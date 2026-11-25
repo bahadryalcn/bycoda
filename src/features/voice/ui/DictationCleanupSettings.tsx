@@ -6,7 +6,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { AdvancedSettings, Select, Toggle } from "../../../shared/ui/settings";
 import { useModelCatalog } from "../../sessions/public/modelHooks";
-import type { VoiceSettings } from "../model/voiceSettings";
+import { loadVoiceSettings, type VoiceSettings } from "../model/voiceSettings";
+import { DictationSettingsSuggestion } from "./DictationSettingsSuggestion";
 
 /** Optional text cleanup has its own explicit cloud opt-in, independent of audio recognition. */
 export function DictationCleanupSettings({
@@ -54,6 +55,16 @@ export function DictationCleanupSettings({
           onChange={(enabled) => update({ enabled })}
         />
       </Row>
+      <DictationSettingsSuggestion
+        settings={settings}
+        apply={(patch) => {
+          change({ dictationCleanup: { ...loadVoiceSettings().dictationCleanup, ...patch } });
+          const saved = loadVoiceSettings().dictationCleanup;
+          return (
+            saved.instructions === patch.instructions && saved.correctionCue === patch.correctionCue
+          );
+        }}
+      />
       {cleanup.enabled ? (
         <AdvancedSettings
           title={t("Text cleanup options")}

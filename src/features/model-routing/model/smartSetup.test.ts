@@ -22,6 +22,7 @@ import {
 } from "./smartSetup";
 
 vi.mock("../../providers/public/providerAccounts", () => ({
+  DEFAULT_PROVIDER_ACCOUNT_ID: "default",
   supportsProviderAccounts: (harness: string) => harness === "codex" || harness === "claude",
   providerAccounts: () => [
     { id: "local-secret", label: "Local" },
@@ -68,7 +69,10 @@ const candidate = (
 });
 
 const setup = (base: ReturnType<typeof draft>, list: SetupCandidate[], poolNames = names) =>
-  applySmartSetup(base, list, rulePlan(list, poolNames));
+  applySmartSetup(base, list, rulePlan(list, poolNames), {
+    ...source(),
+    accountsKnown: () => false,
+  });
 
 it("turns off accelerated settings in new and reused model rows", () => {
   const codex = candidate("worker", 4, 2);
@@ -302,28 +306,72 @@ it("keeps existing ids, limits and unknown entries, refills same-named pools; is
   expect(setup(second, candidates)).toEqual(second);
 });
 
+it("drops removed account rows and cleans up their group and role references", () => {
+  const base = draft();
+  const gone = candidate("retired", 5, 3, { id: "removed", label: "Removed" });
+  const active = candidate("worker", 4, 2, { id: "w", label: "Work" });
+  base.routing.entries.push(
+    { ...gone.target, id: "gone", unknownLimit: "use" },
+    { ...active.target, id: "keep", unknownLimit: "skip" },
+  );
+  base.percentages = { gone: "70", keep: "20" };
+  base.routing.pools = [
+    { id: "gone-group", name: "Retired", entryIds: ["gone"] },
+    { id: "nested", name: "Nested", entryIds: [], poolIds: ["gone-group"] },
+    { id: "mixed", name: "Mixed", entryIds: ["keep", "gone"], poolIds: ["nested"] },
+  ];
+  base.routing.roles["voice.reply"] = { kind: "pool", poolId: "nested" };
+  const modelSource = { ...source(), accounts: { codex: [{ id: "w", label: "Work" }] } };
+  const next = applySmartSetup(base, [active], { order: [0], pools: [], roles: {} }, modelSource);
+  expect(next.routing.entries.map((entry) => entry.id)).toEqual(["keep"]);
+  expect(next.percentages).toEqual({ keep: "20" });
+  expect(next.routing.pools).toEqual([{ id: "mixed", name: "Mixed", entryIds: ["keep"] }]);
+  expect(next.routing.roles["voice.reply"]).toBeUndefined();
+  expect(base.routing.entries).toHaveLength(2);
+  const unknown = applySmartSetup(
+    base,
+    [active],
+    { order: [0], pools: [], roles: {} },
+    {
+      ...modelSource,
+      accountsKnown: () => false,
+    },
+  );
+  expect(unknown.routing.entries.map((entry) => entry.id)).toEqual(["keep", "gone"]);
+});
+
 it("applies planned pool includes and drops ones that would loop", () => {
   const list = [candidate("a", 4, 3), candidate("b", 2, 1)];
-  const next = applySmartSetup(draft(), list, {
-    order: [1, 0],
-    pools: [
-      { name: "Top", members: [0], includes: ["Low"] },
-      { name: "Low", members: [1], includes: [] },
-    ],
-    roles: { "task.worker": { pool: "Top" }, "text.git": "order" },
-  });
+  const next = applySmartSetup(
+    draft(),
+    list,
+    {
+      order: [1, 0],
+      pools: [
+        { name: "Top", members: [0], includes: ["Low"] },
+        { name: "Low", members: [1], includes: [] },
+      ],
+      roles: { "task.worker": { pool: "Top" }, "text.git": "order" },
+    },
+    { ...source(), accountsKnown: () => false },
+  );
   const low = next.routing.pools.find((p) => p.name === "Low")!;
   expect(next.routing.entries.map((e) => e.model)).toEqual(["b", "a"]);
   expect(next.routing.pools.find((p) => p.name === "Top")!.poolIds).toEqual([low.id]);
   expect(next.routing.roles["text.git"]).toEqual({ kind: "order" });
-  const looping = applySmartSetup(draft(), list, {
-    order: [],
-    pools: [
-      { name: "Top", members: [0], includes: ["Low"] },
-      { name: "Low", members: [1], includes: ["Top"] },
-    ],
-    roles: {},
-  });
+  const looping = applySmartSetup(
+    draft(),
+    list,
+    {
+      order: [],
+      pools: [
+        { name: "Top", members: [0], includes: ["Low"] },
+        { name: "Low", members: [1], includes: ["Top"] },
+      ],
+      roles: {},
+    },
+    { ...source(), accountsKnown: () => false },
+  );
   expect(looping.routing.pools.every((p) => !p.poolIds)).toBe(true);
 });
 
@@ -483,11 +531,16 @@ it("applies AI order to pool members and baseline tier fallbacks only", () => {
     candidate("other-unused", 4, 3, account),
     candidate("light", 2, 1),
   ];
-  const next = applySmartSetup(draft(), list, {
-    order: [2, 1],
-    pools: [{ name: "Top", members: [1], includes: [] }],
-    roles: { "task.reviewer": { pool: "Top" } },
-  });
+  const next = applySmartSetup(
+    draft(),
+    list,
+    {
+      order: [2, 1],
+      pools: [{ name: "Top", members: [1], includes: [] }],
+      roles: { "task.reviewer": { pool: "Top" } },
+    },
+    { ...source(), accountsKnown: () => false },
+  );
   expect(next.routing.entries.map((entry) => entry.model)).toEqual([
     "pool-only",
     "top",

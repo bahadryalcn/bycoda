@@ -88,6 +88,8 @@ export type VoiceCompanionViewProps = {
   globalScope: boolean;
   canDetach: boolean;
   toolActivities: VoiceToolActivityEntry[];
+  /** Work the voice assistant started; renders nothing while there is none. */
+  voiceWork?: ReactNode;
   chatTurns: readonly VoiceChatTurn[];
   error: string;
   /** The owner acknowledged the error: clear it. */
@@ -384,6 +386,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               text={[...new Set(p.error ? [voiceErrorTitle(p.error), p.error] : [])].join(": ")}
             />
             {p.recovery}
+            {p.voiceWork}
             {p.fullScreen && (p.choice || p.jobReview) ? (
               <div className={styles.decision}>
                 {p.choice}

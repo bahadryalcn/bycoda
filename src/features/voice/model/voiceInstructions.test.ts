@@ -71,6 +71,20 @@ it("tells the assistant to ask instead of going silent after a failure or a drop
   const notice = voiceInterruptedTurnNotice(`  ${"x".repeat(400)}  `);
   expect(notice).toContain("do not repeat any action until they answer");
   expect(notice).not.toContain("x".repeat(301));
+  expect(notice).toContain("Work this voice assistant started");
+  expect(notice).toContain("never say work was not started unless that state confirms it");
+});
+
+it("routes build requests to a session by default and answers from recorded work state", () => {
+  expect(VOICE_SHARED_POLICY).toContain("goes by default to a normal coding session");
+  expect(VOICE_SHARED_POLICY).toContain(
+    "Use give_jobs, tasks, goals or crews only when the owner explicitly asks",
+  );
+  expect(VOICE_SHARED_POLICY).toContain("Ask at most one clarifying question");
+  expect(VOICE_SHARED_POLICY).toContain(
+    'the seeded block titled "Work this voice assistant started"',
+  );
+  expect(VOICE_SHARED_POLICY).toContain("never create the same work twice");
 });
 
 it("uses native permission, the latest owner correction and exact post-input observation", () => {

@@ -153,7 +153,7 @@ Parts: ModalPanel, NativePopupHost, Portal
 | [TransientNotice](../../src/shared/ui/TransientNotice.tsx) | Existing transient notices only; new ones use Toast. | New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert. |  |
 | [WorkingIndicator](../../src/shared/ui/WorkingIndicator.tsx) | Compact "agent is working" signal beside a session, row or status line. | Generic loading or a pending button: Spinner. Measurable progress: Progress. Unknown pane load: SurfaceLoading. |  |
 
-Parts: NoticeButton, NoticeGlyph, NoticeLink, NoticeSlot, SettingsOperationFeedback, ToastCard, ToastCard
+Parts: ApprovalActions, NoticeButton, NoticeGlyph, NoticeLink, NoticeSlot, SettingsOperationFeedback, ToastCard, ToastCard
 
 ## Data
 

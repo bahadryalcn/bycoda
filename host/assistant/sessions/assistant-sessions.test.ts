@@ -178,7 +178,7 @@ async function setup(overrides: Partial<AssistantSessionPorts> = {}) {
     },
     "owner",
   );
-  const job = (
+  const queued = (
     await core.request(
       {
         op: "jobs.create",
@@ -190,6 +190,9 @@ async function setup(overrides: Partial<AssistantSessionPorts> = {}) {
       "owner",
     )
   ).job!;
+  // Dispatch runs on the request queue after the RPC; this request queues behind it.
+  await core.request({ op: "tick" }, "owner");
+  const job = (await core.request({ op: "jobs.get", id: queued.id }, "owner")).job!;
   let status: AssistantSessionStatus = {
     sessionId: "owned",
     projectId: "project",

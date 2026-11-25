@@ -7,6 +7,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
@@ -31,6 +32,25 @@ export type ProfileSection =
   | "notifications"
   | "cost";
 
+/** Settings still waiting for the owner's review after a language change (settings only). */
+export type LanguageReview = {
+  /** Profile fields to flag: `persona` and `addressAs`. */
+  keys: ReadonlySet<string>;
+  /** Shown under each flagged field. */
+  text: string;
+  /** Shown under the language control for settings outside the profile (voice phrases). */
+  extraText?: string;
+};
+
+function ReviewHint({ review, field }: { review?: LanguageReview; field: string }) {
+  if (!review?.keys.has(field)) return null;
+  return (
+    <InlineMessage tone="warning" live="off">
+      {review.text}
+    </InlineMessage>
+  );
+}
+
 /** Renders one settings or setup section. Callers own the grid and headings. */
 export function AssistantProfileFields({
   section,
@@ -38,12 +58,14 @@ export function AssistantProfileFields({
   onChange,
   observationTasksAvailable = false,
   workModeUnchosen = false,
+  languageReview,
 }: {
   section: ProfileSection;
   value: AssistantProfilePatch;
   observationTasksAvailable?: boolean;
   /** Work mode only: show no selection instead of "Custom" (first setup, nothing chosen yet). */
   workModeUnchosen?: boolean;
+  languageReview?: LanguageReview;
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const rows = useProfileRows();
@@ -88,6 +110,7 @@ export function AssistantProfileFields({
             />
           )}
         </ProfileRow>
+        <ReviewHint review={languageReview} field="addressAs" />
         {!rows && <AddressFrequency value={value} onChange={onChange} />}
         {rows ? avatar : <div className={roleStyles.wide}>{avatar}</div>}
       </>
@@ -95,10 +118,17 @@ export function AssistantProfileFields({
   }
   if (section === "language")
     return (
-      <ProfileLanguage
-        value={String(value.language ?? "auto")}
-        onValueChange={(language) => onChange({ language })}
-      />
+      <>
+        <ProfileLanguage
+          value={String(value.language ?? "auto")}
+          onValueChange={(language) => onChange({ language })}
+        />
+        {languageReview?.extraText && (
+          <InlineMessage tone="warning" live="off">
+            {languageReview.extraText}
+          </InlineMessage>
+        )}
+      </>
     );
   if (section === "personality")
     return (
@@ -139,6 +169,7 @@ export function AssistantProfileFields({
             </div>
           )}
         </ProfileRow>
+        <ReviewHint review={languageReview} field="persona" />
       </>
     );
   if (section === "behavior")

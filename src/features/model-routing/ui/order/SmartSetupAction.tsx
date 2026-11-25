@@ -1,65 +1,89 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { Popover } from "../../../../shared/ui/Popover";
-import { Text } from "../../../../shared/ui/Text";
-import { toast } from "../../../../shared/ui/ToastRegion";
+import { ButtonGroup } from "../../../../shared/ui/ButtonGroup";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { SlidersHorizontal, Sparkles } from "../../../../shared/ui/icons";
+import { HarnessIcon } from "../../../../shared/ui/identity/HarnessIcon";
 import { useModelSource } from "../../../sessions/public/modelSource";
+import { ModelPicker } from "../../../sessions/public/ModelPicker";
+import { mergeModelSettings } from "../../../sessions/public/models";
+import { canRunHarnessTextPrompt } from "../../../../integrations/harness/core/registry";
+import type { ModelRoutingTarget } from "../../../../shared/model/host-contracts/model-routing";
+import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../connections/public/protocol";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import { refreshLocalLiveCatalogFacts } from "../../model/liveCatalogFacts";
-import { applySmartSetup, rulePlan, setupCandidates } from "../../model/smartSetup";
-import { planSmartSetup, type SmartSetupResult } from "../../model/smartSetupAi";
+import {
+  applySmartSetup,
+  rulePlan,
+  setupCandidates,
+  type SetupCandidate,
+} from "../../model/smartSetup";
+import {
+  planSmartSetup,
+  resolveSetupPlanner,
+  setupPlannerLabel,
+  type SmartSetupResult,
+} from "../../model/smartSetupAi";
 import { localSetupCatalog, setupCatalogQuery } from "../../model/smartSetupCatalog";
 
-/**
- * One reversible draft edit that adds pool models and account fallbacks, orders them, fills
- * the groups, binds every job and sets subagents and advisor. The primary action applies the
- * researched rules at once; "Plan setup with AI" asks a model first and falls back to the rules.
- * Persistence stays with the version-bound Save. Failures reach the owner through the draft
- * editor's error line.
- */
+type SetupMethod = "rules" | "ai";
+
+/** Prepares one reversible edit and keeps its planning status beside the actions. */
 export function SmartSetupAction({
   variant = "secondary",
   onEdit,
+  catalogChoices,
+  choice,
+  onChoice,
   children,
 }: {
   variant?: "primary" | "secondary";
-  onEdit: (operation: (draft: OrderDraft) => OrderDraft) => void;
+  onEdit: (operation: (draft: OrderDraft) => OrderDraft) => boolean;
+  catalogChoices: SetupCandidate[];
+  choice?: ModelRoutingTarget;
+  onChoice: (choice: ModelRoutingTarget | undefined) => void;
   children?: ReactNode;
 }) {
   const t = useT();
   const source = useModelSource();
   const client = useQueryClient();
-  const [running, setRunning] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
-  const optionsButton = useRef<HTMLButtonElement>(null);
-  const optionsId = useId();
+  const [running, setRunning] = useState<SetupMethod>();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [planner, setPlanner] = useState<string>();
+  const [result, setResult] = useState<
+    Pick<SmartSetupResult, "plannedBy" | "failure"> & {
+      method: SetupMethod;
+    }
+  >();
   const abort = useRef<AbortController | null>(null);
-  // The edit lands after an async step, so it must use the editor of the latest render.
-  const edit = useStableCallback(onEdit);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Aborts a running plan on unmount instead of editing a draft that is gone.
-  useEffect(() => () => abort.current?.abort(), []);
-  const names = {
-    smartest: t("Smartest"),
-    balanced: t("Balanced"),
-    light: t("Low"),
-    work: t("Work"),
-    personal: t("Personal"),
-  };
-  function apply(result: SmartSetupResult | undefined, failure?: unknown): boolean {
-    let applied = false;
-    edit((draft) => {
+  const aiButton = useRef<HTMLButtonElement>(null);
+  const pickerButton = useRef<HTMLButtonElement>(null);
+  const rulesButton = useRef<HTMLButtonElement>(null);
+  const allowedHarnesses = REMOTE_PROVIDERS.filter(canRunHarnessTextPrompt);
+  const automatic = useQuery({
+    queryKey: ["routing-setup-planner", source.id, allowedHarnesses, catalogChoices],
+    queryFn: async () => (await resolveSetupPlanner(catalogChoices)) ?? null,
+    enabled: !choice,
+    retry: false,
+  });
+  const selected = choice ?? automatic.data;
+  const pickerHarness =
+    selected?.harness ?? allowedHarnesses.find((harness) => source.available(harness));
+  // Finish against the latest account source and draft after catalog or planner work.
+  const edit = useStableCallback((proposal: SmartSetupResult | undefined, failure?: unknown) =>
+    onEdit((draft) => {
       if (failure) throw failure;
-      if (!result)
+      if (!proposal)
         throw new Error("No available provider models found. Check Providers and try again.");
-      const next = applySmartSetup(draft, result.candidates, result.plan);
-      applied = true;
-      return next;
-    });
-    return applied;
-  }
+      return applySmartSetup(draft, proposal.candidates, proposal.plan, source);
+    }),
+  );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Abort setup on unmount so it cannot edit a closed draft.
+  useEffect(() => () => abort.current?.abort(), []);
+
   async function candidatesForSetup() {
     if (source.id) return setupCandidates(source);
     const [, catalog] = await Promise.all([
@@ -68,125 +92,172 @@ export function SmartSetupAction({
     ]);
     return setupCandidates(source, catalog);
   }
-  async function runRules() {
+
+  async function run(method: SetupMethod) {
+    if (abort.current) return;
+    const plannerTarget = selected ?? null;
     const controller = new AbortController();
     abort.current = controller;
-    setRunning(true);
-    let result: SmartSetupResult | undefined;
-    let failure: unknown;
-    try {
-      const candidates = await candidatesForSetup();
-      if (candidates.length) result = { candidates, plan: rulePlan(candidates, names) };
-    } catch (cause) {
-      failure = cause;
-    }
-    if (controller.signal.aborted) return;
-    setRunning(false);
-    if (apply(result, failure))
-      toast.show({
-        tone: "info",
-        message: t("Setup draft ready. Review it, then save."),
-      });
-  }
-  async function runAi() {
-    const controller = new AbortController();
-    abort.current = controller;
-    setRunning(true);
-    let result: SmartSetupResult | undefined;
+    setRunning(method);
+    setPickerOpen(false);
+    setPlanner(undefined);
+    setResult(undefined);
+    const names = {
+      smartest: t("Smartest"),
+      balanced: t("Balanced"),
+      light: t("Low"),
+      work: t("Work"),
+      personal: t("Personal"),
+    };
+    let proposal: SmartSetupResult | undefined;
     let failure: unknown;
     try {
       const candidates = await candidatesForSetup();
       if (controller.signal.aborted) return;
       if (candidates.length)
-        result = await planSmartSetup(candidates, names, { signal: controller.signal });
+        proposal =
+          method === "ai"
+            ? await planSmartSetup(candidates, names, {
+                signal: controller.signal,
+                planner: plannerTarget,
+                onPlanner: (label) => {
+                  if (!controller.signal.aborted) setPlanner(label);
+                },
+              })
+            : { candidates, plan: rulePlan(candidates, names) };
     } catch (cause) {
       failure = cause;
     }
     if (controller.signal.aborted) return;
-    setRunning(false);
-    if (!apply(result, failure) || !result) return;
-    toast.show(
-      result.plannedBy
-        ? {
-            tone: "info",
-            message: t("{p0} planned the setup. Review it, then save.", { p0: result.plannedBy }),
-          }
-        : {
-            tone: "warning",
-            message: result.failure
-              ? t(
-                  "{p0} could not plan the setup ({p1}), so the researched benefit-per-cost ranking was used. Review it, then save.",
-                  {
-                    p0: result.failure.planner,
-                    p1:
-                      result.failure.reason === "timeout"
-                        ? t("it timed out")
-                        : result.failure.reason === "unreadable"
-                          ? t("its answer could not be read")
-                          : (result.failure.detail ?? t("it failed")),
-                  },
-                )
-              : t(
-                  "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.",
-                ),
-          },
-    );
+    abort.current = null;
+    setRunning(undefined);
+    if (edit(proposal, failure) && proposal) {
+      const { plannedBy, failure: plannerFailure } = proposal;
+      setResult({ method, plannedBy, failure: plannerFailure });
+    }
   }
+
+  function cancel() {
+    abort.current?.abort();
+    abort.current = null;
+    setRunning(undefined);
+    queueMicrotask(() => (running === "ai" ? aiButton : rulesButton).current?.focus());
+  }
+
+  const fallback = result?.method === "ai" && !result.plannedBy;
+
   return (
-    <>
-      <Button
-        variant={variant}
-        size="sm"
-        loading={running}
-        loadingLabel={t("Planning…")}
-        onClick={() => void runRules()}
-      >
-        {t("Prepare setup draft")}
-      </Button>
-      {children}
-      <Button
-        ref={optionsButton}
-        size="sm"
-        variant="ghost"
-        aria-haspopup="dialog"
-        aria-expanded={optionsOpen}
-        aria-controls={optionsOpen ? optionsId : undefined}
-        disabled={running}
-        onClick={() => setOptionsOpen((open) => !open)}
-      >
-        {t("Setup options")}
-      </Button>
-      {optionsOpen ? (
-        <Popover
-          id={optionsId}
-          anchor={optionsButton}
-          kind="dialog"
-          aria-label={t("Setup options")}
-          width={320}
-          onDismiss={() => setOptionsOpen(false)}
-          className="flex flex-col items-start gap-2 p-3"
+    <div className="grid min-w-0 gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          ref={rulesButton}
+          variant={variant}
+          size="sm"
+          disabled={running === "ai"}
+          loading={running === "rules"}
+          loadingLabel={t("Preparing draft…")}
+          onClick={() => void run("rules")}
         >
+          {t("Prepare setup draft")}
+        </Button>
+        <ButtonGroup aria-label={t("Plan setup with AI")} className="min-w-0 max-w-full">
           <Button
+            ref={aiButton}
+            variant="ghost"
             size="sm"
-            variant="secondary"
-            onClick={() => {
-              optionsButton.current?.focus();
-              setOptionsOpen(false);
-              void runAi();
-            }}
+            startIcon={<Sparkles className="icon-sm" />}
+            disabled={running === "rules" || (!choice && automatic.isPending)}
+            loading={running === "ai"}
+            loadingLabel={t("Planning…")}
+            onClick={() => void run("ai")}
           >
             {t("Plan setup with AI")}
           </Button>
-          <Text as="p" size="secondary" tone="secondary">
-            {t(
-              "Sets model order, job groups and agent defaults in a draft. Uses standard speed. Review the draft before saving.",
+          <Button
+            ref={pickerButton}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Model and settings")}
+            disabled={!!running || !pickerHarness}
+            aria-haspopup="dialog"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen(!pickerOpen)}
+          >
+            {selected ? (
+              <HarnessIcon harness={selected.harness} size="sm" />
+            ) : (
+              <SlidersHorizontal className="icon-sm" />
             )}
-          </Text>
-          <Text as="p" size="caption" tone="secondary">
-            {t("Prices and scores: OpenRouter, Artificial Analysis.")}
-          </Text>
-        </Popover>
+          </Button>
+        </ButtonGroup>
+        {pickerOpen && pickerHarness ? (
+          <ModelPicker
+            harness={pickerHarness}
+            model={selected?.model ?? source.resolve(pickerHarness).id}
+            values={selected?.modelSettings ?? {}}
+            accountId={selected?.providerAccountId}
+            accountChoices
+            allowedHarnesses={allowedHarnesses}
+            settingsScope="reasoning-and-speed"
+            presentation="field"
+            openRequest={1}
+            externalTrigger={{ anchor: pickerButton, onDismiss: () => setPickerOpen(false) }}
+            inheritChoice={{
+              label:
+                !choice && selected
+                  ? t("Automatic ({p0})", { p0: setupPlannerLabel(selected, catalogChoices) })
+                  : t("Automatic"),
+              selected: !choice,
+              onSelect: () => onChoice(undefined),
+            }}
+            onChange={(harness, model, providerAccountId) => {
+              if (!isRemoteProvider(harness)) return;
+              const resolved = source.resolve(harness, model);
+              onChoice({
+                harness,
+                model,
+                providerAccountId,
+                modelSettings: mergeModelSettings(
+                  resolved,
+                  selected?.model === model && selected.harness === harness
+                    ? selected.modelSettings
+                    : undefined,
+                ),
+              });
+            }}
+            onSettingsChange={(modelSettings) => {
+              if (selected) onChoice({ ...selected, modelSettings });
+            }}
+          />
+        ) : null}
+        {running ? (
+          <Button size="sm" variant="ghost" onClick={cancel}>
+            {t("Cancel")}
+          </Button>
+        ) : null}
+        {children}
+      </div>
+      {running === "ai" && planner ? (
+        <InlineMessage tone="neutral" icon={null}>
+          {t("Planning with {p0}", { p0: planner })}
+        </InlineMessage>
       ) : null}
-    </>
+      {result ? (
+        <InlineMessage tone={fallback ? "warning" : "success"}>
+          {result.plannedBy
+            ? t("Draft planned by {p0}", { p0: result.plannedBy })
+            : result.failure
+              ? result.failure.reason === "timeout"
+                ? t("{p0} timed out. Rules prepared the draft.", { p0: result.failure.planner })
+                : t("{p0} could not complete the plan. Rules prepared the draft.", {
+                    p0: result.failure.planner,
+                  })
+              : fallback
+                ? t("Rules prepared the draft. No planning model was available.")
+                : t("Rules prepared the draft.")}
+        </InlineMessage>
+      ) : null}
+    </div>
   );
 }

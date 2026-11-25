@@ -11,7 +11,6 @@ import { isTerminalTextEdit, terminalToolShortcut } from "../model/terminalKeys"
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { defaultTerminalTitle, parseOsc7Cwd, type TerminalMetaPatch } from "../model/terminalTab";
 import { isLightScheme } from "../../settings/model/appearance";
-import { IS_MAC } from "../../../platform/tauri/platform";
 import "@xterm/xterm/css/xterm.css";
 import { activateTerminalLink } from "../model/terminalLinks";
 import { TerminalSelectionMenu } from "./TerminalSelectionMenu";
@@ -267,7 +266,8 @@ export function TerminalView({
       allowProposedApi: true,
       smoothScrollDuration: 0,
       theme: colors.theme,
-      macOptionIsMeta: IS_MAC,
+      // The DOM input handler enables Meta per key on macOS.
+      macOptionIsMeta: false,
       linkHandler: { activate: activateTerminalLink },
     });
     term.open(host);

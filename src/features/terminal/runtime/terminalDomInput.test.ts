@@ -152,6 +152,7 @@ it("leaves composing macOS editing keys to xterm without injecting shortcuts", (
   const input = vi.fn();
   const clear = vi.fn();
   const term = {
+    options: { macOptionIsMeta: false },
     input,
     clear,
     attachCustomKeyEventHandler: (listener: typeof handle) => {
@@ -183,6 +184,42 @@ it("leaves composing macOS editing keys to xterm without injecting shortcuts", (
     expect(clear).not.toHaveBeenCalled();
     expect(handle(new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true }))).toBe(false);
     expect(input).toHaveBeenCalledExactlyOnceWith("\x1bb");
+  } finally {
+    binding.dispose();
+  }
+});
+
+it("enables xterm Meta per Option key and clears it for layout text and composition", () => {
+  let handle!: (event: KeyboardEvent) => boolean;
+  const options = { macOptionIsMeta: false };
+  const term = {
+    options,
+    attachCustomKeyEventHandler: (listener: typeof handle) => {
+      handle = listener;
+    },
+  } as unknown as Terminal;
+  const binding = bindTerminalDomInput({
+    term,
+    host: document.createElement("div"),
+    onCompositionStart() {},
+    onCompositionEnd() {},
+  });
+  try {
+    for (const [init, asMeta] of [
+      [{ key: "b", code: "KeyB", keyCode: 66 }, true],
+      [{ key: "@", code: "KeyQ", keyCode: 81 }, false],
+      [{ key: "B", code: "KeyB", keyCode: 66, shiftKey: true }, true],
+      [{ key: "{", code: "Digit7", keyCode: 55, shiftKey: true }, false],
+      [{ key: "Enter", code: "Enter", keyCode: 13 }, true],
+      [{ key: "Dead", code: "KeyU", keyCode: 85 }, false],
+      [{ key: "f", code: "KeyF", keyCode: 70, ctrlKey: true }, true],
+      [{ key: "b", code: "KeyB", keyCode: 66, isComposing: true }, false],
+      [{ key: "b", code: "KeyB", keyCode: 66 }, true],
+      [{ key: "b", code: "KeyB", keyCode: 66, altKey: false }, false],
+    ] as const) {
+      expect(handle(new KeyboardEvent("keydown", { altKey: true, ...init }))).toBe(true);
+      expect(options.macOptionIsMeta, JSON.stringify(init)).toBe(asMeta);
+    }
   } finally {
     binding.dispose();
   }

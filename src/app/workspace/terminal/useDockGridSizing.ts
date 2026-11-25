@@ -34,15 +34,16 @@ export function useDockGridSizing(deps: DockGridSizingDeps) {
     },
     [onProjectTerminalSize],
   );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the dock grid's DOM template in step with the committed dock.
   useLayoutEffect(() => {
-    if (dockDragSize.current != null) return;
     const el = dockGridRef.current;
     if (!el) return;
-    applyDockGridStyle(
-      el,
-      dockVisible && currentProjectDock ? currentProjectDock.side : null,
-      currentProjectDock?.size ?? 0,
-    );
+    const side = dockVisible && currentProjectDock ? currentProjectDock.side : null;
+    // A live drag keeps its painted size. A hidden dock has no drag, so its row always
+    // goes, even when a drag's end was lost; otherwise an empty row stays under the chat.
+    if (dockDragSize.current != null && side) return;
+    dockDragSize.current = null;
+    applyDockGridStyle(el, side, currentProjectDock?.size ?? 0);
   }, [currentProjectDock, dockVisible]);
   return { dockGridRef, paintDockSize, commitDockSize };
 }

@@ -35,6 +35,7 @@ import {
 import { AlwaysOnChecklist } from "./settings/AlwaysOnChecklist";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { useLanguageChangeFlow } from "./settings/useLanguageChangeFlow";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
 import { ASSISTANT_WORK_PRESET_TEXT, assistantWorkPreset } from "../model/assistantWorkPresets";
@@ -177,6 +178,17 @@ export function AssistantSetup({
   const index = draft ? Math.max(0, steps.indexOf(draft.step)) : 0;
   const step = steps[index];
   const patch = draft?.patch ?? {};
+  /** Typed answer the builder opens with (the language-change rewrite request). */
+  const [builderRequest, setBuilderRequest] = useState("");
+  const languageFlow = useLanguageChangeFlow({
+    draft: patch,
+    lastSpoken: snapshot?.lastSpokenLanguage,
+    applyLanguage: (language) => update({ language }),
+    startBuilder: (request) => {
+      setBuilderRequest(request);
+      setBuilderOpen(true);
+    },
+  });
   const workPreset = assistantWorkPreset(patch);
   /** A first setup starts with nothing chosen; a custom mix the owner made or already saved is shown as Custom. */
   const workModeUnchosen =
@@ -456,18 +468,33 @@ export function AssistantSetup({
                   type="button"
                   className={styles.aiStart}
                   startIcon={<Sparkles className="icon-sm" />}
-                  onClick={() => setBuilderOpen(true)}
+                  onClick={() => {
+                    setBuilderRequest("");
+                    setBuilderOpen(true);
+                  }}
                 >
                   {t("Set up with AI")}
                 </Button>
               )}
               {step === "identity" && (
                 <div className={styles.grid}>
-                  <AssistantProfileFields section="identity" value={patch} onChange={update} />
+                  <AssistantProfileFields
+                    section="identity"
+                    value={patch}
+                    languageReview={languageFlow.review}
+                    onChange={update}
+                  />
                 </div>
               )}
               {step === "identity" && voice && (
-                <AssistantProfileFields section="language" value={patch} onChange={update} />
+                <AssistantProfileFields
+                  section="language"
+                  value={patch}
+                  languageReview={languageFlow.review}
+                  onChange={(change) => {
+                    if (!languageFlow.intercept(change)) update(change);
+                  }}
+                />
               )}
               {(step === "voice" || step === "speaker" || step === "microphone") && (
                 <VoiceSetupSteps
@@ -592,9 +619,11 @@ export function AssistantSetup({
           </>
         )}
       </Text>
+      {languageFlow.dialog}
       {builderOpen && (
         <AssistantBuilderDialog
           current={patch}
+          initialAnswer={builderRequest}
           onClose={() => setBuilderOpen(false)}
           onApply={(changes) => {
             if (voice && draft && (changes.name ?? patch.name)?.trim()) {

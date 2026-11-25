@@ -8,6 +8,7 @@ import type {
 import type { ManualSupervisionPolicy } from "../../../src/shared/model/assistantManual";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
 import { assistantPolicy } from "../../../src/shared/model/assistantPolicy";
+import { truncateGraphemes } from "../../../src/shared/lib/text/truncate";
 import type { AssistantRepository } from "../repository";
 import type { AssistantPorts } from "../service";
 import type { RoomManagementAdmission } from "../management/assistant-management-turn";
@@ -53,6 +54,42 @@ export const narrationQuietHours = (profile: AssistantProfile, now: number) => {
   );
 };
 const REMINDER = "notification:reminder:";
+/** A repeated problem for one job inside this span is one narration, not one per status check. */
+const PROBLEM_DEDUPE_MS = 30 * 60_000;
+/** The notification body prefix that separates a job stopped by an error from one awaiting the owner. */
+const ERROR_STOP = "Stopped with an error";
+const stoppedByError = async (deps: NarrationSourceDeps, activityId: string) =>
+  (await deps.runtime<Notice | null>(`notification:${activityId}`, null))?.body.startsWith(
+    ERROR_STOP,
+  ) === true;
+/** True when an earlier problem (a job.problem or an error stop) of the same job is recent enough to count. */
+async function earlierJobProblem(
+  deps: NarrationSourceDeps,
+  activity: AssistantActivity,
+): Promise<boolean> {
+  const rows = await deps.store.db
+    .prepare(
+      "SELECT id,value FROM assistant_activity WHERE deleted_at IS NULL AND id<>? AND json_extract(value,'$.jobId')=? AND json_extract(value,'$.kind') IN ('job.problem','job.waiting') AND json_extract(value,'$.createdAt')<=? AND json_extract(value,'$.createdAt')>=? ORDER BY json_extract(value,'$.createdAt') LIMIT 50",
+    )
+    .all(
+      activity.id,
+      activity.jobId,
+      activity.createdAt,
+      activity.createdAt - PROBLEM_DEDUPE_MS,
+    );
+  for (const row of rows) {
+    const earlier = JSON.parse(String(row.value)) as AssistantActivity;
+    if (earlier.createdAt === activity.createdAt && String(row.id) > activity.id) continue;
+    if (earlier.kind === "job.problem" || (await stoppedByError(deps, String(row.id))))
+      return true;
+  }
+  return false;
+}
+/** Names the job by its bounded title in quotes; the error text itself is never spoken. */
+const problemText = (job: AssistantJob) => {
+  const title = truncateGraphemes(job.title.replace(/["\s]+/g, " ").trim(), 80);
+  return title ? `A job stopped with a problem: "${title}".` : "A job stopped with a problem.";
+};
 /** A fired reminder that is still unacknowledged and recent; spoken once as "Reminder: <text>". */
 async function reminderSource(
   deps: NarrationSourceDeps,
@@ -200,7 +237,7 @@ export async function narrationSource(
       ? "completed"
       : activity.kind === "job.waiting"
         ? "question"
-        : activity.kind === "job.running"
+        : activity.kind === "job.running" || activity.kind === "job.problem"
           ? "progress"
           : undefined;
   if (!kind) return undefined;
@@ -209,18 +246,25 @@ export async function narrationSource(
   if (
     (kind === "completed" && job.status !== "done") ||
     (kind === "question" && job.status !== "waiting") ||
-    (kind === "progress" && job.status !== "running")
+    (kind === "progress" && activity.kind === "job.running" && job.status !== "running") ||
+    (activity.kind === "job.problem" && ["done", "cancelled"].includes(job.status))
   )
     return undefined;
-  const text =
-    kind === "completed"
+  // A wait caused by an error is a problem, not an owner question; both forms speak once per job.
+  const problem =
+    activity.kind === "job.problem" ||
+    (kind === "question" && (await stoppedByError(deps, activity.id)));
+  if (problem && (await earlierJobProblem(deps, activity))) return undefined;
+  const text = problem
+    ? problemText(job)
+    : kind === "completed"
       ? "A job completed."
       : kind === "question"
         ? "A job needs your input."
         : "A job is making progress.";
   return {
     eventId,
-    kind,
+    kind: problem ? "progress" : kind,
     text,
     createdAt: activity.createdAt,
     projectIds: assistantJobProjectIds(job),

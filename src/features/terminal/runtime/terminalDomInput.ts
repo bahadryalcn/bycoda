@@ -2,7 +2,11 @@ import type { Terminal } from "@xterm/xterm";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { withTimeout } from "../../../shared/lib/withTimeout";
-import { isMacTerminalClearShortcut, macTerminalShortcutData } from "../model/terminalKeys";
+import {
+  isMacOptionText,
+  isMacTerminalClearShortcut,
+  macTerminalShortcutData,
+} from "../model/terminalKeys";
 
 /**
  * Clipboard, IME composition and key shortcut handling between the DOM and xterm.
@@ -78,7 +82,13 @@ export function bindTerminalDomInput(options: {
   view?.addEventListener("blur", cancelClipboardPaste);
 
   term.attachCustomKeyEventHandler((event) => {
-    if (isImeComposition(event)) return true;
+    const composing = isImeComposition(event);
+    if (IS_MAC && event.type === "keydown") {
+      // xterm reads this option immediately after the custom handler returns.
+      term.options.macOptionIsMeta =
+        !composing && event.altKey && !event.metaKey && !isMacOptionText(event);
+    }
+    if (composing) return true;
     if (
       event.key === "Insert" &&
       event.shiftKey &&

@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { createInterface } from "node:readline";
@@ -7,6 +8,7 @@ import { measure } from "../diagnostics/perf-metrics";
 import { createLogger } from "../diagnostics/logger";
 import { currentRequestTrace } from "../diagnostics/request-trace";
 import { localVoicePython } from "./voice-python";
+import { ggufWorkerArgs, ownedGgufModel } from "./voice-gguf";
 import {
   inspectVoiceRuntime,
   voiceRuntimeConfig,
@@ -411,9 +413,15 @@ export class LocalVoiceService {
       this.runtime.python ||
       process.env.BYCODA_VOICE_PYTHON ||
       (process.platform === "win32" ? "python" : "python3");
+    const gguf =
+      this.runtime.natural === false && ownedGgufModel(homedir(), this.runtime.whisperPath);
+    const command = gguf ? process.execPath : python;
+    const args = gguf
+      ? ggufWorkerArgs(homedir(), gguf.path, gguf.model)
+      : ["-u", "-c", localVoicePython];
     this.loading = new Promise<{ model: string; device: string; turn: boolean }>(
       (resolve, reject) => {
-        const child = (this.child = spawn(python, ["-u", "-c", localVoicePython], {
+        const child = (this.child = spawn(command, args, {
           windowsHide: true,
           stdio: ["pipe", "pipe", "pipe"],
           env: {
@@ -487,7 +495,9 @@ export class LocalVoiceService {
           clearTimeout(timer);
           reject(
             new Error(
-              "Local voice needs Python, faster-whisper and a cached Whisper model on this computer.",
+              gguf
+                ? "The local GGUF model could not be loaded."
+                : "Local voice needs Python, faster-whisper and a cached Whisper model on this computer.",
             ),
           );
           if (this.child === child) this.close();

@@ -2,6 +2,7 @@
 import { act, createElement, StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import type { ITerminalOptions } from "@xterm/xterm";
 
 const pty = vi.hoisted(() => ({
   spawnPty: vi.fn(async () => {}),
@@ -46,12 +47,16 @@ vi.mock("./TerminalCursorPopover", () => ({
   TerminalCursorPopover: ({ children }: { children: React.ReactNode }) => children,
 }));
 vi.mock("@tauri-apps/api/core", () => native);
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  IS_MAC: true,
+}));
 const xterm = vi.hoisted(() => ({
   fit: vi.fn(() => null as { cols: number; rows: number } | null),
   writes: vi.fn((callback?: () => void) => callback?.()),
   webgl: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
   instances: [] as Array<{
-    options: { theme?: { foreground?: string; cursor?: string } };
+    options: ITerminalOptions;
     osc: Map<number, (data: string) => boolean>;
     dataHandler?: (data: string) => void;
     write: ReturnType<typeof vi.fn>;
@@ -83,7 +88,7 @@ vi.mock("@xterm/xterm", () => ({
     options = {};
     osc = new Map<number, (data: string) => boolean>();
     dataHandler?: (data: string) => void;
-    constructor(options: { theme?: { foreground?: string; cursor?: string } }) {
+    constructor(options: ITerminalOptions) {
       this.options = options;
       xterm.instances.push(this);
     }
@@ -138,6 +143,17 @@ import {
   APPEARANCE_DEFAULTS,
   saveAppearancePreferences,
 } from "../../settings/model/appearancePreferences";
+
+it("lets the macOS keyboard layout produce Option characters in xterm", async () => {
+  const { host, root } = setup();
+  try {
+    await act(async () => root.render(createElement(TerminalView, { id: "mac-option", cwd: "" })));
+    expect(xterm.instances[0]?.options.macOptionIsMeta).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
 
 it("zooms only the hovered terminal, clamps size and applies saved typography without respawning", async () => {
   localStorage.clear();

@@ -140,7 +140,7 @@ In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Sen
 
 Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
 
-A small notice in the lower-left corner opens the destination and the files or request data before they are sent. **Send every time** gives you a short review window. Opening the details pauses automatic sending, and you can cancel the pending transfer. After a successful upload, the receipt opens the same data and the destination. Close it to dismiss that receipt. **Data sharing receipts** controls the receipts independently of permission.
+Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. **Send every time** gives you a short review window. Opening the details pauses automatic sending, and you can cancel the pending transfer. After a successful upload, the receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
 once: in the first-run setup, or for existing installations in a small notice that never

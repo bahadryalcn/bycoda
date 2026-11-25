@@ -142,6 +142,7 @@ pub(super) fn call(
     }
     if action == "management.write.authorize" {
         let (message, operation_hash) = management_approval_message(request)?;
+        let details = management_approval_details(request)?;
         let check = || -> Result<(), String> {
             taken.check()?;
             if !issuer.is_current() {
@@ -172,7 +173,7 @@ pub(super) fn call(
         check()?;
         let approved = match standing {
             Some(approved) => approved,
-            None => crate::control::owner_approval::ask_conversation(
+            None => crate::control::owner_approval::ask_conversation_detailed(
                 app,
                 request,
                 crate::control::owner_approval::Prompt {
@@ -181,6 +182,7 @@ pub(super) fn call(
                     confirm: "Approve this exact operation",
                     cancel: "Cancel",
                 },
+                details,
                 || taken.check(),
             )?,
         };

@@ -9,8 +9,18 @@ import {
   ModelRoutingRoleSchema,
   ModelRoutingScopeSchema,
   type ModelRoutingRole,
+  type ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
 import { isModelEnabled, modelBelongsToHarness } from "../../sessions/public/models";
+import { modelDisplayName } from "../../sessions/public/modelDisplayName";
+import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import {
+  defaultProviderAccountId,
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
+import { LOCAL_MODEL_SOURCE } from "../../sessions/public/modelSource";
+import { isRemoteProvider } from "../../connections/public/protocol";
 import { titleGenerationChoice } from "../../sessions/public/titlePreferences";
 import { resolveHelperModel } from "./helperModelRouting";
 import { catalogModelFacts } from "./modelCatalogFacts";
@@ -19,6 +29,7 @@ import { MODEL_ROLE_METADATA } from "./modelRoutingRoles";
 import {
   baselineOrder,
   enforceRoleNeeds,
+  removedSetupAccount,
   ROLE_NEED,
   withoutSetupAcceleration,
   rulePlan,
@@ -261,19 +272,38 @@ export function planFromAnswer(
  * The planner: an explicit routing-setup binding, else the cheapest strong catalog model this
  * device can prompt, else the title model.
  */
-type PlannerChoice = {
+type PlannerChoice = Omit<ModelRoutingTarget, "harness" | "modelSettings"> & {
   harness: Parameters<typeof canRunHarnessTextPrompt>[0];
-  model: string;
-  providerAccountId?: string;
-  modelSettings?: Record<string, string>;
+  modelSettings?: ModelRoutingTarget["modelSettings"];
 };
-async function plannerChoice(candidates: SetupCandidate[]): Promise<PlannerChoice | undefined> {
-  const runnable = (choice: PlannerChoice) =>
+
+function runnablePlanner(accountRemoved: ReturnType<typeof removedSetupAccount>) {
+  return (choice: PlannerChoice) =>
     isModelEnabled(choice.model) &&
     modelBelongsToHarness(choice.harness, choice.model) &&
-    canRunHarnessTextPrompt(choice.harness);
+    canRunHarnessTextPrompt(choice.harness) &&
+    (!isRemoteProvider(choice.harness) || !accountRemoved({ ...choice, harness: choice.harness }));
+}
+
+function plannerTarget(choice: PlannerChoice): ModelRoutingTarget | undefined {
+  if (!isRemoteProvider(choice.harness)) return;
+  const providerAccountId = supportsProviderAccounts(choice.harness)
+    ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
+    : undefined;
+  return {
+    harness: choice.harness,
+    model: choice.model,
+    ...(providerAccountId ? { providerAccountId } : {}),
+    modelSettings: withoutSetupAcceleration(choice.modelSettings ?? {}),
+  };
+}
+
+export async function resolveSetupPlanner(
+  candidates: SetupCandidate[],
+): Promise<ModelRoutingTarget | undefined> {
+  const runnable = runnablePlanner(removedSetupAccount(LOCAL_MODEL_SOURCE));
   const bound = await resolveHelperModel("text.routingSetup");
-  if (bound && runnable(bound)) return bound;
+  if (bound && runnable(bound)) return plannerTarget(bound);
   const strong = candidates
     .filter((candidate) => candidate.profile.intelligence >= 4 && runnable(candidate.target))
     .sort(
@@ -282,9 +312,23 @@ async function plannerChoice(candidates: SetupCandidate[]): Promise<PlannerChoic
         b.profile.intelligence - a.profile.intelligence ||
         Number(Boolean(a.target.providerAccountId)) - Number(Boolean(b.target.providerAccountId)),
     )[0];
-  if (strong) return strong.target;
+  if (strong) return plannerTarget(strong.target);
   const title = titleGenerationChoice();
-  return title && runnable(title) ? title : undefined;
+  return title && runnable(title) ? plannerTarget(title) : undefined;
+}
+
+export function setupPlannerLabel(target: ModelRoutingTarget, candidates: SetupCandidate[]) {
+  const { harness, model, providerAccountId } = target;
+  const name =
+    candidates.find(
+      (candidate) => candidate.target.harness === harness && candidate.target.model === model,
+    )?.modelName ?? modelDisplayName(model, harness);
+  const account =
+    supportsProviderAccounts(harness) && providerAccountId
+      ? (providerAccounts(harness).find(({ id }) => id === providerAccountId)?.label ??
+        providerAccountId)
+      : undefined;
+  return [name, HARNESS_TITLE[harness], account].filter(Boolean).join(" · ");
 }
 
 export type SmartSetupResult = {
@@ -300,21 +344,24 @@ export type SmartSetupResult = {
 export async function planSmartSetup(
   candidates: SetupCandidate[],
   names: SetupPoolNames,
-  options: { signal?: AbortSignal },
+  options: {
+    signal?: AbortSignal;
+    planner?: ModelRoutingTarget | null;
+    onPlanner?: (label: string) => void;
+  },
 ): Promise<SmartSetupResult> {
   const fallback = { candidates, plan: rulePlan(candidates, names) };
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let choice: PlannerChoice | undefined;
+  let choice: ModelRoutingTarget | undefined;
+  let planner = "";
   let timedOut = false;
-  const plannerName = () =>
-    candidates.find((c) => c.target.model === choice?.model)?.modelName ?? choice?.model ?? "";
   const failed = (
     reason: NonNullable<SmartSetupResult["failure"]>["reason"],
     detail?: string,
   ): SmartSetupResult => ({
     ...fallback,
     failure: {
-      planner: plannerName(),
+      planner,
       reason,
       ...(detail?.trim() ? { detail: truncateGraphemes(detail.trim(), 160) } : {}),
     },
@@ -324,8 +371,14 @@ export async function planSmartSetup(
   options.signal?.addEventListener("abort", abort, { once: true });
   try {
     if (options.signal?.aborted) return fallback;
-    choice = await plannerChoice(candidates);
-    if (!choice) return fallback;
+    choice =
+      options.planner === undefined
+        ? await resolveSetupPlanner(candidates)
+        : (options.planner ?? undefined);
+    if (!choice || options.signal?.aborted) return fallback;
+    planner = setupPlannerLabel(choice, candidates);
+    if (!runnablePlanner(removedSetupAccount(LOCAL_MODEL_SOURCE))(choice)) return failed("error");
+    options.onPlanner?.(planner);
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         timedOut = true;
@@ -336,9 +389,6 @@ export async function planSmartSetup(
     const text = await Promise.race([
       runHarnessTextPrompt({
         ...choice,
-        ...(choice.modelSettings
-          ? { modelSettings: withoutSetupAcceleration(choice.modelSettings) }
-          : {}),
         // The project-less session folder; an empty cwd is not a directory and fails the spawn.
         cwd: "~",
         ephemeral: true,
@@ -353,17 +403,13 @@ export async function planSmartSetup(
     const answer = parsePlanAnswer(text);
     if (!answer) return failed("unreadable");
     const planned = planFromAnswer(candidates, answer);
-    // An answer without pools or roles is not a plan; keep its kinds and profiles only.
+    // A failed plan uses the same rules and inputs as a setup prepared without AI.
     if (!planned.plan.pools.length || !Object.keys(planned.plan.roles).length)
-      return {
-        ...failed("unreadable"),
-        candidates: planned.candidates,
-        plan: rulePlan(planned.candidates, names),
-      };
+      return failed("unreadable");
     return {
       candidates: planned.candidates,
       plan: enforceRoleNeeds(planned.candidates, planned.plan),
-      plannedBy: plannerName(),
+      plannedBy: planner,
     };
   } catch (cause) {
     if (!choice || options.signal?.aborted) return fallback;

@@ -41,7 +41,8 @@ terminal's text size; ordinary wheel input continues to scroll. Open the termina
 **Terminal pane actions** menu to adjust its current size with − / + or **Reset**
 to the saved terminal size. Changing text size does not start another shell.
 
-The dock header groups new terminal, profiles and split together. Find,
+The terminal list starts at the top of the dock, next to the toolbar above the
+terminal output. The toolbar groups new terminal, profiles and split together. Find,
 Command suggestions and **Terminal pane actions** follow the selected terminal.
 The pane menu offers Scroll to bottom, Clear terminal and text size. **Move
 Terminal** opens the dock position menu.
@@ -83,8 +84,15 @@ events continue to receive right-clicks.
 
 While a terminal has focus, plain Ctrl+letter chords (Ctrl+W, D, T, N, B, P, O, J,
 K and the rest) go to the shell instead of the app's default shortcuts. Ctrl+Shift
-chords, Ctrl+Tab, Ctrl+Alt+arrows, zoom, full screen and Escape keep working, and
-a chord you record yourself in Keybindings still runs the app command.
+chords, Ctrl+Tab, Ctrl+Alt+arrows, zoom, full screen and Escape keep working.
+Shortcuts you record in Keybindings can still run app commands while the terminal
+has focus. Characters typed with macOS Option or AltGr take priority over
+workspace shortcuts while you type in the terminal.
+
+On macOS, Option types characters from the active keyboard layout, such as `@`
+with Option+Q on Turkish Q. It also starts accent composition. Option acts as
+terminal Meta when the key has no Option character. Option+Left and Option+Right
+move by word.
 
 Terminal colors follow the surrounding pane and shared appearance roles. Where the
 pane's effective solid background can be resolved, the renderer applies its normal

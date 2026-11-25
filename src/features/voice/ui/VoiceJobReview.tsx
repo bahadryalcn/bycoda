@@ -147,7 +147,8 @@ export function VoiceJobReview({
               value={row.request}
               maxLength={16000}
               minRows={2}
-              maxRows={5}
+              maxRows={12}
+              autosize
               onChange={(event) => update(row.id, { request: event.currentTarget.value })}
             />
             {row.kind === "quick" && row.quickAction?.kind === "note" ? (

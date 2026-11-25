@@ -461,8 +461,8 @@ it("returns the Host save promise to the shared leave guard", async () => {
 it("starts an empty catalog with setup instead of the role assignment form", async () => {
   await renderScreen([]);
   expect(container.textContent).toContain("No models configured");
-  expect(container.textContent).toContain("Setup options");
-  expect(container.textContent).not.toContain("Plan setup with AI");
+  expect(container.textContent).toContain("Prepare setup draft");
+  expect(container.textContent).toContain("Plan setup with AI");
   expect(tabButton("Models & order").getAttribute("aria-selected")).toBe("true");
 });
 

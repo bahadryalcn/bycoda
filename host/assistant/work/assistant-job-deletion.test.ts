@@ -83,15 +83,18 @@ async function fixture(mode: "none" | "idle" | "running" = "none", count = 2) {
       execution,
     },
   });
-  const job = (
-      await rpc({
-        op: "jobs.create",
-        title: "Retained job",
-        request: "Keep all sessions and working files",
-        projectId: project.id,
-        idempotencyKey: "retained-deletion-job",
-      })
-    ).job!,
+  const queued = (
+    await rpc({
+      op: "jobs.create",
+      title: "Retained job",
+      request: "Keep all sessions and working files",
+      projectId: project.id,
+      idempotencyKey: "retained-deletion-job",
+    })
+  ).job!;
+  // Dispatch runs on the request queue after the RPC; this request queues behind it.
+  await rpc({ op: "tick" });
+  const job = (await rpc({ op: "jobs.get", id: queued.id })).job!,
     goalId = `assistant-${job.id}`,
     ids = Array.from({ length: count }, (_, i) => `child-${i}`);
   let sessionId: string | undefined, runId: string | undefined;

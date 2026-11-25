@@ -1,8 +1,17 @@
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as hostLog from "../diagnostics/logger";
 import { BOOT_OPTIONAL_READY_MS } from "./boot-phases";
-import { armShutdownDeadline, createLifecycleRuntime, shutdownExitCode } from "./lifecycle";
+import { StoreDatabase } from "../store-db";
+import {
+  armShutdownDeadline,
+  createLifecycleRuntime,
+  readLifecycleActivity,
+  shutdownExitCode,
+} from "./lifecycle";
 
 vi.mock("../assistant/observations/assistant-observation-producers", () => ({
   installAssistantObservationProducers: async () => undefined,
@@ -202,5 +211,51 @@ describe("host boot recovery", () => {
     expect(booted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(booted).toBe(true);
+  });
+});
+
+describe("lifecycle activity", () => {
+  it("answers while a writer scope holds the database queue", async () => {
+    // The update dialog said "Machine activity could not be checked" while the queue was busy.
+    const directory = mkdtempSync(join(tmpdir(), "bycoda-lifecycle-activity-"));
+    const database = new StoreDatabase(
+      join(directory, "host.db"),
+      new URL("../store-worker.mjs", import.meta.url),
+    );
+    try {
+      await database.scope(async () => {
+        await database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000");
+        await database.exec(
+          `CREATE TABLE sessions (id TEXT, status TEXT, shell_running INTEGER, summary TEXT, updated_at INTEGER);
+           CREATE TABLE automation_runs (value TEXT);
+           INSERT INTO sessions VALUES ('s1', 'running', 0, '{"title":"Build"}', 2), ('s2', 'idle', 1, NULL, 1);`,
+        );
+      });
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const writer = database.scope(async () => {
+        entered.resolve();
+        await release.promise;
+      });
+      await entered.promise;
+      const read = await readLifecycleActivity(database, true);
+      expect(read?.activity).toEqual({ sessions: 1, shells: 1, automations: 0 });
+      expect(read?.runningSessions).toEqual([{ id: "s1", title: "Build" }]);
+      release.resolve();
+      await writer;
+    } finally {
+      await database.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an unreadable database as unknown, never idle", async () => {
+    const database = {
+      outsideScope: (work: () => unknown) => work(),
+      readScope: async () => {
+        throw new Error("database unavailable");
+      },
+    };
+    expect(await readLifecycleActivity(database as never, false)).toBeUndefined();
   });
 });

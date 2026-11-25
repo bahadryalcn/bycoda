@@ -20,8 +20,10 @@ import {
 import { modelRoutingPoolCycle } from "../../../shared/model/modelRoutingPools";
 import { REMOTE_PROVIDERS } from "../../connections/public/protocol";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccounts,
   supportsProviderAccounts,
+  type ProviderAccountProvider,
 } from "../../providers/public/providerAccounts";
 import {
   defaultModelSettings,
@@ -68,6 +70,38 @@ const targetKey = (target: ModelRoutingTarget) =>
 const accountKey = (target: ModelRoutingTarget) =>
   JSON.stringify([target.harness, target.providerAccountId ?? "default"]);
 
+function setupAccounts(source: ModelSource, harness: ProviderAccountProvider) {
+  return source.accounts === undefined
+    ? source.id
+      ? []
+      : providerAccounts(harness)
+    : (source.accounts[harness] ?? []);
+}
+
+/** One account snapshot per provider, from the same authority as model discovery. */
+export function removedSetupAccount(source: ModelSource) {
+  const known = new Map<ProviderAccountProvider, Set<string>>();
+  return ({
+    harness,
+    providerAccountId,
+  }: Pick<ModelRoutingTarget, "harness" | "providerAccountId">) => {
+    if (
+      !providerAccountId ||
+      providerAccountId === DEFAULT_PROVIDER_ACCOUNT_ID ||
+      !supportsProviderAccounts(harness) ||
+      source.accountsKnown?.(harness) === false ||
+      (source.id && source.accounts === undefined)
+    )
+      return false;
+    let ids = known.get(harness);
+    if (!ids) {
+      ids = new Set(setupAccounts(source, harness).map(({ id }) => id));
+      known.set(harness, ids);
+    }
+    return !ids.has(providerAccountId);
+  };
+}
+
 function poolName(value: string): string {
   let budget = 80;
   let name = truncateGraphemes(value.trim(), budget);
@@ -103,11 +137,7 @@ export function setupCandidates(source: ModelSource, catalog?: SetupCatalog): Se
         .map((model) => [model.id, model]),
     );
     const accounts = supportsProviderAccounts(harness)
-      ? source.accounts !== undefined
-        ? (source.accounts[harness] ?? [])
-        : source.id
-          ? []
-          : providerAccounts(harness)
+      ? setupAccounts(source, harness)
       : [undefined];
     return accounts.flatMap((account) =>
       [...preferred.values()].map((model): SetupCandidate => {
@@ -455,8 +485,6 @@ function planPools(
       planned.set(existing.id, proposal.includes);
       continue;
     }
-    if (pools.length >= MODEL_ROUTING_MAX_POOLS)
-      throw new Error("Not enough room for catalog pools. Remove unused pools and try again.");
     const pool: ModelRoutingPool = {
       id: crypto.randomUUID(),
       name: poolName(proposal.name),
@@ -475,24 +503,54 @@ function planPools(
     return poolIds.length ? { ...pool, poolIds } : pool;
   });
   // A loop from the plan drops the plan's includes, never the owner's pools.
-  const result = (modelRoutingPoolCycle(included) ? pools : included).filter(
-    (pool) => pool.entryIds.length || pool.poolIds?.length,
-  );
-  return { pools: result, byName };
+  return { pools: modelRoutingPoolCycle(included) ? pools : included, byName };
+}
+
+/** Remove groups with no remaining route, including groups that only include an empty group. */
+function pruneEmptyPools(pools: ModelRoutingPool[]): ModelRoutingPool[] {
+  let remaining = pools;
+  while (true) {
+    const ids = new Set(remaining.map((pool) => pool.id));
+    const next = remaining
+      .map((pool): ModelRoutingPool => {
+        const poolIds = pool.poolIds?.filter((id) => ids.has(id));
+        if (poolIds?.length === pool.poolIds?.length) return pool;
+        const { poolIds: _previous, ...rest } = pool;
+        return poolIds?.length ? { ...rest, poolIds } : rest;
+      })
+      .filter((pool) => pool.entryIds.length || pool.poolIds?.length);
+    if (next.length === remaining.length) return next;
+    remaining = next;
+  }
 }
 
 /**
  * Apply a plan: add pool members and per-account tier fallbacks at medium effort in the
  * planned order, create or refill the planned pools by name, and bind the planned roles.
- * Existing entries keep their ids, limits and other settings; pools and roles the plan does not name
- * are untouched.
+ * Existing entries keep their ids and limits. Explicitly removed accounts leave the draft
+ * with their group memberships and any bindings to groups that become empty.
  */
 export function applySmartSetup(
   draft: OrderDraft,
   candidates: SetupCandidate[],
   plan: SetupPlan,
+  source: ModelSource,
 ): OrderDraft {
-  const { entries, percentages, entryFor } = candidateEntries(draft, candidates);
+  const accountRemoved = removedSetupAccount(source);
+  if (candidates.some(({ target }) => accountRemoved(target)))
+    throw new Error("Provider accounts changed during setup. Try again.");
+  const removed = new Set(draft.routing.entries.filter(accountRemoved).map(({ id }) => id));
+  const { entries, percentages, entryFor } = candidateEntries(
+    {
+      ...draft,
+      routing: {
+        ...draft.routing,
+        entries: draft.routing.entries.filter(({ id }) => !removed.has(id)),
+      },
+    },
+    candidates,
+  );
+  for (const id of removed) delete percentages[id];
   const memberIds = (indexes: number[]) => [
     ...new Set(
       indexes
@@ -501,21 +559,33 @@ export function applySmartSetup(
     ),
   ];
   const planned = memberIds(plannedOrder(candidates, plan));
-  const { pools, byName } = planPools(draft.routing.pools, plan, memberIds);
+  const updatedPools = draft.routing.pools.map((pool) => ({
+    ...pool,
+    entryIds: pool.entryIds.filter((id) => !removed.has(id)),
+  }));
+  const { pools: proposedPools, byName } = planPools(updatedPools, plan, memberIds);
+  const pools = pruneEmptyPools(proposedPools);
+  if (pools.length > MODEL_ROUTING_MAX_POOLS)
+    throw new Error("Not enough room for catalog pools. Remove unused pools and try again.");
+  const poolIds = new Set(pools.map(({ id }) => id));
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const sorted = [
     ...planned.map((id) => byId.get(id)!),
     ...entries.filter((entry) => !planned.includes(entry.id)),
   ];
   const roles = { ...draft.routing.roles };
+  for (const role of Object.keys(roles) as ModelRoutingRole[]) {
+    const choice = roles[role];
+    if (choice?.kind === "pool" && !poolIds.has(choice.poolId)) delete roles[role];
+    if (choice?.kind === "fixed" && accountRemoved(choice.target)) delete roles[role];
+  }
   for (const [role, choice] of Object.entries(plan.roles) as [
     ModelRoutingRole,
     SetupPlan["roles"][ModelRoutingRole],
   ][]) {
     if (!choice) continue;
     const pool = choice === "order" ? undefined : byName(choice.pool);
-    if (pool && pools.some((item) => item.id === pool.id))
-      roles[role] = { kind: "pool", poolId: pool.id };
+    if (pool && poolIds.has(pool.id)) roles[role] = { kind: "pool", poolId: pool.id };
     else if (role.startsWith("text.")) roles[role] = { kind: "order" };
     else delete roles[role];
   }

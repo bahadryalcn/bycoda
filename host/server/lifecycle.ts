@@ -12,6 +12,7 @@ import {
 } from "../work/session-adapter";
 import { guardUnhandledRejections } from "./support";
 import { HOST_SHUTDOWN_DEADLINE_MS } from "../lifecycle-state";
+import type { StoreDatabase, StoreRow } from "../store-db";
 
 /**
  * Exit status of a shutdown that ran to its end. Service supervisors restart a Host that
@@ -58,6 +59,47 @@ export function armShutdownDeadline(
     (options.exit ?? process.exit)(1);
   }, ms);
   return () => clearTimeout(timer);
+}
+
+const lifecycleLog = createLogger("host.lifecycle");
+
+/**
+ * Running work for the private lifecycle endpoint (update, quit and idle-stop checks).
+ * Reads beside the writer queue: callers give up after a few seconds, and a busy queue
+ * made a healthy Host look unverifiable. Undefined means unknown, never idle.
+ */
+export async function readLifecycleActivity(
+  db: StoreDatabase,
+  withRunningSessions: boolean,
+): Promise<{ activity: StoreRow; runningSessions?: StoreRow[] } | undefined> {
+  try {
+    // The request `end` listener runs outside the HTTP dispatch's scope exit.
+    return await db.outsideScope(() =>
+      db.readScope(async () => {
+        const activity = await db
+          .prepare(
+            `SELECT
+              (SELECT count(*) FROM sessions WHERE status='running') AS sessions,
+              (SELECT count(*) FROM sessions WHERE shell_running=1) AS shells,
+              (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running') AS automations`,
+          )
+          .get();
+        if (!activity) throw new Error("Lifecycle activity returned no row.");
+        if (!withRunningSessions) return { activity };
+        const runningSessions = await db
+          .prepare(
+            `SELECT id, CASE WHEN json_valid(summary) THEN substr(json_extract(summary, '$.title'), 1, 160) END AS title
+              FROM sessions WHERE status='running' ORDER BY updated_at DESC LIMIT 25`,
+          )
+          .all()
+          .catch(() => undefined);
+        return { activity, runningSessions };
+      }),
+    );
+  } catch (error) {
+    lifecycleLog.warn("lifecycle activity read failed", failureFields(error));
+    return undefined;
+  }
 }
 
 export async function createLifecycleRuntime(

@@ -24,7 +24,7 @@ class Socket {
   readyState = 1;
   bufferedAmount = 0;
   onopen?: () => void;
-  onclose?: ((event?: { code: number }) => void) | null;
+  onclose?: ((event?: { code: number; wasClean?: boolean }) => void) | null;
   onerror?: (() => void) | null;
   onmessage?: ((message: { data: string }) => void) | null;
   send = vi.fn((raw: string) => {
@@ -2820,4 +2820,226 @@ it("preserves a newer accepted turn while a paused response is awaiting its ID",
   });
   expect(events.reply).toHaveBeenCalledWith("answer", false, "new");
   voice.close();
+});
+
+function diagnosed(events: { diagnostic: ReturnType<typeof vi.fn> }, kind: string) {
+  return events.diagnostic.mock.calls.map(([event]) => event).filter((event) => event.kind === kind);
+}
+
+it("reports how long the session took to become ready and how many items were seeded", async () => {
+  setup();
+  const events = { ...callbacks(), diagnostic: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"), [], { summary: "Earlier work" });
+  expect(diagnosed(events, "ready")).toEqual([
+    { kind: "ready", connectMs: expect.any(Number), seededItems: sockets[0].sent().length - 1 },
+  ]);
+  expect(diagnosed(events, "ready")[0].seededItems).toBeGreaterThan(0);
+  voice.close();
+});
+
+it("adds the socket and session state to the close diagnostic", async () => {
+  setup();
+  const events = {
+    ...callbacks(),
+    tool: vi.fn(() => new Promise<unknown>(() => {})),
+    diagnostic: vi.fn(),
+  };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets[0];
+  acceptInput(socket, "Bir şey yap");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.function_call_arguments.done",
+    response_id: "r1",
+    call_id: "c1",
+    name: "app_tool_call",
+    arguments: "{}",
+  });
+  socket.onclose?.({ code: 1006, wasClean: false });
+  expect(diagnosed(events, "close")).toEqual([
+    {
+      kind: "close",
+      code: 1006,
+      ageMs: expect.any(Number),
+      intentional: false,
+      wasClean: false,
+      pendingCalls: 1,
+      responding: true,
+    },
+  ]);
+  expect(diagnosed(events, "fail")).toEqual([
+    {
+      kind: "fail",
+      code: "1006",
+      ageMs: expect.any(Number),
+      pendingCalls: 1,
+      socketState: 1,
+      lastProviderFrameAgoMs: expect.any(Number),
+    },
+  ]);
+});
+
+it("reports provider error codes cut to 80 graphemes and never the message", async () => {
+  setup();
+  const events = { ...callbacks(), diagnostic: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const message = "PRIVATE-PROVIDER-MESSAGE";
+  sockets[0].emit({
+    type: "error",
+    error: { code: "rate_limit_exceeded", type: "t".repeat(200), message },
+  });
+  const [reported] = diagnosed(events, "provider-error");
+  expect(reported).toEqual({
+    kind: "provider-error",
+    code: "rate_limit_exceeded",
+    type: "t".repeat(80),
+    recoverable: expect.any(Boolean),
+  });
+  expect(JSON.stringify(events.diagnostic.mock.calls)).not.toContain(message);
+  voice.close();
+});
+
+it("reports a tool result that settles after the session closed, by name only", async () => {
+  setup();
+  let settle!: (value: unknown) => void;
+  const events = {
+    ...callbacks(),
+    tool: vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          settle = resolve;
+        }),
+    ),
+    diagnostic: vi.fn(),
+  };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets[0];
+  acceptInput(socket, "Ara");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.function_call_arguments.done",
+    response_id: "r1",
+    call_id: "c1",
+    name: "app_tool_call",
+    arguments: JSON.stringify({ query: "PRIVATE-TOOL-ARGUMENT" }),
+  });
+  voice.close();
+  expect(diagnosed(events, "tool-result-dropped")).toEqual([]);
+  settle({ answer: "PRIVATE-TOOL-RESULT" });
+  await vi.waitFor(() => expect(diagnosed(events, "tool-result-dropped")).toHaveLength(1));
+  expect(diagnosed(events, "tool-result-dropped")[0]).toEqual({
+    kind: "tool-result-dropped",
+    name: "app_tool_call",
+    elapsedMs: expect.any(Number),
+  });
+  expect(JSON.stringify(events.diagnostic.mock.calls)).not.toMatch(/PRIVATE/);
+});
+
+it("emits the fail state and one session summary when the commit is never acknowledged", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = { ...callbacks(), diagnostic: vi.fn() };
+    const voice = await connectedWithFakeTimers(events);
+    candidateAudio();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(diagnosed(events, "fail")).toEqual([
+      {
+        kind: "fail",
+        code: "audio-commit-unacknowledged",
+        ageMs: expect.any(Number),
+        pendingCalls: 0,
+        socketState: 1,
+        lastProviderFrameAgoMs: expect.any(Number),
+      },
+    ]);
+    voice.close();
+    expect(diagnosed(events, "session-summary")).toEqual([
+      {
+        kind: "session-summary",
+        ageMs: expect.any(Number),
+        commits: 1,
+        ackMedianMs: 0,
+        ackMaxMs: 0,
+        responses: 0,
+        toolCalls: 0,
+        toolResultsDropped: 0,
+        firstAudioMedianMs: undefined,
+      },
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("summarizes acknowledged commit latency, responses and tool calls once per session", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = { ...callbacks(), diagnostic: vi.fn() };
+    const voice = await connectedWithFakeTimers(events);
+    const socket = sockets[0];
+    for (const [index, delay] of [100, 300, 200].entries()) {
+      const id = `noise-${index}`;
+      candidateAudio();
+      await vi.advanceTimersByTimeAsync(delay);
+      socket.emit({ type: "input_audio_buffer.committed", item_id: id });
+      socket.emit({
+        type: "conversation.item.created",
+        item: { id, type: "message", role: "user" },
+      });
+      // An empty transcript rejects the candidate, so no response is created.
+      socket.emit({
+        type: "conversation.item.input_audio_transcription.completed",
+        item_id: id,
+        transcript: "",
+      });
+    }
+    acceptInput(socket, "Merhaba", "spoken");
+    socket.emit({ type: "response.created", response: { id: "r1" } });
+    socket.emit({
+      type: "response.function_call_arguments.done",
+      response_id: "r1",
+      call_id: "c1",
+      name: "app_tool_call",
+      arguments: "{}",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    voice.close();
+    voice.close();
+    const summaries = diagnosed(events, "session-summary");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      commits: 4,
+      ackMedianMs: 150,
+      ackMaxMs: 300,
+      responses: 1,
+      toolCalls: 1,
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("never puts transcripts, provider messages or tool arguments into a diagnostic", async () => {
+  setup();
+  const events = { ...callbacks(), diagnostic: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"), [{ role: "user", text: "PRIVATE-SEED" }]);
+  const socket = sockets[0];
+  acceptInput(socket, "PRIVATE-TRANSCRIPT");
+  socket.emit({ type: "response.created", response: { id: "r1" } });
+  socket.emit({
+    type: "response.function_call_arguments.done",
+    response_id: "r1",
+    call_id: "c1",
+    name: "app_tool_call",
+    arguments: JSON.stringify({ query: "PRIVATE-ARGUMENT" }),
+  });
+  socket.emit({ type: "error", error: { code: "oops", message: "PRIVATE-MESSAGE" } });
+  socket.onclose?.({ code: 1006, wasClean: false });
+  expect(events.diagnostic.mock.calls.length).toBeGreaterThan(3);
+  expect(JSON.stringify(events.diagnostic.mock.calls)).not.toMatch(/PRIVATE/);
 });

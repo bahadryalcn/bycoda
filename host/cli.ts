@@ -540,7 +540,7 @@ Connect another computer using an SSH forward to the loopback port.`);
   }
   boot?.phase("db-open");
   const { HostStore } = await import("./store");
-  const { armShutdownDeadline, shutdownExitCode, DATABASE_FAILED_STOP } =
+  const { armShutdownDeadline, shutdownExitCode, DATABASE_FAILED_STOP, readLifecycleActivity } =
     await import("./server/lifecycle");
   const store = new HostStore(join(directory, "host.db"));
   try {
@@ -710,18 +710,11 @@ Connect another computer using an SSH forward to the loopback port.`);
                 response.writeHead(400).end();
                 return;
               }
-              const activity =
+              const read =
                 action === "status" || ifIdle === true
-                  ? await store.db
-                      .prepare(
-                        `SELECT
-                      (SELECT count(*) FROM sessions WHERE status='running') AS sessions,
-                      (SELECT count(*) FROM sessions WHERE shell_running=1) AS shells,
-                      (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running') AS automations`,
-                      )
-                      .get()
-                      .catch(() => undefined)
+                  ? await readLifecycleActivity(store.db, action === "status")
                   : undefined;
+              const activity = read?.activity;
               if (
                 action === "stop" &&
                 ifIdle === true &&
@@ -741,17 +734,7 @@ Connect another computer using an SSH forward to the loopback port.`);
                   runtime: entryPath,
                   buildIdentity,
                   activity,
-                  ...(action === "status" && activity
-                    ? {
-                        runningSessions: await store.db
-                          .prepare(
-                            `SELECT id, CASE WHEN json_valid(summary) THEN substr(json_extract(summary, '$.title'), 1, 160) END AS title
-                        FROM sessions WHERE status='running' ORDER BY updated_at DESC LIMIT 25`,
-                          )
-                          .all()
-                          .catch(() => undefined),
-                      }
-                    : {}),
+                  ...(read?.runningSessions ? { runningSessions: read.runningSessions } : {}),
                 }),
               );
               if (action === "stop")

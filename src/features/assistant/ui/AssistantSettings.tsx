@@ -52,6 +52,7 @@ import {
 } from "../../../shared/ui/settings";
 import { assistantChanges } from "./settings/assistantChanges";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
+import { useLanguageChangeFlow } from "./settings/useLanguageChangeFlow";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
 import { AssistantScheduleInfo } from "./settings/AssistantScheduleFields";
@@ -216,6 +217,20 @@ export function AssistantSettings({
   const [error, setError] = useState("");
   const [savedNotice, setSavedNotice] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
+  /** Typed answer the builder opens with (the language-change rewrite request). */
+  const [builderRequest, setBuilderRequest] = useState("");
+  const languageFlow = useLanguageChangeFlow({
+    draft,
+    lastSpoken: snapshot.lastSpokenLanguage,
+    applyLanguage: (language) => {
+      setSavedNotice(false);
+      setDraft((current) => ({ ...current, language }));
+    },
+    startBuilder: (request) => {
+      setBuilderRequest(request);
+      setBuilderOpen(true);
+    },
+  });
   const [customAccessOpen, setCustomAccessOpen] = useState(false);
   const formId = useId();
   const [page, setPage] = useState<SettingsPage>("personal");
@@ -299,6 +314,7 @@ export function AssistantSettings({
   }
   /** Embedded sections reload their drafts from the Host when the form remounts. */
   function discard() {
+    languageFlow.clearReview();
     setDraft(JSON.parse(savedDraft) as AssistantProfilePatch);
     setRetention(savedRetention);
     consentChanged.current = false;
@@ -410,7 +426,9 @@ export function AssistantSettings({
       observationTasksAvailable={snapshot.capabilities.observationTasks === true}
       section={section}
       value={draft}
+      languageReview={languageFlow.review}
       onChange={(patch) => {
+        if (languageFlow.intercept(patch)) return;
         setSavedNotice(false);
         setDraft((current) => ({ ...current, ...patch }));
       }}
@@ -524,7 +542,10 @@ export function AssistantSettings({
                         size="sm"
                         startIcon={<Sparkles className="icon-sm" />}
                         tooltip={t("Answer a few questions and AI drafts the profile for you")}
-                        onClick={() => setBuilderOpen(true)}
+                        onClick={() => {
+                          setBuilderRequest("");
+                          setBuilderOpen(true);
+                        }}
                       >
                         {t("Create with AI")}
                       </Button>
@@ -808,9 +829,11 @@ export function AssistantSettings({
         </footer>
       </form>
       {leaveDialog}
+      {languageFlow.dialog}
       {builderOpen && (
         <AssistantBuilderDialog
           current={draft}
+          initialAnswer={builderRequest}
           onClose={() => setBuilderOpen(false)}
           onApply={(patch) => {
             setSavedNotice(false);

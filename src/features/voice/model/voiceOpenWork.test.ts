@@ -40,6 +40,32 @@ it("lists non-terminal visible jobs with status, hold reason and question count"
   expect(text).not.toMatch(/Job b|Secret/);
 });
 
+it("includes job and session ids and jobs that ended within 30 minutes", () => {
+  const now = 10_000_000;
+  const ended = (id: string, status: string, ago: number, projectId = "p1") => ({
+    ...job(id, status, projectId),
+    updatedAt: now - ago,
+  });
+  const text = formatVoiceOpenWork(
+    {
+      jobs: [
+        { ...job("a", "running"), sessionIds: ["s1", "s2"] },
+        ended("b", "done", 5 * 60_000),
+        ended("c", "failed", 29 * 60_000),
+        ended("d", "cancelled", 31 * 60_000),
+        ended("e", "done", 60_000, "hidden"),
+      ],
+    },
+    new Set(["p1"]),
+    visibleP1,
+    now,
+  );
+  expect(text).toContain("- Job a (running; id a, session s1, s2)");
+  expect(text).toContain("- Job b (done; id b)");
+  expect(text).toContain("- Job c (failed; id c)");
+  expect(text).not.toMatch(/Job d|Job e/);
+});
+
 it("is empty without open work and bounded for many long jobs", () => {
   expect(formatVoiceOpenWork({ jobs: [job("a", "done")] }, new Set(["p1"]), visibleP1)).toBe("");
   const jobs = Array.from({ length: 40 }, (_, i) => job(`j${i}`, "running", "p1", "x".repeat(500)));
@@ -54,6 +80,14 @@ it("seeds text messages only: summary, open work, then recent turns", () => {
   expect(items.every((item) => item.type === "conversation.item.create")).toBe(true);
   expect(JSON.stringify(items)).not.toMatch(/tool|function/);
   expect(voiceSeedItems(undefined, "", [])).toEqual([]);
+});
+
+it("places the voice work seed before open work", () => {
+  const items = voiceSeedItems("sum", "Open work", [{ role: "user", text: "hi" }], "Voice work");
+  const all = JSON.stringify(items);
+  expect(items).toHaveLength(4);
+  expect(all.indexOf("Voice work")).toBeLessThan(all.indexOf("Open work"));
+  expect(all).not.toMatch(/function/);
 });
 
 it("reads open work through the same scope filter as assistant_status", async () => {

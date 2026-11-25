@@ -11,6 +11,12 @@ it("describes give_jobs as direct start with opt-in review, not review-only", ()
   expect(text).toContain("started");
 });
 
+it("reserves give_jobs for explicitly tracked work and names the session route", () => {
+  const text = tool("give_jobs").description;
+  expect(text).toContain("explicitly wants tracked");
+  expect(text).toContain("workspace.sessions.create with submit true");
+});
+
 it("keeps the app_tools_list limit and project hint aligned with the client", () => {
   const list = tool("app_tools_list");
   expect((list.parameters.properties as any).limit.maximum).toBe(VOICE_TOOL_MAX_LIMIT);

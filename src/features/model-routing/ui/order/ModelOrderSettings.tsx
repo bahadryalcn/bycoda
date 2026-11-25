@@ -31,7 +31,10 @@ import { changedTabs, type OrderTab } from "./orderTabs";
 import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
 import { useRetainedTransaction } from "../../model/retainedTransaction";
 import { useModelSource } from "../../../sessions/public/modelSource";
-import type { ModelRoutingEntry } from "../../../../shared/model/host-contracts/model-routing";
+import type {
+  ModelRoutingEntry,
+  ModelRoutingTarget,
+} from "../../../../shared/model/host-contracts/model-routing";
 
 export type ModelOrderSettingsProps = {
   /** The Host whose routing is edited. */
@@ -109,6 +112,8 @@ function OrderSettingsForm({
   );
   const [view, setView] = useRetainedTransaction<OrderView>(`order:${machineId}:view`, "priority");
   const [focusRequest, setFocusRequest] = useState<FocusRequest>();
+  const [setupRevision, setSetupRevision] = useState(0);
+  const [setupPlanner, setSetupPlanner] = useState<ModelRoutingTarget>();
   const { draft } = editor;
   const kindFor = (entry: ModelRoutingEntry) => kindOf(entry, source);
   const change = (next: OrderDraft) => editor.change(groupEntriesByKind(next, kindFor));
@@ -178,6 +183,9 @@ function OrderSettingsForm({
                 onView={setView}
                 invalid={invalid}
                 focusRequest={focusRequest}
+                setupRevision={setupRevision}
+                setupPlanner={setupPlanner}
+                onSetupPlannerChange={setSetupPlanner}
               />
             ) : null}
             {tab === "groups" ? (
@@ -235,10 +243,14 @@ function OrderSettingsForm({
         discardLabel={editor.conflict ? t("Reload") : undefined}
         discardEnabled={editor.dirty || editor.conflict}
         onDiscard={() => {
+          setSetupRevision((current) => current + 1);
           if (editor.conflict) void editor.reload();
           else editor.revert();
         }}
-        onSave={editor.save}
+        onSave={() => {
+          setSetupRevision((current) => current + 1);
+          return editor.save();
+        }}
       >
         {editor.validation ? <InlineError action={show}>{t(editor.validation)}</InlineError> : null}
         {editor.error ? <InlineError action={show}>{t(editor.error)}</InlineError> : null}

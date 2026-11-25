@@ -53,74 +53,74 @@ export function DictationSettings({
       ?.focus();
   const { formatNumber } = useFormat();
   return (
-    <Group title={t("Dictation")}>
-      <Row
-        id="dictation-enabled"
-        label={t("Enable dictation")}
-        info={
-          <InfoTooltip label={t("Enable dictation")}>
-            {t(
-              "Speak to insert text in the message box. Works independently of voice companion; nothing is sent automatically.",
-            )}
-          </InfoTooltip>
-        }
-      >
-        <Toggle
+    <>
+      <Group title={t("Dictation")} layout="full">
+        <Row
+          id="dictation-enabled"
           label={t("Enable dictation")}
-          on={settings.dictationEnabled}
-          onChange={(dictationEnabled) => change({ dictationEnabled })}
-        />
-      </Row>
-      {prerequisite && revealed ? (
-        <Row
-          id={revealed}
-          label={t("Dictation setting unavailable")}
-          description={
-            prerequisite === "dictation-enabled"
-              ? t("Enable dictation to use this setting. This does not start recording.")
-              : prerequisite === "dictation-engine"
-                ? t("Choose This computer in Dictation recognition to manage local models.")
-                : t("Enable text cleanup to use this setting.")
-          }
-        >
-          <Button variant="link" onClick={focusPrerequisite}>
-            {prerequisite === "dictation-enabled"
-              ? t("Go to Enable dictation")
-              : prerequisite === "dictation-engine"
-                ? t("Go to Dictation recognition")
-                : t("Go to Clean up dictated text")}
-          </Button>
-        </Row>
-      ) : null}
-      {settings.dictationEnabled ? (
-        <Row
-          id="dictation-language"
-          label={t("Dictation language")}
           info={
-            <InfoTooltip label={t("Dictation language")}>
+            <InfoTooltip label={t("Enable dictation")}>
               {t(
-                "Automatic detects the language you speak. Choose one if dictation translates your speech.",
+                "Speak to insert text in the message box. Works independently of voice companion; nothing is sent automatically.",
               )}
             </InfoTooltip>
           }
         >
-          <Select
-            hideLabel
-            label={t("Dictation language")}
-            value={settings.dictationLanguage}
-            options={[
-              { value: "auto", label: t("Automatic") },
-              ...DICTATION_LANGUAGES.map(([value, label]) => ({ value, label })),
-            ]}
-            onChange={(value) =>
-              change({ dictationLanguage: value as Preferences["dictationLanguage"] })
-            }
+          <Toggle
+            label={t("Enable dictation")}
+            on={settings.dictationEnabled}
+            onChange={(dictationEnabled) => change({ dictationEnabled })}
           />
         </Row>
-      ) : null}
-      {settings.dictationEnabled && (
+        {prerequisite && revealed ? (
+          <Row
+            id={revealed}
+            label={t("Dictation setting unavailable")}
+            description={
+              prerequisite === "dictation-enabled"
+                ? t("Enable dictation to use this setting. This does not start recording.")
+                : prerequisite === "dictation-engine"
+                  ? t("Choose This computer in Dictation recognition to manage local models.")
+                  : t("Enable text cleanup to use this setting.")
+            }
+          >
+            <Button variant="link" onClick={focusPrerequisite}>
+              {prerequisite === "dictation-enabled"
+                ? t("Go to Enable dictation")
+                : prerequisite === "dictation-engine"
+                  ? t("Go to Dictation recognition")
+                  : t("Go to Clean up dictated text")}
+            </Button>
+          </Row>
+        ) : null}
+
+        {settings.dictationEnabled ? (
+          <Row
+            id="dictation-shortcut-mode"
+            label={t("Dictation shortcut mode")}
+            description={t(
+              "Automatic supports a quick press to toggle and a longer press to hold.",
+            )}
+          >
+            <Select
+              hideLabel
+              label={t("Dictation shortcut mode")}
+              value={settings.dictationShortcutMode}
+              options={[
+                { value: "auto", label: t("Automatic") },
+                { value: "hold", label: t("Hold to talk") },
+                { value: "toggle", label: t("Press to toggle") },
+              ]}
+              onChange={(value) =>
+                change({ dictationShortcutMode: value as Preferences["dictationShortcutMode"] })
+              }
+            />
+          </Row>
+        ) : null}
+      </Group>
+      {settings.dictationEnabled ? (
         <>
-          {settings.dictationEnabled ? (
+          <Group title={t("Transcription")} layout="full">
             <Row
               id="dictation-engine"
               label={t("Dictation recognition")}
@@ -146,101 +146,51 @@ export function DictationSettings({
                 onChange={(value) => change({ dictationEngine: value as DictationEngine })}
               />
             </Row>
-          ) : null}
-          <Row
-            id="dictation-shortcut-mode"
-            label={t("Dictation shortcut mode")}
-            description={t(
-              "Automatic supports a quick press to toggle and a longer press to hold.",
-            )}
-          >
-            <Select
-              hideLabel
-              label={t("Dictation shortcut mode")}
-              value={settings.dictationShortcutMode}
-              options={[
-                { value: "auto", label: t("Automatic") },
-                { value: "hold", label: t("Hold to talk") },
-                { value: "toggle", label: t("Press to toggle") },
-              ]}
-              onChange={(value) =>
-                change({ dictationShortcutMode: value as Preferences["dictationShortcutMode"] })
+            <Row
+              id="dictation-language"
+              label={t("Dictation language")}
+              info={
+                <InfoTooltip label={t("Dictation language")}>
+                  {t(
+                    "Automatic detects the language you speak. Choose one if dictation translates your speech.",
+                  )}
+                </InfoTooltip>
               }
-            />
-          </Row>
-          {speechEnabled && !settings.enabled ? (
-            <VoiceSetupRow setup={setup} settings={settings} change={change} />
-          ) : null}
-          {settings.dictationEngine === "local" ? (
-            <AdvancedSettings
-              title={t("Transcription models")}
-              settingIds={["dictation-local-models"]}
-              keepMounted
             >
-              <LocalDictationModels settings={settings} change={change} />
-            </AdvancedSettings>
-          ) : (
-            <DictationModelSettings settings={settings} change={change} />
-          )}
-          {settings.dictationEngine === "openrouter" ? (
-            <VoiceCloudKey provider="openrouter" />
-          ) : null}
-          <DictationDictionarySettings settings={settings} change={change} />
-          <DictationCleanupSettings settings={settings} change={change} />
-          <AdvancedSettings
-            title={t("Dictation options")}
-            settingIds={[
-              "dictation-remove-fillers",
-              "dictation-silence-filter",
-              "dictation-device",
-              "dictation-idle-unload",
-            ]}
-            keepMounted
-          >
-            {settings.dictationEngine === "local" ? (
-              <Row
-                id="dictation-idle-unload"
-                label={t("Unload idle model")}
-                description={t(
-                  "Release the local dictation model from memory after dictation stops.",
-                )}
-              >
-                <Select
-                  hideLabel
-                  label={t("Unload idle model")}
-                  value={String(settings.dictationIdleUnloadMinutes)}
-                  options={[
-                    { value: "0", label: t("Immediately") },
-                    ...[1, 5, 15, 30, 60, 120].map((minutes) => ({
-                      value: String(minutes),
-                      label:
-                        minutes === 1
-                          ? t("After 1 minute")
-                          : t("After {p1} minutes", { p1: formatNumber(minutes) }),
-                    })),
-                    ...(![0, 1, 5, 15, 30, 60, 120].includes(settings.dictationIdleUnloadMinutes)
-                      ? [
-                          {
-                            value: String(settings.dictationIdleUnloadMinutes),
-                            label: t("After {p1} minutes", {
-                              p1: formatNumber(settings.dictationIdleUnloadMinutes),
-                            }),
-                          },
-                        ]
-                      : []),
-                  ]}
-                  onChange={(value) => change({ dictationIdleUnloadMinutes: Number(value) })}
-                />
-              </Row>
-            ) : null}
-            {speechEnabled && !settings.enabled ? (
-              <ProcessingRow
-                id="dictation-device"
-                setup={setup}
-                value={settings.device}
-                change={change}
+              <Select
+                hideLabel
+                label={t("Dictation language")}
+                value={settings.dictationLanguage}
+                options={[
+                  { value: "auto", label: t("Automatic") },
+                  ...DICTATION_LANGUAGES.map(([value, label]) => ({ value, label })),
+                ]}
+                onChange={(value) =>
+                  change({ dictationLanguage: value as Preferences["dictationLanguage"] })
+                }
               />
+            </Row>
+            {speechEnabled &&
+            !settings.enabled &&
+            !/(?:^|[/\\])gguf-/i.test(settings.dictationLocalModelPath) ? (
+              <VoiceSetupRow setup={setup} settings={settings} change={change} />
             ) : null}
+            {settings.dictationEngine === "local" ? (
+              <AdvancedSettings
+                title={t("Transcription models")}
+                settingIds={["dictation-local-models"]}
+                keepMounted
+              >
+                <LocalDictationModels settings={settings} change={change} />
+              </AdvancedSettings>
+            ) : (
+              <DictationModelSettings settings={settings} change={change} />
+            )}
+            {settings.dictationEngine === "openrouter" ? (
+              <VoiceCloudKey provider="openrouter" />
+            ) : null}
+          </Group>
+          <Group title={t("Dictation filters")} layout="full">
             <Row
               id="dictation-silence-filter"
               label={t("Filter silence and background noise")}
@@ -263,9 +213,65 @@ export function DictationSettings({
                 onChange={(dictationRemoveFillers) => change({ dictationRemoveFillers })}
               />
             </Row>
-          </AdvancedSettings>
+            {settings.dictationEngine === "local" ? (
+              <AdvancedSettings
+                title={t("Dictation options")}
+                settingIds={["dictation-device", "dictation-idle-unload"]}
+                keepMounted
+              >
+                <Row
+                  id="dictation-idle-unload"
+                  label={t("Unload idle model")}
+                  description={t(
+                    "Release the local dictation model from memory after dictation stops.",
+                  )}
+                >
+                  <Select
+                    hideLabel
+                    label={t("Unload idle model")}
+                    value={String(settings.dictationIdleUnloadMinutes)}
+                    options={[
+                      { value: "0", label: t("Immediately") },
+                      ...[1, 5, 15, 30, 60, 120].map((minutes) => ({
+                        value: String(minutes),
+                        label:
+                          minutes === 1
+                            ? t("After 1 minute")
+                            : t("After {p1} minutes", { p1: formatNumber(minutes) }),
+                      })),
+                      ...(![0, 1, 5, 15, 30, 60, 120].includes(settings.dictationIdleUnloadMinutes)
+                        ? [
+                            {
+                              value: String(settings.dictationIdleUnloadMinutes),
+                              label: t("After {p1} minutes", {
+                                p1: formatNumber(settings.dictationIdleUnloadMinutes),
+                              }),
+                            },
+                          ]
+                        : []),
+                    ]}
+                    onChange={(value) => change({ dictationIdleUnloadMinutes: Number(value) })}
+                  />
+                </Row>
+                {speechEnabled && !settings.enabled ? (
+                  <ProcessingRow
+                    id="dictation-device"
+                    setup={setup}
+                    value={settings.device}
+                    change={change}
+                  />
+                ) : null}
+              </AdvancedSettings>
+            ) : null}
+          </Group>
+          <Group title={t("Dictionary")} layout="full">
+            <DictationDictionarySettings settings={settings} change={change} />
+          </Group>
+          <Group title={t("Text cleanup")} layout="full">
+            <DictationCleanupSettings settings={settings} change={change} />
+          </Group>
         </>
-      )}
-    </Group>
+      ) : null}
+    </>
   );
 }

@@ -420,14 +420,19 @@ test.describe("feedback behavior", () => {
     expect(await counter(page, "notice-retry")).toBe(1);
     await page.clock.fastForward(1000);
     await expect(retry).not.toHaveAttribute("aria-busy", "true");
-    // The action closes the row beside the copy, never between title and message.
-    const boxes = await Promise.all([
+    // Both controls center on the title and message as a single block.
+    const [title, message, action, dismiss] = await Promise.all([
       notice.getByText("Update failed").boundingBox(),
       notice.getByText("The release feed returned 503").boundingBox(),
       retry.boundingBox(),
+      notice.getByRole("button", { name: "Dismiss notice" }).boundingBox(),
     ]);
-    expect(boxes[0]!.y).toBeLessThan(boxes[1]!.y);
-    expect(boxes[2]!.x).toBeGreaterThanOrEqual(boxes[1]!.x + boxes[1]!.width);
+    expect(title!.y).toBeLessThan(message!.y);
+    expect(action!.x).toBeGreaterThanOrEqual(message!.x + message!.width);
+    const copyCenter = (title!.y + message!.y + message!.height) / 2;
+    for (const control of [action!, dismiss!]) {
+      expect(Math.abs(control.y + control.height / 2 - copyCenter)).toBeLessThanOrEqual(1);
+    }
     await page.getByRole("button", { name: "Show file action error" }).click();
     const fileError = page.getByRole("alert").filter({ hasText: "Could not rename the file." });
     await page.clock.fastForward(60_000);

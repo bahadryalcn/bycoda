@@ -9,6 +9,8 @@ import { errorText } from "../../../shared/lib/errors";
 import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { processDictationText, type DictationProcessingOptions } from "./dictationProcessing";
+import { reportDictationLanguage } from "./dictationActivity";
+import { acceptedVoiceLanguage } from "./voiceSpokenLanguage";
 
 const noop = () => {};
 /** New speech (seconds) before the next live preview of the phrase in progress.
@@ -184,7 +186,7 @@ export class Dictation {
     const hint = /^[a-z]{2}$/.test(this.language) ? this.language : undefined;
     const slot = this.inflight.length >= 2 ? this.inflight[0] : undefined;
     const pending = Promise.all([backend, slot]).then(([lease]) => {
-      if (this.closed) return { text: "" };
+      if (this.closed) return { text: "", language: undefined };
       return this.engine === "local"
         ? localVoiceBackend.transcribe(lease, pcm, hint)
         : localVoiceBackend.cloudTranscribe(this.engine, pcm, hint, this.model);
@@ -250,7 +252,16 @@ export class Dictation {
     this.finals++;
     this.queue = this.queue.then(async () => {
       try {
-        let text = processDictationText((await pending).text.trim(), this.processing);
+        const recognized = await pending;
+        if (this.closed) return;
+        const raw = recognized.text.trim();
+        const spoken = raw && acceptedVoiceLanguage(raw, recognized.language);
+        const detected = spoken || recognized.language;
+        if (raw && detected) reportDictationLanguage(detected);
+        let text = processDictationText(raw, {
+          ...this.processing,
+          language: this.processing.language || detected || this.language,
+        });
         if (text && this.processing.cleanup?.enabled && !this.closed) {
           try {
             const cleanup = this.processing.cleanup;

@@ -1,7 +1,7 @@
 import { useEffect, type MutableRefObject } from "react";
 import { setNativeFullscreen } from "../../../platform/tauri/fullscreen";
 import { invoke } from "@tauri-apps/api/core";
-import { isFullscreenShortcut } from "../../../platform/tauri/platform";
+import { IS_MAC, isFullscreenShortcut } from "../../../platform/tauri/platform";
 import {
   applyUiScale,
   loadUiScale,
@@ -34,6 +34,7 @@ import { handleEditorFindKey } from "../../../features/files/editor/editorFindBr
 import { COMPOSER_PICKER_SELECTOR } from "../../../features/sessions/model/composerPickerSelector";
 import {
   isTerminalControlKey,
+  isTerminalLayoutInput,
   terminalToolShortcut,
 } from "../../../features/terminal/model/terminalKeys";
 import { focusToastCard, hasActiveModalOverlay } from "../../../shared/ui/overlay";
@@ -85,12 +86,12 @@ export function useWorkspaceKeyboardShortcuts({
       // window capture, before the terminal can prevent editor/global shortcuts.
       const terminalTarget = e.target instanceof Element ? e.target : null;
       if (terminalTarget?.closest("[data-terminal-tools]")) return;
-      if (terminalTarget?.closest(".bycoda-terminal") && terminalToolShortcut(e)) return;
+      const inTerminal = terminalTarget?.closest(".bycoda-terminal");
+      if (inTerminal && (isTerminalLayoutInput(e, IS_MAC) || terminalToolShortcut(e))) return;
       const customCommand = matchCustomKeybinding(e);
       // Plain Ctrl+letter is readline input in a focused terminal. Only a chord
       // the owner explicitly recorded still reaches the app from there.
-      if (!customCommand && terminalTarget?.closest(".bycoda-terminal") && isTerminalControlKey(e))
-        return;
+      if (!customCommand && inTerminal && isTerminalControlKey(e)) return;
       const pressed = (command: string, defaultMatch: boolean) =>
         keybindingPressed(command, e, defaultMatch);
       // Request popups float above dialogs, so the way into them must work while a dialog is
