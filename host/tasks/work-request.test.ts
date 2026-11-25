@@ -94,3 +94,87 @@ describe("createWork", () => {
     expect(await tasks.list()).toHaveLength(1);
   });
 });
+
+describe("createWork executor, helpers and model choice", () => {
+  const crewRunner = () => ({
+    validate: async () => {},
+    choices: async () => [],
+    start: async () => {
+      throw new Error("not started here");
+    },
+    state: async () => ({ status: "active" as const }),
+    stop: async () => {},
+  });
+
+  it("follows Settings for the model unless the surface sends its own choice", async () => {
+    const { work, deps } = await setup();
+    const task = await createWork(deps, work(), { requestId: "r1" });
+    expect(task.modelChoice).toEqual({ kind: "default" });
+    expect(task.executor).toBeUndefined();
+    expect(task.helpers).toBeUndefined();
+    const fixed = await createWork(
+      deps,
+      work({
+        id: "task-b",
+        execution: { ...work().execution, modelChoice: { kind: "fixed" } },
+      }),
+      { requestId: "r2" },
+    );
+    expect(fixed.modelChoice).toEqual({ kind: "fixed" });
+  });
+
+  it("stores helpers only when the work departs from Settings", async () => {
+    const { work, deps } = await setup();
+    const same = await createWork(deps, work({ helpers: { mode: "settings" } }), {
+      requestId: "r1",
+    });
+    expect(same.helpers).toBeUndefined();
+    const off = await createWork(deps, work({ id: "task-b", helpers: { mode: "off" } }), {
+      requestId: "r2",
+    });
+    expect(off.helpers).toEqual({ mode: "off" });
+  });
+
+  it("creates crew work without review, and names the option a crew cannot honor", async () => {
+    const { tasks, work, deps } = await setup();
+    tasks.crewRunner = crewRunner();
+    const executor = { kind: "crew" as const, crewDefinitionId: "web" };
+    const task = await createWork(deps, work({ executor, options: { isolate: false } }), {
+      requestId: "r1",
+    });
+    expect(task).toMatchObject({ executor, review: false, isolate: false });
+    await expect(
+      createWork(deps, work({ id: "task-b", executor, options: { isolate: true } }), {
+        requestId: "r2",
+      }),
+    ).rejects.toThrow(/^isolate: /);
+    await expect(
+      createWork(deps, work({ id: "task-c", executor, options: { review: true } }), {
+        requestId: "r3",
+      }),
+    ).rejects.toThrow(/^review: /);
+    await expect(
+      createWork(
+        deps,
+        work({
+          id: "task-d",
+          executor,
+          execution: { ...work().execution, modelChoice: { kind: "fixed" } },
+        }),
+        { requestId: "r4" },
+      ),
+    ).rejects.toThrow(/^model: /);
+    // Nothing was created for a refused request.
+    expect(await tasks.list()).toHaveLength(1);
+  });
+
+  it("lets auto keep review and isolation; the Host decides when it starts", async () => {
+    const { work, deps } = await setup();
+    const task = await createWork(
+      deps,
+      work({ executor: { kind: "auto" }, options: { isolate: true, review: true } }),
+      { requestId: "r1" },
+    );
+    expect(task).toMatchObject({ executor: { kind: "auto" }, review: true, isolate: true });
+  });
+});

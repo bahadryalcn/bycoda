@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { buildTaskStop } from "../../../src/shared/model/host-contracts/task-stop";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -960,7 +961,11 @@ it("polls admitted task observations through the existing notification outbox in
     readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
   });
   const { task } = await f.seed();
-  await f.saveTask({ ...task, needsInput: true, projectId: f.project.id });
+  await f.saveTask({
+    ...task,
+    stop: buildTaskStop({ code: "input_required", message: "Answer needed." }, 1),
+    projectId: f.project.id,
+  });
   await f.store.db.exec(
     "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
   );

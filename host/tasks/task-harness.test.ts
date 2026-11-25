@@ -240,7 +240,7 @@ describe("task harness preparation and aggregate budgets", () => {
     await s.start({ review: true, budget: { maxAttempts: 1 } });
     await s.finish();
     expect((await s.task()).status).toBe("blocked");
-    expect((await s.task()).budgetStop).toBeTruthy();
+    expect((await s.task()).stop?.code).toBe("budget_exhausted");
     expect(s.turns).toHaveLength(1);
     expect((await s.tasks.budgets.read({ taskId: (await s.task()).id })).attempts).toBe(1);
   });
@@ -254,7 +254,7 @@ describe("task harness preparation and aggregate budgets", () => {
     s.clock.now += 30_001;
     await s.tick();
     expect((await s.task()).status).toBe("blocked");
-    expect((await s.task()).budgetStop).toBeTruthy();
+    expect((await s.task()).stop?.code).toBe("budget_exhausted");
     expect(s.provider.cancel).toHaveBeenCalledTimes(1);
     expect(readFileSync(join(s.directory, "retained-result.md"), "utf8")).toBe("Keep this work");
     expect((await s.task()).sessionId).toBeTruthy();
@@ -330,7 +330,7 @@ describe("task harness preparation and aggregate budgets", () => {
     expect(await s.task()).toMatchObject({
       status: "blocked",
       reviewer: { sessionId: reviewerId },
-      awaitingOwnerRestart: true,
+      stop: { code: "budget_exhausted" },
     });
     expect(s.provider.cancel).toHaveBeenCalledWith(reviewerId, expect.anything());
     expect((await s.store.session(reviewerId)).session.id).toBe(reviewerId);

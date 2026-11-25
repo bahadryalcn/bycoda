@@ -1,4 +1,6 @@
 import type { Automation } from "../../automations/model/automations";
+import { taskNeedsInput } from "../../../shared/model/host-contracts/task-stop";
+import { taskStopText } from "../../../shared/model/taskStopSummary";
 import type { GoalStatus } from "./hostGoals";
 import type { TaskStatus } from "./hostTasks";
 import type { BoardGoal } from "./goalClient";
@@ -70,8 +72,8 @@ export function backgroundSnapshot(
       title: task.title,
       machineName: task.machineName,
       status: task.status,
-      needsInput: Boolean(task.needsInput),
-      ...(task.error ? { error: task.error } : {}),
+      needsInput: taskNeedsInput(task),
+      ...(taskStopText(task) ? { error: taskStopText(task) } : {}),
       ...(task.autoMerged ? { autoMerged: true } : {}),
     });
   for (const automation of automations) {

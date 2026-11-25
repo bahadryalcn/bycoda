@@ -40,6 +40,7 @@ import { isTaskQueueTool } from "../conversation/conversation-task-queue-tools";
 import {
   TASK_READ_TOOLS,
   callConversationTaskRead,
+  conversationWorkChoices,
   normalizeConversationTaskConfiguration,
 } from "../conversation/conversation-task-tools";
 import {
@@ -567,6 +568,7 @@ export async function dispatchConversationTools(
             projectId,
             await dependencies.tasks.list(),
           );
+          const choices = conversationWorkChoices(args);
           request.result = await createWork(
             { store: dependencies.engine.store, tasks: dependencies.tasks },
             {
@@ -575,18 +577,19 @@ export async function dispatchConversationTools(
               request: String(args.prompt),
               title: String(args.title),
               source: { kind: "session", sessionId: boundPrincipal.sessionId },
+              executor: choices.executor,
+              helpers: choices.helpers,
               execution: {
                 harness: own.harness,
                 providerAccountId: own.providerAccountId,
                 model: own.model,
                 modelSettings: own.modelSettings,
                 runtimeMode: own.runtimeMode,
+                // Use settings unless the owner asked for this session's own model.
+                modelChoice: { kind: choices.useSessionModel ? "fixed" : "default" },
               },
               options: {
                 ...configuration,
-                ...(args.crewDefinitionId
-                  ? { crewDefinitionId: String(args.crewDefinitionId) }
-                  : {}),
                 status: args.status === "queued" ? "queued" : "todo",
               },
             },

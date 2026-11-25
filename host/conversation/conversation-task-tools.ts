@@ -1,4 +1,8 @@
 import { hasUnmergedBranch, type HostTask } from "../../src/features/tasks/model/hostTasks";
+import type {
+  WorkExecutor,
+  WorkHelpers,
+} from "../../src/shared/model/host-contracts/work-executor";
 
 export function assertConversationWorkspaceIntent(input: Record<string, unknown>): void {
   if (input.isolate !== undefined && typeof input.isolate !== "boolean")
@@ -51,6 +55,54 @@ export const TASK_CONFIGURATION_FIELDS = {
     description: "Local check command run by the host before review. Empty clears the check.",
   },
 };
+
+/** Who runs a new task, its helpers and its model; the same words on every surface that creates work. */
+export const WORK_CHOICE_FIELDS = {
+  executor: {
+    enum: ["agent", "crew", "auto"],
+    description:
+      "Who runs it: one agent (default), a crew (also give crewDefinitionId), or auto to let the host choose. Only say crew or auto when the owner asked for it.",
+  },
+  crewDefinitionId: { type: "string", maxLength: 64 },
+  helpers: {
+    enum: ["settings", "off", "use"],
+    description:
+      "Subagents and advisor: settings (default, follow Settings > Models), off (the owner wants it done alone) or use (the owner asked for helpers).",
+  },
+  useSessionModel: {
+    type: "boolean",
+    description:
+      "Run with this conversation's own model instead of Settings > Models. Only when the owner asked for that model.",
+  },
+};
+
+/** The executor and helpers a create call asked for; nothing here grants authority. */
+export function conversationWorkChoices(input: Record<string, unknown>): {
+  executor?: WorkExecutor;
+  helpers?: WorkHelpers;
+  useSessionModel: boolean;
+} {
+  const crewId = typeof input.crewDefinitionId === "string" ? input.crewDefinitionId : undefined;
+  const kind = input.executor ?? (crewId ? "crew" : undefined);
+  if (kind !== undefined && kind !== "agent" && kind !== "crew" && kind !== "auto")
+    throw new Error("executor must be agent, crew or auto.");
+  if (kind === "crew" && !crewId) throw new Error("A crew executor needs crewDefinitionId.");
+  if (kind !== "crew" && crewId) throw new Error("crewDefinitionId needs executor crew.");
+  const helpers = input.helpers;
+  if (helpers !== undefined && helpers !== "settings" && helpers !== "off" && helpers !== "use")
+    throw new Error("helpers must be settings, off or use.");
+  if (input.useSessionModel !== undefined && typeof input.useSessionModel !== "boolean")
+    throw new Error("useSessionModel must be a boolean.");
+  return {
+    ...(kind === "crew"
+      ? { executor: { kind, crewDefinitionId: crewId! } }
+      : kind
+        ? { executor: { kind } }
+        : {}),
+    ...(helpers && helpers !== "settings" ? { helpers: { mode: helpers } } : {}),
+    useSessionModel: input.useSessionModel === true,
+  };
+}
 
 export const TASK_READ_TOOLS = {
   "tasks.artifacts.list": object({ taskId: id, ...pageFields }),

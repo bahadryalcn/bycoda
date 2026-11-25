@@ -1,4 +1,5 @@
 import { mapAsync } from "../async-collections";
+import { buildTaskStop } from "../../src/shared/model/host-contracts/task-stop";
 import { writerWorkspaces } from "../workspaces/writer-workspaces.test-support";
 import type { TaskWorkspaceServices } from "../tasks/task-workspace-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1152,7 +1153,13 @@ describe("editing goal settings", () => {
           ...saved,
           status,
           dependsOn: ["reviewed"],
-          awaitingOwnerRestart: status === "blocked",
+          stop:
+            status === "blocked"
+              ? buildTaskStop(
+                  { code: "owner_stopped", message: "Stopped by you.", nextAction: "restart" },
+                  1,
+                )
+              : undefined,
           verification: { review: { verdict: "pass", sessionId: "review-session", note: "" } },
         }),
         id,
@@ -1192,7 +1199,7 @@ describe("editing goal settings", () => {
       expect(task.autoMerge).not.toBe(true);
       expect(task.maxRunMinutes).toBe(id === "active" ? 10 : 30);
     }
-    expect((await tasks.get("stopped"))?.awaitingOwnerRestart).toBe(true);
+    expect((await tasks.get("stopped"))?.stop?.nextAction).toBe("restart");
     expect(await tasks.get("finished")).toEqual(before.find((task) => task.id === "finished"));
     const disabled = await goals.update(
       "goal",
@@ -1243,7 +1250,7 @@ describe("editing goal settings", () => {
     const { goals, tasks } = await seeded();
     await goals.update("goal", { ...settings, continueUntilDone: false, maxRunMinutes: 0 }, 2);
     expect((await tasks.get("waiting"))?.maxRunMinutes).toBe(10);
-    expect((await tasks.get("stopped"))?.awaitingOwnerRestart).toBe(true);
+    expect((await tasks.get("stopped"))?.stop?.nextAction).toBe("restart");
     expect((await tasks.get("waiting"))?.continueUntilDone).toBeUndefined();
     expect((await tasks.get("waiting"))?.autoMerge).not.toBe(true);
   });
@@ -1920,12 +1927,20 @@ describe("goal tasks", () => {
           reviewing.id,
         );
       await finish(reviewing.reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
+      const failed = (await tasks.get(reviewing.id))!;
       const legacy = {
-        ...(await tasks.get(reviewing.id))!,
+        ...failed,
         goalId: "goal",
         reviewOnly: undefined,
-        repairStop: undefined,
-        needsInput: undefined,
+        stop: buildTaskStop(
+          {
+            code: "run_failed",
+            phase: "review",
+            message: failed.error ?? "Review failed.",
+            nextAction: "takeover",
+          },
+          1,
+        ),
       };
       if (cancelled) await goals.cancel("goal");
       await store.db
@@ -1938,7 +1953,7 @@ describe("goal tasks", () => {
       const recovered = (await planned()).a;
       expect(
         recovered.status,
-        JSON.stringify({ error: recovered.error, repairStop: recovered.repairStop }),
+        JSON.stringify({ error: recovered.error, stop: recovered.stop }),
       ).toBe(cancelled ? "blocked" : "running");
       if (!cancelled) expect((await planned()).a.blockedTakeover).toBeDefined();
       expect((await planned()).b.status).toBe(cancelled ? "blocked" : "queued");

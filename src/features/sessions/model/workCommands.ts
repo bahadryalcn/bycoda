@@ -53,7 +53,7 @@ export function consumeWorkCommand(text: string): {
     name === "epic"
       ? "Create one bycoda Epic with goals.create for the request below. This is a planned parent with board tasks, not a provider-native /goal. Use the current project's saved execution settings and the existing plan approval flow. Do not implement the request in this turn."
       : name === "crew"
-        ? `Find the exact visible Crew named ${JSON.stringify(crew![1] ?? crew![2])} with crews.definitions.list. Ask if the name is ambiguous. Send the request to its existing task-linked lead with crews.request, or create a task with tasks.create and that crewDefinitionId if no task-linked run exists. Never create an unlinked crew run or grant approvals to the lead. Report the actual task and coordinator session identifiers.`
+        ? `Find the exact visible Crew named ${JSON.stringify(crew![1] ?? crew![2])} with crews.definitions.list. Ask if the name is ambiguous. Send the request to its existing task-linked lead with crews.request, or create a task with tasks.create, executor crew and that crewDefinitionId if no task-linked run exists. Never create an unlinked crew run or grant approvals to the lead. Report the actual task and coordinator session identifiers.`
         : "";
   return {
     name,

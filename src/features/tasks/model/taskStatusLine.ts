@@ -1,15 +1,14 @@
 import { t } from "../../../shared/i18n";
 import type { HostTask, TaskOwnerNotice } from "./hostTasks";
+import { MAX_TASK_REPAIR_ATTEMPTS, taskRequiresInstructions } from "./taskRules";
 import {
-  MAX_TASK_REPAIR_ATTEMPTS,
-  canTakeOverBlockedTask,
-  taskRequiresInstructions,
-} from "./taskRules";
+  taskAwaitsRestart,
+  taskNeedsInput,
+  type TaskStop,
+} from "../../../shared/model/host-contracts/task-stop";
+import { firstSentence, taskStopSummary } from "../../../shared/model/taskStopSummary";
 
-/** Host copy for an owner stop (host/sessions/sessionRuns.ts STOPPED_BY_USER). */
-const STOPPED_BY_OWNER = "Stopped by you.";
-/** Host copy for interrupted or crashed runs. */
-const INTERRUPTED = /\binterrupted\b|^Host (?:stopped|restarted)\b|could not be stopped/i;
+export { firstSentence };
 
 export type TaskStatusKind =
   | "todo"
@@ -36,7 +35,8 @@ export type TaskStatusKind =
   | "review_failed"
   | "checks_failed"
   | "failed"
-  | "blocked";
+  | "blocked"
+  | "unrecorded";
 
 export type TaskStatusTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
@@ -60,27 +60,6 @@ export type TaskStatusLine = {
   /** Owner notices to show after completion; zero while the task is unfinished. */
   notices: number;
 };
-
-/** The first sentence of a host message on one line, clamped to `max` characters. */
-export function firstSentence(text: string | undefined, max = 120): string | undefined {
-  if (!text) return undefined;
-  const line = text
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[`*_#>]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!line) return undefined;
-  const end = line.search(/[.!?](?:\s|$)/);
-  const sentence = end >= 0 ? line.slice(0, end + 1) : line;
-  if (sentence.length <= max) return sentence;
-  const cut = sentence.slice(0, max - 1);
-  const space = cut.lastIndexOf(" ");
-  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "")}…`;
-}
-
-function stripPrefix(text: string | undefined, prefix: string): string | undefined {
-  return text?.startsWith(prefix) ? text.slice(prefix.length) : text;
-}
 
 /** Notices the owner should read once the task has finished. */
 export function finishedOwnerNotices(task: HostTask): readonly TaskOwnerNotice[] {
@@ -108,15 +87,18 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
   const active =
     task.status === "queued" || task.status === "running" || task.status === "verifying";
 
-  if (active && task.needsInput) return line("needs_input", "warning", t("Needs input"));
-  if (task.status === "queued" && task.modelRoutingWait?.reason)
-    return line("waiting", "neutral", t("Waiting"), firstSentence(t(task.modelRoutingWait.reason)));
+  const summary = taskStopSummary(task);
+  if (active && taskNeedsInput(task)) return line("needs_input", "warning", t("Needs input"));
+  if (task.status === "queued" && task.wait && summary)
+    return line("waiting", "neutral", summary.title, summary.reason);
+  if (task.stop && taskAwaitsRestart(task) && summary)
+    return line("awaiting_restart", "info", summary.title, summary.reason);
   if (task.status !== "blocked" && taskRequiresInstructions(task))
     return line(
       "needs_instructions",
       "warning",
       t("Waiting for your instructions"),
-      firstSentence(task.repairStop?.message ?? task.blockedTakeover?.blocker ?? task.error),
+      firstSentence(task.blockedTakeover?.blocker ?? task.error),
     );
 
   if (
@@ -187,73 +169,51 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
       break;
   }
 
-  // Blocked: name the specific reason, most actionable first.
-  if (task.budgetStop)
-    return line(
-      "budget_stop",
-      "warning",
-      t("Run budget reached"),
-      firstSentence(stripPrefix(task.budgetStop, "Run budget: ")),
-    );
-  if (task.error?.trim() === STOPPED_BY_OWNER)
-    return line("stopped_by_owner", "neutral", t("Stopped by you"));
-  if (canTakeOverBlockedTask(task))
-    return line("takeover", "info", t("AI takeover pending"), firstSentence(failureReason(task)));
-  if (task.awaitingOwnerRestart)
-    return line(
-      "awaiting_restart",
-      "info",
-      t("Ready to restart"),
-      t("Instructions or settings changed. Retry to run it again."),
-    );
-  if (task.repairStop?.reason === "external")
-    return line(
-      "external_check",
-      "warning",
-      t("Needs an external check"),
-      firstSentence(task.repairStop.message),
-    );
-  if (task.repairStop?.reason === "no_progress")
-    return line(
-      "correction_stalled",
-      "warning",
-      t("Correction stopped · findings unchanged"),
-      firstSentence(task.repairStop.message || failureReason(task)),
-    );
-  if (task.repairStop?.reason === "limit")
-    return line(
-      "correction_limit",
-      "warning",
-      t("Correction limit reached"),
-      firstSentence(task.repairStop.message || failureReason(task)),
-    );
-  if (taskRequiresInstructions(task))
-    return line(
-      "needs_instructions",
-      "warning",
-      t("Waiting for your instructions"),
-      firstSentence(task.blockedTakeover?.blocker ?? failureReason(task)),
-    );
-  if (task.mergeError)
+  // Blocked: the stop code names the reason; nothing here reads `error` text.
+  const { stop } = task;
+  if (!stop || !summary) return line("unrecorded", "neutral", t("Blocked"), summary?.reason);
+  if (task.mergeError && (stop.code === "run_failed" || stop.code === "host_interrupted"))
     return line(
       "delivery_blocked",
       "danger",
       t("Delivery is blocked"),
       firstSentence(task.mergeError),
     );
-  if (task.error && INTERRUPTED.test(task.error))
-    return line("interrupted", "danger", t("Interrupted"), firstSentence(task.error));
-  if (task.verification?.review?.verdict === "fail")
-    return line("review_failed", "danger", t("Review failed"), firstSentence(failureReason(task)));
-  const command = task.verification?.command;
-  if (command && (command.timedOut || command.exitCode !== 0))
-    return line("checks_failed", "danger", t("Checks failed"), firstSentence(task.error));
-  if (task.error) return line("failed", "danger", t("Failed"), firstSentence(task.error));
-  return line("blocked", "neutral", t("Blocked"));
+  return line(stopKind(stop), summary.tone, summary.title, summary.reason);
 }
 
-function failureReason(task: HostTask): string | undefined {
-  return task.verification?.review?.verdict === "fail"
-    ? task.verification.review.note || stripPrefix(task.error, "Review failed: ")
-    : task.error;
+function stopKind(stop: TaskStop): TaskStatusKind {
+  if (stop.nextAction === "restart") return "awaiting_restart";
+  if (stop.nextAction === "takeover") return "takeover";
+  if (stop.code === "run_failed" && stop.nextAction === "provide_input")
+    return "needs_instructions";
+  switch (stop.code) {
+    case "owner_stopped":
+      return "stopped_by_owner";
+    case "budget_exhausted":
+      return "budget_stop";
+    case "repair_exhausted":
+      return stop.repair === "external"
+        ? "external_check"
+        : stop.repair === "no_progress"
+          ? "correction_stalled"
+          : "correction_limit";
+    case "input_required":
+      return "needs_instructions";
+    case "permission_required":
+      return "needs_input";
+    case "host_interrupted":
+      return "interrupted";
+    case "run_failed":
+      return stop.phase === "review"
+        ? "review_failed"
+        : stop.phase === "check"
+          ? "checks_failed"
+          : "failed";
+    case "dependency_cycle":
+    case "dependency_stopped":
+      return "blocked";
+    default:
+      return "failed";
+  }
 }

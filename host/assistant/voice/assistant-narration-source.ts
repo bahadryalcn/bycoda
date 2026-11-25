@@ -1,4 +1,5 @@
 import type { NarrationEvent } from "./assistant-narration";
+import { taskNeedsInput } from "../../../src/shared/model/host-contracts/task-stop";
 import type {
   AssistantActivity,
   AssistantJob,
@@ -186,7 +187,7 @@ export async function narrationSource(
           projectId: string;
           createdAt: number;
           status: string;
-          needsInput?: boolean;
+          stop?: { nextAction: string };
         })
       : undefined;
     const manual = await deps.manualPolicy(),
@@ -208,7 +209,7 @@ export async function narrationSource(
       task.createdAt !== notice.taskCreatedAt ||
       (notice.kind === "task.done"
         ? task.status !== "done"
-        : task.status === "done" || !task.needsInput)
+        : task.status === "done" || !taskNeedsInput(task))
     )
       return undefined;
     return {

@@ -357,7 +357,7 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
     isolate: false,
     review: false,
     continueUntilDone: false,
-    crewDefinitionId: "crew",
+    executor: { kind: "crew", crewDefinitionId: "crew" },
     status: "queued",
   });
   await f.tasks.tick();
@@ -434,7 +434,7 @@ it("admits a third crew after idle coordinators retire and retries a stopped tas
       isolate: false,
       review: false,
       continueUntilDone: false,
-      crewDefinitionId: "crew",
+      executor: { kind: "crew", crewDefinitionId: "crew" },
       status: "queued",
     });
   await f.tasks.tick();
@@ -473,7 +473,7 @@ it("admits a third crew after idle coordinators retire and retries a stopped tas
     isolate: false,
     review: false,
     continueUntilDone: false,
-    crewDefinitionId: "crew",
+    executor: { kind: "crew", crewDefinitionId: "crew" },
     status: "queued",
   });
   await vi.waitFor(

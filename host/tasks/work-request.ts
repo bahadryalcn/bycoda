@@ -2,21 +2,25 @@ import { createHash } from "node:crypto";
 import type { HostStore } from "../store";
 import type { HostTasks } from "./tasks";
 import type { HostTask, HostTaskInput, WorkOrigin } from "../../src/features/tasks/model/hostTasks";
+import type {
+  WorkExecutor,
+  WorkHelpers,
+} from "../../src/shared/model/host-contracts/work-executor";
 
-/** Fields a surface chooses for the run; each surface still resolves its own model for now. */
+/**
+ * The model fields a surface supplies. `modelChoice` omitted means Use settings (`default`): the
+ * Host resolves the model from Settings > Models when the task starts, by the task's source.
+ * A surface that wants one exact model sends `{ kind: "fixed" }` with that target; the target
+ * fields are otherwise only the fallback for a Host with nothing configured.
+ */
 export type WorkExecution = Pick<HostTaskInput, "harness" | "model" | "modelSettings"> &
   Pick<HostTaskInput, "runtimeMode" | "providerAccountId" | "modelChoice">;
 
 export type WorkOptions = Pick<HostTaskInput, "dependsOn" | "verifyCommand" | "isolate"> &
-  Partial<
-    Pick<
-      HostTaskInput,
-      "crewDefinitionId" | "maxRunMinutes" | "source" | "stewardId" | "automationId"
-    >
-  > & {
+  Partial<Pick<HostTaskInput, "maxRunMinutes" | "source" | "stewardId" | "automationId">> & {
     /** Where the task starts. Defaults to the board's to-do column. */
     status?: "todo" | "queued";
-    /** Defaults to on, except for a crew task, whose crew reviews its own work. */
+    /** Defaults to on, except for work a crew runs, which the crew reviews itself. */
     review?: boolean;
     deliveryApprovalRequired?: boolean;
   };
@@ -30,6 +34,10 @@ export type WorkRequest = {
   context?: string;
   title: string;
   source: WorkOrigin;
+  /** Who runs it. Defaults to one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor. Defaults to Settings > Models. */
+  helpers?: WorkHelpers;
   execution: WorkExecution;
   options?: WorkOptions;
 };
@@ -57,9 +65,12 @@ export async function createWork(
   receipt: WorkReceipt,
 ): Promise<HostTask> {
   const { options = {} } = work;
+  const executor = work.executor ?? { kind: "agent" as const };
   const task = {
     ...work.execution,
-    ...(options.crewDefinitionId ? { crewDefinitionId: options.crewDefinitionId } : {}),
+    modelChoice: work.execution.modelChoice ?? { kind: "default" as const },
+    ...(executor.kind === "agent" ? {} : { executor }),
+    ...(work.helpers && work.helpers.mode !== "settings" ? { helpers: work.helpers } : {}),
     ...(options.dependsOn ? { dependsOn: options.dependsOn } : {}),
     ...(options.verifyCommand === undefined ? {} : { verifyCommand: options.verifyCommand }),
     ...(options.isolate === undefined ? {} : { isolate: options.isolate }),
@@ -76,7 +87,7 @@ export async function createWork(
     origin: work.source,
     // shortcut: 0 inherits the Host's run length; budgets are owned by the runtime budget code.
     maxRunMinutes: options.maxRunMinutes ?? 0,
-    review: options.review ?? !options.crewDefinitionId,
+    review: options.review ?? executor.kind !== "crew",
     // Neither an agent nor an automation may enable delivery or open-ended retries.
     autoMerge: false,
     continueUntilDone: false,

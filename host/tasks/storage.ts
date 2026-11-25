@@ -19,6 +19,11 @@ import type {
   SprintSourceEvent,
   SprintTaskSnapshot,
 } from "../../src/features/tasks/model/hostSprints";
+import {
+  stopFitsStatus,
+  taskNeedsInput,
+  waitFitsStatus,
+} from "../../src/shared/model/host-contracts/task-stop";
 import { suspendedTaskDelivery } from "./task-workspace-runtime";
 import { reviewerReply } from "./review-outcomes";
 import type { TaskContext } from "./context";
@@ -571,11 +576,15 @@ export async function write(
     task.runStall &&
     (task.status !== "running" ||
       task.error ||
-      task.needsInput ||
+      taskNeedsInput(task) ||
       task.sessionId !== task.runStall.sessionId ||
       task.runId !== task.runStall.runId)
   )
     task = { ...task, runStall: undefined };
+  // A stop describes a blocked task, an active one paused for the owner, or a held edit; a wait
+  // describes a queued one (or a worker idle until its usage limit resets). Any other status carries neither, so a transition cannot leave one behind.
+  if (task.stop && !stopFitsStatus(task)) task = { ...task, stop: undefined };
+  if (task.wait && !waitFitsStatus(task)) task = { ...task, wait: undefined };
   task = { ...task, workspaceGenerationId: task.workspaceGenerationId ?? randomUUID() };
   const persist = async () => {
     await context.store.db.checkAuthorization();

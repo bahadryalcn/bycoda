@@ -4,11 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { Button } from "../../../shared/ui/Button";
-import { Checkbox } from "../../../shared/ui/Checkbox";
-import {
-  AUTOMATIC_SUBAGENTS,
-  CROSS_SUBAGENTS_KEY,
-} from "../../../shared/model/host-contracts/delegation";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -16,9 +12,9 @@ import { TextField } from "../../../shared/ui/TextField";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { isWorkspaceValid, TaskWorkspacePicker, useWorkspaceChecks } from "./TaskWorkspacePicker";
 import { useTaskTargetMachine } from "./useTaskTargetMachine";
-import { TaskFormAgent } from "./TaskFormAgent";
+import { TaskFixedModelPicker, TaskFormAgent } from "./TaskFormAgent";
+import { WorkExecutorFields } from "./WorkExecutorFields";
 import "./task-form.css";
-import { CrewTaskPicker } from "../../crews/ui/CrewTaskPicker";
 import { preflightTaskDraft, type TaskDraft } from "../model/taskClient";
 import { taskClientErrors } from "../model/taskClientErrors";
 import { t, useLocale } from "../../../shared/i18n";
@@ -116,15 +112,17 @@ export function TaskForm({
       Boolean(draft.verifyCommand?.trim()) ||
       Boolean(draft.budget) ||
       Boolean(draft.preflightRequirements?.length) ||
-      draft.modelSettings[CROSS_SUBAGENTS_KEY] !== undefined ||
       Boolean(draft.workflowId),
   );
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const hasDescription = draft.prompt.trim().length > 0;
+  const crewRun = draft.executor?.kind === "crew";
+  // The Host refuses these combinations and says which option to change; show it before sending.
+  const executorIssue = crewRun ? crewIncompatibility(draft)?.reason : undefined;
   const ready =
-    (!!draft.crewDefinitionId || (!workspaceBusy && workspaceValid)) &&
-    (!draft.crewDefinitionId || crewValid) &&
+    (crewRun || (!workspaceBusy && workspaceValid)) &&
+    (!crewRun || (crewValid && !executorIssue)) &&
     draft.title.trim().length > 0 &&
     looksLikeProject(draft.cwd) &&
     draft.model.length > 0 &&
@@ -140,9 +138,11 @@ export function TaskForm({
       ? t("Choose project")
       : machine == null
         ? taskClientErrors.machine()
-        : !draft.crewDefinitionId && (workspaceBusy || !workspaceValid)
-          ? t("Check the working branch under Advanced.")
-          : undefined;
+        : executorIssue
+          ? executorIssue
+          : !crewRun && (workspaceBusy || !workspaceValid)
+            ? t("Check the working branch under Advanced.")
+            : undefined;
   const startReason = hasDescription
     ? blockedReason
     : t("Add a description to start this with an agent.");
@@ -190,7 +190,7 @@ export function TaskForm({
                         machineId: id,
                         modelChoice: undefined,
                         providerAccountId: defaultAccountFor(draft.harness, id),
-                        crewDefinitionId: undefined,
+                        executor: undefined,
                         workspace: undefined,
                         cwd: firstProjectOn(recents, id),
                       });
@@ -220,7 +220,7 @@ export function TaskForm({
                         cwd,
                         modelChoice: draft.id ? draft.modelChoice : undefined,
                         workspace: undefined,
-                        crewDefinitionId: undefined,
+                        executor: undefined,
                       })
                     }
                   />
@@ -262,15 +262,34 @@ export function TaskForm({
                 frameProps={{ "data-task-prompt": "" }}
               />
             </section>
-            <CrewTaskPicker
+            <WorkExecutorFields
+              routingRole="task.worker"
+              machine={target}
+              routingSupported={routingSupported}
               cwd={draft.cwd}
-              machineId={targetId}
-              value={draft.crewDefinitionId}
-              disabled={saving || draft.workspaceLocked}
-              onChange={(crewDefinitionId) => onChange({ ...draft, crewDefinitionId })}
-              onValidityChange={setCrewValid}
+              harness={draft.harness}
+              modelSettings={draft.modelSettings}
+              executor={draft.executor}
+              onExecutorChange={(executor) => update("executor", executor)}
+              executorIssue={executorIssue}
+              onCrewValidityChange={setCrewValid}
+              modelChoice={draft.modelChoice}
+              onModelChoiceChange={(modelChoice) => update("modelChoice", modelChoice)}
+              fixedModel={
+                <TaskFixedModelPicker
+                  draft={draft}
+                  update={update}
+                  onChange={onChange}
+                  routingSupported={routingSupported}
+                  localAccounts={localAccounts}
+                  defaultAccountFor={defaultAccountFor}
+                />
+              }
+              helpers={draft.helpers}
+              onHelpersChange={(helpers) => update("helpers", helpers)}
+              disabled={saving}
             />
-            {draft.crewDefinitionId ? (
+            {crewRun ? (
               <Text
                 as="div"
                 size="caption"
@@ -297,17 +316,14 @@ export function TaskForm({
                 />
               </Text>
             ) : null}
-            {draft.crewDefinitionId ? null : (
+            {crewRun ? null : (
               <TaskFormAgent
                 draft={draft}
-                target={target}
                 routingSupported={routingSupported}
                 update={update}
-                onChange={onChange}
                 open={agentOpen}
                 onOpenChange={setAgentOpen}
                 localAccounts={localAccounts}
-                defaultAccountFor={defaultAccountFor}
               />
             )}
             <Disclosure
@@ -334,22 +350,7 @@ export function TaskForm({
                   monospace
                 />
               </Text>
-              {!draft.crewDefinitionId ? (
-                <Checkbox
-                  label={t("Allow subagents")}
-                  checked={draft.modelSettings[CROSS_SUBAGENTS_KEY] !== "[]"}
-                  disabled={saving}
-                  onChange={(event) =>
-                    update("modelSettings", {
-                      ...draft.modelSettings,
-                      [CROSS_SUBAGENTS_KEY]: event.currentTarget.checked
-                        ? AUTOMATIC_SUBAGENTS
-                        : "[]",
-                    })
-                  }
-                />
-              ) : null}
-              {!draft.crewDefinitionId ? (
+              {!crewRun ? (
                 <Disclosure
                   className="task-advanced-options"
                   summary={t("Working branch and worktree")}
@@ -451,7 +452,7 @@ export function TaskForm({
                 onSubmit("queued", draft);
               }}
             >
-              {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}
+              {t(crewRun ? "Start with crew" : "Add and start")}
             </Button>
             <Button
               variant="primary"

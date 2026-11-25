@@ -2,6 +2,7 @@ import type { RemoteProvider } from "../../src/features/connections/model/protoc
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { TaskContext } from "./context";
 import { isAssistantGoalTask } from "./usage-limit";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 
 export type RepointInput = {
   taskId: string;
@@ -31,7 +32,7 @@ export async function repointUnstartedTask(
         task.status !== "queued" ||
         task.sessionId ||
         task.runId ||
-        task.crewDefinitionId ||
+        workCrewId(task) ||
         !isAssistantGoalTask(task) ||
         context.jobs.has(task.id)
       )

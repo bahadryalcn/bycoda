@@ -16,11 +16,10 @@ export function repairStopLabel(task: HostTask): string | undefined {
   if (task.blockedTakeover && ["queued", "running", "verifying"].includes(task.status))
     return t("Independent AI completing blocked work");
   if (taskRequiresInstructions(task)) return t("Waiting for your instructions");
-  if (task.repairStop?.reason === "external") return t("Waiting for external verification");
-  if (task.repairStop?.reason === "no_progress")
-    return t("Correction stopped · findings unchanged");
+  if (task.stop?.repair === "external") return t("Waiting for external verification");
+  if (task.stop?.repair === "no_progress") return t("Correction stopped · findings unchanged");
   if (
-    task.repairStop?.reason === "limit" ||
+    task.stop?.repair === "limit" ||
     (!task.continueUntilDone && task.status === "blocked" && (task.repairAttempts ?? 0) >= 3)
   )
     return t("Correction stopped · attempt limit reached");

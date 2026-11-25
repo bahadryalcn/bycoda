@@ -1,5 +1,6 @@
 import type { HostTask, TaskStatus } from "./hostTasks";
 import { NO_VERDICT } from "../../../shared/model/host-contracts/task-findings";
+import { taskAwaitsRestart } from "../../../shared/model/host-contracts/task-stop";
 export { NO_VERDICT };
 /** Shared task rules. This module has no desktop or native runtime dependencies. */
 
@@ -55,7 +56,8 @@ export function taskRequiresInstructions(task: HostTask): boolean {
   return (
     ["blocked", "todo", "queued"].includes(task.status) &&
     Boolean(
-      task.repairStop ||
+      (task.status === "blocked" &&
+        (task.stop?.code === "repair_exhausted" || task.stop?.code === "input_required")) ||
       task.blockedTakeover ||
       (task.status !== "queued" && (task.repairAttempts ?? 0) >= MAX_TASK_REPAIR_ATTEMPTS) ||
       taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES,
@@ -69,25 +71,23 @@ export function canTakeOverBlockedTask(
   if (task.blockedTakeoverSupported === false) return false;
   if (
     task.status !== "blocked" ||
-    task.repairStop ||
+    task.stop?.code !== "run_failed" ||
+    taskAwaitsRestart(task) ||
     (task.repairAttempts ?? 0) >= MAX_TASK_REPAIR_ATTEMPTS ||
     taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES ||
     task.blockedTakeover ||
-    task.awaitingOwnerRestart ||
     !task.sessionId
   )
     return false;
   const review = task.verification?.review;
   const command = task.verification?.command;
   return Boolean(
-    (review?.verdict === "fail" &&
-      review.note !== NO_VERDICT &&
-      task.error === `Review failed: ${review.note}`) ||
-    (command &&
+    (task.stop.phase === "review" && review?.verdict === "fail" && review.note !== NO_VERDICT) ||
+    (task.stop.phase === "check" &&
+      command &&
       !command.timedOut &&
       command.exitCode !== null &&
-      command.exitCode !== 0 &&
-      task.error === `The check command failed (exit code ${command.exitCode}).`),
+      command.exitCode !== 0),
   );
 }
 

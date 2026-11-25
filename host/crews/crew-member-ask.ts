@@ -200,6 +200,8 @@ export async function askCrewMember(
         [CREW_MEMBER_KEY]: JSON.stringify(memberIdentity(agent, request, taskId)),
       },
       ...(files ? { crewScopes: files } : {}),
+      // The crew policy decides whether a member may use helpers; otherwise Settings apply.
+      ...(defaultCrewPolicy.allowSubagents ? {} : { helpers: { mode: "off" as const } }),
       runtimeMode,
       maxRunMinutes: defaultCrewPolicy.maxRunMinutes,
       isolate: false,

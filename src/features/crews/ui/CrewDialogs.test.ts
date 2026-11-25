@@ -102,7 +102,7 @@ it("preselects the exact crew and machine in the canonical task form", async () 
   expect(form.draft).toMatchObject({
     cwd: "/p",
     machineId: "m",
-    crewDefinitionId: "crew-1",
+    executor: { kind: "crew", crewDefinitionId: "crew-1" },
     runtimeMode: "supervised",
   });
   await act(async () => form.onSubmit("todo", form.draft));

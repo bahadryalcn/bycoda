@@ -443,6 +443,32 @@ describe("host automations", () => {
     expect(f.workspaces.finish).not.toHaveBeenCalled();
     expect(f.workspaces.stop).toHaveBeenCalled();
   });
+  it("passes its executor, helpers and Use settings choice to each occurrence's task", async () => {
+    const f = await setup();
+    await f.automations.save(
+      f.input({
+        isolate: false,
+        modelChoice: { kind: "default" },
+        executor: { kind: "auto" },
+        helpers: { mode: "off" },
+      }),
+    );
+    const run = await f.runAndSchedule("nightly");
+    const task = (await f.tasks.get(run.taskId!))!;
+    expect(task).toMatchObject({
+      executor: { kind: "auto" },
+      helpers: { mode: "off" },
+      modelChoice: { kind: "default" },
+      source: "automation",
+      review: false,
+    });
+    // Resolved when the task started, under the automation role, with Off winning over Settings.
+    expect(task.resolved).toMatchObject({
+      executor: { kind: "agent" },
+      role: "automation",
+      helpers: { mode: "off", subagents: "off", source: "task" },
+    });
+  });
   it("accepts only one concurrent edit of the same configuration", async () => {
     const f = await setup();
     const opening = await f.automations.save(f.input({ enabled: false }));
@@ -1153,7 +1179,8 @@ it("resolves automation routing before creating its session and freezes target a
     () =>
       expect(f.turns[0]?.input).toMatchObject({
         model: "claude:routed",
-        modelSettings: execution.modelSettings,
+        // Helper keys come from Settings (here none, so Automatic), never from the routed target.
+        modelSettings: { effort: "high", crossSubagents: "auto" },
       }),
     { timeout: 20000 },
   );

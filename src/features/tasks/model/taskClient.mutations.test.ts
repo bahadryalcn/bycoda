@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { buildTaskStop } from "../../../../src/shared/model/host-contracts/task-stop";
 import { remoteRequest } from "../../connections/model/connections";
 import { machineCapabilities, machineProjects } from "../../automations/model/machineSnapshot";
 import { invoke } from "@tauri-apps/api/core";
@@ -362,7 +363,7 @@ it("replaces cleared host fields immediately when a blocked task is restarted", 
     machineName: "this computer",
     stale: true,
     error: "Earlier failure",
-    needsInput: true,
+    stop: buildTaskStop({ code: "input_required", message: "Answer needed." }, 1),
     reviewer: { sessionId: "old-review", runId: "old-run", startedAt: 1 },
     verification: {
       review: { verdict: "fail", note: "Earlier failure", sessionId: "old-review" },
@@ -371,7 +372,7 @@ it("replaces cleared host fields immediately when a blocked task is restarted", 
   };
   const {
     error,
-    needsInput,
+    stop,
     reviewer,
     verification,
     stale,

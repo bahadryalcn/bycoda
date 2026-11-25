@@ -1,5 +1,12 @@
 import { errorText } from "../../../shared/lib/errors";
 import {
+  crewIncompatibility,
+  parseWorkExecutor,
+  parseWorkHelpers,
+  type WorkExecutor,
+  type WorkHelpers,
+} from "../../../shared/model/host-contracts/work-executor";
+import {
   ModelRoutingItemChoiceSchema,
   type ModelRoutingItemChoice,
 } from "../../../shared/model/host-contracts/model-routing";
@@ -71,7 +78,10 @@ export type HostGoalInput = {
   projectIds: string[];
   /** The project the planner runs in; one of `projectIds`. */
   leadProjectId: string;
-  crewDefinitionId?: string;
+  /** Who runs each planned task. Absent is one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor for the planner and each task. Absent follows Settings > Models. */
+  helpers?: WorkHelpers;
   harness: RemoteProvider;
   /** Local profile inherited by the planner and planned tasks. */
   providerAccountId?: string;
@@ -289,13 +299,18 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     throw new Error(`A goal can span at most ${MAX_GOAL_PROJECTS} projects.`);
   if (typeof v.leadProjectId !== "string" || !projectIds.includes(v.leadProjectId))
     throw new Error("The lead project must be one of the goal’s projects.");
-  if (
-    v.crewDefinitionId !== undefined &&
-    (typeof v.crewDefinitionId !== "string" ||
-      !ID.test(v.crewDefinitionId) ||
-      projectIds.length !== 1)
-  )
-    throw new Error("A crew epic must use one project and a valid crew.");
+  const executor = parseWorkExecutor(v.executor);
+  const helpers = parseWorkHelpers(v.helpers);
+  if (executor?.kind === "crew") {
+    if (projectIds.length !== 1)
+      throw new Error("A crew epic must use one project and a valid crew.");
+    const conflict = crewIncompatibility({
+      isolate: v.isolate as boolean | undefined,
+      workspace: v.workspaces && Object.keys(v.workspaces as object).length ? true : undefined,
+      modelChoice: v.modelChoice as { kind: string } | undefined,
+    });
+    if (conflict) throw new Error(`${conflict.field}: ${conflict.reason}`);
+  }
   if (!isRemoteProvider(v.harness)) throw new Error("Invalid goal agent");
   if (typeof v.model !== "string" || !v.model.trim() || v.model.length > 200)
     throw new Error("Invalid goal model");
@@ -367,7 +382,8 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     prompt: v.prompt,
     projectIds,
     leadProjectId: v.leadProjectId,
-    ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
+    ...(executor ? { executor } : {}),
+    ...(helpers ? { helpers } : {}),
     harness: v.harness,
     ...(v.providerAccountId === undefined
       ? {}

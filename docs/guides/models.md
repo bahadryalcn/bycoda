@@ -138,11 +138,18 @@ Account percentages state how much quota is used. A dot beside the account's usa
 indicates that the project's default model is on another account. In the expanded
 account list, the Default model label identifies that account.
 
-Tasks, goals, stewards, automations and crew members expose **Default**, **Any model**
-and **Fixed** choices. Default follows the role binding; Any model offers a select
+Tasks, goals, stewards, automations and crew members expose **Use settings**, **Any model**
+and **Fixed** choices. Use settings follows the role binding; Any model offers a select
 with **Any model, in order** or a group (shown as **Group: X** elsewhere); Fixed
 keeps the item's chosen model. **Manage models** opens shared
-management. Items without a routing choice use their fixed model.
+management. Items without a routing choice use their fixed model. New tasks and automations
+start on Use settings; the role follows the source (automation for an automation, the crew
+member role for a crew member, task worker otherwise), so the board, chat, voice and Room give the
+same result for the same work. The Host records the chosen model, its source, any skipped
+entries and the helper policy on the task when it starts. The helper policy (subagents, advisor,
+effort cap) resolves from the work's own choice, then the account, provider and global layers
+here; it applies identically to workers, reviewers and crew sessions, and a work-specific
+choice can narrow but never widen what these layers allow.
 
 New runs use the first eligible model at admission. Running sessions retain their
 model even if you edit the order or a quota is exhausted. If every candidate is

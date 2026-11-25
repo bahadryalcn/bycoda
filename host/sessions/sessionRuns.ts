@@ -68,6 +68,15 @@ export type SessionRun = {
   error?: string;
 };
 
+/** The provider's failure note is the only place a gate only the owner can open (a permission, a
+ * credential, billing, a limit) is told apart from a transient failure; everything downstream
+ * reads the structured `cause`, never this text. */
+const OWNER_GATE =
+  /permission|approv|denied|credential|unauthori[sz]ed|forbidden|budget|billing|sign(?:ed)?[- ]?(?:in|out)|log(?:ged)?[- ]?(?:in|out)|api key|persist|time limit|run limit/i;
+export function ownerGateFailure(note: string): boolean {
+  return OWNER_GATE.test(note);
+}
+
 export type SessionRunState =
   | {
       state: "running";
@@ -80,6 +89,8 @@ export type SessionRunState =
       state: "finished";
       status: "succeeded" | "failed" | "cancelled";
       error?: string;
+      /** Why a non-successful run ended; consumers read this, never the `error` text. */
+      cause?: "owner_stop" | "host_interrupted" | "session_deleted" | "owner_gate";
       /** The provider usage limit that ended the turn, read from the session itself. */
       usageLimit?: UsageLimit;
     };
@@ -213,6 +224,7 @@ export async function sessionRunState(
       state: "finished",
       status: "failed",
       error: "The run's session was deleted.",
+      cause: "session_deleted",
     };
   }
   if (session.status === "running" && session.runId === run.runId) {
@@ -246,17 +258,20 @@ export async function sessionRunState(
       state: "finished",
       status: "failed",
       error: HOST_INTERRUPTED,
+      cause: "host_interrupted",
     };
   // The host ends a failed or stopped turn with a system note.
   const last = session.session.blocks.at(-1);
   const note = last?.role === "system" ? last.text.trim() : "";
   if (!note) return { state: "finished", status: "succeeded" };
-  if (note === STOPPED_BY_USER) return { state: "finished", status: "cancelled" };
+  if (note === STOPPED_BY_USER)
+    return { state: "finished", status: "cancelled", cause: "owner_stop" };
   const usageLimit = session.session.usageLimit;
   return {
     state: "finished",
     status: "failed",
     error: note,
+    ...(ownerGateFailure(note) ? { cause: "owner_gate" as const } : {}),
     ...(usageLimit ? { usageLimit } : {}),
   };
 }
@@ -271,6 +286,14 @@ export async function cancelSessionRun(
     sessionId: run.sessionId ?? "",
     runId: run.runId,
   });
+}
+
+/** The session's last block is the note the host writes when the owner stopped the turn. */
+export function lastTurnStoppedByOwner(
+  blocks: readonly { role: string; text?: string }[],
+): boolean {
+  const last = blocks.at(-1);
+  return last?.role === "system" && last.text?.trim() === STOPPED_BY_USER;
 }
 
 export function errorMessage(error: unknown): string {

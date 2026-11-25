@@ -6,51 +6,68 @@ import { AccessPicker } from "../../sessions/public/AccessPicker";
 import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import type { AutomationDraft } from "../model/automations";
 
+/** The model picker for a fixed choice, shared by the toolbar and the background Run with fields. */
+export function AutomationFixedModel({
+  draft,
+  onChange,
+}: {
+  draft: AutomationDraft;
+  onChange: (draft: AutomationDraft) => void;
+}) {
+  return (
+    <ModelPicker
+      presentation="field"
+      accountChoices
+      accountId={draft.providerAccountId}
+      harness={draft.harness}
+      model={draft.model}
+      values={draft.modelSettings}
+      project={draft.cwd}
+      onChange={(harness, model, providerAccountId) =>
+        onChange({
+          ...draft,
+          harness,
+          model,
+          providerAccountId,
+          modelSettings: defaultModelSettings(resolveModel(harness, model)),
+        })
+      }
+      onSettingsChange={(modelSettings) => onChange({ ...draft, modelSettings })}
+    />
+  );
+}
+
 export function AutomationModelChoice({
   draft,
   onChange,
   routingHost,
   extrasBeside,
+  hideModel = false,
 }: {
   draft: AutomationDraft;
   onChange: (draft: AutomationDraft) => void;
   routingHost: { machineId?: string; supported: boolean };
   extrasBeside: boolean;
+  /** Background automations choose their model in the Run with fields. */
+  hideModel?: boolean;
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1">
-      <ModelChoiceField
-        routingRole="automation"
-        value={draft.modelChoice}
-        onChange={(modelChoice) => onChange({ ...draft, modelChoice })}
-        machineId={routingHost.machineId}
-        supported={routingHost.supported}
-        allowDefault
-        onManage={() => openModelsSettings("roles")}
-        fixed={
-          <ModelPicker
-            presentation="field"
-            accountChoices
-            accountId={draft.providerAccountId}
-            harness={draft.harness}
-            model={draft.model}
-            values={draft.modelSettings}
-            project={draft.cwd}
-            onChange={(harness, model, providerAccountId) =>
-              onChange({
-                ...draft,
-                harness,
-                model,
-                providerAccountId,
-                modelSettings: defaultModelSettings(resolveModel(harness, model)),
-              })
-            }
-            onSettingsChange={(modelSettings) => onChange({ ...draft, modelSettings })}
-          />
-        }
-      />
+      {hideModel ? null : (
+        <ModelChoiceField
+          routingRole="automation"
+          value={draft.modelChoice}
+          onChange={(modelChoice) => onChange({ ...draft, modelChoice })}
+          machineId={routingHost.machineId}
+          supported={routingHost.supported}
+          allowDefault
+          onManage={() => openModelsSettings("roles")}
+          fixed={<AutomationFixedModel draft={draft} onChange={onChange} />}
+        />
+      )}
       {/* Chat settings "Extras summary: beside" also shows the active options here; the menu stays complete. */}
       {extrasBeside &&
+      !hideModel &&
       (!routingHost.supported || !draft.modelChoice || draft.modelChoice.kind === "fixed") ? (
         <ModelControlPills
           harness={draft.harness}

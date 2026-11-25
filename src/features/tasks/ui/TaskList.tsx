@@ -12,6 +12,7 @@ import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
+import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 
 const RUNNING_KINDS: ReadonlySet<TaskStatusKind> = new Set(["running", "verifying", "correcting"]);
 
@@ -77,7 +78,7 @@ export function TaskList({
           const status = taskStatusLine(task);
           const description = taskListDescription(
             task.prompt,
-            Boolean(task.crewRunId || task.crewDefinitionId),
+            Boolean(task.crewRunId || workCrewId(task)),
           );
           // Status already shows the delivery state; keep it out of the secondary line.
           const planning = planningLabel?.(task)

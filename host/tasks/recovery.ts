@@ -7,18 +7,19 @@ import {
   TASK_INPUT_REQUIRED,
   taskReviewFailureCount,
   taskRequiresInstructions,
+  canTakeOverBlockedTask,
   hasUnmergedBranch,
   NO_VERDICT,
   parseReviewVerdict,
   type HostTask,
 } from "../../src/features/tasks/model/hostTasks";
-import { hasPendingApproval } from "../../src/features/sessions/model/session";
 import {
-  HOST_INTERRUPTED,
-  errorMessage,
-  launchSessionRun,
-  sessionRunState,
-} from "../sessions/sessionRuns";
+  buildTaskStop,
+  type TaskRepairReason,
+} from "../../src/shared/model/host-contracts/task-stop";
+import { repairStop, verificationStop, type BlockReason } from "./stop-reasons";
+import { hasPendingApproval } from "../../src/features/sessions/model/session";
+import { errorMessage, launchSessionRun, sessionRunState } from "../sessions/sessionRuns";
 import { hasShellPhysicalOwner } from "../execution/shell-ownership";
 import { RETRY_FEEDBACK_LIMIT } from "./constants";
 import { MAX_REPAIR_ATTEMPTS } from "./constants";
@@ -116,7 +117,7 @@ export async function queueTakeover(
 export async function block(
   context: TaskContext,
   task: HostTask,
-  error: string,
+  reason: BlockReason,
   now: number,
   retainReviewer = false,
 ): Promise<HostTask> {
@@ -141,15 +142,29 @@ export async function block(
       task = { ...task, workspaceActivityId: undefined };
     }
   }
-  return await context.write({
+  const error = reason.error ?? reason.message;
+  let stop = buildTaskStop(reason, now);
+  const stopped = {
     ...task,
-    status: "blocked",
+    status: "blocked" as const,
     error,
-    needsInput: taskRequiresInstructions({ ...task, status: "blocked", error }) || undefined,
+    stop,
+    wait: undefined,
     reviewer: retainReviewer ? task.reviewer : undefined,
     completedAt: now,
     updatedAt: now,
-  });
+  };
+  // The owner can hand a verification failure to an independent AI, or must change the
+  // instructions once automatic correction is spent; the stop names that next step.
+  if (
+    stop.code === "run_failed" ||
+    stop.code === "repair_exhausted" ||
+    stop.code === "input_required"
+  ) {
+    if (canTakeOverBlockedTask(stopped)) stop = { ...stop, nextAction: "takeover" };
+    else if (taskRequiresInstructions(stopped)) stop = { ...stop, nextAction: "provide_input" };
+  }
+  return await context.write({ ...stopped, stop });
 }
 
 export async function repairOrBlock(
@@ -165,44 +180,50 @@ export async function repairOrBlock(
   } catch {
     // Preserve the failed verdict and original reason until physical retirement
     // is known. A new advisor or worker must not bypass an unknown writer.
-    return context.block(task, error, now);
+    return context.block(task, verificationStop(task, error), now);
   }
   const canFinish = completableWithFindings(task);
   if (task.blockedTakeover) {
-    const stop = {
-      reason: "no_progress" as const,
-      message:
-        "The independent recovery agent could not complete this task. Provide the missing resource or update the instructions using the worker's concrete request.",
-    };
     return canFinish
-      ? await context.completeWithFindings(task, error, now, stop.reason)
-      : await context.block({ ...task, repairStop: stop }, error, now);
+      ? await context.completeWithFindings(task, error, now, "no_progress")
+      : await context.block(
+          task,
+          repairStop(
+            "no_progress",
+            "The independent recovery agent could not complete this task. Provide the missing resource or update the instructions using the worker's concrete request.",
+            error,
+          ),
+          now,
+        );
   }
-  if (taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES && !task.repairStop)
-    task = { ...task, repairStop: { reason: "limit", message: TASK_INPUT_REQUIRED } };
-  if (task.reviewOnly && !task.repairStop)
-    task = { ...task, repairStop: { reason: "no_progress", message: TASK_INPUT_REQUIRED } };
+  // The review step may already have decided the repair loop ended (see review.ts).
+  const stopped: { repair: TaskRepairReason; message: string } | undefined =
+    task.stop?.code === "repair_exhausted" && task.stop.repair
+      ? { repair: task.stop.repair, message: task.stop.message }
+      : taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES
+        ? { repair: "limit", message: TASK_INPUT_REQUIRED }
+        : task.reviewOnly
+          ? { repair: "no_progress", message: TASK_INPUT_REQUIRED }
+          : undefined;
   const attempts = task.repairAttempts ?? 0;
-  if (task.reviewOnly) return await context.block(task, error, now);
-  if (task.repairStop)
+  if (task.reviewOnly)
+    return await context.block(task, repairStop(stopped!.repair, stopped!.message, error), now);
+  if (stopped)
     return canFinish
-      ? await context.completeWithFindings(task, error, now, task.repairStop.reason)
-      : await context.block(task, error, now);
+      ? await context.completeWithFindings(task, error, now, stopped.repair)
+      : await context.block(task, repairStop(stopped.repair, stopped.message, error), now);
   // Every reviewed task, crew assignments included, corrects in place within
   // the repair limit. Blocking on the first FAIL left a dead card per review.
   const exhausted = attempts >= MAX_REPAIR_ATTEMPTS;
   if (exhausted) {
     if (canFinish) return await context.completeWithFindings(task, error, now, "limit");
     return await context.block(
-      {
-        ...task,
-        repairStop: {
-          reason: "limit" as const,
-          message:
-            "Automatic correction limit reached. Inspect the attempt history and remaining findings before retrying.",
-        },
-      },
-      error,
+      task,
+      repairStop(
+        "limit",
+        "Automatic correction limit reached. Inspect the attempt history and remaining findings before retrying.",
+        error,
+      ),
       now,
     );
   }
@@ -223,7 +244,12 @@ export async function repairOrBlock(
   if (task.repairAdvisor && task.repairAdvisor.fingerprint !== fingerprint)
     return context.block(
       { ...task, repairAdvisor: undefined },
-      "Task instructions changed during advisor consultation. Restart explicitly.",
+      {
+        code: "owner_stopped",
+        phase: "repair",
+        nextAction: "restart",
+        message: "Task instructions changed during advisor consultation. Restart explicitly.",
+      },
       now,
     );
   const original = await context.taskValue(task.id);
@@ -262,7 +288,7 @@ export async function repairOrBlock(
             ...(takeover ? { takeover: true } : {}),
           },
           error: undefined,
-          needsInput: undefined,
+          stop: undefined,
           updatedAt: now,
         },
         undefined,
@@ -296,14 +322,7 @@ export async function repairOrBlock(
     return await context.transaction(async () => {
       if (!(await context.unchangedTask(task.id, expected)))
         return (await context.find(task.id)) ?? task;
-      return context.block(
-        {
-          ...task,
-          repairStop: { reason: "external", message: errorMessage(advisorError) },
-        },
-        errorMessage(advisorError),
-        context.now(),
-      );
+      return context.block(task, repairStop("external", errorMessage(advisorError)), context.now());
     });
   }
   if (!advice) return (await context.find(task.id)) ?? task;
@@ -346,7 +365,7 @@ export async function repairOrBlock(
         error: undefined,
         reviewer: undefined,
         verification: undefined,
-        needsInput: undefined,
+        stop: undefined,
         updatedAt: context.now(),
       },
       undefined,
@@ -368,7 +387,7 @@ export async function completeWithFindings(
   return await context.enterReview({
     ...task,
     error: undefined,
-    repairStop: undefined,
+    stop: undefined,
     repairNote: error,
     completedWithFindings: true,
     ownerNotices: [...(task.ownerNotices ?? []), ...notices].slice(-OWNER_NOTICE_LIMIT),
@@ -390,9 +409,11 @@ export async function canResumeAfterHostStop(
     sessionId?: string;
     runId?: string;
     error?: string;
+    stop?: { code: string };
   },
 ): Promise<boolean> {
-  if (run.error && run.error !== HOST_INTERRUPTED) return false;
+  // A task carries the stop code; a reviewer record only a run error, which is never an interruption.
+  if (run.stop ? run.stop.code !== "host_interrupted" : run.error) return false;
   try {
     const session = await context.store.session(run.sessionId ?? "");
     if (session.status !== "interrupted") return false;
@@ -420,7 +441,8 @@ export async function requeueInterrupted(
     status: "queued",
     error: undefined,
     completedAt: undefined,
-    needsInput: undefined,
+    stop: undefined,
+    wait: undefined,
     updatedAt: now,
   });
 }
@@ -643,7 +665,7 @@ export async function continueUnansweredQuestion(
     );
     await context.write({
       ...task,
-      needsInput: undefined,
+      stop: undefined,
       ownerNotices: [
         ...(task.ownerNotices ?? []),
         ownerNotice(

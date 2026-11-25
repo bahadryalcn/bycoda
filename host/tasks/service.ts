@@ -1,4 +1,5 @@
 import type { TaskFinalizationPreview } from "./task-workspace-runtime";
+import type { BlockReason } from "./stop-reasons";
 import type { TaskPreflightItem } from "../../src/features/tasks/model/taskPreflight";
 import type { CommandReceipt } from "../../src/features/connections/model/protocol";
 import { type AssistantRecoverySource } from "../assistant/work/assistant-worker-recovery";
@@ -6,6 +7,7 @@ import {
   type HostTask,
   type HostTaskInput,
   type TaskDeliveryReview,
+  workCrewId,
 } from "../../src/features/tasks/model/hostTasks";
 import type { HostEngine } from "../engine";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
@@ -37,6 +39,7 @@ import * as storage from "./storage";
 import * as delivery from "./delivery";
 import * as recovery from "./recovery";
 import * as launch from "./launch";
+import type { CrewChoice, ExecutorChoiceDeps } from "./executor-choice";
 import * as review from "./review";
 import { initialize, createTaskEngine } from "./initialize";
 import type { TaskContext } from "./context";
@@ -234,8 +237,13 @@ export class HostTasks {
   repairDelegation?: Pick<ConversationDelegation, "call"> &
     Partial<Pick<ConversationDelegation, "consultTaskRepair">>;
 
+  /** Decision gate for choosing an executor when a task asks for `auto`; bound by the Host composition. */
+  executorDecisions?: ExecutorChoiceDeps["decisions"];
+
   crewRunner?: {
     validate: (task: HostTaskInput) => void | Promise<void>;
+    /** The crews this project may run work with, for the `auto` executor. */
+    choices: (projectId: string) => Promise<CrewChoice[]>;
     start: (task: HostTask) => Promise<{
       sessionId: string;
       harness: HostTask["harness"];
@@ -448,7 +456,7 @@ export class HostTasks {
   async reserveCrewExecution(id: string, runId: string): Promise<void> {
     await this.context.transaction(async () => {
       const task = await this.context.find(id);
-      if (!task?.crewDefinitionId || task.status !== "queued")
+      if (!task || !workCrewId(task) || task.status !== "queued")
         throw new Error("Crew work must be reserved before starting.");
       if (task.crewExecutionId && task.crewExecutionId !== runId)
         throw new Error("Crew task already owns another run.");
@@ -631,11 +639,11 @@ export class HostTasks {
 
   protected block(
     task: HostTask,
-    error: string,
+    reason: BlockReason,
     now: number,
     retainReviewer = false,
   ): Promise<HostTask> {
-    return recovery.block(this.context, task, error, now, retainReviewer);
+    return recovery.block(this.context, task, reason, now, retainReviewer);
   }
 
   /** Correct failed deliverables in unattended work without releasing dependencies.
@@ -665,6 +673,7 @@ export class HostTasks {
     sessionId?: string;
     runId?: string;
     error?: string;
+    stop?: { code: string };
   }): Promise<boolean> {
     return recovery.canResumeAfterHostStop(this.context, run);
   }

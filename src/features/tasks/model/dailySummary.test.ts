@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildTaskStop } from "../../../shared/model/host-contracts/task-stop";
 import { buildDailySummary, summaryHeadline, type DailySummaryInput } from "./dailySummary";
 import type { BoardGoal } from "./goalClient";
 import type { BoardTask } from "./taskClient";
@@ -90,17 +91,27 @@ describe("buildDailySummary", () => {
     expect(summary.finished.map((entry) => entry.key)).toEqual(["m1:end", "m1:upd"]);
   });
 
-  it("lists blocked tasks changed in the period with the first line of the error", () => {
+  it("lists blocked tasks changed in the period with their stop summary", () => {
     const summary = build({
       tasks: [
-        task({ id: "x", status: "blocked", updatedAt: 1500, error: "\nCheck failed\nmore detail" }),
-        task({ id: "y", status: "blocked", updatedAt: 500, error: "Older" }),
+        task({
+          id: "x",
+          status: "blocked",
+          updatedAt: 1500,
+          stop: buildTaskStop({ code: "run_failed", phase: "check", message: "Check failed" }, 1),
+        }),
+        task({
+          id: "y",
+          status: "blocked",
+          updatedAt: 500,
+          stop: buildTaskStop({ code: "run_failed", message: "Older" }, 1),
+        }),
         task({ id: "z", status: "blocked", updatedAt: 1500 }),
       ],
     });
     expect(summary.blocked.map((entry) => [entry.key, entry.detail])).toEqual([
-      ["m1:x", "Check failed"],
-      ["m1:z", undefined],
+      ["m1:x", "Checks failed: Check failed"],
+      ["m1:z", "Blocked: Reason not recorded"],
     ]);
   });
 
@@ -108,7 +119,11 @@ describe("buildDailySummary", () => {
     const summary = build({
       tasks: [
         task({ id: "r", status: "review", updatedAt: 1 }),
-        task({ id: "i", status: "running", needsInput: true }),
+        task({
+          id: "i",
+          status: "running",
+          stop: buildTaskStop({ code: "input_required", message: "Answer needed." }, 1),
+        }),
         task({ id: "n", status: "running" }),
       ],
     });

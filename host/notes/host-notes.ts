@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { taskStopText } from "../../src/shared/model/taskStopSummary";
 import { desktopDatabasePaths } from "../desktop/desktopSessions";
 import type { HostSessionSummary } from "../../src/features/connections/model/protocol";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
@@ -399,7 +400,7 @@ export function hostInbox(
         sessionId: task.sessionId,
         title: task.title,
         detail:
-          task.error ??
+          taskStopText(task) ??
           task.mergeError ??
           (task.status === "review" ? "Review ready" : "Task blocked"),
         updatedAt: task.updatedAt,

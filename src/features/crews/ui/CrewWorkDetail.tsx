@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { taskStopText } from "../../../shared/model/taskStopSummary";
 import { useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -202,7 +203,7 @@ export function CrewWorkDetail({
           {blocked.map((task) => (
             <Alert key={task.id} tone="danger">
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {t("Blocked: {p0}", { p0: task.error ?? task.title })}
+                {t("Blocked: {p0}", { p0: taskStopText(task) ?? task.title })}
               </p>
             </Alert>
           ))}

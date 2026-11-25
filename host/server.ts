@@ -353,6 +353,8 @@ export async function createHostServer(
   const voiceRuntime = createVoiceRuntime(dependencies);
   // Before Social so the decision service can be handed to it (see phase3-p35b-done.md).
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
+  // The `auto` executor asks the same decision gate Social uses; without a source it runs one agent.
+  dependencies.tasks.executorDecisions = decisionRuntime.decisionModels;
   const developmentRuntime = createDevelopmentRuntime(dependencies);
   const sessionsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSessionsRuntime>>>();
   await bootPhase("runtime-sessions", () =>

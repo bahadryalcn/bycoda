@@ -35,6 +35,7 @@ import {
 import { isStewardProposal } from "../model/stewardClient";
 import "./task-board.css";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 
 export type TaskActionHandlers = {
   pending?: boolean;
@@ -96,7 +97,7 @@ export function TaskActions({
   const [reviewPending, setReviewPending] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const can = (to: TaskStatus) =>
-    canMoveTask(task.status, to, task.crewRunId ?? task.crewDefinitionId);
+    canMoveTask(task.status, to, task.crewRunId ?? workCrewId(task));
   type Action = {
     id: string;
     label: string;

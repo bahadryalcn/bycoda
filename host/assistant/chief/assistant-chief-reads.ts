@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { taskStopText } from "../../../src/shared/model/taskStopSummary";
 import { z } from "zod";
 import type { HostStore } from "../../store";
 import type { HostSession } from "../../../src/features/connections/model/protocol";
@@ -332,7 +333,7 @@ export class AssistantChiefReads {
         title: cut(task.title, 200),
         status: task.status,
         prompt: cut(task.prompt, 2000),
-        error: cut(task.error, 500),
+        stop: cut(taskStopText(task), 500),
         sessionId: task.sessionId,
         truncated: task.prompt.length > 2000,
       }),

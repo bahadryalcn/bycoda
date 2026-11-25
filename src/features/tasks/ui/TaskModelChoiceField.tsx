@@ -41,7 +41,7 @@ export function TaskModelChoiceField({
   supported,
   fixed,
 }: {
-  machine?: RemoteMachine;
+  machine?: Pick<RemoteMachine, "id">;
   routingRole: ModelRoutingRole;
   value?: ModelRoutingItemChoice;
   onChange: (choice: ModelRoutingItemChoice) => void;

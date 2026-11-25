@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SafeCounterSchema } from "./schemas";
+import { WorkExecutorSchema, WorkHelpersSchema } from "./work-executor";
 import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import {
   ModelSettingsSchema,
@@ -47,6 +48,8 @@ const editable = {
   harness: SessionProviderSchema,
   providerAccountId: z.string().min(1).max(200).optional(),
   modelChoice: ModelRoutingItemChoiceSchema.optional(),
+  executor: WorkExecutorSchema.optional(),
+  helpers: WorkHelpersSchema.optional(),
   model: z.string(),
   modelSettings: ModelSettingsSchema.optional(),
   runtimeMode: SessionRuntimeModeSchema,

@@ -1,6 +1,8 @@
 import { hostModelRoutingService } from "../model-routing/runtime";
 import { someAsync } from "../async-collections";
-import { resolveRunModel, routingRun, routingWait, routingWaitDue } from "./model-routing";
+import { resolveRunModel } from "./model-routing";
+import { modelQuotaWait, sameWait, taskWaitDue, taskWaitFromWork } from "./stop-reasons";
+import { taskAwaitsRestart, type TaskWait } from "../../src/shared/model/host-contracts/task-stop";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
 import {
   assistantRecoveryHoldsTask,
@@ -28,16 +30,9 @@ import { available } from "./git";
 import { workerPrompt } from "./prompts";
 import { canResumeAfterUsageLimit } from "./usage-limit";
 import type { TaskContext } from "./context";
-import {
-  AUTOMATIC_SUBAGENTS,
-  CROSS_SUBAGENTS_KEY,
-  withoutBackgroundOwner,
-} from "../../src/shared/model/host-contracts/delegation";
-
-/** Resolve Automatic through agents.options at execution, retaining owner overrides. */
-export function taskLaunchSettings(settings: Record<string, string>): Record<string, string> {
-  return { [CROSS_SUBAGENTS_KEY]: AUTOMATIC_SUBAGENTS, ...settings };
-}
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
+import { chooseExecutor } from "./executor-choice";
+import { crewResolution, workerResolution, workRole } from "./work-resolution";
 
 export async function workingCopy(context: TaskContext, task: HostTask): Promise<HostTask> {
   const expected = await context.taskValue(task.id);
@@ -189,9 +184,22 @@ export async function launch(
     return task;
   const budgetReason = await context.budgetReason(task, true);
   if (budgetReason) return await context.budgetBlock(task, budgetReason, now);
-  if (task.crewDefinitionId) {
+  // Who runs it is settled once: a crew by id, or for `auto` the Host's recorded choice.
+  const chosen = await chooseExecutor(
+    { crews: context.crewRunner?.choices, decisions: context.executorDecisions },
+    task,
+  );
+  if (chosen.executor.kind === "crew") {
     if (!context.crewRunner)
-      return await context.block(task, "Crew execution is unavailable on this host.", now);
+      return await context.block(
+        task,
+        {
+          code: "crew_unavailable",
+          phase: "crew",
+          message: "Crew execution is unavailable on this host.",
+        },
+        now,
+      );
     if (task.preflightRequirements?.length) {
       const report = await context.preflightAt(
         task,
@@ -204,22 +212,28 @@ export async function launch(
       if (report.items.some((item) => item.required && item.state !== "ready"))
         return await context.block(
           task,
-          "Preparation requires checked resources before starting the crew.",
+          {
+            code: "preparation_failed",
+            phase: "crew",
+            message: "Preparation requires checked resources before starting the crew.",
+          },
           now,
         );
     }
-    const pending = task.crewExecutionId
-      ? task
-      : await context.write({
-          ...task,
-          crewExecutionId: randomUUID(),
-          updatedAt: context.now(),
-        });
-    if (!routingWaitDue(pending, now)) return pending;
+    const pending =
+      task.crewExecutionId && task.resolved
+        ? task
+        : await context.write({
+            ...task,
+            resolved: task.resolved ?? (await crewResolution(context.store, task, chosen, now)),
+            crewExecutionId: task.crewExecutionId ?? randomUUID(),
+            updatedAt: context.now(),
+          });
+    if (!taskWaitDue(pending, now)) return pending;
     // A run retracted by a model wait is admitted again here; admission is idempotent.
     if (
       pending.crewExecutionId &&
-      (!task.crewExecutionId || routingRun(task).modelRoutingWait || task.crewWorkWait?.unstarted)
+      (!task.crewExecutionId || task.wait?.code === "model_quota" || task.wait?.unstarted)
     )
       await admitRunDuration(
         context.store,
@@ -249,9 +263,8 @@ export async function launch(
         startedAt: now,
         updatedAt: context.now(),
         error: undefined,
-        needsInput: undefined,
-        modelRoutingWait: undefined,
-        crewWorkWait: undefined,
+        stop: undefined,
+        wait: undefined,
       };
       return await context.write(started);
     } catch (error) {
@@ -266,22 +279,18 @@ export async function launch(
             `\u0000crew-task:${task.id}`,
             pending.crewExecutionId!,
           );
-        const wait = { reason: error.message, unstarted };
-        if (
-          latest.crewWorkWait?.reason === wait.reason &&
-          latest.crewWorkWait.unstarted === wait.unstarted
-        )
-          return latest;
+        const wait: TaskWait = { code: "crew_capacity", message: error.message, unstarted };
+        if (sameWait(latest.wait, wait)) return latest;
         return await context.write({
           ...latest,
-          crewWorkWait: wait,
-          error: wait.reason,
+          wait,
+          error: wait.message,
           updatedAt: context.now(),
         });
       }
       if (error instanceof Error && error.name === "CrewRoutingWait") {
         // No eligible model for a crew member: keep the task queued until the next reset.
-        const wait = routingWait(error as Error & { nextResetAt?: number });
+        const wait = modelQuotaWait(error as Error & { nextResetAt?: number });
         // No coordinator was dispatched: the wait is not run time.
         await retractRunDuration(
           context.store,
@@ -290,36 +299,40 @@ export async function launch(
         );
         const waiting = {
           ...latest,
-          modelRoutingWait: wait,
-          error: wait.reason,
+          wait,
+          error: wait.message,
           updatedAt: context.now(),
         };
         return await context.write(waiting);
       }
-      return await context.block(latest, errorMessage(error), context.now());
+      return await context.block(
+        latest,
+        { code: "run_failed", phase: "crew", message: errorMessage(error) },
+        context.now(),
+      );
     }
   }
   if (!task.sessionId) {
-    if (!routingWaitDue(task, now)) return task;
+    if (!taskWaitDue(task, now)) return task;
     const expected = await context.taskValue(task.id);
     const resolution = await resolveRunModel(
       context.store,
-      "task.worker",
+      workRole(task),
       task,
       undefined,
       task.projectId,
     );
+    const applied = await workerResolution(context.store, task, resolution, chosen, now);
     const routed = await context.transaction(async () => {
       const current = await context.unchangedTask(task.id, expected);
       if (!current) return undefined;
       if (!resolution.ok && resolution.reason === "noEligibleEntry") {
-        const wait = routingWait(resolution);
-        if (JSON.stringify(routingRun(current).modelRoutingWait) === JSON.stringify(wait))
-          return current;
+        const wait = modelQuotaWait(resolution);
+        if (sameWait(current.wait, wait)) return current;
         const waiting = {
           ...current,
-          modelRoutingWait: wait,
-          error: wait.reason,
+          wait,
+          error: wait.message,
           updatedAt: now,
         };
         return context.write(waiting);
@@ -327,11 +340,10 @@ export async function launch(
       const resolved = {
         ...current,
         ...(resolution.ok ? resolution.target : {}),
-        modelSettings: taskLaunchSettings(
-          resolution.ok ? resolution.target.modelSettings : current.modelSettings,
-        ),
-        modelRoutingWait: undefined,
-        error: routingRun(current).modelRoutingWait ? undefined : current.error,
+        modelSettings: applied.modelSettings,
+        resolved: applied.resolved,
+        wait: undefined,
+        error: current.wait?.code === "model_quota" ? undefined : current.error,
       };
       return context.write(resolved);
     });
@@ -345,7 +357,11 @@ export async function launch(
   } catch (error) {
     if (error instanceof TaskPreparationSuperseded) return (await context.find(task.id)) ?? task;
     if ((await context.find(task.id))?.updatedAt !== task.updatedAt) return task;
-    return await context.block({ ...task, startedAt: now }, errorMessage(error), now);
+    return await context.block(
+      { ...task, startedAt: now },
+      { code: "preparation_failed", phase: "preparation", message: errorMessage(error) },
+      now,
+    );
   }
   // workingCopy may persist its own managed identity. Capture that exact row,
   // accepting only our original input or its prepared result, never a same-clock
@@ -378,7 +394,11 @@ export async function launch(
       ready = { ...ready, dependencyArtifactsPrepared: true };
     } catch (error) {
       // Keep the newly created checkout discoverable and retryable.
-      return await context.block(ready, errorMessage(error), now);
+      return await context.block(
+        ready,
+        { code: "preparation_failed", phase: "preparation", message: errorMessage(error) },
+        now,
+      );
     }
   }
   // Legacy non-isolated fallbacks retain serialization. Explicit direct tasks
@@ -472,7 +492,11 @@ export async function launch(
     } catch (error) {
       if ((await context.find(task.id))?.updatedAt !== task.updatedAt)
         return (await context.find(task.id)) ?? task;
-      return await context.block(ready, errorMessage(error), now);
+      return await context.block(
+        ready,
+        { code: "preparation_failed", phase: "preparation", message: errorMessage(error) },
+        now,
+      );
     }
   }
   const projectCwd = (await context.store.project(ready.projectId)).cwd;
@@ -491,7 +515,11 @@ export async function launch(
     if (missing.length)
       return await context.block(
         ready,
-        `Preparation requires checked resources: ${missing.map((item) => item.label).join(", ")}.`,
+        {
+          code: "preparation_failed",
+          phase: "preparation",
+          message: `Preparation requires checked resources: ${missing.map((item) => item.label).join(", ")}.`,
+        },
         context.now(),
       );
   }
@@ -559,7 +587,7 @@ export async function launch(
       !current ||
       !["queued", "running"].includes(current.status) ||
       (!recovering && !associated && current.status !== "queued") ||
-      current.awaitingOwnerRestart ||
+      taskAwaitsRestart(current) ||
       context.closing ||
       assistantRecoveryIdentity(current) !== assistantRecoveryIdentity(ready)
     )
@@ -573,12 +601,12 @@ export async function launch(
       const current = await launchCurrent();
       associated = await context.write({
         ...current,
-        awaitingOwnerRestart: undefined,
+        stop: undefined,
         sessionId: receipt.sessionId,
         runId: receipt.runId,
         startedAt: now,
         status: "running",
-        modelRoutingWait: undefined,
+        wait: undefined,
         updatedAt: now,
       });
       launchExpected = await context.taskValue(ready.id);
@@ -736,11 +764,11 @@ export async function launch(
     await context.stopWorkspaceActivity(ready);
     return await context.store.transaction(async () => {
       const current = await context.unchangedTask(ready.id, launchExpected);
-      const reason = started.wait?.message;
+      const wait: TaskWait | undefined = started.wait ? taskWaitFromWork(started.wait) : undefined;
       if (
         current?.status === "queued" &&
         current.workspaceActivityId === undefined &&
-        current.modelRoutingWait?.reason === reason
+        sameWait(current.wait, wait)
       )
         return current;
       return current
@@ -748,7 +776,7 @@ export async function launch(
             ...current,
             workspaceActivityId: undefined,
             status: "queued",
-            modelRoutingWait: reason ? { reason } : undefined,
+            wait,
           })
         : ((await context.find(ready.id)) ?? ready);
     }, "critical");
@@ -758,13 +786,18 @@ export async function launch(
     if (!current) return (await context.find(ready.id)) ?? ready;
     const next = {
       ...current,
-      awaitingOwnerRestart: undefined,
+      stop: undefined,
       sessionId: started.sessionId,
-      modelRoutingWait: undefined,
+      wait: undefined,
       runId: started.runId,
       startedAt: now,
     };
-    if (started.error !== undefined) return context.block(next, started.error, now);
+    if (started.error !== undefined)
+      return context.block(
+        next,
+        { code: "run_failed", phase: "worker", message: started.error },
+        now,
+      );
     return associated
       ? current
       : await context.write({ ...next, status: "running", updatedAt: now });

@@ -99,7 +99,7 @@ export class ConversationGoalTools {
         projectIds: [principal.projectId],
         leadProjectId: principal.projectId,
         ...(typeof input.crewDefinitionId === "string"
-          ? { crewDefinitionId: input.crewDefinitionId }
+          ? { executor: { kind: "crew" as const, crewDefinitionId: input.crewDefinitionId } }
           : {}),
         harness: caller.session.harness,
         providerAccountId: caller.session.providerAccountId,

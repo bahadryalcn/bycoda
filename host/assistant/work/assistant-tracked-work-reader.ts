@@ -1,4 +1,6 @@
 import type { HostStore } from "../../store";
+import { taskNeedsInput } from "../../../src/shared/model/host-contracts/task-stop";
+import { taskStopText } from "../../../src/shared/model/taskStopSummary";
 import type { HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { CrewRun } from "../../../src/features/crews/model/crew";
@@ -79,10 +81,8 @@ export function storeTrackedWorkReader(store: HostStore): TrackedWorkReader {
       if (task.status === "done" || task.status === "review")
         return { state: "done", verification: describeVerification(undefined, [task]) };
       if (task.status === "blocked")
-        return task.error
-          ? { state: "failed", summary: task.error.slice(0, 1000) }
-          : { state: "waiting", waitingReason: "error" };
-      if (task.needsInput) return { state: "waiting", waitingReason: "owner" };
+        return { state: "failed", summary: (taskStopText(task) ?? "").slice(0, 1000) };
+      if (taskNeedsInput(task)) return { state: "waiting", waitingReason: "owner" };
       return {
         state:
           task.status === "running" && (await silent(store, [task.sessionId], now, stallMs))
@@ -110,7 +110,7 @@ export function storeTrackedWorkReader(store: HostStore): TrackedWorkReader {
         };
       if (goal.status === "awaiting-approval")
         return { state: "waiting", waitingReason: "planApproval" };
-      if (children.some((task) => task.needsInput && task.status !== "done"))
+      if (children.some((task) => taskNeedsInput(task) && task.status !== "done"))
         return { state: "waiting", waitingReason: "owner" };
       return {
         state: (await silent(

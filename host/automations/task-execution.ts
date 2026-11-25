@@ -38,7 +38,11 @@ export async function createAutomationTask(
         request: automation.prompt,
         title: automation.name,
         source: { kind: "automation", automationRunId: run.id },
+        executor: automation.executor,
+        helpers: automation.helpers,
         execution: {
+          // Use settings re-resolves on every occurrence; a fixed choice keeps its own model.
+          modelChoice: automation.modelChoice ?? { kind: "default" },
           harness: automation.harness,
           providerAccountId: automation.providerAccountId,
           model: automation.model,

@@ -2,6 +2,7 @@ import {
   readAssistantNotifications,
   type PendingNotification,
 } from "./notifications/assistant-notifications";
+import { taskNeedsInput } from "../../src/shared/model/host-contracts/task-stop";
 import { hostModelRoutingService } from "../model-routing/runtime";
 import { HostDomainRefusalError } from "../domains/context";
 import type { AssistantObservation } from "./observations/assistant-observation-journal";
@@ -787,7 +788,7 @@ export class HostAssistant {
             projectId?: string;
             createdAt?: number;
             status?: string;
-            needsInput?: boolean;
+            stop?: { nextAction: string };
           })
         : undefined;
       return (
@@ -798,7 +799,7 @@ export class HostAssistant {
         task.createdAt === intent.taskCreatedAt &&
         (intent.kind === "task.done"
           ? task.status === "done"
-          : task.needsInput === true && task.status !== "done")
+          : taskNeedsInput(task) && task.status !== "done")
       );
     });
   }
@@ -6425,7 +6426,7 @@ export class HostAssistant {
             id?: string;
             projectId?: string;
             status?: string;
-            needsInput?: boolean;
+            stop?: { nextAction: string };
             createdAt?: number;
           })
         : undefined;
@@ -6436,7 +6437,7 @@ export class HostAssistant {
         task.createdAt! >= 0
           ? task.status === "done"
             ? "task.done"
-            : task.needsInput === true
+            : taskNeedsInput(task)
               ? "task.needsInput"
               : undefined
           : undefined;

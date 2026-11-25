@@ -8,6 +8,7 @@ import type { HostGoal } from "../model/hostGoals";
 import type { HostSettingsState } from "../model/hostSettings";
 import type { HostSteward } from "../model/hostStewards";
 import type { HostTask } from "../model/hostTasks";
+import { buildTaskStop, type TaskStopInput } from "../../../shared/model/host-contracts/task-stop";
 import { readTaskInstructions } from "../model/taskInstructions";
 import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
 import type { DailySummary } from "../model/dailySummary";
@@ -71,6 +72,8 @@ beforeAll(() => {
 afterAll(() => {
   if (animateDescriptor) Object.defineProperty(Element.prototype, "animate", animateDescriptor);
 });
+
+const stopOf = (input: TaskStopInput) => buildTaskStop(input, 1);
 
 const task = (overrides: Partial<HostTask>): HostTask => ({
   id: "main",
@@ -518,10 +521,21 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   host([
     task({ id: "t", status: "todo" }),
     task({ id: "a" }),
-    task({ id: "b", status: "running", startedAt: 1, needsInput: true }),
+    task({
+      id: "b",
+      status: "running",
+      startedAt: 1,
+      stop: stopOf({ code: "input_required", message: "Answer needed." }),
+    }),
     task({ id: "c", status: "review", completedAt: 2 }),
     task({ id: "d", status: "done", completedAt: 2 }),
-    task({ id: "e", status: "blocked", completedAt: 2, error: "Not signed in" }),
+    task({
+      id: "e",
+      status: "blocked",
+      completedAt: 2,
+      error: "Not signed in",
+      stop: stopOf({ code: "run_failed", phase: "worker", message: "Not signed in" }),
+    }),
   ]);
   await render();
   expect(
@@ -534,7 +548,7 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   // A card offers its lead action; everything else, Delete last, is in the menu.
   expect(actions("todo")).toEqual(["Start", "More actions"]);
   expect(actions("queued")).toEqual(["More actions"]);
-  expect(actions("running")).toEqual(["Stop"]);
+  expect(actions("running")).toEqual(["Needs input", "Stop"]);
   expect(actions("review")).toEqual(["Approve", "More actions"]);
   expect(actions("done")).toEqual(["Run again", "More actions"]);
   expect(actions("blocked")).toEqual(["Failed · Not signed in", "Retry", "More actions"]);
@@ -944,6 +958,11 @@ it("confirms before discarding the branch of an unmerged task", async () => {
       status: "blocked",
       completedAt: 2,
       error: "The check command failed (exit code 1).",
+      stop: stopOf({
+        code: "run_failed",
+        phase: "check",
+        message: "The check command failed (exit code 1).",
+      }),
       branch: "mc/abcd1234",
       baseBranch: "main",
       verification: {
@@ -976,9 +995,10 @@ it("offers the branch, check and review options on a new task", async () => {
   await render();
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
-  // Subagent permission stays visible; other agent controls are tucked away.
-  expect(form.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
-  expect(checkboxNamed(form, "Allow subagents").checked).toBe(true);
+  // Who runs it, the model and the helpers are always visible; the other agent controls are tucked away.
+  expect(form.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+  expect(helperChoice(form, "Use settings")!.getAttribute("aria-checked")).toBe("true");
+  expect(form.textContent).not.toContain("Allow subagents");
   expect(form.querySelector('button[aria-label="Execution mode: Automatic"]')).not.toBeNull();
   await openAgentSettings(form);
   const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
@@ -986,9 +1006,8 @@ it("offers the branch, check and review options on a new task", async () => {
     "Review with a second agent",
     "Merge automaticallyAutomatic merge is suspended. Review changes to renew approval.",
     "Continue until completeKeeps correcting while progress is made; asks for input when needed.",
-    "Allow subagents",
   ]);
-  expect(boxes.map((box) => box.checked)).toEqual([false, false, true, true]);
+  expect(boxes.map((box) => box.checked)).toEqual([false, false, true]);
   expect(form.querySelector<HTMLInputElement>('input[placeholder="npm test"]')!.value).toBe("");
   await act(async () => boxes[0].click());
   const reviewerProfile = Array.from(
@@ -999,30 +1018,38 @@ it("offers the branch, check and review options on a new task", async () => {
   expect(form.textContent).toContain("Reviewer instructions");
 });
 
-it("retains the subagent permission when saving and reopening task settings", async () => {
-  const tasks = [task({ status: "todo", modelSettings: { crossSubagents: "auto" } })];
+/** One option of the Helpers choice (Use settings, Off or Use). */
+const helperChoice = (form: ParentNode, name: string) =>
+  Array.from(
+    form.querySelectorAll<HTMLElement>('[role="radiogroup"][aria-label="Helpers"] [role="radio"]'),
+  ).find((option) => option.textContent?.trim() === name);
+
+it("keeps the helper choice when saving and reopening a task", async () => {
+  const tasks = [task({ status: "todo" })];
   host(tasks);
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation(async (command: string, args?: any) => {
     if (command === "remote_request" && args.method === "tasks.save") {
+      // A save replaces the saved choice: an omitted helper choice means Use settings.
+      delete tasks[0].helpers;
       Object.assign(tasks[0], args.params.task);
       return tasks[0];
     }
     return original(command, args);
   });
   await render();
-  for (const enabled of [false, true]) {
-    await pickAction(card("Ship the report"), "Edit");
-    const form = document.querySelector('form[aria-label="Edit task"]')!;
-    const permission = checkboxNamed(form, "Allow subagents");
-    expect(permission.checked).toBe(!enabled);
-    await act(async () => permission.click());
-    await act(async () => button(form, "Save")!.click());
-    expect(tasks[0].modelSettings.crossSubagents).toBe(enabled ? "auto" : "[]");
-  }
   await pickAction(card("Ship the report"), "Edit");
-  const reopened = document.querySelector('form[aria-label="Edit task"]')!;
-  expect(checkboxNamed(reopened, "Allow subagents").checked).toBe(true);
+  let form = document.querySelector('form[aria-label="Edit task"]')!;
+  expect(helperChoice(form, "Use settings")!.getAttribute("aria-checked")).toBe("true");
+  await act(async () => helperChoice(form, "Off")!.click());
+  await act(async () => button(form, "Save")!.click());
+  expect(tasks[0].helpers).toEqual({ mode: "off" });
+  await pickAction(card("Ship the report"), "Edit");
+  form = document.querySelector('form[aria-label="Edit task"]')!;
+  expect(helperChoice(form, "Off")!.getAttribute("aria-checked")).toBe("true");
+  await act(async () => helperChoice(form, "Use settings")!.click());
+  await act(async () => button(form, "Save")!.click());
+  expect(tasks[0].helpers).toBeUndefined();
 });
 
 it("shows one Working branch and worktree heading and keeps the machine limit out of the task", async () => {
@@ -1304,6 +1331,12 @@ it("does not label a continuous runtime failure as an exhausted correction budge
       continueUntilDone: true,
       repairAttempts: 5,
       error: "Provider disconnected",
+      stop: stopOf({
+        code: "run_failed",
+        phase: "worker",
+        message: "Provider disconnected",
+        nextAction: "provide_input",
+      }),
     }),
   ]);
   await render();
@@ -1724,10 +1757,12 @@ it("asks for instructions only after the independent takeover failed", async () 
           blocker: "Acceptance missing",
           previousSessionId: "original-worker",
         },
-        repairStop: {
-          reason: "external",
+        stop: stopOf({
+          code: "repair_exhausted",
+          phase: "repair",
+          repair: "external",
           message: "Provide an Android device and test TalkBack reset.",
-        },
+        }),
         verification: {
           review: {
             verdict: "fail",
@@ -1779,6 +1814,12 @@ it("shows automatic takeover for a blocked task without asking the owner to retr
         status: "blocked",
         sessionId: "worker",
         error: "Review failed: Missing evidence.",
+        stop: stopOf({
+          code: "run_failed",
+          phase: "review",
+          message: "Review failed: Missing evidence.",
+          nextAction: "takeover",
+        }),
         verification: {
           review: { verdict: "fail", note: "Missing evidence.", sessionId: "review" },
         },
@@ -2874,6 +2915,11 @@ it("finishes the owner's exact failed result through the findings action", async
         sessionId: "worker",
         repairAttempts: 1,
         error: "Review failed: Defect remains",
+        stop: stopOf({
+          code: "run_failed",
+          phase: "review",
+          message: "Review failed: Defect remains",
+        }),
         verification: {
           review: { verdict: "fail", note: "Defect remains", sessionId: "reviewer" },
         },

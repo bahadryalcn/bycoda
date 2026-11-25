@@ -9,7 +9,7 @@ import type { ModelRoutingItemChoice } from "../../../shared/model/host-contract
 import { TaskModelChoiceField, useTaskModelRouting } from "./TaskModelChoiceField";
 import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
 import { TaskForm } from "./TaskForm";
-import { TaskFormAgent } from "./TaskFormAgent";
+import { TaskFixedModelPicker } from "./TaskFormAgent";
 import { GoalForm } from "./GoalForm";
 import { StewardForm } from "./TaskStewardForm";
 import { newTaskDraft } from "../model/taskClient";
@@ -211,13 +211,10 @@ it.each(["task", "goal", "steward"])(
     if (kind === "task") {
       await act(async () =>
         render(
-          createElement(TaskFormAgent, {
+          createElement(TaskFixedModelPicker, {
             draft: { ...newTaskDraft("/project", "claude", "old"), modelSettings: settings },
-            open: true,
-            onOpenChange: () => {},
             update: () => {},
             onChange: changed,
-            target: machine,
             routingSupported: true,
             localAccounts: false,
             defaultAccountFor: () => undefined,

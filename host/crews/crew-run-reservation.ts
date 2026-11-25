@@ -101,7 +101,7 @@ export async function reserveCrewRun({
         model: selected.candidate.model,
         modelSettings: selected.candidate.modelSettings ?? {},
         runtimeMode: mode ?? "supervised",
-        crewDefinitionId: definitionId,
+        executor: { kind: "crew" as const, crewDefinitionId: definitionId },
         isolate: false,
         review: false,
         status: "queued",

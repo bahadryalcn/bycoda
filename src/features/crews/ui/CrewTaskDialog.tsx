@@ -82,7 +82,9 @@ function CrewTaskDraft({
         data.modelPoolsSupported,
       ),
       machineId: data.machine.id,
-      crewDefinitionId: definitionId ?? crew?.id,
+      executor: { kind: "crew" as const, crewDefinitionId: (definitionId ?? crew?.id)! },
+      // A crew reviews its own work and does not retry on its own; the form shows anything else.
+      continueUntilDone: false,
       runtimeMode: crew?.policy.runtimeMode ?? "supervised",
     };
     drafts.set(key, initial);

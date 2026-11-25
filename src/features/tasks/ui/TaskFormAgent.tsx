@@ -1,7 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { carryCrossDelegation } from "../../../shared/model/host-contracts/delegation";
-import type { RemoteMachine } from "../../connections/public/protocol";
-import { TaskModelChoiceField } from "./TaskModelChoiceField";
 import {
   defaultModelSettings,
   resolveModel as resolveTaskModel,
@@ -29,27 +27,70 @@ import {
   TaskFormRow,
 } from "./TaskFormFields";
 
-/** Who does the work: model, access, time limit and review, behind one disclosure. */
-export function TaskFormAgent({
+/** The model picker for a fixed choice; the Model row of the work fields shows it. */
+export function TaskFixedModelPicker({
   draft,
   update,
   onChange,
-  open,
-  onOpenChange,
-  target,
-  routingSupported = false,
+  routingSupported,
   localAccounts,
   defaultAccountFor,
 }: {
   draft: TaskDraft;
   update: <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => void;
   onChange: (draft: TaskDraft) => void;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  target?: RemoteMachine;
-  routingSupported?: boolean;
+  routingSupported: boolean;
   localAccounts: boolean;
   defaultAccountFor: (harness: HarnessId, machineId?: string) => string | undefined;
+}) {
+  return (
+    <ModelPicker
+      harness={draft.harness}
+      model={draft.model}
+      values={draft.modelSettings}
+      project={draft.cwd}
+      accountChoices={localAccounts}
+      accountId={draft.providerAccountId}
+      onChange={(harness, model, accountId) =>
+        onChange({
+          ...draft,
+          harness,
+          model,
+          modelChoice: routingSupported ? (draft.modelChoice ?? { kind: "fixed" }) : undefined,
+          modelSettings:
+            harness === draft.harness && model === draft.model
+              ? draft.modelSettings
+              : carryCrossDelegation(
+                  draft.modelSettings,
+                  defaultModelSettings(resolveTaskModel(harness, model)),
+                ),
+          providerAccountId: localAccounts
+            ? (accountId ?? defaultAccountFor(harness))
+            : harness === draft.harness
+              ? draft.providerAccountId
+              : defaultAccountFor(harness),
+        })
+      }
+      onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+    />
+  );
+}
+
+/** What the agent runs with besides its model: access, time limit and review, behind one disclosure. */
+export function TaskFormAgent({
+  draft,
+  update,
+  open,
+  onOpenChange,
+  routingSupported = false,
+  localAccounts,
+}: {
+  draft: TaskDraft;
+  update: <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  routingSupported?: boolean;
+  localAccounts: boolean;
 }) {
   return (
     <Disclosure
@@ -81,46 +122,6 @@ export function TaskFormAgent({
       {open ? (
         <div className="task-form-agent">
           <div className="task-form-agent-picks">
-            <TaskModelChoiceField
-              machine={target}
-              routingRole="task.worker"
-              value={draft.modelChoice}
-              supported={routingSupported}
-              onChange={(choice) => update("modelChoice", choice)}
-              fixed={
-                <ModelPicker
-                  harness={draft.harness}
-                  model={draft.model}
-                  values={draft.modelSettings}
-                  project={draft.cwd}
-                  accountChoices={localAccounts}
-                  accountId={draft.providerAccountId}
-                  onChange={(harness, model, accountId) =>
-                    onChange({
-                      ...draft,
-                      harness,
-                      model,
-                      modelChoice: routingSupported
-                        ? (draft.modelChoice ?? { kind: "fixed" })
-                        : undefined,
-                      modelSettings:
-                        harness === draft.harness && model === draft.model
-                          ? draft.modelSettings
-                          : carryCrossDelegation(
-                              draft.modelSettings,
-                              defaultModelSettings(resolveTaskModel(harness, model)),
-                            ),
-                      providerAccountId: localAccounts
-                        ? (accountId ?? defaultAccountFor(harness))
-                        : harness === draft.harness
-                          ? draft.providerAccountId
-                          : defaultAccountFor(harness),
-                    })
-                  }
-                  onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-                />
-              }
-            />
             {!routingSupported || !draft.modelChoice || draft.modelChoice.kind === "fixed" ? (
               <TaskAccountPicker
                 harness={draft.harness}

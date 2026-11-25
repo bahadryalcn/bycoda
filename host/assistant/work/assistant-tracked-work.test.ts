@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildTaskStop } from "../../../src/shared/model/host-contracts/task-stop";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -110,10 +111,14 @@ describe("tracked direct work", () => {
   it("notifies a failed tracked task", async () => {
     const f = await setup();
     await f.service.trackDirectWork(item("t1", "task"));
-    await f.put("tasks", { id: "t1", status: "blocked", error: "Tests crashed" });
+    await f.put("tasks", {
+      id: "t1",
+      status: "blocked",
+      stop: buildTaskStop({ code: "run_failed", phase: "worker", message: "Tests crashed" }, 1),
+    });
     await f.service.tick();
     expect(await f.notices()).toMatchObject([
-      { kind: "job.failed", title: "Task: Work t1", body: "Tests crashed" },
+      { kind: "job.failed", title: "Task: Work t1", body: "Failed: Tests crashed" },
     ]);
   });
 

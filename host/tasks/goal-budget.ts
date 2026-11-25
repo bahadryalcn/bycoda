@@ -1,4 +1,5 @@
 import { type HostTask } from "../../src/features/tasks/model/hostTasks";
+import { restartHold } from "./stop-reasons";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { TaskContext } from "./context";
 import { readTaskRuntimeBudget } from "../work/runtime-budget";
@@ -149,8 +150,8 @@ export async function budgetBlock(
   now: number,
 ): Promise<HostTask> {
   return await context.block(
-    { ...task, budgetStop: reason, awaitingOwnerRestart: true },
-    `Run budget: ${reason}`,
+    task,
+    { code: "budget_exhausted", message: reason, error: `Run budget: ${reason}` },
     now,
     true,
   );
@@ -192,11 +193,13 @@ export async function updateGoalSettings(
         ...(!active && settings.maxRunMinutes !== undefined
           ? { maxRunMinutes: settings.maxRunMinutes }
           : {}),
-        ...(task.status === "blocked" && changedContinue ? { awaitingOwnerRestart: true } : {}),
-        ...(settings.continueUntilDone &&
-        !task.continueUntilDone &&
-        task.repairStop?.reason === "limit"
-          ? { repairStop: undefined, needsInput: undefined, awaitingOwnerRestart: true }
+        ...(task.status === "blocked" &&
+        changedContinue &&
+        !(task.stop?.code === "repair_exhausted" && task.stop.repair === "external")
+          ? { stop: restartHold(context.now()) }
+          : {}),
+        ...(settings.continueUntilDone && !task.continueUntilDone && task.stop?.repair === "limit"
+          ? { stop: restartHold(context.now()) }
           : {}),
         updatedAt: context.now(),
       });

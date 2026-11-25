@@ -111,26 +111,54 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
           CREATE TABLE IF NOT EXISTS task_history_floor (id INTEGER PRIMARY KEY CHECK(id=1), sequence INTEGER NOT NULL);
           INSERT OR IGNORE INTO task_history_floor VALUES (1, 0);
           CREATE TABLE IF NOT EXISTS task_history (sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, task_id TEXT NOT NULL, status TEXT NOT NULL, effective_at INTEGER NOT NULL, deleted INTEGER NOT NULL, task TEXT NOT NULL);
-          CREATE TRIGGER IF NOT EXISTS task_history_insert AFTER INSERT ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+        `);
+      // The stop and wait codes make "why did tasks stop" answerable from the journal alone.
+      const historyColumns = new Set(
+        (await store.db.prepare("PRAGMA table_info(task_history)").all()).map((row) =>
+          String(row.name),
+        ),
+      );
+      for (const column of ["stop_code", "wait_code"])
+        if (!historyColumns.has(column))
+          await store.db.exec(`ALTER TABLE task_history ADD COLUMN ${column} TEXT`);
+      // Recreated on every start: a trigger kept by IF NOT EXISTS would journal without the codes.
+      // An update is journaled only when the status, a code or the listed identity changes, so a
+      // budget or activity refresh in the same state is not a new stop.
+      const projection = (row: "NEW" | "OLD") =>
+        `json_object('id',${row}.id,'projectId',json_extract(${row}.value,'$.projectId'),'title',json_extract(${row}.value,'$.title'),'status',json_extract(${row}.value,'$.status'),'updatedAt',json_extract(${row}.value,'$.updatedAt'),'goalId',json_extract(${row}.value,'$.goalId'))`;
+      const codes = (row: "NEW" | "OLD") =>
+        `json_extract(${row}.value,'$.stop.code'),json_extract(${row}.value,'$.wait.code')`;
+      await store.db.exec(`
+          DROP TRIGGER IF EXISTS task_history_insert;
+          DROP TRIGGER IF EXISTS task_history_update;
+          DROP TRIGGER IF EXISTS task_history_transfer;
+          DROP TRIGGER IF EXISTS task_history_delete;
+          CREATE TRIGGER task_history_insert AFTER INSERT ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
-              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+              ${projection("NEW")},${codes("NEW")});
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_update AFTER UPDATE ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+          CREATE TRIGGER task_history_update AFTER UPDATE ON tasks
+          WHEN json_extract(OLD.value,'$.status') IS NOT json_extract(NEW.value,'$.status')
+            OR json_extract(OLD.value,'$.stop.code') IS NOT json_extract(NEW.value,'$.stop.code')
+            OR json_extract(OLD.value,'$.wait.code') IS NOT json_extract(NEW.value,'$.wait.code')
+            OR json_extract(OLD.value,'$.title') IS NOT json_extract(NEW.value,'$.title')
+            OR json_extract(OLD.value,'$.goalId') IS NOT json_extract(NEW.value,'$.goalId')
+            OR json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId') BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(NEW.value,'$.projectId'),NEW.id,json_extract(NEW.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),0,
-              json_object('id',NEW.id,'projectId',json_extract(NEW.value,'$.projectId'),'title',json_extract(NEW.value,'$.title'),'status',json_extract(NEW.value,'$.status'),'updatedAt',json_extract(NEW.value,'$.updatedAt'),'goalId',json_extract(NEW.value,'$.goalId')));
+              ${projection("NEW")},${codes("NEW")});
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_transfer BEFORE UPDATE ON tasks
+          CREATE TRIGGER task_history_transfer BEFORE UPDATE ON tasks
           WHEN json_extract(OLD.value,'$.projectId') IS NOT json_extract(NEW.value,'$.projectId') BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(OLD.value,'$.projectId'),OLD.id,json_extract(OLD.value,'$.status'),json_extract(NEW.value,'$.updatedAt'),1,
-              json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
+              ${projection("OLD")},${codes("OLD")});
           END;
-          CREATE TRIGGER IF NOT EXISTS task_history_delete AFTER DELETE ON tasks BEGIN
-            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task) VALUES (
+          CREATE TRIGGER task_history_delete AFTER DELETE ON tasks BEGIN
+            INSERT INTO task_history(project_id,task_id,status,effective_at,deleted,task,stop_code,wait_code) VALUES (
               json_extract(OLD.value,'$.projectId'),OLD.id,json_extract(OLD.value,'$.status'),CAST(unixepoch('subsec')*1000 AS INTEGER),1,
-              json_object('id',OLD.id,'projectId',json_extract(OLD.value,'$.projectId'),'title',json_extract(OLD.value,'$.title'),'status',json_extract(OLD.value,'$.status'),'updatedAt',json_extract(OLD.value,'$.updatedAt'),'goalId',json_extract(OLD.value,'$.goalId')));
+              ${projection("OLD")},${codes("OLD")});
           END;
         `);
       await store.db

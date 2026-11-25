@@ -16,7 +16,10 @@ work. A sustained interruption shows Retry. A denied read appears immediately.
 
 ## Giving work to a Crew
 
-Choose **Worker** in a task or Epic form to use an Agent or a saved Crew. Crew entry
+Choose **Run with** in a task or Epic form: **Agent**, a saved **Crew** or **Auto**, where the
+Host picks a fitting crew or one agent when the task starts. A crew works in the project's
+shared folder and reviews its own work, so isolation, a working branch, a separate review and
+a fixed model are refused with a named reason instead of being dropped. Crew entry
 points open the same task form with the exact machine, project and Crew selected;
 dismissed drafts retain their text and creation identity. Every new run belongs to
 board work and uses the Host task scheduler's admission and limits.

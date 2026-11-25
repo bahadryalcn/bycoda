@@ -7,6 +7,7 @@ import type { HostCrews } from "./crews";
 import type { HostTasks } from "../tasks/tasks";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { composeCommandAdmission } from "../execution/command-admission";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 
 /** Keep focused fake engines inside real Work admission and durable receipt recovery. */
 export function wireCrewWorkEngine(store: HostStore, engine: Pick<HostEngine, "command">): void {
@@ -89,7 +90,7 @@ export function wireCrewSourceTasks(crews: HostCrews, tasks: HostTasks, store: H
     for (const task of sources.filter((entry) => entry.status === "queued")) {
       const run = await crews.startRun(
         task.projectId,
-        task.crewDefinitionId!,
+        workCrewId(task)!,
         task.prompt,
         task.crewExecutionId!,
         task.runtimeMode,

@@ -186,11 +186,18 @@ describe("parseHostGoal", () => {
       harness: "codex",
       model: "model",
       runtimeMode: "supervised",
-      crewDefinitionId: "crew",
+      executor: { kind: "crew", crewDefinitionId: "crew" },
     };
-    expect(parseHostGoal(input).crewDefinitionId).toBe("crew");
+    expect(parseHostGoal(input).executor).toEqual({ kind: "crew", crewDefinitionId: "crew" });
     expect(() => parseHostGoal({ ...input, projectIds: ["one", "two"] })).toThrow("one project");
-    expect(() => parseHostGoal({ ...input, crewDefinitionId: "bad id" })).toThrow("valid crew");
+    expect(() =>
+      parseHostGoal({ ...input, executor: { kind: "crew", crewDefinitionId: "bad id" } }),
+    ).toThrow("Invalid executor");
+    expect(() => parseHostGoal({ ...input, isolate: true })).toThrow(/^isolate: /);
+    // Auto may span several projects; each task decides when it starts.
+    expect(
+      parseHostGoal({ ...input, projectIds: ["one", "two"], executor: { kind: "auto" } }).executor,
+    ).toEqual({ kind: "auto" });
   });
   it("persists optional planner identity separately and rejects permission/lifecycle overrides", () => {
     const input = {

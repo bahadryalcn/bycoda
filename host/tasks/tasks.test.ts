@@ -1,4 +1,5 @@
 import { mapAsync } from "../async-collections";
+import { buildTaskStop } from "../../src/shared/model/host-contracts/task-stop";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
 import * as assistantTurnPolicy from "../assistant/core/assistant-turn-policy";
 import * as assistantTaskMetadata from "../assistant/work/assistant-task-metadata";
@@ -185,7 +186,10 @@ it("does not label unknown timestamps or owner-input waits as stalled", async ()
     { type: "question" },
   );
   await f.tasks.tick();
-  expect(await f.task()).toMatchObject({ status: "running", needsInput: true });
+  expect(await f.task()).toMatchObject({
+    status: "running",
+    stop: { code: "input_required" },
+  });
   expect((await f.task()).runStall).toBeUndefined();
 });
 it("cannot overwrite an owner change made while a stalled diagnostic reads the session", async () => {
@@ -839,11 +843,25 @@ async function setup(verifyTimeoutMs?: number) {
       .prepare("UPDATE tasks SET value=json_set(value, '$.reviewOnly', json('true')) WHERE id=?")
       .run(id);
     await finish((await task(id)).reviewer!.sessionId!, reply);
+    const failed = await task(id);
     await store.db
       .prepare(
-        "UPDATE tasks SET value=json_remove(value, '$.reviewOnly', '$.repairStop', '$.needsInput') WHERE id=?",
+        "UPDATE tasks SET value=json_set(json_remove(value, '$.reviewOnly'), '$.stop', json(?)) WHERE id=?",
       )
-      .run(id);
+      .run(
+        JSON.stringify(
+          buildTaskStop(
+            {
+              code: "run_failed",
+              phase: "review",
+              message: failed.error ?? "Review failed.",
+              nextAction: "takeover",
+            },
+            1,
+          ),
+        ),
+        id,
+      );
     return await task(id);
   };
   /** Orchestrator fixture: the separately tested delivery service owns Git. */
@@ -2014,7 +2032,11 @@ describe("host tasks", () => {
     await settled(started.sessionId!);
     clock.now += MINUTE;
     await tasks.tick();
-    expect(await task()).toMatchObject({ status: "blocked", error: "Not signed in" });
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      error: "Not signed in",
+      stop: { code: "permission_required", nextAction: "retry" },
+    });
     expect((await task()).ownerNotices).toBeUndefined();
   });
   it("retries a transient runtime failure once in a fresh session, then blocks", async () => {
@@ -2067,7 +2089,7 @@ describe("host tasks", () => {
       expect(provider.answer).toHaveBeenCalledWith(started.sessionId, 7, { kind: "skipped" }),
     );
     expect((await task()).status).toBe("running");
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     expect((await task()).ownerNotices).toEqual([
       expect.objectContaining({
         kind: "info",
@@ -2101,7 +2123,7 @@ describe("host tasks", () => {
         status: "blocked",
         error:
           "Run budget: Task Ship the report: The cumulative task runtime allowance is exhausted. Completed work and partial findings are retained; owner action is required.",
-        awaitingOwnerRestart: true,
+        stop: { code: "budget_exhausted", nextAction: "raise_budget" },
       });
       expect((await task()).repairAttempts).toBeUndefined();
       const turnCount = turns.length;
@@ -2199,6 +2221,10 @@ describe("host tasks", () => {
         ...(await task()),
         status: "blocked",
         error: "The host stopped during this run.",
+        stop: buildTaskStop(
+          { code: "host_interrupted", message: "The host stopped during this run." },
+          clock.now,
+        ),
         completedAt: clock.now,
       }),
       started.id,
@@ -2216,6 +2242,52 @@ describe("host tasks", () => {
     await tasks.tick();
     expect((await task()).status).toBe("blocked");
   });
+  it("keeps a task stopped by the owner stopped, with that reason, across ticks", async () => {
+    const { tasks, run, task, turns, clock } = await setup();
+    const started = await run();
+    await tasks.move(started.id, "blocked");
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      stop: { code: "owner_stopped", actor: "owner", nextAction: "retry" },
+    });
+    const count = turns.length;
+    clock.now += MINUTE;
+    await tasks.tick();
+    await tasks.tick();
+    expect(await task()).toMatchObject({ status: "blocked", stop: { code: "owner_stopped" } });
+    expect(turns).toHaveLength(count);
+  });
+  it("shows why a task waits for a dependency and stops it when the owner stopped that dependency", async () => {
+    const { tasks, input, store, task, turns } = await setup();
+    await tasks.save(input({ id: "parent", status: "todo" }));
+    await tasks.save(input({ id: "child", dependsOn: ["parent"] }));
+    await tasks.tick();
+    expect(await task("child")).toMatchObject({
+      status: "queued",
+      wait: { code: "dependency", waitsOn: { taskId: "parent" } },
+    });
+    const block = async (stop: ReturnType<typeof buildTaskStop>) =>
+      await store.db
+        .prepare("UPDATE tasks SET value=? WHERE id=?")
+        .run(JSON.stringify({ ...(await task("parent")), status: "blocked", stop }), "parent");
+    // A dependency blocked for another reason is named on the waiting card.
+    await block(buildTaskStop({ code: "run_failed", phase: "worker", message: "Broke." }, 1));
+    await tasks.tick();
+    expect(await task("child")).toMatchObject({
+      status: "queued",
+      wait: { code: "dependency", waitsOn: { taskId: "parent", code: "run_failed" } },
+    });
+    // One the owner stopped ends the wait: the dependent stops with a way to fix it.
+    await block(buildTaskStop({ code: "owner_stopped", message: "Stopped by you." }, 2));
+    await tasks.tick();
+    expect(await task("child")).toMatchObject({
+      status: "blocked",
+      stop: { code: "dependency_stopped", nextAction: "fix_dependency" },
+    });
+    await tasks.tick();
+    expect((await task("child")).status).toBe("blocked");
+    expect(turns).toHaveLength(0);
+  });
   it("keeps recovered work queued when the daily agent limit is reached", async () => {
     const { tasks, run, task, clock, interrupt, turns } = await setup();
     const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
@@ -2231,6 +2303,8 @@ describe("host tasks", () => {
     clock.now += 2 * MINUTE;
     await tasks.tick();
     expect((await task()).status).toBe("queued");
+    // The silent wait gets a reason, and loses it once the limit is lifted.
+    expect((await task()).wait).toMatchObject({ code: "daily_limit" });
     expect(turns).toHaveLength(1);
     await tasks.limits.save({ dailyAgentMinutes: 0 });
     await tasks.tick();
@@ -2366,7 +2440,7 @@ describe("host tasks", () => {
   it("mirrors whether the running session is waiting on the user", async () => {
     const { tasks, run, task, store, clock } = await setup();
     const started = await run();
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     const ask = async (pendingQuestion?: { requestId: number; questions: [] }) => {
       const session = await store.session(started.sessionId!);
       await store.save(
@@ -2381,10 +2455,10 @@ describe("host tasks", () => {
       await tasks.tick();
     };
     await ask({ requestId: 1, questions: [] });
-    expect(await task()).toMatchObject({ status: "running", needsInput: true });
+    expect(await task()).toMatchObject({ status: "running", stop: { code: "input_required" } });
     await ask(undefined);
     expect((await task()).status).toBe("running");
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
   });
   it("approves a reviewed task, and runs a reviewed or done one again", async () => {
     const { tasks, review, task, turns, store, addRepo, approve } = await setup();
@@ -3328,8 +3402,8 @@ describe("task verification", () => {
       verification: { review: { verdict: "fail", note: "Friday is still missing." } },
     });
     expect((await task()).error).toBeUndefined();
-    expect((await task()).repairStop).toBeUndefined();
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     const notices = (await task()).ownerNotices!;
     expect(
       notices.filter((notice) => notice.kind === "remaining_finding").map((n) => n.message),
@@ -3385,7 +3459,7 @@ describe("task verification", () => {
         continueUntilDone: true,
         repairAttempts: attempt,
       });
-      expect((await task()).repairStop).toBeUndefined();
+      expect((await task()).stop).toBeUndefined();
       expect(
         (await new HostTasks(store, engine, () => clock.now).get("main"))!.continueUntilDone,
       ).toBe(true);
@@ -3417,8 +3491,15 @@ describe("task verification", () => {
       JSON.stringify({
         ...(await task()),
         status: "blocked",
-        repairStop: { reason: "limit", message: "Old correction limit" },
-        needsInput: true,
+        stop: buildTaskStop(
+          {
+            code: "repair_exhausted",
+            repair: "limit",
+            message: "Old correction limit",
+            nextAction: "provide_input",
+          },
+          1,
+        ),
       }),
       "main",
     );
@@ -3426,21 +3507,27 @@ describe("task verification", () => {
     expect(await task()).toMatchObject({
       status: "blocked",
       continueUntilDone: true,
-      awaitingOwnerRestart: true,
+      stop: { nextAction: "restart" },
     });
-    expect((await task()).repairStop).toBeUndefined();
-    expect((await task()).needsInput).toBeUndefined();
+    expect((await task()).stop?.repair).toBeUndefined();
     await store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(
       JSON.stringify({
         ...(await task()),
         continueUntilDone: undefined,
-        repairStop: { reason: "external", message: "Provide the required resource" },
-        needsInput: true,
+        stop: buildTaskStop(
+          {
+            code: "repair_exhausted",
+            repair: "external",
+            message: "Provide the required resource",
+            nextAction: "provide_input",
+          },
+          1,
+        ),
       }),
       "main",
     );
     await tasks.save(input({ continueUntilDone: true }));
-    expect((await task()).repairStop?.reason).toBe("external");
+    expect((await task()).stop?.repair).toBe("external");
   });
   it("stops after one repair even when contents progress", async () => {
     const { reviewing, task, finish, tasks, turns } = await setup();
@@ -3462,7 +3549,7 @@ describe("task verification", () => {
       "VERDICT: FAIL - The report remains incomplete.",
     );
     expect(await task()).toMatchObject({ status: "done", completedWithFindings: true });
-    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     expect((await task()).ownerNotices!.at(-1)).toMatchObject({ kind: "auto_continued" });
     expect((await task()).ownerNotices!.at(-1)!.message).toContain("reached its limit");
     const count = turns.length;
@@ -3567,7 +3654,10 @@ describe("task verification", () => {
       "main",
     );
     await tasks.tick();
-    expect(await task()).toMatchObject({ status: "blocked", needsInput: true });
+    expect(await task()).toMatchObject({
+      status: "blocked",
+      stop: { code: "input_required", nextAction: "provide_input" },
+    });
     expect(turns).toHaveLength(0);
     await expect(tasks.move("main", "queued")).rejects.toThrow("Update the task description");
     await tasks.save({
@@ -3696,7 +3786,7 @@ describe("task verification", () => {
       completedWithFindings: true,
       repairAttempts: 1,
     });
-    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     expect((await task()).ownerNotices).toEqual([
       expect.objectContaining({ kind: "remaining_finding", message: "Friday is missing." }),
       expect.objectContaining({ kind: "auto_continued" }),
@@ -3746,7 +3836,7 @@ describe("task verification", () => {
       '```json\n{"reviewNotes":[{"finding":"Reset is broken."},{"finding":"TalkBack acceptance missing.","category":"external","suggestion":"Test on Android."}]}\n```\nVERDICT: FAIL - Reset is broken.',
     );
     expect(await task()).toMatchObject({ status: "running", repairAttempts: 1 });
-    expect((await task()).repairStop).toBeUndefined();
+    expect((await task()).stop).toBeUndefined();
     const fixedId = (await task()).reviewNotes!.find(
       (note) => note.finding === "Reset is broken.",
     )!.id;
@@ -3794,7 +3884,7 @@ describe("task verification", () => {
     await finish((await task()).reviewer!.sessionId!, "VERDICT: FAIL - Friday is missing.");
     expect((await task()).status).toBe("blocked");
     expect(turns).toHaveLength(before + 1);
-    expect((await task()).needsInput).toBe(true);
+    expect((await task()).stop?.nextAction).toBe("provide_input");
     await expect((async () => await tasks.recheckReview("main"))()).rejects.toThrow(
       "Update the task description before retrying",
     );
@@ -3858,9 +3948,14 @@ describe("task verification", () => {
       repairAttempts: 1,
     });
     expect((await tasks.recoverGoalReview("main", "goal"))!.repairAttempts).toBe(1);
-    await store.db
-      .prepare("UPDATE tasks SET value=? WHERE id=?")
-      .run(JSON.stringify({ ...legacy, error: "Stopped by you." }), "main");
+    await store.db.prepare("UPDATE tasks SET value=? WHERE id=?").run(
+      JSON.stringify({
+        ...legacy,
+        error: "Stopped by you.",
+        stop: buildTaskStop({ code: "owner_stopped", message: "Stopped by you." }, 1),
+      }),
+      "main",
+    );
     expect((await tasks.recoverGoalReview("main", "goal"))!.status).toBe("blocked");
   });
   it("persists review notes across corrections, read updates and successful verification", async () => {
@@ -4098,7 +4193,7 @@ describe("task verification", () => {
         status: "blocked",
         error:
           "Run budget: Task Ship the report: The cumulative task runtime allowance is exhausted. Completed work and partial findings are retained; owner action is required.",
-        awaitingOwnerRestart: true,
+        stop: { code: "budget_exhausted" },
       });
     } finally {
       monotonic.mockRestore();

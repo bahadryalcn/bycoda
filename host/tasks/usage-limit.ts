@@ -5,6 +5,8 @@ import { newRequestId } from "../../src/shared/lib/id/requestId";
 import { withTimeout } from "../../src/shared/lib/withTimeout";
 import { errorMessage } from "../sessions/sessionRuns";
 import type { TaskContext } from "./context";
+import type { TaskWait } from "../../src/shared/model/host-contracts/task-stop";
+import { sameWait } from "./stop-reasons";
 
 const ARM_DEADLINE_MS = 30_000;
 
@@ -57,7 +59,6 @@ export async function waitForUsageLimit(
   limit: TaskUsageLimit,
   now: number,
 ): Promise<boolean> {
-  if (task.crewRunId || task.crewDefinitionId) return false;
   let armed = limit.resumeAtReset === true;
   if (!armed && isAssistantGoalTask(task)) {
     try {
@@ -80,5 +81,14 @@ export async function waitForUsageLimit(
   if (!armed) return false;
   if (taskUsageLimitDue({ ...limit, resumeAtReset: true }, now))
     await context.requeueInterrupted(task, now);
+  else {
+    // The wait is visible on the card; write it once per reset time.
+    const wait: TaskWait = {
+      code: "usage_limit",
+      message: "Waiting for the provider usage limit to reset.",
+      ...(limit.resetsAt !== undefined ? { retryAt: limit.resetsAt } : {}),
+    };
+    if (!sameWait(task.wait, wait)) await context.write({ ...task, wait, updatedAt: now });
+  }
   return true;
 }

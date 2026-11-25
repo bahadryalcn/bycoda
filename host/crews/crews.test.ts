@@ -10,6 +10,7 @@ import type { HostEngine } from "../engine";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { defaultCrewPolicy, type CrewDefinition } from "../../src/features/crews/model/crew";
 import { DELEGATION_PARENT_KEY } from "../../src/shared/model/host-contracts/delegation";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 const stores: HostStore[] = [];
 afterEach(async () => {
   await forEachAsync(stores.splice(0), async (store) => await store.close());
@@ -51,7 +52,7 @@ async function setup() {
       for (const task of sourceRows.filter((entry) => entry.status === "queued")) {
         const run = await service.startRun(
           task.projectId,
-          task.crewDefinitionId!,
+          workCrewId(task)!,
           task.prompt,
           task.crewExecutionId!,
           task.runtimeMode,
@@ -97,6 +98,8 @@ async function setup() {
         const previous = await store.receiptStatus(commandId);
         if (previous) return previous;
         const created = await effect(input);
+        // A created session keeps the settings it was created with.
+        session.session.modelSettings = (input.modelSettings ?? {}) as Record<string, string>;
         const receipt = { commandId, sessionId: created.sessionId, revision: 0 };
         await store.recordReceipt(JSON.stringify(input), receipt);
         return receipt;
@@ -242,7 +245,7 @@ describe("host crews", () => {
     expect(second.id).toBe(first.id);
     expect(f.sourceRows).toHaveLength(1);
     expect(f.sourceRows[0]).toMatchObject({
-      crewDefinitionId: "crew",
+      executor: { kind: "crew", crewDefinitionId: "crew" },
       crewExecutionId: "run",
       projectId: f.project.id,
     });
@@ -945,7 +948,11 @@ describe("crew deletion", () => {
   });
   it("refuses a crew that open tasks still use", async () => {
     const f = await setup();
-    f.rows.push({ id: "task", crewDefinitionId: "crew", status: "todo" } as never);
+    f.rows.push({
+      id: "task",
+      executor: { kind: "crew", crewDefinitionId: "crew" },
+      status: "todo",
+    } as never);
     await expect(
       f.service.call("crews.delete", { definitionId: "crew" }, f.project.id),
     ).rejects.toThrow("Tasks");

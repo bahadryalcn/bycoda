@@ -27,6 +27,18 @@
 }
 
 /* Settings row: title and one-line description left, the control right. */
+.work-executor {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+.work-executor-row {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  justify-items: start;
+}
+
 .task-form-rows {
   display: grid;
   min-inline-size: 0;

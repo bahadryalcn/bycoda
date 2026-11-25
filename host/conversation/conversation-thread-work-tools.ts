@@ -10,7 +10,10 @@ import type { HostTasks } from "../tasks/tasks";
 import type { HostGoals } from "../goals/goals";
 import type { HostAutomations } from "../automations/automations";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
-import { normalizeConversationTaskConfiguration } from "./conversation-task-tools";
+import {
+  conversationWorkChoices,
+  normalizeConversationTaskConfiguration,
+} from "./conversation-task-tools";
 import { createWork, type WorkExecution } from "../tasks/work-request";
 import type { WorkOrigin } from "../../src/features/tasks/model/hostTasks";
 import type { DelegatedRoomPrincipal } from "../assistant/room/assistant-room-delegation";
@@ -408,7 +411,10 @@ export class ConversationThreadWorkTools {
     const exec = execution ? executionFields(execution) : {};
     if (action.startsWith("tasks.")) {
       const task = current as Awaited<ReturnType<HostTasks["list"]>>[number] | undefined;
-      if (action === "tasks.create")
+      if (action === "tasks.create") {
+        const choices = conversationWorkChoices(input);
+        if (choices.useSessionModel)
+          throw new Error("useSessionModel needs a coding session; Room and voice use settings.");
         return createWork(
           { store: this.store, tasks: this.tasks },
           {
@@ -417,6 +423,9 @@ export class ConversationThreadWorkTools {
             request: String(input.prompt),
             title: String(input.title),
             source: origin,
+            executor: choices.executor,
+            helpers: choices.helpers,
+            // Use settings; the reviewed pool model above is only the fallback target.
             execution: exec as WorkExecution,
             options: {
               ...normalizeConversationTaskConfiguration(
@@ -430,6 +439,7 @@ export class ConversationThreadWorkTools {
           },
           { requestId: id },
         );
+      }
       if (action === "tasks.reorder") {
         await this.tasks.reorder((current as Task[]).map((item) => item.id));
         return { status: "completed", action, targetId: id };

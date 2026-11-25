@@ -60,7 +60,7 @@ function RoutingChoice({
         label={t("Model choice")}
         value={segment}
         options={[
-          ...(allowDefault ? [{ value: "default", label: t("Default"), disabled }] : []),
+          ...(allowDefault ? [{ value: "default", label: t("Use settings"), disabled }] : []),
           { value: "pool", label: t("Any model"), disabled },
           { value: "fixed", label: t("Fixed"), disabled },
         ]}

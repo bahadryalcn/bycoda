@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import { SafeCounterSchema } from "./schemas";
+import { WorkExecutorSchema, WorkHelpersSchema, WorkResolvedSchema } from "./work-executor";
+import { TaskStopSchema, TaskWaitSchema } from "./task-stop";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 import {
   GoalBudgetSchema,
@@ -68,7 +70,8 @@ const inputFields = {
   preflightRequirements: z.array(TaskPreflightRequirementSchema).optional(),
   workflowId: z.string().optional(),
   workflowVersion: z.number().optional(),
-  crewDefinitionId: z.string().optional(),
+  executor: WorkExecutorSchema.optional(),
+  helpers: WorkHelpersSchema.optional(),
   crewRunId: z.string().optional(),
   crewScopes: z.array(z.string()).optional(),
   crewReviewFingerprint: z.string().optional(),
@@ -148,11 +151,11 @@ export const TaskVerificationSchema = z.strictObject({
   acceptance: TaskAcceptanceReportSchema.optional(),
 });
 const metadataFields = {
-  modelRoutingWait: z
-    .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
-    .optional(),
+  stop: TaskStopSchema.optional(),
+  wait: TaskWaitSchema.optional(),
   reviewerTarget: ModelRoutingTargetSchema.optional(),
-  crewWorkWait: z.strictObject({ reason: z.string(), unstarted: z.boolean() }).optional(),
+  /** Host-owned: how the executor, model and helpers were chosen when the work started. */
+  resolved: WorkResolvedSchema.optional(),
   conflictRecovery: z
     .strictObject({
       childId: z.string(),
@@ -204,7 +207,6 @@ const metadataFields = {
     .optional(),
   evaluation: TaskEvaluationSchema.optional(),
   budgetUsage: TaskBudgetUsageSchema.optional(),
-  budgetStop: z.string().optional(),
   preflight: TaskPreflightResultSchema.optional(),
   crewExecutionId: z.string().optional(),
   status: TaskStatusSchema.optional(),
@@ -245,15 +247,11 @@ const metadataFields = {
     })
     .optional(),
   reviewFailureCount: z.number().optional(),
-  awaitingOwnerRestart: z.boolean().optional(),
   blockedTakeover: z
     .strictObject({ at: z.number(), previousSessionId: z.string().optional(), blocker: z.string() })
     .optional(),
   repairNote: z.string().optional(),
   checkFailureFingerprint: z.string().optional(),
-  repairStop: z
-    .strictObject({ reason: z.enum(["external", "no_progress", "limit"]), message: z.string() })
-    .optional(),
   ownerNotices: z
     .array(
       z.strictObject({
@@ -337,7 +335,6 @@ const metadataFields = {
   cleanupError: z.string().optional(),
   cleanupRetryAfter: z.number().optional(),
   cleanupArchives: z.array(z.string()).optional(),
-  needsInput: z.boolean().optional(),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional(),
   startedAt: z.number().optional(),

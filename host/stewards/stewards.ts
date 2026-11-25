@@ -984,7 +984,7 @@ export class HostStewards {
           execution: {
             harness: latest.harness,
             providerAccountId: latest.providerAccountId,
-            modelChoice: routingRun(latest).modelChoice,
+            modelChoice: routingRun(latest).modelChoice ?? { kind: "fixed" },
             model: latest.model,
             modelSettings: latest.modelSettings,
             runtimeMode: latest.runtimeMode,

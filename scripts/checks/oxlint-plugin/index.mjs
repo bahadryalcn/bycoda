@@ -14,6 +14,7 @@ import safeTimestampRender from "./rules/safe-timestamp-render.mjs";
 import sharedFormattersOnly from "./rules/shared-formatters-only.mjs";
 import sharedResizeObserver from "./rules/shared-resize-observer.mjs";
 import suppressionHasReason from "./rules/suppression-has-reason.mjs";
+import taskStateFromStopCode from "./rules/task-state-from-stop-code.mjs";
 import utf8ChildLocale from "./rules/utf8-child-locale.mjs";
 import wholeSentenceTranslation from "./rules/whole-sentence-translation.mjs";
 
@@ -28,6 +29,7 @@ export const rules = {
   "shared-formatters-only": sharedFormattersOnly,
   "shared-resize-observer": sharedResizeObserver,
   "suppression-has-reason": suppressionHasReason,
+  "task-state-from-stop-code": taskStateFromStopCode,
   "utf8-child-locale": utf8ChildLocale,
   "whole-sentence-translation": wholeSentenceTranslation,
 };

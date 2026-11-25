@@ -59,10 +59,9 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
         </Fact>,
       );
   };
-  fact("error", t("Reason"), task.error);
+  fact("stop", t("Reason"), task.stop?.message);
+  fact("error", t("Failure"), task.stop ? undefined : task.error);
   fact("merge", t("Delivery"), task.mergeError);
-  fact("stop", t("Automatic correction"), task.repairStop?.message);
-  fact("budget", t("Run budget"), task.budgetStop);
   fact("blocker", t("Blocker"), task.blockedTakeover?.blocker);
   fact("note", t("Latest finding"), task.repairNote);
   fact("feedback", t("Feedback for the next run"), task.retryFeedback);

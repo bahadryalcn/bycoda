@@ -157,6 +157,8 @@ export function automationFromHost(
     harness: host.harness,
     providerAccountId: host.providerAccountId,
     modelChoice: host.modelChoice,
+    workExecutor: host.executor,
+    workHelpers: host.helpers,
     model: host.model,
     modelSettings: host.modelSettings,
     cwd,
@@ -224,6 +226,12 @@ export function hostAutomationFromDraft(
     harness: draft.harness,
     providerAccountId: draft.providerAccountId,
     modelChoice: draft.modelChoice,
+    ...(draft.workExecutor && draft.workExecutor.kind !== "agent"
+      ? { executor: draft.workExecutor }
+      : {}),
+    ...(draft.workHelpers && draft.workHelpers.mode !== "settings"
+      ? { helpers: draft.workHelpers }
+      : {}),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,

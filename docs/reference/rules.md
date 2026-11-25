@@ -70,6 +70,8 @@ fall. Suppress one line only, always with a reason.
   - Every `new ResizeObserver` adds its own observer and callback; a list of measuring rows then runs one per row on each layout. Use `observeResize(element, listener)` from src/shared/lib/observeResize.ts, which shares one observer per window and returns the unsubscribe function for the effect cleanup. If this caller needs observer options the helper lacks, keep it with `// oxlint-disable-next-line bycoda/shared-resize-observer -- <which option and why>` on the line above.
 - `bycoda/suppression-has-reason` (`src/**, host/**, packages/**`)
   - A suppression comment needs a reason so the next reader can tell a justified exception from a silenced defect. Append ` -- <why this line is safe>` in the same comment, for example `// oxlint-disable-next-line no-restricted-imports -- scratch file, not read at startup`.
+- `bycoda/task-state-from-stop-code` (`host/tasks/**, src/features/tasks/**, src/shared/model/**`)
+  - A task's `error` is free text for the owner to read, never for the code to branch on. Read `task.stop?.code` / `task.wait?.code` (src/shared/model/host-contracts/task-stop.ts) and show `taskStopSummary(task)`; a run's cause is `outcome.cause`.
 - `bycoda/utf8-child-locale` (`src/**, host/**`)
   - `LC_ALL=C` makes git and grep treat input as single-byte text, so case-insensitive matching of non-ASCII letters (ş, İ, ç, ö) never succeeds and binary detection changes. Use `LC_ALL: "C.UTF-8"` (predictable messages, UTF-8 aware matching).
 - `bycoda/whole-sentence-translation` (`src/**`)

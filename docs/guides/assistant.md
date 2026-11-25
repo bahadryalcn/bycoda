@@ -302,7 +302,9 @@ the original request and note identity for inspection rather than creating a
 second note.
 
 Choose **Scheduled automation** for recurring work. Review the project, schedule,
-model choice and run limits before saving. **Default** follows the automation
+model choice and run limits before saving. A background automation also sets **Run with**
+(Agent, Crew or Auto) and **Helpers**; each occurrence resolves them again when it starts, while
+a fixed model is never replaced by another. **Use settings** follows the automation
 role, **Any model** uses the shared order or a group, and **Fixed** uses the chosen model.
 **Manage in Models** opens shared priority and limits. The model resolves when
 each run starts; running sessions keep their model. Creation saves the schedule without

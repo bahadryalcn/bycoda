@@ -96,7 +96,7 @@ function TaskCardBody({
         }
       : currentStatus;
   const hasFailureDetails = Boolean(
-    task.error || task.mergeError || task.budgetStop || task.repairStop || task.verification,
+    task.error || task.mergeError || task.stop || task.verification,
   );
   // The column already names plain states; the line names everything else.
   const showStatus =
@@ -228,9 +228,7 @@ function TaskCardBody({
             >
               <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
-              {task.budgetStop ? <p>{task.budgetStop}</p> : null}
-              {task.repairStop?.message ? <p>{task.repairStop.message}</p> : null}
-              {task.error ? <p>{task.error}</p> : null}
+              {task.stop ? <p>{task.stop.message}</p> : task.error ? <p>{task.error}</p> : null}
               {task.mergeError ? <p>{task.mergeError}</p> : null}
               {task.verification ? <VerificationSummary verification={task.verification} /> : null}
             </Text>

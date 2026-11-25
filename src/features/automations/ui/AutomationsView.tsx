@@ -1,6 +1,8 @@
 import { AutomationTemplateCard } from "./AutomationTemplateCard";
 import { HostAutomationFields } from "./HostAutomationFields";
-import { AutomationModelChoice } from "./AutomationModelChoice";
+import { AutomationFixedModel, AutomationModelChoice } from "./AutomationModelChoice";
+import { WorkExecutorFields } from "../../tasks/public/workExecutor";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
 import { useAutomationRoutingHost } from "../hooks/useAutomationRoutingHost";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
@@ -1435,6 +1437,7 @@ function AutomationEditor({
                         onChange={onChange}
                         routingHost={routingHost}
                         extrasBeside={extrasBeside}
+                        hideModel={draft.runInBackground}
                       />
                     }
                   />
@@ -1442,6 +1445,39 @@ function AutomationEditor({
               </section>
 
               <div className="automation-editor-side">
+                {draft.runInBackground ? (
+                  <section>
+                    <SectionLabel as="h2" className="px-1">
+                      {t("Run with")}
+                    </SectionLabel>
+                    <div className="mt-2 px-1">
+                      <WorkExecutorFields
+                        routingRole="automation"
+                        machine={routingHost.machineId ? { id: routingHost.machineId } : undefined}
+                        routingSupported={routingHost.supported}
+                        cwd={draft.cwd}
+                        harness={draft.harness}
+                        modelSettings={draft.modelSettings}
+                        executor={draft.workExecutor}
+                        onExecutorChange={(workExecutor) => update("workExecutor", workExecutor)}
+                        executorIssue={
+                          draft.workExecutor?.kind === "crew"
+                            ? crewIncompatibility({
+                                isolate: draft.workspaceMode === "worktree",
+                                modelChoice: draft.modelChoice,
+                              })?.reason
+                            : undefined
+                        }
+                        modelChoice={draft.modelChoice}
+                        onModelChoiceChange={(modelChoice) => update("modelChoice", modelChoice)}
+                        fixedModel={<AutomationFixedModel draft={draft} onChange={onChange} />}
+                        helpers={draft.workHelpers}
+                        onHelpersChange={(workHelpers) => update("workHelpers", workHelpers)}
+                        disabled={saving}
+                      />
+                    </div>
+                  </section>
+                ) : null}
                 <section>
                   <SectionLabel as="h2" className="px-1">
                     {t("Triggers")}

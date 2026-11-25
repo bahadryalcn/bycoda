@@ -3,6 +3,7 @@ import type { AssistantProfile } from "../../../src/shared/model/host-contracts/
 import type { HostTasks } from "../../tasks/tasks";
 import { assistantWorkerModelSettings } from "../work/assistant-worker-settings";
 import type { AssistantModelSelector } from "./assistant-model-execution";
+import { workCrewId } from "../../../src/shared/model/host-contracts/work-executor";
 
 const sameAccount = (a: string | undefined, b: string | undefined) =>
   (a ?? "default") === (b ?? "default");
@@ -21,7 +22,7 @@ export async function repointUnstartedGoalTasks(input: {
       task.status === "queued" &&
       !task.sessionId &&
       !task.runId &&
-      !task.crewDefinitionId &&
+      !workCrewId(task) &&
       task.goalId?.startsWith("assistant-"),
   );
   if (!unstarted.length || !input.selector) return 0;

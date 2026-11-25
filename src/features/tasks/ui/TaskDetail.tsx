@@ -288,7 +288,11 @@ export function TaskDetail({
             onOpenReview={actions.onOpenReview}
             isOpeningSession={actions.isOpeningSession}
           />
-          <TaskBudgetUsage usage={task.budgetUsage} stop={task.budgetStop} budget={task.budget} />
+          <TaskBudgetUsage
+            usage={task.budgetUsage}
+            stop={task.stop?.code === "budget_exhausted" ? task.stop.message : undefined}
+            budget={task.budget}
+          />
           {actions.onSaveEvaluation ? (
             <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
           ) : null}

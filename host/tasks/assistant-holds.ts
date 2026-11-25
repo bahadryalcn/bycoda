@@ -83,22 +83,21 @@ export async function markAssistantDeletionQuiescent(
     task.artifactDeliveryActivityId
   )
     throw new Error("The task's actual work is still retiring.");
-  await context.write({
-    ...task,
-    status: task.status === "done" ? "done" : "blocked",
-    ...(task.status === "done"
-      ? {}
-      : {
-          error:
-            "Held after owner-reviewed job deletion; original execution may still need inspection.",
-        }),
-    workspaceGenerationId: randomUUID(),
-    awaitingOwnerRestart: true,
-    needsInput: undefined,
-    reviewer: undefined,
-    deliveryRequested: undefined,
-    updatedAt: context.now(),
-  });
+  const held = { ...task, workspaceGenerationId: randomUUID(), deliveryRequested: undefined };
+  if (task.status === "done")
+    await context.write({ ...held, reviewer: undefined, updatedAt: context.now() });
+  else
+    await context.block(
+      held,
+      {
+        code: "owner_stopped",
+        phase: "cleanup",
+        nextAction: "restart",
+        message:
+          "Held after owner-reviewed job deletion; original execution may still need inspection.",
+      },
+      context.now(),
+    );
   context.store.afterCommit(() => context.invalidateAssistantGeneration(task));
 }
 
@@ -176,25 +175,25 @@ export async function restoreAssistantDeletedTask(
     if ((await context.taskValue(snapshot.id)) !== undefined)
       throw new Error("A task with this identity already exists. Nothing was restored.");
     await context.store.project(snapshot.projectId);
-    const done = snapshot.status === "done";
-    return context.write({
+    const restored = {
       ...snapshot,
-      status: done ? "done" : "blocked",
-      ...(done
-        ? {}
-        : {
-            error:
-              "Restored from Recently deleted. Review this task before explicitly restarting it.",
-          }),
       workspaceGenerationId: randomUUID(),
-      awaitingOwnerRestart: true,
-      needsInput: undefined,
-      reviewer: undefined,
       deliveryRequested: undefined,
       mergeRetry: undefined,
       blockedTakeover: undefined,
       runStall: undefined,
-      updatedAt: context.now(),
-    });
+    };
+    if (snapshot.status === "done")
+      return context.write({ ...restored, reviewer: undefined, updatedAt: context.now() });
+    return context.block(
+      restored,
+      {
+        code: "restored",
+        nextAction: "restart",
+        message:
+          "Restored from Recently deleted. Review this task before explicitly restarting it.",
+      },
+      context.now(),
+    );
   }, "critical");
 }

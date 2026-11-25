@@ -3,6 +3,13 @@ import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 import { isScheduleKind, type AutomationSchedule } from "./automationSchedule";
 import type { AutomationRunStatus } from "./automations";
 import {
+  crewIncompatibility,
+  parseWorkExecutor,
+  parseWorkHelpers,
+  type WorkExecutor,
+  type WorkHelpers,
+} from "../../../shared/model/host-contracts/work-executor";
+import {
   ModelRoutingItemChoiceSchema,
   type ModelRoutingItemChoice,
   type ModelRoutingTarget,
@@ -26,6 +33,10 @@ export type HostAutomationInput = AutomationSchedule & {
   harness: RemoteProvider;
   providerAccountId?: string;
   modelChoice?: ModelRoutingItemChoice;
+  /** Who runs each occurrence. Absent is one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor for each occurrence. Absent follows Settings > Models. */
+  helpers?: WorkHelpers;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -143,6 +154,15 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     throw new Error("Invalid model settings");
   if (v.isolate !== undefined && typeof v.isolate !== "boolean")
     throw new Error("Invalid automation options");
+  const executor = parseWorkExecutor(v.executor);
+  const helpers = parseWorkHelpers(v.helpers);
+  if (executor?.kind === "crew") {
+    const conflict = crewIncompatibility({
+      isolate: v.isolate as boolean | undefined,
+      modelChoice: v.modelChoice as { kind: string } | undefined,
+    });
+    if (conflict) throw new Error(`${conflict.field}: ${conflict.reason}`);
+  }
   let trigger: HostAutomationInput["trigger"];
   if (v.trigger !== undefined) {
     if (!v.trigger || typeof v.trigger !== "object" || Array.isArray(v.trigger))
@@ -198,6 +218,8 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     ...(v.modelChoice === undefined
       ? {}
       : { modelChoice: ModelRoutingItemChoiceSchema.parse(v.modelChoice) }),
+    ...(executor ? { executor } : {}),
+    ...(helpers ? { helpers } : {}),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,

@@ -1,4 +1,6 @@
-import { TaskModelChoiceField, useTaskModelRouting } from "./TaskModelChoiceField";
+import { useTaskModelRouting } from "./TaskModelChoiceField";
+import { WorkExecutorFields } from "./WorkExecutorFields";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
 import {
   defaultModelSettings,
   resolveModel as resolveTaskModel,
@@ -46,7 +48,6 @@ import {
   type WorkspaceChecks,
 } from "./TaskWorkspacePicker";
 import { useTaskTargetMachine } from "./useTaskTargetMachine";
-import { CrewTaskPicker } from "../../crews/public/CrewTaskPicker";
 import "./task-goals.css";
 
 /** The new goal form: the job, where it runs, how it runs, review and delivery, and limits. */
@@ -98,8 +99,19 @@ export function GoalForm({
     draft.modelChoice,
   );
   if (choice !== draft.modelChoice) draft = { ...draft, modelChoice: choice };
+  // The Host refuses these combinations and names the option; show it before sending.
+  const executorIssue =
+    draft.executor?.kind !== "crew"
+      ? undefined
+      : draft.cwds.length !== 1
+        ? t("A crew epic must use one project and a valid crew.")
+        : crewIncompatibility({
+            isolate: draft.isolate,
+            workspace: Object.keys(draft.workspaces ?? {}).length ? true : undefined,
+            modelChoice: draft.modelChoice,
+          })?.reason;
   const valid =
-    (!draft.crewDefinitionId || (draft.cwds.length === 1 && crewValid)) &&
+    (draft.executor?.kind !== "crew" || (crewValid && !executorIssue)) &&
     !workspaceBusy &&
     draft.cwds.every((cwd) =>
       isWorkspaceValid(draft.workspaces?.[cwd], workspaceChecks[cwd] ?? INITIAL_WORKSPACE_CHECKS),
@@ -143,13 +155,23 @@ export function GoalForm({
                 onChange={(event) => update("title", event.target.value)}
                 placeholder={t("Name the main job")}
               />
-              <TaskModelChoiceField
-                machine={target}
+              <WorkExecutorFields
                 routingRole="goal.planner"
-                value={draft.modelChoice}
-                supported={routingSupported}
-                onChange={(choice) => update("modelChoice", choice)}
-                fixed={
+                machine={target}
+                routingSupported={routingSupported}
+                cwd={draft.cwds[0] ?? ""}
+                harness={draft.harness}
+                modelSettings={draft.modelSettings}
+                executor={draft.executor}
+                onExecutorChange={(executor) => update("executor", executor)}
+                executorIssue={executorIssue}
+                onCrewValidityChange={setCrewValid}
+                modelChoice={draft.modelChoice}
+                onModelChoiceChange={(choice) => update("modelChoice", choice)}
+                helpers={draft.helpers}
+                onHelpersChange={(helpers) => update("helpers", helpers)}
+                disabled={saving}
+                fixedModel={
                   <ModelPicker
                     harness={draft.harness}
                     model={draft.model}
@@ -338,21 +360,6 @@ export function GoalForm({
                   )}
                 </div>
               </div>
-              {draft.cwds.length === 1 || draft.crewDefinitionId ? (
-                <CrewTaskPicker
-                  cwd={draft.cwds[0] ?? ""}
-                  machineId={targetId}
-                  value={draft.crewDefinitionId}
-                  disabled={saving}
-                  onChange={(crewDefinitionId) => update("crewDefinitionId", crewDefinitionId)}
-                  onValidityChange={setCrewValid}
-                />
-              ) : null}
-              {draft.crewDefinitionId && draft.cwds.length !== 1 ? (
-                <InlineMessage tone="warning">
-                  {t("A crew epic must use one project and a valid crew.")}
-                </InlineMessage>
-              ) : null}
               <Disclosure summary={t("Working branch and worktree")}>
                 <div className="task-form-section-body">
                   {draft.cwds.map((cwd) => (
