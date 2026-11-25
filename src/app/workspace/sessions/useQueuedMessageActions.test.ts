@@ -949,3 +949,18 @@ it("holds the queued head while a delegated subagent of the idle parent still ru
   expect(autoSendMode(parent, [parent, child])).toBeUndefined();
   expect(autoSendMode(parent, [parent, { ...child, busy: false }])).toBe("dispatch");
 });
+
+it("holds automatic sends until history and the interrupted turn are settled", () => {
+  const session = {
+    ...newSession("claude", "/repo"),
+    queuedMessages: [{ id: "head", text: "Next step", attachments: [] }],
+  } satisfies Session;
+  const loading = { ...session, historyLoading: true };
+  const interrupted: Session = {
+    ...session,
+    blocks: [{ id: "quit", role: "system", notice: "interrupt", text: "Turn interrupted." }],
+  };
+  expect(autoSendMode(loading, [loading])).toBeUndefined();
+  expect(autoSendMode(interrupted, [interrupted])).toBeUndefined();
+  expect(autoSendMode(session, [session])).toBe("dispatch");
+});

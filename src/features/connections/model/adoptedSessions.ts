@@ -163,6 +163,10 @@ const comparable = (session: Session | undefined): session is Session =>
 const unconfirmed = (session: Session): boolean =>
   !!session.adoptedDivergence && !session.adoptedDivergence.keep && !session.adoptedSyncConflict;
 
+export function canCompareAdoptedHistory(session: Session): boolean {
+  return !session.historyLoading || !!session.storedHistory;
+}
+
 /** Entries worth fetching: a loaded, idle local copy whose host revision moved,
  * or whose stored divergence is yet to be confirmed against the host. */
 export function planAdoptedFetches(
@@ -176,7 +180,7 @@ export function planAdoptedFetches(
     return (
       !!session &&
       !session.busy &&
-      (!session.historyLoading || !!session.storedHistory) &&
+      canCompareAdoptedHistory(session) &&
       (mirrored.get(entry.id) !== entry.revision ||
         unconfirmed(session) ||
         (entry.authorityGeneration !== undefined &&

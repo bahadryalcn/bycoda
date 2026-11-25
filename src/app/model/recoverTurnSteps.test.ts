@@ -132,11 +132,28 @@ it("shows the recorded steps of a cut-off turn before the interrupted note", asy
   expect(blocks[2].notice).toBe("interrupt");
 });
 
-it("falls back to the final reply alone when the steps cannot be read", async () => {
+it("keeps the interruption when the final reply cannot be tied to the local turn", async () => {
   inFlightChat();
   probe.probeTurnTail.mockResolvedValue({ state: "ended", finalText: "Fixed." });
   probe.readTurnSteps.mockRejectedValue(new Error("no transcript"));
   const { loadResumedWorkspace } = await import("./appLifecycle");
   const restored = await loadResumedWorkspace();
-  expect(restored?.sessions[0].blocks.map((block) => block.role)).toEqual(["user", "assistant"]);
+  expect(restored?.sessions[0].blocks.map((block) => block.role)).toEqual(["user", "system"]);
+});
+
+it("keeps an already recorded reply before a follow-up when the provider still shows the prior turn", async () => {
+  const session = inFlightChat();
+  session.blocks.push(
+    { id: "reply", role: "assistant", text: "Fixed." },
+    { id: "follow-up", role: "user", text: "Now check the mobile build." },
+  );
+  probe.probeTurnTail.mockResolvedValue({ state: "ended", finalText: "Fixed." });
+  probe.readTurnSteps.mockResolvedValue({ text: transcript, startReached: true });
+
+  const { loadResumedWorkspace } = await import("./appLifecycle");
+  const restored = await loadResumedWorkspace();
+  const blocks = restored?.sessions[0].blocks ?? [];
+
+  expect(blocks.slice(0, -1)).toEqual(session.blocks);
+  expect(blocks.at(-1)?.notice).toBe("interrupt");
 });

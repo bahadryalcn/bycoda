@@ -66,6 +66,10 @@ each turn that the transcript shows was cut off, once. A chat you leave
 interrupted after that launch keeps its **Continue** button and is not sent on a
 later launch.
 
+While the chat history loads or an interruption still needs a decision, queued
+messages stay in place. Use **Continue** to resume the interrupted turn or
+the queue's **Send next** action to choose the queued message yourself.
+
 Deleting a conversation also prevents delayed saves and old startup layouts from
 bringing that conversation back. Confirmed deleted conversations are excluded from
 startup recovery. If deletion status cannot be read, restore offers a retry rather

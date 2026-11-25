@@ -161,17 +161,16 @@ const HISTORY_LOAD_ERROR = "Earlier messages could not be loaded. Reopen this ch
 
 function publishBootSession(original: Session, hydrated: Session): void {
   if (quitting) return;
-  const owns = (session: Session) =>
-    session.id === original.id &&
-    !session.busy &&
-    session.blocks === original.blocks &&
-    session.queuedMessages === original.queuedMessages;
-  if (bootingResumed)
-    bootingResumed.sessions = bootingResumed.sessions.map((session) =>
-      owns(session) ? hydrated : session,
-    );
-  if (liveWorkspace)
-    setSessions((sessions) => sessions.map((session) => (owns(session) ? hydrated : session)));
+  const apply = (session: Session): Session => {
+    if (session.id !== original.id || session.busy || session.blocks !== original.blocks)
+      return session;
+    if (session.queuedMessages === original.queuedMessages) return hydrated;
+    // A restored/edited queue invalidates the snapshot, but the same history
+    // placeholder still needs a retry state. Keep the newer queue intact.
+    return session.historyLoading ? { ...session, historyLoadError: HISTORY_LOAD_ERROR } : session;
+  };
+  if (bootingResumed) bootingResumed.sessions = bootingResumed.sessions.map(apply);
+  if (liveWorkspace) setSessions((sessions) => sessions.map(apply));
 }
 
 function startDeferredBootReads(): void {
@@ -748,19 +747,19 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
             value.blocks === placeholder.blocks &&
             value.queuedMessages === placeholder.queuedMessages,
         );
+      const failed = () =>
+        publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
       if (interrupted.has(session.id)) {
-        const failed = () =>
-          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR });
         deferredBootReads.push({
           timedOut: failed,
           run: async () => {
             try {
-              if (!owns()) return;
+              if (!owns()) return failed();
               const record = await getSession(session.id);
               if (!record) throw new Error("Stored session is unavailable.");
-              if (!owns()) return;
+              if (!owns()) return failed();
               const recovered = await recoverInterruptedTurn(markTurnInterrupted(record));
-              if (!owns()) return;
+              if (!owns()) return failed();
               if (shouldPersistSession(recovered)) await upsertSessionPreservingActivity(recovered);
               publishBootSession(placeholder, recovered);
             } catch {
@@ -771,11 +770,11 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
         return placeholder;
       }
       deferredBootReads.push({
-        timedOut: () =>
-          publishBootSession(placeholder, { ...placeholder, historyLoadError: HISTORY_LOAD_ERROR }),
+        timedOut: failed,
         run: () =>
           new Promise<void>((resolve) => {
             if (!owns()) {
+              failed();
               resolve();
               return;
             }
@@ -802,11 +801,7 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
                 if (!record?.historyLoading || record.storedHistory) resolve();
               })
               .catch(() => {
-                publishBootSession(placeholder, {
-                  ...placeholder,
-                  historyLoadError:
-                    "Earlier messages could not be loaded. Reopen this chat to retry.",
-                });
+                failed();
                 resolve();
               });
           }),

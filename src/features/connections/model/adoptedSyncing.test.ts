@@ -34,3 +34,14 @@ it("names only open, idle conversations whose newer host copy has not been compa
   );
   expect([...ids]).toEqual(["new"]);
 });
+
+it("waits to advertise syncing until the desktop history allows comparison", () => {
+  const blocked = session("blocked", {
+    historyLoading: true,
+    historyLoadError: "Earlier messages could not be loaded.",
+  });
+  const readable = session("readable");
+  expect([
+    ...adoptedSyncingIds([entry("blocked"), entry("readable")], [blocked, readable], new Map()),
+  ]).toEqual(["readable"]);
+});

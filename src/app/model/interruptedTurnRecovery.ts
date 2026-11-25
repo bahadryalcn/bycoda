@@ -7,7 +7,6 @@ import {
   disarmAutoContinue,
   isAutoContinueArmed,
   shouldAutoContinue,
-  withFinishedTurn,
   type TurnRecovery,
 } from "../../features/sessions/model/turnRecovery";
 import type { TurnSteps } from "../../features/sessions/model/turnSteps";
@@ -137,10 +136,9 @@ export async function recoverInterruptedTurn(session: Session): Promise<Session>
     transcript: tail === "unsupported" ? tail : tail.state,
   });
   if (recovery.state === "finished") {
-    return withFinishedTurn(
-      await withRecordedSteps(session, steps, "finished"),
-      tail === "unsupported" ? undefined : tail.finalText,
-    );
+    // The tail probe can describe the previous provider turn if the newest
+    // local prompt never reached it. Only the turn-step merge can place a reply.
+    return disarmAutoContinue(await withRecordedSteps(session, steps, "finished"));
   }
   const recovered = disarmAutoContinue(
     recovery.state === "interrupted"
