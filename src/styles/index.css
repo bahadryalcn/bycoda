@@ -8,6 +8,7 @@
 @import "./transcript-surface.css";
 @import "./working-row.css";
 @import "./inbox-avatar.css";
+@import "./file-references.css";
 
 /* Desktop UI classes come from product code under src/ and the root entry documents. The scan
    starts at src/ instead of the repository root: walking the root also crawls host, mobile, build

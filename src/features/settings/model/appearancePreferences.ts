@@ -15,6 +15,13 @@ import {
   normalizeFontId,
 } from "./fontCatalog";
 import { preloadBundledFont } from "./fontFaceLoader";
+import {
+  FILE_REF_KINDS,
+  FILE_REF_TONES,
+  FILE_REF_TONE_DEFAULTS,
+  type FileRefKind,
+  type FileRefTone,
+} from "../../../shared/lib/fileReferenceKind";
 import { APPEARANCE_RANGES } from "./themeRanges";
 
 export const APPEARANCE_PREFERENCES_EVENT = "bycoda.appearancePreferencesChanged";
@@ -40,7 +47,37 @@ export type TranscriptCards = (typeof TRANSCRIPT_CARDS)[number];
 /** "hover" reveals the message actions on hover or focus; the latest turn always shows them. */
 export const TRANSCRIPT_ACTIONS = ["always", "hover"] as const;
 export type TranscriptActions = (typeof TRANSCRIPT_ACTIONS)[number];
+/** "colored" tints file references by kind; "plain" keeps their icon on a neutral ground. */
+export const FILE_REF_STYLES = ["colored", "plain"] as const;
+export type FileRefStyle = (typeof FILE_REF_STYLES)[number];
+/** Stored field of each kind's tone: `fileToneCode`, `fileToneDocs`, ... */
+export type FileToneField = `fileTone${Capitalize<FileRefKind>}`;
+export const FILE_TONE_FIELDS = Object.fromEntries(
+  FILE_REF_KINDS.map((kind) => [kind, `fileTone${kind[0]!.toUpperCase()}${kind.slice(1)}`]),
+) as Record<FileRefKind, FileToneField>;
+const FILE_TONE_DEFAULTS = Object.fromEntries(
+  FILE_REF_KINDS.map((kind) => [FILE_TONE_FIELDS[kind], FILE_REF_TONE_DEFAULTS[kind]]),
+) as Record<FileToneField, FileRefTone>;
+/**
+ * CSS custom properties that hand each kind's chosen tone to file-references.css. A tone is one
+ * of the fixed theme hues, never a free colour.
+ */
+export function fileRefToneColor(tone: FileRefTone): string {
+  return `var(--color-${tone === "neutral" ? "content" : tone})`;
+}
+export function fileRefHueVars(
+  value: Pick<AppearancePreferences, FileToneField>,
+): Record<string, string> {
+  return Object.fromEntries(
+    FILE_REF_KINDS.map((kind) => [
+      `--file-ref-hue-${kind}`,
+      fileRefToneColor(value[FILE_TONE_FIELDS[kind]]),
+    ]),
+  );
+}
 export const APPEARANCE_DEFAULTS = {
+  ...FILE_TONE_DEFAULTS,
+  transcriptFileRefs: "colored" as FileRefStyle,
   interfaceFont: "System",
   codeFont: "System",
   codeSize: 13,
@@ -70,7 +107,7 @@ export const APPEARANCE_DEFAULTS = {
   wheelZoom: true,
   chatBackgroundLayer: true,
 } as const;
-export type AppearancePreferences = {
+export type AppearancePreferences = Record<FileToneField, FileRefTone> & {
   interfaceFont: string;
   codeFont: string;
   codeSize: number;
@@ -105,6 +142,8 @@ export type AppearancePreferences = {
   transcriptChromeInk: number;
   transcriptCards: TranscriptCards;
   transcriptActions: TranscriptActions;
+  /** How file references in replies are tinted; each kind's hue is its `fileTone*` field. */
+  transcriptFileRefs: FileRefStyle;
   messageColor: "theme" | "neutral";
   wordWrap: boolean;
   /** Ctrl+wheel outside self-zooming viewers changes the interface scale. */
@@ -228,6 +267,13 @@ export function normalizeAppearancePreferences(
     transcriptChromeInk: bounded(value.transcriptChromeInk, 61, 50, 100),
     transcriptCards: oneOf(TRANSCRIPT_CARDS, value.transcriptCards, "inset"),
     transcriptActions: oneOf(TRANSCRIPT_ACTIONS, value.transcriptActions, "always"),
+    transcriptFileRefs: oneOf(FILE_REF_STYLES, value.transcriptFileRefs, "colored"),
+    ...(Object.fromEntries(
+      FILE_REF_KINDS.map((kind) => {
+        const field = FILE_TONE_FIELDS[kind];
+        return [field, oneOf(FILE_REF_TONES, value[field], FILE_REF_TONE_DEFAULTS[kind])];
+      }),
+    ) as Record<FileToneField, FileRefTone>),
     messageColor: value.messageColor === "neutral" ? "neutral" : "theme",
     wordWrap: value.wordWrap === true,
     wheelZoom: value.wheelZoom !== false,
@@ -293,6 +339,9 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
   root.dataset.transcriptSurface = value.transcriptSurface;
   root.dataset.transcriptCards = value.transcriptCards;
   root.dataset.transcriptActions = value.transcriptActions;
+  root.dataset.fileRefs = value.transcriptFileRefs;
+  for (const [name, hue] of Object.entries(fileRefHueVars(value)))
+    root.style.setProperty(name, hue);
   // The backdrop layer only exists while a blur is asked for (blur 0 opens none).
   root.toggleAttribute("data-transcript-blur", value.transcriptSurfaceBlur > 0);
   root.style.setProperty(

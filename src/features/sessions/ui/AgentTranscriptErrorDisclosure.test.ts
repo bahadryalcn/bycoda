@@ -10,6 +10,12 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // Reduced motion: a closing row unmounts its body at once instead of waiting for the collapse.
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -102,7 +108,12 @@ describe("Bycoda CLI disclosure", () => {
     expect(container.textContent).not.toContain('"title":"Ideas"');
     act(() => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
-    act(() => row?.querySelector<HTMLButtonElement>('button[aria-label="Expand all"]')?.click());
+    // A small payload has no expand-all control; open its collapsed branches row by row.
+    for (let pass = 0; pass < 4; pass += 1) {
+      const next = row?.querySelector<HTMLElement>('[role="treeitem"][aria-expanded="false"]');
+      if (!next) break;
+      act(() => next.click());
+    }
     expect(row?.textContent).toContain("Ideas");
   });
 
@@ -163,7 +174,11 @@ describe("tool output inspection", () => {
         id: "tool",
         role: "tool",
         text: "Run pnpm build",
-        tool: { kind: "shell", status: "completed", detail: "Build succeeded: output-marker" },
+        tool: {
+          kind: "shell",
+          status: "completed",
+          detail: "Build succeeded: output-marker",
+        },
       },
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
@@ -197,7 +212,11 @@ describe("tool output inspection", () => {
             path: "src/App.tsx",
             contentOnly: true,
             lines: [{ kind: "context", text: "short preview" }],
-            inspection: { kind: "content", text: "full code\nlast-line-marker", truncated: true },
+            inspection: {
+              kind: "content",
+              text: "full code\nlast-line-marker",
+              truncated: true,
+            },
           },
         },
       },

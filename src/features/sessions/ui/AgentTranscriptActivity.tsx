@@ -77,6 +77,7 @@ import {
   proseSummary,
   toolCallLabel,
   isStoppedBlock,
+  mcpToolDisplay,
   toolCallState,
   type ActivityPhase,
   type ActivityPhaseKind,
@@ -885,6 +886,38 @@ function toolActionText(translate: ReturnType<typeof useT>, action: string): str
   }
 }
 
+/** How long a closing row's body stays mounted so the shared Disclosure collapse (standard motion duration) can play. */
+const DISCLOSURE_CLOSE_MS = 200;
+
+/** The collapse only plays where the stylesheet animates it; elsewhere the body unmounts at once. */
+function closeIsAnimated(): boolean {
+  return (
+    typeof CSS !== "undefined" &&
+    CSS.supports("interpolate-size", "allow-keywords") &&
+    window.matchMedia("(prefers-reduced-motion: no-preference)").matches
+  );
+}
+
+/**
+ * Whether a disclosure body is mounted: while open, and for the length of the close transition
+ * afterwards. Closed rows keep nothing mounted, so long transcripts stay cheap.
+ */
+function useClosingMount(open: boolean): boolean {
+  const [lingering, setLingering] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setLingering(!open && closeIsAnimated());
+  }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer that ends the lingering mount after the CSS collapse; cleared on reopen and unmount
+  useEffect(() => {
+    if (!lingering) return;
+    const timer = window.setTimeout(() => setLingering(false), DISCLOSURE_CLOSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [lingering]);
+  return open || lingering;
+}
+
 function ActivityToolRow({
   block,
   cwd,
@@ -909,9 +942,6 @@ function ActivityToolRow({
     null,
   );
   const appCall = bycodaToolCall(block);
-  if (appCall) {
-    return <BycodaCallRow block={block} call={appCall} live={live} onApproval={onApproval} />;
-  }
   const label = toolCallLabel(block, cwd);
   const state = toolCallState(block);
   const pending = needsApproval(block);
@@ -921,6 +951,10 @@ function ActivityToolRow({
     block.tool?.preview?.kind === "shell" ||
     isExecuteTool(block.tool?.kind, block.text || block.tool?.title);
   const errorOpen = override ?? (command && state === "rejected" && hasResult);
+  const bodyMounted = useClosingMount(errorOpen);
+  if (appCall) {
+    return <BycodaCallRow block={block} call={appCall} live={live} onApproval={onApproval} />;
+  }
   const summary = (
     <ToolCallSummary
       label={label}
@@ -982,7 +1016,7 @@ function ActivityToolRow({
           }
           summary={rowContent}
         >
-          {errorOpen ? (
+          {bodyMounted ? (
             <div className={`min-w-0 py-1 ${bare ? "" : "ps-5"}`}>
               <ToolInspectionPanel block={block} />
             </div>
@@ -1051,6 +1085,7 @@ function BycodaCallRow({
     `BycodaCallRow:${block.id}`,
     false,
   );
+  const bodyMounted = useClosingMount(errorOpen);
   const pendingApproval = needsApproval(block);
   const hasResult = !pendingApproval && hasToolInspection(block);
   const hasError = state === "rejected" && hasResult;
@@ -1074,7 +1109,7 @@ function BycodaCallRow({
         </span>
       )}
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
       >
         <BycodaMark className="size-3.5" />
         <OverflowTooltip label={command}>
@@ -1115,7 +1150,7 @@ function BycodaCallRow({
           }
           summary={summary}
         >
-          {errorOpen ? <ToolInspectionPanel block={block} /> : null}
+          {bodyMounted ? <ToolInspectionPanel block={block} /> : null}
         </Disclosure>
       ) : (
         <Disclosure variant="step" collapsible={false} summary={summary} />
@@ -1242,6 +1277,22 @@ export function ToolCall({
   );
 }
 
+/** An MCP tool call: the tool in the body ink, its server a step back in the chrome ink. */
+function McpCallText({
+  call,
+  failed = false,
+}: {
+  call: { tool: string; server: string };
+  failed?: boolean;
+}) {
+  return (
+    <>
+      <span className={failed ? undefined : "text-(--transcript-ink-body)"}>{call.tool}</span>{" "}
+      <span className={failed ? undefined : "text-(--transcript-ink-chrome)"}>{call.server}</span>
+    </>
+  );
+}
+
 function ToolCallSummary({
   label,
   command,
@@ -1275,6 +1326,8 @@ function ToolCallSummary({
     preview,
     cwd,
   );
+  // An MCP call reads as its tool in words with the server after it; the raw id and arguments stay in the tooltip and details.
+  const mcp = command ? undefined : mcpToolDisplay(label);
   // A running command or search reads as one live line: verb and command sweep together.
   if (working && (!action || !target || !isFile)) {
     const summary = (
@@ -1290,7 +1343,11 @@ function ToolCallSummary({
           ) : (
             <>
               {command ? <>{t("Running")} </> : null}
-              <span className="font-mono text-ui-secondary">{label}</span>
+              {mcp ? (
+                <McpCallText call={mcp} />
+              ) : (
+                <span className="font-mono text-ui-secondary">{label}</span>
+              )}
             </>
           )}
         </WorkingIndicator>
@@ -1299,7 +1356,13 @@ function ToolCallSummary({
     return command ? summary : <OverflowTooltip label={label}>{summary}</OverflowTooltip>;
   }
   if (!action || !target) {
-    const summary = (
+    const summary = mcp ? (
+      <span
+        className={`min-w-0 flex-1 truncate font-sans ${failed ? "text-(--ui-tone-danger-fg)" : ""}`}
+      >
+        <McpCallText call={mcp} failed={failed} />
+      </span>
+    ) : (
       <span
         className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
           failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)"
@@ -1318,9 +1381,9 @@ function ToolCallSummary({
     preview?.kind === "write" &&
     previewMatchesFile &&
     (preview.contentOnly || preview.lines?.some((line) => line.kind !== "context"));
-  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)";
-  // Settled work rests dim and brightens with its row (see .transcript-tool-row).
-  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-tool-ink)";
+  // One line, two roles: the action label in the body ink, its value a step back in the chrome ink.
+  const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-body)";
+  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)";
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
@@ -1342,7 +1405,7 @@ function ToolCallSummary({
             cwd={cwd}
             onOpen={openFile && filePath ? () => openFile(filePath) : undefined}
             onOpenFile={onOpenFile}
-            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-start hover:text-(--ui-tone-info-fg) ${
+            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded py-0.5 text-start hover:text-(--ui-tone-info-fg) ${
               chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
             }`}
           >
@@ -1370,7 +1433,7 @@ function ToolCallSummary({
         ) : (
           <OverflowTooltip label={target}>
             <span
-              className={`flex min-w-0 items-center gap-1 rounded px-1 ${
+              className={`flex min-w-0 items-center gap-1 ${
                 chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
               }`}
             >
@@ -1382,16 +1445,14 @@ function ToolCallSummary({
       ) : (
         <OverflowTooltip label={target}>
           {preview?.kind === "search" ? (
-            // The query sits in a quiet pill, so a search reads as a question asked, not a command run.
+            // The query is plain text in the value ink, so a search reads as a question asked, not a command run.
             <span className="flex min-w-0 flex-1">
-              <span
-                className={`min-w-0 max-w-full truncate rounded-full border border-(--transcript-inset-border) px-2 font-sans text-ui-secondary ${targetTone}`}
-              >
+              <span className={`min-w-0 max-w-full truncate font-sans text-ui-body ${targetTone}`}>
                 {target}
               </span>
             </span>
           ) : (
-            <span className={`flex min-w-0 flex-1 items-center gap-1.5 ps-1 ${targetTone}`}>
+            <span className={`flex min-w-0 flex-1 items-center gap-1.5 ${targetTone}`}>
               <span className="min-w-0 truncate">{target}</span>
             </span>
           )}
@@ -1442,25 +1503,26 @@ function ConnectedApprovalControls({
     context.session.id,
     block.approval!.requestId,
   );
+  // A bare MCP tool id reads as words with its server beside it; the exact id stays in the tooltip.
+  const detail = approvalDetail(block);
+  const mcp = mcpToolDisplay(detail);
   return (
-    <Surface
-      ref={cardRef}
-      as="div"
-      variant="card"
-      padding="sm"
-      tone="warning"
-      frame="warning"
-      className="mt-1.5 min-w-0"
-    >
+    <Surface ref={cardRef} as="div" variant="inset" padding="sm" className="mt-1.5 min-w-0">
       <ApprovalRequest
-        title={approvalTitle(block, t)}
-        context={
-          decision.sessionAction
-            ? [context.session.cwd]
-            : [context.session.cwd, t("This request only")]
-        }
+        title={mcp ? t("Allow {p0}?", { p0: mcp.tool }) : approvalTitle(block, t)}
+        path={context.session.cwd}
+        scope={decision.sessionAction ? undefined : t("This request only")}
         actions={decision.sessionAction ? [decision.sessionAction] : undefined}
-        detail={approvalDetail(block)}
+        detail={detail}
+        summary={
+          mcp ? (
+            <OverflowTooltip label={detail}>
+              <Text as="div" size="caption" tone="secondary" truncate>
+                {mcp.server}
+              </Text>
+            </OverflowTooltip>
+          ) : undefined
+        }
         details={
           hasToolInspection(block)
             ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }

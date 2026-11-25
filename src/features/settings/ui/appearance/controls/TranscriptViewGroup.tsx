@@ -1,7 +1,17 @@
+import type { CSSProperties } from "react";
 import { formatNumber, t, useLocale } from "../../../../../shared/i18n";
-import { AdvancedSettings, Row, Segmented } from "../../../../../shared/ui/settings";
+import {
+  FILE_REF_KINDS,
+  FILE_REF_TONES,
+  type FileRefKind,
+  type FileRefTone,
+} from "../../../../../shared/lib/fileReferenceKind";
+import { AdvancedSettings, Row, Segmented, Select } from "../../../../../shared/ui/settings";
 import {
   APPEARANCE_DEFAULTS,
+  FILE_REF_STYLES,
+  FILE_TONE_FIELDS,
+  fileRefToneColor,
   TRANSCRIPT_ACTIONS,
   TRANSCRIPT_CARDS,
   TRANSCRIPT_SURFACES,
@@ -38,6 +48,31 @@ const CARD_LABELS: Record<(typeof TRANSCRIPT_CARDS)[number], () => string> = {
 const ACTION_LABELS: Record<(typeof TRANSCRIPT_ACTIONS)[number], () => string> = {
   always: () => t("Always"),
   hover: () => t("On hover"),
+};
+
+const FILE_REF_STYLE_LABELS: Record<(typeof FILE_REF_STYLES)[number], () => string> = {
+  colored: () => t("Colored"),
+  plain: () => t("Plain"),
+};
+const FILE_KIND_LABELS: Record<FileRefKind, () => string> = {
+  code: () => t("Code"),
+  markup: () => t("Web and markup"),
+  docs: () => t("Documents"),
+  data: () => t("Data and config"),
+  media: () => t("Media"),
+  archive: () => t("Archives"),
+  folder: () => t("Folders"),
+  other: () => t("Other files"),
+};
+const FILE_TONE_LABELS: Record<FileRefTone, () => string> = {
+  info: () => t("Blue"),
+  success: () => t("Green"),
+  warning: () => t("Amber"),
+  danger: () => t("Red"),
+  feature: () => t("Purple"),
+  orchestration: () => t("Pink"),
+  accent: () => t("Accent"),
+  neutral: () => t("Neutral"),
 };
 
 type PresetFields = Pick<
@@ -168,6 +203,8 @@ export function TranscriptViewGroup({
           "transcript-chrome-ink",
           "transcript-cards",
           "transcript-actions",
+          "transcript-file-refs",
+          ...FILE_REF_KINDS.map((kind) => `file-tone-${kind}`),
         ]}
       >
         <Row
@@ -283,6 +320,58 @@ export function TranscriptViewGroup({
             onChange={(transcriptActions) => set({ transcriptActions })}
           />
         </Row>
+        <Row
+          id="transcript-file-refs"
+          label={t("File references")}
+          info={t("File and folder names in replies get an icon. Colored tints them by kind.")}
+          modified={modified("transcriptFileRefs")}
+          onReset={reset("transcriptFileRefs")}
+        >
+          <Segmented
+            label={t("File references")}
+            value={preferences.transcriptFileRefs}
+            options={FILE_REF_STYLES.map((value) => ({
+              value,
+              label: FILE_REF_STYLE_LABELS[value](),
+            }))}
+            disabled={preferencesUnavailable}
+            onChange={(transcriptFileRefs) => set({ transcriptFileRefs })}
+          />
+        </Row>
+        {FILE_REF_KINDS.map((kind) => {
+          const field = FILE_TONE_FIELDS[kind];
+          return (
+            <Row
+              key={kind}
+              id={`file-tone-${kind}`}
+              label={FILE_KIND_LABELS[kind]()}
+              dependsOn={preferences.transcriptFileRefs === "colored"}
+              disabledReason={t("Turn on colored file references first")}
+              modified={modified(field)}
+              onReset={reset(field)}
+            >
+              <Select
+                label={FILE_KIND_LABELS[kind]()}
+                hideLabel
+                controlWidth="compact"
+                value={preferences[field]}
+                disabled={preferencesUnavailable}
+                options={FILE_REF_TONES.map((tone) => ({
+                  value: tone,
+                  label: FILE_TONE_LABELS[tone](),
+                  icon: (
+                    <span
+                      aria-hidden="true"
+                      className="file-ref-swatch"
+                      style={{ "--file-ref-swatch": fileRefToneColor(tone) } as CSSProperties}
+                    />
+                  ),
+                }))}
+                onChange={(tone) => set({ [field]: tone as FileRefTone })}
+              />
+            </Row>
+          );
+        })}
       </AdvancedSettings>
     </>
   );

@@ -56,8 +56,12 @@ export interface JsonViewerProps {
   onQueryChange?: (query: string) => void;
   /** Children shown per page in a long array or object. Defaults to 50. */
   pageSize?: number;
-  /** Show copy value and copy path actions. Defaults to true. */
+  /** Show copy value and copy path actions on the hovered or focused row. Defaults to true. */
   copyable?: boolean;
+  /** Offer copy on the root row. Turn it off when the surrounding card already copies the whole document. Defaults to true. */
+  copyRoot?: boolean;
+  /** Show the search field and the expand and collapse buttons. Turn it off for small payloads. Defaults to true. */
+  toolbar?: boolean;
   writeText?: (text: string) => Promise<void>;
   onCopy?: (detail: JsonViewerCopyDetail) => void;
   /** Called when a row becomes the current one. */
@@ -228,8 +232,7 @@ function Highlight({ text, needle, current }: { text: string; needle: string; cu
 
 type CopyState = "idle" | "done" | "error";
 /**
- * Icon-only copy action built on the shared Button. A row action is the compact inline variant; the path bar uses a regular
- * ghost icon Button. The glyph swaps in place, so the button never changes width.
+ * Icon-only copy action built on the shared InlineAction. A row action is the compact inline variant. The glyph swaps in place, so the button never changes width.
  */
 function CopyButton({
   label,
@@ -237,14 +240,12 @@ function CopyButton({
   onCopy,
   reduced,
   className,
-  focusable = false,
 }: {
   label: string;
   icon: ReactNode;
   onCopy: () => Promise<void>;
   reduced: boolean;
   className?: string;
-  focusable?: boolean;
 }) {
   const t = useT();
   const [state, setState] = useState<CopyState>("idle");
@@ -291,25 +292,6 @@ function CopyButton({
       </motion.span>
     </AnimatePresence>
   );
-  if (focusable)
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        motion="none"
-        label={name}
-        title={label}
-        className={className}
-        data-state={state}
-        onClick={(event) => {
-          event.stopPropagation();
-          void run();
-        }}
-      >
-        {body}
-      </Button>
-    );
   return (
     <InlineAction
       reveal="always"
@@ -351,6 +333,8 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     onQueryChange,
     pageSize = 50,
     copyable = true,
+    copyRoot = true,
+    toolbar = true,
     writeText,
     onCopy,
     onSelect,
@@ -732,6 +716,10 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
     }
   };
 
+  // The root row's value is the whole document and its path is just the root name, so it only offers copy when asked.
+  const rowCopyable = (row: Row) =>
+    copyable && row.kind === "node" && (copyRoot || row.id !== rootName);
+
   const heightStyle = {
     "--json-max-height": typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight,
   } as CSSProperties;
@@ -765,7 +753,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
       className={[styles.root, className].filter(Boolean).join(" ")}
       style={heightStyle}
     >
-      {searchable || rows.length > 1 ? (
+      {toolbar && (searchable || rows.length > 1) ? (
         <div className={styles.toolbar}>
           {searchable ? (
             <SearchInputGroup
@@ -886,7 +874,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                   aria-label={describe(row)}
                   className={styles.row}
                   data-kind={row.kind}
-                  data-copyable={(copyable && row.kind === "node") || undefined}
+                  data-copyable={rowCopyable(row) || undefined}
                   data-active={isActive || undefined}
                   style={{ "--level": row.level - 1 } as CSSProperties}
                   initial={{ height: 0, opacity: 0, overflow: "hidden" }}
@@ -1006,20 +994,22 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                             </span>
                           </Tooltip>
                         )}
-                        {copyable ? (
+                        {rowCopyable(row) ? (
                           <span className={styles.actions}>
                             <CopyButton
-                              label="Copy value"
+                              label={t("Copy value")}
                               icon={<Copy aria-hidden="true" />}
                               reduced={reduced}
                               onCopy={() => copy(row, "value")}
                             />
-                            <CopyButton
-                              label="Copy path"
-                              icon={<Link2 aria-hidden="true" />}
-                              reduced={reduced}
-                              onCopy={() => copy(row, "path")}
-                            />
+                            {row.id !== rootName ? (
+                              <CopyButton
+                                label={t("Copy path")}
+                                icon={<Link2 aria-hidden="true" />}
+                                reduced={reduced}
+                                onCopy={() => copy(row, "path")}
+                              />
+                            ) : null}
                           </span>
                         ) : null}
                       </>
@@ -1048,16 +1038,6 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                 : activeRow.type
               : "page"}
           </span>
-          {copyable && activeRow.kind === "node" ? (
-            <CopyButton
-              key={activeRow.id}
-              focusable
-              label="Copy path"
-              icon={<Copy aria-hidden="true" />}
-              reduced={reduced}
-              onCopy={() => copy(activeRow, "path")}
-            />
-          ) : null}
         </div>
       ) : null}
       <span className={styles.srOnly} role="status">

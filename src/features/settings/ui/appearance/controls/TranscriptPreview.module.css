@@ -97,3 +97,10 @@
   gap: var(--space-2);
   color: var(--transcript-ink-chrome);
 }
+
+/* The sample file references wrap like a line of chips. */
+.refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}

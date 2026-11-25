@@ -323,10 +323,10 @@ export const ChatAgent = custom(
   <path d="M3 12h3c4 0 3-5 8-5m-8 5c4 0 3 5 8 5M16 4h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 10h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2Z" />,
 );
 
-/** Marks a tool call without a dedicated activity glyph. */
+/** A closed toolbox; marks a tool call without a dedicated activity glyph. */
 export const ChatTool = custom(
   "ChatTool",
-  <path d="m4.5 15.5 4-4a2 2 0 0 1 2.8 0l1.2 1.2a2 2 0 0 1 0 2.8l-4 4a2.83 2.83 0 0 1-4-4Zm7-4 4-4 1-2.5L19 3.5 20.5 5 19 7.5l-2.5 1-4 4" />,
+  <path d="M6.5 8h11a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-11a3 3 0 0 1-3-3v-6a3 3 0 0 1 3-3ZM8.5 8V6.5A2.5 2.5 0 0 1 11 4h2a2.5 2.5 0 0 1 2.5 2.5V8M3.5 13h6.5m4 0h6.5M10 12h4v3.5h-4Z" />,
 );
 
 /** Marks a narrated step in the activity list. */

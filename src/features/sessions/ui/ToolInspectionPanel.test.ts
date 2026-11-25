@@ -2,7 +2,13 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ToolInspectionPanel, inspectionJson, hasToolInspection } from "./ToolInspectionPanel";
+import {
+  ToolInspectionPanel,
+  inspectionJson,
+  hasToolInspection,
+  jsonNodeCount,
+  toolCallArguments,
+} from "./ToolInspectionPanel";
 import type { Block } from "../model/session";
 const clipboard = vi.hoisted(() => ({ copy: vi.fn(async (_text: string) => {}) }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyMessage: clipboard.copy }));
@@ -191,6 +197,17 @@ it("recognizes only complete saved JSON collections", () => {
     expect(inspectionJson(text)).toBeNull();
 });
 
+it("reads a recorded tool call's arguments as JSON, not shell text or scalars", () => {
+  expect(
+    toolCallArguments(
+      'mcp__bycoda-conversation__conversation_agents_delegate: {"requestId":"a","n":2}',
+    ),
+  ).toEqual({ data: { requestId: "a", n: 2 } });
+  expect(toolCallArguments('tools.search: [{"q":"x"}]')).toEqual({ data: [{ q: "x" }] });
+  for (const text of ["git status", 'echo {"a":1}', "tool: 42", 'tool: {"a":', "no colon {}"])
+    expect(toolCallArguments(text)).toBeNull();
+});
+
 it("parses saved JSON once across render and copy feedback, then refreshes changed output", async () => {
   const text = '{"result":{"cached":true}}';
   const changed = '{"result":{"cached":false}}';
@@ -249,4 +266,38 @@ it("renders JSON output as a tree while truncated output and commands retain the
   );
   expect(container.querySelector('[role="tree"]')).toBeNull();
   expect(container.querySelector("pre")?.textContent).toBe(text);
+});
+
+it("shows one Copy JSON action on the card and no search toolbar for a small payload", async () => {
+  const block: Block = {
+    id: "small-json",
+    role: "tool",
+    text: "Result",
+    tool: { output: '{"ok":true,"items":[1,2]}', status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  expect(container.querySelector('button[aria-label="Copy JSON"]')).not.toBeNull();
+  expect(container.querySelector('input[aria-label="Search JSON"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Expand all"]')).toBeNull();
+  const rows = container.querySelectorAll('[role="treeitem"]');
+  expect(rows[0]!.querySelector("button")).toBeNull();
+});
+
+it("keeps search and expand controls for a large payload", async () => {
+  const output = JSON.stringify({ items: Array.from({ length: 20 }, (_, i) => ({ id: i })) });
+  const block: Block = {
+    id: "big-json",
+    role: "tool",
+    text: "Result",
+    tool: { output, status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  expect(container.querySelector('input[aria-label="Search JSON"]')).not.toBeNull();
+  expect(jsonNodeCount({ a: [1, 2, 3] }, 12)).toBe(5);
+  expect(
+    jsonNodeCount(
+      Array.from({ length: 100 }, () => 1),
+      12,
+    ),
+  ).toBeLessThan(20);
 });

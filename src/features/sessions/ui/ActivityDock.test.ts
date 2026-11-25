@@ -146,11 +146,12 @@ describe("ActivityDock", () => {
     render({ sessionId: "info-card", busy: true, blocks: [user, agent] });
     const toggle = container.querySelector<HTMLButtonElement>("[data-dock-toggle]")!;
     expect(toggle.textContent).toContain("1 running");
-    expect(toggle.querySelector("svg")?.classList.contains("rotate-180")).toBe(false);
+    const arrow = () => container.querySelector("[data-dock-chevron] svg");
+    expect(arrow()?.classList.contains("rotate-180")).toBe(false);
     expect(container.querySelector('[aria-label="Background work"]')).toBeNull();
     act(() => toggle.click());
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(toggle.querySelector("svg")?.classList.contains("rotate-180")).toBe(true);
+    expect(arrow()?.classList.contains("rotate-180")).toBe(true);
   });
   it("keeps child identity and failed step metrics separate from lifecycle and opens the exact run", () => {
     const onOpenAgent = vi.fn();
@@ -367,7 +368,8 @@ describe("ActivityDock", () => {
       await act(async () => button.click());
       expect(onStopAgent).toHaveBeenCalledWith(expect.objectContaining({ callId: "a1" }));
       expect(stopButtons()[0].getAttribute("aria-disabled")).toBe("true");
-      expect(visibleSessionTestText(stopButtons()[0])).toBe("Stopping…");
+      expect(stopButtons()[0].getAttribute("aria-label")).toMatch(/^Stopping /);
+      expect(visibleSessionTestText(stopButtons()[0])).toBe("");
       finish();
     });
 
@@ -384,11 +386,9 @@ describe("ActivityDock", () => {
       const [button] = stopButtons();
       expect(button.disabled).toBe(false);
       expect(await tooltipText(button)).toBe("Could not stop it. Try again.");
-      expect(visibleSessionTestText(button)).toBe("Retry stop");
-      const labels = [...button.querySelectorAll("[data-reserve]")].map((node) =>
-        node.getAttribute("data-reserve"),
-      );
-      expect(labels).toEqual(["Stop", "Retry stop", "Stopping…"]);
+      // Icon-only: compact, no reserved text.
+      expect(visibleSessionTestText(button)).toBe("");
+      expect(button.querySelector("[data-reserve]")).toBeNull();
       expect(dock()?.querySelector('[role="status"].sr-only')?.textContent).toContain(
         "Could not stop it. Try again.",
       );
@@ -410,8 +410,8 @@ describe("ActivityDock", () => {
         (button) => visibleSessionTestText(button) === "Stop all",
       );
       expect(await tooltipText(all!)).toContain("Interrupt the whole turn");
-      expect(all?.querySelector('[data-reserve="Stop all"]')).not.toBeNull();
-      expect(all?.querySelector('[data-reserve="Retry stop"]')).not.toBeNull();
+      // It sizes to its current text instead of reserving the widest state.
+      expect(all?.querySelector("[data-reserve]")).toBeNull();
       act(() => all?.click());
       expect(onStopAll).not.toHaveBeenCalled();
       expect(visibleSessionTestText(all!)).toBe("Confirm stop?");

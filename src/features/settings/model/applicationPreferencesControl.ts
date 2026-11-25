@@ -1,5 +1,13 @@
 import { applyThemePreference, loadThemePreference, saveThemePreference } from "./appearance";
 import {
+  FILE_REF_KINDS,
+  FILE_REF_TONES,
+  type FileRefTone,
+} from "../../../shared/lib/fileReferenceKind";
+import {
+  FILE_REF_STYLES,
+  FILE_TONE_FIELDS,
+  type FileToneField,
   loadAppearancePreferences,
   saveAppearancePreferences,
   TRANSCRIPT_ACTIONS,
@@ -39,7 +47,19 @@ const transcriptFields = {
   chromeInk: { field: "transcriptChromeInk", min: 50, max: 100 },
   cards: { field: "transcriptCards", options: TRANSCRIPT_CARDS },
   actions: { field: "transcriptActions", options: TRANSCRIPT_ACTIONS },
-} as const;
+  /** colored | plain: whether file references in replies are tinted by kind. */
+  fileRefs: { field: "transcriptFileRefs", options: FILE_REF_STYLES },
+  /** `fileToneCode`, `fileToneMarkup`, ...: the theme tone of each file kind's chip. */
+  ...Object.fromEntries(
+    FILE_REF_KINDS.map((kind) => [
+      FILE_TONE_FIELDS[kind],
+      { field: FILE_TONE_FIELDS[kind], options: FILE_REF_TONES },
+    ]),
+  ),
+} as Record<
+  string,
+  { field: string; options: readonly unknown[] } | { field: string; min: number; max: number }
+>;
 export function applicationPreferencesSnapshot() {
   const voice = loadVoiceSettings();
   const {
@@ -52,7 +72,9 @@ export function applicationPreferencesSnapshot() {
     transcriptChromeInk,
     transcriptCards,
     transcriptActions,
+    transcriptFileRefs,
     messageColor,
+    ...preferences
   } = loadAppearancePreferences();
   return {
     theme: loadThemePreference(),
@@ -70,6 +92,10 @@ export function applicationPreferencesSnapshot() {
       chromeInk: transcriptChromeInk,
       cards: transcriptCards,
       actions: transcriptActions,
+      fileRefs: transcriptFileRefs,
+      ...(Object.fromEntries(
+        FILE_REF_KINDS.map((kind) => [FILE_TONE_FIELDS[kind], preferences[FILE_TONE_FIELDS[kind]]]),
+      ) as Record<FileToneField, FileRefTone>),
     },
     language: getLanguagePreference(),
     voice: Object.fromEntries(voiceFields.map((key) => [key, voice[key] ?? null])),
@@ -125,7 +151,7 @@ export async function applyApplicationPreference(
     for (const [key, value] of edits) {
       if (!Object.prototype.hasOwnProperty.call(transcriptFields, key))
         throw new Error("Invalid transcript appearance field or value.");
-      const rule = transcriptFields[key as keyof typeof transcriptFields];
+      const rule = transcriptFields[key]!;
       const valid =
         "options" in rule
           ? (rule.options as readonly unknown[]).includes(value)

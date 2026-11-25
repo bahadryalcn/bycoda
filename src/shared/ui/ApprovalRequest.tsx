@@ -31,8 +31,8 @@ export type ApprovalRequestProps = {
 };
 
 /**
- * Owner approval: one header line (warning glyph, title, then the decision buttons ending with
- * Allow), the exact request on the code ground below it, and optional details last. A dialog
+ * Owner approval: a title line (subtle warning glyph), quiet folder and scope metadata, the exact
+ * request on the code ground, optional details, then the decision buttons ending with Allow. A dialog
  * passes `actionsPlacement="none"` and puts ApprovalActions in its Modal footer instead. Frameless:
  * the caller places it in its card, pane or dialog. The caller owns authority, handlers and
  * pending state; only Allow gets primary emphasis.
@@ -57,48 +57,52 @@ export function ApprovalRequest({
   details,
   actionsPlacement = "header",
 }: ApprovalRequestProps) {
-  const buttons = <ApprovalActions allow={allow} deny={deny} actions={actions} />;
+  const hasContext = Boolean(scope || path || context?.length);
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        {appearance !== "compact" ? (
-          <div className="flex min-w-0 items-center gap-1">
-            <NoticeGlyph tone="warning" size="inline" />
-            <Heading as="div" size="item">
-              {title}
-            </Heading>
-          </div>
-        ) : null}
-        {actionsPlacement === "header" ? (
-          <div className="ms-auto flex flex-wrap items-center gap-2" data-no-drag="">
-            {buttons}
-          </div>
-        ) : null}
-      </div>
-      {scope ? (
-        <Text as="div" wrap="anywhere">
-          {scope}
-        </Text>
+    <section aria-label={title} className="flex min-w-0 flex-col gap-2 font-sans">
+      {appearance !== "compact" ? (
+        <div className="flex min-w-0 items-center gap-1.5">
+          <NoticeGlyph tone="warning" size="inline" />
+          <Heading as="div" size="item">
+            {title}
+          </Heading>
+        </div>
       ) : null}
-      {path ? (
-        <MiddleTruncate mode="path" size="caption" tone="secondary">
-          {path}
-        </MiddleTruncate>
+      {hasContext ? (
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          {path ? (
+            <div className="min-w-0 max-w-full">
+              <MiddleTruncate mode="path" size="caption" tone="secondary">
+                {path}
+              </MiddleTruncate>
+            </div>
+          ) : null}
+          {scope ? (
+            <Text as="div" size="caption" tone="secondary" wrap="anywhere">
+              {scope}
+            </Text>
+          ) : null}
+          {context?.map((item, index) => (
+            <Text as="div" size="caption" tone="secondary" wrap="anywhere" key={index}>
+              {item}
+            </Text>
+          ))}
+        </div>
       ) : null}
-      {context?.map((item, index) => (
-        <Text as="div" size="caption" tone="secondary" wrap="anywhere" key={index}>
-          {item}
-        </Text>
-      ))}
       {summary ?? (
         <OutputBlock frame="filled" scroll className="max-h-48 min-w-0">
           {detail}
         </OutputBlock>
       )}
       {details ? (
-        <Disclosure summary={details.label} defaultOpen={details.defaultOpen}>
+        <Disclosure variant="compact" summary={details.label} defaultOpen={details.defaultOpen}>
           {details.content}
         </Disclosure>
+      ) : null}
+      {actionsPlacement === "header" ? (
+        <div className="flex flex-wrap items-center justify-end gap-2" data-no-drag="">
+          <ApprovalActions allow={allow} deny={deny} actions={actions} />
+        </div>
       ) : null}
     </section>
   );
@@ -121,7 +125,7 @@ export function ApprovalActions({
   return [...(actions ?? []), deny, allow].map((action, index, all) => (
     <Button
       key={index}
-      variant={index === all.length - 1 ? "primary" : "ghost"}
+      variant={index === all.length - 1 ? "primary" : action === deny ? "secondary" : "ghost"}
       size="sm"
       type="button"
       motion="none"

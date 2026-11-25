@@ -14925,5 +14925,16 @@
   "Anyone on the internet can reach this address. Use it only away from your own networks.": "互联网上的任何人都可以访问此地址。仅在你自己的网络之外使用。",
   "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.": "公共互联网：任何人都可以访问此地址，手机仅受此一次性代码及其设备凭据保护。仅在你自己的网络之外使用。",
   "Width: 240–3840 px. Height: 240–2160 px.": "宽度：240–3840 px。高度：240–2160 px。",
-  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "停止后，已导入的对话会保留。之后可在会话列表中通过“导入历史记录”导入其余对话。"
+  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "停止后，已导入的对话会保留。之后可在会话列表中通过“导入历史记录”导入其余对话。",
+  "Copy JSON": "复制 JSON",
+  "Copy value": "复制值",
+  "File references": "文件引用",
+  "File and folder names in replies get an icon. Colored tints them by kind.": "回复中的文件和文件夹名称会显示图标。彩色会按类型着色。",
+  "Colored": "彩色",
+  "Web and markup": "网页和标记",
+  "Documents": "文档",
+  "Data and config": "数据和配置",
+  "Archives": "压缩包",
+  "Other files": "其他文件",
+  "Turn on colored file references first": "请先开启彩色文件引用"
 }

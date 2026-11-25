@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { statFiles } from "../../../platform/tauri/fs";
-import { existingChatPath } from "./chatPathChecks";
+import { chatPathInfo, existingChatPath } from "./chatPathChecks";
 vi.mock("../../../platform/tauri/fs", () => ({ statFiles: vi.fn() }));
 
 it("batches ambiguous references and recognizes only existing files and folders", async () => {
@@ -37,4 +37,19 @@ it("reuses completed results until TTL expires but retries failed owner reads", 
   vi.mocked(statFiles).mockResolvedValueOnce([{ path: "/ttl/error", isDir: true, mtimeMs: null }]);
   expect(await existingChatPath("/ttl/error")).toBe(true);
   now.mockRestore();
+});
+
+it("tells a folder from a file and a missing path", async () => {
+  vi.mocked(statFiles).mockResolvedValueOnce([
+    { path: "/info/dir", isDir: true, mtimeMs: null },
+    { path: "/info/file.txt", isDir: false, mtimeMs: 2 },
+    { path: "/info/none", isDir: false, mtimeMs: null },
+  ]);
+  expect(
+    await Promise.all(["/info/dir", "/info/file.txt", "/info/none"].map(chatPathInfo)),
+  ).toEqual([
+    { exists: true, isDir: true },
+    { exists: true, isDir: false },
+    { exists: false, isDir: false },
+  ]);
 });

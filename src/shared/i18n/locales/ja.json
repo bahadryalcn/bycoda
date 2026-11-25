@@ -14925,5 +14925,16 @@
   "Anyone on the internet can reach this address. Use it only away from your own networks.": "インターネット上の誰でもこのアドレスにアクセスできます。自分のネットワークの外でのみ使用してください。",
   "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.": "公開インターネット：誰でもこのアドレスにアクセスでき、スマートフォンはこの使い捨てコードとデバイス認証情報だけで保護されます。自分のネットワークの外でのみ使用してください。",
   "Width: 240–3840 px. Height: 240–2160 px.": "幅: 240–3840 px。高さ: 240–2160 px。",
-  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "停止しても、取り込み済みの会話は残ります。残りは後でセッション一覧の「インポート履歴」から取り込めます。"
+  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "停止しても、取り込み済みの会話は残ります。残りは後でセッション一覧の「インポート履歴」から取り込めます。",
+  "Copy JSON": "JSONをコピー",
+  "Copy value": "値をコピー",
+  "File references": "ファイル参照",
+  "File and folder names in replies get an icon. Colored tints them by kind.": "返信内のファイル名とフォルダ名にアイコンが付きます。カラーでは種類ごとに色が付きます。",
+  "Colored": "カラー",
+  "Web and markup": "Web とマークアップ",
+  "Documents": "ドキュメント",
+  "Data and config": "データと設定",
+  "Archives": "アーカイブ",
+  "Other files": "その他のファイル",
+  "Turn on colored file references first": "先にカラーのファイル参照を有効にしてください"
 }

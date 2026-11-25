@@ -92,6 +92,24 @@ export function toolCallState(block: Block): ToolCallState {
 const labels = new WeakMap<Block, string>();
 const categories = new WeakMap<Block, ActivityWorkKind>();
 
+/**
+ * Readable parts of an MCP tool call: the tool as plain words and the server as secondary context.
+ * Accepts the bare id (`mcp__server__tool_name`), the id with its recorded arguments
+ * (`mcp__server__tool_name: {...}`) and the `server:tool_name: {...}` form some harnesses record.
+ * The arguments stay in the call's details. Undefined for anything else.
+ */
+export function mcpToolDisplay(raw: string): { tool: string; server: string } | undefined {
+  const text = raw.trim();
+  const match =
+    /^mcp__(.+?)__([^\s:]+)(?::\s[\s\S]*)?$/.exec(text) ??
+    /^([\w.-]+):([\w.-]+):\s*[{[][\s\S]*$/.exec(text);
+  if (!match) return undefined;
+  const words = (value: string) => value.replace(/[_-]+/g, " ").trim();
+  const tool = words(match[2]);
+  const server = words(match[1]);
+  return tool ? { tool, server } : undefined;
+}
+
 export function toolCallLabel(block: Block, cwd?: string): string {
   if (cwd === undefined) {
     let label = labels.get(block);

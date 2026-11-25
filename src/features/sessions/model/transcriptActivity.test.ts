@@ -17,6 +17,7 @@ import {
   hasRunningSubagent,
   initialThinkingIndex,
   lastActivityIndex,
+  mcpToolDisplay,
   nestedScrollAbsorbsWheel,
   proseSummary,
   resolveToolCallDisplay,
@@ -1502,4 +1503,21 @@ it("keeps Claude's built-in advisor on its own row, live and settled", () => {
     const items = groupTurnItems([read, advisor, read], { settled });
     expect(items.map((item) => item.type)).toEqual(["activity", "block", "activity"]);
   }
+});
+
+it("splits an MCP tool id into readable tool and server words", () => {
+  expect(mcpToolDisplay("mcp__bycoda-conversation__conversation_agents_delegate")).toEqual({
+    tool: "conversation agents delegate",
+    server: "bycoda conversation",
+  });
+  expect(
+    mcpToolDisplay('mcp__bycoda-conversation__conversation_agents_wait: {"runIds":[]}'),
+  ).toEqual({ tool: "conversation agents wait", server: "bycoda conversation" });
+  expect(mcpToolDisplay('bycoda-conversation:conversation_agents_list: {"limit":20}')).toEqual({
+    tool: "conversation agents list",
+    server: "bycoda conversation",
+  });
+  expect(mcpToolDisplay("Read: notes.md")).toBeUndefined();
+  expect(mcpToolDisplay("git status")).toBeUndefined();
+  expect(mcpToolDisplay("mcp__server__a b")).toBeUndefined();
 });

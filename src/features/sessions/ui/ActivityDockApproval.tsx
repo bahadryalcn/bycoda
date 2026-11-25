@@ -3,6 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import type { Block } from "../model/session";
 import { approvalDetail } from "../model/approvalDetail";
+import { mcpToolDisplay } from "../model/transcriptActivity";
 import { approvalSummary } from "./approvalPresentation";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalCardOnScreen } from "./approvalCardVisibility";
@@ -34,6 +35,7 @@ function ConnectedDockApproval({
   const reason = decision.feedback ?? undefined;
   const full = approvalDetail(block);
   const summary = approvalSummary(block);
+  const mcp = mcpToolDisplay(full);
   return (
     <div
       className="flex min-w-0 flex-wrap items-center gap-1.5"
@@ -44,10 +46,10 @@ function ConnectedDockApproval({
         size="caption"
         tone="secondary"
         truncate
-        className="max-w-48 min-w-0 font-mono"
+        className={mcp ? "max-w-48 min-w-0" : "max-w-48 min-w-0 font-mono"}
         data-dock-approval-summary=""
       >
-        {summary}
+        {mcp ? mcp.tool : summary}
       </Text>
       <Button
         variant="ghost"

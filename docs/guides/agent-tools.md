@@ -332,6 +332,18 @@ The assistant reading surface and text ink are in `application.transcript`
 accepts `always` or `hover`. `assistantMessageOpacity` is an alias of
 `surfaceOpacity`, so older clients keep working.
 
+File references in replies (a workspace file or folder written as a link or as
+inline code) show the file-type icon on a tinted chip. In Settings > Chat >
+Fine-tune reading, **File references** switches them between colored and plain
+and picks a color for each kind: code, markup and web, documents, data and
+config, media, archives, folders and other files. The same values are in
+`application.transcript`: `fileRefs` (`colored` or `plain`) and `fileToneCode`,
+`fileToneMarkup`, `fileToneDocs`, `fileToneData`, `fileToneMedia`,
+`fileToneArchive`, `fileToneFolder`, `fileToneOther`. Each tone is one of `info`,
+`success`, `warning`, `danger`, `feature`, `orchestration`, `accent` or
+`neutral`; free color values are not accepted. Inline code that is not a file,
+such as `tabIndex` or `images.generate`, keeps a plain code chip with no icon.
+
 Saved Servers can be edited through `servers.*`. To run a command, ask the
 assistant to use `servers.ssh.execute` with the saved server's ID. The connected
 desktop asks you to approve the exact target and command inside bycoda before starting it,

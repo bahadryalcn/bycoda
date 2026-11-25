@@ -14925,5 +14925,16 @@
   "Anyone on the internet can reach this address. Use it only away from your own networks.": "İnternetteki herkes bu adrese ulaşabilir. Yalnızca kendi ağlarınızın dışında kullanın.",
   "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.": "Herkese açık internet: Herkes bu adrese ulaşabilir ve telefon yalnızca bu tek kullanımlık kod ile cihaz kimlik bilgisiyle korunur. Yalnızca kendi ağlarınızın dışında kullanın.",
   "Width: 240–3840 px. Height: 240–2160 px.": "Genişlik: 240–3840 px. Yükseklik: 240–2160 px.",
-  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "Durdurursanız şimdiye kadar içe aktarılan konuşmalar korunur. Kalanları daha sonra oturum listesindeki İçe aktarma geçmişi ile aktarabilirsiniz."
+  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "Durdurursanız şimdiye kadar içe aktarılan konuşmalar korunur. Kalanları daha sonra oturum listesindeki İçe aktarma geçmişi ile aktarabilirsiniz.",
+  "Copy JSON": "JSON'u kopyala",
+  "Copy value": "Değeri kopyala",
+  "File references": "Dosya referansları",
+  "File and folder names in replies get an icon. Colored tints them by kind.": "Yanıtlardaki dosya ve klasör adlarına simge eklenir. Renkli seçeneği bunları türüne göre renklendirir.",
+  "Colored": "Renkli",
+  "Web and markup": "Web ve işaretleme",
+  "Documents": "Belgeler",
+  "Data and config": "Veri ve yapılandırma",
+  "Archives": "Arşivler",
+  "Other files": "Diğer dosyalar",
+  "Turn on colored file references first": "Önce renkli dosya referanslarını açın"
 }

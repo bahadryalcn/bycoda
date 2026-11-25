@@ -180,3 +180,26 @@
 .root[data-variant="step"] > .body {
   padding-block-start: 0;
 }
+
+/* The body opens and closes smoothly: height from 0 to its natural size plus a fade. interpolate-size
+   lets `auto` animate; engines without ::details-content, or a reader who prefers reduced motion,
+   get the instant toggle. A body that unmounts on close still snaps shut; keep it mounted through
+   the standard duration to animate the close. */
+@media (prefers-reduced-motion: no-preference) {
+  .root {
+    interpolate-size: allow-keywords;
+  }
+  .root::details-content {
+    block-size: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      block-size var(--motion-duration-standard) var(--motion-ease-standard),
+      opacity var(--motion-duration-standard) var(--motion-ease-standard),
+      content-visibility var(--motion-duration-standard) allow-discrete;
+  }
+  .root[open]::details-content {
+    block-size: auto;
+    opacity: 1;
+  }
+}

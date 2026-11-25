@@ -107,6 +107,45 @@ describe("appearance preferences", () => {
     expect(root.style.getPropertyValue("--appearance-transcript-chrome-ink")).toBe("70%");
     expect(root.style.getPropertyValue("--appearance-contrast-scale")).toBe("1.5");
   });
+  it("defaults file references to colored with a tone per kind and rejects unknown tones", () => {
+    expect(normalizeAppearancePreferences({})).toMatchObject({
+      transcriptFileRefs: "colored",
+      fileToneCode: "info",
+      fileToneMarkup: "warning",
+      fileToneDocs: "feature",
+      fileToneData: "success",
+      fileToneMedia: "orchestration",
+      fileToneArchive: "neutral",
+      fileToneFolder: "accent",
+      fileToneOther: "neutral",
+    });
+    expect(
+      normalizeAppearancePreferences({
+        transcriptFileRefs: "rainbow",
+        fileToneCode: "#ff0000",
+        fileToneDocs: "danger",
+      } as never),
+    ).toMatchObject({
+      transcriptFileRefs: "colored",
+      fileToneCode: "info",
+      fileToneDocs: "danger",
+    });
+  });
+
+  it("applies the file reference style and one hue variable per kind", () => {
+    applyAppearancePreferences({
+      ...APPEARANCE_DEFAULTS,
+      transcriptFileRefs: "plain",
+      fileToneDocs: "danger",
+      fileToneOther: "neutral",
+    });
+    const root = document.documentElement;
+    expect(root.dataset.fileRefs).toBe("plain");
+    expect(root.style.getPropertyValue("--file-ref-hue-docs")).toBe("var(--color-danger)");
+    expect(root.style.getPropertyValue("--file-ref-hue-other")).toBe("var(--color-content)");
+    expect(root.style.getPropertyValue("--file-ref-hue-code")).toBe("var(--color-info)");
+  });
+
   it("defaults the image layer on, persists off and restores its default DOM state", () => {
     expect(normalizeAppearancePreferences({}).chatBackgroundLayer).toBe(true);
     expect(

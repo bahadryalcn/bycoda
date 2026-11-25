@@ -42,6 +42,34 @@ export function inspectionJson(text: string): { data: unknown } | null {
   }
 }
 
+/**
+ * A non-shell tool call recorded as `name: {json}` (MCP and other tools) shows its arguments
+ * as a JSON tree instead of one long line. Shell commands keep their literal text.
+ */
+export function toolCallArguments(text: string): { data: unknown } | null {
+  const match = /^[\w.:@/-]+:\s*([{[][\s\S]*)$/.exec(text.trim());
+  const parsed = match ? inspectionJson(match[1]) : null;
+  return parsed && typeof parsed.data === "object" && parsed.data !== null ? parsed : null;
+}
+
+/** Payloads with at most this many nodes (keys and values, root included) read at a glance, so they get no search or expand controls. */
+const JSON_TOOLBAR_MIN_NODES = 12;
+
+/** Counts nodes, stopping once the count passes `limit`. */
+export function jsonNodeCount(data: unknown, limit: number): number {
+  let count = 0;
+  const visit = (value: unknown) => {
+    count += 1;
+    if (count > limit || typeof value !== "object" || value === null) return;
+    for (const child of Object.values(value)) {
+      visit(child);
+      if (count > limit) return;
+    }
+  };
+  visit(data);
+  return count;
+}
+
 export function hasToolInspection(block: Block): boolean {
   const tool = block.tool;
   return !!(
@@ -147,15 +175,15 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       sections.map((section) => ({
         section,
         json:
-          !section.diff &&
-          !section.error &&
-          !section.truncated &&
-          section.title !== "Command" &&
-          section.title !== "Written content"
-            ? inspectionJson(section.text)
-            : null,
+          section.diff || section.error || section.truncated || section.title === "Written content"
+            ? null
+            : section.title === "Command"
+              ? block.tool?.preview?.kind === "shell"
+                ? null
+                : toolCallArguments(section.text)
+              : inspectionJson(section.text),
       })),
-    [sections],
+    [block, sections],
   );
   // JsonViewer owns its own layout, so the wrap choice only matters when some section is plain text.
   const hasWrappable = presentation.some(({ json }) => json === null);
@@ -166,10 +194,18 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
           lines: diffLineCount(section.text),
         })
       : null;
+  // The card's copy is the one copy-everything action; say so when the whole body is JSON.
+  const allJson = presentation.length > 0 && presentation.every(({ json }) => json !== null);
   const actions = [
     {
       id: "copy",
-      label: feedback.copied ? t("Copied") : feedback.failed ? t("Retry copy") : t("Copy"),
+      label: feedback.copied
+        ? t("Copied")
+        : feedback.failed
+          ? t("Retry copy")
+          : allJson
+            ? t("Copy JSON")
+            : t("Copy"),
       icon: feedback.copied ? <Check /> : feedback.failed ? <RotateCcw /> : <Copy />,
       tone: feedback.copied
         ? ("success" as const)
@@ -268,6 +304,9 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 label={catalogText(t, section.title)}
                 maxHeight={320}
                 pageSize={50}
+                // The card's Copy action already copies the whole document.
+                copyRoot={false}
+                toolbar={jsonNodeCount(json.data, JSON_TOOLBAR_MIN_NODES) > JSON_TOOLBAR_MIN_NODES}
               />
             ) : (
               <OutputBlock

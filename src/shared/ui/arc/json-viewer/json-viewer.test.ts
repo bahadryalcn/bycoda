@@ -176,3 +176,32 @@ it("keeps long arrays paged and reaches a late match without building the index 
   await act(async () => vi.advanceTimersByTime(150));
   expect(items()).toBe(52);
 });
+
+it("keeps one copy action per row, none on the root row when the host copies everything, and none in the footer", async () => {
+  await act(async () =>
+    root.render(createElement(JsonViewer, { data: { a: { b: 1 } }, copyRoot: false })),
+  );
+  const names = (row: Element) =>
+    [...row.querySelectorAll("button")].map((button) => button.getAttribute("aria-label"));
+  const rows = [...container.querySelectorAll('[role="treeitem"]')];
+  expect(names(rows[0]!)).toEqual([]);
+  expect(names(rows[1]!)).toEqual(["Copy value", "Copy path"]);
+  // Only row actions remain: the path footer carries no copy button.
+  expect(container.querySelectorAll('button[aria-label^="Copy"]')).toHaveLength(2);
+});
+
+it("offers value copy but no path copy on the root row by default", async () => {
+  await act(async () => root.render(createElement(JsonViewer, { data: { a: 1 } })));
+  const root0 = container.querySelector('[role="treeitem"]')!;
+  expect([...root0.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual([
+    "Copy value",
+  ]);
+});
+
+it("hides search and expand controls when the toolbar is off", async () => {
+  await act(async () =>
+    root.render(createElement(JsonViewer, { data: { a: { b: 1 } }, toolbar: false })),
+  );
+  expect(container.querySelector('input[aria-label="Search JSON"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Expand all"]')).toBeNull();
+});

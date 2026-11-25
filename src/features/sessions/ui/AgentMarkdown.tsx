@@ -76,7 +76,14 @@ import {
 } from "../../../platform/tauri/fs";
 import { ChatFolderBrowser } from "../../files/public/ChatFolderBrowser";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
-import { existingChatPath } from "../../files/public/chatPathChecks";
+import { chatPathInfo } from "../../files/public/chatPathChecks";
+import { leafName } from "../../files/public/fileName";
+import { isKnownFileType } from "../../../shared/lib/fileReferenceKind";
+import {
+  FileReferenceBody,
+  fileReferenceChip,
+  useChatPathIsDirectory,
+} from "../../files/public/FileReference";
 import {
   messageFileCandidates,
   resolveMessageFileReference,
@@ -257,6 +264,14 @@ function MarkdownLink({
   const [linkError, setLinkError] = useState<string>();
   const file = href ? resolveFile(href, cwd) : undefined;
   const label = textContent(children);
+  const fileLeaf = file ? leafName(file.path) : "";
+  const fileSlash = !!file && /[\\/]$/.test(file.path);
+  const fileVerifiedDir = useChatPathIsDirectory(
+    file?.path,
+    !!file && !fileSlash && !isKnownFileType(fileLeaf),
+  );
+  const fileIsDir = fileSlash || fileVerifiedDir;
+  const fileChip = file ? fileReferenceChip(fileLeaf, fileIsDir) : undefined;
   const sessionReference = href ? parseLocalSessionLink(href) : null;
   if (href && sessionReference) {
     return (
@@ -278,7 +293,9 @@ function MarkdownLink({
   const anchor = (
     <Link
       href={href}
-      className={className}
+      unstyled={!!fileChip}
+      {...fileChip}
+      className={[fileChip?.className, className].filter(Boolean).join(" ") || undefined}
       {...props}
       dir={dir ?? "auto"}
       onClick={(event) => {
@@ -315,7 +332,13 @@ function MarkdownLink({
       }}
     >
       {machine ? `${machine} · ` : null}
-      {children}
+      {file ? (
+        <FileReferenceBody name={fileLeaf} isDir={fileIsDir}>
+          {children}
+        </FileReferenceBody>
+      ) : (
+        children
+      )}
     </Link>
   );
   const link = (
@@ -389,35 +412,44 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
     !/[\r\n]/.test(text)
       ? resolveFile(reference, cwd)
       : undefined;
-  const [verifiedPath, setVerifiedPath] = useState<string>();
+  const [verified, setVerified] = useState<{ path: string; isDir: boolean }>();
   const ambiguousPath = candidate?.path;
   useEffect(() => {
     if (!ambiguousPath) return;
     let cancelled = false;
-    void existingChatPath(ambiguousPath).then((exists) => {
-      if (!cancelled) setVerifiedPath(exists ? ambiguousPath : undefined);
+    void chatPathInfo(ambiguousPath).then((info) => {
+      if (!cancelled)
+        setVerified(info.exists ? { path: ambiguousPath, isDir: info.isDir } : undefined);
     });
     return () => {
       cancelled = true;
     };
   }, [ambiguousPath]);
   if (!block) {
+    // A name with a known file type opens as written; any other path-like text needs the file
+    // system to confirm it, so identifiers such as `images.generate` stay plain code.
     const file =
-      fileName && !text.trim().startsWith("/")
+      fileName && isKnownFileType(fileName) && !text.trim().startsWith("/")
         ? resolveFile(text, cwd)
-        : candidate?.path === verifiedPath
+        : candidate && verified && candidate.path === verified.path
           ? candidate
           : undefined;
+    const fileIsDir =
+      !!file &&
+      (/[\\/]$/.test(text.trim()) || (!!verified && verified.path === file.path && verified.isDir));
+    const fileChip = file ? fileReferenceChip(leafName(file.path), fileIsDir) : undefined;
     const open = file && onOpenFile ? () => onOpenFile(file.path, file.navigation) : undefined;
     const span = (
       <span className="inline-flex max-w-full items-center align-baseline">
         <Code
           {...props}
-          variant="chip"
+          // A file reference brings its own tinted chip; other inline code keeps the neutral one.
+          variant={fileChip ? "plain" : "chip"}
           size="caption"
           dir="ltr"
+          {...fileChip}
           className={`inline-flex items-center gap-1 max-w-full [overflow-wrap:anywhere] align-baseline ${
-            open ? "cursor-pointer hover:text-(--ui-tone-info-fg) hover:underline" : ""
+            fileChip?.className ?? ""
           } ${className ?? ""}`}
           role={open ? "link" : undefined}
           tabIndex={open ? 0 : undefined}
@@ -438,12 +470,13 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
               : undefined
           }
         >
-          {fileName && file ? (
-            <span aria-hidden="true">
-              <FileTypeIcon name={fileName} isDir={/[\\/]$/.test(text)} size="sm" />
-            </span>
-          ) : null}
-          {children}
+          {file ? (
+            <FileReferenceBody name={leafName(file.path)} isDir={fileIsDir}>
+              {children}
+            </FileReferenceBody>
+          ) : (
+            children
+          )}
         </Code>
       </span>
     );
@@ -1558,5 +1591,6 @@ function inlineFileName(value: string): string | undefined {
   }
 
   const extension = fileName.includes(".") ? fileName.split(".").pop() : undefined;
-  return extension && /^[a-z][a-z0-9+-]{0,11}$/i.test(extension) ? fileName : undefined;
+  // Only a recognised file type counts; `images.generate` or `logs.sources` is an identifier.
+  return extension && isKnownFileType(fileName) ? fileName : undefined;
 }

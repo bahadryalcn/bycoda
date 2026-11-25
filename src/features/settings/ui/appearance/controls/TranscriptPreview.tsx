@@ -1,13 +1,19 @@
 import { useState, type CSSProperties } from "react";
 import { formatDate, t, useLocale } from "../../../../../shared/i18n";
+import { Code } from "../../../../../shared/ui/Code";
 import { CopyButton } from "../../../../../shared/ui/CopyButton";
+import { FileReferenceBody, fileReferenceChip } from "../../../../files/public/FileReference";
 import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { File, Terminal } from "../../../../../shared/ui/icons";
 import { Segmented } from "../../../../../shared/ui/settings";
 import { Surface } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { chatBackgroundSrc } from "../../../model/appearance";
-import type { AppearancePreferences } from "../../../model/appearancePreferences";
+import {
+  fileRefHueVars,
+  type AppearancePreferences,
+  type FileToneField,
+} from "../../../model/appearancePreferences";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./TranscriptPreview.module.css";
 
@@ -21,9 +27,22 @@ export type TranscriptPreviewValues = Pick<
   | "transcriptChromeInk"
   | "transcriptCards"
   | "transcriptActions"
+  | "transcriptFileRefs"
+  | FileToneField
   | "userMessageOpacity"
   | "messageColor"
 >;
+
+/** File names the preview shows as references: name, whether it is a folder, and the label. */
+const PREVIEW_REFERENCES = [
+  ["math.ts", false, "math.ts:14"],
+  ["index.html", false, "index.html"],
+  ["notes.md", false, "notes.md"],
+  ["rows.csv", false, "rows.csv"],
+  ["logo.png", false, "logo.png"],
+  ["backup.zip", false, "backup.zip"],
+  ["src", true, "src/"],
+] as const;
 
 /**
  * Sticky live preview of the transcript reading rules. It renders the shared markup (reply
@@ -63,6 +82,7 @@ export function TranscriptPreview({
         data-transcript-surface={values.transcriptSurface}
         data-transcript-cards={values.transcriptCards}
         data-transcript-actions={values.transcriptActions}
+        data-file-refs={values.transcriptFileRefs}
         data-chat-message-color={values.messageColor}
         data-chat-user-surface-off={values.userMessageOpacity === 0 ? "" : undefined}
         className={styles.stage}
@@ -73,6 +93,7 @@ export function TranscriptPreview({
             "--appearance-transcript-surface-blur": `${values.transcriptSurfaceBlur}px`,
             "--appearance-transcript-body-ink": `${values.transcriptBodyInk}%`,
             "--appearance-transcript-chrome-ink": `${values.transcriptChromeInk}%`,
+            ...fileRefHueVars(values),
           } as CSSProperties
         }
       >
@@ -103,6 +124,21 @@ export function TranscriptPreview({
                 <strong>{t("All tests pass now.")}</strong>
               </p>
               <p>{t("I also added a regression test so it stays fixed.")}</p>
+              <p className={styles.refs}>
+                {PREVIEW_REFERENCES.map(([name, isDir, label]) => (
+                  // Same chip as a reply: shared inline code at caption size with the reference's tint.
+                  <Code
+                    key={name}
+                    variant="chip"
+                    size="caption"
+                    {...fileReferenceChip(name, isDir)}
+                  >
+                    <FileReferenceBody name={name} isDir={isDir}>
+                      {label}
+                    </FileReferenceBody>
+                  </Code>
+                ))}
+              </p>
             </div>
             <pre className={styles.code}>{"const sum = (a, b) => a + b;"}</pre>
             <Surface variant="card" padding="sm">

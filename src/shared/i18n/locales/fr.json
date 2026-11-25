@@ -14925,5 +14925,16 @@
   "Anyone on the internet can reach this address. Use it only away from your own networks.": "Toute personne sur internet peut atteindre cette adresse. Utilisez-la uniquement en dehors de vos propres réseaux.",
   "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.": "Internet public : toute personne peut atteindre cette adresse, et le téléphone n'est protégé que par ce code à usage unique et son identifiant d'appareil. Utilisez-le uniquement en dehors de vos propres réseaux.",
   "Width: 240–3840 px. Height: 240–2160 px.": "Largeur : 240–3840 px. Hauteur : 240–2160 px.",
-  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "L’arrêt conserve les conversations déjà importées. Importez le reste plus tard avec « Historique des importations » dans la liste des sessions."
+  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "L’arrêt conserve les conversations déjà importées. Importez le reste plus tard avec « Historique des importations » dans la liste des sessions.",
+  "Copy JSON": "Copier le JSON",
+  "Copy value": "Copier la valeur",
+  "File references": "Références de fichiers",
+  "File and folder names in replies get an icon. Colored tints them by kind.": "Les noms de fichiers et de dossiers dans les réponses reçoivent une icône. Coloré les teinte selon leur type.",
+  "Colored": "Coloré",
+  "Web and markup": "Web et balisage",
+  "Documents": "Documents",
+  "Data and config": "Données et configuration",
+  "Archives": "Archives",
+  "Other files": "Autres fichiers",
+  "Turn on colored file references first": "Activez d'abord les références de fichiers colorées"
 }

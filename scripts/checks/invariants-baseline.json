@@ -1436,10 +1436,6 @@
       "bycoda/grapheme-safe-truncate": 1,
       "bycoda/suppression-has-reason": 1
     },
-    "src/features/sessions/ui/ActivityDock.tsx": {
-      "bycoda/compiler-owns-memo": 1,
-      "bycoda/effect-names-its-sync": 3
-    },
     "src/features/sessions/ui/AgentMarkdown.tsx": {
       "bycoda/compiler-owns-memo": 16,
       "bycoda/effect-names-its-sync": 5,

@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { OctagonX } from "../../../shared/ui/icons";
+import { Square } from "../../../shared/ui/icons";
 import { LiveText } from "../../../shared/ui/LiveText";
 import type { StopAllControl } from "../model/backgroundStop";
 
@@ -72,8 +72,10 @@ export function DockStopAll({
         // At rest the short text stands for the control's full name.
         label={text === t("Stop all") && text !== control.label ? control.label : undefined}
         tooltip={failed ? t("Could not stop it. Try again.") : control.title}
-        startIcon={<OctagonX className="icon-xs" strokeWidth={1.75} />}
-        reserveLabels={[t("Stop all"), control.confirmLabel, t("Stopping…"), t("Retry stop")]}
+        // The same square as each row's Stop, so every stop control reads alike.
+        startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
+        // The label changes by state; the button sizes to the current text, right-aligned in the header.
+        stableWidth={false}
         loading={stopping}
         onBlur={() => setArmed(false)}
         onClick={press}
