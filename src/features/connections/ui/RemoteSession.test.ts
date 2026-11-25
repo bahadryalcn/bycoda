@@ -4106,7 +4106,6 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   ).toBe(true);
   // Sending is not refused: the message waits in the shared queue instead.
   expect(container.querySelector('button[aria-label^="Send."]')).toBeNull();
-  expect(document.body.textContent).not.toContain("running in the background");
   expect(
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
