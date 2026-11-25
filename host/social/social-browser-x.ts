@@ -25,6 +25,7 @@ import {
   parseInstagramFollowChange,
 } from "./social-browser-instagram-audience";
 import { changeInstagramPost, parseInstagramPostChange } from "./social-browser-instagram-posts";
+import { deleteInstagramPostOnce, instagramPostDeletion } from "./browser/instagram-post-deletion";
 import { instagramBrowserMentions } from "./social-browser-instagram-mentions";
 import { readInstagramEarnings } from "./social-browser-instagram-earnings";
 import {
@@ -47,6 +48,7 @@ import {
 } from "./browser/instagram-live";
 import { exact } from "./core/social-helpers";
 import { XProfileActions, parseXProfilePatch } from "./social-browser-profile";
+import { deleteXPost } from "./social-browser-x-delete";
 import {
   LinkedInProfileActions,
   parseLinkedInProfilePatch,
@@ -516,6 +518,10 @@ export class XBrowserSessions {
       action === "highlight-change" ? parseInstagramHighlightChange(input) : undefined;
     return this.exclusive(accountId, async () => {
       await check();
+      if (patch?.action === "delete") {
+        const deletion = await instagramPostDeletion(service, account.platformId, patch.postUrl);
+        if (deletion) return { postUrl: patch.postUrl, changed: false, deletion };
+      }
       const profile = this.profile(accountId, "browser-profiles");
       // Payout screens may contain payment details outside the named earnings summaries.
       // Keep this dedicated window out of the shared browser tracker and live view.
@@ -561,6 +567,13 @@ export class XBrowserSessions {
             await this.limiter.record(accountId);
           }
         };
+        if (patch?.action === "delete")
+          return await deleteInstagramPostOnce(service, account.platformId, patch, (beforeDelete) =>
+            changeInstagramPost(context, patch, async () => {
+              await check();
+              await beforeDelete();
+            }),
+          );
         if (patch) return await changeInstagramPost(context, patch);
         if (follow)
           return await instagramFollow(context, follow, (recipientId, recordAttempt) =>
@@ -1137,14 +1150,17 @@ export class XBrowserSessions {
     );
     return { status: flow.status, expiresAt: flow.expiresAt };
   }
-  async status(service: SocialService, p: SocialPrincipal, accountId: string) {
+  async status(service: SocialService, p: SocialPrincipal, accountId: string, loginFlow = false) {
     const account = await service.accountForOAuth(p, accountId);
     const source = (await this.chrome.get(accountId))
       ? ("existing-chrome" as const)
       : ("dedicated" as const);
+    if (account.platform !== "x" && loginFlow)
+      return { ...this.platforms.status(accountId), source };
     if (account.platform !== "x")
       return { ...(await this.platforms.check(service, p, account)), source };
     const flow = this.logins.get(accountId);
+    if (loginFlow) return { status: flow?.status ?? "idle", error: flow?.error, source };
     if (flow?.status === "waiting" || flow?.status === "checking")
       return { status: flow.status, error: flow.error };
     if (!account.connected || !account.platformId)
@@ -1317,6 +1333,34 @@ export class XBrowserSessions {
     const platforms = this.platforms.adapter();
     return {
       creatorInfo: platforms.creatorInfo,
+      deletePost: (account, token, postId, beforeSubmit) => {
+        if (account.platform !== "x")
+          return platforms.deletePost!(account, token, postId, beforeSubmit);
+        return this.exclusive(account.id, async () => {
+          if (
+            this.stopped ||
+            ["waiting", "checking"].includes(this.logins.get(account.id)?.status ?? "") ||
+            this.workflows.hasActive(account.id)
+          )
+            throw new SocialPlatformError("denied");
+          const deps = this.deps();
+          const launcher = this.launcher;
+          await deleteXPost(
+            {
+              ...deps,
+              launcher: launcher ? (profile) => launcher(profile, true, "hidden") : undefined,
+              identity: (page, target) => this.identity(page, target),
+            },
+            account,
+            postId,
+            beforeSubmit &&
+              (async () => {
+                await beforeSubmit();
+                if (this.stopped) throw new SocialPlatformError("denied");
+              }),
+          );
+        });
+      },
       send: (account, job, token, media, checkpoint, beforeSubmit) =>
         account.platform === "x"
           ? this.exclusive(

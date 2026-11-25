@@ -54,6 +54,17 @@ it("recognizes a captcha iframe as captcha without interacting", async () => {
   for (const spy of Object.values(interactions)) expect(spy).not.toHaveBeenCalled();
 });
 
+it("ignores a preloaded captcha while CSS hides it and detects it when shown", async () => {
+  const url = "https://www.reddit.com/";
+  const src = "https://www.google.com/recaptcha/enterprise/anchor";
+  const hidden = pageAt(url, `<iframe src="${src}" style="visibility: hidden"></iframe>`);
+  const active = pageAt(url, `<iframe src="${src}" style="visibility: visible"></iframe>`);
+
+  await expect(detectChallenge(hidden.page)).resolves.toBeNull();
+  await expect(detectChallenge(active.page)).resolves.toEqual({ kind: "captcha", url });
+  for (const spy of Object.values(hidden.interactions)) expect(spy).not.toHaveBeenCalled();
+});
+
 it("recognizes a human-verification heading as captcha", async () => {
   const { page } = pageAt("https://www.facebook.com/login/", `<h1>Verify you are human</h1>`);
   await expect(detectChallenge(page)).resolves.toMatchObject({ kind: "captcha" });
@@ -79,6 +90,23 @@ it("classifies a logged-out login route as login", async () => {
   const { page } = pageAt("https://www.instagram.com/accounts/login/", "<form></form>");
   await expect(detectChallenge(page)).resolves.toMatchObject({ kind: "login" });
 });
+
+it.each(["login", "signup"])(
+  "recognizes X's combined %s route and omits its query",
+  async (mode) => {
+    const path = "/i/jf/onboarding/web";
+    const { page } = pageAt(
+      `https://x.com${path}?redirect_after_login=%2Fcompose%2Fpost&mode=${mode}`,
+      "",
+    );
+    await expect(detectChallenge(page)).resolves.toEqual({
+      kind: "login",
+      url: `https://x.com${path}`,
+    });
+    const other = pageAt(`https://example.com${path}?mode=${mode}`, "");
+    await expect(detectChallenge(other.page)).resolves.toBeNull();
+  },
+);
 
 it("keeps captcha ahead of URL classification and drops query strings from the result", async () => {
   const { page } = pageAt(

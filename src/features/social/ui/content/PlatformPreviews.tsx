@@ -25,6 +25,9 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
         const x = account.platform === "x" ? xPostExtras(draft.platform[account.id]?.x) : undefined;
         const linkedinFormat =
           account.platform === "linkedin" ? draft.platform[account.id]?.linkedinFormat : undefined;
+        const reddit =
+          account.platform === "reddit" ? draft.platform[account.id]?.reddit : undefined;
+        const redditTarget = reddit?.subreddit.trim();
         const limit = characterLimit(account, policies, { reel, hasMedia: draft.media.length > 0 });
         const count = characterCount(account, text, link);
         const over = limit !== undefined && count > limit;
@@ -42,6 +45,16 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
               <PlatformMark platform={account.platform} size="sm" />
               <strong>{account.name}</strong>
             </header>
+            {redditTarget ? (
+              <Text as="p" size="caption" tone="muted" className="content-preview-text">
+                {/^u_/i.test(redditTarget) ? `u/${redditTarget.slice(2)}` : `r/${redditTarget}`}
+              </Text>
+            ) : null}
+            {reddit?.title?.trim() ? (
+              <Text as="p" size="body" weight="medium" className="content-preview-text">
+                {reddit.title.trim()}
+              </Text>
+            ) : null}
             <Text
               as="p"
               size="body"
@@ -49,7 +62,10 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
               leading="inherit"
               className="content-preview-text"
             >
-              {text || (!linkedinFormat ? t("Your post text appears here.") : null)}
+              {text ||
+                (!linkedinFormat && !reddit?.title?.trim()
+                  ? t("Your post text appears here.")
+                  : null)}
             </Text>
             {x?.quotePostId ? (
               <Text as="p" size="caption" tone="muted" className="content-preview-text">

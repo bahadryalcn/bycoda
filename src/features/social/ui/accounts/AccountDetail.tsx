@@ -28,9 +28,11 @@ import { accountHealth, accountModeText } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
 import { XApiSettings } from "./platform/XApiSettings";
 import { XAccountActions } from "./platform/XAccountActions";
+import { BrowserInboxHandoff } from "./platform/BrowserInboxHandoff";
 import { YouTubeManage } from "./youtube/YouTubeManage";
 import type { YouTubeSection } from "./youtube/youtubeForms";
 import { TikTokAccountTools } from "./platform/TikTokAccountTools";
+import { PublishedPostManagement } from "./platform/PublishedPostManagement";
 import { SnapchatProfilePanel } from "./SnapchatProfilePanel";
 import { snapchatAccountKey } from "../common/snapchatAccount";
 // Facebook Page panels
@@ -39,6 +41,7 @@ import { FacebookLivePanel } from "./platform/FacebookLivePanel";
 import { FacebookManagementRequests } from "./platform/FacebookManagementRequests";
 import { FacebookMonetization } from "./platform/FacebookMonetization";
 import { FacebookPageActivity } from "./platform/FacebookPageActivity";
+import { FacebookBrowserPostDelete } from "./platform/FacebookBrowserPostDelete";
 import { FacebookProfileEditor } from "./platform/FacebookProfileEditor";
 import {
   FacebookPersonalProfileForm,
@@ -80,10 +83,13 @@ export function AccountDetail({
   youtubeSection,
 }: AccountDetailProps) {
   const [openedAt] = useState(Date.now);
+  const [browserStatus, setBrowserStatus] = useState<string>();
   const { error, is, write } = useAccountWrite(t("The account could not be changed. Try again."));
   const confirmation = useConfirm();
   const capabilities = snapshot.capabilities[account.id] ?? [];
   const health = accountHealth({ account, capabilities, needsHuman, now: now ?? openedAt });
+  const browserNeedsRetry =
+    account.connection === "browser" && browserStatus === "failed" && health.status === "ok";
   const onThisComputer = account.executorId === snapshot.executorId;
   const disabled = !hostOnline;
 
@@ -126,7 +132,30 @@ export function AccountDetail({
     },
   ];
 
+  const publishedPostPlatform =
+    account.platform === "reddit"
+      ? "reddit"
+      : account.platform === "telegram" &&
+          account.accountType === "channel" &&
+          account.connection === "token"
+        ? "telegram"
+        : undefined;
+  const canManagePublishedPosts =
+    publishedPostPlatform &&
+    account.connected &&
+    onThisComputer &&
+    !disabled &&
+    capabilities.some(({ operation, status }) => operation === "delete" && status === "available");
+  const canOpenRedditChat =
+    account.platform === "reddit" &&
+    account.connection === "browser" &&
+    account.connected &&
+    account.accessApproved &&
+    Boolean(account.platformId) &&
+    onThisComputer;
   const hasPlatformTools =
+    canManagePublishedPosts ||
+    canOpenRedditChat ||
     account.platform === "x" ||
     account.platform === "youtube" ||
     (account.platform === "tiktok" && account.connected) ||
@@ -151,8 +180,8 @@ export function AccountDetail({
             secondary={menu}
           />
           <div className="social-detail-status">
-            <Badge tone={HEALTH_TONE[health.status]} size="sm">
-              {health.text}
+            <Badge tone={browserNeedsRetry ? "warning" : HEALTH_TONE[health.status]} size="sm">
+              {browserNeedsRetry ? t("Connection needs a retry") : health.text}
             </Badge>
             {account.paused ? (
               <Badge tone="warning" size="sm">
@@ -179,6 +208,7 @@ export function AccountDetail({
         onThisComputer={onThisComputer}
         disabled={disabled}
         onChanged={onChanged}
+        onBrowserStatusChange={setBrowserStatus}
       />
       {hasPlatformTools ? (
         <section
@@ -188,7 +218,12 @@ export function AccountDetail({
           <Heading size="item">{t("Tools")}</Heading>
           {account.platform === "x" ? (
             <XAccountActions
-              key={account.id}
+              key={JSON.stringify([
+                socialQueryScope(client),
+                account.id,
+                account.platformId,
+                account.connection,
+              ])}
               account={account}
               client={client}
               disabled={disabled}
@@ -283,6 +318,36 @@ export function AccountDetail({
               disabled={disabled || !onThisComputer}
             />
           ) : null}
+          {canOpenRedditChat ? (
+            <Disclosure summary={t("Direct messages")} variant="row">
+              <BrowserInboxHandoff
+                key={JSON.stringify([socialQueryScope(client), account.id, account.platformId])}
+                accountId={account.id}
+                client={client}
+                disabled={disabled}
+                instruction={t("Continue in Reddit Chat.")}
+              />
+            </Disclosure>
+          ) : null}
+          {canManagePublishedPosts ? (
+            <Disclosure
+              summary={t("Posts")}
+              variant="row"
+              key={JSON.stringify([
+                socialQueryScope(client),
+                account.id,
+                account.platformId,
+                account.connection,
+              ])}
+            >
+              <PublishedPostManagement
+                platform={publishedPostPlatform}
+                accountId={account.id}
+                accountName={account.name}
+                client={client}
+              />
+            </Disclosure>
+          ) : null}
           {/* Facebook Page and personal profile management */}
           {account.platform === "facebook" &&
           (account.accountType === "page" ||
@@ -290,7 +355,14 @@ export function AccountDetail({
           account.connected &&
           onThisComputer &&
           !disabled ? (
-            <div key={`${socialQueryScope(client).join(":")}:${account.id}:${account.connection}`}>
+            <div
+              key={JSON.stringify([
+                socialQueryScope(client),
+                account.id,
+                account.platformId,
+                account.connection,
+              ])}
+            >
               <Disclosure summary={t("Edit profile")} variant="row">
                 {account.accountType === "member" ? (
                   <FacebookPersonalProfileForm client={client} account={account} />
@@ -301,6 +373,14 @@ export function AccountDetail({
               <Disclosure summary={t("Facebook profile photos")} variant="row">
                 <FacebookProfilePhotos client={client} account={account} />
               </Disclosure>
+              {account.connection === "browser" &&
+              capabilities.some(
+                ({ operation, status }) => operation === "delete" && status === "available",
+              ) ? (
+                <Disclosure summary={t("Posts")} variant="row">
+                  <FacebookBrowserPostDelete client={client} accountId={account.id} />
+                </Disclosure>
+              ) : null}
               {account.accountType === "page" && account.connection !== "browser" ? (
                 <>
                   <Disclosure summary={t("Posts")} variant="row">

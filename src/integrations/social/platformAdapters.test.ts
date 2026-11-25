@@ -83,6 +83,7 @@ describe("Official social API adapter contracts", () => {
       code: "unsupported",
     });
     expect(fetcher.mock.calls).toHaveLength(previous);
+    expect(telegram.deletePost).toBeTypeOf("function");
     expect(contentSupport(channel, job("message"))).toContain("publishing only");
     expect(contentSupport({ ...channel, accountType: "bot" }, publish)).toContain(
       "existing Telegram bot chats",

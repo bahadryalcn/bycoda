@@ -25,6 +25,60 @@ async function openSocial(page: Page) {
 
 const sections = (page: Page) => page.getByRole("tablist", { name: "Social bölümleri" });
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`Reddit campaign keeps target and title ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?reddit-delete&reddit-campaign");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByRole("checkbox", { name: /Fixture Reddit/ }).check();
+      await editor.getByRole("textbox", { name: "Paylaşım" }).fill("Campaign body");
+      await editor
+        .getByRole("textbox", { name: "Topluluk veya profil", exact: true })
+        .fill("u/bycoda");
+      const save = editor.getByRole("button", { name: "Taslağı kaydet" });
+      const publish = editor.getByRole("button", { name: "Yayınla", exact: true });
+      await expect(save).toBeEnabled();
+      await expect(publish).toBeDisabled();
+      await editor.getByRole("textbox", { name: "Başlık", exact: true }).fill("Release notes");
+      const preview = editor.getByRole("article").filter({ hasText: "Release notes" });
+      await expect(preview.getByText("u/bycoda", { exact: true })).toBeVisible();
+      await expect(save).toBeEnabled();
+      await expect(publish).toBeEnabled();
+      await editor.getByRole("textbox", { name: "Başlık", exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/reddit-campaign-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await save.click();
+      await expect(editor).toBeHidden();
+      expect(await requests(page, "campaigns.create")).toEqual([
+        expect.objectContaining({
+          variants: [
+            expect.objectContaining({
+              accountId: "fixture-reddit",
+              reddit: { subreddits: ["u_bycoda"], title: "Release notes", kind: "self" },
+            }),
+          ],
+        }),
+      ]);
+      await page.getByRole("radio", { name: "Liste", exact: true }).check();
+      await page.getByRole("button", { name: /Campaign body.*Fixture Reddit/ }).click();
+      const reopened = page.getByRole("dialog");
+      await expect(reopened.getByRole("textbox", { name: "Başlık", exact: true })).toHaveValue(
+        "Release notes",
+      );
+      await expect(
+        reopened.getByRole("textbox", { name: "Topluluk veya profil", exact: true }),
+      ).toHaveValue("u/bycoda");
+    });
+  }
+
 test("social YouTube management confirms video edits and shows provider failures", async ({
   page,
 }) => {
@@ -197,6 +251,23 @@ for (const theme of ["light", "dark"])
       await page.getByRole("dialog").getByRole("button", { name: "Kapat" }).click();
       await page.getByRole("button", { name: /Studio fixture/ }).click();
       await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await chooseSection("Videolar");
+      await page.getByRole("button", { name: "Yükle", exact: true }).click();
+      await page.getByRole("button", { name: /^Studio test Short/ }).click();
+      await page.getByRole("button", { name: "Videoyu sil", exact: true }).click();
+      const studioDelete = page.getByRole("dialog", { name: "Videoyu sil" });
+      await expect(studioDelete.getByText("shortDemo01")).toBeVisible();
+      await expect(studioDelete.getByText("Studio test Short", { exact: true })).toBeVisible();
+      await expect(studioDelete.getByText("Bu işlem geri alınamaz.")).toBeVisible();
+      expect(await requests(page, "youtube.video.delete")).toEqual([]);
+      await capture("studio-delete-confirm");
+      await studioDelete.getByRole("button", { name: "Videoyu sil", exact: true }).click();
+      await expect
+        .poll(() => requests(page, "youtube.video.delete"))
+        .toEqual([{ accountId: "youtube-browser", videoId: "shortDemo01", confirm: true }]);
+      await expect(page.getByText("Studio test Short")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Videoyu sil", exact: true })).toBeDisabled();
+      await capture("studio-delete-complete");
       await chooseSection("Topluluk gönderileri");
       await capture("community");
       await chooseSection("Analiz");
@@ -208,6 +279,62 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`Instagram deletion review ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        "/tests/browser/social/social.html?instagram-surface=browser&instagram-delete-review",
+      );
+      const frame = page.locator("[data-instagram-surface]");
+      const openTools = async () => {
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
+      };
+      const tab = (name: RegExp) => frame.getByRole("tab", { name }).click();
+      const input = frame.getByRole("textbox", {
+        name: /^(Instagram post URL|Instagram gönderi bağlantısı)$/i,
+      });
+      const deleteName = /^(Delete Instagram post|Instagram gönderisini sil)$/i;
+      const remove = frame.getByRole("button", { name: deleteName });
+      await openTools();
+      await tab(/^(Content|İçerik)$/);
+      await tab(/^(Posts|Gönderiler)$/);
+      await input.fill("https://www.instagram.com/p/FixtureDelete/");
+      await expect(remove).toBeEnabled();
+      await remove.click();
+      await page.getByRole("dialog").getByRole("button", { name: deleteName }).click();
+      await expect(frame.getByText(/^(Needs review|İnceleme gerekli)$/)).toBeVisible();
+      await expect(remove).toBeDisabled();
+      await expect(frame.getByRole("button", { name: /^(Open post|Gönderiyi aç)$/ })).toBeVisible();
+      const capture = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-instagram-followup/delete-${surface}-${theme}-${width}.png`,
+          fullPage: true,
+          animations: "disabled",
+        });
+      await capture("post");
+      await page.reload();
+      await openTools();
+      await tab(/^(Requests|İstekler)$/);
+      await expect(
+        frame.getByText(
+          /This change may already be on Instagram|Bu değişiklik Instagram'da zaten olabilir/,
+        ),
+      ).toBeVisible();
+      await expect(
+        frame.getByRole("button", { name: /Review and apply|İncele ve uygula/ }),
+      ).toHaveCount(0);
+      await expect(frame.getByRole("button", { name: /^(Open post|Gönderiyi aç)$/ })).toBeVisible();
+      await capture("request");
+      await tab(/^(Content|İçerik)$/);
+      await tab(/^(Posts|Gönderiler)$/);
+      await input.fill("https://www.instagram.com/reel/FixtureDelete/");
+      await expect(frame.getByText(/^(Needs review|İnceleme gerekli)$/)).toBeVisible();
+      await expect(remove).toBeDisabled();
+    });
+
     test(`Instagram surfaces ${theme} ${width}`, async ({ page }) => {
       for (const surface of ["publishing", "story", "inbox", "browser", "insights"]) {
         await page.setViewportSize({
@@ -580,6 +707,108 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    for (const [name, platform, postId] of [
+      ["Reddit", "reddit", "t3_qa123"],
+      ["Telegram", "telegram", "-1001234567890:7"],
+    ] as const)
+      test(`${name} published post deletion ${theme} ${width}`, async ({ page }) => {
+        const review = theme === "dark" && width === 800;
+        const profileTarget = platform === "reddit" && width === 800;
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(
+          `/tests/browser/social/social.html?${platform}-delete${review ? "&delete-review" : ""}${profileTarget ? "&profile-target" : ""}`,
+        );
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+        await page.getByRole("button", { name: new RegExp(`Fixture ${name}`) }).click();
+        const detail = page.getByRole("dialog", { name: `Fixture ${name}` });
+        await detail
+          .locator("summary")
+          .filter({ hasText: /^Gönderiler$/ })
+          .click();
+        await detail.getByRole("button", { name: "Gönderilerimi yükle" }).click();
+        const remove = detail.getByRole("button", { name: "Gönderiyi sil", exact: true });
+        await expect(remove).toBeDisabled();
+        await detail.getByRole("button", { name: /Gönderi seçin/ }).click();
+        const title =
+          platform === "reddit"
+            ? `${profileTarget ? "u/bycoda" : "r/bycodatest"} · Test yayını`
+            : "Test yayını";
+        await page.getByRole("option", { name: title, exact: true }).click();
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${platform}-delete-form-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        await remove.click();
+        const confirmation = page.getByRole("dialog", { name: "Gönderiyi sil" });
+        await expect(confirmation.getByText(postId, { exact: true })).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${platform}-delete-confirm-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        await confirmation.getByRole("button", { name: "İptal", exact: true }).click();
+        expect(await requests(page, `${platform}.post.delete`)).toEqual([]);
+        await remove.click();
+        await confirmation.getByRole("button", { name: "Sil", exact: true }).click();
+        await expect(
+          detail.getByText(review ? "İnceleme gerekli" : "Silindi", { exact: true }),
+        ).toBeVisible();
+        await expect(detail.getByRole("button", { name: "Gönderiyi aç" })).toHaveCount(
+          review ? 1 : 0,
+        );
+        await expect(remove).toBeDisabled();
+        expect(await requests(page, `${platform}.post.delete`)).toEqual([
+          {
+            accountId: `fixture-${platform}`,
+            jobId: `${platform}-qa`,
+            postId,
+            confirm: `DELETE_${platform.toUpperCase()}_POST`,
+          },
+        ]);
+      });
+    test(`Facebook browser post deletion ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?facebook-page&facebook-browser");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Facebook Page/ }).click();
+      const detail = page.getByRole("dialog", { name: "Fixture Facebook Page" });
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Gönderiler$/ })
+        .click();
+      const link = detail.getByRole("textbox", { name: "Bağlantı", exact: true });
+      const remove = detail.getByRole("button", { name: "Gönderiyi sil", exact: true });
+      const postId = "https://www.facebook.com/permalink.php?story_fbid=789&id=123";
+      await expect(remove).toBeDisabled();
+      await link.fill(postId);
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/facebook-delete-form-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await remove.click();
+      const confirmation = page.getByRole("dialog", { name: "Gönderiyi sil" });
+      await expect(confirmation.getByText(postId, { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/facebook-delete-confirm-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await confirmation.getByRole("button", { name: "İptal", exact: true }).click();
+      await expect(link).toHaveValue(postId);
+      expect(await requests(page, "facebook.post.delete")).toEqual([]);
+      await remove.click();
+      await confirmation.getByRole("button", { name: "Sil", exact: true }).click();
+      await expect(detail.getByText("Silindi", { exact: true })).toBeVisible();
+      expect(await requests(page, "facebook.post.delete")).toEqual([
+        { accountId: "fixture-facebook", postId, confirm: "DELETE_FACEBOOK_POST" },
+      ]);
+    });
     test(`Facebook Page controls ${theme} ${width}`, async ({ page }) => {
       test.setTimeout(60_000);
       await page.setViewportSize({ width, height: 900 });
@@ -1302,6 +1531,112 @@ test("account capability and Telegram connection visual matrix", async ({ page }
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
+    test(`Reddit Chat uses the selected browser account ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?reddit-delete&reddit-chat");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Reddit/ }).click();
+      const account = page.getByRole("dialog", { name: "Fixture Reddit" });
+      await account.locator("summary").filter({ hasText: "Doğrudan mesajlar" }).click();
+      const open = account.getByRole("button", { name: "Tarayıcıda aç", exact: true });
+      await open.click();
+      const status = account.getByText("Reddit Chat’te devam et.", { exact: true });
+      await expect(status).toBeVisible();
+      await expect(open).toBeDisabled();
+      await account.getByRole("button", { name: "Kapat", exact: true }).click();
+      await expect(account).toBeHidden();
+      await page.getByRole("button", { name: /Fixture Reddit/ }).click();
+      await account.locator("summary").filter({ hasText: "Doğrudan mesajlar" }).click();
+      await expect(status).toBeVisible({ timeout: 3_000 });
+      await expect(open).toBeDisabled();
+      await status.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/reddit-chat-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "İptal", exact: true }).click();
+      await expect(account.getByText("İptal edildi", { exact: true })).toBeVisible();
+      await expect(open).toBeEnabled();
+      expect(
+        await page.evaluate(() => {
+          const { socialFixtureCalls } = window as unknown as {
+            socialFixtureCalls: { args: { method?: string; params?: unknown } }[];
+          };
+          return socialFixtureCalls
+            .filter(({ args }) =>
+              ["social.browser.workflow.begin", "social.browser.workflow.cancel"].includes(
+                args.method ?? "",
+              ),
+            )
+            .map(({ args }) => args.params);
+        }),
+      ).toEqual([
+        expect.objectContaining({ accountId: "fixture-reddit", intent: "inbox" }),
+        { accountId: "fixture-reddit", workflowId: "workflow-0" },
+      ]);
+    });
+
+    test(`X Chat uses the selected browser account ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?x-browser-delete&x-chat");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      const account = page.getByRole("dialog", { name: "Demo account" });
+      await account
+        .locator("summary")
+        .filter({ hasText: /X işlemleri/i })
+        .click();
+      await account.getByRole("button", { name: /X'te ne yapmak istiyorsunuz/ }).click();
+      await page.getByRole("option", { name: "Doğrudan mesajlar", exact: true }).click();
+      const open = account.getByRole("button", { name: "Tarayıcıda aç", exact: true });
+      await open.click();
+      const status = account.getByText("X tarayıcı penceresinde devam et.", { exact: true });
+      await expect(status).toBeVisible();
+      await expect(open).toBeDisabled();
+      await account.getByRole("button", { name: "Kapat", exact: true }).click();
+      await expect(account).toBeHidden();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      await account
+        .locator("summary")
+        .filter({ hasText: /X işlemleri/i })
+        .click();
+      await account.getByRole("button", { name: /X'te ne yapmak istiyorsunuz/ }).click();
+      await page.getByRole("option", { name: "Doğrudan mesajlar", exact: true }).click();
+      await expect(status).toBeVisible({ timeout: 3_000 });
+      await expect(open).toBeDisabled();
+      await status.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/x-chat-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "İptal", exact: true }).click();
+      await expect(account.getByText("İptal edildi", { exact: true })).toBeVisible();
+      await expect(open).toBeEnabled();
+      expect(
+        await page.evaluate(() => {
+          const { socialFixtureCalls } = window as unknown as {
+            socialFixtureCalls: { args: { method?: string; params?: unknown } }[];
+          };
+          return socialFixtureCalls
+            .filter(({ args }) =>
+              ["social.browser.workflow.begin", "social.browser.workflow.cancel"].includes(
+                args.method ?? "",
+              ),
+            )
+            .map(({ args }) => args.params);
+        }),
+      ).toEqual([
+        expect.objectContaining({ accountId: "x", intent: "inbox" }),
+        { accountId: "x", workflowId: "workflow-0" },
+      ]);
+    });
+
     test(`X billing, actions and publishing ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.goto("/tests/browser/social/social.html?x-paid-fixture");
@@ -1346,6 +1681,40 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/social-x/content-${theme}-${width}.png`,
         animations: "disabled",
       });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`X browser post deletion ${theme} ${width}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?x-browser-delete");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      const account = page.getByRole("dialog", { name: "Demo account" });
+      await account
+        .locator("summary")
+        .filter({ hasText: /X işlemleri/i })
+        .click();
+      await expect(account.getByText("Gönderiyi sil", { exact: true })).toBeVisible();
+      await account.getByText("Bunun yerine bir gönderi kimliği kullanın", { exact: true }).click();
+      await account.getByRole("textbox", { name: "Gönderi kimliği" }).fill("123456789");
+      await page.screenshot({
+        path: testInfo.outputPath("x-browser-delete-picker.png"),
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "İncele", exact: true }).click();
+      const confirm = page.getByRole("dialog", { name: "Gönderiyi sil" });
+      await expect(confirm.getByText("123456789")).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("x-browser-delete.png"),
+        animations: "disabled",
+      });
+      await confirm.getByRole("button", { name: "Sil", exact: true }).click();
+      await expect(account.getByText("Uygulandı", { exact: true })).toBeVisible();
     });
   }
 
@@ -1398,60 +1767,213 @@ test("account settings and connection forms visual matrix", async ({ page }, tes
   }
 });
 
-test("a new account is created through the owner-assisted signup dialog", async ({
-  page,
-}, testInfo) => {
-  for (const theme of ["light", "dark"]) {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto("/tests/browser/social/social.html?signup-create");
-    await page.evaluate(
-      (light) => document.documentElement.classList.toggle("theme-light", light),
-      theme === "light",
-    );
-    await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
-    await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
-    await page.getByRole("button", { name: /^Platform: / }).click();
-    await page.getByRole("option", { name: "Reddit" }).click();
-    await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
-    await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
-    await page.getByRole("button", { name: "Bunun yerine yeni bir Reddit hesabı oluştur" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("İsim").fill("Studio");
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-start-${theme}.png`),
-      animations: "disabled",
-    });
-    await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
-    await expect(dialog.getByLabel("E-posta adresi")).toBeVisible();
-    await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-fields-${theme}.png`),
-      animations: "disabled",
-    });
-    await dialog.getByLabel("E-posta adresi").fill("studio@example.com");
-    await dialog.getByRole("button", { name: "Devam et" }).click();
-    await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
-    await expect(dialog.getByLabel("E-posta adresi")).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-blockers-${theme}.png`),
-      animations: "disabled",
-    });
-    await page.evaluate(() =>
-      (
-        window as unknown as { socialFixtureCloseSignupWindow: () => void }
-      ).socialFixtureCloseSignupWindow(),
-    );
-    await expect(dialog.getByRole("button", { name: "Girişe devam et" })).toBeVisible({
-      timeout: 8000,
-    });
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-closed-${theme}.png`),
-      animations: "disabled",
-    });
-    await dialog.getByRole("button", { name: "Girişe devam et" }).click();
-    await expect(page.getByRole("dialog", { name: "Studio" })).toBeVisible();
-  }
-});
+for (const width of [800, 1280]) {
+  test(`signup verification recovery at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["light", "dark"]) {
+      for (const [scene, platform, instruction] of [
+        ["signup-google-expired", "YouTube", "Google kayıt oturumunun süresi doldu."],
+        ["signup-google-device", "YouTube", "QR kodunu telefonunla tara"],
+        ["signup-instagram-phone", "Instagram", "Instagram’da cep telefonu numaranı gir"],
+        ["signup-x-welcome", "X", "X’te karşılama adımlarını bitir"],
+      ]) {
+        await page.goto(`/tests/browser/social/social.html?signup-create&${scene}`);
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+        await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+        await page.getByRole("button", { name: /^Platform: / }).click();
+        await page.getByRole("option", { name: platform, exact: true }).click();
+        await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+        await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+        await page
+          .getByRole("button", { name: `Bunun yerine yeni bir ${platform} hesabı oluştur` })
+          .click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByLabel("İsim").fill("Bycoda");
+        await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+        await expect(dialog.getByText(instruction, { exact: false })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Kaydı durdur" })).toBeEnabled();
+        await expect(dialog.locator('input[type="password"], input[type="tel"]')).toHaveCount(0);
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${scene}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+  });
+
+  test(`signup provider warnings at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["light", "dark"]) {
+      for (const [platform, name, warning] of [
+        ["x", "X", "X kayda devam edemedi."],
+        ["tiktok", "TikTok", "TikTok, kayıt denemesi sınırına ulaştı."],
+      ]) {
+        await page.goto("/tests/browser/social/social.html?signup-create&signup-provider-warning");
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+        await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+        await page.getByRole("button", { name: /^Platform: / }).click();
+        await page.getByRole("option", { name, exact: true }).click();
+        await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+        await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+        await page
+          .getByRole("button", { name: `Bunun yerine yeni bir ${name} hesabı oluştur` })
+          .click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByLabel("İsim").fill("Bycoda");
+        await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+        await expect(dialog.getByText(warning, { exact: false })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Kaydı durdur" })).toBeEnabled();
+        if (platform === "tiktok")
+          await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toHaveCount(
+            0,
+          );
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${platform}-signup-warning-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+  });
+}
+
+for (const [width, variant] of [
+  [1280, ""],
+  [800, ""],
+  [1280, "signup-limit"],
+  [800, "signup-limit"],
+  [1280, "signup-network-block"],
+  [800, "signup-network-block"],
+] as const) {
+  const networkBlocked = variant === "signup-network-block";
+  const state = networkBlocked ? " with network block" : variant ? " with email sign-up limit" : "";
+  test(`owner-assisted signup dialog${state} at ${width}px`, async ({ page }, testInfo) => {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/social/social.html?signup-create${variant ? `&${variant}` : ""}`,
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+      await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+      await page.getByRole("button", { name: /^Platform: / }).click();
+      await page.getByRole("option", { name: "Reddit" }).click();
+      await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+      await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+      await page
+        .getByRole("button", { name: "Bunun yerine yeni bir Reddit hesabı oluştur" })
+        .click();
+      const dialog = page.getByRole("dialog");
+      const close = dialog.locator("header").getByRole("button", { name: "Kapat", exact: true });
+      await expect(close).toBeEnabled();
+      await dialog.getByLabel("İsim").fill("Studio");
+      await page.screenshot({
+        path: testInfo.outputPath(`signup-start-${theme}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+      await expect(close).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Kaydı durdur", exact: true })).toBeEnabled();
+      await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+      if (!networkBlocked) {
+        await expect(dialog.getByLabel("E-posta adresi")).toBeVisible();
+        await page.screenshot({
+          path: testInfo.outputPath(`signup-fields-${theme}.png`),
+          animations: "disabled",
+        });
+        await dialog.getByLabel("E-posta adresi").fill("studio@example.com");
+        await dialog.getByRole("button", { name: "Devam et" }).click();
+      }
+      if (variant) {
+        await expect(
+          dialog.getByRole("status").filter({
+            hasText: networkBlocked
+              ? "Reddit, ağ güvenliği nedeniyle tarayıcı erişimini engelledi. Daha sonra tekrar deneyin."
+              : "Reddit, e-postayla kayıt sınırına ulaştı. Daha sonra tekrar deneyin.",
+          }),
+        ).toBeVisible();
+        await expect(dialog.getByText("İşleminiz bekleniyor", { exact: true })).toHaveCount(0);
+        await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toHaveCount(0);
+        await expect(
+          dialog.getByRole("button", { name: "Kaydı durdur", exact: true }),
+        ).toBeEnabled();
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/reddit-${variant}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        if (networkBlocked) {
+          await page.emulateMedia({ reducedMotion: "reduce" });
+          await page.goto(
+            "/tests/browser/social/social.html?reddit-delete&reddit-browser-network-block",
+          );
+          await page.evaluate(
+            (light) => document.documentElement.classList.toggle("theme-light", light),
+            theme === "light",
+          );
+          await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+          await page.getByRole("button", { name: /Fixture Reddit/ }).click();
+          const connection = page.getByRole("region", { name: "Bağlantı", exact: true });
+          await connection.getByRole("button", { name: "Bağlantıyı kontrol et" }).click();
+          await expect(connection.getByRole("alert")).toContainText(
+            "Reddit, ağ güvenliği nedeniyle tarayıcı erişimini engelledi. Daha sonra tekrar deneyin.",
+          );
+          const accountStatus = page
+            .getByRole("dialog", { name: "Fixture Reddit" })
+            .locator(".social-detail-status");
+          await expect(accountStatus.getByText("Bağlı", { exact: true })).toHaveCount(0);
+          await expect(
+            accountStatus.getByText("Bağlantı tekrar denenmeli", { exact: true }),
+          ).toHaveCount(1);
+          await page.screenshot({
+            path: `temp/verification/social-platform-acceptance/reddit-connect-network-block-${theme}-${width}.png`,
+            animations: "disabled",
+          });
+          await connection.getByRole("button", { name: "Bağlantıyı kontrol et" }).click();
+          await expect(accountStatus.getByText("Bağlı", { exact: true })).toHaveCount(1);
+          await expect(connection.getByRole("alert")).toHaveCount(0);
+        }
+        continue;
+      }
+      await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
+      await expect(
+        dialog.getByText(
+          "Aşağıda belirtilenleri platform penceresinde tamamla. Sonra burada Devam et’e tıkla.",
+        ),
+      ).toBeVisible();
+      await expect(dialog.getByText(/parola|koşul kabulü/i)).toHaveCount(0);
+      await expect(dialog.getByLabel("E-posta adresi")).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`signup-blockers-${theme}.png`),
+        animations: "disabled",
+      });
+      await page.evaluate(() =>
+        (
+          window as unknown as { socialFixtureCloseSignupWindow: () => void }
+        ).socialFixtureCloseSignupWindow(),
+      );
+      await expect(dialog.getByRole("button", { name: "Girişe devam et" })).toBeVisible({
+        timeout: 8000,
+      });
+      await expect(close).toBeEnabled();
+      await page.screenshot({
+        path: testInfo.outputPath(`signup-closed-${theme}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("button", { name: "Girişe devam et" }).click();
+      await expect(page.getByRole("dialog", { name: "Studio" })).toBeVisible();
+    }
+  });
+}
 
 test("automatic audience labels stay on one line", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {

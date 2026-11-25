@@ -304,23 +304,43 @@ describe("YouTube Community post management", () => {
   const postRow = (id: string, authorId: string) =>
     `<ytd-backstage-post-thread-renderer><a id="author-text" href="/channel/${authorId}">Author</a><a href="/post/${id}">Permalink</a><span id="content-text">Version one</span><span id="menu"><button aria-label="More actions"></button></span><img src="fixture-image.jpg" alt="Attachment"></ytd-backstage-post-thread-renderer>`;
 
-  function management(acknowledge = true, confirm = true) {
-    const html =
-      recorded("channel-community.html") + postRow(postId, channel) + postRow(foreignId, author);
+  function management({
+    acknowledge = true,
+    confirm = true,
+    beforeStatus = 200,
+    afterStatus = 404,
+    wrongReturnUrl = false,
+    staleReceipt = false,
+  } = {}) {
+    const shell = recorded("channel-community.html");
+    const own = postRow(postId, channel);
+    const foreign = postRow(foreignId, author);
+    const notice = (text: string) =>
+      `<ytd-notification-action-renderer><span id="text">${text}</span></ytd-notification-action-renderer>`;
+    const html = shell + own + foreign + (staleReceipt ? notice("Post deleted") : "");
+    let sent = false;
+    let navigation: { name: string; responseStatus: number } | undefined;
     const gate = vi.fn(async () => undefined);
     const f = fixture(recipe("youtube"), owner(), html, {
-      render: () => html,
+      render: (url) => {
+        if (new URL(url).pathname === `/post/${postId}`) {
+          const status = sent ? afterStatus : beforeStatus;
+          navigation = {
+            name: sent && wrongReturnUrl ? `https://www.youtube.com/post/${foreignId}` : url,
+            responseStatus: status,
+          };
+          return status === 200 ? own : "";
+        }
+        return sent ? shell + foreign : html;
+      },
       click: (control) => {
         const token = control.getAttribute("data-bycoda-web-control");
         const body = f.window.document.body;
         const row = body.querySelector(`[data-bycoda-community-post="${postId}"]`);
-        const receipt = (text: string) =>
-          body.insertAdjacentHTML(
-            "beforeend",
-            `<ytd-notification-action-renderer><span id="text">${text}</span></ytd-notification-action-renderer>`,
-          );
+        const receipt = (text: string) => body.insertAdjacentHTML("beforeend", notice(text));
         const remove = () => {
           if (acknowledge) {
+            sent = true;
             row?.remove();
             receipt("Post deleted");
           }
@@ -367,6 +387,13 @@ describe("YouTube Community post management", () => {
         }
       },
     });
+    Object.defineProperty(f.window.document, "readyState", { value: "complete" });
+    Object.defineProperty(f.window, "performance", {
+      value: {
+        getEntriesByType: (type: string) =>
+          type === "navigation" && navigation ? [navigation] : [],
+      },
+    });
     return { ...f, gate, ctx: Object.assign(f.ctx, { beforeYouTubeSubmission: gate }) };
   }
 
@@ -394,18 +421,23 @@ describe("YouTube Community post management", () => {
   it.each([true, false])(
     "deletes a scheduled post with optional platform confirmation %s",
     async (confirm) => {
-      const f = management(true, confirm);
+      const f = management({ confirm });
       await expect(youtubeDeleteCommunity(f.ctx, postId, "scheduled")).resolves.toEqual({
         id: postId,
         deleted: true,
       });
       expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+      expect(
+        vi
+          .mocked(f.page.goto)
+          .mock.calls.filter(([url]) => url === `https://www.youtube.com/post/${postId}`),
+      ).toHaveLength(2);
       expect(f.window.document.querySelector(`a[href="/post/${foreignId}"]`)).not.toBeNull();
     },
   );
 
   it("refuses a foreign post and leaves an ambiguous deletion unresolved", async () => {
-    const f = management(false, false);
+    const f = management({ acknowledge: false, confirm: false });
     await expect(youtubeDeleteCommunity(f.ctx, foreignId, "published")).rejects.toMatchObject({
       code: "unsupported",
     });
@@ -414,5 +446,29 @@ describe("YouTube Community post management", () => {
       code: "unknown",
     });
     expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["the target still returns 200", { afterStatus: 200 }],
+    ["the target was already unavailable", { beforeStatus: 404 }],
+    ["the response belongs to a different permalink", { wrongReturnUrl: true }],
+  ] as const)(
+    "does not confirm deletion from the toast and empty list alone when %s",
+    async (_case, evidence) => {
+      const f = management(evidence);
+      await expect(youtubeDeleteCommunity(f.ctx, postId, "published")).rejects.toMatchObject({
+        code: "unknown",
+      });
+      expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("does not use a deletion toast already visible before the delete action", async () => {
+    const f = management({ staleReceipt: true });
+    await expect(youtubeDeleteCommunity(f.ctx, postId, "published")).rejects.toMatchObject({
+      code: "unsupported",
+    });
+    expect(f.gate).not.toHaveBeenCalled();
+    expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
   });
 });

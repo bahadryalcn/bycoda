@@ -1,4 +1,8 @@
 import { t } from "../../../../shared/i18n";
+import {
+  REDDIT_PROFILE_TARGET,
+  REDDIT_TITLE_LIMIT,
+} from "../../../../integrations/social/adapters/reddit-rules";
 import { xPostWeight } from "../../../../integrations/social/publishingFormats";
 import { xPostExtrasIssue, X_POST_WEIGHT_LIMIT } from "../../../../integrations/social/x-publish";
 import {
@@ -49,7 +53,7 @@ export function usesInstagramApi(account: SocialAccount): boolean {
   return account.platform === "instagram" && account.connection !== "browser";
 }
 
-export type Problem = { text: string; accountId?: string };
+export type Problem = { text: string; accountId?: string; fix?: "accounts" };
 
 export type RuleInput = {
   draft: ContentDraft;
@@ -355,15 +359,17 @@ export function youtubeProblems(options: PlatformDraft["youtube"], probe?: Media
   return problems;
 }
 
-/**
- * Reddit: one subreddit is required. The Host has no Reddit variant field yet, so publishing is
- * blocked after the subreddit check; the draft still keeps the choice for review.
- */
 export function redditProblems(options: PlatformDraft["reddit"]): string[] {
   const subreddit = options?.subreddit.trim() ?? "";
-  if (!REDDIT_SUBREDDIT.test(subreddit))
+  if (!REDDIT_SUBREDDIT.test(subreddit) && !REDDIT_PROFILE_TARGET.test(subreddit))
     return [t("Choose one subreddit: 3 to 21 letters, numbers or underscores.")];
-  return [t("Reddit posting is not connected to the Host yet.")];
+  const title = options?.title?.trim() ?? "";
+  if (!title) return [t("Enter a title.")];
+  if (title.length > REDDIT_TITLE_LIMIT)
+    return [t("Use at most {p0} characters.", { p0: REDDIT_TITLE_LIMIT })];
+  if (options?.flair.trim() && !/^[A-Za-z0-9-]{1,64}$/.test(options.flair.trim()))
+    return [t("Enter a valid Reddit flair ID.")];
+  return [];
 }
 
 /** Whether an account can be chosen for this post, with the plain reason when it cannot. */
@@ -425,6 +431,12 @@ export function draftProblems(input: RuleInput): Problem[] {
       problems.push({ text: `${name}: ${text}`, accountId: account.id });
     const availability = accountAvailability(account, input);
     if (availability.disabled) add(availability.reason!);
+    else if (input.projectId && !account.grants[input.projectId]?.includes("publish"))
+      problems.push({
+        text: `${name}: ${t("Grant publishing permission for this project in Accounts first.")}`,
+        accountId: account.id,
+        fix: "accounts",
+      });
     const limit = characterLimit(account, input.snapshot?.policies, {
       reel: draft.platform[account.id]?.facebook?.target === "reel",
       hasMedia: draft.media.length > 0,
@@ -530,8 +542,12 @@ export function draftProblems(input: RuleInput): Problem[] {
         add(text);
     if (account.platform === "youtube")
       for (const text of youtubeProblems(platform?.youtube, videoProbe(draft.media))) add(text);
-    if (account.platform === "reddit")
+    if (account.platform === "reddit") {
       for (const text of redditProblems(platform?.reddit)) add(text);
+      if (draft.repeat.enabled) add(t("Turn off repeat for Reddit posts."));
+      if (draft.media.length) add(t("Reddit posts accept text or links without attachments."));
+      if (link && draft.text.trim()) add(t("Clear the separate link for a Reddit text post."));
+    }
     if (account.platform === "snapchat") {
       const snapchat = snapchatOptions(draft, account.id);
       if (!snapchat) add(t("Choose a Snapchat publishing format."));
@@ -589,9 +605,10 @@ export function hasPostContent(draft: ContentDraft, accounts: SocialAccount[]): 
     (accounts.length > 0 &&
       accounts.every(
         (account) =>
-          account.platform === "linkedin" &&
-          account.connection === "oauth" &&
-          !!draft.platform[account.id]?.linkedinFormat,
+          (account.platform === "linkedin" &&
+            account.connection === "oauth" &&
+            !!draft.platform[account.id]?.linkedinFormat) ||
+          (account.platform === "reddit" && !!draft.platform[account.id]?.reddit?.title?.trim()),
       ))
   );
 }
@@ -619,6 +636,15 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
     if (account.platform === "x") {
       const x = xPostExtras(platform?.x);
       if (x) variant.x = x;
+    }
+    if (account.platform === "reddit" && platform?.reddit) {
+      const { subreddit, title, flair } = platform.reddit;
+      variant.reddit = {
+        subreddits: [subreddit.trim()],
+        title: title?.trim() ?? "",
+        kind: link ? "link" : "self",
+        ...(flair.trim() ? { flairId: flair.trim() } : {}),
+      };
     }
     if (account.platform === "snapchat") variant.snapchat = snapchatOptions(draft, account.id);
     // Spread the saved options first so fields without a form control (category, publish time,

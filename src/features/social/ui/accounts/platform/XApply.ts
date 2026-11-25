@@ -54,7 +54,7 @@ export function useXApply(account: SocialAccount, client: SocialClient) {
       title: request.title,
       message: t("Apply this action to {p0}?", { p0: account.name }),
       details: request.details,
-      confirmLabel: t("Apply"),
+      confirmLabel: request.kind === "deletePost" ? t("Delete") : t("Apply"),
       danger: request.danger ?? false,
     });
     if (!approved) return false;

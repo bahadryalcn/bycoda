@@ -14,7 +14,15 @@ import {
   browserOperations,
 } from "../../src/integrations/social/browserCapabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
-import { challengeError, detectChallenge, needsHumanError } from "./browser/challenge";
+import {
+  assertRedditBrowserAccess,
+  challengeError,
+  detectChallenge,
+  needsHumanError,
+  RedditBrowserNetworkBlock,
+} from "./browser/challenge";
+import { deleteFacebookPagePost, facebookPageDeleteTarget } from "./browser/facebook-post-delete";
+import { deleteRedditBrowserPost } from "./browser/reddit-post-delete";
 import { BrowserSendLimiter } from "./browser/limiter";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
@@ -111,6 +119,9 @@ export class PlatformBrowserSessions {
     if (!recipe || recipe.operations.length === 0) throw new SocialPlatformError("unsupported");
     return recipe;
   }
+  private sessionUrl(recipe: BrowserRecipe, account: SocialAccount): string {
+    return recipe.sessionUrl ?? recipe.connectionUrl?.(account) ?? recipe.loginUrl;
+  }
   waiting(id: string): boolean {
     return ["waiting", "checking"].includes(this.logins.get(id)?.status ?? "");
   }
@@ -137,7 +148,8 @@ export class PlatformBrowserSessions {
         const recipe = this.recipe(current);
         const session = await this.open(current, true);
         try {
-          await session.page.goto(recipe.connectionUrl?.(current) ?? recipe.loginUrl);
+          await session.page.goto(this.sessionUrl(recipe, current));
+          if (current.platform === "reddit") await assertRedditBrowserAccess(session.page);
           const challenge = await challengeError(session.page, this.directory);
           if (challenge) throw challenge;
           if (await detectChallenge(session.page)) throw new SocialPlatformError("expired");
@@ -202,7 +214,8 @@ export class PlatformBrowserSessions {
       flow.status = "checking";
       const session = await this.open(account, true);
       try {
-        await session.page.goto(connectionUrl);
+        await session.page.goto(recipe.sessionUrl ?? connectionUrl);
+        if (account.platform === "reddit") await assertRedditBrowserAccess(session.page);
         let identity: Awaited<ReturnType<BrowserRecipe["identity"]>>;
         for (let attempt = 0; attempt < 60 && !identity; attempt++) {
           if (flow.cancelled) return;
@@ -250,9 +263,11 @@ export class PlatformBrowserSessions {
     }).catch((error: unknown) => {
       flow.status = "failed";
       flow.error =
-        error instanceof SocialPlatformError && error.code === "needs_human"
-          ? "The platform asked for a verification step. Complete it in the dedicated window, then try again."
-          : "Browser identity verification failed. Complete login and any challenge in the dedicated window, then try again.";
+        error instanceof RedditBrowserNetworkBlock
+          ? error.message
+          : error instanceof SocialPlatformError && error.code === "needs_human"
+            ? "The platform asked for a verification step. Complete it in the dedicated window, then try again."
+            : "Browser identity verification failed. Complete login and any challenge in the dedicated window, then try again.";
     });
     return { status: flow.status, expiresAt: flow.expiresAt };
   }
@@ -427,7 +442,7 @@ export class PlatformBrowserSessions {
           ? await this.launcher(this.profile(account.id), true, "hidden")
           : await this.open(account);
         const page = session.page;
-        await page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+        await page.goto(this.sessionUrl(recipe, account));
         const verifyIdentity = async () => {
           await options.check();
           for (let attempt = 0; attempt < 30; attempt++) {
@@ -504,13 +519,33 @@ export class PlatformBrowserSessions {
 
   adapter(): SocialAdapter {
     return {
+      deletePost: (account, _token, postId, beforeSubmit) =>
+        this.exclusive(account.id, async () => {
+          const reddit = account.platform === "reddit";
+          const target = reddit ? postId : facebookPageDeleteTarget(account, postId).url;
+          if (!this.launcher || !beforeSubmit || this.stopped || this.waiting(account.id))
+            throw new SocialPlatformError("denied");
+          if (!reddit) await beforeSubmit();
+          const session = await this.open(account);
+          try {
+            const context = this.context(session.page, account, []);
+            const remove = reddit ? deleteRedditBrowserPost : deleteFacebookPagePost;
+            await remove(context, target, async () => {
+              if (this.stopped || this.waiting(account.id)) throw new SocialPlatformError("denied");
+              await beforeSubmit();
+              if (this.stopped || this.waiting(account.id)) throw new SocialPlatformError("denied");
+            });
+          } finally {
+            await session.close().catch(() => undefined);
+          }
+        }),
       creatorInfo: (account) =>
         this.exclusive(account.id, async () => {
           const recipe = this.recipe(account);
           if (!this.launcher || !recipe.creatorInfo) throw new SocialPlatformError("unsupported");
           const session = await this.open(account);
           try {
-            await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+            await session.page.goto(this.sessionUrl(recipe, account));
             const context = this.context(session.page, account, []);
             await context.verifyIdentity();
             const result = await runLayered(this.wiring, account.id, {
@@ -555,7 +590,7 @@ export class PlatformBrowserSessions {
             }
             const session = await this.open(account);
             try {
-              await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+              await session.page.goto(this.sessionUrl(recipe, account));
               let submitted = false;
               const context = this.context(session.page, account, files, beforeSubmit, () => {
                 submitted = true;
@@ -602,7 +637,7 @@ export class PlatformBrowserSessions {
             throw new SocialPlatformError("unsupported");
           const session = await this.open(account);
           try {
-            await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+            await session.page.goto(this.sessionUrl(recipe, account));
             const context = this.context(session.page, account, []);
             await context.verifyIdentity();
             const result = await runLayered(this.wiring, account.id, {
@@ -633,7 +668,7 @@ export class PlatformBrowserSessions {
           if (!this.launcher || !collect) throw new SocialPlatformError("unsupported");
           const session = await this.open(account);
           try {
-            await session.page.goto(recipe.connectionUrl?.(account) ?? recipe.loginUrl);
+            await session.page.goto(this.sessionUrl(recipe, account));
             const context = this.context(session.page, account, []);
             await context.verifyIdentity();
             const collected = await runLayered(this.wiring, account.id, {

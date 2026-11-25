@@ -120,8 +120,9 @@ export function YouTubeManage({
   const { write, error, is, setError } = useAccountWrite(t("The YouTube operation failed."));
   const confirmation = useConfirm();
 
-  const sectionViews = youtubeViews(section);
-  const view = sectionViews.length ? (views[section] ?? sectionViews[0]!.value) : undefined;
+  const sectionViews = youtubeViews(section, browser);
+  const view =
+    views[section] ?? sectionViews[0]?.value ?? (section === "videos" ? "videos" : undefined);
   const forms = youtubeViewForms(section, browser, view);
   const browseForm = forms.find(isBrowseForm);
   const taskForms = forms.filter((item) => !isBrowseForm(item));
@@ -157,8 +158,19 @@ export function YouTubeManage({
     queryClient
       .invalidateQueries({ queryKey: [...socialQueryScope(client), "youtube", account.id] })
       .catch(() => undefined);
-  const finish = (response: unknown) => {
+  const finish = (response: unknown, deletedVideoId?: unknown) => {
     if (response === undefined) return;
+    if (typeof deletedVideoId === "string" && asYoutubeRecord(response)?.status === "done") {
+      setSelection((current) =>
+        current?.section === "videos" && current.id === deletedVideoId ? undefined : current,
+      );
+      setDrafts((current) => {
+        if (current.videos?.videoId !== deletedVideoId) return current;
+        const next = { ...current.videos };
+        delete next.videoId;
+        return { ...current, videos: next };
+      });
+    }
     setResult(response);
     refreshLists();
   };
@@ -178,12 +190,25 @@ export function YouTubeManage({
       return;
     }
     const details = await youtubePayload(form, outgoing, account.id);
+    const isVideoDelete = form.action === "youtube.video.delete";
+    const confirmationDetails =
+      isVideoDelete && selected && selected.id === details.videoId
+        ? { title: selected.title, ...details }
+        : details;
     const confirmed = await confirmation.confirm({
       title: actionLabel,
-      message: account.name,
+      message: isVideoDelete ? (
+        <>
+          {account.name}
+          <br />
+          {t("This action cannot be undone.")}
+        </>
+      ) : (
+        account.name
+      ),
       danger: form.danger ?? false,
       confirmLabel: actionLabel,
-      details: <YouTubeFacts data={details} />,
+      details: <YouTubeFacts data={confirmationDetails} />,
     });
     if (!confirmed) return;
     finish(
@@ -195,6 +220,7 @@ export function YouTubeManage({
             await youtubePayload(form, outgoing, account.id, client.upload),
           ),
       ),
+      isVideoDelete ? details.videoId : undefined,
     );
   };
 
@@ -232,11 +258,20 @@ export function YouTubeManage({
     setSelection(undefined);
   };
   const review = async (target: YouTubeOperation) => {
+    const deletes = target.action.endsWith(".delete");
     if (
       !(await confirmation.confirm({
         title: t("Approve YouTube operation"),
-        message: account.name,
-        danger: false,
+        message: deletes ? (
+          <>
+            {account.name}
+            <br />
+            {t("This action cannot be undone.")}
+          </>
+        ) : (
+          account.name
+        ),
+        danger: deletes,
         confirmLabel: t("Approve"),
         details: <YouTubeFacts data={{ action: target.action, ...target.input }} />,
       }))
@@ -250,6 +285,7 @@ export function YouTubeManage({
           confirm: true,
         }),
       ),
+      target.action === "youtube.video.delete" ? target.input.videoId : undefined,
     );
   };
   const reconcile = async (target: YouTubeOperation, status: "done" | "rejected") => {

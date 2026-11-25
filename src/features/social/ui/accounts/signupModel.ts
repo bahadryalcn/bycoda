@@ -176,6 +176,10 @@ export function signupStepLabel(step: NonNullable<SocialBrowserWorkflow["registr
       return blockerLabel(step);
     case "admin_setup":
       return t("Administrator setup");
+    case "rate_limit":
+      return t("Reddit reached its email sign-up limit. Try again later.");
+    case "network_blocked":
+      return t("Reddit blocked browser access for network security. Try again later.");
     case "unknown":
       return t("Unrecognized step");
   }
@@ -188,6 +192,11 @@ export function signupProblem(workflow: SocialBrowserWorkflow): string | undefin
     return t("The signup was interrupted. Start again to reopen the window.");
   if (workflow.status === "failed") return workflow.error || t("The signup could not continue.");
   const registration = workflow.registration;
+  if (
+    workflow.status === "awaiting_owner" &&
+    (registration?.step === "rate_limit" || registration?.step === "network_blocked")
+  )
+    return registration.message ? t(registration.message) : signupStepLabel(registration.step);
   if (registration?.status === "unsupported")
     return t("This signup step is not recognized. Finish it in the platform window.");
   if (registration?.status === "changed")

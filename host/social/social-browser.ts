@@ -8,6 +8,7 @@ import { join, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import { createLogger } from "../diagnostics/logger";
+import { OPEN_CONTROL_QUERY } from "./social-browser-publishing-shared";
 
 const BROWSER_RESPONSE_ORIGINS = [
   "https://x.com",
@@ -25,6 +26,7 @@ const BROWSER_RESPONSE_ORIGINS = [
   "https://web.whatsapp.com",
   "https://web.telegram.org",
 ];
+const REDDIT_RESPONSE_ORIGIN = "https://www.reddit.com";
 
 /** Minimal page surface used by the X browser-session flows; mocked in tests. */
 export interface BrowserPage {
@@ -461,8 +463,26 @@ export function cdpPage(
         "base64",
       ),
     async click(selector) {
+      const query = selector.startsWith("[data-bycoda-web-control=")
+        ? `${OPEN_CONTROL_QUERY}(document, ${JSON.stringify(selector)})`
+        : `[...document.querySelectorAll(${JSON.stringify(selector)})]`;
       const point = await evaluate<{ x: number; y: number } | null>(
-        `(() => { const matches = [...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden"); if (matches.length !== 1) return null; const element = matches[0]; if (element.disabled || element.getAttribute("aria-disabled") === "true") return null; element.scrollIntoView({ block: "center" }); const box = element.getBoundingClientRect(); const x = box.x + box.width / 2, y = box.y + box.height / 2; const hit = document.elementFromPoint(x, y); return hit && element.contains(hit) ? { x, y } : null; })()`,
+        `(() => {
+          const matches = ${query}.filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden");
+          if (matches.length !== 1) return null;
+          const element = matches[0];
+          if (element.disabled || element.getAttribute("aria-disabled") === "true") return null;
+          element.scrollIntoView({ block: "center" });
+          const box = element.getBoundingClientRect();
+          const x = box.x + box.width / 2, y = box.y + box.height / 2;
+          let hit = document.elementFromPoint(x, y);
+          while (hit?.shadowRoot && !element.contains(hit)) {
+            const next = hit.shadowRoot.elementFromPoint(x, y);
+            if (!next || next === hit) break;
+            hit = next;
+          }
+          return hit && element.contains(hit) ? { x, y } : null;
+        })()`,
       );
       if (!point) throw new Error("Page element is missing.");
       // Trusted input events; X ignores many synthetic DOM clicks.
@@ -540,7 +560,11 @@ export function cdpPage(
             return;
           }
           path.lastIndex = 0;
-          if (BROWSER_RESPONSE_ORIGINS.includes(url.origin) && path.test(url.pathname))
+          if (
+            (BROWSER_RESPONSE_ORIGINS.includes(url.origin) ||
+              url.origin === REDDIT_RESPONSE_ORIGIN) &&
+            path.test(url.pathname)
+          )
             requests.add(params.requestId);
         }
         if (method === "Network.loadingFinished" && requests.delete(params.requestId)) {

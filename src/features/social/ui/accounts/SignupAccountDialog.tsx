@@ -165,7 +165,15 @@ export function SignupAccountDialog({
         ? { disabled: true, disabledReason: t("Fill in the fields above.") }
         : { disabled: false };
   const problem = workflow ? signupProblem(workflow) : undefined;
-  const status = workflow ? signupStatus(workflow) : undefined;
+  const blocked =
+    live && (registration?.step === "rate_limit" || registration?.step === "network_blocked");
+  const status = workflow && !blocked ? signupStatus(workflow) : undefined;
+  const ownerInstruction =
+    live &&
+    !blocked &&
+    registration?.status === "awaiting_owner" &&
+    !registration.canAdvance &&
+    registration.message;
 
   return (
     <Modal
@@ -173,6 +181,7 @@ export function SignupAccountDialog({
       onClose={() => {
         if (!busy && !live) leave();
       }}
+      closeDisabled={busy || live}
       size="md"
       footer={
         <ModalActions className="social-dialog-actions">
@@ -190,7 +199,7 @@ export function SignupAccountDialog({
               {workflow ? t("Start again") : t("Open sign-up window")}
             </DisabledReason>
           ) : null}
-          {live ? (
+          {live && !blocked ? (
             <DisabledReason
               variant="primary"
               loading={is("advance")}
@@ -229,16 +238,20 @@ export function SignupAccountDialog({
         {status ? (
           <div className="social-tag-line">
             <Badge tone={status.tone}>{status.label}</Badge>
-            {registration && !registration.blockers.some((item) => item === registration.step) ? (
+            {registration &&
+            !ownerInstruction &&
+            !registration.blockers.some((item) => item === registration.step) ? (
               <Text as="span" tone="muted">
                 {signupStepLabel(registration.step)}
               </Text>
             ) : null}
           </div>
         ) : null}
-        {status && registration?.message ? (
+        {ownerInstruction ? (
+          <Text as="p">{t(ownerInstruction)}</Text>
+        ) : status && registration?.message ? (
           <Text as="p" tone="muted" size="caption" wrap="anywhere">
-            {registration.message}
+            {t(registration.message)}
           </Text>
         ) : null}
         {live && registration?.blockers.length ? (

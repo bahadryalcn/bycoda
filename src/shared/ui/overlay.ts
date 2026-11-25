@@ -1,4 +1,11 @@
-import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { isImeComposition } from "../lib/keyboard";
 
@@ -22,6 +29,7 @@ type Entry = {
   keepEscape?: (event: KeyboardEvent) => boolean;
 };
 const entries: Entry[] = [];
+const modalOverlayListeners = new Set<() => void>();
 /* WebKit does not focus a button on click, so `document.activeElement` is the body when a
    pointer opens an overlay. The last pointer-activated control is the focus-return fallback. */
 const TRIGGER_SELECTOR =
@@ -183,6 +191,15 @@ export function shouldHandleGlobalEscape(event: KeyboardEvent) {
 /** A modal owns workspace keyboard scope, including its portalled children. */
 export function hasActiveModalOverlay() {
   return entries.some((entry) => entry.modal);
+}
+function subscribeToModalOverlay(listener: () => void) {
+  modalOverlayListeners.add(listener);
+  return () => {
+    modalOverlayListeners.delete(listener);
+  };
+}
+export function useHasActiveModalOverlay() {
+  return useSyncExternalStore(subscribeToModalOverlay, hasActiveModalOverlay, () => false);
 }
 const inert = new Map<HTMLElement, boolean>();
 let observer: MutationObserver | undefined;
@@ -492,6 +509,7 @@ export function useOverlay(
       observer.observe(document.body, { childList: true, subtree: true });
     }
     syncInert();
+    if (modal) modalOverlayListeners.forEach((listener) => listener());
     // Preserve explicit descendant autofocus, including portalled child overlays.
     if (
       modal &&
@@ -506,6 +524,7 @@ export function useOverlay(
       entries.splice(entries.indexOf(entry), 1);
       if (!entry.passive) notifyOverlayListeners();
       syncInert();
+      if (entry.modal) modalOverlayListeners.forEach((listener) => listener());
       if (!entries.length) {
         window.removeEventListener("keydown", onKey, true);
         document.removeEventListener("focusin", onFocus);

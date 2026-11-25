@@ -214,7 +214,12 @@ export class SocialTransport {
       if (method === "social.browser.workflow.cancel")
         return params.loginFlow === true
           ? this.browser.cancelLogin(this.service, p, String(params.accountId ?? ""))
-          : this.browser.workflows.cancel(this.service, p, String(params.accountId ?? ""));
+          : this.browser.workflows.cancel(
+              this.service,
+              p,
+              String(params.accountId ?? ""),
+              typeof params.workflowId === "string" ? params.workflowId : undefined,
+            );
       if (method === "social.browser.registration.review")
         return this.browser.workflows.reviewRegistration(this.service, p, {
           accountId: String(params.accountId ?? ""),
@@ -258,7 +263,12 @@ export class SocialTransport {
             : undefined,
         );
       if (method === "social.browser.status")
-        return this.browser.status(this.service, p, String(params.accountId ?? ""));
+        return this.browser.status(
+          this.service,
+          p,
+          String(params.accountId ?? ""),
+          params.loginFlow === true,
+        );
     }
     if (
       method === "social.media.claim" ||

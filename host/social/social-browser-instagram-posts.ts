@@ -13,6 +13,9 @@ const remove = ["Delete", "Sil"];
 const done = ["Done", "Bitti"];
 const editor =
   'textarea[aria-label="Write a caption..."], textarea[aria-label="Write a caption…"], textarea[aria-label="Açıklama yaz..."], textarea[aria-label="Açıklama yaz…"]';
+const deleteNotice = `[...document.querySelectorAll('[role="status"],[role="alert"]')].some(el =>
+  el.getClientRects().length && ['Post deleted', 'Gönderi silindi'].includes(el.textContent.trim()))`;
+const unavailablePost = ["Post isn't available", "Post mevcut değil"];
 
 export function parseInstagramPostChange(input: Record<string, unknown>): InstagramPostChange {
   const { action, caption, confirm } = input;
@@ -33,6 +36,7 @@ export function parseInstagramPostChange(input: Record<string, unknown>): Instag
 export async function changeInstagramPost(
   context: BrowserRecipeContext,
   input: InstagramPostChange,
+  beforeDelete?: () => Promise<void>,
 ): Promise<InstagramPostChangeResult> {
   const target = instagramPost(input.postUrl);
   const isDelete = input.action === "delete";
@@ -69,7 +73,15 @@ export async function changeInstagramPost(
   const click = async (body: string, mutation = false) => {
     await waitFor(body);
     await verify();
-    if (mutation) submitted = true;
+    if (mutation) {
+      if (isDelete && beforeDelete) {
+        await waitFor(body);
+        await beforeDelete();
+        await verify();
+        await waitFor(body);
+      }
+      submitted = true;
+    }
     await context.page.click(marker);
   };
   const openMenu = async () => {
@@ -123,7 +135,7 @@ export async function changeInstagramPost(
     } else {
       await click(
         `
-        if (dialogs.length !== 1) return;
+        if (dialogs.length !== 1 || ${deleteNotice}) return;
         const titles = matches(dialogs[0], 'h1,h2,h3,[role="heading"]');
         if (!titles.some(el => ['Delete post?', 'Gönderi silinsin mi?'].includes(label(el)))) return;
         return mark(button(dialogs[0], ${JSON.stringify(remove)}));
@@ -131,14 +143,18 @@ export async function changeInstagramPost(
         true,
       );
       const receipt = await context.waitFor<boolean>(
-        `(() => {
-        if (location.origin !== 'https://www.instagram.com') return false;
-        return [...document.querySelectorAll('[role="status"],[role="alert"]')].some(el =>
-          el.getClientRects().length && ['Post deleted', 'Gönderi silindi'].includes(el.textContent.trim()));
-      })()`,
+        `location.origin === 'https://www.instagram.com' && (${deleteNotice})`,
         15_000,
       );
       if (!receipt) throw new SocialPlatformError("unknown");
+      await verify();
+      await context.page.goto(postUrl);
+      await waitFor(`
+        if (dialogs.length || matches(document, 'main article,[role="main"] article').length) return;
+        return matches(document, 'main span,[role="main"] span').some(el =>
+          ${JSON.stringify(unavailablePost)}.some(message =>
+            el.textContent.trim() === message && document.title === message + ' • Instagram'));
+      `);
       await verify();
     }
     return { postUrl, changed: true };

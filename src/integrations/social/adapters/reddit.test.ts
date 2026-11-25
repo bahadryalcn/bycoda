@@ -291,11 +291,40 @@ describe("Reddit replies, messages and deletes", () => {
     expect(body.get("subject")).toBe("Hi");
   });
 
-  it("deletes an owned post or comment through /api/del", async () => {
-    const { http, calls } = fakeHttp([{ value: {} }]);
-    await createRedditAdapter(http).deletePost!(account(), "token", "t3_gone");
-    expect(calls[0].url).toContain("/api/del");
-    expect(new URLSearchParams(String(calls[0].options.body)).get("id")).toBe("t3_gone");
+  const identity = { value: { id: "abc", name: "owner" } };
+  const info = (author = "t2_abc") => ({
+    value: {
+      kind: "Listing",
+      data: { children: [{ kind: "t3", data: { name: "t3_gone", author_fullname: author } }] },
+    },
+  });
+  it("deletes an owned post through /api/del and rereads the same fullname", async () => {
+    const { http, calls } = fakeHttp([
+      identity,
+      info(),
+      { value: {} },
+      { value: { kind: "Listing", data: { children: [] } } },
+    ]);
+    const guard = vi.fn(async () => expect(calls).toHaveLength(2));
+    await createRedditAdapter(http).deletePost!(account(), "token", "t3_gone", guard);
+    expect(calls[2].url).toContain("/api/del");
+    expect(new URLSearchParams(String(calls[2].options.body)).get("id")).toBe("t3_gone");
+    expect(calls[3].url).toContain("/api/info?id=t3_gone");
+    expect(guard).toHaveBeenCalledOnce();
+  });
+  it("refuses deletion if the exact post belongs to another Reddit user", async () => {
+    const { http, calls } = fakeHttp([identity, info("t2_other")]);
+    await expect(
+      createRedditAdapter(http).deletePost!(account(), "token", "t3_gone"),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(calls).toHaveLength(2);
+  });
+  it("holds an accepted delete if the same Reddit post still exists", async () => {
+    const { http, calls } = fakeHttp([identity, info(), { value: {} }, info()]);
+    await expect(
+      createRedditAdapter(http).deletePost!(account(), "token", "t3_gone"),
+    ).rejects.toMatchObject({ code: "unknown" });
+    expect(calls).toHaveLength(4);
   });
 
   it("edits own text through /api/editusertext", async () => {

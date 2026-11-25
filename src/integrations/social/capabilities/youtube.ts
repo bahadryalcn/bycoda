@@ -90,7 +90,7 @@ export function youtubeCapabilities(): PlatformCapabilities {
       ),
     },
     browser: {
-      // YouTube Studio operations without a generally available official API.
+      delete: "List Studio videos and permanently delete an owned video after owner confirmation.",
       "channel.profile.update":
         "Edit the verified channel's Studio profile, including its name and handle.",
       "comment.react": "Like or heart an exact comment in Studio.",

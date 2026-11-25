@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SocialClient } from "../../model/socialClient";
-import { socialQueryScope } from "../../model/socialQuery";
+import { socialContentSnapshotKey, socialQueryScope } from "../../model/socialQuery";
 import { appendSocialWorkspacePage, socialRows } from "../../model/socialWorkspace";
 import type { SocialCampaign, SocialJob, SocialSnapshot } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
@@ -84,7 +84,7 @@ export function useContentData(
 ) {
   const cache = useQueryClient();
   const scope = [...socialQueryScope(client), "content"] as const;
-  const snapshotKey = [...scope, "snapshot", projectId ?? ""];
+  const snapshotKey = socialContentSnapshotKey(client, projectId);
   const readPage = async (offsets: Offsets): Promise<ContentPage> => ({
     snapshot: (
       await client.sectionSnapshot({
@@ -161,9 +161,7 @@ export function useContentData(
     loadMore,
     refetch: () => {
       // Observers follow selection changes; a delayed save must invalidate its original keys.
-      void cache
-        .invalidateQueries({ queryKey: [...scope, "snapshot", projectId ?? ""], exact: true })
-        .catch(() => undefined);
+      void cache.invalidateQueries({ queryKey: snapshotKey, exact: true }).catch(() => undefined);
       void cache
         .invalidateQueries({ queryKey: [...scope, "programs", projectId ?? ""], exact: true })
         .catch(() => undefined);

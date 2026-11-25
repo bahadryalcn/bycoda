@@ -87,12 +87,13 @@ describe("X API operations", () => {
 
   it("keeps the browser connection unsupported for them, with no API wording", () => {
     const caps = accountCapabilities(account({ connection: "browser", scopes: ["dm.read"] }));
-    for (const operation of OPENED) {
+    for (const operation of OPENED.filter((operation) => operation !== "delete")) {
       expect(row(caps, operation), operation).toMatchObject({
         status: "unsupported",
         reasonCode: "unsupported.not_yet",
       });
     }
+    expect(row(caps, "delete")).toMatchObject({ status: "available", reasonCode: "browser.ready" });
     expect(JSON.stringify(caps.filter((item) => item.status !== "unsupported"))).not.toMatch(
       /X API|OAuth/,
     );

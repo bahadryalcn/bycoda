@@ -9,6 +9,7 @@ import {
   type PlainBrowserLauncher,
 } from "./social-browser";
 import { XBrowserSessions } from "./social-browser-x";
+import { REDDIT_NETWORK_BLOCK_EXPRESSION } from "./browser/challenge";
 import { parseCreateTweet, xUserId } from "./social-browser-x-page";
 import { SocialService } from "./social";
 import { HostStore } from "../store";
@@ -39,12 +40,23 @@ function fakeBrowser(options: {
   };
 }) {
   const calls: string[] = [];
+  let pageUrl = "about:blank";
   let closed!: () => void;
   const page: BrowserPage = {
     goto: vi.fn(async (url: string) => {
+      pageUrl = url;
       calls.push(`goto ${url}`);
     }),
     evaluate: vi.fn(async (expression: string) => {
+      if (expression === REDDIT_NETWORK_BLOCK_EXPRESSION) return false;
+      if (expression.includes("fetch('/api/me.json'"))
+        return pageUrl === "https://www.reddit.com/"
+          ? { platformId: "web:reddit:t2_owner1", name: "BycodaOwner" }
+          : undefined;
+      if (expression === "({ origin: location.origin, path: location.pathname })") {
+        const url = new URL(pageUrl);
+        return { origin: url.origin, path: url.pathname };
+      }
       if (expression.includes("empty_state_body_text")) return options.emptyMentions === true;
       if (expression === "location.pathname") return options.path ?? "/messages/42-7";
       if (expression.includes("AppTabBar_Profile_Link")) return "/owner";
@@ -179,6 +191,16 @@ const job = (overrides: Partial<SocialJob["payload"]> = {}): SocialJob => ({
 const created = JSON.stringify({
   data: { create_tweet: { tweet_results: { result: { rest_id: "777" } } } },
 });
+const createdReply = (parentId: string) =>
+  JSON.stringify({
+    data: {
+      create_tweet: {
+        tweet_results: {
+          result: { rest_id: "777", legacy: { in_reply_to_status_id_str: parentId } },
+        },
+      },
+    },
+  });
 async function linkedInProfileFixture(
   options: { accountType?: "organization" | "member"; connection?: "browser" | "api" } = {},
 ) {
@@ -828,6 +850,39 @@ describe("X browser session", () => {
       "message.start": "available",
     });
   });
+
+  it("starts Reddit at sign-in and verifies its saved session from the Reddit home page", async () => {
+    const fake = fakeBrowser({});
+    const s = await fixture(fake.launcher, undefined, fake.plain);
+    const reddit = (await s.social.call(owner, "accounts.create", {
+      platform: "reddit",
+      name: "Pending Reddit",
+      accountType: "member",
+      connection: "browser",
+      projectIds: [s.project.id],
+    })) as SocialAccount;
+
+    expect((await s.browser.begin(s.social, owner, reddit.id, true)).status).toBe("waiting");
+    await settle(() => fake.calls.includes("plain https://www.reddit.com/login/"));
+    expect(fake.launcher).not.toHaveBeenCalled();
+    fake.closeWindow();
+    await settle(async () =>
+      ["connected", "failed"].includes(
+        (await s.browser.status(s.social, owner, reddit.id, true)).status,
+      ),
+    );
+
+    expect(fake.calls).toContain("goto https://www.reddit.com/");
+    expect((await s.browser.status(s.social, owner, reddit.id, true)).status).toBe("connected");
+    expect(fake.launcher).toHaveBeenCalledTimes(1);
+    expect(await s.social.accountForOAuth(owner, reddit.id)).toMatchObject({
+      platformId: "web:reddit:t2_owner1",
+      name: "BycodaOwner",
+      connected: true,
+    });
+    expect((await s.browser.status(s.social, owner, reddit.id)).status).toBe("connected");
+    expect(fake.launcher).toHaveBeenCalledTimes(2);
+  });
   it("fails when the window closes without an X login and removes the profile on disconnect", async () => {
     const fake = fakeBrowser({ cookies: () => [] });
     const s = await fixture(fake.launcher, undefined, fake.plain);
@@ -930,7 +985,7 @@ describe("X browser session", () => {
     ]);
   });
   it("stages an MP4 for a post reply, waits for video attachment readiness and cleans staging", async () => {
-    const fake = fakeBrowser({ response: created });
+    const fake = fakeBrowser({ response: createdReply("123") });
     const s = await fixture(fake.launcher);
     let staged = "";
     fake.page.setFiles = vi.fn(async (_selector, paths) => {
@@ -954,7 +1009,7 @@ describe("X browser session", () => {
     expect(fake.calls).toContain('click [data-testid="tweetButtonInline"]');
   });
   it("replies inline on the target post and refuses DMs without a recipient", async () => {
-    const fake = fakeBrowser({ response: created });
+    const fake = fakeBrowser({ response: createdReply("123") });
     const s = await fixture(fake.launcher);
     const account = { ...s.account, platformId: "42" };
     await s.browser
@@ -1223,94 +1278,104 @@ describe("X browser background monitoring and messaging", () => {
       ],
     });
   });
-  it("runs an owner-activated automatic reply from a browser mention through the existing queue exactly once", async () => {
-    let clock = now;
-    const responses = {
-      mentions: '{"global_objects":{"tweets":{}}}',
-      inbox: '{"inbox_initial_state":{"entries":[]}}',
-    };
-    const fake = fakeBrowser({ responses, response: created });
-    const s = await fixture(fake.launcher, () => clock);
-    await s.social.connectAccount(
-      s.account.id,
-      {
-        platformId: "42",
-        name: "owner",
-        scopes: X_BROWSER_SCOPES,
-        accessApproved: true,
-        connection: "browser",
-      },
-      { accessToken: "browser-session" },
-    );
-    await s.social.call(owner, "accounts.grants", {
-      accountId: s.account.id,
-      projectId: s.project.id,
-      permissions: ["read", "draft", "reply"],
-    });
-    await s.social.call(owner, "profiles.save", {
-      projectId: s.project.id,
-      productName: "bycoda",
-      brandVoice: "Helpful",
-      facts: [
+  it.each([
+    ["succeeded", "800", "777"],
+    ["review", "900", undefined],
+  ] as const)(
+    "runs an owner-activated browser reply exactly once and records %s",
+    async (status, reportedParent, expectedId) => {
+      let clock = now;
+      const responses = {
+        mentions: '{"global_objects":{"tweets":{}}}',
+        inbox: '{"inbox_initial_state":{"entries":[]}}',
+      };
+      const fake = fakeBrowser({ responses, response: createdReply(reportedParent) });
+      const s = await fixture(fake.launcher, () => clock);
+      await s.social.connectAccount(
+        s.account.id,
         {
-          id: "fact",
-          topic: "product",
-          text: "bycoda helps develop software.",
-          source: "Public product description",
+          platformId: "42",
+          name: "owner",
+          scopes: X_BROWSER_SCOPES,
+          accessApproved: true,
+          connection: "browser",
         },
-      ],
-    });
-    const rule = (await s.social.call(owner, "automations.create", {
-      accountId: s.account.id,
-      projectId: s.project.id,
-      name: "Product help",
-      mode: "automatic",
-      trigger: "comment",
-      topics: ["product"],
-      dailyLimit: 1,
-      answers: [{ keyword: "what is bycoda", factId: "fact" }],
-    })) as {
-      id: string;
-    };
-    await s.social.call(owner, "automations.activate", {
-      id: rule.id,
-      confirm: "ENABLE_AUTOMATIC_REPLIES",
-    });
-    await s.social.call(owner, "execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
-    await s.social.call(owner, "inbox.polling", { enabled: true });
-    clock += 2000;
-    responses.mentions = JSON.stringify({
-      global_objects: {
-        tweets: {
-          incoming: {
-            id_str: "800",
-            user_id_str: "7",
-            full_text: "What is bycoda?",
-            created_at: new Date(clock).toUTCString(),
-            entities: { user_mentions: [{ id_str: "42" }] },
+        { accessToken: "browser-session" },
+      );
+      await s.social.call(owner, "accounts.grants", {
+        accountId: s.account.id,
+        projectId: s.project.id,
+        permissions: ["read", "draft", "reply"],
+      });
+      await s.social.call(owner, "profiles.save", {
+        projectId: s.project.id,
+        productName: "bycoda",
+        brandVoice: "Helpful",
+        facts: [
+          {
+            id: "fact",
+            topic: "product",
+            text: "bycoda helps develop software.",
+            source: "Public product description",
+          },
+        ],
+      });
+      const rule = (await s.social.call(owner, "automations.create", {
+        accountId: s.account.id,
+        projectId: s.project.id,
+        name: "Product help",
+        mode: "automatic",
+        trigger: "comment",
+        topics: ["product"],
+        dailyLimit: 1,
+        answers: [{ keyword: "what is bycoda", factId: "fact" }],
+      })) as {
+        id: string;
+      };
+      await s.social.call(owner, "automations.activate", {
+        id: rule.id,
+        confirm: "ENABLE_AUTOMATIC_REPLIES",
+      });
+      await s.social.call(owner, "execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+      await s.social.call(owner, "inbox.polling", { enabled: true });
+      clock += 2000;
+      responses.mentions = JSON.stringify({
+        global_objects: {
+          tweets: {
+            incoming: {
+              id_str: "800",
+              user_id_str: "7",
+              full_text: "What is bycoda?",
+              created_at: new Date(clock).toUTCString(),
+              entities: { user_mentions: [{ id_str: "42" }] },
+            },
           },
         },
-      },
-    });
-    await s.social.tick();
-    // Inbound polling runs independently of dispatch; its authorized reply is
-    // queued for the next dispatch tick rather than delaying existing jobs.
-    expect((await s.social.snapshot(owner)).jobs).toMatchObject([
-      { kind: "reply", status: "queued" },
-    ]);
-    await s.social.tick();
-    const snapshot = await s.social.snapshot(owner);
-    expect(snapshot.jobs).toHaveLength(1);
-    expect(snapshot.jobs[0]).toMatchObject({
-      kind: "reply",
-      status: "succeeded",
-      platformId: "777",
-    });
-    expect(fake.calls).toContain("text bycoda helps develop software.");
-    clock += 61000;
-    await s.social.tick();
-    expect((await s.social.snapshot(owner)).jobs).toHaveLength(1);
-  });
+      });
+      await s.social.tick();
+      // Inbound polling runs independently of dispatch; its authorized reply is
+      // queued for the next dispatch tick rather than delaying existing jobs.
+      expect((await s.social.snapshot(owner)).jobs).toMatchObject([
+        { kind: "reply", status: "queued" },
+      ]);
+      await s.social.tick();
+      const snapshot = await s.social.snapshot(owner);
+      expect(snapshot.jobs).toHaveLength(1);
+      expect(snapshot.jobs[0]).toMatchObject({
+        kind: "reply",
+        status,
+        payload: { postId: "800" },
+      });
+      expect(snapshot.jobs[0].platformId).toBe(expectedId);
+      expect(fake.calls).toContain("text bycoda helps develop software.");
+      clock += 61000;
+      await s.social.tick();
+      expect((await s.social.snapshot(owner)).jobs).toHaveLength(1);
+      expect(
+        fake.calls.filter((call) => call === 'click [data-testid="tweetButtonInline"]'),
+      ).toHaveLength(1);
+    },
+  );
   it("does not read another account's profile", async () => {
     const fake = fakeBrowser({ cookies: () => loggedIn("99"), responses: { mentions, inbox } });
     const s = await fixture(fake.launcher, () => now);

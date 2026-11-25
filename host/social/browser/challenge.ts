@@ -7,12 +7,45 @@ import type { BrowserPage } from "../social-browser";
 export type ChallengeKind = "captcha" | "verification" | "suspicious_login" | "login";
 export type ChallengeHit = { kind: ChallengeKind; url: string };
 
+// The same X route hosts sign-in and signup; only the classification leaves the page.
+export const X_ONBOARDING_EXPRESSION = `(location.origin === "https://x.com" &&
+  location.pathname === "/i/jf/onboarding/web" &&
+  ["login", "signup"].includes(new URLSearchParams(location.search).get("mode")))`;
+
+/** Reddit's full-page access denial. A quoted notice alone is ordinary page content. */
+export const REDDIT_NETWORK_BLOCK_EXPRESSION = String.raw`(() => {
+  if (location.origin !== "https://www.reddit.com") return false;
+  const matches = (selector, label) => [...document.querySelectorAll(selector)].some(el =>
+    !el.hidden && el.getAttribute('aria-hidden') !== 'true' && el.getClientRects().length &&
+    !['hidden', 'collapse'].includes(getComputedStyle(el).visibility) &&
+    (el.textContent || '').replace(/\s+/g, ' ').trim() === label);
+  return matches('div,h1,p', "You've been blocked by network security.") &&
+    matches('a,button', 'File a ticket');
+})()`;
+export const REDDIT_NETWORK_BLOCK_MESSAGE =
+  "Reddit blocked browser access for network security. Try again later.";
+
+export class RedditBrowserNetworkBlock extends Error {
+  constructor() {
+    super(REDDIT_NETWORK_BLOCK_MESSAGE);
+  }
+}
+
+export async function assertRedditBrowserAccess(page: BrowserPage): Promise<void> {
+  if ((await page.evaluate<boolean>(REDDIT_NETWORK_BLOCK_EXPRESSION)) === true)
+    throw new RedditBrowserNetworkBlock();
+}
+
 /**
  * Read-only probe. It queries the DOM and location only; it never clicks, types, fills or submits.
  * Returned values are reduced to booleans so no page text, field value or query string leaves the page.
  */
 const PROBE = String.raw`(() => {
-  const visible = el => !!el && !el.hidden && el.getAttribute('aria-hidden') !== 'true' && !!el.getClientRects().length;
+  const visible = el => {
+    if (!el || el.hidden || el.getAttribute('aria-hidden') === 'true' || !el.getClientRects().length) return false;
+    const visibility = getComputedStyle(el).visibility;
+    return visibility !== 'hidden' && visibility !== 'collapse';
+  };
   const text = el => (el && el.textContent || '').replace(/\s+/g, ' ').trim();
   const captchaFrame = [...document.querySelectorAll('iframe')].some(el =>
     visible(el) && /captcha|arkoselabs|hcaptcha|recaptcha|turnstile/i.test(el.getAttribute('src') || ''));
@@ -23,7 +56,8 @@ const PROBE = String.raw`(() => {
     /^(verificationCode|verification-code|security_code|confirmation_code|otp|otp-code)$/i.test(el.name || '') ||
     /^(Verification code|Confirmation code|Security code|Doğrulama kodu)$/i.test(el.getAttribute('aria-label') || '') ||
     el.getAttribute('placeholder') === 'Enter 6-digit code'));
-  return { path: location.pathname, origin: location.origin, captchaFrame, humanText, codeField };
+  return { path: location.pathname, origin: location.origin, captchaFrame, humanText, codeField,
+    xOnboarding: ${X_ONBOARDING_EXPRESSION} };
 })()`;
 
 type Probe = {
@@ -32,6 +66,7 @@ type Probe = {
   captchaFrame: boolean;
   humanText: boolean;
   codeField: boolean;
+  xOnboarding: boolean;
 };
 
 /**
@@ -46,7 +81,10 @@ export async function detectChallenge(page: BrowserPage): Promise<ChallengeHit |
   if (probe.codeField) return { kind: "verification", url };
   if (/\/(?:checkpoint|challenge)(?:\/|$)/.test(probe.path))
     return { kind: "suspicious_login", url };
-  if (/\/(?:login|signin|signup|authwall|recover|accounts\/login)(?:\/|$)/.test(probe.path))
+  if (
+    probe.xOnboarding ||
+    /\/(?:login|signin|signup|authwall|recover|accounts\/login)(?:\/|$)/.test(probe.path)
+  )
     return { kind: "login", url };
   return null;
 }

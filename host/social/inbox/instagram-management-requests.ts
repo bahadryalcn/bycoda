@@ -7,6 +7,7 @@ import {
 } from "../../../src/features/social/model/instagramManagement";
 import type { SocialPermission } from "../../../src/features/social/model/social";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
+import { instagramPostDeletion } from "../browser/instagram-post-deletion";
 import type { SocialActionContext, SocialActionModule } from "../core/social-actions";
 import { exact, str } from "../core/social-helpers";
 import { instagramHandle } from "../social-browser-instagram-audience";
@@ -113,6 +114,23 @@ async function account(
 }
 
 export const instagramManagementRequests: SocialActionModule = {
+  "instagram.post.deletion.status": {
+    readOnly: true,
+    ownerOnly: true,
+    async run(ctx, input) {
+      exact(input, ["accountId", "postUrl"]);
+      const found = await ctx.service.access(
+        ctx.principal,
+        str(input.accountId, "account"),
+        "read",
+      );
+      if (found.platform !== "instagram" || found.connection !== "browser" || !found.platformId)
+        throw new SocialPlatformError("unsupported");
+      return {
+        deletion: await instagramPostDeletion(ctx.service, found.platformId, input.postUrl),
+      };
+    },
+  },
   "instagram.management.request": {
     readOnly: false,
     ownerOnly: false,
@@ -163,11 +181,21 @@ export const instagramManagementRequests: SocialActionModule = {
         str(input.accountId, "account"),
         "read",
       );
-      return {
-        requests: (await readRequests(ctx, found.id)).filter(
-          (item) => item.platformAccountId === found.platformId,
-        ),
-      };
+      const items = (await readRequests(ctx, found.id)).filter(
+        (item) => item.platformAccountId === found.platformId,
+      );
+      const requests = await Promise.all(
+        items.map(async (item) => {
+          if (item.kind !== "post.delete" || typeof item.details.postUrl !== "string") return item;
+          const deletion = await instagramPostDeletion(
+            ctx.service,
+            found.platformId,
+            item.details.postUrl,
+          );
+          return deletion ? { ...item, deletion } : item;
+        }),
+      );
+      return { requests };
     },
   },
   "instagram.management.dismiss": {

@@ -46,8 +46,11 @@ export function XPostActions({ account, client, disabled }: Props) {
   const [enabled, setEnabled] = useState(true);
   const listing = useAccountWrite(t("Could not load your posts."));
   const x = useXApply(account, client);
-  const options = actions.filter(
-    (action) => !action.enterprise || account.xApiProduct === "enterprise",
+  const browser = account.connection === "browser";
+  const options = actions.filter((action) =>
+    browser
+      ? action.value === "deletePost"
+      : !action.enterprise || account.xApiProduct === "enterprise",
   );
   const action = options.find((item) => item.value === kind) ?? options[0]!;
   const posts = xPublishedPosts(jobs ?? [], account.id);
@@ -65,11 +68,13 @@ export function XPostActions({ account, client, disabled }: Props) {
     });
   const review = async () => {
     const known = posts.find((job) => job.platformId === postId);
+    const postLabel = known ? xPostLabel(known) : postId;
     const done = await x.apply({
       kind: action.value,
       title: action.label(),
       details: [
-        action.target === "post" ? (known ? xPostLabel(known) : postId) : userId.trim(),
+        action.target === "post" ? postLabel : userId.trim(),
+        action.value === "deletePost" && postLabel !== postId ? postId : "",
         action.toggle ? (enabled ? t("Enable") : t("Disable")) : "",
       ]
         .filter(Boolean)
@@ -89,15 +94,17 @@ export function XPostActions({ account, client, disabled }: Props) {
   return (
     <div className="social-x-group">
       <SectionLabel variant="inline" size="secondary" as="h4">
-        {t("Posts and accounts")}
+        {browser ? t("Delete post") : t("Posts and accounts")}
       </SectionLabel>
-      <Select
-        label={t("X API action")}
-        value={action.value}
-        options={options.map((item) => ({ value: item.value, label: item.label() }))}
-        onValueChange={(value) => setKind(value as XApplyKind)}
-        disabled={busy}
-      />
+      {browser ? null : (
+        <Select
+          label={t("X API action")}
+          value={action.value}
+          options={options.map((item) => ({ value: item.value, label: item.label() }))}
+          onValueChange={(value) => setKind(value as XApplyKind)}
+          disabled={busy}
+        />
+      )}
       {action.target === "post" ? (
         <>
           <div className="social-x-toolbar social-x-toolbar-pick">

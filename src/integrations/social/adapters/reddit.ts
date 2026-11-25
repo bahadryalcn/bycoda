@@ -10,6 +10,7 @@ import { redditAudience } from "./reddit-audience";
 import { redditInbox } from "./reddit-inbox";
 import {
   redditCall,
+  redditChildren,
   redditCreatedName,
   redditFullname,
   redditUsername,
@@ -146,10 +147,47 @@ export function createRedditAdapter(http: SocialHttp = new SocialHttp()): Social
         { channel: "comments", status: "read" },
       ],
     }),
-    async deletePost(account, token, platformId) {
+    async deletePost(account, token, platformId, beforeSubmit) {
       const thing = redditFullname(platformId, ["t1", "t3"]);
+      const { value: identity } = await redditCall(http, account, token, "/api/v1/me");
+      const owner = typeof identity.id === "string" ? identity.id.replace(/^t2_/, "") : "";
+      if (!owner || account.platformId !== `t2_${owner}` || identity.is_suspended === true)
+        throw new SocialPlatformError("denied");
+      const read = async () => {
+        const { value } = await redditCall(http, account, token, "/api/info", {
+          query: { id: thing },
+        });
+        if (value.kind !== "Listing" || !Array.isArray(value.data?.children))
+          throw new SocialPlatformError("unknown");
+        const rows = redditChildren(value);
+        if (
+          rows.length !== value.data.children.length ||
+          rows.length > 1 ||
+          (rows[0] && (rows[0].kind !== thing.slice(0, 2) || rows[0].data?.name !== thing))
+        )
+          throw new SocialPlatformError("unknown");
+        return rows[0]?.data;
+      };
+      if ((await read())?.author_fullname !== account.platformId)
+        throw new SocialPlatformError("denied");
+      await beforeSubmit?.();
       const { value } = await redditCall(http, account, token, "/api/del", { form: { id: thing } });
+      if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new SocialPlatformError("unknown");
       redditWriteErrors(value, Date.now());
+      if (Object.keys(value).length !== 0 && !Array.isArray(value.json?.errors))
+        throw new SocialPlatformError("unknown");
+      const current = await read().catch(() => {
+        throw new SocialPlatformError("unknown");
+      });
+      if (
+        current &&
+        (current.author !== "[deleted]" ||
+          (thing.startsWith("t3_")
+            ? current.removed_by_category !== "deleted"
+            : current.body !== "[deleted]"))
+      )
+        throw new SocialPlatformError("unknown");
     },
     collectAudience: (account, token, source: CaptureSource, cursor) =>
       redditAudience(http, account, token, source, cursor),

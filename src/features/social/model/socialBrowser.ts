@@ -51,7 +51,12 @@ export type InstagramProfileState = XProfileState & { username?: string };
 export type InstagramPostChange =
   | { action: "caption"; postUrl: string; caption: string; confirm: "EDIT_INSTAGRAM_CAPTION" }
   | { action: "delete"; postUrl: string; confirm: "DELETE_INSTAGRAM_POST" };
-export type InstagramPostChangeResult = { postUrl: string; changed: boolean };
+export type InstagramPostDeletion = "review" | "deleted";
+export type InstagramPostChangeResult = {
+  postUrl: string;
+  changed: boolean;
+  deletion?: InstagramPostDeletion;
+};
 export type InstagramRecipient = { handle: string; platformId: string };
 export type InstagramFollowerSample = {
   followers: { username: string }[];
@@ -111,7 +116,15 @@ export type SocialRegistrationProfile = Partial<Record<SocialRegistrationField, 
 export type SocialRegistrationBlocker = "password" | "verification" | "terms" | "challenge";
 export type SocialRegistrationProgress = {
   status: "ready" | "needs_fields" | "awaiting_owner" | "unsupported" | "changed";
-  step: "method" | "profile" | "birthdate" | SocialRegistrationBlocker | "admin_setup" | "unknown";
+  step:
+    | "method"
+    | "profile"
+    | "birthdate"
+    | SocialRegistrationBlocker
+    | "admin_setup"
+    | "rate_limit"
+    | "network_blocked"
+    | "unknown";
   blockers: SocialRegistrationBlocker[];
   requiredFields: SocialRegistrationField[];
   filledFields: SocialRegistrationField[];
@@ -220,7 +233,7 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     routes: {
       login: "https://x.com/login",
       signup: "https://x.com/i/flow/signup",
-      inbox: "https://x.com/messages",
+      inbox: "https://x.com/i/chat",
       publish: "https://x.com/compose/post",
     },
   },
@@ -290,10 +303,12 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     origins: ["https://web.telegram.org"],
     routes: { login: "https://web.telegram.org/", inbox: "https://web.telegram.org/" },
   },
-  // reddit: owner-assisted signup only; no login, inbox or publish route is allowed yet
   reddit: {
     origins: ["https://www.reddit.com"],
-    routes: { signup: "https://www.reddit.com/register/" },
+    routes: {
+      signup: "https://www.reddit.com/register/",
+      inbox: "https://www.reddit.com/chat/",
+    },
   },
 };
 

@@ -18,6 +18,7 @@ import { tiktokActions } from "../tiktok/tiktok-actions";
 import { facebookPageActions } from "./facebook-page-actions";
 import { facebookLiveActions } from "../facebook-live/actions";
 import { facebookManagementActions } from "./facebook-management-actions";
+import { ownerPublishedPostActions } from "./published-post-actions";
 
 /** Every registry action module. Phase 4 adds an action by editing its own module, not this list. */
 export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
@@ -43,6 +44,7 @@ export const SOCIAL_ACTION_MODULES: SocialActionModule[] = [
   facebookPageActions,
   facebookLiveActions,
   facebookManagementActions,
+  ownerPublishedPostActions,
   instagramModerationRequests,
   instagramManagementRequests,
 ];

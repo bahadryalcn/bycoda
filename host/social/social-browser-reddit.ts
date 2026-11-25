@@ -5,6 +5,7 @@ import {
   fill,
   inputId,
   json,
+  OPEN_CONTROL_QUERY,
   readJson,
   submitResponse,
   unknown,
@@ -33,10 +34,8 @@ import { detectChallenge, needsHumanError } from "./browser/challenge";
  * Reddit member recipe: text and link posts to one subreddit, comments, replies and an inbox poll.
  * Private messages and chat are not part of it (Reddit chat is a separate system).
  *
- * Live Reddit blocks headless automation ("blocked by network security") for a logged-out profile, so no
- * page structure was recorded. Everything that touches an unverified page element carries a
- * `// shortcut: unverified live` note; the safety rules (identity before and after, markSubmitted before the
- * irreversible click, outcome only from a recognized response plus a persisted readback) do not depend on it.
+ * Reddit exposes the subreddit and comment hierarchy on public permalinks. The signed-in composer
+ * and its write response still require live acceptance with an owner-controlled account.
  */
 const R = "https://www.reddit.com";
 const TEXT_CAP = 40_000;
@@ -87,35 +86,81 @@ export function redditCreatedId(raw: string, prefix: "t1" | "t3"): string | unde
     value.json?.data?.name, // legacy /api/submit
     value.json?.data?.things?.[0]?.data?.name, // legacy /api/comment
     value.data?.createPost?.post?.id,
+    value.data?.createProfilePost?.post?.id,
     value.data?.createComment?.comment?.id,
   ];
   for (const item of direct)
     if (typeof item === "string" && new RegExp(`^${prefix}_[a-z0-9]{1,30}$`).test(item))
       ids.add(item);
   // A refused write answers with errors and no id.
-  if (value.json?.errors?.length || value.data?.createPost?.ok === false) return undefined;
+  if (
+    value.json?.errors?.length ||
+    value.data?.createPost?.ok === false ||
+    value.data?.createProfilePost?.ok === false
+  )
+    return undefined;
   return ids.size === 1 ? [...ids][0] : undefined;
 }
-// shortcut: unverified live — verify with the owner's first Reddit session (request path and body shape).
 const REDDIT_WRITE = /\/(?:svc\/shreddit\/graphql|api\/(?:submit|comment))$/;
 
-// shortcut: unverified live — verify with the owner's first Reddit session (composer selectors).
+/** Reddit's live top-level comment response preserves HTML attribute casing. */
+function redditCommentReceipt(raw: string): string | undefined {
+  const jsonId = redditCreatedId(raw, "t1");
+  if (jsonId) return jsonId;
+  if (!/^\s*<faceplate-loader name="CreateComment_[\w-]+"/.test(raw)) return;
+  const ids = new Set(
+    [
+      ...raw.matchAll(
+        /<shreddit-comment\s+(?:[^>]*?\s)?thing[Ii][Dd]="(t1_[a-z0-9]{1,30})"(?=\s|>)/g,
+      ),
+    ].map((match) => match[1]),
+  );
+  return ids.size === 1 ? [...ids][0] : undefined;
+}
+
 const TITLE = 'textarea[name="title"],input[name="title"]';
 const BODY = '[contenteditable="true"][name="body"],textarea[name="body"]';
 const LINK = 'input[name="link"],input[name="url"]';
-const POST_SUBMIT = 'button#submit-post-button,button[slot="submit-button"]';
+const POST_SUBMIT =
+  'button#inner-post-submit-button,button#submit-post-button,button[slot="submit-button"]';
 const FLAIR_REQUIRED = '[flair-required],[data-flair-required="true"]';
 const FLAIR_OPEN = '[data-testid="flair-picker-button"],r-post-flair-picker button';
 const FLAIR_APPLY =
   '[role="dialog"] button[type="submit"],[role="dialog"] button[slot="primary-button"]';
 
-function postEvidence(id: string, owner: string, title: string, text: string, link?: string) {
+function withRedditTarget(ctx: BrowserRecipeContext, target: string): BrowserRecipeContext {
+  return {
+    ...ctx,
+    controlRoot: "html",
+    verifyIdentity: async () => {
+      await ctx.verifyIdentity();
+      if (!(await ctx.page.evaluate<boolean>(target))) throw denied();
+    },
+  };
+}
+
+function postEvidence(
+  id: string,
+  owner: string,
+  subreddit: string,
+  title: string,
+  text: string,
+  link?: string,
+  profile?: string,
+) {
   return String.raw`(() => {
+    if (location.origin !== ${json(R)}) return false;
     const norm = ${norm};
     const posts = [...document.querySelectorAll('shreddit-post')].filter(el => el.getAttribute('id') === ${json(id)});
     if (posts.length !== 1) return false;
     const post = posts[0];
-    if (post.getAttribute('author-id') !== ${json(owner)} || norm(post.getAttribute('post-title')) !== norm(${json(title)})) return false;
+    if (post.getAttribute('author-id') !== ${json(owner)} ||
+        ${
+          profile
+            ? `!location.pathname.toLowerCase().startsWith(${json(`/user/${profile.toLowerCase()}/comments/${base36(id)}/`)})`
+            : `post.getAttribute('subreddit-name')?.toLowerCase() !== ${json(subreddit.toLowerCase())}`
+        } ||
+        norm(post.getAttribute('post-title')) !== norm(${json(title)})) return false;
     ${
       link
         ? String.raw`try { return new URL(post.getAttribute('content-href') || '').href === new URL(${json(link)}).href; } catch { return false; }`
@@ -131,30 +176,52 @@ async function redditPost(ctx: BrowserRecipeContext, job: SocialJob): Promise<So
   if (!submission.title) throw unsupported();
   const owner = ownId(ctx.account.platformId);
   const link = submission.kind === "link" ? submission.link : undefined;
-  await ctx.page.goto(
-    `${R}/r/${submission.subreddit}/submit/?type=${submission.kind === "link" ? "LINK" : "TEXT"}`,
-  );
+  const path = `/r/${submission.subreddit}/submit`;
+  await ctx.page.goto(`${R}${path}/?type=${submission.kind === "link" ? "LINK" : "TEXT"}`);
   await ctx.verifyIdentity();
+  const member = /^u_/i.test(submission.subreddit) ? await redditIdentity(ctx.page) : undefined;
+  const profile =
+    member?.platformId === ctx.account.platformId &&
+    `u_${member.name.toLowerCase()}` === submission.subreddit.toLowerCase()
+      ? member.name
+      : undefined;
+  const targets = [path.toLowerCase()];
+  if (profile) targets.push(`/user/${profile.toLowerCase()}/submit`);
+  const checked = withRedditTarget(
+    ctx,
+    String.raw`location.origin === ${json(R)} &&
+      ${json(targets)}.includes(location.pathname.replace(/\/$/, '').toLowerCase())`,
+  );
+  await checked.verifyIdentity();
   const required = await ctx.page.evaluate<boolean>(
     `!!document.querySelector(${json(FLAIR_REQUIRED)})`,
   );
   // A required flair that the job does not name is refused before anything is typed or submitted.
   if (required && !submission.flairId) throw unsupported();
-  await fill(ctx, TITLE, "post-title", submission.title);
-  if (link) await fill(ctx, LINK, "post-link", link);
-  else if (submission.text) await fill(ctx, BODY, "post-body", submission.text);
+  await fill(checked, TITLE, "post-title", submission.title);
+  if (link) await fill(checked, LINK, "post-link", link);
+  else if (submission.text) await fill(checked, BODY, "post-body", submission.text);
   if (submission.flairId) {
-    await click(ctx, FLAIR_OPEN, "flair-open");
+    await click(checked, FLAIR_OPEN, "flair-open");
     await click(
-      ctx,
+      checked,
       `[role="dialog"] input[type="radio"][value=${json(submission.flairId)}]`,
       "flair-choice",
     );
-    await click(ctx, FLAIR_APPLY, "flair-apply");
+    await click(checked, FLAIR_APPLY, "flair-apply");
   }
   // A disabled submit control (for example a missing flair) stops here, before the click.
+  // Reddit may leave the composer as soon as it accepts the post.
+  let dispatched = false;
   const id = await submitResponse(
-    ctx,
+    {
+      ...checked,
+      verifyIdentity: () => (dispatched ? ctx : checked).verifyIdentity(),
+      markSubmitted: () => {
+        dispatched = true;
+        ctx.markSubmitted?.();
+      },
+    },
     REDDIT_WRITE,
     (raw) => redditCreatedId(raw, "t3"),
     POST_SUBMIT,
@@ -164,7 +231,15 @@ async function redditPost(ctx: BrowserRecipeContext, job: SocialJob): Promise<So
   try {
     await ctx.page.goto(url);
     const persisted = await ctx.waitFor<boolean>(
-      postEvidence(id, owner, submission.title, submission.text, link),
+      postEvidence(
+        id,
+        owner,
+        submission.subreddit,
+        submission.title,
+        submission.text,
+        link,
+        profile,
+      ),
       30_000,
     );
     if (!persisted) throw unknown();
@@ -176,18 +251,27 @@ async function redditPost(ctx: BrowserRecipeContext, job: SocialJob): Promise<So
 }
 
 const COMMENT_ROW = 'shreddit-comment[thingid^="t1_"]';
-// shortcut: unverified live — verify with the owner's first Reddit session (comment composer markup).
-const COMMENT_EDITOR =
-  '[data-bycoda-rd-composer] [contenteditable="true"],[data-bycoda-rd-composer] textarea';
+const COMMENT_ROOT = "[data-bycoda-rd-composer]";
+const COMMENT_EXPAND = "textarea#innerTextArea";
+const COMMENT_EDITOR = '[contenteditable="true"],textarea:not(#innerTextArea)';
 const COMMENT_SUBMIT =
-  '[data-bycoda-rd-composer] button[type="submit"],[data-bycoda-rd-composer] button[slot="submit-button"]';
+  'button#comment-composer-submit-button,button[type="submit"],button[slot="submit-button"]';
 const REPLY_LABELS = ["Reply", "Yanıtla"];
 
-type CommentRow = { id: string; author: string; text: string };
+type CommentRow = {
+  id: string;
+  author: string;
+  authorName: string;
+  post: string | null;
+  parent: string | null;
+  text: string;
+};
 /** Own persisted comments by thing ID. Only the comment's own text is read, never its nested replies. */
 const COMMENTS_SNAPSHOT = String.raw`(() => [...document.querySelectorAll(${json(COMMENT_ROW)})].map(el => {
-  const body = el.querySelector(':scope > [slot="comment"]');
-  return { id: el.getAttribute('thingid'), author: el.getAttribute('author-id') || '', text: body ? body.textContent : '' };
+  const body = [...el.querySelectorAll('[slot="comment"]')].find(node => node.closest('shreddit-comment') === el);
+  return { id: el.getAttribute('thingid'), author: el.getAttribute('author-id') || '',
+    authorName: el.getAttribute('author') || '',
+    post: el.getAttribute('postid'), parent: el.getAttribute('parentid'), text: body ? body.textContent : '' };
 }))()`;
 
 async function redditComment(ctx: BrowserRecipeContext, job: SocialJob): Promise<SocialSendResult> {
@@ -202,22 +286,31 @@ async function redditComment(ctx: BrowserRecipeContext, job: SocialJob): Promise
     ? inputId(job.payload.objectPostId ?? job.payload.threadId, /^t3_[a-z0-9]{1,30}$/)
     : target;
   const page = `${R}/comments/${base36(post)}/`;
+  const checked = withRedditTarget(
+    ctx,
+    String.raw`location.origin === ${json(R)} &&
+      /^(?:\/(?:r|user)\/[A-Za-z0-9_-]+)?\/comments\/${base36(post)}(?:\/|$)/.test(location.pathname) &&
+      document.querySelectorAll('shreddit-post[id="${post}"]').length === 1`,
+  );
   await ctx.page.goto(reply ? `${page}comment/${base36(target)}/` : page);
-  await ctx.verifyIdentity();
+  await checked.verifyIdentity();
+  const member = await redditIdentity(ctx.page);
+  if (member?.platformId !== ctx.account.platformId) throw denied();
   if (reply) {
     const marked = await ctx.waitFor<boolean>(
       String.raw`(() => {
         const rows = [...document.querySelectorAll(${json(COMMENT_ROW)})].filter(el => el.getAttribute('thingid') === ${json(target)});
-        if (rows.length !== 1) return false;
-        const buttons = [...rows[0].querySelectorAll('button')].filter(b => b.closest('shreddit-comment') === rows[0] && !b.disabled &&
+        if (rows.length !== 1 || rows[0].getAttribute('postid') !== ${json(post)}) return false;
+        const buttons = [...rows[0].querySelectorAll('button')].filter(b => b.closest('shreddit-comment') === rows[0] && !b.disabled && b.getClientRects().length &&
           ${json(REPLY_LABELS)}.includes((b.getAttribute('aria-label') || b.textContent || '').trim()));
         if (buttons.length !== 1) return false;
+        document.querySelectorAll('[data-bycoda-rd-reply]').forEach(el => el.removeAttribute('data-bycoda-rd-reply'));
         buttons[0].setAttribute('data-bycoda-rd-reply', 'true'); return true;
       })()`,
       20_000,
     );
     if (!marked) throw denied();
-    await click(ctx, '[data-bycoda-rd-reply="true"]', "reply");
+    await click(checked, '[data-bycoda-rd-reply="true"]', "reply");
   }
   // The reply box opens inside its comment; the post's own box is the only host outside every comment.
   const host = await ctx.waitFor<boolean>(
@@ -231,28 +324,47 @@ async function redditComment(ctx: BrowserRecipeContext, job: SocialJob): Promise
     20_000,
   );
   if (!host) throw unsupported();
-  await fill(ctx, COMMENT_EDITOR, "comment-text", text);
+  const composer = { ...checked, controlRoot: COMMENT_ROOT };
+  const collapsed = await ctx.page.evaluate<boolean>(String.raw`(() => {
+    const root = document.querySelector(${json(COMMENT_ROOT)});
+    return !!root && ${OPEN_CONTROL_QUERY}(root, ${json(COMMENT_EXPAND)}).some(el => el.getClientRects().length && !el.hidden);
+  })()`);
+  if (collapsed) await click(composer, COMMENT_EXPAND, "comment-expand");
+  await fill(composer, COMMENT_EDITOR, "comment-text", text);
   const before = (await ctx.page.evaluate<CommentRow[]>(COMMENTS_SNAPSHOT)).map((row) => row.id);
-  const watcher = ctx.page.watchResponse(REDDIT_WRITE, (raw) => !!redditCreatedId(raw, "t1"));
-  const submit = await control(ctx, COMMENT_SUBMIT, "comment-submit");
+  const submit = await control(composer, COMMENT_SUBMIT, "comment-submit");
+  const responsePath = new RegExp(
+    `${REDDIT_WRITE.source}|^/svc/shreddit/(?:${post}|${target})/create-comment$`,
+  );
+  const watcher = ctx.page.watchResponse(responsePath, (raw) => !!redditCommentReceipt(raw));
   let submitted = false;
   try {
-    await ctx.verifyIdentity();
+    await checked.verifyIdentity();
     submitted = true;
     ctx.markSubmitted?.();
     await ctx.page.click(submit);
     const raw = await watcher.body(30_000);
-    const id = raw && redditCreatedId(raw, "t1");
+    const id = raw && redditCommentReceipt(raw);
     if (!id || before.includes(id)) throw unknown();
     // Reload the created comment: the optimistic composer echo is not delivery evidence.
     await ctx.page.goto(`${page}comment/${base36(id)}/`);
-    const rows = await ctx.waitFor<CommentRow[]>(COMMENTS_SNAPSHOT, 30_000);
-    await ctx.verifyIdentity();
+    const persisted = String.raw`(() => {
+      const rows = ${COMMENTS_SNAPSHOT}.filter(row => row.id === ${json(id)});
+      return rows.length === 1 ? rows[0] : undefined;
+    })()`;
+    const row = await ctx.waitFor<CommentRow>(persisted, 30_000);
+    await checked.verifyIdentity();
     const squash = (value: string) => value.replace(/[\s*_#`>[\]()~|\\!-]+/g, " ").trim();
-    const match = rows?.filter(
-      (row) => row.id === id && row.author === owner && squash(row.text) === squash(text),
-    );
-    if (match?.length !== 1) throw unknown();
+    if (
+      !row ||
+      (row.author
+        ? row.author !== owner
+        : row.authorName.toLowerCase() !== member.name.toLowerCase()) ||
+      row.post !== post ||
+      (reply ? row.parent !== target : row.parent !== null && row.parent !== post) ||
+      squash(row.text) !== squash(text)
+    )
+      throw unknown();
     return { platformId: id, url: `${page}comment/${base36(id)}/` };
   } catch (error) {
     if (submitted) throw unknown();
@@ -361,7 +473,8 @@ async function redditPoll(
 export const redditBrowserRecipe: BrowserRecipe = {
   platform: "reddit",
   loginUrl: `${R}/login/`,
-  operations: ["publish", "comments.read", "comment", "reply", "poll"],
+  sessionUrl: `${R}/`,
+  operations: ["publish", "comments.read", "comment", "reply", "poll", "delete"],
   identity: redditIdentity,
   send: (ctx, job) =>
     guard(ctx, () =>

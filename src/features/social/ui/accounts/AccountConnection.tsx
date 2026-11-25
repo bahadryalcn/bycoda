@@ -7,6 +7,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { Heading } from "../../../../shared/ui/Heading";
+import { LiveText } from "../../../../shared/ui/LiveText";
 
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -16,6 +17,7 @@ import { operationText } from "../common/capabilityText";
 import type { Capability, SocialAccount, SocialOperation } from "../../model/social";
 import { TOKEN_PLATFORMS } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
 import type { HostProject } from "../../../connections/public/protocol";
 import { TelegramChannelConnect } from "./platform/TelegramChannelConnect";
 import { XProfileEditor } from "./platform/XProfileEditor";
@@ -33,6 +35,7 @@ export type AccountConnectionProps = {
   onThisComputer: boolean;
   disabled: boolean;
   onChanged(): void;
+  onBrowserStatusChange?(status: string): void;
 };
 
 type BrowserState = { status: string; error?: string; source?: "existing-chrome" | "dedicated" };
@@ -71,6 +74,7 @@ export function AccountConnection({
   onThisComputer,
   disabled,
   onChanged,
+  onBrowserStatusChange,
 }: AccountConnectionProps) {
   const [resourceId, setResourceId] = useState(
     account.platform === "linkedin" && account.connection === "oauth"
@@ -78,6 +82,7 @@ export function AccountConnection({
       : "",
   );
   const [browser, setBrowser] = useState<BrowserState>();
+  const [browserPollFailed, setBrowserPollFailed] = useState(false);
   const [oauth, setOAuth] = useState<OAuthState>();
   const [linkedinLiveComments, setLinkedinLiveComments] = useState(false);
   const [operations, setOperations] = useState<SocialOperation[]>(() =>
@@ -103,22 +108,41 @@ export function AccountConnection({
   const isOrganization = account.accountType === "organization";
   const needsPageTarget = account.platform === "linkedin" && isOrganization && !account.platformId;
   const locked = disabled || is("connect:browser") || is("connect:oauth");
+  const browserPending = browser?.status === "waiting" || browser?.status === "checking";
+
+  const updateBrowser = (result: BrowserState) => {
+    setBrowserPollFailed(false);
+    setBrowser(result);
+    onBrowserStatusChange?.(result.status);
+    if (result.status === "connected") onChanged();
+  };
+  const refreshBrowser = usePollingRefresh({
+    active: usesBrowser && browserPending && !disabled && !is("cancel:browser"),
+    scope: client,
+    intervalMs: 2_000,
+    load: async (isCurrent) => {
+      try {
+        const result = await client.browserStatus(account.id, true);
+        if (isCurrent()) updateBrowser(result);
+      } catch (error) {
+        if (isCurrent()) setBrowserPollFailed(true);
+        throw error;
+      }
+    },
+  });
 
   const startBrowser = () =>
     write("connect:browser", async () => {
-      const result = await client.browserBegin(account.id, resourceId || undefined);
-      setBrowser(result);
-      if (result.status === "connected") onChanged();
+      updateBrowser(await client.browserBegin(account.id, resourceId || undefined));
     });
   const checkBrowser = () =>
     write("check:browser", async () => {
-      const result = await client.browserStatus(account.id);
-      setBrowser(result);
-      if (result.status === "connected") onChanged();
+      if (browserPending) await refreshBrowser();
+      else updateBrowser(await client.browserStatus(account.id));
     });
   const cancelBrowser = () =>
     write("cancel:browser", async () => {
-      setBrowser(await client.browserCancelLogin(account.id));
+      updateBrowser(await client.browserCancelLogin(account.id));
     });
   const startOAuth = () =>
     write("connect:oauth", async () => {
@@ -160,13 +184,15 @@ export function AccountConnection({
       aria-label={t("Connection")}
     >
       <Heading size="item">{t("Connection")}</Heading>
-      <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {!account.connected
-          ? t("Connection needed")
-          : onThisComputer
-            ? t("This account is connected on the selected computer.")
-            : t("This account is connected on another computer.")}
-      </Text>
+      {browser?.status !== "failed" ? (
+        <Text as="p" tone="muted" leading="snug" className="social-muted">
+          {!account.connected
+            ? t("Connection needed")
+            : onThisComputer
+              ? t("This account is connected on the selected computer.")
+              : t("This account is connected on another computer.")}
+        </Text>
+      ) : null}
       {usesBrowser ? (
         <div className="social-field-row">
           {account.platform === "linkedin" && isOrganization ? (
@@ -181,7 +207,12 @@ export function AccountConnection({
             variant={CONNECT_VARIANT}
             size="sm"
             loading={is("connect:browser")}
-            disabled={locked || (needsPageTarget && !resourceId.trim())}
+            disabled={
+              locked ||
+              is("check:browser") ||
+              browserPending ||
+              (needsPageTarget && !resourceId.trim())
+            }
             onClick={() => void startBrowser().catch(() => undefined)}
           >
             {account.connected ? t("Sign in again in the browser") : t("Sign in in the browser")}
@@ -190,7 +221,7 @@ export function AccountConnection({
             variant="secondary"
             size="sm"
             loading={is("check:browser")}
-            disabled={disabled || is("check:browser")}
+            disabled={locked || is("check:browser") || is("cancel:browser")}
             onClick={() => void checkBrowser().catch(() => undefined)}
           >
             {t("Check connection")}
@@ -202,7 +233,7 @@ export function AccountConnection({
               )}
             </Text>
           ) : null}
-          {browser?.status === "waiting" || browser?.status === "checking" ? (
+          {browserPending ? (
             <Button
               variant="ghost"
               size="sm"
@@ -218,10 +249,13 @@ export function AccountConnection({
               {t("Uses your existing Chrome session.")}
             </Text>
           ) : null}
-          {browser ? (
-            <Text as="span" tone="muted" leading="snug" className="social-muted">
-              {browserStatusText(browser.status)}
-            </Text>
+          {browser && (browser.status !== "failed" || !browser.error) ? (
+            <LiveText
+              text={browserStatusText(browser.status)}
+              tone="muted"
+              leading="snug"
+              className="social-muted"
+            />
           ) : null}
         </div>
       ) : null}
@@ -230,8 +264,14 @@ export function AccountConnection({
           client={client}
           accountId={account.id}
           resourceId={resourceId || undefined}
-          disabled={locked || !onThisComputer || (needsPageTarget && !resourceId.trim())}
-          onChanged={onChanged}
+          disabled={
+            locked || browserPending || !onThisComputer || (needsPageTarget && !resourceId.trim())
+          }
+          onChanged={() => {
+            setBrowser(undefined);
+            onBrowserStatusChange?.("connected");
+            onChanged();
+          }}
         />
       ) : null}
       {!usesBrowser && !isToken && !isTelegram ? (
@@ -351,7 +391,10 @@ export function AccountConnection({
         />
       ) : null}
       {browser?.error || oauth?.error ? (
-        <InlineError>{browser?.error ?? oauth?.error}</InlineError>
+        <InlineError>{t(browser?.error ?? oauth?.error ?? "")}</InlineError>
+      ) : null}
+      {browserPollFailed && !disabled ? (
+        <InlineError>{t("Could not reach this computer.")}</InlineError>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       <CapabilityList capabilities={capabilities} grouped />

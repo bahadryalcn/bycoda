@@ -1030,6 +1030,51 @@ describe("campaign dispatch publication grants", () => {
   );
 });
 describe("reviewed campaign approval", () => {
+  it("keeps the Reddit post destination and title in the reviewed campaign and queued job", async () => {
+    const s = await fixture();
+    const account = await s.account("reddit");
+    const reddit = { subreddits: ["bycodatest"], title: "Release notes", kind: "self" };
+    const input = {
+      name: "Reddit update",
+      projectIds: [s.a.id],
+      variants: [{ accountId: account.id, text: "First post", reddit }],
+    };
+    const campaign = await s.call<SocialCampaign>("campaigns.create", input);
+    expect(campaign.variants[0]?.reddit).toEqual(reddit);
+    const preview = await s.call<{ campaign: SocialCampaign }>("campaigns.preview", {
+      id: campaign.id,
+    });
+    expect(preview.campaign.variants[0]?.reddit).toEqual(reddit);
+    await s.call("campaigns.approveReviewed", {
+      id: campaign.id,
+      expectedRevision: campaign.revision,
+    });
+    await s.call("campaigns.schedule", { id: campaign.id });
+    expect((await s.social.snapshot(owner)).jobs[0]?.payload.reddit).toEqual(reddit);
+    const incomplete = await s.call<SocialCampaign>("campaigns.create", {
+      ...input,
+      variants: [
+        { ...input.variants[0], reddit: { ...reddit, title: "", flairId: "Draft flair" } },
+      ],
+    });
+    expect(incomplete.variants[0]?.reddit).toEqual({
+      ...reddit,
+      title: "",
+      flairId: "Draft flair",
+    });
+    const incompletePreview = await s.call<{ targets: { contentError?: string }[] }>(
+      "campaigns.preview",
+      { id: incomplete.id },
+    );
+    expect(incompletePreview.targets[0]?.contentError).toMatch(/Reddit destination and a title/);
+    await expect(
+      s.call("campaigns.create", {
+        ...input,
+        variants: [{ ...input.variants[0], reddit: { ...reddit, subreddits: ["one", "two"] } }],
+      }),
+    ).rejects.toThrow();
+  });
+
   it("keeps X publishing options in preview and the exact scheduled job", async () => {
     const s = await fixture();
     const account = await s.account("x");

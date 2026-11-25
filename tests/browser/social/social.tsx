@@ -68,6 +68,77 @@ function fixtureRegistrationProgress(
         ? ["email", "birthdate"]
         : ["email"];
   const missing = fields.filter((field) => !profile[field]);
+  const query = new URLSearchParams(location.search);
+  if (platform === "x" && query.has("signup-x-welcome"))
+    return {
+      status: "awaiting_owner",
+      step: "profile",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message: "Finish the welcome steps in X, then close the window to continue to sign-in.",
+    };
+  if (platform === "youtube" && query.has("signup-google-expired"))
+    return {
+      status: "awaiting_owner",
+      step: "method",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message:
+        "The Google signup session expired. Select Try again in the Google window, then continue here.",
+    };
+  if (
+    (platform === "youtube" && query.has("signup-google-device")) ||
+    (platform === "instagram" && query.has("signup-instagram-phone"))
+  )
+    return {
+      status: "awaiting_owner",
+      step: "verification",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message:
+        platform === "youtube"
+          ? "Scan the QR code with your phone and finish verification in the Google window."
+          : "Enter a mobile number and confirm the SMS or WhatsApp code in Instagram.",
+    };
+  if (query.has("signup-provider-warning") && (platform === "x" || platform === "tiktok"))
+    return {
+      status: "awaiting_owner",
+      step: platform === "x" ? "terms" : "rate_limit",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message:
+        platform === "x"
+          ? "X could not continue signup. Check the message in the X window, then select Continue here."
+          : "TikTok reached its sign-up attempt limit. Try again later.",
+    };
+  if (platform === "reddit" && query.has("signup-network-block"))
+    return {
+      status: "awaiting_owner",
+      step: "network_blocked",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message: "Reddit blocked browser access for network security. Try again later.",
+    };
+  if (platform === "reddit" && !missing.length && query.has("signup-limit"))
+    return {
+      status: "awaiting_owner",
+      step: "rate_limit",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message: "Reddit reached its email sign-up limit. Try again later.",
+    };
   return {
     status: missing.length ? "needs_fields" : "awaiting_owner",
     step: missing.length ? "profile" : "verification",
@@ -133,6 +204,45 @@ if (new URLSearchParams(location.search).has("x-paid-fixture")) {
   });
   snapshot.capabilities = { x: accountCapabilities(x) };
 }
+if (new URLSearchParams(location.search).has("x-browser-delete")) {
+  const x = snapshot.accounts[0];
+  Object.assign(x, {
+    xApiProduct: undefined,
+    connection: "browser",
+    connected: true,
+    accessApproved: true,
+    platformId: "12345",
+  });
+  snapshot.sendingEnabled = true;
+  snapshot.capabilities = { x: accountCapabilities(x) };
+}
+const deleteParams = new URLSearchParams(location.search);
+let redditConnectionChecks = 0;
+const deleteFixture = deleteParams.has("telegram-delete")
+  ? "telegram"
+  : deleteParams.has("reddit-delete")
+    ? "reddit"
+    : undefined;
+let deleteStatus: "review" | "deleted" | undefined;
+if (deleteFixture) {
+  const telegram = deleteFixture === "telegram";
+  const publicationAccount = {
+    ...snapshot.accounts[0]!,
+    id: `fixture-${deleteFixture}`,
+    name: telegram ? "Fixture Telegram" : "Fixture Reddit",
+    platform: deleteFixture,
+    accountType: telegram ? ("channel" as const) : ("member" as const),
+    platformId: telegram ? "-1001234567890" : "web:reddit:t2_fixture",
+    connection: telegram ? ("token" as const) : ("browser" as const),
+    ...(telegram ? { telegramBotId: "123", scopes: ["channel.publish"] } : {}),
+    connected: true,
+    accessApproved: true,
+    grants: { demo: ["read", "draft", "publish"] },
+  };
+  snapshot.accounts = [publicationAccount];
+  snapshot.capabilities = { [publicationAccount.id]: accountCapabilities(publicationAccount) };
+}
+let youtubeStudioVideoDeleted = false;
 if (new URLSearchParams(location.search).has("youtube-management")) {
   const scopes = [
     ...new Set(
@@ -225,6 +335,10 @@ let configured = false;
 let oauthStatus = "idle";
 let browserWrites = false;
 if (facebookProfileFixture) browserWrites = true;
+if (deleteFixture === "reddit" && new URLSearchParams(location.search).has("reddit-campaign")) {
+  browserWrites = true;
+  snapshot.sendingEnabled = true;
+}
 const browserFlows: Record<string, { status: "waiting" | "connected"; expiresAt?: number }> = {};
 const mediaUploads = new Map<
   string,
@@ -1624,6 +1738,15 @@ Object.assign(window, {
         }
         if (args.method === "social.browser.status") {
           const id = (args.params as { accountId: string }).accountId;
+          if (
+            id === "fixture-reddit" &&
+            deleteParams.has("reddit-browser-network-block") &&
+            redditConnectionChecks++ === 0
+          )
+            return {
+              status: "failed",
+              error: "Reddit blocked browser access for network security. Try again later.",
+            };
           return structuredClone(
             browserFlows[id] ?? {
               status: snapshot.accounts.some(
@@ -1766,6 +1889,9 @@ Object.assign(window, {
           };
         if (args.method === "social.browser.workflow.status") {
           const { accountId } = args.params as { accountId: string };
+          for (const workflow of browserWorkflows)
+            if (workflow.accountId === accountId && workflow.status === "queued")
+              workflow.status = "awaiting_owner";
           return {
             available: true,
             reason: "Fixture only",
@@ -1901,7 +2027,11 @@ Object.assign(window, {
               accountId: account.id,
               platform: account.platform,
               intent: input.intent,
-              status: "awaiting_owner",
+              status:
+                input.intent === "inbox" &&
+                new URLSearchParams(location.search).has(`${account.platform}-chat`)
+                  ? "queued"
+                  : "awaiting_owner",
               outcome: "unverified",
               createdAt: Date.now(),
               updatedAt: Date.now(),
@@ -1939,9 +2069,16 @@ Object.assign(window, {
           return structuredClone(workflow);
         }
         if (args.method === "social.browser.workflow.cancel") {
-          const { accountId } = args.params as { accountId: string };
+          const { accountId, workflowId } = args.params as {
+            accountId: string;
+            workflowId?: string;
+          };
           for (const workflow of browserWorkflows)
-            if (workflow.accountId === accountId && workflow.status === "awaiting_owner")
+            if (
+              workflow.accountId === accountId &&
+              (!workflowId || workflow.id === workflowId) &&
+              ["queued", "awaiting_owner"].includes(workflow.status)
+            )
               workflow.status = "cancelled";
           return null;
         }
@@ -1992,20 +2129,47 @@ Object.assign(window, {
         }
         if (args.method === "social.request") {
           const params = args.params as { action: string; input?: Record<string, unknown> };
+          if (params.action === "x.apply") {
+            const { accountId, kind, postId, confirm, intentId } = params.input ?? {};
+            if (
+              !new URLSearchParams(location.search).has("x-browser-delete") ||
+              accountId !== "x" ||
+              kind !== "deletePost" ||
+              postId !== "123456789" ||
+              confirm !== "APPLY_X_ACTION" ||
+              typeof intentId !== "string"
+            )
+              throw new Error("The fixture expected an exact reviewed X post deletion.");
+            return { status: "applied", result: { postId } };
+          }
           if (params.action === "youtube.videos.list")
             return {
-              items: [
-                {
-                  id: "shortDemo01",
-                  title: "Summer release",
-                  privacy: "public",
-                  description: "Release notes and demo.",
-                },
-              ],
+              items:
+                params.input?.accountId === "youtube-browser"
+                  ? youtubeStudioVideoDeleted
+                    ? []
+                    : [{ id: "shortDemo01", title: "Studio test Short" }]
+                  : [
+                      {
+                        id: "shortDemo01",
+                        title: "Summer release",
+                        privacy: "public",
+                        description: "Release notes and demo.",
+                      },
+                    ],
             };
           if (params.action === "youtube.video.update") return { status: "done" };
           if (params.action === "youtube.video.delete")
-            throw new Error("Fixture YouTube deletion denied.");
+            if (params.input?.accountId === "youtube-browser") {
+              if (
+                params.input.videoId !== "shortDemo01" ||
+                params.input.confirm !== true ||
+                youtubeStudioVideoDeleted
+              )
+                throw new Error("Fixture requires one confirmed Studio video deletion.");
+              youtubeStudioVideoDeleted = true;
+              return { status: "done", result: { id: "shortDemo01", deleted: true } };
+            } else throw new Error("Fixture YouTube deletion denied.");
           if (params.action === "youtube.channel.read")
             return {
               name: "Fixture channel",
@@ -2107,6 +2271,28 @@ Object.assign(window, {
                 },
               ],
             };
+          if (deleteFixture && params.action === `${deleteFixture}.posts.published`)
+            return {
+              posts: [
+                {
+                  jobId: `${deleteFixture}-qa`,
+                  postId: deleteFixture === "telegram" ? "-1001234567890:7" : "t3_qa123",
+                  title: "Test yayını",
+                  ...(deleteFixture === "reddit"
+                    ? { subreddit: deleteParams.has("profile-target") ? "u_bycoda" : "bycodatest" }
+                    : {}),
+                  url:
+                    deleteFixture === "telegram"
+                      ? "https://t.me/c/1234567890/7"
+                      : "https://www.reddit.com/comments/qa123/",
+                  deletion: deleteStatus,
+                },
+              ],
+            };
+          if (deleteFixture && params.action === `${deleteFixture}.post.delete`) {
+            deleteStatus = deleteParams.has("delete-review") ? "review" : "deleted";
+            return { status: deleteStatus };
+          }
           if (facebookFixture) {
             if (facebookProfileFixture && params.action === "facebook.page.uploadPhoto") {
               const { kind, uploadId, confirm } = params.input ?? {};
@@ -2189,6 +2375,8 @@ Object.assign(window, {
                 followersCount: 1270,
                 fanCount: 932,
               };
+            if (params.action === "facebook.post.delete" && facebookFixture)
+              return { deleted: true };
             if (
               params.action === "facebook.posts.list" ||
               params.action === "facebook.mentions.list"
@@ -2784,7 +2972,10 @@ Object.assign(window, {
               };
               for (const variant of campaign.variants) {
                 const account = snapshot.accounts.find((item) => item.id === variant.accountId)!;
-                const issue = contentSupport(account, { kind: "publish", payload: variant });
+                const issue =
+                  account.platform === "reddit"
+                    ? undefined
+                    : contentSupport(account, { kind: "publish", payload: variant });
                 if (issue) throw new Error(issue);
                 if (
                   (account.connection === "browser" || variant.facebook?.target === "reel") &&

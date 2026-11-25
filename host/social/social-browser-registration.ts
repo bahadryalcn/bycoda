@@ -1,6 +1,7 @@
 import type { SocialPlatform } from "../../src/features/social/model/social";
 import type { BrowserPage } from "./social-browser";
 import { setTimeout as sleep } from "node:timers/promises";
+import { REDDIT_NETWORK_BLOCK_EXPRESSION, REDDIT_NETWORK_BLOCK_MESSAGE } from "./browser/challenge";
 import {
   fillGoogleBirthdate,
   GOOGLE_FIELD_PATH,
@@ -9,6 +10,11 @@ import {
   GOOGLE_SIGNUP_URL,
   googleSelectors,
 } from "./social-browser-registration-google";
+import {
+  INSTAGRAM_SIGNUP_FIELD,
+  INSTAGRAM_SIGNUP_PATH,
+  INSTAGRAM_SIGNUP_PROBE,
+} from "./social-browser-registration-instagram";
 import {
   SNAPCHAT_SIGNUP_ORIGIN,
   SNAPCHAT_SIGNUP_PATH,
@@ -55,7 +61,9 @@ type Contract =
   | "tiktok-email-method"
   | "tiktok-email"
   | "reddit-email"
+  | "instagram-profile"
   | "x-profile"
+  | "x-birthdate"
   | "reddit-username"
   | "google-signin"
   | "google-name"
@@ -66,6 +74,12 @@ type Probe = {
   contract?: Contract;
   fields: RegistrationField[];
   blockers: RegistrationBlocker[];
+  xSignupMethod?: "choose" | "retry";
+  xSignupPreferences?: "review" | "retry";
+  xPostSignup?: true;
+  tiktokAttemptsLimited?: true;
+  redditEmailLimited?: true;
+  redditNetworkBlocked?: true;
   navigation?:
     | "signup"
     | "email-method"
@@ -76,6 +90,8 @@ type Probe = {
     | "google-signup";
   /** Set on accounts.google.com: the sign-in pages or the account-creation steps. */
   google?: "signin" | "signup";
+  googleBoundary?: "expired" | "device";
+  instagramPhoneVerification?: true;
 };
 const literal = JSON.stringify;
 const supported = new Set<SocialPlatform>([
@@ -119,15 +135,23 @@ const redditSelectors = {
   email: 'input[name="email"]',
   username: 'input[name="username"]',
 } as const;
-// X renders signup as a modal on /i/flow/signup. x.com answers headless Chrome with HTTP 403
-// (observed 2026-11-15), so these names are documented/remembered, not observed live.
-// shortcut: unverified live, re-check on the first owner-visible signup run.
+// Older signup layout. The current entry may redirect to X's shared onboarding form.
 const xPath = "^/i/flow/signup/?$";
+const xSignupRetry =
+  "X could not continue signup. Check the message in the X window, then select Continue here.";
 const xSelectors = { displayName: 'input[name="name"]', email: 'input[name="email"]' } as const;
 const xBirthdate = {
   Month: ["select#SELECTOR_1", 'select[aria-label="Month"]', 'select[aria-label="Ay"]'],
   Day: ["select#SELECTOR_2", 'select[aria-label="Day"]', 'select[aria-label="Gün"]'],
   Year: ["select#SELECTOR_3", 'select[aria-label="Year"]', 'select[aria-label="Yıl"]'],
+} as const;
+const xBirthdateRoute = String.raw`location.pathname==='/i/jf/onboarding/web' &&
+  new URLSearchParams(location.search).get('mode')==='signup' &&
+  /^#\/s\/signup_dob(?:\/[A-Za-z0-9_-]+)?$/.test(location.hash)`;
+const xCurrentBirthdate = {
+  Month: ['select#jf-date-date_of_birth-month[name="date_of_birth-month"]'],
+  Day: ['select#jf-date-date_of_birth-day[name="date_of_birth-day"]'],
+  Year: ['select#jf-date-date_of_birth-year[name="date_of_birth-year"]'],
 } as const;
 const redditPath = "^/register/?$";
 const linkedInPageFields = {
@@ -139,6 +163,7 @@ const linkedInPageFields = {
 } as const;
 function fieldSelector(contract: Contract, field: RegistrationField): string {
   if (contract === "snapchat-signup") return snapchatSignupSelectors[field] ?? "";
+  if (contract === "instagram-profile") return `[${INSTAGRAM_SIGNUP_FIELD}="${field}"]`;
   if (contract === "linkedin-page")
     return field === "displayName" || field === "username" ? linkedInPageFields[field] : "";
   if (contract === "x-profile")
@@ -226,7 +251,7 @@ export function parseRegistrationProfile(raw: unknown): RegistrationProfile {
 function probeExpression(
   platform: keyof typeof origins,
   accountKind?: RegistrationProfile["accountKind"],
-  markedSnapchatField?: RegistrationField,
+  markedSignupField?: RegistrationField,
 ): string {
   return String.raw`(() => {
     const empty={fields:[],blockers:[]};
@@ -236,6 +261,7 @@ function probeExpression(
     // every signup step; counting it would report a challenge on each step.
     const visible=el=>!!el&&!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';
     const reddit=${literal(platform)}==='reddit';
+    if(reddit&&(${REDDIT_NETWORK_BLOCK_EXPRESSION}))return {...empty,redditNetworkBlocked:true};
     const deepAll=(selector,root=document)=>{const out=[...root.querySelectorAll(selector)];for(const el of root.querySelectorAll('*'))if(el.shadowRoot)out.push(...deepAll(selector,el.shadowRoot));return out;};
     const all=selector=>reddit?deepAll(selector):[...document.querySelectorAll(selector)];
     const inputs=all('input').filter(visible);
@@ -248,7 +274,37 @@ function probeExpression(
     if(reddit&&all('h1,h2,[role="heading"]').filter(visible).some(el=>/^(Verify your email|Check your email|Verify email address|E-postanı doğrula)/i.test(el.textContent.trim())))blockers.push('verification');
     if(all('iframe').some(el=>visible(el)&&/captcha|arkoselabs|hcaptcha|recaptcha/i.test(el.getAttribute('src')||''))||all('[role="dialog"],h1,h2').filter(visible).some(el=>/^(Verify (?:you are|you're) human|Complete the security check|Security verification|Prove your humanity|Güvenlik doğrulaması)$/i.test(el.textContent.trim())))blockers.push('challenge');
     if(x&&xHeadings.some(text=>/^(Authenticate|Suspicious login|Kimlik doğrulama|Şüpheli)/i.test(text)))blockers.push('challenge');
-    if(${literal(platform)}==='snapchat'){const markedField=${literal(markedSnapchatField ?? null)};${SNAPCHAT_SIGNUP_PROBE}}
+    if(x&&!blockers.length&&/^\/i\/jf\/onboarding\/web\/post_signup\/?$/.test(location.pathname)){
+      const forms=all('form').filter(form=>visible(form)&&
+        [...form.querySelectorAll('p')].some(el=>visible(el)&&el.textContent.trim()==='Pick your interests')&&
+        [...form.querySelectorAll('button[type="button"]')].some(el=>visible(el)&&el.textContent.trim()==='Skip'));
+      if(forms.length===1)return {...empty,xPostSignup:true};
+    }
+    if(x&&location.pathname==='/i/jf/onboarding/web'&&new URLSearchParams(location.search).get('mode')==='signup'){
+      if(!blockers.length&&/^#\/s\/signup_preferences(?:\/[A-Za-z0-9_-]+)?$/.test(location.hash)){
+        const switches=all('form button[role="switch"]').filter(visible);
+        const form=switches.length===1&&switches[0].form;
+        if(form&&[...form.querySelectorAll('p')].some(el=>visible(el)&&el.textContent.trim()==='Let people find your account by your email')){
+          const rejected=[...form.querySelectorAll('p')].some(el=>visible(el)&&el.textContent.trim()==='Something went wrong. Please try again.');
+          return {...empty,xSignupPreferences:rejected?'retry':'review'};
+        }
+      }
+      if(!blockers.length&&(${xBirthdateRoute})){
+        const selects=Object.values(${literal(xCurrentBirthdate)}).flat().map(selector=>
+          [...document.querySelectorAll(selector)].filter(el=>visible(el)&&!el.disabled));
+        if(selects.every(matches=>matches.length===1))
+          return {contract:'x-birthdate', fields:['birthdate'], blockers};
+      }
+      const identity=inputs.filter(el=>el.name==='username_or_email'&&el.type==='text'&&!el.disabled&&!el.readOnly);
+      const password=inputs.filter(el=>el.type==='password');
+      // The initial form includes a transparent password control for credential managers.
+      if(identity.length===1&&identity[0].form&&password.length===1&&password[0].form===identity[0].form&&getComputedStyle(password[0]).opacity==='0'){
+        const rejected=[...identity[0].form.querySelectorAll('p')].some(el=>visible(el)&&el.textContent.trim()==='Something went wrong. Please try again.');
+        return {...empty,xSignupMethod:rejected?'retry':'choose',blockers:blockers.filter(kind=>kind!=='password')};
+      }
+    }
+    if(${literal(platform)}==='snapchat'){const markedField=${literal(markedSignupField ?? null)};${SNAPCHAT_SIGNUP_PROBE}}
+    if(${literal(platform)}==='instagram'){const markedField=${literal(markedSignupField ?? null)};${INSTAGRAM_SIGNUP_PROBE}}
     if(googleAuth){${GOOGLE_PROBE}
     }
     const normalize=value=>(value||'').replace(/\s+/g,' ').trim();
@@ -298,7 +354,17 @@ function probeExpression(
       // Continue and code) a username and password step. Continue accepts the User Agreement.
       const only=selector=>{const found=all(selector).filter(visible);return found.length===1&&!found[0].disabled&&!found[0].readOnly&&['text','email'].includes(found[0].type||'text')?found[0]:undefined;};
       const email=only(${literal(redditSelectors.email)}),username=only(${literal(redditSelectors.username)});
-      if(email&&!username&&!blockers.includes('verification'))return {contract:'reddit-email',fields:['email'],blockers:[...blockers,'terms']};
+      if(email&&!username&&!blockers.includes('verification')){
+        const limited=all('toaster-lite').some(toaster=>toaster.shadowRoot&&deepAll('div,span,p,[role="alert"],[role="status"]',toaster.shadowRoot).some(el=>
+          visible(el)&&/^Email sign-up limit reached\. Try again later\.(?: \(Error: [a-z0-9]+\))?$/i.test(normalize(el.textContent))));
+        // The rate-limit toast can disappear before the first Host status read.
+        const emailEndpoint=location.origin+'/svc/shreddit/account/register_email_verify_initialize';
+        const emailResponse=performance.getEntriesByType('resource').findLast(entry=>
+          (entry.initiatorType==='fetch'||entry.initiatorType==='xmlhttprequest')&&
+          (entry.name===emailEndpoint||entry.name.startsWith(emailEndpoint+'?')));
+        if(limited||emailResponse?.responseStatus===429)return {...empty,blockers,redditEmailLimited:true};
+        return {contract:'reddit-email',fields:['email'],blockers:[...blockers,'terms']};
+      }
       if(username&&!email&&!blockers.includes('verification'))return {contract:'reddit-username',fields:['username'],blockers:[...blockers,'terms']};
       return {...empty,blockers};
     }
@@ -330,12 +396,24 @@ function probeExpression(
       const buttons=[...document.querySelectorAll('button')].filter(visible);
       const send=buttons.filter(el=>el.type==='button'&&el.textContent.trim()==='Send code');
       const submit=buttons.filter(el=>el.type==='submit'&&el.textContent.trim()==='Next');
+      if(email.length===1&&passwords.length===1&&codes.length===1&&codes[0].form&&
+        [...codes[0].form.querySelectorAll('span[role="status"]')].some(el=>visible(el)&&el.textContent.trim()==='Maximum number of attempts reached. Try again later.'))
+        return {...empty,tiktokAttemptsLimited:true};
       if(email.length===1&&passwords.length===1&&codes.length===1&&send.length===1&&submit.length===1)
         return {contract:'tiktok-email',fields:['email','birthdate'],blockers};
     }
     return {...empty,blockers};
   })()`;
 }
+
+// TikTok renders the options inside the combobox, where textContent also includes hidden choices.
+const tiktokDateTrigger = String.raw`
+      const dateTrigger=control=>{
+        if(!control||control.getAttribute('role')!=='combobox'||control.getAttribute('aria-disabled')==='true')return;
+        if(!control.children.length)return control;
+        const labels=[...control.children].filter(el=>el.localName==='div'&&!el.hasAttribute('role')&&!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length);
+        if(labels.length===1)return labels[0];
+      };`;
 
 async function fillTikTokBirthdate(
   page: BrowserPage,
@@ -362,26 +440,40 @@ async function fillTikTokBirthdate(
     Year: year,
   };
   for (const part of ["Month", "Day", "Year"] as const) {
+    const selector = `[data-bycoda-registration-date=${literal(part)}]`;
+    const triggerSelector = `[data-bycoda-registration-date-trigger=${literal(part)}]`;
     await beforeAction?.();
     const state = await page.evaluate<
       { expanded: boolean; same: boolean } | undefined
     >(String.raw`(() => {
       if(location.origin!=='https://www.tiktok.com'||!/^\/signup\/phone-or-email\/email\/?$/.test(location.pathname))return;
+      ${tiktokDateTrigger}
       const controls=[...document.querySelectorAll('[role="combobox"]')].filter(el=>!el.hidden&&!!el.getClientRects().length&&el.getAttribute('aria-label')===${literal(`${part}. Double-tap for more options`)});
-      if(controls.length!==1)return;const control=controls[0],value=control.textContent.trim();
+      if(controls.length!==1)return;
+      const control=controls[0],trigger=dateTrigger(control);
+      if(!trigger)return;
+      const value=trigger.textContent.trim();
       const expanded=control.getAttribute('aria-expanded')==='true',controlsId=control.getAttribute('aria-controls');
       if(expanded?controlsId!==${literal(`${part}-options-list-container`)}:!!controlsId&&controlsId!==${literal(`${part}-options-list-container`)})return;
-      if(control.getAttribute('aria-disabled')==='true'||(value!==${literal(part)}&&value!==${literal(requested[part])}))return;
+      if(value!==${literal(part)}&&value!==${literal(requested[part])})return;
       document.querySelectorAll('[data-bycoda-registration-date]').forEach(el=>el.removeAttribute('data-bycoda-registration-date'));
+      document.querySelectorAll('[data-bycoda-registration-date-trigger]').forEach(el=>el.removeAttribute('data-bycoda-registration-date-trigger'));
       control.setAttribute('data-bycoda-registration-date',${literal(part)});
+      trigger.setAttribute('data-bycoda-registration-date-trigger',${literal(part)});
       return {expanded,same:value===${literal(requested[part])}};
     })()`);
     if (!state) return false;
     if (state.same) continue;
-    const selector = `[data-bycoda-registration-date=${literal(part)}]`;
     if (!state.expanded) {
       await beforeAction?.();
-      await page.click(selector);
+      const unchanged = await page.evaluate<boolean>(String.raw`(() => {
+        if(location.origin!=='https://www.tiktok.com'||!/^\/signup\/phone-or-email\/email\/?$/.test(location.pathname))return false;
+        ${tiktokDateTrigger}
+        const control=document.querySelector(${literal(selector)}),trigger=dateTrigger(control);
+        return !!trigger&&control.getAttribute('aria-expanded')==='false'&&trigger.matches(${literal(triggerSelector)})&&trigger.textContent.trim()===${literal(part)};
+      })()`);
+      if (!unchanged) return false;
+      await page.click(triggerSelector);
     }
     let selected = false;
     try {
@@ -404,15 +496,17 @@ async function fillTikTokBirthdate(
       await beforeAction?.();
       const unchanged = await page.evaluate<boolean>(String.raw`(() => {
         if(location.origin!=='https://www.tiktok.com'||!/^\/signup\/phone-or-email\/email\/?$/.test(location.pathname))return false;
-        const control=document.querySelector(${literal(selector)}),option=document.querySelector('[data-bycoda-registration-date-option="true"]');
-        return !!control&&!!option&&control.getAttribute('aria-expanded')==='true'&&control.getAttribute('aria-controls')===${literal(`${part}-options-list-container`)}&&(control.textContent.trim()===${literal(part)}||control.textContent.trim()===${literal(requested[part])})&&option.textContent.trim()===${literal(requested[part])}&&option.getAttribute('role')==='option'&&option.parentElement?.id===${literal(`${part}-options-list-container`)};
+        ${tiktokDateTrigger}
+        const control=document.querySelector(${literal(selector)}),option=document.querySelector('[data-bycoda-registration-date-option="true"]'),trigger=dateTrigger(control);
+        return !!trigger&&!!option&&control.getAttribute('aria-expanded')==='true'&&control.getAttribute('aria-controls')===${literal(`${part}-options-list-container`)}&&trigger.textContent.trim()===${literal(part)}&&option.textContent.trim()===${literal(requested[part])}&&option.getAttribute('role')==='option'&&option.parentElement?.id===${literal(`${part}-options-list-container`)};
       })()`);
       if (!unchanged) return false;
       await page.click('[data-bycoda-registration-date-option="true"]');
       const retained = await page.evaluate<boolean>(String.raw`(() => {
         if(location.origin!=='https://www.tiktok.com'||!/^\/signup\/phone-or-email\/email\/?$/.test(location.pathname))return false;
+        ${tiktokDateTrigger}
         const control=document.querySelector(${literal(selector)});
-        return !!control&&control.getAttribute('aria-label')===${literal(`${part}. Double-tap for more options`)}&&control.textContent.trim()===${literal(requested[part])};
+        return !!control&&control.getAttribute('aria-label')===${literal(`${part}. Double-tap for more options`)}&&dateTrigger(control)?.textContent.trim()===${literal(requested[part])};
       })()`);
       if (!retained) return false;
     } finally {
@@ -423,7 +517,7 @@ async function fillTikTokBirthdate(
         if (expanded) {
           try {
             await beforeAction?.();
-            await page.click(selector);
+            await page.click(triggerSelector);
           } catch {
             // Cancellation must not cause a cleanup click in an inactive workflow.
           }
@@ -438,15 +532,23 @@ async function fillTikTokBirthdate(
 async function fillXBirthdate(
   page: BrowserPage,
   birthdate: string,
+  contract: "x-profile" | "x-birthdate",
   beforeAction?: () => Promise<void>,
 ): Promise<boolean> {
   const [year, month, day] = birthdate.split("-");
   const wanted = { Month: String(Number(month)), Day: String(Number(day)), Year: year };
+  const current = contract === "x-birthdate";
+  const route = current ? xBirthdateRoute : `new RegExp(${literal(xPath)}).test(location.pathname)`;
+  const selectors = current ? xCurrentBirthdate : xBirthdate;
   for (const part of ["Month", "Day", "Year"] as const) {
     await beforeAction?.();
+    if (current) {
+      const fresh = await page.evaluate<Probe>(probeExpression("x"));
+      if (fresh.contract !== contract || fresh.blockers.length) return false;
+    }
     const done = await page.evaluate<boolean>(String.raw`(() => {
-      if(location.origin!=='https://x.com'||!new RegExp(${literal(xPath)}).test(location.pathname))return false;
-      const found=new Set(${literal(xBirthdate[part])}.flatMap(selector=>[...document.querySelectorAll(selector)].filter(el=>!el.hidden&&!!el.getClientRects().length&&!el.disabled)));
+      if(location.origin!=='https://x.com'||!(${route}))return false;
+      const found=new Set(${literal(selectors[part])}.flatMap(selector=>[...document.querySelectorAll(selector)].filter(el=>!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&!el.disabled&&getComputedStyle(el).visibility!=='hidden')));
       if(found.size!==1)return false;
       const select=[...found][0],wanted=${literal(wanted[part])};
       if(select.value&&select.value!==wanted)return false;
@@ -682,6 +784,20 @@ function progress(
       "Complete the platform's verification in its browser window, then resume this step.",
       { blockers: probe.blockers },
     );
+  if (probe.redditEmailLimited)
+    return result(
+      "awaiting_owner",
+      "rate_limit",
+      "Reddit reached its email sign-up limit. Try again later.",
+    );
+  if (probe.tiktokAttemptsLimited)
+    return result(
+      "awaiting_owner",
+      "rate_limit",
+      "TikTok reached its sign-up attempt limit. Try again later.",
+    );
+  if (probe.redditNetworkBlocked)
+    return result("awaiting_owner", "network_blocked", REDDIT_NETWORK_BLOCK_MESSAGE);
   if (platform === "facebook" && profile.accountKind === "person")
     return result(
       "awaiting_owner",
@@ -689,16 +805,70 @@ function progress(
       "Complete personal account registration in the Facebook window, then connect it here.",
       { blockers: probe.blockers },
     );
+  if (probe.xSignupMethod && !probe.blockers.length)
+    return result(
+      "awaiting_owner",
+      "method",
+      probe.xSignupMethod === "retry"
+        ? xSignupRetry
+        : "Choose a sign-up method in X, then select Continue here.",
+    );
+  if (probe.xSignupPreferences)
+    return result(
+      "awaiting_owner",
+      "terms",
+      probe.xSignupPreferences === "retry"
+        ? xSignupRetry
+        : "This step requires a password, verification or agreement action in the platform window. Resume afterwards; registration remains unverified.",
+    );
+  if (probe.xPostSignup)
+    return result(
+      "awaiting_owner",
+      "profile",
+      "Finish the welcome steps in X, then close the window to continue to sign-in.",
+    );
+  if (probe.contract === "x-birthdate")
+    return profile.birthdate
+      ? result(
+          "awaiting_owner",
+          "birthdate",
+          "Complete the platform's verification in its browser window, then resume this step.",
+        )
+      : result(
+          "needs_fields",
+          "birthdate",
+          "Provide the missing nonsecret owner registration fields.",
+          {
+            requiredFields: ["birthdate"],
+          },
+        );
+  if (probe.googleBoundary === "expired")
+    return result(
+      "awaiting_owner",
+      "method",
+      "The Google signup session expired. Select Try again in the Google window, then continue here.",
+    );
+  if (probe.googleBoundary === "device")
+    return result(
+      "awaiting_owner",
+      "verification",
+      "Scan the QR code with your phone and finish verification in the Google window.",
+    );
+  if (probe.instagramPhoneVerification)
+    return result(
+      "awaiting_owner",
+      "verification",
+      "Enter a mobile number and confirm the SMS or WhatsApp code in Instagram.",
+    );
   if (platform === "youtube" && probe.contract === "google-signin") {
     // An existing Google account signs in here; a new one starts only after the owner entered
     // the name for it and pressed Continue, so opening the window never starts account creation.
-    const requiredFields = (["givenName", "familyName"] as const).filter((key) => !profile[key]);
-    return requiredFields.length
+    return !profile.givenName
       ? result(
           "needs_fields",
           "method",
           "Sign in with the channel's existing Google account in the window, or enter the name for a new Google account and press Continue.",
-          { requiredFields },
+          { requiredFields: ["givenName"] },
         )
       : result(
           "awaiting_owner",
@@ -708,7 +878,7 @@ function progress(
         );
   }
   if (platform === "youtube" && probe.google === "signup") {
-    const requiredFields = probe.fields.filter((key) => !profile[key]);
+    const requiredFields = probe.fields.filter((key) => key !== "familyName" && !profile[key]);
     if (requiredFields.length)
       return result("needs_fields", "profile", "Provide the details for the new Google account.", {
         blockers: probe.blockers,
@@ -836,6 +1006,7 @@ async function prepareRegistrationStep(
   const profile = parseRegistrationProfile(rawProfile);
   if (!supported.has(platform)) return progress(platform, profile, { fields: [], blockers: [] });
   const selected = platform as keyof typeof origins;
+  const revalidateFields = selected === "snapchat" || selected === "instagram";
   const probe = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
   if (!probe.contract || probe.blockers.includes("challenge"))
     return progress(platform, profile, probe);
@@ -857,11 +1028,13 @@ async function prepareRegistrationStep(
           ? "^/company/setup/new/$"
           : selected === "x"
             ? xPath
-            : selected === "tiktok"
-              ? "^/signup/phone-or-email/email/?$"
-              : selected === "facebook"
-                ? "^/pages/creation/?$"
-                : "^/signup/?$";
+            : selected === "instagram"
+              ? INSTAGRAM_SIGNUP_PATH
+              : selected === "tiktok"
+                ? "^/signup/phone-or-email/email/?$"
+                : selected === "facebook"
+                  ? "^/pages/creation/?$"
+                  : "^/signup/?$";
   for (const key of probe.fields) {
     if (!profile[key]) continue;
     if (probe.contract === "facebook-page") {
@@ -911,8 +1084,11 @@ async function prepareRegistrationStep(
       filledFields.push(key);
       continue;
     }
-    if (key === "birthdate" && probe.contract === "x-profile") {
-      if (!(await fillXBirthdate(page, profile.birthdate!, options.beforeAction)))
+    if (
+      key === "birthdate" &&
+      (probe.contract === "x-profile" || probe.contract === "x-birthdate")
+    ) {
+      if (!(await fillXBirthdate(page, profile.birthdate!, probe.contract, options.beforeAction)))
         return result(
           "changed",
           "birthdate",
@@ -950,8 +1126,10 @@ async function prepareRegistrationStep(
     const selector = fieldSelector(probe.contract, key);
     if (!selector) continue;
     await options.beforeAction?.();
-    if (selected === "snapchat") {
-      const fresh = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
+    if (revalidateFields) {
+      const fresh = await page.evaluate<Probe>(
+        probeExpression(selected, profile.accountKind, selected === "instagram" ? key : undefined),
+      );
       if (fresh.contract !== probe.contract || !fresh.fields.includes(key))
         return { ...progress(platform, profile, fresh), filledFields };
     }
@@ -978,7 +1156,7 @@ async function prepareRegistrationStep(
       );
     if (marked === "empty") {
       await options.beforeAction?.();
-      if (selected === "snapchat") {
+      if (revalidateFields) {
         const fresh = await page.evaluate<Probe>(
           probeExpression(selected, profile.accountKind, key),
         );

@@ -22,6 +22,7 @@ const READ_NOTE =
 
 /** Browser-session wording. Never mentions API scopes, OAuth or API products. */
 export const X_BROWSER_NOTES: BrowserNotes = {
+  delete: "Deletes a single owned post after owner confirmation and checks the result on X.",
   publish:
     "Publishes through the connected X web session and the existing approval queue. The verified account identity and the persisted platform acknowledgement are required; uncertain outcomes are held for review.",
   media:
@@ -85,7 +86,7 @@ export function xCapabilities(): PlatformCapabilities {
       ...NOT_YET,
       delete: r(
         ["tweet.write", "tweet.read", "users.read"],
-        "Deletes one of this account's posts through the X API. Browser deletion is not implemented.",
+        "Deletes one of this account's posts through the X API.",
       ),
       analytics: r(
         ["tweet.read", "users.read"],

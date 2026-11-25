@@ -20,6 +20,8 @@ export type BrowserRecipeContext = {
   files: { path: string; kind: "image" | "video" | "document" }[];
   now(): number;
   waitFor<T>(expression: string, timeoutMs?: number): Promise<T | undefined>;
+  /** A recipe can scope control discovery to one unique host and its open shadow roots. */
+  controlRoot?: string;
   /** Rechecks the connected web identity; call immediately before every submission and after acknowledgement. */
   verifyIdentity(): Promise<void>;
   /** TikTok account actions recheck Host authority after resolving the exact submission target. */
@@ -36,6 +38,8 @@ export type BrowserPollResult = {
 export interface BrowserRecipe {
   platform: Exclude<SocialPlatform, "x">;
   loginUrl: string;
+  /** Authenticated entry page if the sign-in route cannot verify a saved session. */
+  sessionUrl?: string;
   /** Optional explicit organization/channel setup target, validated by the platform recipe. */
   connectionUrl?(account: SocialAccount, target?: string): string;
   operations: readonly SocialOperation[];

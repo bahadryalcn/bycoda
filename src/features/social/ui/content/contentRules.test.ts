@@ -371,12 +371,34 @@ describe("YouTube and Reddit", () => {
     expect(youtubeProblems({ title: "Launch", privacy: "public", madeForKids: false })).toEqual([]);
   });
 
-  it("requires exactly one valid subreddit and reports Reddit posting as not connected", () => {
+  it("requires a Reddit destination and title and carries a profile link post into the campaign", () => {
     expect(redditProblems(undefined)).toHaveLength(1);
     expect(redditProblems({ subreddit: "a b", flair: "" })[0]).toContain("Choose one subreddit");
-    expect(redditProblems({ subreddit: "launches", flair: "" })).toEqual([
-      "Reddit posting is not connected to the Host yet.",
-    ]);
+    expect(redditProblems({ subreddit: "launches", flair: "" })).toEqual(["Enter a title."]);
+    const reddit = account({ id: "r1", platform: "reddit", connection: "browser" });
+    const draft = input(
+      {
+        text: "",
+        link: "https://example.com/releases",
+        platform: {
+          r1: { reddit: { subreddit: "u_bycoda", title: " Release notes ", flair: "" } },
+        },
+      },
+      [reddit],
+    );
+    expect(draftProblems(draft)).toEqual([]);
+    const variants = buildVariants(draft);
+    expect(variants[0]?.reddit).toEqual({
+      subreddits: ["u_bycoda"],
+      title: "Release notes",
+      kind: "link",
+    });
+    const reopened = draftFromCampaign({ id: "c1", name: "Release", variants } as SocialCampaign);
+    expect(reopened.platform.r1?.reddit).toEqual({
+      subreddit: "u_bycoda",
+      title: "Release notes",
+      flair: "",
+    });
   });
 });
 
@@ -439,6 +461,20 @@ describe("account availability", () => {
 });
 
 describe("draftProblems", () => {
+  it("allows choosing a draft-only account but explains why this project cannot publish", () => {
+    const x = account({ id: "x1", platform: "x", name: "QA", grants: { p1: ["read", "draft"] } });
+    const rules = input({}, [x]);
+
+    expect(accountAvailability(x, rules)).toEqual({ disabled: false });
+    expect(draftProblems(rules)).toEqual([
+      {
+        accountId: "x1",
+        text: "X · QA: Grant publishing permission for this project in Accounts first.",
+        fix: "accounts",
+      },
+    ]);
+  });
+
   it("asks for a project, content and an account before anything else", () => {
     const x = account({ id: "x1", platform: "x" });
     const problems = draftProblems(

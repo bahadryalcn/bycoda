@@ -1,8 +1,8 @@
 import { NOT_YET, r, type OperationRequirements, type PlatformCapabilities } from "./shared";
 
 /**
- * Reddit Data API rows (OAuth web app, duration=permanent). Browser rows are empty: the browser recipe
- * covers posts, comments, replies and inbox polling; Reddit chat and private messages stay API-only. Scope names come from the OAuth definition.
+ * Reddit Data API rows (OAuth web app, duration=permanent). The browser recipe
+ * covers posts, comments, replies and inbox polling. The owner opens native Reddit Chat separately.
  */
 export function redditCapabilities(): PlatformCapabilities {
   const api: OperationRequirements = {
@@ -51,7 +51,10 @@ export function redditCapabilities(): PlatformCapabilities {
       ["privatemessages"],
       "Inbox polling with a cursor at the newest seen item. A backlog larger than 100 between two polls is not paged.",
     ),
-    delete: r(["edit"], "Delete a post or comment this account owns through /api/del."),
+    delete: r(
+      ["identity", "read", "edit"],
+      "Delete a published post after verifying Reddit account and post ownership.",
+    ),
     "audience.collect": r(
       ["read", "history"],
       "Keyword search, site-wide or within one subreddit, and commenters on your own posts or one post. Account-level commenter lists are not available.",

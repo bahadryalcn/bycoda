@@ -6,7 +6,7 @@ import { SocialPlatformError, type SocialSendResult } from "../../src/integratio
 import { X_POST_WEIGHT_LIMIT } from "../../src/integrations/social/adapters/x";
 import { xPostWeight } from "../../src/integrations/social/publishingFormats";
 import { xMediaFormat, xMediaIssue } from "../../src/integrations/social/xMedia";
-import { challengeError } from "./browser/challenge";
+import { challengeError, X_ONBOARDING_EXPRESSION } from "./browser/challenge";
 import { writeFileAtomic } from "../storage/atomic-write";
 import type { BrowserPage } from "./social-browser";
 import { parseXBrowserMessageSent } from "./social-browser-inbound";
@@ -19,8 +19,49 @@ import {
   xChatBlockReason,
   xUnexpectedScreen,
   xUserId,
+  X_POST_PATH,
   type XBrowserDeps,
 } from "./social-browser-x-page";
+
+const loginPage = `(${LOGIN_PATH}.test(location.pathname) || ${X_ONBOARDING_EXPRESSION})`;
+const blankPostDialog = `(() => {
+  if (location.origin !== 'https://x.com' || location.pathname !== '/compose/post' ||
+      !document.querySelector('a[data-testid="AppTabBar_Profile_Link"]')) return false;
+  const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"][aria-labelledby="modal-header"]')]
+    .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+  return dialogs.length === 1 && !dialogs[0].textContent.trim() &&
+    !dialogs[0].querySelector('input,button,textarea,[contenteditable],iframe');
+})()`;
+const homeColumn = '[data-testid="primaryColumn"]';
+const inlinePostButton = '[data-testid="tweetButtonInline"]';
+const homePostEditor = `${homeColumn} ${EDITOR}[contenteditable="true"]`;
+const homePostButton = `${homeColumn} ${inlinePostButton}`;
+const homePostComposer = `(() => {
+  const visible = el => el.getClientRects().length && !el.hidden && getComputedStyle(el).visibility !== 'hidden';
+  return location.origin === 'https://x.com' && location.pathname === '/home' &&
+    ![...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].some(visible) &&
+    document.querySelectorAll(${JSON.stringify(homePostEditor)}).length === 1 &&
+    document.querySelectorAll(${JSON.stringify(homePostButton)}).length === 1 &&
+    visible(document.querySelector(${JSON.stringify(homePostEditor)})) &&
+    visible(document.querySelector(${JSON.stringify(homePostButton)}));
+})()`;
+
+async function requireComposer(page: BrowserPage, directory: string, state: string | undefined) {
+  if (state === "ready") return;
+  const challenge = await challengeError(page, directory);
+  if (challenge) throw challenge;
+  if (state === "login") throw new SocialPlatformError("expired");
+  throw await xUnexpectedScreen(page);
+}
+
+async function requireReplyTarget(page: BrowserPage, postId: string | undefined) {
+  if (!postId) return;
+  const location = await page.evaluate<{ origin: string; path: string }>(
+    "({ origin: location.origin, path: location.pathname })",
+  );
+  if (location?.origin !== "https://x.com" || X_POST_PATH.exec(location.path)?.[1] !== postId)
+    throw new SocialPlatformError("denied");
+}
 
 /**
  * X web publishing and legacy DM sending. Gates are the recipe's own checks (owner identity,
@@ -49,10 +90,9 @@ async function sendMessage(
   const editor = '[data-testid="dmComposerTextInput"]';
   const ready = await deps.until<string>(
     page,
-    `${LOGIN_PATH}.test(location.pathname) ? "login" : ${CHAT_PATH_EXPRESSION} ? "chat" : document.querySelector(${JSON.stringify(editor)}) ? "ready" : ""`,
+    `${loginPage} ? "login" : ${CHAT_PATH_EXPRESSION} ? "chat" : document.querySelector(${JSON.stringify(editor)}) ? "ready" : ""`,
     30_000,
   );
-  if (ready === "login") throw new SocialPlatformError("expired");
   if (ready === "chat") {
     // X redirects /messages/compose to the encrypted XChat shell, which this recipe cannot drive.
     // Fail before any submit marker or pacing slot so the job is a clean unsupported, not a timeout.
@@ -60,9 +100,7 @@ async function sendMessage(
     const reasonCode = await xChatBlockReason(deps, page);
     throw new SocialPlatformError("unsupported", undefined, { reasonCode });
   }
-  // A missing composer is a challenge (NEEDS_HUMAN) or an unexpected screen for the next layer.
-  if (ready !== "ready")
-    throw (await challengeError(page, deps.directory)) ?? (await xUnexpectedScreen(page));
+  await requireComposer(page, deps.directory, ready);
   await deps.identity(page, account);
   // A composer alone is insufficient: pin the actual numeric conversation participants.
   const conversation = await page.evaluate<string>("location.pathname");
@@ -152,29 +190,64 @@ async function compose(
   files: string[],
   beforeSubmit?: () => Promise<void>,
 ): Promise<SocialSendResult> {
-  const button = postId ? '[data-testid="tweetButtonInline"]' : '[data-testid="tweetButton"]';
+  let button = postId ? inlinePostButton : '[data-testid="tweetButton"]';
+  let editor = EDITOR;
+  let fileInput = FILE_INPUT;
   await page.goto(postId ? `https://x.com/i/status/${postId}` : "https://x.com/compose/post");
-  const state = await deps.until<string>(
+  let state = await deps.until<string>(
     page,
-    `${LOGIN_PATH}.test(location.pathname) ? "login" : document.querySelector(${JSON.stringify(EDITOR)}) ? "ready" : ""`,
+    `${loginPage} ? "login" : document.querySelector(${JSON.stringify(EDITOR)}) ? "ready" : ""`,
     45_000,
   );
-  if (state === "login") throw new SocialPlatformError("expired");
-  if (state !== "ready")
-    throw (await challengeError(page, deps.directory)) ?? (await xUnexpectedScreen(page));
+  // X can leave the new-post dialog empty while the signed-in home composer is available.
+  // Only change routes before touching the editor, and never for replies, login or challenges.
+  const useHome = !postId && !state && (await page.evaluate<boolean>(blankPostDialog));
+  if (useHome) {
+    const challenge = await challengeError(page, deps.directory);
+    if (challenge) throw challenge;
+    await deps.identity(page, account);
+    await page.goto("https://x.com/home");
+    state = await deps.until<string>(
+      page,
+      `${loginPage} ? "login" : ${homePostComposer} ? "ready" : ""`,
+      15_000,
+    );
+    editor = homePostEditor;
+    button = homePostButton;
+    fileInput = `${homeColumn} ${FILE_INPUT}`;
+  }
+  await requireComposer(page, deps.directory, state);
   const id = xUserId(await page.cookies());
   if (!id) throw new SocialPlatformError("expired");
   // Never post from whichever account happens to be logged in to the profile.
   if (id !== account.platformId) throw new SocialPlatformError("denied");
-  await page.click(EDITOR);
+  await requireReplyTarget(page, postId);
+  if (
+    useHome &&
+    !(await page.evaluate<boolean>(
+      `${homePostComposer} && !document.querySelector(${JSON.stringify(homePostEditor)}).textContent.trim()`,
+    ))
+  )
+    throw new SocialPlatformError("denied");
+  await page.click(editor);
   if (text) await page.insertText(text);
   if (files.length) {
-    await page.setFiles(FILE_INPUT, files);
+    if (
+      useHome &&
+      !(await page.evaluate<boolean>(
+        `${homePostComposer} && document.querySelectorAll(${JSON.stringify(fileInput)}).length === 1`,
+      ))
+    )
+      throw new SocialPlatformError("denied");
+    await page.setFiles(fileInput, files);
+    const attachments = useHome
+      ? `${homeColumn} [data-testid="attachments"]`
+      : '[data-testid="attachments"]';
     const attached = await deps.until<boolean>(
       page,
       files[0].endsWith(".mp4")
-        ? `!!document.querySelector('[data-testid="attachments"] video, [data-testid="attachments"] [data-testid="videoPlayer"]') && !document.querySelector('[data-testid="attachments"] [role="progressbar"]')`
-        : `document.querySelectorAll('[data-testid="attachments"] img').length >= ${files.length}`,
+        ? `!!document.querySelector('${attachments} video, ${attachments} [data-testid="videoPlayer"]') && !document.querySelector('${attachments} [role="progressbar"]')`
+        : `document.querySelectorAll('${attachments} img').length >= ${files.length}`,
       120_000,
     );
     if (!attached) throw new SocialPlatformError("rejected");
@@ -186,16 +259,23 @@ async function compose(
   );
   if (!enabled) throw new SocialPlatformError("rejected");
   await deps.identity(page, account);
+  await requireReplyTarget(page, postId);
+  if (useHome && !(await page.evaluate<boolean>(homePostComposer)))
+    throw new SocialPlatformError("denied");
   await beforeSubmit?.();
-  const response = page.watchResponse(/\/(CreateTweet|CreateNoteTweet)$/);
   await deps.limiter.record(account.id);
+  await requireReplyTarget(page, postId);
+  const response = page.watchResponse(/\/(CreateTweet|CreateNoteTweet)$/);
   try {
-    await page.click(button);
-  } catch {
+    try {
+      await page.click(button);
+    } catch {
+      throw new SocialPlatformError("unknown");
+    }
+    const body = await response.body(45_000);
+    if (body === undefined) throw new SocialPlatformError("unknown");
+    return parseCreateTweet(body, deps.now(), postId);
+  } finally {
     response.stop();
-    throw new SocialPlatformError("unknown");
   }
-  const body = await response.body(45_000);
-  if (body === undefined) throw new SocialPlatformError("unknown");
-  return parseCreateTweet(body, deps.now());
 }

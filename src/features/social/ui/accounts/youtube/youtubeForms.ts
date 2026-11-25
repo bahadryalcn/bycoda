@@ -48,7 +48,7 @@ export type YouTubeForm = {
 export function youtubeSections(browser: boolean) {
   return [
     { value: "channel", label: t("Channel profile") },
-    ...(!browser ? [{ value: "videos", label: t("Videos and playlists") }] : []),
+    { value: "videos", label: browser ? t("Videos") : t("Videos and playlists") },
     { value: "comments", label: t("Comments") },
     ...(browser ? [{ value: "community", label: t("Community posts") }] : []),
     ...(!browser ? [{ value: "subscriptions", label: t("Subscriptions") }] : []),
@@ -170,6 +170,11 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             ),
       ];
     case "videos":
+      if (browser)
+        return [
+          { action: "youtube.videos.list", label: t("List videos") },
+          remove("youtube.video.delete", t("Delete video"), "delete", [videoId]),
+        ];
       return [
         { action: "youtube.videos.list", label: t("List videos") },
         update(
@@ -473,8 +478,11 @@ const browseActions = new Set([
 export const isBrowseForm = (form: YouTubeForm) => !form.write && browseActions.has(form.action);
 
 /** Sub-views of a section that groups unrelated lists (videos and playlists, broadcasts and chat). */
-export function youtubeViews(section: YouTubeSection): { value: YouTubeView; label: string }[] {
-  if (section === "videos")
+export function youtubeViews(
+  section: YouTubeSection,
+  browser = false,
+): { value: YouTubeView; label: string }[] {
+  if (section === "videos" && !browser)
     return [
       { value: "videos", label: t("Videos") },
       { value: "playlists", label: t("Playlists") },

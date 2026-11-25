@@ -12,10 +12,16 @@ import {
   unsupported,
 } from "../social-browser-publishing-shared";
 import type { BrowserRecipeContext } from "../social-browser-recipe";
+import { creatorExpression } from "./browser-creator-page";
 
 const TIKTOK = "https://www.tiktok.com";
 const CAPTION_EDITOR =
   '[data-e2e="caption-editor"][contenteditable="true"],[data-e2e="caption-editor"] [contenteditable="true"],textarea[data-e2e="edit-post-caption"]';
+const postDeletedNotice = String.raw`(() => {
+  if (location.origin !== ${json(TIKTOK)}) return false;
+  const receipts = [...document.querySelectorAll('[role="status"],[role="alert"]')].filter(el => !el.hidden && el.getClientRects().length);
+  return receipts.some(el => /^(?:Post deleted|Video deleted|Photo deleted|Gönderi silindi|Video silindi|Fotoğraf silindi)[.!]?$/i.test(el.textContent.trim()));
+})()`;
 
 export async function checkTikTokPublishingChallenge(ctx: BrowserRecipeContext): Promise<void> {
   const challenge = await detectChallenge(ctx.page);
@@ -126,6 +132,7 @@ export async function tiktokDeletePost(
   await openPostMenu(ctx, path);
   await click(ctx, '[data-e2e="post-delete"],[data-e2e="browse-delete"]', "post-delete");
   await checkTikTokPublishingChallenge(ctx);
+  if (await ctx.page.evaluate<boolean>(postDeletedNotice)) throw unsupported();
   await commitPostChange(
     ctx,
     path,
@@ -133,14 +140,18 @@ export async function tiktokDeletePost(
     "post-delete-confirm",
     beforeSubmit,
     async () => {
-      const succeeded = String.raw`(() => {
-        const receipts = [...document.querySelectorAll('[role="status"],[role="alert"]')].filter(el => !el.hidden && el.getClientRects().length);
-        return receipts.some(el => /^(?:Post deleted|Video deleted|Photo deleted|Gönderi silindi|Video silindi|Fotoğraf silindi)[.!]?$/i.test(el.textContent.trim()));
-      })()`;
-      if (!(await ctx.waitFor<boolean>(succeeded))) throw unknown();
+      if (!(await ctx.waitFor<boolean>(postDeletedNotice))) throw unknown();
       await ctx.page.goto(TIKTOK + path);
       await checkTikTokPublishingChallenge(ctx);
-      const gone = String.raw`[...document.querySelectorAll('[data-e2e="video-not-available"],[data-e2e="post-not-available"]')].some(el => !el.hidden && el.getClientRects().length)`;
+      const gone = creatorExpression(
+        path,
+        `const detail = one(document, '#main-content-video_detail');
+        if (all(detail ?? document, 'video,[data-e2e="browse-video-desc"],[data-e2e="browse-photo-desc"]').length) return;
+        if (one(document, '[data-e2e="video-not-available"],[data-e2e="post-not-available"]')) return true;
+        return detail && all(detail, 'p').some(el =>
+          ['Video currently unavailable', 'Video şu an kullanılamıyor'].includes(label(el)));
+        `,
+      );
       if (!(await ctx.waitFor<boolean>(gone))) throw unknown();
     },
   );

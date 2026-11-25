@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { INSTAGRAM_MANAGEMENT_KINDS } from "../../../src/features/social/model/instagramManagement";
+import { deleteInstagramPostOnce } from "../browser/instagram-post-deletion";
 import type { SocialActionContext } from "../core/social-actions";
 import { instagramManagementRequests } from "./instagram-management-requests";
 
@@ -7,6 +8,7 @@ const request = instagramManagementRequests["instagram.management.request"].run;
 const list = instagramManagementRequests["instagram.management.list"].run;
 const dismiss = instagramManagementRequests["instagram.management.dismiss"].run;
 const earnings = instagramManagementRequests["instagram.earnings.read"].run;
+const deletionStatus = instagramManagementRequests["instagram.post.deletion.status"];
 const post = "https://www.instagram.com/p/ABCdef123/";
 
 function fixture(overrides: { connection?: string; aiStopped?: boolean } = {}) {
@@ -49,10 +51,39 @@ describe("Instagram management requests", () => {
       readOnly: true,
     });
     expect(instagramManagementRequests["instagram.management.dismiss"].ownerOnly).toBe(true);
+    expect(deletionStatus).toMatchObject({ ownerOnly: true, readOnly: true });
+    expect(deletionStatus.tool).toBeUndefined();
     expect(instagramManagementRequests["instagram.earnings.read"]).toMatchObject({
       tool: true,
       readOnly: true,
     });
+  });
+
+  it("shows the same owner review in the status and request reads after dismissal and requeue", async () => {
+    const { ctx } = fixture();
+    const owner: SocialActionContext = {
+      ...ctx,
+      principal: { kind: "owner", actorId: "owner", provider: "owner" },
+    };
+    const input = { accountId: "ig-1", kind: "post.delete", details: { postUrl: post } };
+    const first = (await request(ctx, input)) as { id: string };
+    await deleteInstagramPostOnce(
+      ctx.service,
+      "web:instagram:owner",
+      { action: "delete", postUrl: post, confirm: "DELETE_INSTAGRAM_POST" },
+      async (beforeDelete) => {
+        await beforeDelete();
+        throw new Error("Provider acknowledgement lost");
+      },
+    );
+    await dismiss(owner, { accountId: input.accountId, id: first.id });
+    await request(ctx, input);
+    await expect(list(owner, { accountId: input.accountId })).resolves.toMatchObject({
+      requests: [{ deletion: "review", details: { postUrl: post } }],
+    });
+    await expect(
+      deletionStatus.run(owner, { accountId: input.accountId, postUrl: post }),
+    ).resolves.toEqual({ deletion: "review" });
   });
 
   it("queues every kind without any browser or provider call and deduplicates", async () => {

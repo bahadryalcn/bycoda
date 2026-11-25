@@ -89,6 +89,10 @@ describe("Reddit capability map", () => {
       status: "pending",
       scopes: ["privatemessages"],
     });
+    expect(rowOf(rows, "delete")).toMatchObject({
+      status: "pending",
+      scopes: ["identity", "read", "edit"],
+    });
   });
 
   it("refuses non-member account types on the API connection", () => {
@@ -103,13 +107,20 @@ describe("Reddit capability map", () => {
     });
   });
 
-  it("offers posts, comments and polling on a browser connection but no chat", () => {
+  it("offers post deletion, posts, comments and polling on a browser connection", () => {
     const rows = accountCapabilities(account({ connection: "browser", scopes: [] }), NOW);
-    for (const operation of ["publish", "comment", "reply", "poll", "comments.read"] as const)
+    for (const operation of [
+      "publish",
+      "comment",
+      "reply",
+      "poll",
+      "comments.read",
+      "delete",
+    ] as const)
       expect(rowOf(rows, operation)?.status).toBe("available");
     expect(rowOf(rows, "message.reply")?.reasonCode).toBe("browser.no_recipe");
     expect(rowOf(rows, "message.start")?.reasonCode).toBe("browser.no_recipe");
-    expect(rowOf(rows, "delete")?.reasonCode).toBe("unsupported.not_yet");
+    expect(rowOf(rows, "delete")?.reasonCode).toBe("browser.ready");
   });
 
   it("names the Reddit documentation as the source for API rows", () => {

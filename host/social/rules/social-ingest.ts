@@ -9,6 +9,7 @@ import type {
   SocialThread,
 } from "../../../src/features/social/model/social";
 import type { SocialInbound } from "../../../src/integrations/social/adapter";
+import { parseTelegramDiscussionThread } from "../../../src/integrations/social/telegram-webhook";
 import type { SocialPrincipal } from "../social";
 import { socialGenerationPrompt } from "../social-generation";
 import type { SocialServiceInternals } from "../core/social-internals";
@@ -32,6 +33,10 @@ export async function ingestEvents(
   const account = await s.get<SocialAccount>("account", accountId);
   let count = 0;
   for (const event of events) {
+    const discussion =
+      account.platform === "telegram" &&
+      account.accountType === "bot" &&
+      parseTelegramDiscussionThread(event.threadId);
     const eventId = str(event.eventId, "event", 300);
     const key = `${accountId}:${event.kind}:${str(event.threadId, "thread", 300)}`;
     const saved = await s.transaction(async (): Promise<SocialContact | undefined> => {
@@ -122,11 +127,13 @@ export async function ingestEvents(
       contact.history = contact.history.slice(-1000);
       await s.put("contact", contact.id, contact);
       await s.put("thread", thread.id, thread);
-      if (event.optedOut || OPT_OUT.test(event.text)) await s.optOut(contact);
+      if (!discussion && (event.optedOut || OPT_OUT.test(event.text))) await s.optOut(contact);
       return contact;
     });
     if (saved) {
       count++;
+      // An automatic forward is a reviewable channel post, not a customer's incoming message.
+      if (discussion) continue;
       await runInboundHooks(s, account, event, saved, options);
       if (!options?.draftOnly) await applyInboundRules(s, key, event);
     }

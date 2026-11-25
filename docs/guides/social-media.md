@@ -1,13 +1,44 @@
 # Social media accounts and drafts
 
+For a Reddit post in **Content**, select the connected Reddit account, enter
+the title and choose one subreddit. For your own profile with a browser
+connection, enter `u/your_username`. The preview shows the exact destination
+and title before you save or publish. Reddit accepts a text post or an HTTPS
+link post. Schedule the post individually if you want it to run later.
+
 Social Media keeps accounts on the selected computer. Choose the computer and project at the top before connecting an account, preparing content or reviewing activity. A saved account, an authenticated browser session and permission to send are separate states.
+
+The editor keeps draft saving available when a project lacks publishing permission.
+Open **Accounts & Settings** from the editor to grant the missing permission.
 
 ## Create a new account
 
-For X, **Browser** is the default. Open **X actions** from the account for
+When Reddit blocks the browser for network security, signup and connection checks show the
+provider's access error. The signup can be stopped and started again when Reddit allows access.
+
+When Reddit reports an email signup limit, the account dialog keeps the notice visible while
+the signup form stays on the same step. Stop signup and return later when Reddit allows another try.
+
+For X, **Browser** is the default. When X asks how to sign up, choose a method
+in the X window and then select **Continue** in Bycoda. Open **X actions** from the account for
 profile edits, Creator Studio and X Live Studio. Complete verification on X.
 To store a Live Studio stream key, paste it into **X stream key** and choose
 **Save stream key**.
+
+From a connected X browser account, open **X actions**, select **Direct messages**
+and choose **Open in browser**. Bycoda verifies the account in its saved browser
+profile before opening X Chat. Enter any PIN and send messages in the X window.
+The Bycoda window status tracks the browser workflow. Reopen the account's
+**Direct messages** section to see or cancel a Chat window that is still open.
+
+To delete a post from a connected X browser account, open **X actions** and find
+**Delete post**. Choose a post from history or enter its ID, then review the
+target. Bycoda checks the active account and owner controls on X before deleting.
+If the result needs review, check the post on X before trying again.
+If X returns to sign-in while preparing a post, reply or message, reconnect the
+same account before retrying.
+If the X new-post dialog stays empty, Bycoda can use the verified home timeline's
+inline composer before submitting. A reply stays on its original post.
 
 For paid API operations, choose the API connection and set **X API billing**
 to Pay per use or Enterprise. Review the example prices, select permissions
@@ -16,7 +47,36 @@ In **Content**, select an X account for polls, Community posts and threads.
 API quote posts require Enterprise. Review partial threads on X before
 sending additional posts.
 
-For a browser account on LinkedIn, TikTok, Instagram, Facebook, YouTube or Reddit, choose **Connect account**, then **Create a new account instead**. Bycoda saves the account, opens the platform's signup window and shows which steps you must finish there: password, verification code, terms or a security check. It asks only for non-secret details such as email, name, username or birth date, and never for a password or code. Bycoda does not solve security checks. When the signup window closes, choose **Continue to sign-in** to sign in and let the Host verify the identity. Closing the window does not prove the account was created. For YouTube, sign in to your Google account in the window, or enter your name and choose **Continue** to create a new Google account first; the channel is created after it.
+For a browser account on X, LinkedIn, TikTok, Instagram, Facebook, YouTube or Reddit, choose **Connect account**, then **Create a new account instead**. Bycoda saves the account, opens the platform's signup window and shows which steps you must finish there: password, verification code, terms or a security check. It asks only for non-secret details such as email, name, username or birth date, and never for a password or code. Bycoda does not solve security checks. When the signup window closes, choose **Continue to sign-in** to sign in and let the Host verify the identity. Closing the window does not prove the account was created. For YouTube, sign in to your Google account in the window, or enter your name and choose **Continue** to create a new Google account first; the channel is created after it.
+
+If Google shows a verification QR code, scan it with your phone and finish
+verification in Google. If the session expires, choose **Try again** in the
+Google window before continuing in Bycoda. If Instagram asks for a mobile
+number, enter it and confirm the SMS or WhatsApp code in Instagram.
+
+Follow the actions shown for the current step in the provider window. If X
+reports that signup could not continue, check the message in X before continuing
+in Bycoda. Use **Stop signup** to end a signup that is still open.
+If X shows **Pick your interests**, finish or skip the welcome steps in X.
+Close the window and choose **Continue to sign-in** in Bycoda to verify the account.
+
+After email verification, X may ask for the account administrator's birth
+date. Enter the real date in Bycoda and select **Continue** to prepare empty
+date fields. Review any date already displayed and confirm the correct date
+in the X window.
+Review the final email discovery preference in X. If X reports an error after
+submission, the signup panel keeps the session available for review.
+
+Google's last name field is optional during YouTube signup. On Instagram's
+recognized Meta Account form, Bycoda prepares the email, full name and username.
+Finish the birthday, password, verification and final submission in Instagram.
+For TikTok email signup, Bycoda selects the birth date you provide and preserves
+any different date choices already entered in TikTok.
+If TikTok reaches its signup attempt limit, the panel shows the provider's
+request to wait and hides Continue while the warning is visible.
+If Reddit limits email signup, the panel keeps the wait message after the
+notice in Reddit disappears. The email verification step replaces the message
+when Reddit accepts a later attempt.
 
 ## Accounts requested by a project
 
@@ -26,7 +86,7 @@ When a project's work needs a social account it does not have, the AI can ask fo
 
 In **Accounts & Settings**, connect an account using a supported browser account type. Choose the account and open its Connection section.
 
-For a dedicated browser profile, choose **Sign in in the browser**. Complete passwords, verification and challenges in that window yourself. Close the dedicated sign-in window after finishing; the Host then verifies the saved identity. **Check connection** rechecks an existing connection. **Cancel sign-in** cancels the current sign-in attempt without removing the account's saved history.
+For a dedicated browser profile, choose **Sign in in the browser**. Complete passwords, verification and challenges in that window yourself. Close the window after finishing. The account screen updates when the Host verifies the saved identity or reports a problem. **Check connection** refreshes the status on demand. **Stop** cancels the current sign-in attempt and preserves the account's saved history.
 
 A new LinkedIn organization browser account requires its Page ID or company URL. Reconnecting preserves the previously verified platform identity.
 
@@ -94,7 +154,9 @@ let its Host publish at the selected time.
 In **Inbox**, open an Instagram comment to reply publicly, send an eligible
 private reply or open its moderation actions. Existing API DMs can send an
 image or video at an HTTPS URL separately from the text. Check **Activity**
-after sending to see the actual outcome. The Instagram account tools show
+after sending to see the actual outcome. For an uncertain browser deletion,
+check the original post in Instagram before recording the result in **Review**.
+The Instagram account tools show
 insights and the available mentions, and open Instagram's own workflow for
 professional conversion, Highlights, monetization and Live Producer.
 
@@ -117,11 +179,54 @@ window, select **Live video** and reveal the stream credentials before using
 read the Live status before starting. End the broadcast before closing the
 window from bycoda. The saved credentials can be removed in Accounts.
 
+To remove an owned Instagram post from a verified browser account, open
+**Instagram tools**, then **Content** and **Posts**, and paste its permalink.
+After you confirm the deletion, Bycoda checks whether the exact post became
+unavailable. An uncertain result appears as **Needs review** in Posts and on
+matching **Requests** after reopening the account. Open the post to check it
+in Instagram. Dismissing the request removes it from the list. The deletion
+status stays with the account and post and prevents another submission.
+
+## Telegram channel comments
+
+Connect a Telegram **Bot** account that can see messages in the channel's linked
+discussion group. When Telegram automatically forwards a new channel post to the
+group, refresh **Inbox** or let the configured webhook deliver it.
+
+Open the entry for that post, draft a reply, then approve and send it. Telegram
+shows it under the channel post as a comment. Bycoda requires the linked group
+and the original discussion message for this send.
+
+To remove a publication, open the connected Telegram **Channel** account,
+expand **Posts**, and choose a post published from Bycoda. Confirm **Delete
+post**. Telegram allows Bot API deletion within 48 hours, and the administrator
+bot needs delete permission. A result in review keeps the message link so you
+can inspect the post in Telegram.
+
+## Reddit Chat
+
+Open a connected Reddit browser account in **Accounts**. Under **Tools**, expand
+**Direct messages** and choose **Open in browser**. Bycoda verifies the selected
+account, then opens Reddit Chat in its saved browser profile. Choose the recipient
+and send the message in Reddit. Reopen **Direct messages** to see or cancel a
+Chat window that is still open.
+
+## Reddit published posts
+
+Open the connected Reddit account, expand **Posts**, and load its Bycoda
+publications. Pick the post and confirm **Delete post**. The Host checks the
+original post and the current Reddit author. A result that needs review remains
+visible and cannot be submitted again from this list.
+
 ## Inbox search
 
 The inbox filters loaded conversations as you type, then searches the selected account scope on the Host when you pause. If the selected conversation still matches, its history and reply draft stay in place. Adding or removing a tag updates the conversation after the Host confirms the change.
 
 ## Reply uncertainty
+
+Bycoda verifies a new Reddit comment by reopening its permalink and matching
+the author, thread and text. Check that permalink on Reddit if the comment
+appears in Review.
 
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.
 
@@ -153,7 +258,8 @@ Open **Social > Accounts**, choose your YouTube channel and expand **YouTube man
 - In **Content**, choose **Video** or **Short**. A Short must be square or vertical and up to three minutes. YouTube decides the final classification. Review the publication or schedule before sending.
 - Select a YouTube API account before attaching an MP4 or WebM larger than 64 MiB. The API path accepts up to 256 GiB and resumes the same YouTube upload when the Host restarts with a valid session. Browser video uploads use the 64 MiB limit.
 - Use **Videos and playlists** to edit metadata and visibility, upload a thumbnail, organize playlist items or delete eligible content. Use **Comments** to moderate a comment. Read and reply to ordinary comments from the shared Inbox.
-- In **Community posts** on a browser-connected channel, choose a publish time to schedule a post. Use the published or scheduled list to select an owned post, edit its text or confirm deletion.
+- In **Community posts** on a browser-connected channel, choose a publish time to schedule a post. Use the published or scheduled list to select an owned post, edit its text or confirm deletion. If the link was already unavailable before deletion, check the result on YouTube and record it in **Review**.
+- In **Videos** on a browser-connected channel, choose **Load** to read the first Studio page for videos, Shorts and live recordings. Select the exact owned item and confirm **Delete video**. An uncertain result can be checked and recorded in **Review** before another attempt.
 - Select **Analytics** for channel activity, traffic sources and estimated earnings. If a report requests more permission, reconnect the channel and select the matching report permission. Google must make the report available to the channel.
 - Select **Live broadcasts** to create and bind a broadcast and stream, view chat and Super Chats, and transition the broadcast after an encoder starts sending. The creation result displays the RTMP URL and credential reference. The stream key stays in the Host vault.
 - Select **Review** for YouTube operations pending owner approval. Verify uncertain outcomes on YouTube, then record the result before resubmitting.
@@ -215,6 +321,9 @@ conversation window when the recipient responds. Check **Activity** for uncertai
 
 The Page details also show posts, mentions, insights, applicable earnings estimates and
 current Live controls. Copy encoder details from the owner controls to configure an encoder.
+For a browser-connected Page, open **Posts**, paste the direct Facebook post link, and
+confirm **Delete post**. The browser must be signed in as that Page. Bycoda checks the
+post's author, then waits for Facebook to report deletion and reopens the same link.
 The browser monetization overview can read visible Stars, in-stream ads and bonus status for
 the verified Page. Facebook Groups and unsolicited Messenger conversations are unavailable.
 

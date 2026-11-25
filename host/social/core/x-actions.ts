@@ -87,8 +87,16 @@ async function xAccount(ctx: SocialActionContext, id: unknown): Promise<SocialAc
 function assertPaid(ctx: SocialActionContext, account: SocialAccount) {
   if (account.connection === "browser" || !account.xApiProduct)
     throw new Error("The owner must enable a paid X API product.");
+  assertXWriteAccount(ctx, account);
+}
+
+function assertXWriteAccount(ctx: SocialActionContext, account: SocialAccount) {
   if (!account.connected || !account.accessApproved || account.paused)
-    throw new Error("Connect and enable this X API account first.");
+    throw new Error(
+      account.connection === "browser"
+        ? "Connect and enable this X browser account first."
+        : "Connect and enable this X API account first.",
+    );
   if (account.executorId !== ctx.executorId)
     throw new Error("Use the X account on its active executor Host.");
 }
@@ -129,8 +137,10 @@ async function applyXWrite(
 ) {
   ctx.service.owner(ctx.principal);
   const account = await xAccount(ctx, input.accountId);
-  assertPaid(ctx, account);
   const action = parseWrite(input);
+  const browserDelete = account.connection === "browser" && action.kind === "deletePost";
+  if (browserDelete) assertXWriteAccount(ctx, account);
+  else assertPaid(ctx, account);
   if (input.confirm !== "APPLY_X_ACTION")
     throw new Error("Confirm the exact X action before sending.");
   if (typeof input.intentId !== "string" || !/^[a-f0-9-]{36}$/.test(input.intentId))
@@ -152,7 +162,7 @@ async function applyXWrite(
     }
     if ("userId" in action)
       await ctx.service.assertSendable({ platform: "x", platformId: action.userId }, "comment");
-    const token = await xToken(ctx, account.id);
+    const token = browserDelete ? "" : await xToken(ctx, account.id);
     const platformId = await xWriteTarget(http, ctx, account, token, action);
     if (platformId) await ctx.service.assertSendable({ platform: "x", platformId }, "comment");
     await assertXWriteCurrent(ctx, account, token);
@@ -181,10 +191,13 @@ async function assertXWriteCurrent(
   account: SocialAccount,
   token: string,
 ) {
-  const latestToken = await xToken(ctx, account.id);
+  const browser = account.connection === "browser";
+  const latestToken = browser ? "" : await xToken(ctx, account.id);
   const latest = await xAccount(ctx, account.id);
-  assertPaid(ctx, latest);
+  if (browser) assertXWriteAccount(ctx, latest);
+  else assertPaid(ctx, latest);
   if (
+    latest.connection !== account.connection ||
     latest.xApiProduct !== account.xApiProduct ||
     latest.platformId !== account.platformId ||
     latestToken !== token
@@ -250,7 +263,9 @@ async function submitXWrite(
   if (action.kind === "deletePost") {
     const remove = ctx.service.adapterFor(account).deletePost;
     if (!remove) throw new SocialPlatformError("unsupported");
-    await remove(account, token, action.postId);
+    if (account.connection === "browser")
+      await remove(account, token, action.postId, () => assertXWriteCurrent(ctx, account, token));
+    else await remove(account, token, action.postId);
     return { postId: action.postId };
   }
   return "postId" in action

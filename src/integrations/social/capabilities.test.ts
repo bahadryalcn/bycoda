@@ -186,10 +186,10 @@ describe("capability table shape", () => {
     }
   });
 
-  it("offers Reddit browser posts, comments and polling but no chat, while its API rows follow the Reddit table", () => {
+  it("matches published post deletion and other implemented Reddit browser operations", () => {
     for (const item of accountCapabilities(browserAccount("reddit")))
       expect(item.status === "available", item.operation).toBe(
-        ["publish", "comments.read", "comment", "reply", "poll"].includes(item.operation),
+        ["publish", "comments.read", "comment", "reply", "poll", "delete"].includes(item.operation),
       );
     const api = accountCapabilities(apiAccount("reddit"));
     expect(row(api, "analytics")).toMatchObject({
@@ -252,7 +252,10 @@ describe("capability table shape", () => {
           expect(api.reasonCode, `${platform}.${operation} api`).toBe("unsupported.not_yet");
         }
         const browser = row(accountCapabilities(browserAccount(platform)), operation);
-        if (openedByBrowser.includes(operation))
+        if (
+          openedByBrowser.includes(operation) ||
+          (platform === "youtube" && operation === "delete")
+        )
           expect(browser.status, `${platform}.${operation} browser`).toBe("available");
         else {
           expect(browser.status, `${platform}.${operation} browser`).toBe("unsupported");

@@ -1,6 +1,7 @@
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 import { click, control, denied, fill, json } from "../social-browser-publishing-shared";
 import type { BrowserRecipeContext } from "../social-browser-recipe";
+import { detectChallenge, needsHumanError } from "./challenge";
 import {
   commitYouTubeBrowser,
   verifyYouTubeBrowser,
@@ -162,15 +163,38 @@ export async function youtubeEditCommunity(
   });
 }
 
+async function communityPostStatus(ctx: BrowserRecipeContext, postId: string) {
+  const path = `/post/${postId}`;
+  await ctx.page.goto(`${youtubePublicOrigin}${path}`);
+  const status = await ctx.waitFor<number>(
+    String.raw`(() => {
+      if(location.origin!==${json(youtubePublicOrigin)}||location.pathname!==${json(path)}||
+          document.readyState!=='complete')return;
+      const response=performance.getEntriesByType('navigation')[0];
+      if(!response?.name||!response.responseStatus)return;
+      const address=new URL(response.name);
+      if(address.origin===location.origin&&address.pathname===location.pathname)
+        return response.responseStatus;
+    })()`,
+    12_000,
+  );
+  const challenge = await detectChallenge(ctx.page);
+  if (challenge) throw needsHumanError(challenge);
+  return status;
+}
+
 export async function youtubeDeleteCommunity(
   ctx: YouTubeBrowserRecipeContext,
   postId: string,
   status: YouTubePostStatus,
 ) {
-  const { path, channel, action } = await communityPostMenu(ctx, postId, status, ["Delete", "Sil"]);
+  if (!postIdPattern.test(postId)) throw new SocialPlatformError("rejected");
+  const before = await communityPostStatus(ctx, postId);
+  const { path, action } = await communityPostMenu(ctx, postId, status, ["Delete", "Sil"]);
   const confirm =
     "yt-confirm-dialog-renderer #confirm-button button,yt-confirm-dialog-renderer button#confirm-button";
   const notice = communityNotice(["Post deleted", "Gönderi silindi"]);
+  if (await ctx.page.evaluate<boolean>(`(${notice})`)) throw await youtubeBrowserScreenError(ctx);
   return await commitYouTubeBrowser(ctx, action, async () => {
     const stage = await ctx.waitFor<"deleted" | "confirm">(
       String.raw`(() => {
@@ -186,10 +210,9 @@ export async function youtubeDeleteCommunity(
       await ctx.page.click(target);
     }
     const acknowledged = stage && (await ctx.waitFor<boolean>(`(${notice})`, 30_000));
-    if (!acknowledged) return;
-    const current = await ctx.waitFor<PostRow[]>(communityRows(path, channel), 20_000);
-    return current && !current.some((row) => row.id === postId)
-      ? { id: postId, deleted: true }
-      : undefined;
+    // A temporarily empty list and an already inaccessible link cannot prove deletion.
+    if (!acknowledged || before !== 200 || (await communityPostStatus(ctx, postId)) !== 404) return;
+    await ctx.page.goto(`${youtubePublicOrigin}${path}`);
+    return { id: postId, deleted: true };
   });
 }

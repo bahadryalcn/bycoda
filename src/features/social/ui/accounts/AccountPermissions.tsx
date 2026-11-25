@@ -1,6 +1,7 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getLocale, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -11,6 +12,7 @@ import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import type { HostProject } from "../../../connections/public/protocol";
 import type { SocialAccount, SocialPermission } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { socialContentSnapshotKey } from "../../model/socialQuery";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -46,6 +48,7 @@ export function AccountPermissions({
   disabled,
   onChanged,
 }: AccountPermissionsProps) {
+  const cache = useQueryClient();
   const [assistant, setAssistant] = useState<AssistantPermission[]>(
     () => account.assistantGrantPending?.permissions ?? account.assistantGrant?.permissions ?? [],
   );
@@ -83,7 +86,13 @@ export function AccountPermissions({
           permissions: grants,
         }),
       )
-      .then((result) => result !== undefined && onChanged())
+      .then((result) => {
+        if (result === undefined) return;
+        void cache
+          .invalidateQueries({ queryKey: socialContentSnapshotKey(client, projectId), exact: true })
+          .catch(() => undefined);
+        onChanged();
+      })
       .catch(() => undefined);
 
   return (

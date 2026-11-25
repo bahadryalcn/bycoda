@@ -11,3 +11,7 @@ export function socialQueryScope(client: SocialClient) {
   }
   return ["social", scope] as const;
 }
+
+export function socialContentSnapshotKey(client: SocialClient, projectId?: string) {
+  return [...socialQueryScope(client), "content", "snapshot", projectId ?? ""] as const;
+}

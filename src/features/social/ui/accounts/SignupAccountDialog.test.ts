@@ -7,10 +7,16 @@ import type { SocialClient } from "../../model/socialClient";
 import { SignupAccountDialog } from "./SignupAccountDialog";
 
 vi.mock("../../../../shared/ui/Modal", () => ({
-  Modal: (props: { title: string; children: ReactNode; footer: ReactNode }) =>
+  Modal: (props: {
+    title: string;
+    closeDisabled?: boolean;
+    children: ReactNode;
+    footer: ReactNode;
+  }) =>
     createElement(
       "div",
       { role: "dialog", "aria-label": props.title },
+      createElement("button", { disabled: props.closeDisabled, "aria-label": "Close dialog" }),
       props.children,
       props.footer,
     ),
@@ -69,7 +75,7 @@ function setup(begin: SocialBrowserWorkflow = flow(), existingAccountId?: string
     root.render(
       createElement(SignupAccountDialog, {
         client: client as unknown as SocialClient,
-        platform: "reddit",
+        platform: begin.platform,
         accountType: "member",
         initialName: "Launch",
         projectIds: ["p1"],
@@ -104,6 +110,42 @@ const submit = () =>
       ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 
+it.each([
+  ["reddit", "rate_limit", "Reddit reached its email sign-up limit. Try again later."],
+  [
+    "reddit",
+    "network_blocked",
+    "Reddit blocked browser access for network security. Try again later.",
+  ],
+  ["tiktok", "rate_limit", "TikTok reached its sign-up attempt limit. Try again later."],
+] as const)(
+  "shows %s's %s warning and keeps the stop action available",
+  async (platform, step, message) => {
+    const { client } = setup(
+      flow({
+        platform,
+        registration: {
+          status: "awaiting_owner",
+          step,
+          blockers: [],
+          requiredFields: [],
+          filledFields: ["email"],
+          canAdvance: false,
+          message,
+        },
+      }),
+    );
+    await submit();
+    expect(element.querySelector('[role="status"][data-tone="warning"]')?.textContent).toBe(
+      message,
+    );
+    expect(element.textContent).not.toContain("Waiting for you");
+    expect(button("Continue")).toBeUndefined();
+    expect(button("Stop signup")?.disabled).toBe(false);
+    expect(client.browserRegistrationAdvance).not.toHaveBeenCalled();
+  },
+);
+
 it("creates the browser account, opens signup without secrets and shows the owner steps", async () => {
   const { client } = setup();
   await submit();
@@ -121,6 +163,10 @@ it("creates the browser account, opens signup without secrets and shows the owne
   expect(element.textContent).toContain("Enter the verification code");
   expect(element.textContent).toContain("Solve the security check");
   expect(element.querySelector('input[type="password"]')).toBeNull();
+  expect(element.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')?.disabled).toBe(
+    true,
+  );
+  expect(button("Stop signup")?.disabled).toBe(false);
 });
 
 it("collects only the required fields, keeps the draft and advances with them", async () => {
@@ -138,6 +184,52 @@ it("collects only the required fields, keeps the draft and advances with them", 
     email: "ada@example.com",
     username: "ada_l",
   });
+});
+
+it("shows the next action in the platform window without opening Details", async () => {
+  const message = "Choose a sign-up method in X, then select Continue here.";
+  setup(
+    flow({
+      platform: "x",
+      registration: {
+        status: "awaiting_owner",
+        step: "method",
+        blockers: [],
+        requiredFields: [],
+        filledFields: [],
+        canAdvance: false,
+        message,
+      },
+    }),
+  );
+  await submit();
+  expect(element.textContent).toContain(message);
+  expect(button("Continue")?.disabled).toBe(false);
+});
+
+it("names only the observed provider action when the Host reports verification", async () => {
+  const { client } = setup(
+    flow({
+      registration: {
+        status: "awaiting_owner",
+        step: "verification",
+        blockers: ["verification"],
+        requiredFields: [],
+        filledFields: ["email"],
+        canAdvance: false,
+        message:
+          "This step requires a password, verification or agreement action in the platform window. Resume afterwards; registration remains unverified.",
+      },
+    }),
+  );
+  await submit();
+  expect(element.textContent).toContain(
+    "Complete the steps below in the platform window. Then select Continue here.",
+  );
+  expect(element.textContent).toContain("Enter the verification code");
+  expect(element.textContent).not.toMatch(/password|agreement|Accept the terms/i);
+  expect(button("Continue")?.disabled).toBe(false);
+  expect(client.browserRegistrationAdvance).not.toHaveBeenCalled();
 });
 
 it("hands over to the account sign-in once the window is closed", async () => {

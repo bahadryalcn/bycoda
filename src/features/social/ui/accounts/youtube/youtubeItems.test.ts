@@ -149,6 +149,11 @@ describe("YouTube list picking", () => {
 describe("YouTube section structure", () => {
   it("splits video and live sections into views with their own forms", () => {
     expect(youtubeViews("videos").map(({ value }) => value)).toEqual(["videos", "playlists"]);
+    expect(youtubeViews("videos", true)).toEqual([]);
+    expect(youtubeViewForms("videos", true, "videos").map(({ action }) => action)).toEqual([
+      "youtube.videos.list",
+      "youtube.video.delete",
+    ]);
     expect(youtubeViews("live").map(({ value }) => value)).toEqual([
       "broadcasts",
       "chat",

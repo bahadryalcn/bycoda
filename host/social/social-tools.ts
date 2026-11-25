@@ -347,6 +347,15 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
                 ),
               ],
             },
+            reddit: object(
+              {
+                subreddits: { ...strings(), maxItems: 1 },
+                title: string(),
+                kind: { enum: ["self", "link"] },
+                flairId: string(),
+              },
+              [],
+            ),
             // Facebook Page publishing metadata. Host time controls dispatch; this time belongs to Meta.
             facebook: {
               description:

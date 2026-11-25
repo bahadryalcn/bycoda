@@ -10,14 +10,23 @@ const managePost = readFileSync(
 const owner = account("tiktok", "web:tiktok:bycoda");
 
 describe("TikTok post management", () => {
-  function setup(click: (name: string | null) => void = () => {}) {
+  function setup(
+    click: (name: string | null) => void = () => {},
+    options: {
+      unavailable?: string;
+      staleNotice?: boolean;
+    } = {},
+  ) {
     let caption = "Original caption";
     let deleted = false;
+    const notice = '<p role="status">Post deleted.</p>';
     const result = fixture(recipe("tiktok"), owner, managePost, {
       render: () =>
         deleted
-          ? '<header><a data-e2e="nav-profile" href="/@bycoda">Profile</a></header><p data-e2e="post-not-available">Unavailable</p>'
-          : managePost.replaceAll("Original caption", caption),
+          ? '<header><a data-e2e="nav-profile" href="/@bycoda">Profile</a></header>' +
+            (options.unavailable ?? '<p data-e2e="post-not-available">Unavailable</p>')
+          : managePost.replaceAll("Original caption", caption) +
+            (options.staleNotice ? notice : ""),
       click(element) {
         const name = element.getAttribute("data-e2e");
         click(name);
@@ -36,7 +45,7 @@ describe("TikTok post management", () => {
         }
         if (name === "confirm-delete") {
           deleted = true;
-          dom.body.insertAdjacentHTML("beforeend", '<p role="status">Post deleted.</p>');
+          if (!options.staleNotice) dom.body.insertAdjacentHTML("beforeend", notice);
         }
       },
     });
@@ -74,6 +83,50 @@ describe("TikTok post management", () => {
     });
     expect(page.goto).toHaveBeenCalledTimes(2);
     expect(ctx.markSubmitted).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["Video currently unavailable", "video"],
+    ["Video şu an kullanılamıyor", "video"],
+    ["Video currently unavailable", "photo"],
+  ] as const)(
+    "recognizes the observed missing-post screen (%s, %s)",
+    async (message, mediaType) => {
+      const { ctx, page } = setup(undefined, {
+        unavailable: `<div id="main-content-video_detail"><div><p>${message}</p></div></div>`,
+      });
+      await expect(
+        tiktokDeletePost(ctx, { postId: "123", mediaType }, async () => {}),
+      ).resolves.toEqual({
+        postId: "123",
+      });
+      expect(page.goto).toHaveBeenLastCalledWith(`https://www.tiktok.com/@bycoda/${mediaType}/123`);
+      expect(ctx.markSubmitted).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    ["outside the post detail region", "<aside><p>Video currently unavailable</p></aside>"],
+    [
+      "alongside the still-visible post",
+      '<div id="main-content-video_detail"><video></video><p data-e2e="post-not-available">Unavailable</p></div>',
+    ],
+  ])("keeps deletion uncertain when the unavailable indicator appears %s", async (_name, html) => {
+    const { ctx } = setup(undefined, { unavailable: html });
+    await expect(tiktokDeletePost(ctx, { postId: "123" }, async () => {})).rejects.toMatchObject({
+      code: "unknown",
+    });
+    expect(ctx.markSubmitted).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a deletion notice already on the screen before confirmation", async () => {
+    const clicks = vi.fn();
+    const { ctx } = setup(clicks, { staleNotice: true });
+    await expect(tiktokDeletePost(ctx, { postId: "123" }, async () => {})).rejects.toMatchObject({
+      code: "unsupported",
+    });
+    expect(clicks).not.toHaveBeenCalledWith("confirm-delete");
+    expect(ctx.markSubmitted).not.toHaveBeenCalled();
   });
 
   it("waits for the owner on a challenge before clicking anything", async () => {

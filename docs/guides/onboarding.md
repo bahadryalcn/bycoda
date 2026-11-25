@@ -214,8 +214,8 @@ start a session, open Explorer, Changes or the terminal, open the Guide) and the
 
 - **Who sees the offer.** Everyone who has never finished, skipped or declined the tour,
   existing users included. A small notice offers "Take a 1-minute tour" or "Later" once. It
-  never appears over Quick setup, the Guide or any open dialog; it waits until they are
-  closed (for Quick setup that means after "Finish setup" or "Set up later"). "Later" ends the
+  waits for Quick setup, the Guide and other dialogs to close. If a dialog opens while
+  the notice is visible, the notice hides until the dialog closes. "Later" ends the
   offer for good, and so does finishing or skipping the tour.
 - **Start it again.** Guide → "Take the tour", View → Take the tour, and Settings → General →
   Getting started → Take the tour. A tour left part-way shows "Resume tour" and continues from

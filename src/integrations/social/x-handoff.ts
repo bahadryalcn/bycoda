@@ -24,7 +24,7 @@ const paths: Record<Exclude<XDestination, "spaces">, string> = {
   profile: "/settings/profile",
   post: "/",
   publish: "/compose/post",
-  messages: "/messages",
+  messages: "/i/chat",
   audience: "/settings/your_twitter_data",
   lists: "/i/lists",
   analytics: "/i/jf/creators/studio",

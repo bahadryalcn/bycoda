@@ -32,7 +32,7 @@ export type FacebookDraft = {
   /** Local datetime field. Empty delegates timing to the bycoda queue. */
   scheduledPublishAt?: string;
 };
-export type RedditDraft = { subreddit: string; flair: string };
+export type RedditDraft = { subreddit: string; flair: string; title?: string };
 export type InstagramTagDraft = {
   id: string;
   localMediaId?: string;
@@ -62,7 +62,6 @@ export type PlatformDraft = {
   instagram?: InstagramDraft;
   x?: XPostDraft;
   linkedinFormat?: LinkedInPostFormat;
-  /** Kept in the draft for review; the Host has no Reddit variant field yet (see contentRules). */
   reddit?: RedditDraft;
 };
 
@@ -273,6 +272,12 @@ export function draftFromCampaign(
       entry.snapchat = options;
     }
     if (variant.linkedinFormat) entry.linkedinFormat = structuredClone(variant.linkedinFormat);
+    if (variant.reddit)
+      entry.reddit = {
+        subreddit: variant.reddit.subreddits?.[0] ?? "",
+        flair: variant.reddit.flairId ?? "",
+        title: variant.reddit.title ?? "",
+      };
     if (variant.facebook) {
       const options = variant.facebook;
       entry.facebook =

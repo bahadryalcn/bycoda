@@ -28,7 +28,7 @@ import { firstRunTourSteps } from "../model/tourSteps";
 import { configureFileAccess } from "../../../platform/tauri/fileAccess";
 import { describeLocalError } from "../../connections/public/remoteFailure";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
+import { hasActiveModalOverlay, useHasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { t } from "../../../shared/i18n";
 import { FeatureHighlightMarkers } from "./FeatureHighlightMarkers";
 import type { GuidedTourOutcome } from "./GuidedTour";
@@ -71,6 +71,7 @@ export function OnboardingHost({
   const [guide, setGuide] = useState<GuideView | null>(null);
   const [tour, setTour] = useState<ActiveTour | null>(null);
   const [offer, setOffer] = useState(false);
+  const modalOpen = useHasActiveModalOverlay();
   const [accessError, setAccessError] = useState("");
   const [accessBusy, setAccessBusy] = useState(false);
   const setupAccess = () => {
@@ -240,7 +241,7 @@ export function OnboardingHost({
         onEnd={endTour}
       />
     </Suspense>
-  ) : offer ? (
+  ) : offer && !modalOpen ? (
     <Suspense fallback={null}>
       <TourOffer
         onStart={() => {

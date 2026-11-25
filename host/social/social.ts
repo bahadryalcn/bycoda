@@ -138,6 +138,10 @@ import {
   type SocialInbound,
 } from "../../src/integrations/social/adapter";
 import { contentSupport } from "../../src/integrations/social/platformAdapters";
+import {
+  REDDIT_TITLE_LIMIT,
+  redditPayload,
+} from "../../src/integrations/social/adapters/reddit-rules";
 import { parseSnapchatPublishOptions } from "./execution/snapchat-publish-options";
 import {
   facebookNativeScheduleAt,
@@ -710,6 +714,7 @@ export class SocialService implements SocialServiceApi {
                 "facebook",
                 "instagram",
                 "linkedinFormat",
+                "reddit",
               ]);
               const account = await this.get<SocialAccount>("account", variant.accountId);
               await this.assertLength(
@@ -719,6 +724,7 @@ export class SocialService implements SocialServiceApi {
               );
               if (
                 !variant.text?.trim() &&
+                !(account.platform === "reddit" && variant.reddit) &&
                 !(
                   account.platform === "linkedin" &&
                   (variant.linkedinFormat || variant.media.length)
@@ -3896,6 +3902,7 @@ export class SocialService implements SocialServiceApi {
             instagram: variant.instagram,
             ...(variant.x ? { x: variant.x } : {}),
             linkedinFormat: variant.linkedinFormat,
+            ...(variant.reddit ? { reddit: variant.reddit } : {}),
           },
           ...approvalJobFields(automated, this.now()),
           attempts: 0,
@@ -3944,6 +3951,7 @@ export class SocialService implements SocialServiceApi {
         "instagram",
         "x",
         "linkedinFormat",
+        "reddit",
       ]);
       const accountId = str(value.accountId, "account");
       const account = await this.access(p, accountId, "draft");
@@ -4076,6 +4084,33 @@ export class SocialService implements SocialServiceApi {
           : parseLinkedInPostFormat(value.linkedinFormat);
       if (linkedinFormat && (account.platform !== "linkedin" || account.connection !== "oauth"))
         throw new Error("LinkedIn polls and article links require a LinkedIn API connection.");
+      let reddit: CampaignVariant["reddit"];
+      if (value.reddit !== undefined) {
+        if (account.platform !== "reddit")
+          throw new Error("Reddit publishing options require a Reddit account.");
+        if (value.reddit && typeof value.reddit === "object" && !Array.isArray(value.reddit))
+          exact(value.reddit as Record<string, unknown>, [
+            "subreddits",
+            "title",
+            "kind",
+            "flairId",
+          ]);
+        const options = redditPayload({ payload: { reddit: value.reddit } }, true);
+        if ((options.subreddits?.length ?? 0) > 1)
+          throw new Error("Choose one Reddit destination.");
+        if (
+          options.subreddits?.some((name) => name.length > 64) ||
+          (options.title?.length ?? 0) > REDDIT_TITLE_LIMIT
+        )
+          throw new Error("The Reddit destination or title is too long.");
+        const flairId = options.flairId?.trim();
+        reddit = {
+          subreddits: (options.subreddits ?? []).map((name) => name.trim()),
+          title: options.title?.trim() ?? "",
+          kind: options.kind ?? (value.link ? "link" : "self"),
+          ...(flairId ? { flairId } : {}),
+        };
+      }
       const telegramChannelMedia =
         account.platform === "telegram" &&
         account.accountType === "channel" &&
@@ -4085,6 +4120,7 @@ export class SocialService implements SocialServiceApi {
         accountId,
         text:
           xMediaOnly ||
+          (reddit && value.text === "") ||
           (snapchat?.target === "story" && value.text === "") ||
           (account.platform === "instagram" && media.length > 0 && value.text === "") ||
           (account.platform === "linkedin" &&
@@ -4109,6 +4145,7 @@ export class SocialService implements SocialServiceApi {
         ...(instagram ? { instagram } : {}),
         ...(x ? { x } : {}),
         ...(linkedinFormat ? { linkedinFormat } : {}),
+        ...(reddit ? { reddit } : {}),
       };
     });
     if (new Set(variants.map((variant) => variant.accountId)).size !== variants.length)
@@ -4271,6 +4308,7 @@ export class SocialService implements SocialServiceApi {
               instagram: variant.instagram,
               ...(variant.x ? { x: variant.x } : {}),
               linkedinFormat: variant.linkedinFormat,
+              ...(variant.reddit ? { reddit: variant.reddit } : {}),
             },
             ...approvalJobFields(decision, variant.scheduledAt),
             attempts: 0,

@@ -8,6 +8,7 @@ import type {
 /** X browser-session operations. Browser capability is derived from these, never from stored scopes. */
 export const X_BROWSER_OPERATIONS: readonly SocialOperation[] = [
   "publish",
+  "delete",
   "media",
   "reply",
   "comment",
@@ -46,6 +47,7 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     // Facebook owner profile tools use the account's verified browser actor.
     "profile.read",
     "profile.update",
+    "delete",
   ],
   linkedin: [
     "publish",
@@ -89,8 +91,8 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
   // No WhatsApp chat-sender reader is wired (dm_senders), so audience.collect is not offered here.
   whatsapp: ["inbox.read", "message.reply", "message.start", "poll", "media"],
   telegram: ["inbox.read", "message.reply", "message.start", "poll", "media"],
-  // Member web session: posts, comments and inbox replies. Reddit chat and private messages stay API-only.
-  reddit: ["publish", "comments.read", "comment", "reply", "poll"],
+  // Reddit Chat opens as an owner workflow. The browser recipe handles posts and comment replies.
+  reddit: ["publish", "comments.read", "comment", "reply", "poll", "delete"],
 };
 
 export function browserScopes(platform: Exclude<SocialPlatform, "x">): string[] {
@@ -102,6 +104,8 @@ export function browserOperations(
 ): readonly SocialOperation[] {
   if (account.platform === "x") return X_BROWSER_OPERATIONS;
   const operations = BROWSER_PLATFORM_OPERATIONS[account.platform];
+  if (account.platform === "facebook" && account.accountType !== "page")
+    return operations.filter((operation) => operation !== "delete");
   if (account.platform === "snapchat")
     return operations.filter((operation) =>
       account.accountType === "public_profile"

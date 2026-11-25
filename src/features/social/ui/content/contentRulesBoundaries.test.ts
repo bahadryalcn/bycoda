@@ -266,10 +266,12 @@ describe("YouTube and Reddit boundaries", () => {
   });
 
   it("accepts subreddits of 3 to 21 letters, numbers and underscores, trimmed", () => {
-    const connected = ["Reddit posting is not connected to the Host yet."];
-    expect(redditProblems({ subreddit: "abc", flair: "" })).toEqual(connected);
-    expect(redditProblems({ subreddit: "a".repeat(21), flair: "" })).toEqual(connected);
-    expect(redditProblems({ subreddit: " launches ", flair: "" })).toEqual(connected);
+    expect(redditProblems({ subreddit: "abc", flair: "", title: "Update" })).toEqual([]);
+    expect(redditProblems({ subreddit: "a".repeat(21), flair: "", title: "Update" })).toEqual([]);
+    expect(redditProblems({ subreddit: " launches ", flair: "", title: "Update" })).toEqual([]);
+    expect(
+      redditProblems({ subreddit: "u_a-" + "b".repeat(18), flair: "", title: "Update" }),
+    ).toEqual([]);
     for (const subreddit of ["ab", "a".repeat(22), "r/launches", "my-sub", ""])
       expect(redditProblems({ subreddit, flair: "" })[0]).toContain("Choose one subreddit");
   });
@@ -396,7 +398,7 @@ describe("draftProblems per account", () => {
     expect(draftProblems(input(draft, [tt]))).toEqual([]);
   });
 
-  it("keeps a Reddit post blocked even when the subreddit is valid", () => {
+  it("keeps a Reddit post blocked when only the subreddit is filled", () => {
     const reddit = account({ id: "r1", platform: "reddit" });
     expect(
       draftProblems(
@@ -404,7 +406,7 @@ describe("draftProblems per account", () => {
       ),
     ).toEqual([
       {
-        text: "Reddit · reddit account: Reddit posting is not connected to the Host yet.",
+        text: "Reddit · reddit account: Enter a title.",
         accountId: "r1",
       },
     ]);

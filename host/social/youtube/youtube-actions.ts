@@ -69,6 +69,10 @@ import {
   youtubeBrowserProfile,
   youtubeUpdateBrowserProfile,
 } from "../social-browser-youtube-profile";
+import {
+  youtubeDeleteStudioVideo,
+  youtubeListStudioVideos,
+} from "../browser/youtube-video-management";
 import { youTubeLiveSecretWriter } from "./live-secret";
 import {
   publicYouTubeOperation,
@@ -198,6 +202,14 @@ const writes = {
     "youtube.video.delete",
     modify,
     async (ctx, account, input, beforeWrite) => {
+      if (account.connection === "browser")
+        return await youtubeBrowser(
+          ctx,
+          account,
+          "delete",
+          (recipe) => youtubeDeleteStudioVideo(recipe, input.videoId),
+          { beforeSubmit: beforeWrite },
+        );
       const api = await youtubeApi(ctx, account, "delete");
       return await deleteYouTubeVideo({ ...api, beforeWrite }, input.videoId, input.confirm);
     },
@@ -541,11 +553,13 @@ export const youtubeActions: SocialActionModule = {
       ? await youtubeBrowser(ctx, account, "channel.profile.update", youtubeBrowserProfile)
       : await getYouTubeChannel(await youtubeApi(ctx, account, "profile.read")),
   ),
-  "youtube.videos.list": read(
-    "youtube.videos.list",
-    async (ctx, account, { cursor }) =>
-      await listYouTubeVideos(await youtubeApi(ctx, account, "profile.read"), cursor),
-  ),
+  "youtube.videos.list": read("youtube.videos.list", async (ctx, account, { cursor }) => {
+    if (account.connection === "browser") {
+      if (cursor) throw new SocialPlatformError("unsupported");
+      return await youtubeBrowser(ctx, account, "delete", youtubeListStudioVideos);
+    }
+    return await listYouTubeVideos(await youtubeApi(ctx, account, "profile.read"), cursor);
+  }),
   "youtube.playlists.list": read(
     "youtube.playlists.list",
     async (ctx, account, { cursor, playlistId }) => {

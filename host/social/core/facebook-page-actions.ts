@@ -6,6 +6,7 @@ import type {
 } from "../../../src/features/social/model/social";
 import { SocialPlatformError } from "../../../src/integrations/social/adapter";
 import { FACEBOOK_PAGE_PHOTO_SCOPES } from "../../../src/integrations/social/adapters/facebook-page-edit";
+import { facebookPageDeleteTarget } from "../browser/facebook-post-delete";
 import { exact, hash, str } from "./social-helpers";
 import type { SocialActionContext, SocialActionModule } from "./social-actions";
 
@@ -68,13 +69,14 @@ class PageWriteUnsubmittedError extends Error {
   }
 }
 
-/** A disconnected caller or Host restart must not replay an unconfirmed Graph write. */
-async function writePage<T>(
+/** A disconnected caller or Host restart must not replay an unconfirmed Page write. */
+async function writePageReceipt<T, Current extends { account: SocialAccount }>(
   ctx: SocialActionContext,
   account: SocialAccount,
   operation: SocialOperation,
   input: unknown,
-  submit: (current: Awaited<ReturnType<typeof page>>) => Promise<T>,
+  recheck: () => Promise<Current>,
+  submit: (current: Current) => Promise<T>,
   uncertain?: (result: T) => boolean,
 ): Promise<T> {
   let pending = pendingPageWrites.get(ctx.service);
@@ -89,7 +91,7 @@ async function writePage<T>(
     const candidate = hash(JSON.stringify([account.platformId, operation, input]));
     const unconfirmed = new Set<string>(JSON.parse((await ctx.service.setting(key)) ?? "[]"));
     if (unconfirmed.has(candidate)) throw new SocialPlatformError("unknown");
-    const current = await page(ctx, account.id, operation);
+    const current = await recheck();
     if (current.account.platformId !== account.platformId) throw new SocialPlatformError("denied");
     unconfirmed.add(candidate);
     await ctx.service.setSetting(key, JSON.stringify([...unconfirmed]));
@@ -112,6 +114,61 @@ async function writePage<T>(
   } finally {
     pending.delete(account.id);
   }
+}
+
+function writePage<T>(
+  ctx: SocialActionContext,
+  account: SocialAccount,
+  operation: SocialOperation,
+  input: unknown,
+  submit: (current: Awaited<ReturnType<typeof page>>) => Promise<T>,
+  uncertain?: (result: T) => boolean,
+) {
+  return writePageReceipt(
+    ctx,
+    account,
+    operation,
+    input,
+    () => page(ctx, account.id, operation),
+    submit,
+    uncertain,
+  );
+}
+
+async function deleteBrowserPagePost(
+  ctx: SocialActionContext,
+  account: SocialAccount,
+  input: unknown,
+) {
+  const target = facebookPageDeleteTarget(account, input);
+  const recheck = async () => {
+    const current = await ctx.service.access(ctx.principal, account.id, "read");
+    if (
+      current.platform !== "facebook" ||
+      current.connection !== "browser" ||
+      current.accountType !== "page" ||
+      current.platformId !== account.platformId ||
+      !current.connected ||
+      !current.accessApproved ||
+      current.executorId !== ctx.store.environmentId
+    )
+      throw new SocialPlatformError("denied");
+    ctx.service.capability(current, "delete");
+    await assertSending(ctx, current);
+    return { account: current, adapter: ctx.service.adapterFor(current) };
+  };
+  const receiptTarget = /^\d+$/.test(target.id) ? `${account.platformId}_${target.id}` : target.id;
+  await writePageReceipt(ctx, account, "delete", receiptTarget, recheck, async (current) => {
+    if (!current.adapter.deletePost) throw new SocialPlatformError("unsupported");
+    await current.adapter.deletePost(current.account, "", target.url, async () => {
+      try {
+        await recheck();
+      } catch (error) {
+        throw new PageWriteUnsubmittedError(error);
+      }
+    });
+  });
+  return { accountId: account.id, postId: target.url, deleted: true };
 }
 
 type BeforePageWrite = (account: SocialAccount) => Promise<void>;
@@ -328,6 +385,13 @@ export const facebookPageActions: SocialActionModule = {
       exact(input, ["accountId", "postId", "confirm"]);
       if (input.confirm !== "DELETE_FACEBOOK_POST")
         throw new Error("Deletion confirmation required.");
+      const candidate = await ctx.service.access(
+        ctx.principal,
+        str(input.accountId, "account"),
+        "read",
+      );
+      if (candidate.connection === "browser")
+        return deleteBrowserPagePost(ctx, candidate, input.postId);
       const { account } = await page(ctx, input.accountId, "delete");
       const target = postId(account, input.postId);
       await writePage(ctx, account, "delete", target, async ({ adapter, token }) => {

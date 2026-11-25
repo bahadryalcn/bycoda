@@ -13,11 +13,21 @@ import { telegramChannelContentIssue } from "./telegramChannel";
 import { tiktokContentIssue } from "./tiktok";
 import { hasXPostExtras, xPostExtrasIssue } from "./x-publish";
 import { xMediaIssue } from "./xMedia";
+import { redditPayload, validateSubmission } from "./adapters/reddit-rules";
+import { SocialPlatformError } from "./adapter";
 
 export function contentSupport(
   account: SocialAccount,
   job: Pick<SocialJob, "payload" | "kind">,
 ): string | undefined {
+  if (account.platform === "reddit" && job.kind === "publish") {
+    try {
+      validateSubmission(job, redditPayload(job));
+    } catch (error) {
+      if (!(error instanceof SocialPlatformError)) throw error;
+      return "Set one Reddit destination and a title, and use text or an HTTPS link without attachments.";
+    }
+  }
   if (job.payload.instagram !== undefined) {
     if (
       account.platform !== "instagram" ||

@@ -228,6 +228,7 @@ export type CampaignVariant = {
   instagram?: InstagramPublishOptions;
   x?: XPostExtras;
   linkedinFormat?: LinkedInPostFormat;
+  reddit?: RedditPayload;
   facebook?: FacebookPublishOptions;
 };
 /** Explicit Reel destination; omission preserves ordinary Page feed publishing. */

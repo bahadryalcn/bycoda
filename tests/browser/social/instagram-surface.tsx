@@ -47,6 +47,9 @@ const comment: SocialThread = {
   ],
 };
 const dm: SocialThread = { ...comment, id: "dm", kind: "message" };
+const deletionFixture = new URLSearchParams(location.search).has("instagram-delete-review");
+const deletionPost = "https://www.instagram.com/p/FixtureDelete/";
+const deletionKey = "social-qa:instagram-post-deletion";
 const client = {
   async request(action: string, input?: Record<string, unknown>) {
     if (action === "inbox.replyOptions")
@@ -73,6 +76,23 @@ const client = {
             action: "hide",
             status: "pending",
             createdAt: Date.UTC(2026, 10, 16),
+          },
+        ],
+      };
+    if (deletionFixture && action === "instagram.post.deletion.status")
+      return { deletion: sessionStorage.getItem(deletionKey) ?? undefined };
+    if (deletionFixture && action === "instagram.management.list")
+      return {
+        requests: [
+          {
+            id: "fixture-management-delete",
+            accountId: account.id,
+            platformAccountId: account.platformId,
+            projectId: "demo",
+            kind: "post.delete",
+            details: { postUrl: deletionPost },
+            createdAt: Date.UTC(2026, 10, 16),
+            deletion: sessionStorage.getItem(deletionKey) ?? undefined,
           },
         ],
       };
@@ -120,6 +140,12 @@ const client = {
   },
   async snapshot() {
     return { accounts: [account], profiles: [] };
+  },
+  async browserInstagramPost() {
+    if (!deletionFixture || sessionStorage.getItem(deletionKey))
+      throw new Error("Unexpected fixture deletion attempt");
+    sessionStorage.setItem(deletionKey, "review");
+    return { postUrl: deletionPost, changed: false, deletion: "review" };
   },
   async browserProfileRead() {
     return {

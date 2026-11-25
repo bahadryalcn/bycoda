@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { openExternal } from "../../../../../platform/tauri/openExternal";
 import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
@@ -41,7 +42,8 @@ export function InstagramManagementRequests({
   const confirmation = useConfirm();
   const [uncertain, setUncertain] = useState<ReadonlySet<string>>(new Set());
   const { write, is, error } = useAccountWrite(t("Could not save this change. Try again."));
-  const requestsKey = [...socialQueryScope(client), "instagram", accountId, "management"];
+  const scope = [...socialQueryScope(client), "instagram", accountId];
+  const requestsKey = [...scope, "management"];
   const query = useQuery({
     queryKey: requestsKey,
     queryFn: async () =>
@@ -86,7 +88,11 @@ export function InstagramManagementRequests({
       details: (
         <DescriptionList size="sm">
           {Object.entries(item.details).map(([field, value]) => (
-            <DescriptionItem key={field} term={field} monospace>
+            <DescriptionItem
+              key={field}
+              term={field === "postUrl" ? t("Instagram post URL") : field}
+              monospace
+            >
               {typeof value === "string" ? value : JSON.stringify(value)}
             </DescriptionItem>
           ))}
@@ -98,8 +104,17 @@ export function InstagramManagementRequests({
     if (!ok) return;
     const applied = await write(item.id, async () => {
       try {
-        if (action.type === "post") await client.browserInstagramPost(accountId, action.change);
-        else if (action.type === "highlight")
+        if (action.type === "post") {
+          const result = await client.browserInstagramPost(accountId, action.change);
+          if (result.deletion) {
+            await queryClient.invalidateQueries({ queryKey: [...scope, "post-deletion"] });
+            if (result.deletion === "review") {
+              setUncertain((current) => new Set(current).add(item.id));
+              await queryClient.invalidateQueries({ queryKey: requestsKey });
+              return false;
+            }
+          }
+        } else if (action.type === "highlight")
           await client.browserInstagramHighlightChange(accountId, action.change);
         else await client.browserProfileUpdate(accountId, "instagram", action.patch);
       } catch (cause) {
@@ -140,18 +155,37 @@ export function InstagramManagementRequests({
           </Text>
           <DescriptionList size="sm">
             {Object.entries(item.details).map(([field, value]) => (
-              <DescriptionItem key={field} term={field} monospace>
+              <DescriptionItem
+                key={field}
+                term={field === "postUrl" ? t("Instagram post URL") : field}
+                monospace
+              >
                 {typeof value === "string" ? value : JSON.stringify(value)}
               </DescriptionItem>
             ))}
           </DescriptionList>
-          {uncertain.has(item.id) ? (
+          {item.deletion === "deleted" ? (
+            <InlineMessage tone="success">{t("Deleted")}</InlineMessage>
+          ) : item.deletion === "review" || uncertain.has(item.id) ? (
             <InlineMessage tone="warning">
               {t("This change may already be on Instagram. Check Instagram, then dismiss it.")}
             </InlineMessage>
           ) : null}
           <div className="instagram-actions">
-            {uncertain.has(item.id) ? null : (
+            {item.deletion === "review" && typeof item.details.postUrl === "string" ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  const url = item.details.postUrl;
+                  if (typeof url === "string")
+                    void write(`open:${item.id}`, () => openExternal(url)).catch(() => undefined);
+                }}
+              >
+                {t("Open post")}
+              </Button>
+            ) : null}
+            {item.deletion || uncertain.has(item.id) ? null : (
               <Button
                 size="sm"
                 variant="primary"

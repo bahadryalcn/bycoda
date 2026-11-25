@@ -1,6 +1,7 @@
 import type {
   InstagramHighlightChange,
   InstagramPostChange,
+  InstagramPostDeletion,
   InstagramProfilePatch,
 } from "./socialBrowser";
 
@@ -25,6 +26,7 @@ export type InstagramManagementRequest = {
   kind: InstagramManagementKind;
   details: Record<string, unknown>;
   createdAt: number;
+  deletion?: InstagramPostDeletion;
 };
 
 /** The owner-only browser call a queued request maps to, rebuilt with its confirm token. */

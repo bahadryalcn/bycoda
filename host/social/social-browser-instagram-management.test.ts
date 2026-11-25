@@ -2,6 +2,7 @@ import { type HTMLElement, type HTMLTextAreaElement, Window } from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialJob } from "../../src/features/social/model/social";
 import { socialBrowserUrl } from "../../src/features/social/model/socialBrowser";
+import { deleteInstagramPostOnce, instagramPostDeletion } from "./browser/instagram-post-deletion";
 import type { BrowserPage } from "./social-browser";
 import {
   instagramFollow,
@@ -16,6 +17,7 @@ import {
 import { openInstagramDirectThread } from "./social-browser-instagram-dm";
 import { changeInstagramPost, parseInstagramPostChange } from "./social-browser-instagram-posts";
 import { metaBrowserRecipes } from "./social-browser-meta";
+import { job } from "./social-browser-publishing-test-support";
 import type { BrowserRecipeContext } from "./social-browser-recipe";
 
 const windows: Window[] = [];
@@ -66,19 +68,41 @@ const caption = parseInstagramPostChange({
   caption: "New",
   confirm: "EDIT_INSTAGRAM_CAPTION",
 });
-const remove = parseInstagramPostChange({
+const remove = {
   action: "delete",
   postUrl,
   confirm: "DELETE_INSTAGRAM_POST",
-});
+} as const;
 
-function posts(options: { owned?: boolean; persisted?: boolean; receipt?: boolean } = {}) {
+function deletionSettings() {
+  const values = new Map<string, string>();
+  return {
+    async setting(key: string) {
+      return values.get(key);
+    },
+    async setSetting(key: string, value: string) {
+      values.set(key, value);
+    },
+  };
+}
+
+function posts(
+  options: {
+    owned?: boolean;
+    persisted?: boolean;
+    receipt?: boolean;
+    staleReceipt?: boolean;
+    readback?: "present" | "other-post" | "login" | "turkish";
+  } = {},
+) {
   const f = fixture();
   const submit = vi.fn();
   let saved = "Old";
+  let deleted = false;
   const main = () => {
     f.render(
-      '<main><article><a href="/p/Test123/">Date</a><button aria-label="More options">...</button></article></main>',
+      '<main><article><a href="/p/Test123/">Date</a><button aria-label="More options">...</button></article></main>' +
+        (options.staleReceipt ? '<div role="status">Post deleted</div>' : ""),
     );
     f.document.querySelector("button")!.addEventListener("click", menu);
   };
@@ -105,16 +129,83 @@ function posts(options: { owned?: boolean; persisted?: boolean; receipt?: boolea
       dialog.innerHTML = "<h2>Delete post?</h2><button>Delete</button><button>Cancel</button>";
       dialog.querySelector("button")!.addEventListener("click", () => {
         submit();
+        deleted = true;
         f.render(options.receipt === false ? "" : '<div role="status">Post deleted</div>');
       });
     });
   };
   vi.mocked(f.page.goto).mockImplementation(async (url) => {
     f.window.location.href = url;
-    main();
+    if (!deleted || options.readback === "present") {
+      main();
+      return;
+    }
+    if (options.readback === "other-post")
+      f.window.location.href = "https://www.instagram.com/p/Other567/";
+    if (options.readback === "login") {
+      f.window.location.href = "https://www.instagram.com/accounts/login/";
+      f.render('<main><input type="password"></main>');
+      return;
+    }
+    const unavailable =
+      options.readback === "turkish" ? "Post mevcut değil" : "Post isn't available";
+    f.document.title = `${unavailable} • Instagram`;
+    f.render(`<main><span>${unavailable}</span></main>`);
   });
   return { ...f, submit };
 }
+
+it("saves the Instagram deletion review state before the final click", async () => {
+  const f = posts({ receipt: false });
+  const beforeDelete = vi.fn(async () => expect(f.submit).not.toHaveBeenCalled());
+  await expect(changeInstagramPost(f.context, remove, beforeDelete)).rejects.toMatchObject({
+    code: "unknown",
+  });
+  expect(beforeDelete).toHaveBeenCalledOnce();
+  expect(f.submit).toHaveBeenCalledOnce();
+});
+
+it("holds an uncertain delete across browser sessions and permalink aliases for the same actor", async () => {
+  const settings = deletionSettings();
+  const initial = posts({ receipt: false });
+  await expect(
+    deleteInstagramPostOnce(settings, "111", remove, (beforeDelete) =>
+      changeInstagramPost(initial.context, remove, beforeDelete),
+    ),
+  ).resolves.toMatchObject({ changed: false, deletion: "review" });
+  const alias = { ...remove, postUrl: "https://www.instagram.com/reel/Test123/" };
+  const runAgain = vi.fn();
+  await expect(deleteInstagramPostOnce(settings, "111", alias, runAgain)).resolves.toEqual({
+    postUrl: alias.postUrl,
+    changed: false,
+    deletion: "review",
+  });
+  expect(runAgain).not.toHaveBeenCalled();
+  await expect(instagramPostDeletion(settings, "222", alias.postUrl)).resolves.toBeUndefined();
+  await expect(
+    instagramPostDeletion(settings, "111", "https://www.instagram.com/p/Other456/"),
+  ).resolves.toBeUndefined();
+});
+
+it("allows a retry after a pre-click failure and saves a verified delete", async () => {
+  const settings = deletionSettings();
+  const first = posts({ owned: false });
+  await expect(
+    deleteInstagramPostOnce(settings, "111", remove, (beforeDelete) =>
+      changeInstagramPost(first.context, remove, beforeDelete),
+    ),
+  ).rejects.toMatchObject({ code: "unsupported" });
+  await expect(instagramPostDeletion(settings, "111", postUrl)).resolves.toBeUndefined();
+  expect(first.submit).not.toHaveBeenCalled();
+  const retry = posts();
+  await expect(
+    deleteInstagramPostOnce(settings, "111", remove, (beforeDelete) =>
+      changeInstagramPost(retry.context, remove, beforeDelete),
+    ),
+  ).resolves.toMatchObject({ changed: true, deletion: "deleted" });
+  await expect(instagramPostDeletion(settings, "111", postUrl)).resolves.toBe("deleted");
+  expect(retry.submit).toHaveBeenCalledOnce();
+});
 
 it("requires exact Instagram post and explicit consequence confirmation", () => {
   for (const input of [
@@ -149,15 +240,118 @@ it("holds an unpersisted edit and an unacknowledged delete after one submission"
   }
 });
 
-it("verifies the delete receipt and refuses a missing owner menu before submit", async () => {
+it("verifies the delete receipt on the same post and refuses a missing owner menu", async () => {
   const f = posts();
   await expect(changeInstagramPost(f.context, remove)).resolves.toEqual({ postUrl, changed: true });
   expect(f.submit).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(f.page.goto).mock.calls).toEqual([[postUrl], [postUrl]]);
   const other = posts({ owned: false });
   await expect(changeInstagramPost(other.context, remove)).rejects.toMatchObject({
     code: "unsupported",
   });
   expect(other.submit).not.toHaveBeenCalled();
+});
+
+it("confirms the observed Turkish unavailable state on the deleted post", async () => {
+  const f = posts({ readback: "turkish" });
+  await expect(changeInstagramPost(f.context, remove)).resolves.toEqual({ postUrl, changed: true });
+  expect(vi.mocked(f.page.goto).mock.calls).toEqual([[postUrl], [postUrl]]);
+});
+
+it.each(["present", "other-post", "login"] as const)(
+  "holds a deletion with a receipt when the exact post readback is %s",
+  async (readback) => {
+    const f = posts({ readback });
+    await expect(changeInstagramPost(f.context, remove)).rejects.toMatchObject({ code: "unknown" });
+    expect(f.submit).toHaveBeenCalledOnce();
+  },
+);
+
+it("does not submit using a deletion notice already displayed before confirmation", async () => {
+  const f = posts({ staleReceipt: true });
+  await expect(changeInstagramPost(f.context, remove)).rejects.toMatchObject({
+    code: "unsupported",
+  });
+  expect(f.submit).not.toHaveBeenCalled();
+});
+
+function postComment({
+  initialPath = "/p/Test123/",
+  pathAtSubmit,
+  parentPath = "/p/Test123/c/456/",
+}: { initialPath?: string; pathAtSubmit?: string; parentPath?: string } = {}) {
+  const f = fixture();
+  const reply = vi.fn();
+  const submit = vi.fn();
+  const submitted = vi.fn();
+  f.context.markSubmitted = submitted;
+  vi.mocked(f.page.goto).mockImplementation(async () => {
+    f.window.location.href = new URL(initialPath, postUrl).href;
+    f.render(`<main>
+      <ul><li><a href="${parentPath}">Date</a><button>Reply</button></li></ul>
+      <textarea aria-label="Add a comment..."></textarea><button>Post</button>
+    </main>`);
+    f.document.querySelector("li button")!.addEventListener("click", reply);
+    f.document.querySelector("main > button")!.addEventListener("click", submit);
+  });
+  f.verifyIdentity.mockImplementation(async () => {
+    if (pathAtSubmit && f.document.querySelector("textarea")?.value === "Bycoda test reply")
+      f.window.location.href = new URL(pathAtSubmit, postUrl).href;
+  });
+  vi.mocked(f.page.watchResponse).mockReturnValue({
+    body: async () =>
+      JSON.stringify({
+        status: "ok",
+        comment: {
+          pk: "222",
+          user: { pk: "111" },
+          text: "Bycoda test reply",
+          parent_comment_id: "456",
+        },
+      }),
+    stop: vi.fn(),
+  });
+  return { ...f, reply, submit, submitted };
+}
+
+const postCommentJob = job("reply", {
+  postId: "ig:Test123:123",
+  threadId: "456",
+  text: "Bycoda test reply",
+});
+
+const instagramSend = metaBrowserRecipes.find((recipe) => recipe.platform === "instagram")!.send;
+
+it("sends the comment reply on the same post after a Reel URL redirect", async () => {
+  const f = postComment({ initialPath: "/reel/Test123/", parentPath: "/reel/Test123/c/456/" });
+  await expect(instagramSend(f.context, postCommentJob)).resolves.toEqual({ platformId: "222" });
+  expect(f.reply).toHaveBeenCalledOnce();
+  expect(f.submit).toHaveBeenCalledOnce();
+  expect(f.submitted).toHaveBeenCalledOnce();
+});
+
+it("requires a parent for a reply before opening the post", async () => {
+  const f = postComment();
+  const request = {
+    ...postCommentJob,
+    payload: { ...postCommentJob.payload, threadId: undefined },
+  };
+  await expect(instagramSend(f.context, request)).rejects.toMatchObject({ code: "unsupported" });
+  expect(f.page.goto).not.toHaveBeenCalled();
+  expect(f.submit).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["redirects to another post", { initialPath: "/p/Other567/" }],
+  ["shows a parent link from another post", { parentPath: "/p/Other567/c/456/" }],
+  ["changes the post during the final identity check", { pathAtSubmit: "/p/Other567/" }],
+] as const)("leaves a reply unsent when Instagram %s", async (_scenario, options) => {
+  const f = postComment(options);
+  await expect(instagramSend(f.context, postCommentJob)).rejects.toMatchObject({
+    code: "unsupported",
+  });
+  expect(f.submit).not.toHaveBeenCalled();
+  expect(f.submitted).not.toHaveBeenCalled();
 });
 
 it("reports NEEDS_HUMAN without clicking challenge controls", async () => {

@@ -49,6 +49,7 @@ export const SOCIAL_READ_ACTIONS = [
   // Instagram
   "instagram.insights",
   "instagram.mentions",
+  "instagram.post.deletion.status",
   // TikTok account operations.
   "tiktok.profile.read",
   "tiktok.analytics.read",
@@ -77,6 +78,8 @@ export const SOCIAL_READ_ACTIONS = [
   "facebook.live.list",
   "facebook.live.comments",
   "facebook.management.list",
+  "reddit.posts.published",
+  "telegram.posts.published",
   "instagram.comments.requests.list",
   "instagram.management.list",
 ] as const;

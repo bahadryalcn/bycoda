@@ -668,8 +668,11 @@ export function socialClient(machineId: string) {
       }),
     browserWorkflowStatus: (accountId: string) =>
       remoteRequest<SocialBrowserState>(machineId, "social.browser.workflow.status", { accountId }),
-    browserWorkflowCancel: (accountId: string) =>
-      remoteRequest<void>(machineId, "social.browser.workflow.cancel", { accountId }),
+    browserWorkflowCancel: (accountId: string, workflowId?: string) =>
+      remoteRequest<void>(machineId, "social.browser.workflow.cancel", {
+        accountId,
+        ...(workflowId !== undefined ? { workflowId } : {}),
+      }),
     browserBegin: (accountId: string, resourceId?: string) =>
       remoteRequest<{ status: string; expiresAt: number }>(machineId, "social.browser.begin", {
         accountId,
@@ -704,12 +707,13 @@ export function socialClient(machineId: string) {
           ...(resourceId ? { resourceId } : {}),
         },
       ),
-    browserStatus: (accountId: string) =>
+    browserStatus: (accountId: string, loginFlow = false) =>
       remoteRequest<{ status: string; error?: string; source?: "existing-chrome" | "dedicated" }>(
         machineId,
         "social.browser.status",
         {
           accountId,
+          ...(loginFlow ? { loginFlow: true } : {}),
         },
       ),
     browserCancelLogin: (accountId: string) =>

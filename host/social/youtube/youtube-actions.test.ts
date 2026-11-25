@@ -260,6 +260,37 @@ describe("YouTube Host management", () => {
     expect(usedBrowser).toHaveBeenCalledOnce();
   });
 
+  it("runs an approved YouTube Studio video deletion without reading API credentials", async () => {
+    const f = await setup();
+    const account = await f.social.account(f.account.id);
+    await f.social.put<SocialAccount>("account", account.id, {
+      ...account,
+      connection: "browser",
+      platformId: `web:youtube:${channelId}`,
+    });
+    const videoId = "abcdefghijk";
+    const usedBrowser = vi.fn();
+    f.social.youtubeBrowser = async (selected, _run, options) => {
+      usedBrowser(selected.id);
+      await options?.beforeSubmit?.();
+      return { id: videoId, deleted: true } as never;
+    };
+    const request = await f.call<{ id: string }>(
+      "youtube.changes.request",
+      { accountId: account.id, action: "youtube.video.delete", input: { videoId } },
+      f.principal,
+    );
+    const approval = { accountId: account.id, id: request.id, confirm: true };
+    await expect(f.call("youtube.operation.approve", approval, f.principal)).rejects.toThrow();
+    expect(usedBrowser).not.toHaveBeenCalled();
+    await expect(f.call("youtube.operation.approve", approval, owner)).resolves.toMatchObject({
+      status: "done",
+      result: { id: videoId, deleted: true },
+    });
+    expect(usedBrowser).toHaveBeenCalledExactlyOnceWith(account.id);
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
   it("keeps an unknown outcome and prevents blind repeats across request IDs", async () => {
     const f = await setup();
     const respond = f.fetcher.getMockImplementation()!;

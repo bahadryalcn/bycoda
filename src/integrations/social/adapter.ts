@@ -175,7 +175,12 @@ export interface SocialAdapter {
   facebook?: ReturnType<
     typeof import("./adapters/facebook-page-operations").createFacebookPageOperations
   >;
-  deletePost?(account: SocialAccount, token: string, platformId: string): Promise<void>;
+  deletePost?(
+    account: SocialAccount,
+    token: string,
+    platformId: string,
+    beforeSubmit?: () => Promise<void>,
+  ): Promise<void>;
   listPosts?(
     account: SocialAccount,
     token: string,

@@ -14,7 +14,9 @@ import { xHandoff, type XDestination } from "../../../../../integrations/social/
 import type { SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
+import { BrowserInboxHandoff } from "./BrowserInboxHandoff";
 import { XApiActions } from "./XApiActions";
+import { XPostActions } from "./XPostActions";
 import "./x.css";
 
 type Props = { account: SocialAccount; client: SocialClient; disabled: boolean };
@@ -79,6 +81,12 @@ export function XAccountActions({ account, client, disabled }: Props) {
   const needsTarget = destination === "post";
   const options = destinations();
   const current = options.find((option) => option.value === destination);
+  const chat = destination === "messages" && account.connection === "browser" && account.connected;
+  const open = async () => {
+    await openExternal(
+      xHandoff(destination, needsTarget ? target : undefined, account.platformId).url,
+    );
+  };
   return (
     <Disclosure summary={t("X actions")} variant="row">
       <div className="social-x-stack">
@@ -86,11 +94,6 @@ export function XAccountActions({ account, client, disabled }: Props) {
           <SectionLabel variant="inline" size="secondary" as="h4">
             {t("Finish on X")}
           </SectionLabel>
-          <Text as="p" size="secondary" tone="muted">
-            {t(
-              "X does not let apps do these steps. MonoCode opens the exact page and you finish it there.",
-            )}
-          </Text>
           <Select
             label={t("What do you want to do on X?")}
             value={destination}
@@ -116,23 +119,26 @@ export function XAccountActions({ account, client, disabled }: Props) {
               onChange={(event) => setTarget(event.currentTarget.value)}
             />
           ) : null}
-          <Button
-            variant="primary"
-            size="sm"
-            className="self-start"
-            loading={is("open")}
-            disabled={needsTarget && !isXResourceId(target)}
-            onClick={() =>
-              void write("open", () =>
-                openExternal(
-                  xHandoff(destination, needsTarget ? target : undefined, account.platformId).url,
-                ),
-              )
-            }
-          >
-            {t("Open in browser")}
-          </Button>
-          {error ? <InlineError>{error}</InlineError> : null}
+          <BrowserInboxHandoff
+            accountId={account.id}
+            client={client}
+            disabled={disabled}
+            visible={chat}
+            instruction={t("Continue in the X browser window.")}
+          />
+          {!chat ? (
+            <Button
+              variant="primary"
+              size="sm"
+              className="self-start"
+              loading={is("open")}
+              disabled={needsTarget && !isXResourceId(target)}
+              onClick={() => void write("open", open).catch(() => undefined)}
+            >
+              {t("Open in browser")}
+            </Button>
+          ) : null}
+          {!chat && error ? <InlineError>{error}</InlineError> : null}
         </div>
         {destination === "live" && account.connected ? (
           <div className="social-x-group">
@@ -185,7 +191,9 @@ export function XAccountActions({ account, client, disabled }: Props) {
             ) : null}
           </div>
         ) : null}
-        {account.connected && account.xApiProduct ? (
+        {account.connected && account.connection === "browser" ? (
+          <XPostActions account={account} client={client} disabled={disabled || account.paused} />
+        ) : account.connected && account.xApiProduct ? (
           <XApiActions account={account} client={client} disabled={disabled || account.paused} />
         ) : null}
       </div>

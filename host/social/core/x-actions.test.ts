@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SocialAccount } from "../../../src/features/social/model/social";
-import { SocialHttp } from "../../../src/integrations/social/adapter";
+import { SocialHttp, type SocialAdapter } from "../../../src/integrations/social/adapter";
 import type { SocialActionContext } from "./social-actions";
 import { createXActions } from "./x-actions";
 import { storeXLiveKey } from "./x-live-key";
@@ -14,7 +14,7 @@ const request = {
   intentId: "692f5dee-0000-4000-8000-000000000001",
 };
 
-function fixture({ paid = true, suppress = false, unknown = false } = {}) {
+function fixture({ paid = true, suppress = false, unknown = false, browser = false } = {}) {
   const fetcher = vi.fn(async () => {
     if (unknown) throw new Error("connection lost");
     return Response.json({ data: { following: false, pending_follow: true } });
@@ -25,7 +25,7 @@ function fixture({ paid = true, suppress = false, unknown = false } = {}) {
     executorId: "host",
     platform: "x",
     platformId: "234",
-    connection: "oauth",
+    connection: browser ? "browser" : "oauth",
     xApiProduct: paid ? "pay-per-use" : undefined,
     connected: true,
     accessApproved: true,
@@ -34,6 +34,7 @@ function fixture({ paid = true, suppress = false, unknown = false } = {}) {
   const assertSendable = vi.fn(async () => {
     if (suppress) throw new Error("Recipient is suppressed.");
   });
+  const deletePost = vi.fn<NonNullable<SocialAdapter["deletePost"]>>(async () => {});
   const ctx = {
     principal: { kind: "owner" },
     executorId: "host",
@@ -44,13 +45,15 @@ function fixture({ paid = true, suppress = false, unknown = false } = {}) {
       },
       access: async () => account,
       credentialFor: async () => ({ accessToken: "secret" }),
+      capability: vi.fn(),
+      adapterFor: () => ({ deletePost }),
       setting: async (key: string) => settings.get(key),
       setSetting: async (key: string, value: string) => settings.set(key, value),
       assertSendable,
     },
   } as unknown as SocialActionContext;
   const actions = createXActions(new SocialHttp(fetcher));
-  return { fetcher, actions, ctx, assertSendable };
+  return { fetcher, actions, ctx, assertSendable, deletePost, settings };
 }
 
 describe("X account actions", () => {
@@ -127,6 +130,39 @@ describe("X account actions", () => {
     await expect(apply(ctx, request)).resolves.toEqual({ status: "review" });
     await expect(apply(ctx, request)).resolves.toEqual({ status: "review" });
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes one exact post through the browser without paid API credentials", async () => {
+    const { actions, ctx, fetcher, deletePost } = fixture({ paid: false, browser: true });
+    const credentialFor = vi.spyOn(ctx.service, "credentialFor");
+    const deletion = { ...request, kind: "deletePost", postId: "123" };
+    await expect(actions["x.apply"].run(ctx, deletion)).resolves.toEqual({
+      status: "applied",
+      result: { postId: "123" },
+    });
+    await expect(actions["x.apply"].run(ctx, deletion)).resolves.toMatchObject({
+      status: "applied",
+    });
+    expect(deletePost).toHaveBeenCalledTimes(1);
+    expect(deletePost).toHaveBeenCalledWith(
+      expect.objectContaining({ connection: "browser" }),
+      "",
+      "123",
+      expect.any(Function),
+    );
+    expect(credentialFor).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rechecks sending authority inside the browser before committing deletion", async () => {
+    const { actions, ctx, deletePost, settings } = fixture({ paid: false, browser: true });
+    deletePost.mockImplementationOnce(async (_account, _token, _postId, authorize) => {
+      settings.set("stopped", "true");
+      await authorize?.();
+    });
+    await expect(
+      actions["x.apply"].run(ctx, { ...request, kind: "deletePost", postId: "123" }),
+    ).resolves.toEqual({ status: "review" });
   });
 });
 

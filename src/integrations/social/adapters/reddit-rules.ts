@@ -12,13 +12,17 @@ export type RedditPayload = {
 
 /** Reddit's published title limit is 300 characters (unverified against live docs). */
 export const REDDIT_TITLE_LIMIT = 300;
+export const REDDIT_PROFILE_TARGET = /^u_[A-Za-z0-9_-]{3,20}$/i;
 /** Self-post and comment text limit (unverified against live docs). */
 export const REDDIT_BODY_LIMIT = 10_000;
 export const REDDIT_SELF_BODY_LIMIT = 40_000;
 export const REDDIT_MESSAGE_SUBJECT_LIMIT = 100;
 
-export function redditPayload(job: SocialJob): RedditPayload {
-  const raw: unknown = (job.payload as { reddit?: unknown }).reddit;
+export function redditPayload(
+  job: { payload: { reddit?: unknown } },
+  draft = false,
+): RedditPayload {
+  const raw = job.payload.reddit;
   if (raw === undefined) return {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) reject("reddit.payload_invalid");
   const value = raw as Record<string, unknown>;
@@ -32,7 +36,8 @@ export function redditPayload(job: SocialJob): RedditPayload {
   if (kind !== undefined && kind !== "self" && kind !== "link") reject("reddit.payload_invalid");
   if (
     flairId !== undefined &&
-    (typeof flairId !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(flairId))
+    (typeof flairId !== "string" ||
+      (draft ? flairId.length > 64 : !/^[A-Za-z0-9-]{1,64}$/.test(flairId)))
   )
     reject("reddit.payload_invalid");
   if (subject !== undefined && typeof subject !== "string") reject("reddit.payload_invalid");
@@ -55,7 +60,10 @@ export type RedditSubmission = {
 };
 
 /** Synchronous platform-limit and one-subreddit checks. Nothing is sent when this throws. */
-export function validateSubmission(job: SocialJob, payload: RedditPayload): RedditSubmission {
+export function validateSubmission(
+  job: Pick<SocialJob, "payload">,
+  payload: RedditPayload,
+): RedditSubmission {
   if (job.payload.media.length > 0)
     throw new SocialPlatformError("unsupported", undefined, {
       reasonCode: "reddit.media_unsupported",
@@ -63,7 +71,11 @@ export function validateSubmission(job: SocialJob, payload: RedditPayload): Redd
   const targets = payload.subreddits ?? [];
   if (targets.length > 1) reject("reddit.one_subreddit");
   if (targets.length === 0) reject("reddit.subreddit_required");
-  const subreddit = subredditName(targets[0]);
+  const target = targets[0];
+  const subreddit =
+    typeof target === "string" && REDDIT_PROFILE_TARGET.test(target)
+      ? target
+      : subredditName(target);
   const title = (payload.title ?? "").trim();
   if (title.length < 1 || title.length > REDDIT_TITLE_LIMIT) reject("reddit.title_length");
   const kind = payload.kind ?? (job.payload.link ? "link" : "self");
