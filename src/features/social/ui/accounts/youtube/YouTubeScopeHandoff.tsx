@@ -1,5 +1,6 @@
 import { openExternal } from "../../../../../platform/tauri/openExternal";
 import { t } from "../../../../../shared/i18n";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import type { SocialAccount, SocialOperation } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
@@ -53,6 +54,11 @@ export function YouTubeScopeHandoff({
   return (
     <InlineMessage
       tone="warning"
+      extra={
+        error ? (
+          <ErrorDetails title={t("The connection could not be started")} detail={error} />
+        ) : undefined
+      }
       action={{
         label: t("Reconnect with this permission"),
         pending: is("youtube-scope"),
@@ -68,7 +74,7 @@ export function YouTubeScopeHandoff({
         },
       }}
     >
-      {error ? `${copy} ${error}` : copy}
+      {copy}
     </InlineMessage>
   );
 }

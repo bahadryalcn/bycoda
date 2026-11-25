@@ -81,13 +81,3 @@
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-
-/* Many sections: wrap onto a second line instead of truncating the labels. */
-.instagram-tools [role="tablist"] {
-  flex-wrap: wrap;
-  overflow: visible;
-}
-
-.instagram-tools [role="tab"] {
-  flex: none;
-}

@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ChevronRight } from "../../../shared/ui/icons";
-import { taskSessionIds } from "../../tasks/model/backgroundSession";
+import { taskSessionIds } from "../../tasks/public/backgroundSession";
 import { useProjectCrews } from "../model/crewClient";
 import { crewRunMatchesQuery } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
@@ -15,7 +15,7 @@ import { classifyRemoteError, isConnectionFailure } from "../../connections/mode
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
 
-import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
+import type { BackgroundSessionTarget } from "../../tasks/public/backgroundSession";
 export type OpenSession = (target: BackgroundSessionTarget) => void | Promise<void>;
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -115,7 +115,7 @@ export function CrewSessions({
           ) : null}
           {state.visibleError && !sharedConnectionIssue ? (
             <InlineError
-              className="px-2.5 py-1"
+              inset="row"
               details={state.errorDetails}
               retry={{ onRetry: () => void state.refetch(), pending: state.isFetching }}
             >

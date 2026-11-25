@@ -85,6 +85,7 @@ it("ranks a large listing off-thread and hides results from an earlier query", a
   function Probe({ query }: { query: string }) {
     const { rankedFiles } = useComposerMentionSources({
       executionCwd: cwd,
+      indexFiles: true,
       remote: false,
       notesEnabled: false,
       mentionOpen: true,

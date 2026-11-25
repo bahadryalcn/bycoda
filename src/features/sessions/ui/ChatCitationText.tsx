@@ -86,9 +86,11 @@ function FileCommentPill({ citation }: { citation: FileCommentCitation }) {
           setAnchor(event.currentTarget);
         }}
       >
-        <Text as="span" size="inherit" tone="feature" className={styles.token}>
-          <MessageSquare className={styles.tokenIcon} aria-hidden />
-          {label}
+        <Text as="span" size="inherit" tone="feature">
+          <span className={styles.token}>
+            <MessageSquare className={styles.tokenIcon} aria-hidden />
+            {label}
+          </span>
         </Text>
       </Button>
       {anchor ? (
@@ -105,9 +107,9 @@ function FileCommentPill({ citation }: { citation: FileCommentCitation }) {
             <Text size="caption" tone="secondary" wrap="anywhere">
               {citation.file.path}
             </Text>
-            <Text as="blockquote" size="secondary" className={styles.quote}>
-              {citation.text}
-            </Text>
+            <blockquote className={styles.quote}>
+              <Text size="secondary">{citation.text}</Text>
+            </blockquote>
             <Text as="p" size="secondary" className={styles.comment}>
               {citation.comment}
             </Text>
@@ -141,25 +143,24 @@ function ConversationCitationToken({ token, citation }: { token: string; citatio
         );
       }}
     >
-      <Text
-        as="span"
-        size="inherit"
-        tone={unavailable ? "secondary" : "accent"}
-        {...surfaceAttributes(
-          {
-            radius: "control",
-            tone: unavailable ? "neutral" : "accent",
-            ring: unavailable ? "tone-neutral" : "tone-accent",
-          },
-          styles.token,
-        )}
-        data-unavailable={unavailable || undefined}
-      >
-        <BlockQuote className={styles.tokenIcon} aria-hidden />
-        {/* Brackets stay in the DOM so selecting and copying give the token back. */}
-        <span className="sr-only">[</span>
-        {tokenLabel(token)}
-        <span className="sr-only">]</span>
+      <Text as="span" size="inherit" tone={unavailable ? "secondary" : "accent"}>
+        <span
+          {...surfaceAttributes(
+            {
+              radius: "control",
+              tone: unavailable ? "neutral" : "accent",
+              ring: unavailable ? "tone-neutral" : "tone-accent",
+            },
+            styles.token,
+          )}
+          data-unavailable={unavailable || undefined}
+        >
+          <BlockQuote className={styles.tokenIcon} aria-hidden />
+          {/* Brackets stay in the DOM so selecting and copying give the token back. */}
+          <span className="sr-only">[</span>
+          {tokenLabel(token)}
+          <span className="sr-only">]</span>
+        </span>
       </Text>
     </Button>
   );
@@ -195,16 +196,15 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
         >
           <BlockQuote className="icon-sm shrink-0" />
           {token ? (
-            <Text
-              as="span"
-              size="inherit"
-              tone="accent"
-              {...surfaceAttributes(
-                { radius: "control", tone: "accent", ring: "tone-accent" },
-                styles.token,
-              )}
-            >
-              {tokenLabel(token)}
+            <Text as="span" size="inherit" tone="accent">
+              <span
+                {...surfaceAttributes(
+                  { radius: "control", tone: "accent", ring: "tone-accent" },
+                  styles.token,
+                )}
+              >
+                {tokenLabel(token)}
+              </span>
             </Text>
           ) : null}
           <Text size="inherit" tone="inherit" truncate className={styles.label}>

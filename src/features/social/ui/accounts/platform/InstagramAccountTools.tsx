@@ -137,6 +137,7 @@ export function InstagramAccountTools({
       <div className="instagram-tools">
         {groups.length && group ? (
           <SubTabs
+            wrap
             label={t("Instagram tools")}
             value={group}
             items={groups}
@@ -145,6 +146,7 @@ export function InstagramAccountTools({
         ) : null}
         {inGroup.length > 1 ? (
           <SubTabs
+            wrap
             label={t("Instagram section")}
             value={section ?? inGroup[0]!.value}
             items={inGroup}

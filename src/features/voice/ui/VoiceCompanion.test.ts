@@ -36,7 +36,7 @@ const assistantHost = vi.hoisted(() => ({
     memory: [],
     jobs: [],
   } as any,
-  request: vi.fn(async (input: any): Promise<any> => {
+  request: vi.fn(async (input: any, _environment?: string): Promise<any> => {
     if (input.op === "snapshot") return { snapshot: assistantHost.snapshot };
     if (input.op === "profile.get") return { profile: assistantHost.snapshot.profile };
     if (input.op === "voice.runtime.register") return { ok: true };

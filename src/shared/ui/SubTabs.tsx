@@ -4,7 +4,10 @@ import styles from "./SubTabs.module.css";
 export type SubTabsProps<T extends string = string> = Omit<
   TabStripProps<T>,
   "variant" | "size" | "fill" | "responsive" | "orientation"
->;
+> & {
+  /** Wrap the tabs onto further lines instead of scrolling or truncating; for many sections with long labels. */
+  wrap?: boolean;
+};
 
 /**
  * Secondary navigation: a lighter tab strip (text only, underline on the selected tab) for
@@ -25,6 +28,11 @@ export type SubTabsProps<T extends string = string> = Omit<
  *   ]}
  * />
  */
-export function SubTabs<T extends string = string>({ className, ...props }: SubTabsProps<T>) {
-  return <TabStrip {...props} className={[styles.list, className].filter(Boolean).join(" ")} />;
+export function SubTabs<T extends string = string>({ className, wrap, ...props }: SubTabsProps<T>) {
+  return (
+    <TabStrip
+      {...props}
+      className={[styles.list, wrap && styles.wrap, className].filter(Boolean).join(" ")}
+    />
+  );
 }

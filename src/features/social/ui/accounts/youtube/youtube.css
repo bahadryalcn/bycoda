@@ -72,13 +72,3 @@
   align-items: center;
   gap: var(--space-2);
 }
-
-/* Many sections: wrap onto a second line instead of truncating the labels. */
-.youtube-manage [role="tablist"] {
-  flex-wrap: wrap;
-  overflow: visible;
-}
-
-.youtube-manage [role="tab"] {
-  flex: none;
-}

@@ -331,6 +331,7 @@ export function YouTubeManage({
   return (
     <div className="youtube-manage">
       <SubTabs
+        wrap
         label={t("YouTube management")}
         value={section}
         items={youtubeSections(browser)}

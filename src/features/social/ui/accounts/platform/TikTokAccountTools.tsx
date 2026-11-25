@@ -111,6 +111,7 @@ export function TikTokAccountTools({
     >
       <div className="tiktok-tools">
         <SubTabs
+          wrap
           label={t("TikTok section")}
           value={group.value}
           onValueChange={(value) => {
