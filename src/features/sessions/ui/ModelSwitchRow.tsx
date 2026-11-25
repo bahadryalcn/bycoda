@@ -1,6 +1,7 @@
 import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { useT } from "../../../shared/i18n";
 import { ArrowLeftRight, Clock } from "../../../shared/ui/icons";
 import { supportsProviderAccounts } from "../../providers/public/providerAccounts";
@@ -179,9 +180,13 @@ function stepNoteLabel(step: ModelSwitchStep, t: ReturnType<typeof useT>) {
 function StepNote({ step, note }: { step: ModelSwitchStep; note?: string }) {
   if (!note) return null;
   return (
-    <Tooltip label={note} asChild>
-      <Clock className="icon-sm shrink-0" tone={step.note === "summary" ? "warning" : "muted"} />
-    </Tooltip>
+    <InfoTooltip
+      label={note}
+      icon={<Clock className="icon-sm" tone={step.note === "summary" ? "warning" : "muted"} />}
+      className="shrink-0"
+    >
+      {note}
+    </InfoTooltip>
   );
 }
 

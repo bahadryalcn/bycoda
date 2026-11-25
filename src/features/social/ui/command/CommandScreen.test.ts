@@ -177,3 +177,19 @@ it("shows a Host failure on the screen instead of hiding it", async () => {
   await click(buttonWithText("Plan"));
   expect(element.textContent).toContain("Connect a social account before asking AI to plan.");
 });
+
+it("keeps a failed Snapchat account refresh recoverable in Command", async () => {
+  const client = fakeClient();
+  const sectionSnapshot = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Account snapshot unavailable."))
+    .mockResolvedValue({ snapshot: { accounts: [] } });
+  client.sectionSnapshot = sectionSnapshot;
+  render(client);
+  await settle();
+  expect(element.textContent).toContain("Could not read the accounts. Try again.");
+  expect(element.textContent).not.toContain("Account snapshot unavailable.");
+  await click(buttonWithText("Try again"));
+  expect(sectionSnapshot).toHaveBeenCalledTimes(2);
+  expect(element.textContent).not.toContain("Could not read the accounts. Try again.");
+});

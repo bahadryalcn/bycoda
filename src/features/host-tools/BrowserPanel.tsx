@@ -575,7 +575,7 @@ function ProjectBrowserPanel({
         });
     }, 20);
   };
-  const action = async (work: () => Promise<unknown>, _keepSelection?: { current: boolean }) => {
+  const action = async (work: () => Promise<unknown>) => {
     if (pending.current || !alive.current || !activeRef.current) return;
     pending.current = true;
     const version = generation.current;
@@ -585,13 +585,7 @@ function ProjectBrowserPanel({
       await work();
     } catch (cause) {
       if (alive.current && version === generation.current) {
-        setError(
-          cause instanceof BrowserDraftDeliveryUncertainError
-            ? t(cause.message)
-            : cause instanceof Error
-              ? cause.message
-              : String(cause),
-        );
+        setError(errorText(cause));
       }
     } finally {
       if (version === generation.current) {
@@ -1788,14 +1782,11 @@ function ProjectBrowserPanel({
                   variant="ghost"
                   disabled={busy}
                   onClick={() =>
-                    void action(
-                      async () => {
-                        if (mode.current)
-                          await request("browser.annotation.clear", { captureId: capture.id });
-                        setCaptures((items) => items.filter((item) => item.id !== capture.id));
-                      },
-                      { current: true },
-                    ).catch(() => {})
+                    void action(async () => {
+                      if (mode.current)
+                        await request("browser.annotation.clear", { captureId: capture.id });
+                      setCaptures((items) => items.filter((item) => item.id !== capture.id));
+                    }).catch(() => {})
                   }
                 >
                   {t("Remove selection")}
@@ -1841,7 +1832,6 @@ function ProjectBrowserPanel({
                 variant="primary"
                 disabled={!canInput || uncertainDelivery}
                 onClick={() => {
-                  const deliveryFailed = { current: false };
                   if (selection) {
                     setCaptures((items) => [
                       ...items.filter((item) => item.id !== selection.id),
@@ -1873,7 +1863,6 @@ function ProjectBrowserPanel({
                           composerWindow,
                         );
                       } catch (cause) {
-                        deliveryFailed.current = true;
                         if (cause instanceof BrowserDraftDeliveryUncertainError)
                           setUncertainDelivery(true);
                         throw cause;
@@ -1896,7 +1885,7 @@ function ProjectBrowserPanel({
                     );
                     if (!newerDraft) cancelSelection();
                     setNotice(t("Added to composer. Review the attachment and send when ready."));
-                  }, deliveryFailed);
+                  });
                 }}
               >
                 {error ? t("Retry adding selection") : t("Add selection to composer")}

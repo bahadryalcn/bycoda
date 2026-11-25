@@ -82,7 +82,9 @@ export function ConnectAccountDialog({
   const [picked, setPicked] = useState<string[]>(() =>
     initialProjectId ? [initialProjectId] : [],
   );
-  const { error, is, write } = useAccountWrite(t("The account could not be added. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The account could not be added. Try again."),
+  );
 
   const choosePlatform = (next: SocialPlatform) => {
     const nextMethod = defaultConnectionMethod(next);
@@ -192,7 +194,10 @@ export function ConnectAccountDialog({
           <Select
             label={t("Account type")}
             value={accountType}
-            options={types.map((item) => ({ value: item, label: accountTypeText(item) }))}
+            options={types.map((item) => ({
+              value: item,
+              label: accountTypeText(item),
+            }))}
             onValueChange={setAccountType}
           />
         ) : null}
@@ -224,12 +229,14 @@ export function ConnectAccountDialog({
         {canCreateAccount(platform, method) ? (
           <div className="social-dialog-links">
             <Button variant="link" size="sm" onClick={() => setKind("signup")}>
-              {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+              {t("Create a new {p0} account instead", {
+                p0: SOCIAL_PLATFORM_NAMES[platform],
+              })}
             </Button>
           </div>
         ) : null}
         {error ? (
-          <InlineError details={error}>
+          <InlineError details={details}>
             {t("The account could not be added. Try again.")}
           </InlineError>
         ) : null}

@@ -13,7 +13,9 @@ vi.mock("./AccountPermissions", () => ({ AccountPermissions: () => null }));
 vi.mock("./AutonomySettings", () => ({ AutonomySettings: () => null }));
 vi.mock("./BrowserSettings", () => ({ BrowserSettings: () => null }));
 vi.mock("./ReplyRules", () => ({ ReplyRules: () => null }));
-vi.mock("./platform/InstagramAccountTools", () => ({ InstagramAccountTools: () => null }));
+vi.mock("./platform/InstagramAccountTools", () => ({
+  InstagramAccountTools: () => null,
+}));
 
 let element: HTMLDivElement, root: Root;
 
@@ -105,7 +107,10 @@ it("hides the Connect action when the capability is available", () => {
 });
 
 it("disables the account actions silently while the Host is offline (the shell shows the one notice)", () => {
-  const client = { browserBegin: vi.fn(), request: vi.fn() } as unknown as SocialClient;
+  const client = {
+    browserBegin: vi.fn(),
+    request: vi.fn(),
+  } as unknown as SocialClient;
   act(() =>
     root.render(
       createElement(AccountDetail, {

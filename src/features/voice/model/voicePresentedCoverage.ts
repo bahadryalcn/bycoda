@@ -101,6 +101,8 @@ export const presentedOmitted = {
     "EffortScale",
     "ColorSwatchRow",
     "PrivateEmail",
+    "NoticeCard",
+    "StatusGlyph",
   ],
   /** Menus, dialogs, sheets and tooltips would open a second overlay stack inside the drawer. */
   overlay: [
@@ -181,10 +183,10 @@ export const presentedOmitted = {
     "SettingsFeedback",
     "SettingsSaveBar",
     "TabDirtyDot",
+    "TargetChips",
     "Toast",
     "ToastRegion",
     "ToastSlot",
-    "TransientNotice",
     "WindowChromeInset",
     "WindowTitleBarAbove",
   ],

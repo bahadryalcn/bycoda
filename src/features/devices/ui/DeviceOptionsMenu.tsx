@@ -117,6 +117,7 @@ export function DeviceOptionsMenu({
             variant="item"
             loading={addDevice.loading}
             disabled={addDevice.disabled}
+            disabledReason={addDevice.disabledReason}
             onClick={addDevice.onClick}
           >
             <MessageSquarePlus className="icon-sm" aria-hidden />
@@ -144,6 +145,7 @@ export function DeviceOptionsMenu({
           iconOnly
           label={t("Zoom out")}
           disabled={zoom <= 1}
+          disabledReason={t("Minimum zoom reached")}
           onClick={() => onZoom(Math.max(1, zoom - 0.25))}
         >
           <Minus className="icon-sm" aria-hidden />
@@ -153,6 +155,7 @@ export function DeviceOptionsMenu({
           className="device-panel-zoom-value"
           tooltip={t("Fit to panel")}
           disabled={zoom === 1}
+          disabledReason={t("Already fitted to panel")}
           onClick={() => onZoom(1)}
         >
           {formatNumber(zoom, { style: "percent" })}
@@ -162,6 +165,7 @@ export function DeviceOptionsMenu({
           iconOnly
           label={t("Zoom in")}
           disabled={zoom >= 3}
+          disabledReason={t("Maximum zoom reached")}
           onClick={() => onZoom(Math.min(3, zoom + 0.25))}
         >
           <Plus className="icon-sm" aria-hidden />

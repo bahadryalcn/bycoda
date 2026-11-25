@@ -75,6 +75,13 @@ export function GoalFinalReview({
             variant="secondary"
             size="sm"
             disabled={busy || goal.stale || !goal.finalReviewSupported}
+            disabledReason={
+              goal.stale
+                ? t("The host is offline.")
+                : !goal.finalReviewSupported
+                  ? t("Update the selected host to recheck final acceptance.")
+                  : undefined
+            }
             onClick={onRecheckFinal}
           >
             {t("Recheck final acceptance")}

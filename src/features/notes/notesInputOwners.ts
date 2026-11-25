@@ -961,9 +961,6 @@ export function noteWorkOwner(work: NativeInputWork) {
   const scope = tickets.get(work);
   return scope && !scope.finished && !scope.requestedDone ? scope.owner : undefined;
 }
-export function notesInputAllowed() {
-  return noteActivityOwner().allowed();
-}
 
 function samePublicationValue(value: unknown, snapshot: unknown): boolean {
   if (Object.is(value, snapshot)) return true;

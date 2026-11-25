@@ -110,7 +110,10 @@ function DeviceRow({
       label={
         <span className="flex min-w-0 items-center gap-2">
           {device.isCurrent ? (
-            <InfoTooltip icon={<Laptop aria-hidden className="icon-sm shrink-0" tone="accent" />}>
+            <InfoTooltip
+              label={t("This desktop")}
+              icon={<Laptop aria-hidden className="icon-sm shrink-0" tone="accent" />}
+            >
               {t("This desktop")}
             </InfoTooltip>
           ) : (

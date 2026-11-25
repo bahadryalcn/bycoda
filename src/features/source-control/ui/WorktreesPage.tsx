@@ -87,7 +87,7 @@ export function WorktreesPage({
     tree: Worktree;
     review: RemoteWorktreeRemovalReview;
   }>();
-  const [reviewingProject, setReviewingProject] = useState<string>();
+  const [reviewingPath, setReviewingPath] = useState<string>();
   const reviewRequest = useRef<object | undefined>(undefined);
   const [refreshing, setRefreshing] = useState(false);
   const removals = useBackgroundRemovals();
@@ -101,7 +101,7 @@ export function WorktreesPage({
     "Deleting worktrees runs on this computer, so it is unavailable for a project on a connected machine.",
   );
   const [managedWorkspaces, setManagedWorkspaces] = useState<ManagedWorkspace[] | null>(null);
-  const [managedLoading, setManagedLoading] = useState(true);
+  const [managedStatus, setManagedStatus] = useState<"loading" | "failed" | "ready">("loading");
   const managedPaths = new Set(managedWorkspaces?.map((workspace) => pathKey(workspace.path)));
   const worktrees = rawWorktrees.filter((tree) => !managedPaths.has(pathKey(tree.path)));
   const revealWorktree = (path: string) => {
@@ -118,8 +118,8 @@ export function WorktreesPage({
         key={project}
         cwd={project}
         onInventory={(inventory) => {
-          setManagedLoading(inventory === null);
-          if (inventory !== null) setManagedWorkspaces(inventory);
+          setManagedStatus(inventory.status);
+          if (inventory.status === "ready") setManagedWorkspaces(inventory.workspaces);
         }}
         renderHeader={(refreshManaged, managedBusy, managedDisabled) => (
           <header className={styles.header}>
@@ -136,10 +136,10 @@ export function WorktreesPage({
                   setDeleting(undefined);
                   setRemoteReview(undefined);
                   reviewRequest.current = undefined;
-                  setReviewingProject(undefined);
+                  setReviewingPath(undefined);
                   setRevealFailure(undefined);
                   setManagedWorkspaces(null);
-                  setManagedLoading(true);
+                  setManagedStatus("loading");
                 }}
               />
               <div className={styles.actions}>
@@ -208,7 +208,7 @@ export function WorktreesPage({
         policyCollapsed={!boundary}
         hasWorktreeMatches={(query) =>
           !data ||
-          managedLoading ||
+          managedStatus !== "ready" ||
           !!error ||
           !!loadError ||
           worktrees.some((tree) =>
@@ -227,18 +227,23 @@ export function WorktreesPage({
                 {t("Loading worktrees…")}
               </LoadingText>
             )}
-            {managedLoading && (
+            {managedStatus === "loading" && (
               <LoadingText delay={false} inset="row">
                 {t("Loading managed workspaces…")}
               </LoadingText>
             )}
-            {data && !worktrees.length && !managedWorkspaces?.length && (
-              <EmptyState
-                size="inline"
-                inset="row"
-                description={t("Create a worktree to work on another branch in a separate folder.")}
-              />
-            )}
+            {data &&
+              managedStatus === "ready" &&
+              !worktrees.length &&
+              !managedWorkspaces?.length && (
+                <EmptyState
+                  size="inline"
+                  inset="row"
+                  description={t(
+                    "Create a worktree to work on another branch in a separate folder.",
+                  )}
+                />
+              )}
             {worktrees
               .filter((tree) =>
                 `${tree.path} ${tree.branch ?? tree.head}`
@@ -267,12 +272,14 @@ export function WorktreesPage({
                   (remoteProject
                     ? !remoteRemovalAvailable
                       ? remoteLifecycleNotice
-                      : reviewingProject === project
-                        ? t("Wait for managed workspaces to load.")
+                      : reviewingPath === tree.path
+                        ? t("Checking worktree removal…")
                         : undefined
-                    : managedLoading
+                    : managedStatus === "loading"
                       ? t("Wait for managed workspaces to load.")
-                      : undefined);
+                      : managedStatus === "failed"
+                        ? t("Deletion is unavailable until Refresh succeeds.")
+                        : undefined);
                 return (
                   <WorktreeRow
                     key={tree.path}
@@ -292,12 +299,13 @@ export function WorktreesPage({
                     onDelete={() => {
                       setError(undefined);
                       if (!remoteProject) {
+                        if (managedStatus !== "ready") return;
                         setDeleting(tree);
                         return;
                       }
                       const request = {};
                       reviewRequest.current = request;
-                      setReviewingProject(project);
+                      setReviewingPath(tree.path);
                       void reviewRemoteWorktreeRemoval(project, tree.path)
                         .then(
                           (review) => {
@@ -320,7 +328,7 @@ export function WorktreesPage({
                           },
                         )
                         .finally(() => {
-                          if (reviewRequest.current === request) setReviewingProject(undefined);
+                          if (reviewRequest.current === request) setReviewingPath(undefined);
                         });
                     }}
                   />
@@ -380,6 +388,10 @@ export function WorktreesPage({
           tree={deleting}
           sessionCount={worktreeSessionIds(deleting, liveSessions).length}
           onRemove={async (cwd, path, force, deleteSessions, deleteBranch) => {
+            if (managedStatus !== "ready") {
+              throw new Error(t("Deletion is unavailable until Refresh succeeds."));
+            }
+            if (managedPaths.has(pathKey(path))) throw new Error(t("This is a managed workspace."));
             // Check predictable blockers before the dialog closes; nothing is destroyed yet.
             await onCheckRemove(cwd, path, force);
             const tree = deleting;

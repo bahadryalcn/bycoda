@@ -162,7 +162,9 @@ export function ServerForwards({
                   ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                   : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
               </Text>
-              {status?.error ? <InlineError details={status.error} /> : null}
+              {status?.error ? (
+                <InlineError details={status.error}>{t("Port forwarding failed")}</InlineError>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 {/* Until the status is verified the badge says so; no second "unknown" control. */}
                 {verified ? (
@@ -315,7 +317,9 @@ export function ServerForwards({
             </div>
           </form>
         </Disclosure>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? (
+          <InlineError details={error}>{t("Port forwarding action failed")}</InlineError>
+        ) : null}
         {statusError ? (
           <InlineError retry={{ onRetry: () => refresh(server.id) }}>{statusError}</InlineError>
         ) : null}

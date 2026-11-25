@@ -1,3 +1,4 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { useRef, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
@@ -25,7 +26,7 @@ import { OutreachBoard } from "./OutreachBoard";
 import { PeopleTable } from "./PeopleTable";
 import { PersonPanel } from "./PersonPanel";
 import { SegmentBuilder } from "./SegmentBuilder";
-import { removeFromList, suppressPeople } from "./audienceBulk";
+import { removeFromList, suppressPeople, type BulkResult } from "./audienceBulk";
 import { deleteCollection } from "./collectionDelete";
 import { collectionKind, listDisplayName } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
@@ -53,6 +54,9 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   const [notice, setNotice] = useState<string>();
   const [noticeTone, setNoticeTone] = useState<"success" | "warning" | "info">("success");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [optOutFailures, setOptOutFailures] = useState<
+    (BulkResult["failed"][number] & { name: string })[]
+  >([]);
   const [error, setError] = useState<string>();
   const [aiBusy, setAiBusy] = useState(false);
   const [aiSteps, setAiSteps] = useState<number>();
@@ -179,8 +183,8 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     }
   }
 
-  async function optOutSelected() {
-    if (bulkBusy) return;
+  async function optOutSelected(ids = selectedIds) {
+    if (bulkBusy || !ids.length) return;
     const ok = await confirm({
       title: t("Stop contacting these people?"),
       message: t("They will not be sent any message on any channel. Nothing is deleted."),
@@ -191,7 +195,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     setBulkBusy(true);
     setError(undefined);
     try {
-      const result = await suppressPeople(client, selectedIds);
+      const result = await suppressPeople(client, ids);
       setNoticeTone(result.failed.length ? "warning" : "success");
       setNotice(
         result.failed.length
@@ -201,7 +205,19 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
             })
           : t("{p0} people opted out", { p0: formatNumber(result.done) }),
       );
-      setSelected(new Set());
+      const failed = new Set(result.failed.map((item) => item.personId));
+      setOptOutFailures(
+        result.failed.map((item) => ({
+          ...item,
+          name:
+            people.find((person) => person.id === item.personId)?.name ??
+            optOutFailures.find((previous) => previous.personId === item.personId)?.name ??
+            item.personId,
+        })),
+      );
+      setSelected(
+        (current) => new Set([...current].filter((id) => !ids.includes(id) || failed.has(id))),
+      );
       data.reload();
     } catch (err) {
       setError(presentRemoteError(err, { explicit: true }));
@@ -354,6 +370,30 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
         </div>
 
         {notice ? <InlineMessage tone={noticeTone}>{notice}</InlineMessage> : null}
+        {optOutFailures.length ? (
+          <section aria-label={t("Result")}>
+            <ul className="audience-list">
+              {optOutFailures.map(({ personId, name, reason }) => (
+                <li key={personId}>
+                  <InlineError details={redactDiagnosticText(reason)}>
+                    {t("{p0}: {p1}", { p0: name, p1: t("Failed") })}
+                  </InlineError>
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant="link"
+              loading={bulkBusy}
+              onClick={() => {
+                void optOutSelected(optOutFailures.map(({ personId }) => personId)).catch(
+                  () => undefined,
+                );
+              }}
+            >
+              {t("Retry")}
+            </Button>
+          </section>
+        ) : null}
         {error ? <InlineError>{error}</InlineError> : null}
 
         <TabPanel value="people">

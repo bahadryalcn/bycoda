@@ -4,6 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -323,7 +324,13 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             <InlineMessage tone="info">{statusLabel()}</InlineMessage>
           ) : null}
         </div>
-        {error && <Alert tone="danger">{error}</Alert>}
+        {error && (
+          <Alert
+            tone="danger"
+            title={t("ACP operation failed.")}
+            extra={<ErrorDetails detail={error} title={t("ACP operation failed.")} />}
+          />
+        )}
         {configs.map((config) => (
           <div
             key={config.id}

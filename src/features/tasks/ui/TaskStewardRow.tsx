@@ -95,7 +95,11 @@ export function StewardRow({
           disabled={busy}
           onCheckedChange={() => onToggle(steward)}
         />
-        <InlineTextAction disabled={busy || Boolean(steward.run)} onClick={() => onRunNow(steward)}>
+        <InlineTextAction
+          disabled={busy || Boolean(steward.run)}
+          disabledReason={steward.run ? t("A run is already in progress.") : undefined}
+          onClick={() => onRunNow(steward)}
+        >
           {t("Run now")}
         </InlineTextAction>
         <InlineMoreAction

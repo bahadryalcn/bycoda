@@ -2,7 +2,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 
@@ -47,9 +47,12 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [proposal, setProposal] = useState<RuleSimplifySuggestion>();
-  const { error, is, write } = useAccountWrite(t("The rule could not be changed. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The rule could not be changed. Try again."),
+  );
   const confirmation = useConfirm();
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads this account's reply rules from the Host; `alive` drops a read that settles after the account changed.
   useEffect(() => {
     let alive = true;
     client.sectionSnapshot({ section: "rules" }).then(
@@ -67,7 +70,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
     };
   }, [account.id, attempt, client]);
 
-  const reload = useCallback(() => setAttempt((value) => value + 1), []);
+  const reload = () => setAttempt((value) => value + 1);
   const projectId = rules?.[0]?.projectId ?? projects[0]?.id;
   // Only prerequisites the owner cannot see are explained; working and loading are visible.
   const reviewReason = disabled
@@ -187,7 +190,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
           ))}
         </div>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

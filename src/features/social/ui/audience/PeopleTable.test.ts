@@ -112,21 +112,22 @@ describe("PeopleTable", () => {
     expect(props.onOpen).toHaveBeenCalledWith("p1");
   });
 
-  it("shows the platforms, the stage, the score and at most two tags with a +N overflow", () => {
+  it("shows platforms and score, names the status icon, and opens all tags", () => {
     renderTable();
     const [adaRow, graceRow] = Array.from(document.querySelectorAll("tbody tr"));
     expect(adaRow!.querySelector('[aria-label="X"]')).not.toBeNull();
     expect(adaRow!.querySelector('[role="meter"]')).toBeNull();
-    expect(adaRow!.textContent).toContain("New");
+    expect(adaRow!.querySelector('[aria-label="New"]')).not.toBeNull();
     expect(adaRow!.textContent).toContain("87");
-    expect(adaRow!.textContent).toContain("vip");
+    expect(adaRow!.querySelector('button[aria-label="Tags"]')).not.toBeNull();
 
     expect(graceRow!.textContent).not.toContain("No account");
     expect(graceRow!.textContent).toContain("–");
-    expect(graceRow!.textContent).toContain("alpha");
-    expect(graceRow!.textContent).toContain("bravo");
-    expect(graceRow!.textContent).not.toContain("charlie");
-    expect(graceRow!.textContent).toContain("+3");
+    expect(graceRow!.textContent).not.toContain("alpha");
+    act(() => graceRow!.querySelector<HTMLButtonElement>('button[aria-label="Tags"]')!.click());
+    expect(document.body.textContent).toContain("alpha");
+    expect(document.body.textContent).toContain("bravo");
+    expect(document.body.textContent).toContain("charlie");
   });
 
   it("offers Load more only while the Host has another page", () => {
@@ -188,7 +189,7 @@ it("reserves intrinsic categorical cells and bounds long identities with full va
   expect(table.querySelector('tbody td[data-label="Status"]')?.getAttribute("data-sizing")).toBe(
     "content",
   );
-  expect(table.querySelector('tbody td[data-label="Status"]')?.textContent).toBe("New");
+  expect(table.querySelector('tbody td[data-label="Status"] [aria-label="New"]')).not.toBeNull();
   expect(table.querySelector('tbody td[data-label="Accounts"]')?.textContent).toBe("–");
   expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(name);
   expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(address);

@@ -85,6 +85,7 @@ export type SearchableSelectTriggerRender = {
     "aria-readonly"?: boolean;
     "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling";
     "aria-describedby"?: string;
+    "aria-description"?: string;
     "aria-busy"?: boolean | "true" | "false";
     "data-state": "open" | "closed";
     onClick: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -215,6 +216,8 @@ export function SearchableSelect(
     searchPlaceholder?: string;
     emptyLabel?: string;
     disabled?: boolean;
+    /** Why the picker is unavailable while `disabled`: shown as its tooltip and exposed to assistive tech. */
+    disabledReason?: string;
     layer?: number;
     variant?: "field" | "transparent" | "row" | "panel" | "pill";
     searchable?: boolean;
@@ -356,6 +359,7 @@ function SearchableSelectMenu({
   searchPlaceholder: searchPlaceholderOption,
   emptyLabel: emptyLabelOption,
   disabled = false,
+  disabledReason,
   readOnly = false,
   onClose,
   menuAttributes,
@@ -398,6 +402,7 @@ function SearchableSelectMenu({
   searchPlaceholder?: string;
   emptyLabel?: string;
   disabled?: boolean;
+  disabledReason?: string;
   layer?: number;
   variant?: "field" | "transparent" | "row" | "panel" | "pill";
   searchable?: boolean;
@@ -620,9 +625,11 @@ function SearchableSelectMenu({
     typeof tooltipSource === "string"
       ? { label: tooltipSource }
       : (tooltipSource ?? { label: selectedLabel, when: "overflow" });
+  const reason = disabled ? disabledReason?.trim() || undefined : undefined;
   const hint = useTooltip({
     ...tooltipContent,
-    label: open ? undefined : tooltipContent.label,
+    ...(reason ? { when: "always" as const } : {}),
+    label: open ? undefined : (reason ?? tooltipContent.label),
     details: open ? undefined : tooltipContent.details,
     shortcut: open ? undefined : tooltipContent.shortcut,
     describe: false,
@@ -643,6 +650,7 @@ function SearchableSelectMenu({
         )
       : triggerProps?.["aria-describedby"],
     "aria-label": triggerProps?.["aria-label"] ?? `${label}: ${selectedLabel ?? placeholder}`,
+    "aria-description": reason,
     "aria-busy": loading || triggerProps?.["aria-busy"],
     "aria-expanded": open,
     "aria-haspopup": "dialog",

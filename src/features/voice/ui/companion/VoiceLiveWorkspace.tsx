@@ -3,6 +3,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Maximize2, Minimize2 } from "../../../../shared/ui/icons";
 import { useT } from "../../../../shared/i18n";
 import { Heading } from "../../../../shared/ui/Heading";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import type { Session } from "../../../sessions/public/session";
 import { voiceLiveResults } from "../../model/voiceLiveWork";
@@ -78,17 +79,15 @@ export function VoiceLiveWorkspace({
         </Button>
       </div>
       <div className="grid min-h-0 min-w-0 flex-1 content-start gap-4 overflow-x-hidden overflow-y-auto">
-        <Suspense fallback={null}>
+        <Suspense fallback={<LoadingText>{t("Loading…")}</LoadingText>}>
           {usageReport && <UsageReportView report={usageReport} />}
           {presented && (
             <VoicePresentedAnswer
               result={presented}
               version={presentedVersion}
               observed={results}
-              onAction={(button) =>
-                onPresentedAction
-                  ? onPresentedAction(presentedVersion, button)
-                  : Promise.reject(new Error("This view cannot run actions."))
+              onAction={
+                onPresentedAction && ((button) => onPresentedAction(presentedVersion, button))
               }
             />
           )}

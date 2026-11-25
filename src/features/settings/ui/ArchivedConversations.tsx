@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Group, SettingsFeedback } from "../../../shared/ui/settings";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -97,8 +98,16 @@ export function ArchivedConversations({
               ? { label: t("Retry"), onClick: sessionsStatus.onRetry }
               : undefined
           }
+          extra={
+            sessionsStatus.error ? (
+              <ErrorDetails
+                title={t("Archived conversations could not be loaded.")}
+                detail={sessionsStatus.error}
+              />
+            ) : undefined
+          }
         >
-          {sessionsStatus.error ?? t("Archived conversations could not be loaded.")}
+          {t("Archived conversations could not be loaded.")}
         </SettingsFeedback>
       ) : archived.length === 0 ? (
         <SettingsFeedback state="empty" presentation="inset">
@@ -124,8 +133,16 @@ export function ArchivedConversations({
                     ? { label: t("Retry"), onClick: sessionsStatus.onRetry }
                     : undefined
                 }
+                extra={
+                  sessionsStatus?.error ? (
+                    <ErrorDetails
+                      title={t("This list may be incomplete.")}
+                      detail={sessionsStatus.error}
+                    />
+                  ) : undefined
+                }
               >
-                {t("This list may be incomplete.")} {sessionsStatus?.error}
+                {t("This list may be incomplete.")}
               </SettingsFeedback>
             </div>
           ) : null}
@@ -193,8 +210,16 @@ export function ArchivedConversations({
                   </div>
                   {errors[`unarchive:${session.id}`] ? (
                     <div className="settings-collection-feedback">
-                      <SettingsFeedback state="error">
-                        {errors[`unarchive:${session.id}`]}
+                      <SettingsFeedback
+                        state="error"
+                        extra={
+                          <ErrorDetails
+                            title={t("The conversation could not be unarchived.")}
+                            detail={errors[`unarchive:${session.id}`]}
+                          />
+                        }
+                      >
+                        {t("The conversation could not be unarchived.")}
                       </SettingsFeedback>
                     </div>
                   ) : null}

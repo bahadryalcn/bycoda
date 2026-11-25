@@ -53,7 +53,7 @@ it("localizes both local and hosted recovery explanations when the language chan
   await act(async () => setLanguagePreference("tr"));
   expect(container.textContent).toContain("bycoda kapandığında bu tur kesintiye uğradı.");
   await render({ message: "The host stopped this turn before it finished." });
-  expect(container.textContent).toContain("Ana makine bu turu tamamlanmadan durdurdu.");
+  expect(container.textContent).toContain("Host bu turu tamamlanmadan durdurdu.");
   expect(container.textContent).not.toContain("The host stopped");
 });
 

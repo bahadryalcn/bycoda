@@ -135,7 +135,7 @@ it("retains attachments for retry if starting the session fails", async () => {
   await attach();
   native.submitFails = true;
   await act(async () => button("Start").click());
-  expect(container.textContent).toContain("Could not start session");
+  expect(container.textContent).toContain("Could not start the session.");
   expect(container.querySelector('button[aria-label="Open image.png full screen"]')).not.toBeNull();
   expect(button("Start").disabled).toBe(false);
 });

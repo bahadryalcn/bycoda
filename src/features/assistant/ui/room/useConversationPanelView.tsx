@@ -1,5 +1,6 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { errorText } from "../../../../shared/lib/errors";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t, useLocale } from "../../../../shared/i18n";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
@@ -50,12 +51,17 @@ export function useConversationPanelView(
   const [search, setSearch] = useState<{
     query: string;
     results: AssistantMessage[];
-    settled: boolean;
+    error?: string;
   } | null>(null);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const searchActive = query.trim() !== "";
   const searchCurrent = search?.query === query ? search : null;
   const searchResults = searchActive ? (searchCurrent?.results ?? []) : null;
-  const searching = searchActive && !searchCurrent?.settled;
+  const searching = searchActive && !searchCurrent;
+  const retrySearch = () => {
+    setSearch(null);
+    setSearchAttempt((attempt) => attempt + 1);
+  };
   const dropSearchResults = (keep: (message: AssistantMessage) => boolean) =>
     setSearch((current) =>
       current ? { ...current, results: current.results.filter(keep) } : current,
@@ -95,10 +101,12 @@ export function useConversationPanelView(
         } finally {
           clearingRef.current = false;
           setClearing(false);
+          if (query.trim()) retrySearch();
         }
       },
     });
   }
+  // Debounce the current query and ignore replies superseded by query changes or clear.
   useEffect(() => {
     if (!query.trim()) return;
     let cancelled = false;
@@ -107,26 +115,18 @@ export function useConversationPanelView(
       void assistantRequest({ op: "conversations.search", query, limit: 100 })
         .then((result) => {
           if (!cancelled && epoch === searchEpoch.current)
-            setSearch({ query, results: result.messages ?? [], settled: false });
+            setSearch({ query, results: result.messages ?? [] });
         })
         .catch((cause) => {
-          const message = presentRemoteError(cause);
-          if (!cancelled && epoch === searchEpoch.current && message) setError(message);
-        })
-        .finally(() => {
-          if (!cancelled)
-            setSearch((current) =>
-              current?.query === query
-                ? { ...current, settled: true }
-                : { query, results: [], settled: true },
-            );
+          if (!cancelled && epoch === searchEpoch.current)
+            setSearch({ query, results: [], error: errorText(cause) });
         });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [assistantRequest, query, searchAttempt, searchEpoch]);
   const currentMessages = searchResults ?? messages[threadId] ?? emptyAssistantMessages;
   const visible = useMemo(
     () => visibleAssistantMessages(currentMessages, source, privacy),
@@ -210,6 +210,8 @@ export function useConversationPanelView(
 
   return {
     searchResults,
+    searchError: searchActive ? searchCurrent?.error : undefined,
+    retrySearch,
     searching,
     clearConversation,
     currentMessages,

@@ -3,14 +3,13 @@ import type {
   ModelRoutingEntry,
   ModelRoutingEntryStatus,
 } from "../../../../shared/model/host-contracts/model-routing";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
-import { GripVertical } from "../../../../shared/ui/icons";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
+import { ArrowRight, GripVertical, TriangleAlert } from "../../../../shared/ui/icons";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { supportsProviderAccounts } from "../../../providers/public/providerAccounts";
@@ -160,16 +159,20 @@ export function ModelOrderRow({
       {/* Align the secondary line with the model field when it can't sit beside it. */}
       <div className="col-start-2 col-end-3 row-start-2 flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 @min-[40rem]/model-order:col-start-4 @min-[40rem]/model-order:col-end-5 @min-[40rem]/model-order:row-start-1 @min-[40rem]/model-order:w-56 @min-[40rem]/model-order:justify-end">
         {next ? (
-          <Badge size="xs" tone="success" className="shrink-0">
-            {t("Next")}
-          </Badge>
+          <InfoTooltip
+            label={t("Next model to be used")}
+            icon={<ArrowRight className="icon-sm" aria-hidden />}
+          >
+            {t("Next model to be used")}
+          </InfoTooltip>
         ) : null}
         {status?.skip ? (
-          <OverflowTooltip label={t(skipLabels[status.skip])}>
-            <Badge size="xs" tone="warning" truncate className="max-w-36">
-              {t(skipLabels[status.skip])}
-            </Badge>
-          </OverflowTooltip>
+          <InfoTooltip
+            label={t(skipLabels[status.skip])}
+            icon={<TriangleAlert className="icon-sm" aria-hidden />}
+          >
+            {t(skipLabels[status.skip])}
+          </InfoTooltip>
         ) : null}
         {left !== accountQuota ? (
           <Text size="caption" tone="secondary" className="break-words">

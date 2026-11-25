@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { t } from "../../../shared/i18n";
 import { retainAsyncSubscription } from "../../../shared/lib/asyncSubscription";
@@ -76,7 +76,7 @@ type Options = {
       capacity?: AttachmentReadCapacity,
     ) => Promise<Attachment[]>,
   ) => void;
-  setPasteError: Dispatch<SetStateAction<string | null>>;
+  setPasteError: (value: string | null) => void;
 };
 
 /**

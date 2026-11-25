@@ -29,7 +29,6 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
 import { InlineVisualHost, type InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
-import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import {
   canOfferTranslation,
@@ -69,6 +68,7 @@ import {
   ChartBreakoutSquare,
   X,
   MessageSquare,
+  Pause,
 } from "../../../shared/ui/icons";
 import { PerformanceTraceContext } from "./performanceTraceContext";
 import {
@@ -1900,12 +1900,7 @@ function TurnMetricsBadge({
           onSelect: () => setOpen((value) => !value),
         })
       ) : (
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Turn metrics: {p0}", { p0: label })}
-          tooltip={t("Turn metrics")}
-        >
+        <Button variant="ghost" iconOnly label={t("Turn metrics: {p0}", { p0: label })}>
           <ChartBreakoutSquare className="icon-sm" strokeWidth={1.75} />
         </Button>
       )}
@@ -2741,9 +2736,15 @@ function UserMessageBlock({
         </div>
         {block.turnOutcome === "stopped" ? (
           <div className="flex justify-end">
-            <Badge tone="neutral" appearance="subtle" size="sm">
-              {t("Stopped by you")}
-            </Badge>
+            <Tooltip label={t("Stopped by you")} asChild>
+              <span
+                role="img"
+                aria-label={t("Stopped by you")}
+                className="text-(--transcript-ink-chrome)"
+              >
+                <Pause className="icon-sm" aria-hidden />
+              </span>
+            </Tooltip>
           </div>
         ) : null}
         {block.draft ? (
@@ -2893,16 +2894,11 @@ function WorkFoldLine({
             if (next !== open) onToggle();
           }}
           summaryLabel={open ? t("Hide the work") : t("Show the work")}
-          aria-live={live ? "polite" : undefined}
+          live={live}
           summary={label}
         />
       ) : (
-        <Disclosure
-          variant="step"
-          collapsible={false}
-          role={live ? "status" : undefined}
-          summary={label}
-        />
+        <Disclosure variant="step" collapsible={false} live={live} summary={label} />
       )}
     </div>
   );

@@ -57,9 +57,16 @@ const expiredPublish: Capability = {
 function fakeClient(patch: Record<string, unknown> = {}) {
   return {
     browserBegin: vi.fn(async () => ({ status: "waiting", expiresAt: 1 })),
-    browserStatus: vi.fn<SocialClient["browserStatus"]>(async () => ({ status: "connected" })),
-    browserCancelLogin: vi.fn<SocialClient["browserCancelLogin"]>(async () => ({ status: "idle" })),
-    oauthBegin: vi.fn(async () => ({ url: "https://example.test/authorize", expiresAt: 1 })),
+    browserStatus: vi.fn<SocialClient["browserStatus"]>(async () => ({
+      status: "connected",
+    })),
+    browserCancelLogin: vi.fn<SocialClient["browserCancelLogin"]>(async () => ({
+      status: "idle",
+    })),
+    oauthBegin: vi.fn(async () => ({
+      url: "https://example.test/authorize",
+      expiresAt: 1,
+    })),
     oauthStatus: vi.fn(async () => ({ status: "waiting", candidates: [] })),
     oauthSelect: vi.fn(async () => ({})),
     tokenConnect: vi.fn(async () => ({})),
@@ -70,7 +77,9 @@ function fakeClient(patch: Record<string, unknown> = {}) {
 
 it("requests the owner's chosen OAuth operations instead of always requesting publishing", async () => {
   const client = fakeClient();
-  render(client, { capabilities: [expiredPublish, { ...expiredPublish, operation: "reply" }] });
+  render(client, {
+    capabilities: [expiredPublish, { ...expiredPublish, operation: "reply" }],
+  });
   const reply = [...element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
     (input) => input.closest("label")?.textContent?.includes("Replies"),
   );
@@ -175,7 +184,9 @@ it("shows the platform's own error from the status check", async () => {
 
 it("keeps an organization account from starting until the numeric organization ID is entered", async () => {
   const client = fakeClient();
-  render(client, { account: account({ platform: "linkedin", accountType: "organization" }) });
+  render(client, {
+    account: account({ platform: "linkedin", accountType: "organization" }),
+  });
   const start = () => button("Connect in browser");
   expect(start()?.disabled).toBe(true);
   const field = element.querySelector<HTMLInputElement>('input:not([type="checkbox"])');
@@ -193,7 +204,11 @@ it("starts the browser sign-in from the row, the owner finishes it there, and a 
   const onChanged = render(client, {
     account: account({ connection: "browser", connected: true }),
     capabilities: [
-      { ...expiredPublish, reasonCode: "browser.reconnect", source: "browser" } as Capability,
+      {
+        ...expiredPublish,
+        reasonCode: "browser.reconnect",
+        source: "browser",
+      } as Capability,
     ],
   });
   await act(async () => button("Sign in again in the browser")?.click());
@@ -214,7 +229,10 @@ it("updates an open browser sign-in through verification and failure without a c
   client.browserStatus
     .mockResolvedValueOnce({ status: "waiting" })
     .mockResolvedValueOnce({ status: "checking" })
-    .mockResolvedValueOnce({ status: "failed", error: "The identity could not be verified." });
+    .mockResolvedValueOnce({
+      status: "failed",
+      error: "The identity could not be verified.",
+    });
   const onChanged = render(client, {
     account: account({ platform: "reddit", connection: "browser" }),
   });
@@ -237,7 +255,9 @@ it("ignores a status check still in flight when the owner stops sign-in", async 
   const status = Promise.withResolvers<Awaited<ReturnType<SocialClient["browserStatus"]>>>();
   const client = fakeClient();
   client.browserStatus.mockReturnValueOnce(status.promise);
-  const onChanged = render(client, { account: account({ connection: "browser" }) });
+  const onChanged = render(client, {
+    account: account({ connection: "browser" }),
+  });
 
   await act(async () => button("Sign in in the browser")?.click());
   expect(client.browserStatus).toHaveBeenCalledExactlyOnceWith("a1", true);
@@ -249,7 +269,9 @@ it("ignores a status check still in flight when the owner stops sign-in", async 
 });
 
 it("labels the first browser sign-in differently from signing in again", () => {
-  render(fakeClient(), { account: account({ connection: "browser", connected: false }) });
+  render(fakeClient(), {
+    account: account({ connection: "browser", connected: false }),
+  });
   expect(button("Sign in in the browser")).toBeTruthy();
   expect(button("Sign in again in the browser")).toBeUndefined();
 });
@@ -272,7 +294,11 @@ it("says plainly when the sign-in could not be started and keeps the actions ava
 it("connects a token account with the account id only, because the Host holds the credential", async () => {
   const client = fakeClient();
   const onChanged = render(client, {
-    account: account({ platform: "whatsapp", accountType: "business", connection: "token" }),
+    account: account({
+      platform: "whatsapp",
+      accountType: "business",
+      connection: "token",
+    }),
   });
   expect(element.querySelector('input[type="password"]')).toBeNull();
   await act(async () => button("Connect")?.click());
@@ -287,7 +313,11 @@ it("does not refresh as connected when the token connection fails", async () => 
     }),
   });
   const onChanged = render(client, {
-    account: account({ platform: "whatsapp", accountType: "business", connection: "token" }),
+    account: account({
+      platform: "whatsapp",
+      accountType: "business",
+      connection: "token",
+    }),
   });
   await act(async () => button("Connect")?.click());
   expect(onChanged).not.toHaveBeenCalled();
@@ -296,7 +326,11 @@ it("does not refresh as connected when the token connection fails", async () => 
 
 it("uses the channel review for Telegram and offers no one-click Connect on its capability rows", () => {
   render(fakeClient(), {
-    account: account({ platform: "telegram", accountType: "channel", connection: "token" }),
+    account: account({
+      platform: "telegram",
+      accountType: "channel",
+      connection: "token",
+    }),
     capabilities: [expiredPublish],
   });
   expect(element.querySelector('[data-testid="telegram-connect"]')).not.toBeNull();
@@ -305,9 +339,13 @@ it("uses the channel review for Telegram and offers no one-click Connect on its 
 });
 
 it("shows the X profile editor only for a connected X account", () => {
-  render(fakeClient(), { account: account({ platform: "x", connected: false }) });
+  render(fakeClient(), {
+    account: account({ platform: "x", connected: false }),
+  });
   expect(element.querySelector('[data-testid="x-profile"]')).toBeNull();
-  render(fakeClient(), { account: account({ platform: "x", connected: true }) });
+  render(fakeClient(), {
+    account: account({ platform: "x", connected: true }),
+  });
   expect(element.querySelector('[data-testid="x-profile"]')).not.toBeNull();
 });
 
@@ -325,7 +363,10 @@ it("starts nothing while the Host is offline", () => {
 });
 
 it("says on which computer the account is connected", () => {
-  render(fakeClient(), { account: account({ connected: true }), onThisComputer: false });
+  render(fakeClient(), {
+    account: account({ connected: true }),
+    onThisComputer: false,
+  });
   act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
   expect(document.body.textContent).toContain("This account is connected on another computer.");
 });
@@ -363,7 +404,12 @@ it("keeps capability details in compact status groups without hiding the connect
   render(fakeClient(), {
     capabilities: [
       expiredPublish,
-      { ...expiredPublish, operation: "reply", status: "available", reasonCode: "api.ready" },
+      {
+        ...expiredPublish,
+        operation: "reply",
+        status: "available",
+        reasonCode: "api.ready",
+      },
       {
         ...expiredPublish,
         operation: "analytics",
@@ -393,7 +439,11 @@ it("requires a LinkedIn Page target for browser organizations", async () => {
   const client = fakeClient();
   client.browserStatus.mockResolvedValueOnce({ status: "waiting" });
   render(client, {
-    account: account({ platform: "linkedin", accountType: "organization", connection: "browser" }),
+    account: account({
+      platform: "linkedin",
+      accountType: "organization",
+      connection: "browser",
+    }),
   });
   const start = button("Sign in in the browser")!;
   expect(start.disabled).toBe(true);
@@ -411,7 +461,9 @@ it("requires a LinkedIn Page target for browser organizations", async () => {
 });
 
 it("does not display idle as an active check", async () => {
-  const client = fakeClient({ browserStatus: vi.fn(async () => ({ status: "idle" })) });
+  const client = fakeClient({
+    browserStatus: vi.fn(async () => ({ status: "idle" })),
+  });
   render(client, { account: account({ connection: "browser" }) });
   await act(async () => button("Check connection")?.click());
   expect(element.textContent).toContain("Not checked");

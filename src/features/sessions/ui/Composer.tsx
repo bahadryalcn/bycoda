@@ -110,15 +110,12 @@ import {
 import { collectSkippedAttachments } from "../model/attachmentSkips";
 import {
   attachmentDraftTokens,
-  attachmentTokens,
   compactAttachmentDraftTokens,
   expandAttachmentDraftTokens,
   attachmentsDroppedByEdit,
   deleteTokenAtCaret,
-  findTokens,
   insertAtSelection,
   removeAttachmentFromText,
-  rewriteTokenMatches,
   tokensForIncoming,
 } from "../model/attachmentTokens";
 import { COMPOSER_MAX_HEIGHT, composerMaxHeight, resizeComposer } from "../model/composerResize";
@@ -232,7 +229,7 @@ import {
 } from "../../settings/public/settings";
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { useResolvedTabGroupLogo } from "../../workspace/model/tabGroups";
-import { ComposerNotices } from "./ComposerNotices";
+import { ComposerNotices, type ComposerFeedback } from "./ComposerNotices";
 import {
   supportsProviderAccounts,
   type ProviderAccountProvider,
@@ -335,6 +332,7 @@ import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import {
   applyTextareaEdit,
   applyUndoableTextareaEdit,
+  selectedComposerAttachments,
   applyMentionDeletion,
   insertDictatedText,
 } from "./composerTextareaEdit";
@@ -491,7 +489,11 @@ type Props = {
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
   onDeleteQueuedMessage?: (messageId: string) => import("../model/queueAction").QueueRemoval;
-  onEditQueuedMessage?: (messageId: string, text: string, attachments: Attachment[]) => void;
+  onEditQueuedMessage?: (
+    messageId: string,
+    text: string,
+    attachments: Attachment[],
+  ) => boolean | void;
   onQueuedMessageEditingChange?: (messageId?: string) => void;
   /** The queue in its new order, as ids; resolved against the live queue by the owner. */
   onReorderQueuedMessages?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;
@@ -538,7 +540,7 @@ type SubmissionRun = {
   submitContinuationRef: {
     current: ((value: string, queue: boolean, original: ParentAdmission) => void) | null;
   };
-  setPasteError: (value: string | null | ((current: string | null) => string | null)) => void;
+  setPasteError: (value: SetStateAction<ComposerFeedback>) => void;
   setSubmission: (value: null) => void;
   t: (key: string) => string;
 };
@@ -568,7 +570,12 @@ async function awaitSubmission(run: SubmissionRun): Promise<void> {
       rawAction.apply(() => run.submitContinuationRef.current?.(run.value, run.queue, admitted)),
     );
   } catch (error) {
-    if (parentChanged.identity() === originalIdentity) run.setPasteError(errorText(error));
+    if (parentChanged.identity() === originalIdentity) {
+      run.setPasteError({
+        title: run.t("Could not prepare the message."),
+        detail: errorText(error),
+      });
+    }
   } finally {
     rawAction.finish();
     if (parentChanged.identity() === originalIdentity && run.submitLockRef.current === token) {
@@ -858,8 +865,12 @@ export const Composer = memo(function Composer({
   /** The text, caret and skill list the slash/dollar/mention parse last ran for. */
   const tokenSyncRef = useRef<TokenSyncSnapshot | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
+  const citationCommentDrafts = useRef(new Map<string, string>());
   const replaceCitations = useCallback((next: ComposerCitation[]) => {
     if (JSON.stringify(citationsRef.current) === JSON.stringify(next)) return;
+    for (const id of citationCommentDrafts.current.keys()) {
+      if (!next.some((citation) => citation.id === id)) citationCommentDrafts.current.delete(id);
+    }
     citationsRef.current = next;
     setCitationsState(next);
     mountedClosureRef.current?.changed();
@@ -945,7 +956,7 @@ export const Composer = memo(function Composer({
     () => extractChatCitations(initialDraft ?? "").text.trim().length > 0,
   );
   // Says so when a restored draft lost an attachment whose file is gone.
-  const [pasteError, setPasteError] = useState<string | null>(
+  const [pasteError, setPasteError] = useState<ComposerFeedback>(
     () => (sessionId ? takeComposerNotice(sessionId) : undefined) ?? null,
   );
   const [plusOpen, setPlusOpen] = useState(false);
@@ -1017,7 +1028,13 @@ export const Composer = memo(function Composer({
   const [creatingSkill, setCreatingSkill] = useState(false);
   const [sessionFolderOpen, setSessionFolderOpen] = useState(false);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
-  const [sessionFolderError, setSessionFolderError] = useState<string | null>(null);
+  const [sessionFolderError, setSessionFolderError] = useState<ComposerFeedback>(null);
+  const folderLoadFailed = useStableCallback((error: unknown) =>
+    setSessionFolderError({
+      title: t("Could not refresh the session folders."),
+      detail: errorText(error),
+    }),
+  );
   const [sessionFolderPending, setSessionFolderPending] = useState(false);
   const [sessionFolderSaving, setSessionFolderSaving] = useState(false);
   const sessionFolderLoading = useRef(false);
@@ -1739,7 +1756,7 @@ export const Composer = memo(function Composer({
           setSessionFolderOpen(true);
         })
         .catch((error: unknown) => {
-          if (latestCwd() === cwd) setSessionFolderError(String(error));
+          if (latestCwd() === cwd) folderLoadFailed(error);
         })
         .finally(() => {
           sessionFolderLoading.current = false;
@@ -1749,23 +1766,20 @@ export const Composer = memo(function Composer({
     }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
-  }, [canUseSessionFolders, cwd, latestCwd]);
+  }, [canUseSessionFolders, cwd, latestCwd, folderLoadFailed]);
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !canUseSessionFolders || !sessionFolderOpen) return;
-    return subscribeSessionOrganization(
-      () => {
-        const snapshot = cachedSessionOrganization();
-        if (!snapshot) return;
-        try {
-          setSessionFolders(organizationFoldersForProject(snapshot, cwd));
-        } catch (error) {
-          setSessionFolderError(String(error));
-        }
-      },
-      (error) => setSessionFolderError(String(error)),
-    );
-  }, [canUseSessionFolders, cwd, sessionFolderOpen]);
+    return subscribeSessionOrganization(() => {
+      const snapshot = cachedSessionOrganization();
+      if (!snapshot) return;
+      try {
+        setSessionFolders(organizationFoldersForProject(snapshot, cwd));
+      } catch (error) {
+        folderLoadFailed(error);
+      }
+    }, folderLoadFailed);
+  }, [canUseSessionFolders, cwd, sessionFolderOpen, folderLoadFailed]);
 
   useEffect(() => {
     const el = ref.current;
@@ -3138,23 +3152,7 @@ export const Composer = memo(function Composer({
   };
 
   const selectedAttachments = (value: string, selectionStart: number, selectionEnd: number) => {
-    if (selectionStart === selectionEnd) return;
-    const attachments = attachmentsRef.current;
-    const matches = findTokens(value, attachments).filter(
-      (token) => token.start < selectionEnd && token.end > selectionStart,
-    );
-    if (!matches.length) return;
-    const start = Math.min(selectionStart, matches[0].start);
-    const end = Math.max(selectionEnd, matches[matches.length - 1].end);
-    const indices = [...new Set(matches.map((match) => match.index))].sort((a, b) => a - b);
-    const selected = indices.map((index) => attachments[index]);
-    const tokens = attachmentTokens(selected);
-    const text = rewriteTokenMatches(
-      value.slice(start, end),
-      matches.map((match) => ({ ...match, start: match.start - start, end: match.end - start })),
-      (match) => tokens[indices.indexOf(match.index)],
-    );
-    return { attachments, selected, text, start, end };
+    return selectedComposerAttachments(value, selectionStart, selectionEnd, attachmentsRef.current);
   };
 
   const copyAttachmentSelection = (event: ClipboardEvent<HTMLTextAreaElement>, cut: boolean) => {
@@ -3208,7 +3206,8 @@ export const Composer = memo(function Composer({
         );
       })
       .catch((error: unknown) => {
-        if (isCurrent()) setPasteError(errorText(error));
+        if (isCurrent())
+          setPasteError({ title: t("Could not copy the selection."), detail: errorText(error) });
       });
   };
 
@@ -3351,7 +3350,7 @@ export const Composer = memo(function Composer({
           .catch((reason: unknown) => {
             if (!accepted.isCurrent()) return;
             accepted.fail(reason);
-            setPasteError(errorText(reason));
+            setPasteError({ title: t("Could not read attachments."), detail: errorText(reason) });
           }),
       );
       return;
@@ -3668,9 +3667,13 @@ export const Composer = memo(function Composer({
           hideIdentityControls ? undefined : () => setModelPickerRequest((count) => count + 1)
         }
         pasteError={
-          pasteError && isVoiceSetupError(pasteError) ? t("Dictation setup is needed") : pasteError
+          typeof pasteError === "string" && isVoiceSetupError(pasteError)
+            ? t("Dictation setup is needed")
+            : pasteError
         }
-        pasteErrorAction={pasteError ? <VoiceRecoveryAction message={pasteError} /> : undefined}
+        pasteErrorAction={
+          typeof pasteError === "string" ? <VoiceRecoveryAction message={pasteError} /> : undefined
+        }
         sessionFolderError={sessionFolderError}
         sessionFolderMutationBlocked={sessionFolderMutationBlocked}
         onSessionFolderRecovered={(message) => {
@@ -3844,7 +3847,12 @@ export const Composer = memo(function Composer({
                   }
                   requestAnimationFrame(() => el.focus());
                 })()
-                  .catch((error: unknown) => setSessionFolderError(String(error)))
+                  .catch((error: unknown) =>
+                    setSessionFolderError({
+                      title: t("Could not change the session folder."),
+                      detail: errorText(error),
+                    }),
+                  )
                   .finally(() => {
                     sessionFolderLoading.current = false;
                     setSessionFolderPending(false);
@@ -3999,6 +4007,7 @@ export const Composer = memo(function Composer({
             citations={citations}
             disabled={parentClosed || !!submission}
             onChange={changeCitations}
+            drafts={citationCommentDrafts}
             inlineText={inlineActive ? draft : undefined}
           />
           {attachments.length > 0 ? (
@@ -4112,6 +4121,7 @@ export const Composer = memo(function Composer({
               hasSubagents={hasSubagents}
               onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={removeAttachment}
+              citationCommentDrafts={citationCommentDrafts}
               onChangeCitations={changeCitations}
             />
             {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}

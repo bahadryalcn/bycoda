@@ -162,7 +162,9 @@ export function SidebarUpdateFooter({
               ) : null}
               <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
             </div>
-            {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
+            {snapshot.error ? (
+              <InlineError details={snapshot.error}>{t("Could not update the app")}</InlineError>
+            ) : null}
             {notes ? (
               <>
                 <Divider decorative />

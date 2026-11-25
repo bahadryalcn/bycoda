@@ -415,13 +415,6 @@ export function cacheInboxContinuation(
   if (current) inboxListCaches.set(key, { ...current, ...result });
 }
 
-export function peekInboxItems(
-  projects: readonly { path: string }[],
-  query: InboxQuery,
-): InboxItem[] | null {
-  return peekInboxList(projects, query)?.items ?? null;
-}
-
 export function inboxListIsFresh(
   projects: readonly { path: string }[],
   query: InboxQuery,
@@ -1461,10 +1454,6 @@ export function sortInboxItems(items: InboxItem[]): InboxItem[] {
 
 export function inboxItemKey(item: InboxItem): string {
   return `${item.provider}:${inboxIdentityKey(item)}`;
-}
-
-export function githubWorkItemKey(item: GithubWorkItem): string {
-  return `${item.repo}:${item.kind}:${item.number}`;
 }
 
 export function inboxItemStatus(item: {

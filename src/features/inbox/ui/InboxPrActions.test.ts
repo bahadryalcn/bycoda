@@ -99,7 +99,10 @@ it("requires a reviewed head and permits cancelling without running an action", 
     );
   await render();
   await act(async () => button(container, "Merge pull request").click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Refresh and review");
+  // A local, already translated reason is the title itself; only raw Host text goes behind Details.
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Refresh and review the pull request before merging.",
+  );
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await render("b".repeat(40));
   await act(async () => button(container, "Merge pull request").click());

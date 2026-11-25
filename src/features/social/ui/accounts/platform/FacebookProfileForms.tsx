@@ -24,13 +24,19 @@ export function FacebookProfilePhotos({ account, client }: Props) {
   const [kind, setKind] = useState("avatar");
   const [file, setFile] = useState<File>();
   const [saved, setSaved] = useState(false);
-  const { error, is, write } = useAccountWrite(t("Could not save this change. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("Could not save this change. Try again."),
+  );
   const confirm = useConfirm();
   const label = kind === "avatar" ? t("Facebook profile picture") : t("Facebook cover photo");
   const save = async () => {
     if (
       !file ||
-      !(await confirm.confirm({ title: label, message: account.name, confirmLabel: t("Save") }))
+      !(await confirm.confirm({
+        title: label,
+        message: account.name,
+        confirmLabel: t("Save"),
+      }))
     )
       return;
     const result = await write("photo", async () => {
@@ -97,7 +103,7 @@ export function FacebookProfilePhotos({ account, client }: Props) {
         {t("Save")}
       </Button>
       {saved ? <InlineMessage tone="info">{t("Saved")}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirm.dialog}
     </div>
   );
@@ -108,10 +114,19 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   const [field, setField] = useState("bio");
   const [drafts, setDrafts] = useState<Partial<Record<string, string>>>({});
   const [existing, setExisting] = useState<Partial<Record<string, string>>>({});
-  const [name, setName] = useState<FacebookPersonalName>({ first: "", middle: "", last: "" });
+  const [name, setName] = useState<FacebookPersonalName>({
+    first: "",
+    middle: "",
+    last: "",
+  });
   const [visibility, setVisibility] = useState("show");
   const [saved, setSaved] = useState(false);
-  const { error, is, write } = useAccountWrite(t("Could not save this change. Try again."));
+  const {
+    error,
+    details: errorDetails,
+    is,
+    write,
+  } = useAccountWrite(t("Could not save this change. Try again."));
   const confirm = useConfirm();
   const details = {
     work: t("Facebook workplace"),
@@ -139,7 +154,11 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   const save = async () => {
     if (
       !valid ||
-      !(await confirm.confirm({ title: label, message: account.name, confirmLabel: t("Save") }))
+      !(await confirm.confirm({
+        title: label,
+        message: account.name,
+        confirmLabel: t("Save"),
+      }))
     )
       return;
     const patch: FacebookBrowserProfilePatch =
@@ -170,7 +189,10 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
       <Select
         label={t("Profile details")}
         value={field}
-        options={Object.entries(fields).map(([value, label]) => ({ value, label }))}
+        options={Object.entries(fields).map(([value, label]) => ({
+          value,
+          label,
+        }))}
         disabled={is("profile")}
         onValueChange={(value) => {
           setField(value);
@@ -252,7 +274,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
         {t("Save profile")}
       </Button>
       {saved ? <InlineMessage tone="info">{t("Saved")}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={errorDetails}>{error}</InlineError> : null}
       {confirm.dialog}
     </div>
   );

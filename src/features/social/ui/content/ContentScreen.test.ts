@@ -88,10 +88,10 @@ afterEach(() => {
 });
 
 describe("ContentScreen states", () => {
-  it("asks for a project before showing posts, and disables New post", () => {
+  it("asks for a project once before showing posts or a New post action", () => {
     render(props({ projectId: undefined }));
     expect(element.textContent).toContain("Choose a project at the top to see its posts.");
-    expect(buttonWith("New post")?.disabled).toBe(true);
+    expect(buttonWith("New post")).toBeUndefined();
   });
 
   it("shows one sentence, one primary action and Fill with AI when there are no posts", () => {

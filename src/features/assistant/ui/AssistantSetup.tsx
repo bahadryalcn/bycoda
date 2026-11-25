@@ -1,5 +1,4 @@
 import { errorText } from "../../../shared/lib/errors";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text, textAttributes } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -35,6 +34,7 @@ import { applyAssistantWorkPreset, assistantWorkPreset } from "../model/assistan
 import styles from "./AssistantSetup.module.css";
 
 const DRAFT_KEY = "bycoda.assistant.setup-draft";
+class SetupReadinessError extends Error {}
 const labels = {
   identity: "Identity",
   voice: "Voice provider",
@@ -109,7 +109,14 @@ export function AssistantSetup({
   const busy = useRef(false),
     liveEnvironment = useRef(environmentId);
   liveEnvironment.current = environmentId;
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ title: string; detail?: string }>();
+  function showSetupError(cause: unknown, title: string) {
+    setError(
+      cause instanceof SetupReadinessError
+        ? { title: cause.message }
+        : { title, detail: errorText(cause) },
+    );
+  }
   const providerKey = useVoiceSetupProviderKey();
   const [verifiedProvider, setVerifiedProvider] = useState<string>();
   const providerVerified = verifiedProvider === providerKey;
@@ -180,12 +187,14 @@ export function AssistantSetup({
       .some((model) => model.harness === proposedWorker.harness && model.id === proposedWorker.id);
   function assertSource() {
     if (!draft?.environmentId || liveEnvironment.current !== draft.environmentId)
-      throw new Error(t("The original setup Host is unavailable. Your draft is kept."));
+      throw new SetupReadinessError(
+        t("The original setup Host is unavailable. Your draft is kept."),
+      );
   }
   function reviewedExecution() {
     if (!proposedWorker) return patch.execution;
     if (!isRemoteProvider(proposedWorker.harness) || !defaultWorkerAvailable)
-      throw new Error(t("Choose a provider and model"));
+      throw new SetupReadinessError(t("Choose a provider and model"));
     return {
       harness: proposedWorker.harness,
       model: proposedWorker.id,
@@ -199,10 +208,10 @@ export function AssistantSetup({
     try {
       const execution =
         step === "workmode" ? (assertSource(), reviewedExecution()) : patch.execution;
-      setError("");
+      setError(undefined);
       setDraft({ ...draft, patch: { ...draft.patch, execution }, step: steps[index + 1] });
     } catch (cause) {
-      setError(errorText(cause));
+      showSetupError(cause, t("Could not continue assistant setup."));
     }
   }
   function update(next: AssistantProfilePatch) {
@@ -233,12 +242,12 @@ export function AssistantSetup({
       if (execution !== patch.execution)
         setDraft({ ...draft, patch: { ...draft.patch, execution } });
     } catch (cause) {
-      setError(errorText(cause));
+      showSetupError(cause, t("Could not continue assistant setup."));
       return;
     }
     busy.current = true;
     setPending(true);
-    setError("");
+    setError(undefined);
     try {
       for (const rule of (voiceOnly ? "" : draft.rules)
         .split(/\r?\n/)
@@ -318,11 +327,11 @@ export function AssistantSetup({
       );
       assertSource();
       if (!profile?.setupComplete || (voice && !profile.voiceSetupComplete))
-        throw new Error(t("Setup could not be confirmed by the Host."));
+        throw new SetupReadinessError(t("Setup could not be confirmed by the Host."));
       draftWriter.clear();
       onClose();
     } catch (cause) {
-      setError(presentRemoteError(cause, { explicit: true }));
+      showSetupError(cause, t("Could not save assistant setup."));
     } finally {
       busy.current = false;
       setPending(false);
@@ -336,7 +345,9 @@ export function AssistantSetup({
       }}
       size={voice ? "md" : "sm"}
       fitViewport
-      footerStart={draft && error ? <InlineError>{error}</InlineError> : undefined}
+      footerStart={
+        draft && error ? <InlineError details={error.detail}>{error.title}</InlineError> : undefined
+      }
       footer={
         draft ? (
           <ModalActions>

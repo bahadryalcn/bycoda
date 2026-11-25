@@ -1,5 +1,4 @@
-/* Doubled class so the block beats SettingsCollection.css whatever the stylesheet order. */
-.row.row {
+:global(.settings-collection-list) > .row {
   display: block;
   min-block-size: 2.875rem;
   padding: var(--ui-space-2) var(--ui-space-3);

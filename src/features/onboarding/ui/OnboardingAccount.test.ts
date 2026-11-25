@@ -19,6 +19,10 @@ vi.mock("../../account", () => ({
   setStatsChoice: account.setStats,
   subscribeAnonymousStats: () => () => undefined,
   useAccountState: () => account.state,
+  signInFailure: (message: string | null) => ({
+    title: "Sign-in did not finish. Try again.",
+    detail: message ?? undefined,
+  }),
   useAccount: () => ({
     state: account.state,
     signIn: account.signIn,
@@ -156,7 +160,9 @@ describe("onboarding account step", () => {
   it("returns to the step with the error and keeps Continue on failure", async () => {
     account.state = { phase: "signed-out", notice: "sign-in-failed", message: "Network down" };
     await render();
-    expect(text()).toContain("Network down");
+    // The translated title is visible; the raw host message stays behind Details.
+    expect(text()).toContain("Sign-in did not finish. Try again.");
+    expect(text()).not.toContain("Network down");
     expect(text()).toContain("Continue");
     account.state = { phase: "signed-out", notice: "declined", message: null };
     await render();

@@ -197,10 +197,15 @@ describe("file editor line endings", () => {
     // The failed write passes through the save queue before its catch handler
     // restores the autosave timer. Wait for that failure to settle first.
     await act(async () => {
-      await vi.waitFor(() =>
-        expect(container.textContent).toContain("Save failed: disk unavailable"),
-      );
+      await vi.waitFor(() => expect(container.textContent).toContain("Save failed"));
     });
+    // The status bar shows only "Save failed"; the raw error is behind its Details control.
+    act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click(),
+    );
+    expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toContain(
+      "disk unavailable",
+    );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(FILE_EDITOR_AUTOSAVE_DELAY_MS);

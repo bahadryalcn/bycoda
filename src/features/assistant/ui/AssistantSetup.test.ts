@@ -399,7 +399,11 @@ it("keeps reviewed values and rules after a failed save and retries against the 
   state.request.mockRejectedValueOnce(new Error("Fixture save unavailable"));
   await render();
   await start();
+  expect(document.body.textContent).toContain("Could not save assistant setup.");
+  expect(document.body.textContent).not.toContain("Fixture save unavailable");
+  await click("Details");
   expect(document.body.textContent).toContain("Fixture save unavailable");
+  await click("Details");
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual(draft("host-a"));
   expect(state.close).not.toHaveBeenCalled();
   await start();

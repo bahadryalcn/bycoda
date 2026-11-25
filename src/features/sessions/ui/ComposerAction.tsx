@@ -58,12 +58,13 @@ export function ComposerAction({
     );
   }
   if (busy) {
+    const queueIsPrimary = followUpAction === "queue";
     const showFollowUp = (hasValue && allowBusySubmit && !disabled) || !!submitting;
     return (
       <>
         {showFollowUp ? (
           <>
-            {onQueue ? (
+            {onQueue && !queueIsPrimary ? (
               <Button
                 motion="none"
                 iconOnly
@@ -84,17 +85,20 @@ export function ComposerAction({
               tone="accent"
               motion="none"
               iconOnly={!busyLabel}
-              label={label}
-              shortcut="Enter"
-              aria-description={busyLabel}
-              loading={submitting === "send"}
+              label={queueIsPrimary ? (busyLabel ?? label) : label}
+              shortcut={
+                queueIsPrimary && onQueue && queueShortcut ? `Enter / ${queueShortcut}` : "Enter"
+              }
+              aria-description={queueIsPrimary ? undefined : busyLabel}
+              data-usage-guide={queueIsPrimary ? "queue-button" : undefined}
+              loading={queueIsPrimary ? !!submitting : submitting === "send"}
               loadingLabel={t("Sending…")}
-              disabled={submitting === "queue"}
+              disabled={!queueIsPrimary && submitting === "queue"}
               startIcon={
                 followUpAction === "steer" ? (
                   <span className="composer-steer-icon icon-sm" aria-hidden="true" />
                 ) : busyLabel ? (
-                  <ArrowUp className="icon-sm" strokeWidth={2} />
+                  <ListEnd className="icon-sm" strokeWidth={1.75} />
                 ) : undefined
               }
               onClick={onSend}
@@ -115,9 +119,6 @@ export function ComposerAction({
           label={t("Stop")}
           shortcut={stopShortcut}
           data-usage-guide="stop-button"
-          data-composer-stop-optional={
-            showFollowUp && hasValue && onQueue && !submitting && !stopping ? "" : undefined
-          }
           loading={stopping}
           loadingLabel={t("Stopping…")}
           onClick={onStop}

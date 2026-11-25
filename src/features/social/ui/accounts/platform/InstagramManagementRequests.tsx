@@ -71,7 +71,10 @@ export function InstagramManagementRequests({
     );
   const dismiss = async (item: InstagramManagementRequest) => {
     const done = await write(item.id, () =>
-      client.request("instagram.management.dismiss", { accountId, id: item.id }),
+      client.request("instagram.management.dismiss", {
+        accountId,
+        id: item.id,
+      }),
     );
     if (done) remove(item);
   };
@@ -107,7 +110,9 @@ export function InstagramManagementRequests({
         if (action.type === "post") {
           const result = await client.browserInstagramPost(accountId, action.change);
           if (result.deletion) {
-            await queryClient.invalidateQueries({ queryKey: [...scope, "post-deletion"] });
+            await queryClient.invalidateQueries({
+              queryKey: [...scope, "post-deletion"],
+            });
             if (result.deletion === "review") {
               setUncertain((current) => new Set(current).add(item.id));
               await queryClient.invalidateQueries({ queryKey: requestsKey });

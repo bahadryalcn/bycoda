@@ -64,7 +64,7 @@ function ScopedTemplateMenu({ scope, draft, templateId, busy, onApply }: Templat
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [nameOwner, setNameOwner] = useState<string>();
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ details?: string } | null>(null);
   const all = [...BUILTIN_TASK_WORKFLOWS, ...profiles];
   const custom = profiles.find((profile) => profile.id === templateId);
   const profileName = (profile: TaskWorkflowProfile) =>
@@ -75,13 +75,11 @@ function ScopedTemplateMenu({ scope, draft, templateId, busy, onApply }: Templat
     setNaming(false);
   };
   const attempt = (operation: () => void) => {
-    setError("");
+    setError(null);
     try {
       operation();
     } catch (failure) {
-      setError(
-        failure instanceof Error ? failure.message : t("The template could not be updated."),
-      );
+      setError({ details: failure instanceof Error ? failure.message : undefined });
     }
   };
   const latestForEdit = () => {
@@ -183,7 +181,12 @@ function ScopedTemplateMenu({ scope, draft, templateId, busy, onApply }: Templat
                   maxLength={120}
                   onChange={(event) => setName(event.target.value)}
                 />
-                <Button type="button" disabled={!name.trim()} onClick={save}>
+                <Button
+                  type="button"
+                  disabled={!name.trim()}
+                  disabledReason={name.trim() ? undefined : t("Enter a template name first.")}
+                  onClick={save}
+                >
                   {t("Save")}
                 </Button>
               </div>
@@ -192,7 +195,17 @@ function ScopedTemplateMenu({ scope, draft, templateId, busy, onApply }: Templat
         ]
       : []),
     ...(error
-      ? [{ kind: "content" as const, id: "error", node: <InlineError>{error}</InlineError> }]
+      ? [
+          {
+            kind: "content" as const,
+            id: "error",
+            node: (
+              <InlineError details={error.details}>
+                {t("The template could not be updated.")}
+              </InlineError>
+            ),
+          },
+        ]
       : []),
   ];
   return (

@@ -49,7 +49,7 @@ function job(
     kind,
     status,
     scheduledAt,
-    accountId: "x1",
+    accountId: ["c3", "c4"].includes(campaignId) ? "l1" : "x1",
     payload: { text: "", media: [] },
   } as unknown as SocialJob;
 }
@@ -71,6 +71,7 @@ function render(patch: Partial<ContentListProps> = {}) {
     onAccountFilter: vi.fn(),
     onStatusFilter: vi.fn(),
     onOpen: vi.fn(),
+    onReviewProgram: vi.fn(),
     ...patch,
   };
   act(() => root.render(createElement(ContentList, props)));
@@ -146,11 +147,13 @@ describe("ContentList", () => {
   it("lists every saved post by name with its state", () => {
     render();
     expect(names()).toEqual(["Draft idea", "Queued post", "Sent post", "Failed post"]);
-    const rows = [...element.querySelectorAll(".content-row")].map((row) => row.textContent ?? "");
-    expect(rows[0]).toContain("Draft");
-    expect(rows[1]).toContain("Scheduled");
-    expect(rows[2]).toContain("Sent");
-    expect(rows[3]).toContain("Failed");
+    const rows = [...element.querySelectorAll('.content-row-meta [role="img"]')];
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Draft",
+      "Scheduled",
+      "Sent",
+      "Failed",
+    ]);
   });
 
   it.each([
@@ -233,9 +236,36 @@ describe("ContentList", () => {
     render({ programs });
     const section = element.querySelector(".content-programs")!;
     expect(section.textContent).toContain("Weekly tip");
-    expect(section.textContent).toContain("Active");
-    expect(section.textContent).toContain("Paused");
-    expect(section.textContent).toContain("Cancelled");
-    expect(section.querySelectorAll("button")).toHaveLength(0);
+    expect(
+      [...section.querySelectorAll('[role="img"]')].map((icon) => icon.getAttribute("aria-label")),
+    ).toEqual(["Active", "Paused", "Cancelled"]);
+    expect(section.querySelectorAll("button.content-row")).toHaveLength(3);
   });
+});
+
+it("opens the selected paused program for review", () => {
+  const program = { id: "program-1", name: "Repeat launch", enabled: false } as SocialProgram;
+  const onReviewProgram = vi.fn();
+  render({ programs: [program], onReviewProgram });
+  const review = [...element.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Repeat launch"),
+  );
+  expect(review).toBeDefined();
+  act(() => review!.click());
+  expect(onReviewProgram).toHaveBeenCalledWith(program);
+});
+
+it("filters a multi-account post by each matching job and displays mixed outcomes", () => {
+  const campaign = {
+    ...queuedPost,
+    variants: [...queuedPost.variants, { ...queuedPost.variants[0]!, accountId: "l1" }],
+  };
+  const jobs = [job("c2", "failed", 10), { ...job("c2", "succeeded", 20), accountId: "l1" }];
+  render({ campaigns: [campaign], jobs, accountFilter: "x1", statusFilter: "failed" });
+  expect(names()).toEqual(["Queued post"]);
+  expect(element.querySelector('.content-row-meta [aria-label="Failed"]')).not.toBeNull();
+  expect(element.querySelector('.content-row-meta [aria-label="Sent"]')).toBeNull();
+  render({ campaigns: [campaign], jobs });
+  expect(element.querySelector('.content-row-meta [aria-label="Failed"]')).not.toBeNull();
+  expect(element.querySelector('.content-row-meta [aria-label="Sent"]')).not.toBeNull();
 });

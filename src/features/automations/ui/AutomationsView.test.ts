@@ -558,8 +558,14 @@ it("shows run-history read failures with retry instead of claiming the automatio
   // The runs are a section of the same page, not another tab.
   expect(container.querySelector('[role="tab"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "History is unavailable",
+    "Could not load recent runs.",
   );
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Details: Could not load recent runs."]')!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("History is unavailable");
   expect(container.textContent).not.toContain("This automation has not run yet.");
   failHistory = false;
   const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -870,7 +876,12 @@ it("keeps toggle progress on its automation and allows retry after a failed chan
   await act(async () => fail(new Error("Automation unavailable")));
   expect(toggle.hasAttribute("aria-busy")).toBe(false);
   expect(toggle.getAttribute("aria-checked")).toBe("true");
-  expect(container.textContent).toContain("Automation unavailable");
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Details: Automation action failed."]')!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("Automation unavailable");
   invoke.mockImplementation(previous);
   await act(async () => toggle.click());
   expect(invoke.mock.calls.filter(([command]) => command === "automations_upsert")).toHaveLength(2);
@@ -951,7 +962,12 @@ it.each([false, true])(
       expect(form.getAttribute("aria-busy")).toBe("false");
       expect(name.disabled).toBe(false);
       expect(name.value).toBe("Submitted review");
-      expect(container.textContent).toContain("Save unavailable");
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('[aria-label="Details: Automation action failed."]')!
+          .click(),
+      );
+      expect(document.body.textContent).toContain("Save unavailable");
       await changeInput(name, "Retry review");
       expect(name.value).toBe("Retry review");
     } finally {
@@ -1144,14 +1160,12 @@ it("keeps a failed run's full error outside its disabled session button", async 
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Open Failed history"]')!.click(),
   );
-  const detail = [...container.querySelectorAll("div")].find(
-    (element) => element.textContent === error && element.children.length === 0,
+  const details = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Details: Automation run failed or was skipped."]',
   )!;
-  expect(detail).toBeDefined();
-  expect(detail.closest("button")).toBeNull();
-  expect(
-    detail.parentElement?.closest("li")?.querySelector('button[aria-disabled="true"]'),
-  ).not.toBeNull();
+  expect(details.closest("li")?.querySelector('button[aria-disabled="true"]')).not.toBeNull();
+  await act(async () => details.click());
+  expect(document.body.textContent).toContain(error);
 });
 
 it.each([

@@ -4,7 +4,8 @@ import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { InlineTextAction } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { CollectionFooter, ContinuousList } from "../../../shared/ui/ContinuousList";
 import { CollectionRow } from "../../../shared/ui/CollectionRow";
@@ -21,7 +22,7 @@ import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
-import { Globe, MonitorSmartphone, Plus, RefreshCw, Server } from "../../../shared/ui/icons";
+import { Globe, MonitorSmartphone, Plus, RefreshCw, Server, Zap } from "../../../shared/ui/icons";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { parseRemotePath, remoteProjectFor } from "../../connections/public/remoteProjects";
@@ -111,7 +112,7 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
       }
     : undefined;
   const machineName = machine?.name ?? t("This computer");
-  const targetError =
+  const targetUnavailableTitle =
     needsRemote && !machine
       ? t("This computer is no longer available in Connections.")
       : source && !globalOnly && !projectRecord
@@ -181,7 +182,7 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
   );
   return (
     <div className="settings-topics">
-      {targetError ? (
+      {targetUnavailableTitle ? (
         <div
           className={styles.connections}
           id="setting-mcp-servers"
@@ -195,8 +196,11 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
             <SettingsFeedback
               state="error"
               action={{ label: t("Retry"), onClick: inventory.refresh }}
+              extra={inventory.error ? <ErrorDetails detail={inventory.error} /> : undefined}
             >
-              {inventory.error || targetError}
+              {inventory.error
+                ? t("Could not load MCP computers and projects.")
+                : targetUnavailableTitle}
             </SettingsFeedback>
           )}
         </div>
@@ -661,9 +665,12 @@ function McpConnections({
                     trailing={
                       <>
                         {entry.hub?.direct && policy?.mode === "onDemand" ? (
-                          <Badge size="xs" tone="neutral">
+                          <InfoTooltip
+                            label={t("Session startup")}
+                            icon={<Zap aria-hidden className="icon-sm" />}
+                          >
                             {t("Starts with session")}
-                          </Badge>
+                          </InfoTooltip>
                         ) : null}
                         {/* The dot carries the quiet default; only an exception is written. */}
                         {status === "configured" ? null : statusLabel(status)}
@@ -731,6 +738,13 @@ function McpConnections({
           id="mcp-loading"
           label={t("Start MCP servers")}
           disabled={!policy || hub.saving || !!hub.loading?.corrupt}
+          disabledReason={
+            !policy
+              ? t("Wait for the MCP settings to load.")
+              : hub.saving
+                ? t("Saving…")
+                : undefined
+          }
         >
           <SharedSelect
             hideLabel

@@ -281,7 +281,9 @@ describe("onboarding workflow", () => {
   it("reports a failed discovery and still allows adding a folder", async () => {
     mock.discover.mockRejectedValue(new Error("Access denied"));
     await projects();
-    expect(container.textContent).toContain("Access denied");
+    // The translated title is visible; the raw error stays behind Details.
+    expect(container.textContent).toContain("Could not read this computer’s conversation history.");
+    expect(container.textContent).not.toContain("Access denied");
     await click("Choose project folders");
     expect(mock.remember).toHaveBeenCalledWith("G:/new-project");
     expect(onImported).toHaveBeenCalledOnce();
@@ -296,7 +298,8 @@ describe("onboarding workflow", () => {
     });
     await projects();
     await click("Import 1 projects");
-    expect(container.textContent).toContain("Transcript unreadable");
+    expect(container.textContent).toContain("Could not import G:/app.");
+    expect(container.textContent).not.toContain("Transcript unreadable");
     expect(onFinish).not.toHaveBeenCalled();
   });
   it("persists workspace choices and reuses them when setup reopens", async () => {
@@ -510,8 +513,9 @@ describe("onboarding workflow", () => {
     expect(container.textContent).not.toContain("Stale save failed");
     mock.language.mockRejectedValueOnce(new Error("Save failed"));
     await click("Switch language");
-    expect(container.textContent).toContain("Save failed");
-    await click("Continue");
+    expect(container.textContent).toContain("Could not change the language.");
     expect(container.textContent).not.toContain("Save failed");
+    await click("Continue");
+    expect(container.textContent).not.toContain("Could not change the language.");
   });
 });

@@ -14,43 +14,22 @@
   gap: 2px;
   padding-block-start: 12px;
 }
-/* Narrow: one track. Wide: a scope column (project, storage) beside the managed
-   workspace and worktree collections, which need the room. */
-.columns {
-  display: flex;
-  flex-direction: column;
-  gap: var(--settings-group-gap, 28px);
-  min-inline-size: 0;
-}
-.scopeColumn,
-.mainColumn {
-  min-inline-size: 0;
-}
-
-.project {
-  min-inline-size: 0;
-}
-
-.scope {
-  overflow-wrap: anywhere;
-  margin-block-start: 4px;
-}
-
 .actions,
 .rowActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
-/* Row grammar matches WorkspaceManagedRow: [status dot] [identity] [actions]. The doubled class beats SettingsCollection.css whatever the stylesheet order. */
-.row.row {
+/* These rows use the status, identity and actions columns of the worktree roster. */
+:global(.settings-collection-list) > .row {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: var(--ui-space-3) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px 10px;
-  min-block-size: 46px;
-  padding: 8px 10px 8px 14px;
+  gap: var(--ui-space-1) var(--ui-space-3);
+  min-block-size: 2.875rem;
+  padding-block: var(--ui-space-2);
+  padding-inline: var(--ui-space-3);
 }
 
 .dot {
@@ -60,7 +39,7 @@
 .identity {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 
@@ -68,7 +47,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 6px;
+  gap: var(--ui-space-1) var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -90,7 +69,7 @@
 
 .row .rowActions {
   justify-self: end;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .location {

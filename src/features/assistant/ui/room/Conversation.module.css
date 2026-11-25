@@ -188,6 +188,10 @@
   padding: var(--ui-space-2) var(--ui-space-5);
 }
 
+.narrowAction {
+  display: none;
+}
+
 @container assistant-room (max-width: 900px) {
   .layout {
     grid-template-columns: 180px minmax(0, 1fr);
@@ -201,5 +205,23 @@
   }
   .messages {
     padding: var(--ui-space-4) var(--ui-space-3);
+  }
+}
+
+@container assistant-room (max-width: 540px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .layout:not([data-show-transcript]) > .transcript,
+  .layout[data-show-transcript] > .threadList {
+    display: none;
+  }
+  .narrowAction {
+    display: block;
+    flex: none;
+  }
+  .threadChip {
+    flex: 0 1 auto;
+    min-inline-size: 0;
   }
 }

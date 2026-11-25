@@ -1,5 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -27,6 +28,7 @@ import { attachmentDropVerdict } from "../model/attachmentDrop";
 import {
   clipboardTextWithAttachments,
   isFileReferenceText,
+  copyMessage,
   messageFromClipboard,
   nativeClipboardAttachments,
 } from "../../../platform/tauri/clipboard";
@@ -56,7 +58,11 @@ import {
   type QueuedEditSuggestionScope,
   type QueuedEditSuggestionsHandle,
 } from "./QueuedEditSuggestions";
-import { applyMentionDeletion } from "./composerTextareaEdit";
+import {
+  applyMentionDeletion,
+  applyUndoableTextareaEdit,
+  selectedComposerAttachments,
+} from "./composerTextareaEdit";
 import {
   addDraftAttachments,
   applyQueuedEdit,
@@ -79,6 +85,10 @@ import {
   mutateParentInput,
 } from "../data/parentInputClosure";
 
+type CutVersion = QueuedEditDraft & { start: number; end: number };
+
+type EditFeedback = { title: string; detail: string };
+
 type Props = {
   parentSessionId?: string;
   message: QueuedMessage;
@@ -87,7 +97,7 @@ type Props = {
   references?: ComposerReferenceContext;
   /** Enables the composer's `/` and `@` menus for this chat. */
   suggestions?: QueuedEditSuggestionScope;
-  onSave: (text: string, attachments: Attachment[]) => void;
+  onSave: (text: string, attachments: Attachment[]) => boolean | void;
   /** Take the message out of the queue; offered when nothing would be left to send. */
   onRemove: () => void;
   onCancel: () => void;
@@ -105,20 +115,25 @@ export function QueuedMessageEditDialog(props: Props) {
 
 /** Dispatch may have happened before a callback threw, so a throw keeps the input as unknown. */
 function dispatchSave<Input extends object>(
-  onSave: (text: string, attachments: Attachment[]) => void,
+  onSave: Props["onSave"],
   next: { text: string; attachments: Attachment[] },
-  retained: { update: (input: Input & { disposition: string }) => unknown },
+  retained: { update: (input: Input & { disposition: string }) => unknown; release: () => void },
   input: Input,
-  outcome: { accepted: () => void; failed: (message: string) => void },
+  outcome: { accepted: () => void; refused: () => void; failed: (detail: string) => void },
 ) {
   try {
-    onSave(next.text, next.attachments);
+    if (onSave(next.text, next.attachments) === false) {
+      retained.release();
+      outcome.refused();
+      return;
+    }
     retained.update({ ...input, disposition: "accepted-unknown" });
     outcome.accepted();
   } catch (reason) {
     // The visible error is not an authoritative rejection; keep the original input as unknown.
     retained.update({ ...input, disposition: "dispatch-unknown" });
-    outcome.failed(presentRemoteError(reason, { explicit: true }));
+    const { message, details } = describeRemoteError(reason);
+    outcome.failed([...new Set([message, details].filter(Boolean))].join("\n\n"));
   }
 }
 
@@ -155,6 +170,7 @@ function QueueEditContent({
   // Quotes live beside the text, as in the composer; the row's text keeps them serialized.
   const [source] = useState(() => extractChatCitations(message.text));
   const body = { ...message, text: source.text };
+  const citationCommentDrafts = useRef(new Map<string, string>());
   const [citations, setCitations] = useState<ComposerCitation[]>(source.citations);
   const [inlineAttachments, setInlineAttachments] = useState<ReadonlySet<string> | null>(null);
   const inlineActive = inlineAttachments !== null;
@@ -162,7 +178,7 @@ function QueueEditContent({
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState<QueuedEditDraft>(() => queuedEditDraft(body));
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | EditFeedback | null>(null);
   const [loadingAttachments, setLoadingAttachments] = useState(0);
   const pendingAttachments = useRef(0);
   const pendingSlots = useRef(new Set<string | symbol>());
@@ -170,6 +186,8 @@ function QueueEditContent({
   const dropBox = useRef<HTMLDivElement>(null);
   const dropFeedback = useExternalDropFeedback();
   const draftRef = useRef(draft);
+  const applyingCut = useRef(false);
+  const cuts = useRef<{ before: CutVersion; after: CutVersion; native: boolean }[]>([]);
   /** Where the caret goes once the next draft is rendered. */
   const pendingCaret = useRef<number | null>(null);
   /** Attachments added here: theirs to release if the edit does not keep them. */
@@ -303,7 +321,8 @@ function QueueEditContent({
           parentChanged();
           setError(null);
         },
-        failed: (message) => setError(message),
+        refused: () => setError(t("Could not save changes.")),
+        failed: (detail) => setError({ title: t("Could not save changes."), detail }),
       });
     });
 
@@ -360,9 +379,35 @@ function QueueEditContent({
     else parentChanged();
   };
 
+  const restoreCut = (field: HTMLTextAreaElement, version: CutVersion) => {
+    updateDraft(version);
+    field.value = version.text;
+    field.setSelectionRange(version.start, version.end);
+  };
+
+  const findCut = (undo: boolean, next?: string) =>
+    cuts.current.find(({ before, after, native }) => {
+      const from = undo ? after : before;
+      const to = undo ? before : after;
+      return (
+        from.text === draftRef.current.text &&
+        from.attachments === draftRef.current.attachments &&
+        (next === undefined ? !native : next === to.text)
+      );
+    });
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
     if (!parentChanged.canMutate()) return;
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "z") {
+      const undo = !event.shiftKey;
+      const cut = findCut(undo);
+      if (cut) {
+        event.preventDefault();
+        restoreCut(event.currentTarget, undo ? cut.before : cut.after);
+        return;
+      }
+    }
     if (event.key === "Escape" && menus.current?.dismiss()) {
       event.preventDefault();
       return;
@@ -391,6 +436,54 @@ function QueueEditContent({
       return;
     pendingCaret.current = edit.caret;
     updateDraft(edit.draft);
+  };
+
+  const copySelection = (event: ClipboardEvent<HTMLTextAreaElement>, cut: boolean) => {
+    const el = event.currentTarget;
+    const { value, selectionStart, selectionEnd } = el;
+    const before = draftRef.current;
+    const selection = selectedComposerAttachments(
+      value,
+      selectionStart,
+      selectionEnd,
+      before.attachments,
+    );
+    if (!selection) return;
+    event.preventDefault();
+    const isCurrent = () => alive.current && field.current === el && parentChanged.canMutate();
+    if (!isCurrent()) return;
+    const { text, selected, start, end } = selection;
+    void copyMessage(text, selected)
+      .then(() => {
+        if (
+          !cut ||
+          !isCurrent() ||
+          draftRef.current !== before ||
+          el.value !== value ||
+          el.selectionStart !== selectionStart ||
+          el.selectionEnd !== selectionEnd
+        )
+          return;
+        const edited = editDraftText(before, value.slice(0, start) + value.slice(end), start);
+        const entry = {
+          before: { ...before, start, end },
+          after: { ...edited.draft, start: edited.caret, end: edited.caret },
+          native: false,
+        };
+        cuts.current = [entry, ...cuts.current].slice(0, 12);
+        // Added files remain owned by the editor until Save or discard, including cut files.
+        updateDraft(entry.after);
+        entry.native = applyUndoableTextareaEdit(
+          el,
+          entry.after.text,
+          entry.after.start,
+          applyingCut,
+        );
+      })
+      .catch((cause: unknown) => {
+        if (isCurrent())
+          setError({ title: t("Could not copy the selection."), detail: errorText(cause) });
+      });
   };
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -517,10 +610,12 @@ function QueueEditContent({
             else attach(incoming, layout);
             const limit = capacity.notice();
             if (limit && alive.current)
-              setError((previous) => [previous, limit].filter(Boolean).join(" "));
+              setError((previous) =>
+                [typeof previous === "string" ? previous : null, limit].filter(Boolean).join(" "),
+              );
           }),
         isAlive: () => alive.current,
-        setError,
+        setError: (detail) => setError({ title: t("Could not read attachments."), detail }),
         release: () => {
           capacity.finish();
           pendingAttachments.current -= 1;
@@ -672,13 +767,21 @@ function QueueEditContent({
             onChange={() => {}}
             onInput={(event) => {
               const el = event.currentTarget;
-              change(el.value, el.selectionStart ?? el.value.length);
+              if (!parentChanged.canMutate()) return;
+              const { inputType } = event.nativeEvent as InputEvent;
+              const undo = inputType === "historyUndo";
+              const cut = (undo || inputType === "historyRedo") && findCut(undo, el.value);
+              if (cut) restoreCut(el, undo ? cut.before : cut.after);
+              else if (!applyingCut.current && el.value !== draftRef.current.text)
+                change(el.value, el.selectionStart ?? el.value.length);
               menus.current?.sync(el);
             }}
             onClick={(event) => menus.current?.sync(event.currentTarget)}
             onKeyUp={(event) => menus.current?.sync(event.currentTarget, true)}
             onSelect={(event) => menus.current?.sync(event.currentTarget, true)}
             onKeyDown={onKeyDown}
+            onCopy={(event) => copySelection(event, false)}
+            onCut={(event) => copySelection(event, true)}
             onPaste={onPaste}
             frameProps={{ ref: dropBox }}
             frameClassName="[--composer-draft-max-height:20rem]"
@@ -689,6 +792,7 @@ function QueueEditContent({
                     citations={citations}
                     disabled={parentClosed}
                     onChange={changeCitations}
+                    drafts={citationCommentDrafts}
                     inlineText={inlineActive ? draft.text : undefined}
                   />
                   {draft.attachments.length > 0 ? (
@@ -760,6 +864,7 @@ function QueueEditContent({
               hasSubagents={false}
               onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={remove}
+              citationCommentDrafts={citationCommentDrafts}
               onChangeCitations={changeCitations}
             />
           </PromptField>
@@ -783,7 +888,15 @@ function QueueEditContent({
               {t("Missing files are dropped from the message when you save.")}
             </Text>
           ) : null}
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {typeof error === "string" ? (
+            <Alert tone="danger">{error}</Alert>
+          ) : error ? (
+            <Alert
+              tone="danger"
+              title={error.title}
+              extra={<ErrorDetails title={error.title} detail={error.detail} />}
+            />
+          ) : null}
         </div>
       </Modal>
       {confirmingDiscard ? (

@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "../../../shared/ui/icons";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
@@ -23,9 +24,9 @@ export function NewProjectFolderGroup() {
     newProjectFolderSetting.subscribe,
   );
   const [home, setHome] = useState<string | null>(null);
-  const [homeError, setHomeError] = useState<string | null>(null);
+  const [homeError, setHomeError] = useState<string | true | null>(null);
   const [homeAttempt, setHomeAttempt] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
 
@@ -37,7 +38,7 @@ export function NewProjectFolderGroup() {
       (value) => {
         if (current) {
           if (typeof value !== "string" || !value.trim()) {
-            setHomeError(t("Could not read your home folder. Retry or choose a folder."));
+            setHomeError(true);
             return;
           }
           setHome(value);
@@ -74,8 +75,13 @@ export function NewProjectFolderGroup() {
       if (path) {
         newProjectFolderSetting.save(path);
         if (newProjectFolderSetting.load() !== path)
-          throw new Error(t("Could not save. Your previous choice was kept."));
+          setError({ title: t("Could not save. Your previous choice was kept.") });
       }
+    } catch (cause) {
+      setError({
+        title: t("Could not choose the folder for new projects."),
+        detail: errorText(cause),
+      });
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -89,17 +95,25 @@ export function NewProjectFolderGroup() {
         label={t("Folder for new projects")}
         feedback={
           error ? (
-            <SettingsFeedback state="error">{error}</SettingsFeedback>
+            <SettingsFeedback
+              state="error"
+              extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
+            >
+              {error.title}
+            </SettingsFeedback>
           ) : !chosen && homeError ? (
             <SettingsFeedback
               state="error"
+              extra={
+                typeof homeError === "string" ? <ErrorDetails detail={homeError} /> : undefined
+              }
               action={{
                 label: t("Retry"),
                 disabled: busy,
                 onClick: () => setHomeAttempt((attempt) => attempt + 1),
               }}
             >
-              {homeError}
+              {t("Could not read your home folder. Retry or choose a folder.")}
             </SettingsFeedback>
           ) : undefined
         }
@@ -109,7 +123,7 @@ export function NewProjectFolderGroup() {
           loading={busy}
           disabled={busy}
           loadingLabel={t("Choosing folder…")}
-          onClick={() => choose().catch((cause: unknown) => setError(errorText(cause)))}
+          onClick={() => void choose()}
         >
           {chosen || automatic || t("Choose folder…")}
         </Button>
@@ -122,7 +136,7 @@ export function NewProjectFolderGroup() {
             onClick={() => {
               setError(null);
               if (!restoreNewProjectFolderDefault())
-                setError(t("Could not save. Your previous choice was kept."));
+                setError({ title: t("Could not save. Your previous choice was kept.") });
             }}
           >
             <RotateCcw aria-hidden />

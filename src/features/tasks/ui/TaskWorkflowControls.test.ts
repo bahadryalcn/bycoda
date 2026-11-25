@@ -121,8 +121,10 @@ it("preserves concurrent edits and the typed template name on reopen", async () 
   await typeName("Keep this name");
   await click("Save");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "changed in another window",
+    "The template could not be updated.",
   );
+  await click("Details");
+  expect(document.body.textContent).toContain("changed in another window");
   await click("Remove template");
   expect(loadTaskWorkflows(scope)).toEqual([concurrent]);
   await click("Template: Original");
@@ -137,8 +139,10 @@ it("preserves corrupt saved data and the current draft", async () => {
   const onApply = await render();
   await click("Template");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "Existing saved data was preserved",
+    "The template could not be updated.",
   );
+  await click("Details");
+  expect(document.body.textContent).toContain("Existing saved data was preserved");
   expect(localStorage.getItem(key)).toBe("invalid saved data");
   expect(onApply).not.toHaveBeenCalled();
 });

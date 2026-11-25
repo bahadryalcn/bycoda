@@ -14,6 +14,7 @@ import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -1056,9 +1057,17 @@ export function NotesView({
         }}
       >
         {actionFailure ? (
-          <Alert tone="danger" className="">
-            {t("Could not load or update notes: ")}
-            {actionFailure.message}{" "}
+          <Alert
+            tone="danger"
+            className=""
+            title={t("Could not load or update notes.")}
+            extra={
+              <ErrorDetails
+                title={t("Could not load or update notes.")}
+                detail={actionFailure.message}
+              />
+            }
+          >
             {actionFailure.retry ? (
               <Button
                 variant="ghost"
@@ -1085,9 +1094,13 @@ export function NotesView({
         {[...drafts]
           .filter(([id, draft]) => id !== selectedId && draft.error)
           .map(([id, draft]) => (
-            <Alert tone="danger" key={id} className="">
-              {t("Unsaved note: ")}
-              {draft.error}{" "}
+            <Alert
+              tone="danger"
+              key={id}
+              className=""
+              title={t("Could not save note")}
+              extra={<ErrorDetails title={t("Could not save note")} detail={draft.error ?? ""} />}
+            >
               <Button variant="ghost" size="sm" type="button" onClick={() => setSelectedId(id)}>
                 {t("Recover draft")}
               </Button>
@@ -1872,7 +1885,7 @@ function NoteEditor({
       saveTimer.current = null;
       saveTimerWork.current = null;
       return enqueueNoteSave(note.id, persist, work)
-        .catch((error) => setSaveError(String(error)))
+        .catch((error) => setSaveError(errorText(error)))
         .finally(() => {
           delayed?.();
           work();
@@ -2206,11 +2219,12 @@ function NoteEditor({
             </div>
           </Text>
           {saveError ? (
-            <Alert tone="danger" className="note-detail-error">
-              <span>
-                {t("Could not save note: ")}
-                {saveError}
-              </span>
+            <Alert
+              tone="danger"
+              className="note-detail-error"
+              title={t("Could not save note")}
+              extra={<ErrorDetails title={t("Could not save note")} detail={saveError} />}
+            >
               <Button
                 variant="ghost"
                 size="sm"

@@ -73,9 +73,16 @@ export function SnapchatReviews({
   const [reviews, setReviews] = useState<Review[]>();
   const [selected, setSelected] = useState<Review>();
   const confirmation = useConfirm();
-  const { error, is, write } = useAccountWrite(t("Something went wrong. Try again."));
+  const {
+    error,
+    details: errorDetails,
+    is,
+    write,
+  } = useAccountWrite(t("Something went wrong. Try again."));
   const read = async () => {
-    const found = await client.request<Review[]>("snapchat.review.list", { accountId });
+    const found = await client.request<Review[]>("snapchat.review.list", {
+      accountId,
+    });
     setReviews(found.filter((item) => item.accountId === accountId));
   };
   const decide = (item: Review, approve: boolean) =>
@@ -148,7 +155,7 @@ export function SnapchatReviews({
             </Text>
           ) : null}
         </div>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={errorDetails}>{error}</InlineError> : null}
         {!error && !is("read") && !is("decision") && reviews?.length === 0 ? (
           <EmptyState size="inline" context="list" title={t("Nothing to review.")} />
         ) : null}

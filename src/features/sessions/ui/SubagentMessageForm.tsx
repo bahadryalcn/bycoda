@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -145,21 +146,20 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
             {relay.blockedReason}
           </Text>
         ) : null}
-        <Text
-          role="status"
-          as="p"
+        <LiveText
           size="caption"
           tone={relay.status === "rejected" ? "danger" : "secondary"}
-          className={` empty:hidden `}
-        >
-          {relay.status === "accepted"
-            ? direct
-              ? t("Message accepted. It goes to this agent as its next input.")
-              : t("Request added to the main conversation. Delivery is not yet confirmed.")
-            : relay.status === "rejected"
-              ? t("Request was not accepted. Your message is kept here; try again.")
-              : null}
-        </Text>
+          className="empty:hidden"
+          text={
+            relay.status === "accepted"
+              ? direct
+                ? t("Message accepted. It goes to this agent as its next input.")
+                : t("Request added to the main conversation. Delivery is not yet confirmed.")
+              : relay.status === "rejected"
+                ? t("Request was not accepted. Your message is kept here; try again.")
+                : ""
+          }
+        />
         <div className="flex flex-wrap items-center justify-end gap-2">
           <InfoTooltip className="me-auto" label={t("How messaging works")}>
             {direct

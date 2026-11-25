@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MAX_ATTACHMENTS, MAX_EMBED_BYTES } from "../model/attachments";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -78,6 +79,10 @@ function chipCount() {
   return container.querySelectorAll("[data-attachment-chip]").length;
 }
 
+function detail() {
+  return openErrorDetails(container);
+}
+
 function alert() {
   return container.querySelector('[role="alert"]')?.textContent ?? null;
 }
@@ -115,7 +120,11 @@ async function waitForAlert() {
 
 async function send() {
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click(),
+    container
+      .querySelector<HTMLButtonElement>(
+        'button[aria-label="Send"], button[aria-label="Queue message"]',
+      )!
+      .click(),
   );
 }
 
@@ -175,8 +184,8 @@ it("shows failed audio paste writes, cancels a waiting Send, and retains text fo
   await send();
   await act(async () => fail(new Error("disk full")));
   await waitForAlert();
-  expect(alert()).toContain("recording.wav");
-  expect(alert()).toContain("disk full");
+  expect(detail()).toContain("recording.wav");
+  expect(detail()).toContain("disk full");
   expect(field.value).toBe("keep this draft");
   expect(submit).not.toHaveBeenCalled();
   invoke.mockResolvedValue("/tmp/recording.wav");
@@ -526,7 +535,7 @@ it("reports a copy that holds nothing attachable", async () => {
   paste(render(), "file:///home/dev/.DS_Store");
   await waitForAlert();
 
-  expect(alert()).toBe("Nothing to attach. The file may have been moved, renamed, or deleted.");
+  expect(detail()).toBe("Nothing to attach. The file may have been moved, renamed, or deleted.");
 });
 
 it("attaches what fits and says how many copies it left out", async () => {
@@ -581,7 +590,7 @@ it("reports a clipboard it could not read instead of trying the image", async ()
   const event = paste(render(), "file:///home/dev/report.pdf");
   await waitForAlert();
 
-  expect(alert()).toBe("The clipboard could not be read on this system.");
+  expect(detail()).toBe("The clipboard could not be read on this system.");
   // A failed read must not be mistaken for an empty clipboard.
   expect(invoke).not.toHaveBeenCalledWith("clipboard_image");
   // The URI is still withheld, so the error is what the user is left with.
@@ -672,6 +681,6 @@ it("reports why a clipboard image could not be attached", async () => {
   paste(render());
   await waitForAlert();
 
-  expect(alert()).toBe("Clipboard image is too large to attach (maximum 20 MB).");
+  expect(detail()).toBe("Clipboard image is too large to attach (maximum 20 MB).");
   expect(container.querySelector('[aria-label^="Open clipboard-image"]')).toBeNull();
 });

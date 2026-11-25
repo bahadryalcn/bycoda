@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -157,6 +158,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
               {error ? (
                 <SettingsFeedback
                   state="error"
+                  extra={<ErrorDetails detail={error} />}
                   action={{
                     label: t("Retry"),
                     disabled: pending !== null,
@@ -172,7 +174,6 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
                             "Could not confirm the file access operation. Refresh the status before trying again.",
                           )}
                   </p>
-                  {error}
                 </SettingsFeedback>
               ) : pending ? (
                 <SettingsFeedback state="loading" immediate={pending === "configure"}>

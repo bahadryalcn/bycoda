@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { ImagePlus, Sparkles } from "../../../../../shared/ui/icons";
@@ -382,7 +383,14 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
         </SettingsFeedback>
       ) : null}
       {appearance.chatBackgroundError ? (
-        <SettingsFeedback state="error">{appearance.chatBackgroundError}</SettingsFeedback>
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails detail={appearance.chatBackgroundError.detail} />}
+        >
+          {appearance.chatBackgroundError.operation === "remove"
+            ? t("Could not remove the chat background.")
+            : t("Could not set the chat background.")}
+        </SettingsFeedback>
       ) : null}
       {hasImage ? (
         <>

@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type { SocialClient } from "../../model/socialClient";
 import { socialContentSnapshotKey, socialQueryScope } from "../../model/socialQuery";
 import { appendSocialWorkspacePage, socialRows } from "../../model/socialWorkspace";
@@ -85,6 +86,9 @@ export function useContentData(
   const cache = useQueryClient();
   const scope = [...socialQueryScope(client), "content"] as const;
   const snapshotKey = socialContentSnapshotKey(client, projectId);
+  const snapshotScope = JSON.stringify(snapshotKey);
+  const [refreshFailure, setRefreshFailure] = useState<{ scope: string; error: unknown }>();
+  const pollError = refreshFailure?.scope === snapshotScope ? refreshFailure.error : undefined;
   const readPage = async (offsets: Offsets): Promise<ContentPage> => ({
     snapshot: (
       await client.sectionSnapshot({
@@ -112,6 +116,8 @@ export function useContentData(
     intervalMs: CONTENT_REFRESH_MS,
     read: () => readPage({}),
     merge: refreshContentPages,
+    onRefreshError: (error) =>
+      setRefreshFailure(error === undefined ? undefined : { scope: snapshotScope, error }),
   });
   const programs = useQuery({
     queryKey: [...scope, "programs", projectId ?? ""],
@@ -150,11 +156,30 @@ export function useContentData(
     scheduledJobs: scheduled.data?.jobs ?? [],
     scheduledCampaigns: scheduled.data?.campaigns ?? [],
     scheduledLoading: !!range && scheduled.isPending,
-    error:
-      (snapshot.isFetchNextPageError ? undefined : snapshot.error) ??
-      programs.error ??
-      scheduled.error ??
-      undefined,
+    error: !combined ? (snapshot.error ?? undefined) : undefined,
+    refreshError: combined
+      ? ((snapshot.isFetchNextPageError ? undefined : snapshot.error) ?? pollError)
+      : undefined,
+    programsError: programs.error ?? undefined,
+    scheduledError: scheduled.error ?? undefined,
+    scheduledUnavailable: !!range && !scheduled.data && scheduled.isError,
+    retrySnapshot: () => {
+      void snapshot
+        .refetch()
+        .then((result) => {
+          if (!result.isError)
+            setRefreshFailure((current) =>
+              current?.scope === snapshotScope ? undefined : current,
+            );
+        })
+        .catch(() => undefined);
+    },
+    retryPrograms: () => {
+      void programs.refetch().catch(() => undefined);
+    },
+    retryScheduled: () => {
+      void scheduled.refetch().catch(() => undefined);
+    },
     hasMore: snapshot.hasNextPage,
     loadingMore: snapshot.isFetchingNextPage,
     moreError: snapshot.isFetchNextPageError ? snapshot.error?.message : undefined,

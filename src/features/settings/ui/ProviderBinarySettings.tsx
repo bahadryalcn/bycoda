@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 
@@ -92,7 +93,7 @@ export function ProviderBinaryControl({
   const inspectionBusy = useRef(false);
   const mounted = useRef(true);
   const request = useRef(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
   // Callers key this control by provider, so every provider starts from fresh state.
   useEffect(() => {
@@ -119,11 +120,19 @@ export function ProviderBinaryControl({
           ...next,
           overridden: Boolean(binaryPath?.trim()),
         });
-        setError(binaryInspectionError(provider, next));
+        const problem = binaryInspectionError(provider, next);
+        setError(
+          problem
+            ? {
+                title: next.error ? t("Could not inspect the CLI executable.") : problem,
+                detail: next.error || undefined,
+              }
+            : null,
+        );
         return next;
       } catch (cause) {
         if (!mounted.current || generation !== request.current) return null;
-        setError(errorText(cause));
+        setError({ title: t("Could not inspect the CLI executable."), detail: errorText(cause) });
         return null;
       } finally {
         if (generation === request.current) {
@@ -160,14 +169,10 @@ export function ProviderBinaryControl({
     const generation = request.current + 1;
     const next = await inspect(value, "save");
     if (!mounted.current || generation !== request.current || !next) return;
-    const validationError = binaryInspectionError(provider, next);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+    if (binaryInspectionError(provider, next)) return;
     if (!saveProviderBinaryPath(provider, value)) {
       setInspection(undefined);
-      setError(t("Could not save the binary path."));
+      setError({ title: t("Could not save the binary path.") });
       return;
     }
     setOverridden(true);
@@ -188,7 +193,7 @@ export function ProviderBinaryControl({
       return;
     if (!saveProviderBinaryPath(provider, null)) {
       setInspection(undefined);
-      setError(t("Could not save the binary path."));
+      setError({ title: t("Could not save the binary path.") });
       return;
     }
     setDraft("");
@@ -221,7 +226,11 @@ export function ProviderBinaryControl({
             }
           })
           .catch((cause) => {
-            if (mounted.current && generation === request.current) setError(errorText(cause));
+            if (mounted.current && generation === request.current)
+              setError({
+                title: t("Could not choose the CLI executable."),
+                detail: errorText(cause),
+              });
           })
           .finally(() => {
             if (generation === request.current) {
@@ -296,7 +305,14 @@ export function ProviderBinaryControl({
         }}
       />
       {inline ? chooseExecutable : null}
-      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
+        >
+          {error.title}
+        </SettingsFeedback>
+      ) : null}
       {inline ? <ModalFooter>{pathActions}</ModalFooter> : null}
     </form>
   );
@@ -369,10 +385,17 @@ export function ProviderBinaryControl({
                     {t("Checking the selected CLI…")}
                   </Text>
                 ) : null}
-                {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+                {error ? (
+                  <SettingsFeedback
+                    state="error"
+                    extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
+                  >
+                    {error.title}
+                  </SettingsFeedback>
+                ) : null}
                 {revealError ? (
-                  <SettingsFeedback state="error">
-                    {t("Could not open the CLI location: {p0}", { p0: revealError })}
+                  <SettingsFeedback state="error" extra={<ErrorDetails detail={revealError} />}>
+                    {t("Could not open the CLI location.")}
                   </SettingsFeedback>
                 ) : null}
                 <ModalActions>

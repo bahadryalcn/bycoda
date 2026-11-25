@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ActionHost } from "../../../shared/ui/ActionHost";
@@ -94,7 +95,11 @@ export function SharedCliAccountCard({
       layout="full"
       title={t("Accounts")}
       feedback={
-        error && !editor ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined
+        error && !editor ? (
+          <SettingsFeedback state="error" extra={<ErrorDetails detail={error} />}>
+            {t("Could not save this account.")}
+          </SettingsFeedback>
+        ) : undefined
       }
     >
       <div
@@ -208,7 +213,7 @@ export function SharedCliAccountCard({
         <ProviderAccountDialog
           editor={editor}
           working={false}
-          submitError={error ?? undefined}
+          submitError={error ? t("Could not save this account.") : undefined}
           onLabel={(next) =>
             setEditor((current) => (current ? { ...current, label: next } : current))
           }

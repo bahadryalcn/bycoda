@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { openErrorDetails } from "../../features/sessions/ui/errorDetails.fixture";
 import type { UpdaterSnapshot } from "../model/updater";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 
@@ -22,6 +23,15 @@ let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // The Details popover measures its anchor; jsdom has no ResizeObserver.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   mocks.snooze.mockClear();
   container = document.createElement("div");
   document.body.append(container);
@@ -78,7 +88,8 @@ it("shows a versionless failure and lets the user close it without snoozing", as
   });
 
   expect(dialog.querySelector("h2")?.textContent).toBe("Update failed");
-  expect(dialog.textContent).toContain("Update service unavailable");
+  expect(dialog.textContent).toContain("Could not update the app");
+  expect(openErrorDetails(dialog)).toContain("Update service unavailable");
   expect(dialog.textContent).not.toContain("Remind me tomorrow");
   const close = Array.from(dialog.querySelectorAll("button")).find(
     (button) => button.textContent?.trim() === "Close",

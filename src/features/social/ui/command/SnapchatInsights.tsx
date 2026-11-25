@@ -1,3 +1,4 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
   SnapchatEarningsQuery,
@@ -16,6 +17,7 @@ import { dateKey } from "../../../../shared/ui/date-time/values";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Select } from "../../../../shared/ui/Select";
 import { Text } from "../../../../shared/ui/Text";
 import type { Capability, SocialAccount, SocialSnapshot } from "../../model/social";
@@ -340,6 +342,9 @@ export function SnapchatInsights({
   disabled: boolean;
 }) {
   const [snapshot, setSnapshot] = useState<SocialSnapshot>();
+  const [failure, setFailure] = useState<string>();
+  const [retry, setRetry] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState("");
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll account grants only while this Host and project are visible in Command.
@@ -347,16 +352,27 @@ export function SnapchatInsights({
     if (!active || disabled) return;
     let current = true;
     const refresh = async () => {
-      const result = await client.sectionSnapshot({ section: "accounts", projectId });
-      if (current) setSnapshot(result.snapshot);
+      try {
+        const { snapshot } = await client.sectionSnapshot({ section: "accounts", projectId });
+        if (!snapshot) throw new Error("The Host did not return the account snapshot.");
+        if (current) {
+          setSnapshot(snapshot);
+          setFailure(undefined);
+        }
+      } catch (cause) {
+        if (current) setFailure(cause instanceof Error ? redactDiagnosticText(cause.message) : "");
+      } finally {
+        if (current) setLoading(false);
+      }
     };
+    setLoading(true);
     void refresh().catch(() => undefined);
     const timer = setInterval(() => void refresh().catch(() => undefined), 60_000);
     return () => {
       current = false;
       clearInterval(timer);
     };
-  }, [active, client, projectId, disabled]);
+  }, [active, client, projectId, disabled, retry]);
 
   const accounts =
     snapshot?.accounts.filter(
@@ -367,31 +383,55 @@ export function SnapchatInsights({
         (!projectId || account.grants[projectId]?.includes("read")),
     ) ?? [];
   const account = accounts.find((item) => item.id === selected) ?? accounts[0];
-  if (!account || !snapshot) return null;
+  const readPending = loading && active && !disabled;
+  if (failure === undefined && !readPending && (!account || !snapshot)) return null;
+  const executorMismatch = !!account && account.executorId !== snapshot?.executorId;
   return (
-    <Disclosure summary={t("Snapchat insights")} variant="row">
-      <div className="social-card">
-        {accounts.length > 1 ? (
-          <Select
-            label={t("Account")}
-            value={account.id}
-            onValueChange={setSelected}
-            disabled={disabled}
-            options={accounts.map((item) => ({ value: item.id, label: item.name }))}
-          />
-        ) : (
-          <Text as="p" size="secondary">
-            {account.name}
-          </Text>
-        )}
-        <AccountInsights
-          key={snapchatAccountKey(client, account)}
-          client={client}
-          account={account}
-          capabilities={snapshot.capabilities[account.id] ?? []}
-          disabled={disabled || account.executorId !== snapshot.executorId}
-        />
-      </div>
-    </Disclosure>
+    <>
+      {failure !== undefined ? (
+        <InlineError
+          details={failure}
+          retry={{
+            onRetry: () => setRetry((value) => value + 1),
+            pending: readPending,
+            disabled,
+          }}
+        >
+          {t("Could not read the accounts. Try again.")}
+        </InlineError>
+      ) : null}
+      {!snapshot && readPending ? <LoadingText>{t("Loading accounts…")}</LoadingText> : null}
+      {account && snapshot ? (
+        <Disclosure summary={t("Snapchat insights")} variant="row">
+          <div className="social-card">
+            {executorMismatch ? (
+              <InlineMessage tone="warning">
+                {t("This account is connected on another computer.")}
+              </InlineMessage>
+            ) : null}
+            {accounts.length > 1 ? (
+              <Select
+                label={t("Account")}
+                value={account.id}
+                onValueChange={setSelected}
+                disabled={disabled}
+                options={accounts.map((item) => ({ value: item.id, label: item.name }))}
+              />
+            ) : (
+              <Text as="p" size="secondary">
+                {account.name}
+              </Text>
+            )}
+            <AccountInsights
+              key={snapchatAccountKey(client, account)}
+              client={client}
+              account={account}
+              capabilities={snapshot.capabilities[account.id] ?? []}
+              disabled={disabled || executorMismatch}
+            />
+          </div>
+        </Disclosure>
+      ) : null}
+    </>
   );
 }

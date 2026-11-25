@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { openErrorDetails } from "../../../sessions/ui/errorDetails.fixture";
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -142,7 +143,8 @@ it("dismisses a request and shows a Host failure", async () => {
   expect(client.accountRequests.dismiss).toHaveBeenCalledWith("r1");
   client.accountRequests.dismiss.mockRejectedValueOnce(new Error("Request is gone."));
   await act(async () => button("Dismiss")?.click());
-  expect(element.textContent).toContain("Request is gone.");
+  expect(element.textContent).toContain("The request could not be updated. Try again.");
+  expect(openErrorDetails(element)).toContain("Request is gone.");
 });
 
 it("keeps a way to the approved account when the sign-in window cannot open", async () => {

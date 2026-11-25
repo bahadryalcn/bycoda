@@ -1,11 +1,12 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { OnboardingIllustratedStep } from "./OnboardingIllustratedStep";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
-import { useAccount } from "../../account";
+import { signInFailure, useAccount } from "../../account";
 
 /**
  * Optional sign-in step. Skipping stays fully local; signing in only adds cross-device stats.
@@ -16,6 +17,7 @@ export function OnboardingAccount() {
   const { state, signIn, cancelSignIn } = useAccount();
   const signedOut = state.phase === "signed-out" ? state : null;
   const failed = signedOut?.notice === "sign-in-failed" || signedOut?.notice === "session-ended";
+  const failure = signedOut && failed ? signInFailure(signedOut.message ?? null) : null;
   return (
     <>
       <OnboardingHeading title={t("Sign in")} />
@@ -46,10 +48,16 @@ export function OnboardingAccount() {
                 "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.",
               )}
             </Text>
-            {failed ? (
-              <Alert tone="danger">
-                {signedOut.message ?? t("Sign-in did not finish. Try again.")}
-              </Alert>
+            {failure ? (
+              <Alert
+                tone="danger"
+                title={failure.title}
+                extra={
+                  failure.detail ? (
+                    <ErrorDetails title={failure.title} detail={failure.detail} />
+                  ) : undefined
+                }
+              />
             ) : null}
             <div className="onboarding-actions">
               <Button variant="secondary" onClick={() => signIn().catch(() => undefined)}>

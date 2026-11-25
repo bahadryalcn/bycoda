@@ -38,6 +38,7 @@ type Props = {
   hasSubagents: boolean;
   onInlineAttachments: (ids: ReadonlySet<string> | null) => void;
   onRemoveAttachment: (id: string) => void;
+  citationCommentDrafts: { current: Map<string, string> };
   onChangeCitations: (citations: ComposerCitation[], removed?: number) => void;
 };
 
@@ -55,6 +56,7 @@ export function ComposerInlineEditor({
   hasSubagents,
   onInlineAttachments,
   onRemoveAttachment,
+  citationCommentDrafts,
   onChangeCitations,
 }: Props) {
   const t = useT();
@@ -244,6 +246,7 @@ export function ComposerInlineEditor({
           onChange={onChangeCitations}
           openFileComment={{ id: reference.value, anchor: active.anchor }}
           onCloseFileComment={close}
+          drafts={citationCommentDrafts}
         />
       ) : null}
       {active && attachment ? (

@@ -62,15 +62,15 @@ export function DiagnosticsSharingSetting() {
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {mode !== "off" ? (
-          <InfoPopover label={t("Share diagnostic logs")}>
-            <Text as="p" size="caption" tone="secondary">
-              {mode === "auto"
+        <InfoPopover label={t("Share diagnostic logs")}>
+          <Text as="p" size="caption" tone="secondary">
+            {mode === "off"
+              ? t("Nothing is sent. Pick a mode to review and share a report.")
+              : mode === "auto"
                 ? t("Review a crash report or weekly logs before they are sent automatically.")
                 : t("Every report requires approval.")}
-            </Text>
-          </InfoPopover>
-        ) : null}
+          </Text>
+        </InfoPopover>
         <SegmentedControl
           label={t("Share diagnostic logs")}
           value={mode}

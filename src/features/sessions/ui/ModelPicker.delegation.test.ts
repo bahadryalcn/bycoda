@@ -296,9 +296,9 @@ describe("cross-provider delegation rows", () => {
         ...container.querySelectorAll<HTMLButtonElement>("[data-model-subagent-editor] button"),
       ].find((button) => button.textContent === "Apply")!;
       await act(async () => personal.click());
-      expect(apply.disabled).toBe(false);
+      expect(apply.getAttribute("aria-disabled")).not.toBe("true");
       await act(async () => writeUsage(100, Date.now() + 60_000));
-      expect(apply.disabled).toBe(true);
+      expect(apply.getAttribute("aria-disabled")).toBe("true");
       await act(async () => apply.click());
       expect(onSettingsChange).not.toHaveBeenCalled();
       await act(async () => personal.click());

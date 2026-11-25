@@ -64,7 +64,7 @@ it("keeps denied and empty discovery recoverable without claiming connection", a
     );
     f.client.browserChromeTabs.mockRejectedValueOnce(new Error("Chrome permission denied"));
     await act(async () => f.button("Find Chrome tabs").click());
-    expect(f.node.textContent).toContain("Chrome permission denied");
+    expect(f.node.textContent).toContain("Could not connect to Chrome. Try again.");
     expect(f.onChanged).not.toHaveBeenCalled();
     await act(async () => f.button("Find Chrome tabs").click());
     expect(f.node.textContent).toContain("No matching platform tabs");

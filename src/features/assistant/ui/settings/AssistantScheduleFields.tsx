@@ -100,7 +100,6 @@ export function AssistantScheduleFields({
         />
         <ProfileSwitch
           label={t("Task done")}
-          description={t("Observed tasks in projects enabled for manual supervision.")}
           checked={policy.observationTaskDone}
           onCheckedChange={(observationTaskDone) => onChange({ observationTaskDone })}
         />
@@ -241,10 +240,9 @@ export function AssistantScheduleFields({
           />
         </div>
         <div className={styles.hintRow}>
-          <Text as="p" size="secondary">
-            {t("Observed tasks in projects enabled for manual supervision.")}
-          </Text>
-          {!observationTasksAvailable && (
+          {observationTasksAvailable ? (
+            <Text size="secondary">{t("Task observations available")}</Text>
+          ) : (
             <Badge tone="warning" size="xs">
               {t("Readiness not confirmed")}
             </Badge>

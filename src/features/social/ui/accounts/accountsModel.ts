@@ -191,7 +191,10 @@ export function defaultTimeZone(): string {
 
 /** Day names for the working-hours checkboxes, Sunday first (0 to 6 as the Host stores them). */
 export function weekdayLabels(locale?: string): { day: number; label: string }[] {
-  const formatter = dateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
+  const formatter = dateTimeFormat(locale, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
   // 2026-11-01 is a Sunday.
   return Array.from({ length: 7 }, (_, day) => ({
     day,

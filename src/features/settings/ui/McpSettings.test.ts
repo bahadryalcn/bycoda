@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -1134,7 +1135,11 @@ it("keeps the draft and shows the error when the file changed since it was read"
     return "";
   });
   await act(async () => sheetButtons("Save")[0].click());
-  expect(sheet()!.textContent).toContain("The configuration changed on disk");
+  await expectErrorDetails(
+    sheet()!,
+    "Could not save MCP configuration.",
+    "The configuration changed on disk",
+  );
   expect(configArea().value).toBe(draft);
   expect(sheetButtons("Save")[0].disabled).toBe(false);
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_discover")).toHaveLength(

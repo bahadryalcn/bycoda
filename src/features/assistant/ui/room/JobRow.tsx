@@ -9,7 +9,7 @@ import {
   InlineMoreAction,
   InlineTextAction,
 } from "../../../../shared/ui/ActionHost";
-import { Badge } from "../../../../shared/ui/Badge";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
@@ -22,6 +22,7 @@ import {
   CheckCircle,
   CircleX,
   Clock,
+  Folder,
   Pause,
   Play,
   Square,
@@ -148,9 +149,11 @@ export function JobRow({
             {job.title}
           </Button>
           {projectName && (
-            <Badge size="sm" tone="neutral" truncate className={styles.project}>
-              {projectName}
-            </Badge>
+            <Tooltip asChild label={projectName}>
+              <span role="img" aria-label={t("Project: {p0}", { p0: projectName })}>
+                <Folder className="icon-sm" />
+              </span>
+            </Tooltip>
           )}
         </div>
         <div

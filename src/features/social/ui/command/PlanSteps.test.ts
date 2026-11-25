@@ -136,9 +136,17 @@ it("shows why a step needs approval before the run, and the Host message after i
   };
   render({ results, approved: ["s1", "s3"] });
   expect([0, 1, 2].map(statusOf)).toEqual(["Blocked", "Done", "Failed"]);
-  expect(steps()[0]?.textContent).toContain("The account is paused.");
+  expect(steps()[0]?.textContent).not.toContain("The account is paused.");
+  act(() =>
+    steps()[0]!.querySelector<HTMLButtonElement>('button[aria-label^="Details:"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("The account is paused.");
   expect(steps()[0]?.textContent).not.toContain("Replies go out under your name.");
-  expect(steps()[2]?.textContent).toContain("Rate limited.");
+  expect(steps()[2]?.textContent).not.toContain("Rate limited.");
+  act(() =>
+    steps()[2]!.querySelector<HTMLButtonElement>('button[aria-label^="Details:"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Rate limited.");
 });
 
 it("stops asking for approval once a step has finished", () => {

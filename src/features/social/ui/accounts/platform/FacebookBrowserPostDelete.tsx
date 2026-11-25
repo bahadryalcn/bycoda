@@ -72,7 +72,7 @@ export function FacebookBrowserPostDelete({
           {t("Delete post")}
         </Button>
       </div>
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
       {deleted ? <InlineMessage tone="success">{t("Deleted")}</InlineMessage> : null}
       {confirm.dialog}
     </form>

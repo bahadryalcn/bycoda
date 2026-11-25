@@ -35,12 +35,22 @@ type PostMetrics = {
   next?: number;
 };
 type Result =
-  | { source: "studio"; period?: string; metrics: { key: string; displayValue: string }[] }
+  | {
+      source: "studio";
+      period?: string;
+      metrics: { key: string; displayValue: string }[];
+    }
   | ({ source: "business"; followers?: number; likes?: number } & PostMetrics)
   | ({ source: "display" } & PostMetrics)
   | { events: SocialInbound[]; coverage?: { status: string }[] }
   | {
-      comments: { id: string; postId: string; author?: string; username?: string; text: string }[];
+      comments: {
+        id: string;
+        postId: string;
+        author?: string;
+        username?: string;
+        text: string;
+      }[];
       next?: number;
     }
   | { people: { platformId: string; username: string; name: string }[] }
@@ -63,7 +73,9 @@ export function TikTokReadouts({
 }) {
   const t = useT();
   const format = useFormat();
-  const { is, write, error } = useAccountWrite(t("Could not complete the TikTok request."));
+  const { is, write, error, details } = useAccountWrite(
+    t("Could not complete the TikTok request."),
+  );
   const [result, setResult] = useState<Result>();
   const [syncCount, setSyncCount] = useState<number>();
   const [relationship, setRelationship] = useState<"followers" | "following">("followers");
@@ -270,7 +282,7 @@ export function TikTokReadouts({
           {t("Imported items: {p0}", { p0: format.formatNumber(syncCount) })}
         </InlineMessage>
       )}
-      {error && <InlineError>{error}</InlineError>}
+      {error && <InlineError details={details}>{error}</InlineError>}
       {result && "credentialSaved" in result && result.credentialSaved && (
         <InlineMessage tone="success">{t("Stream key saved on this Host.")}</InlineMessage>
       )}
@@ -356,7 +368,10 @@ export function TikTokReadouts({
                 <TikTokRow
                   key={event.eventId}
                   title={event.contactName}
-                  meta={format.formatDate(event.at, { dateStyle: "medium", timeStyle: "short" })}
+                  meta={format.formatDate(event.at, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
                   body={event.text}
                 >
                   {view === "comments" &&

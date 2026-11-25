@@ -26,6 +26,7 @@ type ListProps = {
   capabilities: Capability[];
   projectId?: string;
   disabled: boolean;
+  executorMismatch?: boolean;
 };
 
 const labels: Record<SnapchatContentTarget, () => string> = {
@@ -198,7 +199,14 @@ function PublicationPage({
   );
 }
 
-function AccountPublications({ client, account, capabilities, projectId, disabled }: ListProps) {
+function AccountPublications({
+  client,
+  account,
+  capabilities,
+  projectId,
+  disabled,
+  executorMismatch,
+}: ListProps) {
   const [target, setTarget] = useState<SnapchatContentTarget>("spotlight");
   const read = capabilities.find((item) => item.operation === "profile.read");
   const deletion = capabilities.find((item) => item.operation === "delete");
@@ -209,6 +217,11 @@ function AccountPublications({ client, account, capabilities, projectId, disable
     (!projectId || !!account.grants[projectId]?.includes("publish"));
   return (
     <>
+      {executorMismatch ? (
+        <InlineMessage tone="warning">
+          {t("This account is connected on another computer.")}
+        </InlineMessage>
+      ) : null}
       {!canRead ? (
         <InlineMessage tone="warning">
           {account.connection === "browser"
@@ -286,6 +299,7 @@ export function SnapchatContentList({
           capabilities={capabilities[account.id] ?? []}
           projectId={projectId}
           disabled={disabled || account.executorId !== executorId}
+          executorMismatch={account.executorId !== executorId}
         />
       </div>
     </Disclosure>

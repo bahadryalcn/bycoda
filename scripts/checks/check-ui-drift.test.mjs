@@ -1123,3 +1123,255 @@ test("pane-edge-erased flags CSS that hides the edge between workbench panes", (
   assert.ok(!flagged(".card { border-right: none; }"));
   assert.ok(!flagged(".bycoda-sidebar { background: transparent; }"));
 });
+
+test("disabled shared controls accept a reason or an explained restriction", () => {
+  const imports =
+    'import { Button as Action, Checkbox, Row, InlineAction, InlineMessage } from "@/shared/ui";';
+  const count = (jsx) =>
+    rulesOf("src/features/demo/View.tsx", imports + jsx).filter(
+      (rule) => rule === "disabled-without-reason",
+    ).length;
+  assert.equal(
+    count("<><Action disabled /><Row disabled /><Checkbox disabled /><InlineAction disabled /></>"),
+    4,
+  );
+  assert.equal(count('<Action disabled disabledReason={t("Offline")} />'), 0);
+  assert.equal(count('<Action disabled aria-describedby="blocked" />'), 0);
+  assert.equal(count("<Action disabled={loading} />"), 0);
+  assert.equal(count("<Action disabled={!draft.trim()} />"), 0);
+  assert.equal(count("<Action disabled={false} />"), 0);
+  assert.equal(
+    count(
+      "const View = ({ blocked }) => <><Action disabled={blocked} />{blocked && <InlineMessage>Offline</InlineMessage>}</>;",
+    ),
+    0,
+  );
+  assert.equal(
+    count(
+      "const View = ({ blocked, other }) => <><Action disabled={blocked} />{other && <InlineMessage>Offline</InlineMessage>}</>;",
+    ),
+    1,
+  );
+});
+
+test("view guards cover component live regions and generic div naming", () => {
+  const focus = (source) =>
+    rulesOf("src/features/demo/View.tsx", source).filter((rule) =>
+      ["role-status-banner", "raw-aria-live", "aria-label-without-role"].includes(rule),
+    );
+  assert.deepEqual(
+    focus('<><Text role={"status"} /><Badge aria-live="polite" /><Disclosure role="status" /></>'),
+    ["role-status-banner", "role-status-banner", "raw-aria-live"],
+  );
+  assert.deepEqual(
+    focus(
+      '<><div aria-label="Loading" /><div role="group" aria-label="Options" /><nav aria-label="Tools" /></>',
+    ),
+    ["aria-label-without-role"],
+  );
+});
+
+test("tooltip aria-labels and paired gate branches use matching text only", () => {
+  const imports = 'import { Button } from "@/shared/ui/Button";';
+  const count = (rule, source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter((finding) => finding === rule)
+      .length;
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      '<Button tooltip="Delete" aria-label="Delete"><Icon /></Button>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      '<Tooltip label="Delete"><Button aria-label="Delete"><Icon /></Button></Tooltip>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      'const View = ({ busy }) => <Button tooltip={busy ? "Wait" : "Ready"}>{busy ? "Wait" : "Ready"}</Button>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "tooltip-repeats-label",
+      'const View = ({ busy, other }) => <Button tooltip={busy ? "Wait" : "Ready"}>{other ? "Wait" : "Ready"}</Button>;',
+    ),
+    0,
+  );
+  assert.equal(
+    count(
+      "duplicate-feedback-channel",
+      'const View = ({ busy }) => { const gate = { disabledReason: busy ? "Checking" : "Connect" }; return <Button {...gate}>{busy ? "Checking" : "Connect"}</Button>; };',
+    ),
+    1,
+  );
+  const adapter = 'import { gateProps, DisabledReason } from "../social/ui/common/DisabledReason";';
+  const view =
+    'const View = ({ connected, busy }) => <DisabledReason {...gateProps(connected ? { disabled: false } : { disabled: true, disabledReason: busy ? t("Checking") : t("Unavailable") })}>{connected ? t("Ready") : busy ? t("Checking") : t("Offline")}</DisabledReason>;';
+  assert.equal(count("duplicate-feedback-channel", adapter + view), 1);
+  assert.equal(
+    count(
+      "duplicate-feedback-channel",
+      adapter +
+        view.replace('busy ? t("Checking") : t("Offline")', 'busy ? t("Offline") : t("Checking")'),
+    ),
+    0,
+  );
+});
+
+test("optional field captions and hint paragraphs use the info control", () => {
+  const imports = 'import { Text, TextField, InfoPopover } from "@/shared/ui";';
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter(
+      (rule) => rule === "inline-help-text",
+    ).length;
+  assert.equal(
+    count('<div><TextField /><Text variant="caption">Look under Settings.</Text></div>'),
+    1,
+  );
+  assert.equal(count('<div><p className="onboarding-hint">Optional guide.</p></div>'), 1);
+  assert.equal(
+    count('<div><TextField info={help} /><Text tone="secondary">Look under Settings.</Text></div>'),
+    0,
+  );
+  assert.equal(
+    count(
+      '<div><TextField /><InfoPopover /><Text tone="secondary">Look under Settings.</Text></div>',
+    ),
+    0,
+  );
+  assert.equal(
+    count('<div><TextField /><Text tone="warning">Connecting changes your key.</Text></div>'),
+    0,
+  );
+  assert.equal(count('<div><Text tone="secondary">Account costs vary by plan.</Text></div>'), 0);
+  assert.equal(count('<div><TextField /><Text tone="secondary">{requiredStatus}</Text></div>'), 0);
+  assert.equal(
+    count(
+      '<div>{connected ? <Text>Connected</Text> : <Text size="caption">Paste a key from LinkedIn Live.</Text>}<form /></div>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      '<div><TextField /><Text size="caption" tone="secondary">X charges per returned item and per write.</Text></div>',
+    ),
+    0,
+  );
+  assert.equal(
+    count(
+      '<div><TextField /><Text size="caption">{t(secure ? "HTTPS verifies the certificate." : "HTTP requires approval.")}</Text></div>',
+    ),
+    0,
+  );
+});
+
+test("row badges distinguish written tags from icons and counts", () => {
+  const imports = 'import { Badge, BadgeList, ListRow } from "@/shared/ui";';
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", imports + source).filter(
+      (rule) => rule === "row-text-badge",
+    ).length;
+  assert.equal(count('<ListRow><Badge>{t("Active")}</Badge></ListRow>'), 1);
+  assert.equal(count("<tr><td><Badge>Inbox</Badge></td></tr>"), 1);
+  assert.equal(count("<ListRow trailing={<BadgeList items={tags} />} />"), 1);
+  assert.equal(
+    count("<ListRow><Badge>12+</Badge><Badge icon={Icon} /><Badge>{count}</Badge></ListRow>"),
+    0,
+  );
+  assert.equal(count("<section><Badge>Active</Badge></section>"), 0);
+});
+
+test("feature class literals reject physical direction and local token overrides", () => {
+  const findings = (file, source) =>
+    rulesOf(file, source).filter((rule) =>
+      ["physical-direction-utility", "arbitrary-ui-token-override"].includes(rule),
+    );
+  const feature = "src/features/demo/View.tsx";
+  for (const utility of ["ml-2", "mr-2", "pl-2", "pr-2", "text-left", "text-right", "md:-ml-2"])
+    assert.deepEqual(findings(feature, '<div className="' + utility + '" />'), [
+      "physical-direction-utility",
+    ]);
+  assert.deepEqual(
+    findings(feature, '<div className={cn("ms-2", show && "hover:[--ui-text-strong:red]")} />'),
+    ["arbitrary-ui-token-override"],
+  );
+  assert.deepEqual(
+    findings(feature, '<div className="text-start me-2 ps-2 text-(--ui-text-strong)" />'),
+    [],
+  );
+  assert.deepEqual(
+    findings("src/app/demo/View.tsx", '<div className="ml-2" data-example="[--ui-ink:red]" />'),
+    [],
+  );
+});
+
+test("native title covers shared TreeRow aliases and preserves semantic titles", () => {
+  const source =
+    'import { TreeRow as Item } from "@/shared/ui/TreeRow"; <><Item title={path} /><Item title="" /><Modal title="Dialog" /><iframe title="Preview" /></>;';
+  assert.equal(
+    rulesOf("src/features/demo/View.tsx", source).filter((rule) => rule === "native-title").length,
+    1,
+  );
+});
+
+test("local stylesheets distinguish fillable shared slots from control styling", () => {
+  const view = "src/features/demo/View.tsx";
+  const file = "src/features/demo/view.css";
+  const source =
+    'import "./view.css"; import { Surface, Text, Button } from "@/shared/ui"; <><Surface className="fill-panel" /><Button className="fixed-button" /><Text className="counter" /></>;';
+  const css = [
+    ".fill-panel { height: 100%; border-radius: 8px; }",
+    ".fixed-button { height: 100%; }",
+    ".counter { font-variant-numeric: tabular-nums; }",
+    ".other { font-variant-numeric: tabular-nums; }",
+  ].join("\n");
+  assert.deepEqual(
+    scanFile(
+      file,
+      css,
+      collectDefinitions(
+        new Map([
+          [view, source],
+          [file, css],
+        ]),
+      ),
+    ).map(({ rule, line }) => [rule, line]),
+    [
+      ["shared-internal-selector", 1],
+      ["shared-internal-selector", 2],
+      ["shared-internal-selector", 3],
+      ["feature-typography", 4],
+    ],
+  );
+});
+
+test("focus-dependent paint skipping is allowed and focus paint is still checked", () => {
+  const source = [
+    ".row:focus-within { content-visibility: auto; contain-intrinsic-block-size: 28px; }",
+    ".row button:focus { outline: 2px solid var(--ui-focus-ring); }",
+  ].join("\n");
+  assert.deepEqual(
+    rulesOf("src/features/demo/view.css", source).filter((rule) =>
+      ["interaction-state", "focus-outline-removed"].includes(rule),
+    ),
+    ["focus-outline-removed"],
+  );
+});
+
+test("palette literals stay checked outside the exact art modules", () => {
+  const colors = "const pigments = [themePalette.hexff0000, themePalette.hex00ff00];";
+  const found = (file) =>
+    rulesOf("src/features/sessions/ui/" + file, colors).filter(
+      (rule) => rule === "theme-palette-literal",
+    ).length;
+  for (const name of ["crewCharacters", "crewEnvironment", "crewCodeSign", "crewCodeColor"])
+    assert.equal(found(name + ".ts"), 0);
+  assert.equal(found("crewMixedView.ts"), 2);
+});

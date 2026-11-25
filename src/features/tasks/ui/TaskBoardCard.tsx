@@ -5,6 +5,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ActionHost, actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -219,10 +220,18 @@ function TaskCardBody({
             >
               <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
-              {task.budgetStop ? <p>{task.budgetStop}</p> : null}
-              {task.repairStop?.message ? <p>{task.repairStop.message}</p> : null}
-              {task.error ? <p>{task.error}</p> : null}
-              {task.mergeError ? <p>{task.mergeError}</p> : null}
+              {task.budgetStop ? (
+                <Text as="p" tone="secondary" size="secondary">
+                  {task.budgetStop}
+                </Text>
+              ) : null}
+              {task.repairStop?.message ? (
+                <Text as="p" tone="secondary" size="secondary">
+                  {task.repairStop.message}
+                </Text>
+              ) : null}
+              {task.error ? <InlineError details={task.error} /> : null}
+              {task.mergeError ? <InlineError details={task.mergeError} /> : null}
               {task.verification ? <VerificationSummary verification={task.verification} /> : null}
             </Text>
           </Modal>

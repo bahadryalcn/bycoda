@@ -66,7 +66,12 @@ describe("accountHealth", () => {
       }).status,
     ).toBe("warn");
     expect(
-      accountHealth({ account: account(), capabilities: [], needsHuman: true, now: NOW }).status,
+      accountHealth({
+        account: account(),
+        capabilities: [],
+        needsHuman: true,
+        now: NOW,
+      }).status,
     ).toBe("warn");
   });
 
@@ -110,7 +115,12 @@ describe("number and time validation", () => {
   });
 
   it("reports working hours problems in plain words", () => {
-    const base = { timeZone: "Europe/Istanbul", days: [1], start: "09:00", end: "17:00" };
+    const base = {
+      timeZone: "Europe/Istanbul",
+      days: [1],
+      start: "09:00",
+      end: "17:00",
+    };
     expect(workingHoursError(base)).toBeUndefined();
     expect(workingHoursError({ ...base, days: [] })).toBe("Choose at least one day.");
     expect(workingHoursError({ ...base, start: "9am" })).toBe("Use 24-hour times such as 09:00.");
@@ -152,6 +162,11 @@ it("summarizes only the operations that are available", async () => {
 
 it("does not report a healthy connection when intervention status is unknown", () => {
   expect(
-    accountHealth({ account: account(), capabilities: [], needsHuman: undefined, now: NOW }).text,
+    accountHealth({
+      account: account(),
+      capabilities: [],
+      needsHuman: undefined,
+      now: NOW,
+    }).text,
   ).toBe("Connection status unknown");
 });

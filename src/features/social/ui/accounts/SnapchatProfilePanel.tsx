@@ -70,7 +70,7 @@ export function SnapchatProfilePanel({
   const [status, setStatus] = useState<SnapchatMonetizationStatus>();
   const [checkBeforeSaving, setCheckBeforeSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const { error, is, write } = useAccountWrite(
+  const { error, details, is, write } = useAccountWrite(
     t("The profile could not be verified. Read the profile again before saving."),
   );
   const confirmation = useConfirm();
@@ -138,7 +138,9 @@ export function SnapchatProfilePanel({
               ...patch,
               ...(uploadId ? { avatarUploadId: uploadId } : {}),
             })
-          : await client.snapchatProfileCreate(account.id, { name: current("name").trim() });
+          : await client.snapchatProfileCreate(account.id, {
+              name: current("name").trim(),
+            });
         setProfile(result);
         setDraft({});
         setAvatar(undefined);
@@ -183,7 +185,7 @@ export function SnapchatProfilePanel({
               {t("Read the profile to see it and edit it here.")}
             </Text>
           ) : null}
-          {error ? <InlineError>{error}</InlineError> : null}
+          {error ? <InlineError details={details}>{error}</InlineError> : null}
           {saved ? <InlineMessage tone="success">{t("Changes saved.")}</InlineMessage> : null}
           {status ? (
             <Surface variant="inset" padding="sm" className="social-sc-group">
@@ -266,7 +268,10 @@ export function SnapchatProfilePanel({
                           value={current(field)}
                           disabled={blocked || busy}
                           onChange={(event) =>
-                            setDraft({ ...draft, [field]: event.currentTarget.value })
+                            setDraft({
+                              ...draft,
+                              [field]: event.currentTarget.value,
+                            })
                           }
                         />
                       ))}

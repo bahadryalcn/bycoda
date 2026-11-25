@@ -7,6 +7,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CodeMirrorEditor } from "./CodeMirrorEditor";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const format = vi.hoisted(() => vi.fn());
 vi.mock("../../../shared/lib/format", () => ({
@@ -112,7 +113,9 @@ it("does not delete selected code when copying to the clipboard fails", async ()
   const items = await openMenu();
   await act(async () => items.find((item) => item.textContent?.startsWith("Cut"))!.click());
   expect(view.state.doc.toString()).toBe("const Page=()=> <div/>;");
-  expect(host.textContent).toContain("Clipboard denied");
+  expect(host.textContent).toContain("Couldn’t complete that editor action.");
+  await showErrorDetails(host);
+  expect(document.body.textContent).toContain("Clipboard denied");
 });
 
 it("does not paste over edits made while clipboard access was pending", async () => {

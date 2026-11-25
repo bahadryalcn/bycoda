@@ -1,7 +1,9 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -54,7 +56,7 @@ export type ShortcutModifier = "metaKey" | "ctrlKey" | "altKey" | "shiftKey";
 type ShortcutFeedback =
   | { state: "loading" }
   | { state: "success" }
-  | { state: "error"; message: string };
+  | { state: "error"; title: string; detail: string };
 type ShortcutFeedbackProps = {
   onFeedbackChange?: (feedback: ShortcutFeedback | null) => void;
 };
@@ -96,7 +98,7 @@ export function ShortcutEditor({
   // or Enter/Space on the recorder is an intentional start.
   const intent = useRef(false);
   const focusing = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const [preview, setPreview] = useState("");
   const held = useRef({
     metaKey: false,
@@ -117,9 +119,10 @@ export function ShortcutEditor({
       setSaved(true);
       onFeedbackChange?.({ state: "success" });
     } catch (reason) {
-      const message = t("Could not save shortcut: {p0}", { p0: errorText(reason) });
-      setError(message);
-      onFeedbackChange?.({ state: "error", message });
+      const title = t("Could not save shortcut.");
+      const detail = errorText(reason);
+      setError({ title, detail });
+      onFeedbackChange?.({ state: "error", title, detail });
     } finally {
       setBusy(false);
       pending.current = false;
@@ -221,95 +224,99 @@ export function ShortcutEditor({
       aria-busy={busy}
       data-capturing={recording || undefined}
     >
-      <Tooltip label={recording ? t("Del disables · Esc cancels") : undefined} asChild>
-        <div className={styles.control}>
-          <div
-            className={styles.recorder}
-            onPointerDownCapture={() => {
-              intent.current = true;
-            }}
-            onKeyDownCapture={(event) => {
-              if (event.key === "Enter" || event.key === " ") intent.current = true;
-            }}
-            onFocusCapture={() => {
-              focusing.current = true;
-            }}
-            onFocus={() => {
-              focusing.current = false;
-              intent.current = false;
-            }}
-            onBlur={() => {
-              focusing.current = false;
-              intent.current = false;
-            }}
-          >
-            <ShortcutRecorder
-              label={t("Change {p0} shortcut", { p0: name })}
-              hideLabel
-              hideActions
-              platform={IS_MAC ? "mac" : "other"}
-              disabled={busy || disabled}
-              recording={recording}
-              displayKeys={
-                !recording && !busy && display && display !== t("Unassigned")
-                  ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
-                      (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
-                    )
-                  : undefined
+      <div className={styles.control}>
+        <div
+          className={styles.recorder}
+          onPointerDownCapture={() => {
+            intent.current = true;
+          }}
+          onKeyDownCapture={(event) => {
+            if (event.key === "Enter" || event.key === " ") intent.current = true;
+          }}
+          onFocusCapture={() => {
+            focusing.current = true;
+          }}
+          onFocus={() => {
+            focusing.current = false;
+            intent.current = false;
+          }}
+          onBlur={() => {
+            focusing.current = false;
+            intent.current = false;
+          }}
+        >
+          <ShortcutRecorder
+            label={t("Change {p0} shortcut", { p0: name })}
+            hideLabel
+            hideActions
+            platform={IS_MAC ? "mac" : "other"}
+            disabled={busy || disabled}
+            recording={recording}
+            displayKeys={
+              !recording && !busy && display && display !== t("Unassigned")
+                ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
+                    (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
+                  )
+                : undefined
+            }
+            onRecordingChange={(next) => {
+              if (!next) {
+                setRecording(false);
+                return;
               }
-              onRecordingChange={(next) => {
-                if (!next) {
-                  setRecording(false);
-                  return;
-                }
-                if (focusing.current && !intent.current) return;
-                beginRecording();
-              }}
-              displayText={
-                busy
-                  ? t("Saving…")
-                  : recording
-                    ? preview || t("Record shortcut")
-                    : (display ?? t("Disabled"))
-              }
-            />
-          </div>
-          <span className={styles.actionSlot}>
-            {recording ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Cancel")}
-                tooltip={t("Del disables · Esc cancels")}
-                onClick={() => {
-                  setRecording(false);
-                  setError(null);
-                  onFeedbackChange?.(null);
-                }}
-              >
-                <X aria-hidden className="icon-sm" />
-              </Button>
-            ) : resetVisible ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Reset {p0} shortcut", { p0: name })}
-                disabled={busy || disabled}
-                onClick={() => void run(onReset)}
-              >
-                <RotateCcw aria-hidden strokeWidth={1.75} />
-              </Button>
-            ) : null}
-          </span>
+              if (focusing.current && !intent.current) return;
+              beginRecording();
+            }}
+            displayText={
+              busy
+                ? t("Saving…")
+                : recording
+                  ? preview || t("Record shortcut")
+                  : (display ?? t("Disabled"))
+            }
+          />
         </div>
-      </Tooltip>
+        <span className={styles.actionSlot}>
+          {recording ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Cancel")}
+              tooltip={t("Del disables · Esc cancels")}
+              onClick={() => {
+                setRecording(false);
+                setError(null);
+                onFeedbackChange?.(null);
+              }}
+            >
+              <X aria-hidden className="icon-sm" />
+            </Button>
+          ) : resetVisible ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={t("Reset {p0} shortcut", { p0: name })}
+              disabled={busy || disabled}
+              disabledReason={busy ? t("Finish the current change first.") : undefined}
+              onClick={() => void run(onReset)}
+            >
+              <RotateCcw aria-hidden strokeWidth={1.75} />
+            </Button>
+          ) : null}
+        </span>
+      </div>
       {!display && onEnable ? (
         <Button variant="ghost" disabled={busy || disabled} onClick={() => void run(onEnable)}>
           {t("Enable")}
         </Button>
       ) : null}
       {onFeedbackChange ? null : error ? (
-        <SettingsFeedback state="error">{error}</SettingsFeedback>
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails title={error.title} detail={error.detail} />}
+        >
+          {error.title}
+        </SettingsFeedback>
       ) : busy || saved ? (
         <SettingsFeedback state={busy ? "loading" : "success"} immediate>
           {busy ? t("Saving…") : t("Saved")}
@@ -459,9 +466,17 @@ const KeybindingSettingsRow = memo(function KeybindingSettingsRow({
       }
       feedback={
         feedback ? (
-          <SettingsFeedback state={feedback.state} immediate>
+          <SettingsFeedback
+            state={feedback.state}
+            immediate
+            extra={
+              feedback.state === "error" ? (
+                <ErrorDetails title={feedback.title} detail={feedback.detail} />
+              ) : undefined
+            }
+          >
             {feedback.state === "error"
-              ? feedback.message
+              ? feedback.title
               : feedback.state === "loading"
                 ? t("Saving…")
                 : t("Saved")}
@@ -625,15 +640,14 @@ export function KeybindingsPage() {
           <ListFilter aria-hidden strokeWidth={1.75} />
         </Button>
         {query.trim() || filtered ? (
-          <Text
-            size="caption"
-            tone="secondary"
-            leading="inherit"
+          <InlineMessage
+            tone="neutral"
+            icon={null}
+            live="polite"
             className={`${styles.summary} tabular-nums`}
-            role="status"
           >
             {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
-          </Text>
+          </InlineMessage>
         ) : null}
         {filtersOpen ? (
           <Popover

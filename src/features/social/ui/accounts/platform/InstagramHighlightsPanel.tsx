@@ -25,7 +25,9 @@ export function InstagramHighlightsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const confirmation = useConfirm();
   const [snapshot, setSnapshot] = useState<InstagramHighlights>();
   const [notice, setNotice] = useState("");
@@ -165,7 +167,12 @@ export function InstagramHighlightsPanel({
                         ...(storyIds.length ? { storyIds } : {}),
                         confirm: "EDIT_INSTAGRAM_HIGHLIGHT",
                       }
-                    : { action: "create", name, storyIds, confirm: "CREATE_INSTAGRAM_HIGHLIGHT" },
+                    : {
+                        action: "create",
+                        name,
+                        storyIds,
+                        confirm: "CREATE_INSTAGRAM_HIGHLIGHT",
+                      },
                   actionLabel,
                 )
               }
@@ -196,7 +203,7 @@ export function InstagramHighlightsPanel({
         </>
       ) : null}
       {notice ? <InlineMessage>{notice}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { Portal } from "../../../shared/ui/Portal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
@@ -265,14 +265,12 @@ export const TranscriptFind = memo(function TranscriptFind({
               headerClassName="min-w-0 flex-1"
               trailing={
                 <>
-                  <Text
-                    role="status"
+                  <LiveText
                     size="micro"
                     tone="secondary"
                     className="min-w-[10ch] shrink-0 whitespace-nowrap text-end tabular-nums"
-                  >
-                    {countLabel}
-                  </Text>
+                    text={countLabel}
+                  />
                   {retry && (
                     <FindButton label={t("Retry")} onClick={retry}>
                       <RefreshCw className="icon-sm" strokeWidth={1.75} />

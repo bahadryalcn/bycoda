@@ -258,7 +258,7 @@ it("renders one compact line with picker, account, profile, quota and skip reaso
   await act(() => root.render(createElement(ModelOrderRow, rowProps())));
   expect(picker.presentation).toBe("field");
   expect(container.textContent).toContain("15% left");
-  expect(container.textContent).toContain("Below the reserved limit");
+  expect(container.querySelector('[aria-label="Below the reserved limit"]')).not.toBeNull();
   expect(container.textContent).toContain("4/5 · $$");
   // The picker names the account itself; the row has no account column of its own.
   expect(picker.hideAgentSettings).toBe(true);

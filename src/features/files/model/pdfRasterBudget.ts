@@ -52,7 +52,7 @@ export class PdfRasterBudget {
           remaining -= released;
           this.used -= released;
           // Wake callbacks mutate the queue; iterate a snapshot to avoid requeue loops.
-          // oxlint-disable-next-line unicorn/no-useless-spread
+          // oxlint-disable-next-line unicorn/no-useless-spread -- iterate a copy because a woken waiter can requeue itself
           for (const wake of [...this.waiting]) wake();
         });
       };

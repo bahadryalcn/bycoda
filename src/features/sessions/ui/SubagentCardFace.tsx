@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -53,6 +55,7 @@ export function SubagentCardFace({
   /** Actions in the last track; every card has one. */
   footer: ReactNode;
 }) {
+  const t = useT();
   const detail = details.filter(Boolean).join(" · ");
   const titleClass = "min-w-0 text-start font-sans";
   // ui-drift-ignore: text-truncation -- WorkingIndicator only offers one-line truncate; the working title keeps the two lines its idle Text has.
@@ -92,6 +95,7 @@ export function SubagentCardFace({
           aria-description={description}
           aria-expanded={open}
           tooltip={name}
+          tooltipWhen="overflow"
           onClick={onToggle}
         >
           {titleText}
@@ -114,16 +118,16 @@ export function SubagentCardFace({
           </Text>
         ) : null}
       </span>
-      <Text
-        as="div"
-        size="micro"
-        tone="danger"
-        lines={2}
-        className={styles.cardReason}
-        data-subagent-reason
-      >
-        {reason}
-      </Text>
+      <div className={styles.cardReason} data-subagent-reason>
+        {reason ? (
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+            <Text size="micro" tone="danger">
+              {t("Subagent failed")}
+            </Text>
+            <ErrorDetails title={t("Subagent failed")} detail={reason} />
+          </span>
+        ) : null}
+      </div>
       {status}
       <span className={styles.cardFooter}>{footer}</span>
     </div>

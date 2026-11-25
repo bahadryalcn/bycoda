@@ -130,6 +130,7 @@ function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) 
             form="feedback-form"
             loading={busy}
             disabled={length === 0}
+            disabledReason={length === 0 ? t("Add a message.") : undefined}
           >
             {t("Send")}
           </Button>

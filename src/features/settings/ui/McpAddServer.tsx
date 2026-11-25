@@ -2,6 +2,7 @@ import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -132,7 +133,7 @@ export function AddServerModal({
   const [config, setConfig] = useState(editing ? JSON.stringify(editing.config, null, 2) : "");
   const [busy, setBusy] = useState(false);
   const [added, setAdded] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const adding = useRef(false);
   const formId = useId();
   const nameInJson = format === "json" ? serverNameInJson(config) : null;
@@ -144,7 +145,7 @@ export function AddServerModal({
     let written = added;
     try {
       setBusy(true);
-      setError("");
+      setError(null);
       if (!written) {
         if (format === "url" && !/^https?:\/\//i.test(url.trim())) {
           throw new Error(t("Enter an HTTP or HTTPS server URL."));
@@ -188,10 +189,13 @@ export function AddServerModal({
     } catch (cause) {
       setError(
         written
-          ? editing
-            ? t("Configuration could not be read.")
-            : t("Server added. Refresh failed. Retry to check status.")
-          : errorText(cause),
+          ? {
+              title: editing
+                ? t("Configuration could not be read.")
+                : t("Server added. Refresh failed. Retry to check status."),
+              detail: errorText(cause),
+            }
+          : { title: t("The MCP server could not be saved."), detail: errorText(cause) },
       );
     } finally {
       adding.current = false;
@@ -235,7 +239,9 @@ export function AddServerModal({
       <form
         id={formId}
         onSubmit={(event) => {
-          void add(event).catch((cause) => setError(errorText(cause)));
+          void add(event).catch((cause: unknown) =>
+            setError({ title: t("The MCP server could not be saved."), detail: errorText(cause) }),
+          );
         }}
         className="space-y-4"
       >
@@ -328,7 +334,18 @@ export function AddServerModal({
           />
         )}
 
-        {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+        {error ? (
+          <SettingsFeedback
+            state="error"
+            extra={
+              error.detail && error.detail !== error.title ? (
+                <ErrorDetails title={error.title} detail={error.detail} />
+              ) : undefined
+            }
+          >
+            {error.title}
+          </SettingsFeedback>
+        ) : null}
       </form>
     </Modal>
   );

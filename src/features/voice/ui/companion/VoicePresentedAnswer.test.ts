@@ -107,7 +107,7 @@ it("runs a composed form: input, choice, number and checkbox values reach the ac
   const onAction = vi.fn(async () => ({ status: "returned" as const, preview: "Total 42" }));
   await render(usageForm, { onAction });
   // A required field is empty, so the button waits for it.
-  expect(button("Open Usage")!.disabled).toBe(true);
+  expect(button("Open Usage")!.getAttribute("aria-disabled")).toBe("true");
   await type(textbox("Project path"), "/work/a");
   expect(button("Open Usage")!.disabled).toBe(false);
   await act(async () => button("Tokens")!.click());
@@ -138,7 +138,11 @@ it("shows a refusal, then drops it once an input it used changes", async () => {
   await render(usageForm, { onAction });
   await type(textbox("Project path"), "/work/a");
   await act(async () => button("Open Usage")!.click());
-  expect(host.querySelector("[role='alert']")?.textContent).toContain("Usage is locked.");
+  const alert = host.querySelector("[role='alert']");
+  expect(alert?.textContent).toContain("Could not run this action.");
+  expect(alert?.textContent).not.toContain("Usage is locked.");
+  await act(async () => button("Details")!.click());
+  expect(document.body.textContent).toContain("Usage is locked.");
   await type(textbox("Project path"), "/work/b");
   expect(host.querySelector("[role='alert']")).toBeNull();
   await act(async () => button("Open Usage")!.click());
@@ -157,6 +161,26 @@ it("keeps what the owner typed when the same fields are shown again", async () =
     button("Tokens")?.getAttribute("aria-pressed") ??
       button("Tokens")?.getAttribute("aria-checked"),
   ).toBe("true");
+});
+
+it("keeps the newer action pending when a press from an older presentation finishes", async () => {
+  const older = Promise.withResolvers<void>();
+  const newer = Promise.withResolvers<void>();
+  const onAction = vi.fn(() => newer.promise);
+  await render(usageForm, { onAction: () => older.promise });
+  await type(textbox("Project path"), "/work/a");
+  await act(async () => button("Open Usage")!.click());
+  await render({ ...usageForm, title: "Updated" }, { version: 2, onAction });
+  await act(async () => button("Open Usage")!.click());
+  expect(button("Open Usage")!.getAttribute("aria-disabled")).toBe("true");
+
+  await act(async () => older.resolve());
+  expect(button("Open Usage")!.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => button("Open Usage")!.click());
+  expect(onAction).toHaveBeenCalledTimes(1);
+
+  await act(async () => newer.resolve());
+  expect(button("Open Usage")!.hasAttribute("aria-disabled")).toBe(false);
 });
 
 it("renders model text as plain text and copies the exact text", async () => {

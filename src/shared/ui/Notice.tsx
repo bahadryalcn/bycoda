@@ -18,6 +18,8 @@ export type NoticeAction = {
   ariaLabel?: string;
   /** Tooltip shown while `disabled`, naming why the action is unavailable. */
   disabledReason?: string;
+  /** Tooltip that adds detail the label cannot carry (the scope of a grant). Never repeat the label. */
+  tooltip?: string;
 };
 
 /** One glyph per tone for every notice, so tone never rides on colour alone. */
@@ -148,6 +150,7 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
       truncate
       aria-label={action.ariaLabel}
       disabledReason={action.disabledReason}
+      tooltip={action.tooltip}
       onClick={action.onClick}
     >
       {action.label}
@@ -171,6 +174,7 @@ export function NoticeButton({ action, quiet }: { action: NoticeAction; quiet?: 
       disabled={action.disabled}
       aria-label={action.ariaLabel}
       disabledReason={action.disabledReason}
+      tooltip={action.tooltip}
       onClick={action.onClick}
     >
       {action.label}

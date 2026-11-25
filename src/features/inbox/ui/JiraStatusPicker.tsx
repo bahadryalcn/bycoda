@@ -124,6 +124,7 @@ export function JiraStatusPicker({
                     variant="item"
                     align="start"
                     disabled={transition.requiresFields}
+                    disabledReason={t("This transition needs fields. Change it in Jira.")}
                     onClick={() => void changeStatus(transition)}
                   >
                     {transition.name}

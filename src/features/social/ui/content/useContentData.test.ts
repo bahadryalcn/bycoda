@@ -278,7 +278,12 @@ it("shows the range error with the screen's retry, and a refetch reloads every v
   const client = { sectionSnapshot, request: vi.fn(async () => []) } as unknown as SocialClient;
   render(client, "p1", true, range);
   await settle();
-  expect((state.error as Error).message).toBe("Range offline");
+  expect(state.scheduledError?.message).toBe("Range offline");
+  expect(state.snapshot).toBeDefined();
+  expect(state.error).toBeUndefined();
+  act(() => state.retryScheduled());
+  await settle();
+  expect(state.scheduledError).toBeUndefined();
   act(() => state.refetch());
   await settle();
   expect(state.error).toBeUndefined();

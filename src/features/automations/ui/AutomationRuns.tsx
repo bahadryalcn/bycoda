@@ -1,7 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { ClampText } from "../../../shared/ui/ClampText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -9,6 +7,8 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { CircleAlert } from "../../../shared/ui/icons";
 import { findTriggerEvent, triggerName } from "../model/automationTriggerCatalog";
 import {
   automationScheduleLabel,
@@ -51,8 +51,13 @@ export function AutomationRuns({
       </SectionLabel>
       {loading ? <LoadingText inset="row" /> : null}
       {error ? (
-        <InlineError inset="row" className="mt-2" retry={{ onRetry: onRefresh, disabled: loading }}>
-          {error}
+        <InlineError
+          inset="row"
+          className="mt-2"
+          details={error}
+          retry={{ onRetry: onRefresh, disabled: loading }}
+        >
+          {t("Could not load recent runs.")}
         </InlineError>
       ) : null}
       {runs.length > 0 ? (
@@ -103,9 +108,7 @@ function RunRow({
         type="button"
         disabled={!sessionId && !(run.taskId && onOpenTask)}
         disabledReason={
-          sessionId || (run.taskId && onOpenTask)
-            ? undefined
-            : (run.error ?? t("This run has no session yet"))
+          sessionId || (run.taskId && onOpenTask) ? undefined : t("This run has no session yet")
         }
         onClick={() => {
           if (run.taskId && onOpenTask) {
@@ -130,7 +133,9 @@ function RunRow({
         <span>
           {/* Still running, but stuck until the owner answers. */}
           {run.status === "running" && run.needsInput ? (
-            <Badge tone="warning">{t("Needs input")}</Badge>
+            <Tooltip label={t("Needs input")}>
+              <CircleAlert className="icon-sm" aria-label={t("Needs input")} />
+            </Tooltip>
           ) : (
             <RunStatusPill status={run.status} />
           )}
@@ -140,9 +145,9 @@ function RunRow({
         </Text>
       </Button>
       {run.error && (run.status === "failed" || run.status === "skipped") ? (
-        <ClampText lines={2} size="micro" tone="danger" className="px-4 pb-2 break-words">
-          {run.error}
-        </ClampText>
+        <InlineError inset="row" details={run.error}>
+          {t("Automation run failed or was skipped.")}
+        </InlineError>
       ) : null}
     </li>
   );

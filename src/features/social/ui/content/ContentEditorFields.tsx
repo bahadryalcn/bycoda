@@ -1,6 +1,6 @@
 import { Fragment, type SetStateAction } from "react";
 import { Text } from "../../../../shared/ui/Text";
-import { Tooltip } from "../../../../shared/ui/Tooltip";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -158,13 +158,19 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
                 className="content-check content-account"
               />
             );
-            // The unavailable reason rides a tooltip on the row instead of a text line per account.
-            return availability.disabled && availability.reason ? (
-              <Tooltip key={account.id} label={availability.reason}>
-                {row}
-              </Tooltip>
-            ) : (
-              <Fragment key={account.id}>{row}</Fragment>
+            return (
+              <Fragment key={account.id}>
+                {availability.disabled && availability.reason ? (
+                  <div className="flex items-center gap-2">
+                    {row}
+                    <InfoPopover label={t("{p0}: {p1}", { p0: account.name, p1: t("Help") })}>
+                      {availability.reason}
+                    </InfoPopover>
+                  </div>
+                ) : (
+                  row
+                )}
+              </Fragment>
             );
           })
         )}

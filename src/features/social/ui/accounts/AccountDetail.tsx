@@ -7,7 +7,6 @@ import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
 import type { HostProject } from "../../../connections/public/protocol";
-import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import {
   Globe,
@@ -30,6 +29,7 @@ import { AccountPermissions } from "./AccountPermissions";
 import { AutonomySettings } from "./AutonomySettings";
 import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
+import { AccountStatusMark } from "./AccountStatusMark";
 import { accountHealth } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
 import { XApiSettings } from "./platform/XApiSettings";
@@ -54,12 +54,6 @@ import {
   FacebookProfilePhotos,
 } from "./platform/FacebookProfileForms";
 import "./accounts.css";
-
-const HEALTH_TONE: Record<"ok" | "warn" | "error", BadgeTone> = {
-  ok: "success",
-  warn: "warning",
-  error: "danger",
-};
 
 export type AccountDetailProps = {
   client: SocialClient;
@@ -90,12 +84,19 @@ export function AccountDetail({
 }: AccountDetailProps) {
   const [openedAt] = useState(Date.now);
   const [browserStatus, setBrowserStatus] = useState<string>();
-  const { error, is, write } = useAccountWrite(t("The account could not be changed. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The account could not be changed. Try again."),
+  );
   const confirmation = useConfirm();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const capabilities = snapshot.capabilities[account.id] ?? [];
-  const health = accountHealth({ account, capabilities, needsHuman, now: now ?? openedAt });
+  const health = accountHealth({
+    account,
+    capabilities,
+    needsHuman,
+    now: now ?? openedAt,
+  });
   const browserNeedsRetry =
     account.connection === "browser" && browserStatus === "failed" && health.status === "ok";
   const onThisComputer = account.executorId === snapshot.executorId;
@@ -103,7 +104,10 @@ export function AccountDetail({
 
   const pause = () =>
     void write("pause", () =>
-      client.request("accounts.pause", { accountId: account.id, paused: !account.paused }),
+      client.request("accounts.pause", {
+        accountId: account.id,
+        paused: !account.paused,
+      }),
     )
       .then((result) => result !== undefined && onChanged())
       .catch(() => undefined);
@@ -118,7 +122,9 @@ export function AccountDetail({
         confirmLabel: t("Remove connection"),
         danger: true,
         onConfirm: async () => {
-          await client.request("accounts.disconnect", { accountId: account.id });
+          await client.request("accounts.disconnect", {
+            accountId: account.id,
+          });
           onChanged();
         },
       })
@@ -188,15 +194,12 @@ export function AccountDetail({
         <PlatformMark platform={account.platform} size="lg" />
         {/* The sheet title names the account; health shows only when it needs attention. */}
         {browserNeedsRetry || health.status !== "ok" ? (
-          <Badge tone={browserNeedsRetry ? "warning" : HEALTH_TONE[health.status]} size="sm">
-            {browserNeedsRetry ? t("Connection needs a retry") : health.text}
-          </Badge>
+          <AccountStatusMark
+            status={browserNeedsRetry || health.status === "ok" ? "warn" : health.status}
+            label={browserNeedsRetry ? t("Connection needs a retry") : health.text}
+          />
         ) : null}
-        {account.paused ? (
-          <Badge tone="warning" size="sm">
-            {t("Paused")}
-          </Badge>
-        ) : null}
+        {account.paused ? <AccountStatusMark status="paused" label={t("Paused")} /> : null}
         <Button
           ref={menuTrigger}
           className="social-detail-menu"
@@ -222,7 +225,7 @@ export function AccountDetail({
         ) : null}
       </div>
       {error ? (
-        <InlineError details={error}>
+        <InlineError details={details}>
           {t("The account could not be changed. Try again.")}
         </InlineError>
       ) : null}

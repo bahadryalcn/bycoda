@@ -138,8 +138,11 @@ it("labels stale storage on its own section and retries it without touching the 
 
   storageFails = true;
   await act(async () => button("Refresh workspace status")!.click());
-  expect(container.textContent).toContain("could not refresh and may be out of date");
-  expect(container.textContent).toContain("storage probe failed");
+  const stale = "Couldn’t refresh Workspace storage. Showing last loaded data.";
+  expect(container.textContent).toContain(stale);
+  expect(container.textContent).not.toContain("storage probe failed");
+  await act(async () => button("Details")!.click());
+  expect(document.querySelector("pre")?.textContent).toContain("storage probe failed");
   // The last good storage reading and the unsaved edit both survive.
   expect(container.textContent).toContain("Showing the last storage reading");
   expect(pinBox().getAttribute("aria-checked")).toBe("true");
@@ -147,7 +150,7 @@ it("labels stale storage on its own section and retries it without touching the 
   storageFails = false;
   storageBytes = 1 * GIB;
   await act(async () => button("Retry")!.click());
-  expect(container.textContent).not.toContain("could not refresh and may be out of date");
+  expect(container.textContent).not.toContain(stale);
   expect(container.textContent).toContain("1.0 GiB / 10.0 GiB");
   expect(pinBox().getAttribute("aria-checked")).toBe("true");
 });

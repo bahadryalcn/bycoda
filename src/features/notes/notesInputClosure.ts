@@ -2,18 +2,8 @@ import {
   createNativeInputClosureRegistry,
   type NativeInputClosure,
   type NativeInputErrorCode,
-  type NativeInputLease,
 } from "../../shared/lib/native-input-closure-registry";
-import type {
-  NativeInputRead,
-  NativeInputRegistration,
-  NativeInputWork,
-} from "../../shared/lib/native-input-observer";
 
-export type NotesInputRead = NativeInputRead;
-export type NotesInputRegistration = NativeInputRegistration;
-export type NotesInputWork = NativeInputWork;
-export type NotesInputLease = NativeInputLease<"note-editor">;
 export type NotesInputClosure = NativeInputClosure<"note-editor">;
 
 export class NotesInputClosureError extends Error {

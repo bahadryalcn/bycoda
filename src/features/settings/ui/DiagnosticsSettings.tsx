@@ -1,5 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
-import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { getPerformanceTrace, clearPerformanceTrace } from "../../../shared/lib/performanceTrace";
@@ -56,6 +57,7 @@ function HostStallProfilesRow() {
           <SettingsFeedback
             state="error"
             action={{ label: t("Retry"), onClick: () => setReadAttempt((attempt) => attempt + 1) }}
+            extra={<ErrorDetails title={t("Could not confirm the Host setting.")} detail={error} />}
           >
             {t("Could not confirm the Host setting.")}
           </SettingsFeedback>
@@ -162,9 +164,11 @@ export function DiagnosticsGroup() {
         <Toggle label={t("Performance trace")} on={enabled} onChange={onEnabled} />
       </Row>
       <Row id="performance-trace-data" label={t("Trace data")} dependsOn={enabled}>
-        <Text role="status" size="caption" tone="secondary" className="empty:hidden">
-          {result === "cleared" ? t("Cleared") : ""}
-        </Text>
+        {result === "cleared" ? (
+          <InlineMessage tone="neutral" icon={null} live="polite">
+            {t("Cleared")}
+          </InlineMessage>
+        ) : null}
         <CopyButton
           className="shrink-0"
           label={t("Copy trace")}

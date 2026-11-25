@@ -267,7 +267,7 @@ describe("AudienceScreen person panel", () => {
     pickOption("Change stage", "Contacted");
     await flush();
     const row = document.querySelector("tbody tr");
-    expect(row?.textContent).toContain("Contacted");
+    expect(row?.querySelector('[role="img"][aria-label="Contacted"]')).not.toBeNull();
   });
 
   it("removes the row and closes the panel after the person's data is deleted", async () => {

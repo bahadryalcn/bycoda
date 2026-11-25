@@ -199,10 +199,7 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
           {groups.map((group) => (
             <li
               key={group.key}
-              {...surfaceAttributes(
-                { frame: "pane", edge: "bottom" },
-                "min-w-0 space-y-2 border-(--ui-tone-neutral-border) pb-3",
-              )}
+              {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "min-w-0 space-y-2 pb-3")}
             >
               <Text as="p" size="caption" tone="inherit" weight="medium" className="break-words">
                 <ModelLabel model={group.model} harness={group.harness} />

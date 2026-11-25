@@ -1419,8 +1419,8 @@ function TreeChildren({
     <>
       {error ? (
         <div style={pad} className="min-w-0 break-words">
-          <InlineError inset="row" retry={{ onRetry }}>
-            {error}
+          <InlineError inset="row" details={error} retry={{ onRetry }}>
+            {t("Couldn’t open this folder")}
           </InlineError>
         </div>
       ) : loading && entries === null ? (

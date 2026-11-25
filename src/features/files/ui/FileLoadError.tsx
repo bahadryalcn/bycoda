@@ -10,11 +10,13 @@ import { DocumentMessage } from "./DocumentMessage";
 import { Progress } from "../../../shared/ui/Progress";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useRef, useState } from "react";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { isUnsupportedRemoteRoute } from "../../connections/public/remoteFailure";
 import { useGracedFailure } from "../../connections/public/transientFailure";
-import { basename, revealPath } from "../../../platform/tauri/fs";
+import { basename } from "../../../platform/tauri/fs";
+import { useRevealFile } from "./useRevealFile";
 import { readTextFileSlice, type TextFileSlice, type TextFileStamp } from "../data/largeTextFile";
 
 const REVEAL_LABEL = IS_MAC
@@ -29,11 +31,6 @@ const TOO_LARGE_TO_EDIT = "File is too large to edit";
 export function isTooLargeToEdit(message: string): boolean {
   return message.startsWith(TOO_LARGE_TO_EDIT);
 }
-
-const reveal = (path: string) =>
-  void revealPath(path).catch((error) => {
-    console.warn("FileLoadError reveal failed", error);
-  });
 
 /** Shown when the editor cannot load a file. A file over the editor limit opens as a read-only,
  * paged view, on this computer or on the connected machine that owns it. Where the same request
@@ -69,32 +66,41 @@ function FileLoadFailure({
   useLocale();
   const local = !isRemoteProjectPath(path);
   const shownCentrally = useConnectionErrorShownCentrally(message);
+  const { reveal, failure: revealFailure } = useRevealFile(path);
   if (shownCentrally) return null;
   return (
-    <DocumentMessage
-      title={t("Couldn’t open {p0}", { p0: basename(path) })}
-      error
-      detail={message}
-      onRetry={retryable ? onRetry : undefined}
-      action={local ? { label: t(REVEAL_LABEL), onClick: () => reveal(path) } : undefined}
-      extra={
-        local ? undefined : (
-          <CopyButton
-            size="sm"
-            variant="ghost"
-            label={t("Copy path")}
-            text={path}
-            resetKeys={[path]}
-          />
-        )
-      }
-    />
+    <>
+      <DocumentMessage
+        title={t("Couldn’t open {p0}", { p0: basename(path) })}
+        error
+        detail={message}
+        onRetry={retryable ? onRetry : undefined}
+        action={local ? { label: t(REVEAL_LABEL), onClick: () => void reveal() } : undefined}
+        extra={
+          local ? undefined : (
+            <CopyButton
+              size="sm"
+              variant="ghost"
+              label={t("Copy path")}
+              text={path}
+              resetKeys={[path]}
+            />
+          )
+        }
+      />
+      {revealFailure ? (
+        <InlineError inset="row" details={revealFailure}>
+          {t("Couldn’t open the file location")}
+        </InlineError>
+      ) : null}
+    </>
   );
 }
 
 function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => void }) {
   useLocale();
   const local = !isRemoteProjectPath(path);
+  const { reveal, failure: revealFailure } = useRevealFile(path);
   // Start offsets of the pages before the current one, for "Previous".
   const [history, setHistory] = useState<number[]>([]);
   const [offset, setOffset] = useState(0);
@@ -197,7 +203,7 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
             size="sm"
             variant="ghost"
             startIcon={<Folder className="icon-xs" strokeWidth={1.75} />}
-            onClick={() => reveal(path)}
+            onClick={() => void reveal()}
           >
             {t(REVEAL_LABEL)}
           </Button>
@@ -211,6 +217,11 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
           />
         )}
       </Text>
+      {revealFailure ? (
+        <InlineError inset="row" details={revealFailure}>
+          {t("Couldn’t open the file location")}
+        </InlineError>
+      ) : null}
       <OutputBlock
         size="secondary"
         tone="secondary"

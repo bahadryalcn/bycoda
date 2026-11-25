@@ -146,10 +146,12 @@ export function ChatFolderBrowser({
   async function saveMapping() {
     await runAction("mapping", async () => {
       if (!isEqualOrInside(directory, remoteRoot))
-        throw new Error("The connected folder must contain the folder currently being browsed.");
+        throw new Error(t("The connected folder must contain the folder currently being browsed."));
       if (!(await isLocalDirectory(localRoot.trim())))
         throw new Error(
-          "The shared folder is unavailable on this computer. Check its connection or update the shared folder path.",
+          t(
+            "The shared folder is unavailable on this computer. Check its connection or update the shared folder path.",
+          ),
         );
       saveExplorerMapping(remoteRoot, localRoot);
       const localPath = localExplorerPath(directory);
@@ -167,7 +169,7 @@ export function ChatFolderBrowser({
       void revealDirectory();
     }
     // Only the initial request should open the OS file manager automatically.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the first request on open reveals the folder; later directory changes must not
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -292,7 +294,7 @@ export function ChatFolderBrowser({
                 label={t("Same folder on this computer")}
                 disabled={busy}
                 className="font-mono"
-                placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
+                placeholder={IS_WIN ? "\\\\MacBook\\share\\projects" : "/Volumes/share/projects"}
                 value={localRoot}
                 onChange={(event) => setLocalRoot(event.target.value)}
                 required
@@ -320,14 +322,17 @@ export function ChatFolderBrowser({
           </LoadingText>
         ) : null}
         {actionError ? (
-          <InlineError inset="row">
-            {t("Could not open the shared folder: ")}
-            {actionError}
+          <InlineError inset="row" details={actionError}>
+            {t("Could not open the shared folder.")}
           </InlineError>
         ) : null}
         {error ? (
-          <InlineError inset="row" retry={{ onRetry: () => setReload((value) => value + 1) }}>
-            {error}
+          <InlineError
+            inset="row"
+            details={error}
+            retry={{ onRetry: () => setReload((value) => value + 1) }}
+          >
+            {t("Couldn’t open this folder")}
           </InlineError>
         ) : !entries ? (
           <LoadingText inset="row">{t("Loading folder…")}</LoadingText>

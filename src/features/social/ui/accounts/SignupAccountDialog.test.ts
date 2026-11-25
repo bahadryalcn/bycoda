@@ -16,7 +16,10 @@ vi.mock("../../../../shared/ui/Modal", () => ({
     createElement(
       "div",
       { role: "dialog", "aria-label": props.title },
-      createElement("button", { disabled: props.closeDisabled, "aria-label": "Close dialog" }),
+      createElement("button", {
+        disabled: props.closeDisabled,
+        "aria-label": "Close dialog",
+      }),
       props.children,
       props.footer,
     ),
@@ -25,7 +28,10 @@ vi.mock("../../../../shared/ui/Modal", () => ({
 
 vi.mock("../../../../shared/ui/DatePicker", () => ({
   DatePicker: (props: { label: string; max?: string }) =>
-    createElement("input", { "aria-label": props.label, "data-max": props.max }),
+    createElement("input", {
+      "aria-label": props.label,
+      "data-max": props.max,
+    }),
 }));
 
 let element: HTMLDivElement, root: Root;
@@ -66,7 +72,11 @@ function setup(begin: SocialBrowserWorkflow = flow(), existingAccountId?: string
     request: vi.fn(async () => ({ id: "acc-1" })),
     browserWorkflowBegin: vi.fn(async () => begin),
     browserRegistrationAdvance: vi.fn(async () => flow({ updatedAt: 11 })),
-    browserWorkflowStatus: vi.fn(async () => ({ available: true, reason: "", workflows: [] })),
+    browserWorkflowStatus: vi.fn(async () => ({
+      available: true,
+      reason: "",
+      workflows: [],
+    })),
     browserWorkflowCancel: vi.fn(async () => undefined),
   };
   const onClose = vi.fn();
@@ -293,7 +303,11 @@ const birthdateMax = async (local: Date) => {
     setup(
       {
         ...flow(),
-        registration: { ...flow().registration!, requiredFields: ["birthdate"], blockers: [] },
+        registration: {
+          ...flow().registration!,
+          requiredFields: ["birthdate"],
+          blockers: [],
+        },
       },
       "acc-9",
     );

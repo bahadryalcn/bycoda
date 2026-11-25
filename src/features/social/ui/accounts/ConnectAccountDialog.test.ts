@@ -57,7 +57,11 @@ function fakeClient(create: ReturnType<typeof vi.fn> = vi.fn(async () => ({ id: 
 
 function render(
   client: ReturnType<typeof fakeClient>["client"],
-  props: { initialProjectId?: string; onClose?: () => void; onCreated?: (id: string) => void } = {},
+  props: {
+    initialProjectId?: string;
+    onClose?: () => void;
+    onCreated?: (id: string) => void;
+  } = {},
 ) {
   const onClose = props.onClose ?? vi.fn();
   const onCreated = props.onCreated ?? vi.fn();
@@ -158,7 +162,11 @@ it("switches to a token connection and the bot type when Telegram is chosen", as
   await submitForm();
   expect(create).toHaveBeenCalledWith(
     "accounts.create",
-    expect.objectContaining({ platform: "telegram", accountType: "bot", connection: "token" }),
+    expect.objectContaining({
+      platform: "telegram",
+      accountType: "bot",
+      connection: "token",
+    }),
   );
 });
 
@@ -170,7 +178,11 @@ it("uses a browser connection when the owner picks the browser sign-in", async (
   await submitForm();
   expect(create).toHaveBeenCalledWith(
     "accounts.create",
-    expect.objectContaining({ platform: "x", connection: "browser", accountType: "member" }),
+    expect.objectContaining({
+      platform: "x",
+      connection: "browser",
+      accountType: "member",
+    }),
   );
 });
 

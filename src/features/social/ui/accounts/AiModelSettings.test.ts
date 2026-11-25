@@ -18,7 +18,9 @@ const picker = vi.hoisted(() => ({
 // The app's model picker has its own tests; here only the inherit choice and the saved agent matter.
 vi.mock("../../../sessions/public/ModelPicker", () => ({
   ModelPicker: (
-    props: typeof picker.props & { inheritChoice?: { label: string; selected: boolean } },
+    props: typeof picker.props & {
+      inheritChoice?: { label: string; selected: boolean };
+    },
   ) => {
     picker.props = props;
     return createElement(
@@ -106,7 +108,10 @@ it("reads saved effort and account and persists settings through the reviewed po
       policies: {
         ...policies,
         global: {
-          agent: { ...policies.global.agent, modelSettings: { reasoningEffort: "xhigh" } },
+          agent: {
+            ...policies.global.agent,
+            modelSettings: { reasoningEffort: "xhigh" },
+          },
         },
       },
     }),

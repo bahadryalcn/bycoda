@@ -45,6 +45,7 @@ import { StatusDot } from "../../shared/ui/StatusDot";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
 import { localSessionLinkFields } from "../../features/sessions/model/localSessionReference";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { InlineError } from "../../shared/ui/InlineError";
 import { TextField } from "../../shared/ui/TextField";
 import { Modal } from "../../shared/ui/Modal";
@@ -3419,8 +3420,17 @@ function SidebarComponent({
           {t("Regenerating title…")}
         </Text>
       ) : (
-        <Alert tone="danger">
-          {titleActions[globalSessionKey(session)].error}
+        <Alert
+          tone="danger"
+          onClick={(event) => event.stopPropagation()}
+          extra={
+            <ErrorDetails
+              title={t("Could not regenerate title")}
+              detail={titleActions[globalSessionKey(session)].error ?? ""}
+            />
+          }
+        >
+          {t("Could not regenerate title")}
           <Button
             onClick={(event) => {
               event.stopPropagation();
@@ -4684,7 +4694,7 @@ function SidebarComponent({
           ) : (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
               <div className={sessionsStale ? "opacity-60" : undefined}>
-                {/* Renders nothing: tells this list which conversations a live crew manages. */}
+                {/* Tells this list which conversations a live crew manages, and shows the project's unfinished Crew work with its work dialog. */}
                 {onOpenCrewSession && inProject && !sessionsHidden && (
                   <CrewSidebar
                     key={cwd}
@@ -7704,10 +7714,12 @@ function SessionRenameRow({
   };
 
   return (
+    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Pointer isolation wrapper only; the TextField inside owns keyboard input.
     <div
       data-session-rename
       data-no-drag
       className="flex min-w-0 flex-1 flex-col"
+      onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}
     >
@@ -7720,12 +7732,18 @@ function SessionRenameRow({
         value={value}
         disabled={saving}
         onChange={(e) => setValue(e.target.value)}
-        onBlur={() => finish(true)}
+        onBlur={(event) => {
+          if (
+            !error &&
+            !event.currentTarget.closest("[data-session-rename]")?.contains(event.relatedTarget)
+          )
+            finish(true);
+        }}
         onKeyDown={onKeyDown}
         leading="snug"
         className="w-full"
       />
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? <InlineError details={error}>{t("Could not rename session")}</InlineError> : null}
     </div>
   );
 }

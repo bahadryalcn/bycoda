@@ -115,9 +115,14 @@ export function YouTubeManage({
   // The edit form shows the current values; what the owner typed (the draft) wins over them.
   const draft: YouTubeDraft = { ...baseline, ...own };
   const mergeDraft = (values: YouTubeDraft) =>
-    setDrafts((current) => ({ ...current, [section]: { ...current[section], ...values } }));
+    setDrafts((current) => ({
+      ...current,
+      [section]: { ...current[section], ...values },
+    }));
   const setField = (key: string, value: string | File[]) => mergeDraft({ [key]: value });
-  const { write, error, is, setError } = useAccountWrite(t("The YouTube operation failed."));
+  const { write, error, details, is, setError } = useAccountWrite(
+    t("The YouTube operation failed."),
+  );
   const confirmation = useConfirm();
 
   const sectionViews = youtubeViews(section, browser);
@@ -156,7 +161,9 @@ export function YouTubeManage({
 
   const refreshLists = () =>
     queryClient
-      .invalidateQueries({ queryKey: [...socialQueryScope(client), "youtube", account.id] })
+      .invalidateQueries({
+        queryKey: [...socialQueryScope(client), "youtube", account.id],
+      })
       .catch(() => undefined);
   const finish = (response: unknown, deletedVideoId?: unknown) => {
     if (response === undefined) return;
@@ -320,7 +327,10 @@ export function YouTubeManage({
         value={view ?? ""}
         options={sectionViews}
         onValueChange={(value) => {
-          setViews((current) => ({ ...current, [section]: value as YouTubeView }));
+          setViews((current) => ({
+            ...current,
+            [section]: value as YouTubeView,
+          }));
           setOperation("");
           setResult(undefined);
           setError("");
@@ -397,7 +407,10 @@ export function YouTubeManage({
               <SegmentedControl
                 label={t("Actions")}
                 value={form.action}
-                options={taskForms.map(({ action, label }) => ({ value: action, label }))}
+                options={taskForms.map(({ action, label }) => ({
+                  value: action,
+                  label,
+                }))}
                 onValueChange={chooseTask}
               />
             ) : (
@@ -406,7 +419,10 @@ export function YouTubeManage({
                 hideLabel
                 value={form.action}
                 disabled={busy || blocked}
-                options={taskForms.map(({ action, label }) => ({ value: action, label }))}
+                options={taskForms.map(({ action, label }) => ({
+                  value: action,
+                  label,
+                }))}
                 onValueChange={chooseTask}
               />
             )
@@ -443,7 +459,7 @@ export function YouTubeManage({
               {t("Pick an item in the list above, or enter its ID.")}
             </Text>
           ) : null}
-          {error ? <InlineError>{error}</InlineError> : null}
+          {error ? <InlineError details={details}>{error}</InlineError> : null}
           <div className="youtube-actions">
             <Button
               variant={form.danger ? "secondary" : "primary"}
@@ -470,7 +486,7 @@ export function YouTubeManage({
         </section>
       ) : (
         <>
-          {error ? <InlineError>{error}</InlineError> : null}
+          {error ? <InlineError details={details}>{error}</InlineError> : null}
           {result !== undefined ? <YouTubeResult result={result} busy={busy} /> : null}
         </>
       )}

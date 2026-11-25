@@ -10,6 +10,7 @@ import { projectKey, projectName } from "../../../shared/lib/paths";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Sparkles, Plus, Zap } from "../../../shared/ui/icons";
@@ -499,8 +500,12 @@ function AutomationsContent({
 
         <main className="automation-workspace flex min-h-0 min-w-0 flex-1 flex-col">
           {error ? (
-            <Alert tone="danger" className="mx-3 mt-1 mb-2 shrink-0">
-              {error}
+            <Alert
+              tone="danger"
+              className="mx-3 mt-1 mb-2 shrink-0"
+              extra={<ErrorDetails detail={error} title={t("Automation action failed.")} />}
+            >
+              {t("Automation action failed.")}
             </Alert>
           ) : null}
           {paused && !editorDraft ? (

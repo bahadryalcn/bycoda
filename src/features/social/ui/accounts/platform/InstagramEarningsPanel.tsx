@@ -36,7 +36,9 @@ export function InstagramEarningsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const [snapshot, setSnapshot] = useState<InstagramEarnings>();
   const read = () => {
     void write("earnings", async () => {
@@ -67,7 +69,7 @@ export function InstagramEarningsPanel({
       {snapshot && !snapshot.values.length ? (
         <EmptyState size="inline" context="list" title={t("Earnings unavailable")} />
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
     </FieldGroup>
   );
 }

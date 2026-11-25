@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { WorktreeList, useWorktreeList } from "./WorktreeList";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
@@ -80,7 +80,8 @@ export function WorktreePicker({
       await onSelect(tree);
       dismiss();
     } catch (e) {
-      setError(presentRemoteError(e, { explicit: true }));
+      const { details, message } = describeRemoteError(e);
+      setError(details || message);
     } finally {
       setBusy(false);
     }
@@ -193,6 +194,7 @@ export function WorktreePicker({
             <InlineError
               inset="row"
               className="shrink-0"
+              details={error || loadError}
               retry={
                 loadError
                   ? {
@@ -203,7 +205,7 @@ export function WorktreePicker({
                   : undefined
               }
             >
-              {error || loadError}
+              {t(error ? "Couldn’t select worktree" : "Couldn’t load worktrees")}
             </InlineError>
           )}
           <Text

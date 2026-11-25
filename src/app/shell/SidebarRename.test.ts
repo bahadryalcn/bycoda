@@ -1127,7 +1127,15 @@ describe("sidebar session rename", () => {
     items = openMenu();
     expect(items.find((item) => item.textContent === "Regenerate title")?.disabled).toBe(true);
     await act(async () => reject(new Error("Provider unavailable")));
-    expect(card().querySelector('[role="alert"]')?.textContent).toContain("Provider unavailable");
+    expect(card().querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not regenerate title",
+    );
+    await act(async () =>
+      card()
+        .querySelector<HTMLButtonElement>('[aria-label="Details: Could not regenerate title"]')!
+        .click(),
+    );
+    expect(document.body.textContent).toContain("Provider unavailable");
     act(() =>
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
@@ -1156,7 +1164,15 @@ describe("sidebar session rename", () => {
     expect(renameInput()).toBe(input);
     expect(input.value).toBe("Retry this name");
     expect(input.disabled).toBe(false);
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk unavailable");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not rename session",
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Details: Could not rename session"]')!
+        .click(),
+    );
+    expect(document.body.textContent).toContain("Disk unavailable");
     await act(async () => {
       pressKey(input, "Enter");
     });

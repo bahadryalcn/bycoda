@@ -56,7 +56,7 @@ function ConnectedDockApproval({
         motion="none"
         loading={decision.pending && decision.decision === "deny"}
         disabled={decision.blocked}
-        tooltip={decision.blocked ? reason : undefined}
+        disabledReason={decision.blocked ? reason : undefined}
         onClick={() => void decision.decide("deny")}
       >
         {t("Deny")}
@@ -69,6 +69,7 @@ function ConnectedDockApproval({
           motion="none"
           loading={decision.sessionAction.pending}
           disabled={decision.sessionAction.disabled}
+          tooltip={decision.sessionAction.tooltip}
           onClick={decision.sessionAction.onClick}
         >
           {decision.sessionAction.label}
@@ -83,7 +84,8 @@ function ConnectedDockApproval({
           decision.pending && !decision.allowForSessionPending && decision.decision === "allow"
         }
         disabled={decision.blocked}
-        tooltip={decision.blocked ? reason : full === summary ? undefined : full}
+        disabledReason={decision.blocked ? reason : undefined}
+        tooltip={full === summary ? undefined : full}
         onClick={() => void decision.decide("allow")}
       >
         {t("Allow")}

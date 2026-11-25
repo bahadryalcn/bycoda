@@ -4,6 +4,7 @@ import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
 import { Button } from "../../../../shared/ui/Button";
 import { Plus } from "../../../../shared/ui/icons";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../../shared/ui/SearchInput";
 import { Skeleton } from "../../../../shared/ui/Skeleton";
@@ -24,9 +25,11 @@ function threadTime(at: number) {
 export function ConversationThreadList({
   c,
   onFailure,
+  onShowTranscript,
 }: {
   c: ConversationContext;
   onFailure: (cause: unknown) => void;
+  onShowTranscript: () => void;
 }) {
   const { setQuery } = useAssistantRoom();
   const {
@@ -49,6 +52,12 @@ export function ConversationThreadList({
     (a, b) =>
       Number(Boolean(a.projectId)) - Number(Boolean(b.projectId)) || b.updatedAt - a.updatedAt,
   );
+  const openDisabledReason =
+    scope !== "global" && !project
+      ? t("Select a project to open a conversation.")
+      : scope === "session" && !sessionId
+        ? t("Select a session to open a conversation.")
+        : undefined;
   return (
     <aside
       {...surfaceAttributes({ frame: "pane", edge: "inline-end" }, styles.threadList)}
@@ -93,18 +102,20 @@ export function ConversationThreadList({
           <Button
             iconOnly
             label={t("Open conversation")}
-            disabled={
-              pending ||
-              clearing ||
-              summaryRefreshing ||
-              (scope !== "global" && !project) ||
-              (scope === "session" && !sessionId)
-            }
-            onClick={() => void open().catch(onFailure)}
+            disabled={pending || clearing || summaryRefreshing || !!openDisabledReason}
+            disabledReason={openDisabledReason}
+            onClick={() => void open(onShowTranscript).catch(onFailure)}
           >
             <Plus className="icon-sm" />
           </Button>
         </div>
+        {query.trim() && (
+          <div className={styles.narrowAction}>
+            <Button variant="secondary" onClick={onShowTranscript}>
+              {t("Show search results")}
+            </Button>
+          </div>
+        )}
       </div>
       <div className={styles.threads}>
         {!threads.length && pending && (
@@ -117,18 +128,25 @@ export function ConversationThreadList({
             ))}
           </div>
         )}
+        {!threads.length && !pending && (
+          <EmptyState size="inline" description={t("No conversations yet.")} />
+        )}
         {threads.map((thread) => {
           const projectName = thread.projectId
             ? (projects.find((item) => (item.id ?? item.path) === thread.projectId)?.name ??
               thread.projectId)
             : "";
+          const scopeName = projectName || t("Global");
           return (
             <Button
               key={thread.id}
               variant="item"
               selected={threadId === thread.id}
               disabled={clearing || summaryRefreshing}
-              onClick={() => setThreadId(thread.id)}
+              onClick={() => {
+                setThreadId(thread.id);
+                onShowTranscript();
+              }}
             >
               <span className={styles.threadTop}>
                 <Text
@@ -140,7 +158,9 @@ export function ConversationThreadList({
                   truncate
                   className={styles.threadName}
                 >
-                  {projectName || t("Global")}
+                  {thread.purpose === "job-planning"
+                    ? t("Job planning · {p0}", { p0: scopeName })
+                    : scopeName}
                 </Text>
                 <Text size="micro" tone="muted" leading="inherit" className={styles.threadTime}>
                   {threadTime(thread.updatedAt)}

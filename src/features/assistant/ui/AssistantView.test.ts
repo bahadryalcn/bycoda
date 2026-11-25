@@ -2535,6 +2535,48 @@ it("pages timestamp siblings using the exact oldest loaded message identity", as
   const texts = [...container.querySelectorAll("[data-message-id]")].map((row) => row.textContent);
   expect(new Set(texts).size).toBe(texts.length);
 });
+
+it("retries a failed conversation search and only pages history outside search", async () => {
+  const thread = summaryThread();
+  mock.snapshot!.threads = [thread];
+  const messages = Array.from({ length: 100 }, (_, id) => ({
+    id: `search-history-${id}`,
+    threadId: thread.id,
+    role: "user" as const,
+    via: "text" as const,
+    text: "History",
+    jobIds: [],
+    version: 1,
+    createdAt: id,
+    updatedAt: id,
+  }));
+  const queries: string[] = [];
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation(async (input, env) => {
+    if (input.op === "threads.messages") return { messages };
+    if (input.op !== "conversations.search") return base(input, env);
+    queries.push(input.query);
+    if (queries.length === 1) throw new Error("Search index unavailable.");
+    return { messages: [] };
+  });
+  await render({ initialTab: "conversations" });
+  expect(container.textContent).toContain("Load earlier messages");
+  vi.useFakeTimers();
+  await enterMemoryQuery("weekly update");
+  expect(container.textContent).not.toContain("Load earlier messages");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  expect(container.textContent).toContain("Could not search conversations.");
+  expect(container.textContent).not.toContain("Search index unavailable.");
+  expect(container.textContent).not.toContain("No results");
+
+  await click("Try again");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  expect(queries).toEqual(["weekly update", "weekly update"]);
+  expect(container.textContent).toContain("No results");
+  expect(container.textContent).not.toContain("Could not search conversations.");
+  await click("Reset filters");
+  expect(container.textContent).toContain("Load earlier messages");
+});
 it("keeps loaded history after a cursor error and retries the same canonical zero-timestamp cursor", async () => {
   const thread = {
     id: "cursor-thread",

@@ -1,6 +1,6 @@
 import { t } from "../../../../shared/i18n";
-import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
-import { StatusDot } from "../../../../shared/ui/StatusDot";
+import type { BadgeTone } from "../../../../shared/ui/Badge";
+import { SocialStatusDot } from "../common/SocialStatusDot";
 import type { StatusTextStatus } from "../common/StatusText";
 
 export type ContentState = Exclude<StatusTextStatus, "completed"> | "draft" | "paused";
@@ -46,16 +46,7 @@ export function contentStateLabel(state: ContentState): string {
   }
 }
 
-/** Status of a post as a toned badge; the word always shows, color never carries it alone. */
-export function ContentStateBadge({ state }: { state: ContentState }) {
-  return (
-    <Badge size="sm" tone={contentStateTone(state)}>
-      {contentStateLabel(state)}
-    </Badge>
-  );
-}
-
 /** The state as a named dot for calendar chips; the word is its accessible name. */
 export function ContentStateDot({ state }: { state: ContentState }) {
-  return <StatusDot tone={contentStateTone(state)} label={contentStateLabel(state)} />;
+  return <SocialStatusDot tone={contentStateTone(state)} label={contentStateLabel(state)} />;
 }

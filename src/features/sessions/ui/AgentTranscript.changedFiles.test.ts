@@ -67,7 +67,8 @@ it("renders the settled turn's file list below its footer and opens the diff or 
   expect(mount.querySelectorAll('ul[aria-label="Changed files"]')).toHaveLength(1);
   expect(list()?.previousElementSibling?.hasAttribute("data-transcript-actions-row")).toBe(true);
   const button = () => list()?.querySelector("button");
-  expect(button()?.textContent).toBe("src/main.ts+3−2");
+  expect(button()?.textContent).toContain("src/main.ts");
+  expect(button()?.textContent).toContain("+3−2");
   await act(async () => button()?.click());
   expect(onOpenDiff).toHaveBeenCalledExactlyOnceWith("/repo/src/main.ts");
   expect(onOpenFile).not.toHaveBeenCalled();

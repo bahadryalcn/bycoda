@@ -1,4 +1,5 @@
 import type {
+  CampaignVariant,
   SnapchatPublishOptions,
   LinkedInPostFormat,
   FacebookPublishOptions,
@@ -77,6 +78,13 @@ export type ContentDraft = {
   /** Set when the draft was loaded from a saved campaign; saving then revises it. */
   campaignId?: string;
   revision?: number;
+  saved?: {
+    variants: CampaignVariant[];
+    fields: Pick<
+      ContentDraft,
+      "text" | "link" | "media" | "when" | "scheduledAt" | "factIds" | "platform"
+    >;
+  };
   name: string;
   text: string;
   link: string;
@@ -316,7 +324,7 @@ export function draftFromCampaign(
             }
           : undefined;
   const scheduled = first?.scheduledAt;
-  return {
+  const draft: ContentDraft = {
     campaignId: campaign.id,
     revision: campaign.revision,
     name: campaign.name,
@@ -334,6 +342,14 @@ export function draftFromCampaign(
     utm: { source: "", medium: "", campaign: "" },
     repeat: { ...DEFAULT_REPEAT },
     platform,
+  };
+  const { text, link, when, scheduledAt, factIds } = draft;
+  return {
+    ...draft,
+    saved: {
+      variants: campaign.variants,
+      fields: { text, link, media: draft.media, when, scheduledAt, factIds, platform },
+    },
   };
 }
 

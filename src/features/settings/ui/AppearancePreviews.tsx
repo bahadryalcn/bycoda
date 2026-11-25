@@ -2,8 +2,6 @@ import { type CSSProperties } from "react";
 import { ACCENT_COLOR_DEFAULT, type ThemePreference } from "../model/appearance";
 import "./AppearancePreviews.css";
 
-export { matchThemePalette } from "../model/themePalettes";
-
 /** True while the accent is the app default (no override, or the default value itself). */
 export function isDefaultAccent(accentColor: string | null) {
   return !accentColor || accentColor.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase();

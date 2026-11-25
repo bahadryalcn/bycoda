@@ -152,7 +152,13 @@ it("shows why a reconnect that really failed did not work", async () => {
     entry.textContent?.includes("Reconnect"),
   );
   await act(async () => button?.click());
-  expect(container.textContent).toContain("Reconnecting failed: SSH timed out");
+  expect(container.textContent).toContain("Reconnecting failed");
+  expect(container.textContent).not.toContain("SSH timed out");
+  const details = [...container.querySelectorAll("button")].find(
+    (entry) => entry.getAttribute("aria-label") === "Details: Reconnecting failed",
+  );
+  await act(async () => details?.click());
+  expect(document.body.textContent).toContain("SSH timed out");
 });
 
 it("shows recovery status without transport error details or retry actions", async () => {
@@ -223,5 +229,10 @@ it("says a busy machine is busy and adds no retry action the failure does not al
   );
   expect(container.textContent).toContain("Server is busy right now");
   expect(container.textContent).not.toContain("Couldn’t load from the machine");
-  expect(container.querySelectorAll("button")).toHaveLength(0);
+  expect(container.textContent).not.toContain("[RPC_TIMEOUT]");
+  expect(
+    [...container.querySelectorAll("button")].some((button) =>
+      button.textContent?.includes("Retry"),
+    ),
+  ).toBe(false);
 });

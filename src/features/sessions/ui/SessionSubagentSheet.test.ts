@@ -1,5 +1,13 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ComponentProps, type ReactElement } from "react";
+import {
+  act,
+  Children,
+  createElement,
+  isValidElement,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block, Session } from "../model/session";
@@ -225,7 +233,14 @@ it("sends a delegated child's steer with attachments to that child session", () 
   };
   const options = { followUpBehavior: "steer" as const };
   act(() => {
-    lastSheet().composer?.props.onSubmit("Use the cached schema", [attachment], options);
+    // The composer slot is a fragment: a stop failure line, then the composer.
+    const composer = Children.toArray(
+      (lastSheet().composer as ReactElement<{ children: ReactNode }> | undefined)?.props.children,
+    ).find(
+      (child): child is ReactElement<ComponentProps<typeof SubagentChatComposer>> =>
+        isValidElement(child) && "onSubmit" in (child.props as object),
+    );
+    composer?.props.onSubmit("Use the cached schema", [attachment], options);
   });
   expect(onSubmitToSession).toHaveBeenCalledWith(
     "child-1",

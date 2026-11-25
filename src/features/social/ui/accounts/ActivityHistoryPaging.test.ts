@@ -67,7 +67,11 @@ function host(jobs: SocialJob[], actionPages: { items: AiAction[]; next?: string
 async function mount(client: SocialClient, projectId?: string) {
   act(() =>
     root.render(
-      createElement(ActivityHistory, { client, accounts, ...(projectId ? { projectId } : {}) }),
+      createElement(ActivityHistory, {
+        client,
+        accounts,
+        ...(projectId ? { projectId } : {}),
+      }),
     ),
   );
   await act(async () => undefined);

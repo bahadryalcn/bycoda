@@ -26,7 +26,7 @@ import {
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Heading } from "../../../shared/ui/Heading";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError, presentRemoteError } from "../../connections/public/remoteFailure";
 import { hostLifetimeDeadline, remainingUntil } from "../../../shared/lib/time/hostLifetime";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { shortSha } from "../../../shared/lib/shortSha";
@@ -80,8 +80,11 @@ export function WorkspaceReview({
     savedPublication(workspace, "attempt") ? "publish" : "merge",
   );
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone: "success" | "warning" } | null>(
+    null,
+  );
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [publication, setPublication] = useState<PublicationDraft>(
     () =>
@@ -100,10 +103,12 @@ export function WorkspaceReview({
   const publicationAttempt = useRef<PublicationAttempt | null>(
     savedPublication<PublicationAttempt>(workspace, "attempt"),
   );
+  // Persist the draft so closing the review does not discard publication edits.
   useEffect(() => {
     savePublication(workspace, "draft", publication);
   }, [workspace.id, workspace.environmentId, publication]);
   const [now, setNow] = useState(() => monotonicNow());
+  // Recheck the Host plan lifetime after the window regains focus or visibility.
   useEffect(() => {
     if (!plan) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -122,6 +127,7 @@ export function WorkspaceReview({
       document.removeEventListener("visibilitychange", check);
     };
   }, [plan]);
+  // Read publication capabilities for the active workspace's Host.
   useEffect(() => {
     let live = true;
     void getWorkspaceCapabilities(context)
@@ -130,20 +136,30 @@ export function WorkspaceReview({
       })
       .catch((reason) => {
         const message = presentRemoteError(reason);
-        if (live && message) setError(message);
+        if (live && message)
+          setError({
+            title: t("Couldn’t check workspace capabilities"),
+            detail: describeRemoteError(reason).details,
+          });
       });
     return () => {
       live = false;
     };
   }, [context.cwd, context.environmentId]);
 
+  const publicationReady = !!publication.repository.trim() && !!publication.title.trim();
+  function clearPlan() {
+    setPlan(null);
+    setDiffCommit(null);
+  }
+
   async function review(action: "merge" | "publish") {
-    if (lock.current) return;
+    if (lock.current || (action === "publish" && !publicationReady)) return;
     lock.current = true;
     setPending("review");
     setError(null);
     setMessage(null);
-    setPlan(null);
+    clearPlan();
     try {
       const fresh = await workspaceRequest(
         "workspaces.get",
@@ -168,12 +184,22 @@ export function WorkspaceReview({
       setNow(monotonicNow());
     } catch (reason) {
       const message = presentRemoteError(reason);
-      if (message) setError(message);
+      if (message) {
+        setError({
+          title: t(
+            action === "publish"
+              ? "Couldn’t review publication"
+              : "Couldn’t review workspace changes",
+          ),
+          detail: describeRemoteError(reason).details,
+        });
+      }
     } finally {
       lock.current = false;
       setPending(null);
     }
   }
+  // Prepare the initial merge review unless there is a publication to reconcile.
   useEffect(() => {
     if (!publicationAttempt.current) void review("merge");
   }, [workspace.id]);
@@ -201,8 +227,15 @@ export function WorkspaceReview({
     } catch (reason) {
       // Keep the original token and operation key for publication reconciliation.
       // A lost response must never generate a second push or PR intent.
-      setError(presentRemoteError(reason, { explicit: true }));
-      if (plan.action === "merge") setPlan(null);
+      setError({
+        title: t(
+          plan.action === "merge"
+            ? "Couldn’t merge workspace changes"
+            : "Couldn’t confirm pull request creation",
+        ),
+        detail: describeRemoteError(reason).details,
+      });
+      if (plan.action === "merge") clearPlan();
     } finally {
       lock.current = false;
       setPending(null);
@@ -217,29 +250,56 @@ export function WorkspaceReview({
     };
     if (attempt.plan.action === "merge") {
       await workspaceRequest("workspaces.delivery.merge", params, context);
-      setMessage(
-        t("Merged into {p0}.", {
+      setMessage({
+        tone: "success",
+        text: t("Merged into {p0}.", {
           p0: branchName(attempt.plan.targetBranchRef),
         }),
-      );
-      setPlan(null);
+      });
+      clearPlan();
     } else {
       const result = await workspaceRequest("workspaces.delivery.publish", params, context);
       setReceipt(result);
       if (result.status === "complete") {
         publicationAttempt.current = null;
         savePublication(workspace, "attempt", null);
-        setPlan(null);
-        setMessage(t("Pull request created."));
-      } else
-        setMessage(
-          t(
+        clearPlan();
+        setMessage({ tone: "success", text: t("Pull request created.") });
+      } else {
+        setMessage({
+          tone: "warning",
+          text: t(
             "Publication is incomplete. Check the recorded push and pull request before continuing.",
           ),
-        );
+        });
+      }
     }
-    const fresh = await workspaceRequest("workspaces.get", { workspaceId: workspace.id }, context);
-    if (fresh) onWorkspaceChange?.(fresh);
+    await refreshWorkspace();
+  }
+  async function refreshWorkspace() {
+    setRefreshError(null);
+    try {
+      const fresh = await workspaceRequest(
+        "workspaces.get",
+        { workspaceId: workspace.id },
+        context,
+      );
+      if (fresh) onWorkspaceChange?.(fresh);
+    } catch (reason) {
+      const { details, message } = describeRemoteError(reason);
+      setRefreshError(details || message);
+    }
+  }
+  async function retryWorkspaceRefresh() {
+    if (lock.current) return;
+    lock.current = true;
+    setPending("refresh");
+    try {
+      await refreshWorkspace();
+    } finally {
+      lock.current = false;
+      setPending(null);
+    }
   }
   async function reconcilePublication() {
     if (!publicationAttempt.current || lock.current) return;
@@ -249,7 +309,10 @@ export function WorkspaceReview({
     try {
       await apply(publicationAttempt.current);
     } catch (reason) {
-      setError(presentRemoteError(reason, { explicit: true }));
+      setError({
+        title: t("Couldn’t check publication status"),
+        detail: describeRemoteError(reason).details,
+      });
     } finally {
       lock.current = false;
       setPending(null);
@@ -282,10 +345,23 @@ export function WorkspaceReview({
               <Button
                 variant="secondary"
                 loading={pending === "review"}
-                disabled={!!pending && pending !== "review"}
+                disabled={
+                  (!!pending && pending !== "review") || (mode === "publish" && !publicationReady)
+                }
+                disabledReason={
+                  mode === "publish" && !publicationReady
+                    ? t("Enter a repository and title.")
+                    : undefined
+                }
                 onClick={() => void review(mode)}
               >
-                {t(plan ? "Refresh review" : "Retry review")}
+                {t(
+                  plan
+                    ? "Refresh review"
+                    : mode === "publish"
+                      ? "Review publication"
+                      : "Retry review",
+                )}
               </Button>
               {plan && (
                 <Button
@@ -327,7 +403,7 @@ export function WorkspaceReview({
               }
               onClick={() => {
                 setMode("publish");
-                setPlan(null);
+                clearPlan();
                 setError(null);
               }}
             >
@@ -369,7 +445,7 @@ export function WorkspaceReview({
                       ...value,
                       [key]: event.target.value,
                     }));
-                    setPlan(null);
+                    clearPlan();
                   }}
                 />
               ))}
@@ -384,27 +460,30 @@ export function WorkspaceReview({
                   ...value,
                   body: event.target.value,
                 }));
-                setPlan(null);
+                clearPlan();
               }}
             />
-            <Button
-              variant="secondary"
-              disabled={
-                !!pending ||
-                attempted ||
-                !publication.repository.trim() ||
-                !publication.title.trim()
-              }
-              loading={pending === "review"}
-              onClick={() => void review("publish")}
-            >
-              {t("Review publication")}
-            </Button>
           </>
         )}
         {pending === "review" && <LoadingText delay={false}>{t("Preparing review…")}</LoadingText>}
-        {error && <InlineError className="break-words">{error}</InlineError>}
-        {message && <p role="status">{message}</p>}
+        {error && <InlineError details={error.detail}>{error.title}</InlineError>}
+        {message && (
+          <InlineMessage tone={message.tone} live="polite">
+            {message.text}
+          </InlineMessage>
+        )}
+        {refreshError && (
+          <InlineError
+            details={refreshError}
+            action={{
+              label: t("Refresh workspace status"),
+              disabled: !!pending,
+              onClick: () => void retryWorkspaceRefresh(),
+            }}
+          >
+            {t("Couldn’t refresh workspace status")}
+          </InlineError>
+        )}
         {receipt && (
           <DescriptionList>
             <DescriptionItem term={t("Branch push")}>
@@ -417,8 +496,15 @@ export function WorkspaceReview({
                 <Button
                   variant="link"
                   onClick={() => {
-                    if (receipt.pullRequest)
-                      openExternal(receipt.pullRequest.url).catch(() => undefined);
+                    if (receipt.pullRequest) {
+                      setError(null);
+                      void openExternal(receipt.pullRequest.url).catch((reason) =>
+                        setError({
+                          title: t("Couldn’t open the pull request"),
+                          detail: describeRemoteError(reason).details,
+                        }),
+                      );
+                    }
                   }}
                 >
                   #{receipt.pullRequest.number}
@@ -507,7 +593,7 @@ export function WorkspaceReview({
                 </ul>
               </section>
             </div>
-            {diffCommit && (
+            {diffCommit && plan.commits.includes(diffCommit) && (
               <section className="min-w-0 overflow-hidden">
                 <Heading size="item" level={3}>
                   {t("Commit diff")} · {shortSha(diffCommit)}
@@ -542,7 +628,8 @@ export function WorkspaceReview({
                 <ul>
                   {plan.checks.map((check) => (
                     <li key={check.name} className="break-words">
-                      {check.name}: {t(check.status)}
+                      {check.name}:{" "}
+                      {t({ passed: "Passed", failed: "Failed", unknown: "Unknown" }[check.status])}
                     </li>
                   ))}
                 </ul>

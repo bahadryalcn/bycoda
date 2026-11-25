@@ -40,19 +40,6 @@ function reasonLabel(reason: NeedsHumanItem["reason"]): string {
   }
 }
 
-function reasonHint(reason: NeedsHumanItem["reason"]): string {
-  switch (reason) {
-    case "challenge":
-      return t("Complete the security check on the page, then come back and press I'm done.");
-    case "verification":
-      return t("Enter the code shown on the page, then come back and press I'm done.");
-    case "login":
-      return t("Sign in on the page, then come back and press I'm done.");
-    case "unexpected_screen":
-      return t("Look at the page and clear whatever is blocking it, then press I'm done.");
-  }
-}
-
 /** Accounts waiting for the owner. The owner opens the live view, completes the step, then says "I'm done". */
 export function NeedsHumanList({
   client,
@@ -62,9 +49,9 @@ export function NeedsHumanList({
 }: NeedsHumanListProps) {
   const [items, setItems] = useState<NeedsHumanItem[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [openAccount, setOpenAccount] = useState<string | null>(null);
+  const [openAccount, setOpenAccount] = useState<string | null>(null); // the open row's item id, so two rows of one account never both look open
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [doneFailed, setDoneFailed] = useState(false);
+  const [doneFailed, setDoneFailed] = useState<string | null>(null);
 
   const count = items?.length;
   useEffect(() => {
@@ -90,12 +77,12 @@ export function NeedsHumanList({
 
   const done = async (id: string) => {
     setBusyId(id);
-    setDoneFailed(false);
+    setDoneFailed(null);
     try {
       await client.browser.needsHuman.resolve(id);
       await refresh();
     } catch {
-      setDoneFailed(true);
+      setDoneFailed(id);
     } finally {
       setBusyId(null);
     }
@@ -126,7 +113,6 @@ export function NeedsHumanList({
           {t("Waiting items could not be refreshed.")}
         </InlineMessage>
       ) : null}
-      {doneFailed ? <InlineError>{t("Could not mark this as done.")}</InlineError> : null}
       <ul className="needs-human-list">
         {items.map((item, index) => (
           <li
@@ -144,33 +130,42 @@ export function NeedsHumanList({
               <Text size="caption" tone="muted" leading="inherit" className="needs-human-platform">
                 {SOCIAL_PLATFORM_NAMES[item.platform]}
               </Text>
-              <Text size="caption" tone="secondary" leading="snug" className="needs-human-hint">
-                {reasonHint(item.reason)}
-              </Text>
             </div>
             <div className="needs-human-actions">
-              <Button size="sm" variant="primary" onClick={() => setOpenAccount(item.accountId)}>
-                {t("Open live view")}
+              <Button
+                size="sm"
+                variant="primary"
+                pressed={openAccount === item.id}
+                onClick={() => setOpenAccount(openAccount === item.id ? null : item.id)}
+              >
+                {openAccount === item.id ? t("Close live view") : t("Open live view")}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={busyId === item.id}
-                onClick={() => void done(item.id).catch(() => setDoneFailed(true))}
+                onClick={() => void done(item.id)}
               >
                 {t("I'm done")}
               </Button>
             </div>
+            {doneFailed === item.id ? (
+              <InlineError className="needs-human-error">
+                {t("Could not mark this as done.")}
+              </InlineError>
+            ) : null}
+            {openAccount === item.id ? (
+              <div className="needs-human-live">
+                <LiveBrowserPanel
+                  client={client}
+                  accountId={item.accountId}
+                  onClose={() => setOpenAccount(null)}
+                />
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
-      {openAccount ? (
-        <LiveBrowserPanel
-          client={client}
-          accountId={openAccount}
-          onClose={() => setOpenAccount(null)}
-        />
-      ) : null}
     </div>
   );
 }

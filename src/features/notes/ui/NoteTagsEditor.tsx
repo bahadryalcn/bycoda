@@ -81,6 +81,7 @@ export function NoteTagsEditor({
                   variant="secondary"
                   size="sm"
                   disabled={tags.length >= MAX_NOTE_TAGS}
+                  disabledReason={t("Up to {p0} tags per note", { p0: MAX_NOTE_TAGS })}
                   onClick={() => {
                     const next = normalizeNoteTags([...tags, tag]);
                     if (!sameTags(next, tags)) onChange(next);

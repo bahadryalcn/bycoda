@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useEffect, useState, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -97,13 +98,13 @@ export function CrewSessions({
     .sort((a, b) => b.updatedAt - a.updatedAt);
   return (
     <>
-      {ongoingRuns.length > 0 || state.visibleError ? (
+      {runs.length > 0 || state.visibleError ? (
         <section
           aria-label={t("Crew work")}
           aria-busy={state.pendingFailure || undefined}
           className="px-1.5 pt-1"
         >
-          {ongoingRuns.length > 0 ? (
+          {runs.length > 0 ? (
             <div className="flex min-h-7 items-center gap-1 ps-2.5 pe-0.5">
               <Text tone="muted" weight="medium" className="min-w-0 flex-1">
                 {t("Crew work")}
@@ -117,15 +118,16 @@ export function CrewSessions({
             <InlineError
               inset="row"
               details={state.errorDetails}
-              retry={{ onRetry: () => void state.refetch(), pending: state.isFetching }}
+              retry={{
+                onRetry: () => void state.refetch(),
+                pending: state.isFetching,
+              }}
             >
               {state.visibleError}
             </InlineError>
           ) : null}
           {sharedConnectionIssue && !data ? (
-            <Text role="status" as="p" tone="muted" className="px-2.5 py-1">
-              {t("Not connected")}
-            </Text>
+            <LiveText text={t("Not connected")} tone="muted" className="block px-2.5 py-1" />
           ) : null}
           <div className="flex flex-col gap-0 empty:hidden">
             {runs.map((run) => (
@@ -162,7 +164,15 @@ export function CrewSessions({
           state={state}
           definitionId={opened.definitionId}
           initialRunId={opened.runId}
-          onOpen={onOpen}
+          onOpen={
+            onOpen
+              ? (target) => {
+                  // The opened session replaces this view; the dialog must not stay over it.
+                  setOpened(null);
+                  return onOpen(target);
+                }
+              : undefined
+          }
           onClose={() => setOpened(null)}
         />
       ) : null}
@@ -176,7 +186,7 @@ export function CrewManagementDialog({
   ...props
 }: ComponentProps<typeof CrewWorkManager> & { onClose: () => void }) {
   return (
-    <Modal padding="none" title={t("Crews")} size="lg" onClose={onClose}>
+    <Modal padding="none" title={t("Crew work")} size="lg" onClose={onClose}>
       <CrewWorkManager {...props} />
     </Modal>
   );

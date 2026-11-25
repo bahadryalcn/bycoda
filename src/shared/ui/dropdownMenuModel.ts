@@ -16,6 +16,8 @@ export type DropdownMenuAction = {
   shortcut?: string;
   title?: string;
   disabled?: boolean;
+  /** Why the row is unavailable while `disabled`: shown as its tooltip and announced with the row. */
+  disabledReason?: string;
   danger?: boolean;
   checked?: boolean;
   selectionRole?: "radio" | "checkbox";

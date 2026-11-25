@@ -1,12 +1,12 @@
-import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import type { SessionRewindPlan } from "../model/contracts";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { shortSha } from "../../../shared/lib/shortSha";
@@ -145,7 +145,8 @@ export function WorkspaceRewindPreview({
       await onApply();
       onClose();
     } catch (cause) {
-      setError(errorText(cause));
+      const { details, message } = describeRemoteError(cause);
+      setError(details || message);
     } finally {
       setPending(false);
     }
@@ -218,7 +219,13 @@ export function WorkspaceRewindPreview({
             {t("This rewind preview has expired. Cancel and open a new preview.")}
           </Alert>
         ) : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            title={t("Couldn’t rewind")}
+            extra={<ErrorDetails title={t("Couldn’t rewind")} detail={error} />}
+          />
+        ) : null}
       </Text>
     </Modal>
   );
@@ -239,6 +246,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
   const handler = undoHandlers.get(sessionId) ?? undoHandlers.get("*");
   const currentUndo =
     saved && handler ? { sessionId, run: () => handler(sessionId, saved) } : undo.get(sessionId);
+  // Settle a preview if its composer leaves before the owner approves it.
   useEffect(
     () => () => {
       if (preview?.displaySessionId === sessionId) {
@@ -265,7 +273,8 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
               try {
                 await currentUndo.run();
               } catch (cause) {
-                setError(presentRemoteError(cause, { explicit: true }));
+                const { details, message } = describeRemoteError(cause);
+                setError(details || message);
               } finally {
                 setPending(false);
               }
@@ -273,7 +282,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
           >
             {t("Undo rewind")}
           </Button>
-          {error ? <InlineError>{error}</InlineError> : null}
+          {error ? <InlineError details={error}>{t("Couldn’t undo rewind")}</InlineError> : null}
         </Text>
       ) : null}
       {current ? (

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -24,6 +25,13 @@ const toggle = () =>
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   mock.load.mockReset().mockResolvedValue(false);
   mock.save.mockReset().mockResolvedValue(true);
   container = document.createElement("div");
@@ -66,7 +74,7 @@ it("retains the previous value after a rejected save and allows another attempt"
   await act(async () => toggle().click());
   expect(toggle().getAttribute("aria-checked")).toBe("false");
   expect(toggle().disabled).toBe(false);
-  expect(container.textContent).toContain("Synthetic Host busy");
+  await expectErrorDetails(container, "Could not save Exact Git rewind.", "Synthetic Host busy");
   await act(async () => toggle().click());
   expect(mock.save).toHaveBeenCalledTimes(2);
   expect(toggle().getAttribute("aria-checked")).toBe("true");
@@ -76,7 +84,7 @@ it("shows a retryable read error without allowing an unknown policy to be change
   mock.load.mockRejectedValueOnce(new Error("Synthetic Host offline"));
   await act(async () => root.render(createElement(ExactGitRewindSetting)));
   expect(toggle().disabled).toBe(true);
-  expect(container.textContent).toContain("Synthetic Host offline");
+  await expectErrorDetails(container, "Could not load Exact Git rewind.", "Synthetic Host offline");
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Retry",
   )!;

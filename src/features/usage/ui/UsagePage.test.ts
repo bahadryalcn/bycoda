@@ -61,7 +61,9 @@ it("keeps known quota visible when refresh fails", () => {
   limits.error = "Could not refresh limits";
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("58%");
-  expect(markup).toContain("Could not refresh limits");
+  // The raw error sits behind the shared Details control; the row shows the translated title.
+  expect(markup).toContain("Account limits unavailable.");
+  expect(markup).toContain('aria-label="Details: Account limits unavailable."');
   expect(markup).toMatch(/role="alert"[^>]*class="[^"]*usage-account-error/);
   expect(markup).toContain("Retry: Default account");
   limits.error = null;

@@ -7,7 +7,7 @@ import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
-import { MoreHorizontal, RefreshCw } from "../../../../shared/ui/icons";
+import { ArrowLeft, MoreHorizontal } from "../../../../shared/ui/icons";
 import { hasAssistantSummaryRefresh } from "../../model/assistantSummaryRefresh";
 import { AssistantRemoteAccess } from "../AssistantRemoteAccess";
 import styles from "./Conversation.module.css";
@@ -16,9 +16,11 @@ import type { ConversationContext } from "./ConversationTypes";
 export function ConversationHeader({
   c,
   onFailure,
+  onBack,
 }: {
   c: ConversationContext;
   onFailure: (cause: unknown) => void;
+  onBack: () => void;
 }) {
   const {
     snapshot,
@@ -46,11 +48,16 @@ export function ConversationHeader({
   return (
     <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.header)}>
       <div className={styles.identity}>
+        <div className={styles.narrowAction}>
+          <Button iconOnly variant="ghost" label={t("Back to conversations")} onClick={onBack}>
+            <ArrowLeft className="icon-sm" />
+          </Button>
+        </div>
         <Text as="strong" size="title" tone="inherit" weight="medium" leading="inherit" truncate>
           {snapshot.profile.name}
         </Text>
         {threadLabel && (
-          <Badge key={threadId} size="xs" className={styles.threadChip}>
+          <Badge key={threadId} size="xs" truncate className={styles.threadChip}>
             {threadLabel}
           </Badge>
         )}
@@ -75,15 +82,6 @@ export function ConversationHeader({
                   </Badge>
                 </Tooltip>
               )}
-              <Button
-                iconOnly
-                label={t("Refresh conversation summary")}
-                disabled={!summaryRefreshable}
-                loading={summaryRefreshing}
-                onClick={() => void refreshSummary().catch(onFailure)}
-              >
-                <RefreshCw className="icon-xs" />
-              </Button>
             </>
           )}
         </div>

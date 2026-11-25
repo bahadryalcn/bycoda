@@ -35,7 +35,9 @@ export type AiModelSettingsProps = {
  */
 export function AiModelSettings({ client, policies, onChanged }: AiModelSettingsProps) {
   const [scope, setScope] = useState<PolicyScope>("global");
-  const { error, is, write } = useAccountWrite(t("The AI model could not be saved. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The AI model could not be saved. Try again."),
+  );
   const own = readScope(policies, scope).agent;
   const effective = effectiveForScope(policies, scope).agent;
   const save = (agent: SocialAgent | undefined) =>
@@ -66,7 +68,7 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
       }
       feedback={
         error ? (
-          <InlineError>{error}</InlineError>
+          <InlineError details={details}>{error}</InlineError>
         ) : is("ai.model") ? (
           <LoadingText delay={false}>{t("Saving…")}</LoadingText>
         ) : null

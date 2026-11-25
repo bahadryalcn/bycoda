@@ -81,11 +81,20 @@ export function saveRepeatProgram(
     factIds: string[];
     media: SocialMedia[];
     repeat: RepeatDraft;
+    youtube?: ProgramConfig["youtube"];
     startsAt: number;
     language: string;
   },
 ): Promise<unknown> {
   const base = defaultProgram(input.projectId, input.startsAt);
+  const youtube = input.youtube;
+  const declarations = youtube && {
+    title: youtube.title,
+    privacy: youtube.privacy,
+    madeForKids: youtube.madeForKids,
+    containsSyntheticMedia: youtube.containsSyntheticMedia,
+    ...(youtube.format ? { format: youtube.format } : {}),
+  };
   const config: ProgramConfig = {
     ...base,
     name: input.name,
@@ -106,6 +115,7 @@ export function saveRepeatProgram(
       media: input.media,
     },
     strategy: "repeat",
+    ...(declarations ? { youtube: declarations } : {}),
     totalPosts: input.repeat.totalPosts,
     schedule: {
       ...base.schedule,

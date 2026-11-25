@@ -107,7 +107,9 @@ export function FacebookManagementRequests({
         client.request<{ requests: FacebookManagementRequest[] }>("facebook.management.list", {
           accountId,
         }),
-        client.request<{ levels: Partial<Record<AutonomyAction, AutonomyLevel>> }>("autonomy.get", {
+        client.request<{
+          levels: Partial<Record<AutonomyAction, AutonomyLevel>>;
+        }>("autonomy.get", {
           accountId,
         }),
       ]),
@@ -220,7 +222,7 @@ export function FacebookManagementRequests({
           ))}
         </ul>
       ) : null}
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
       {confirm.dialog}
     </section>
   );

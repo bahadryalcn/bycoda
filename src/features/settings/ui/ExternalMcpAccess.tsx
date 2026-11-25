@@ -1,13 +1,14 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Group, Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
-import { BadgeList } from "../../../shared/ui/BadgeList";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -19,7 +20,16 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, RefreshCw } from "../../../shared/ui/icons";
+import {
+  CircleHelp,
+  Eye,
+  MessageSquare,
+  Pencil,
+  RefreshCw,
+  Shield,
+  Terminal,
+  UsersRound,
+} from "../../../shared/ui/icons";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, RemoteMachine } from "../../connections";
@@ -99,7 +109,7 @@ function CreateToken({
   });
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [errorTitle, setErrorTitle] = useState("");
   const [uncertain, setUncertain] = useState(false);
   const formId = useId();
   const pending = useRef(false);
@@ -127,12 +137,12 @@ function CreateToken({
       duration > 366 ||
       !groups.some((g) => modes[g])
     ) {
-      setError(t("Choose a project, at least one scope, and a duration from 1 to 366 days."));
+      setErrorTitle(t("Choose a project, at least one scope, and a duration from 1 to 366 days."));
       return;
     }
     pending.current = true;
     setBusy(true);
-    setError("");
+    setErrorTitle("");
     const scopes: Scopes = {};
     for (const group of groups)
       if (modes[group]) scopes[group] = modes[group].split(",") as ("read" | "write")[];
@@ -154,7 +164,7 @@ function CreateToken({
       // Never render an RPC error payload: it could contain credential material.
       if (alive.current) {
         setUncertain(true);
-        setError(t("Token creation failed. Refresh the list before trying again."));
+        setErrorTitle(t("Token creation failed. Refresh the list before trying again."));
         onCreated();
       }
     } finally {
@@ -285,7 +295,7 @@ function CreateToken({
                 onChange={(e) => setDays(e.target.value)}
               />
             </Disclosure>
-            {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+            {errorTitle && <SettingsFeedback state="error">{errorTitle}</SettingsFeedback>}
           </div>
         </Text>
       )}
@@ -302,7 +312,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
     tokens: Grant[];
   }>();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [errorTitle, setErrorTitle] = useState("");
   const [creating, setCreating] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
@@ -331,7 +341,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   async function refresh() {
     const version = ++epoch.current;
     setLoading(true);
-    setError("");
+    setErrorTitle("");
     try {
       const machines = await invoke<RemoteMachine[]>("remote_machines");
       const machine = machines?.find(isLocalSyncMachine);
@@ -346,7 +356,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       }
     } catch {
       if (version === epoch.current)
-        setError(
+        setErrorTitle(
           t(
             "External MCP access unavailable. Check the local host connection and version, then refresh.",
           ),
@@ -366,7 +376,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       throw new Error("Token revocation is unavailable while another request is pending.");
     pending.current = true;
     setRevoking(grant.id);
-    setError("");
+    setErrorTitle("");
     try {
       const result = await remoteRequest<{ revoked: boolean }>(
         data.machine.id,
@@ -384,7 +394,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           },
       );
     } catch (cause) {
-      setError(t("Token revocation failed. Refresh and try again."));
+      setErrorTitle(t("Token revocation failed. Refresh and try again."));
       throw cause;
     } finally {
       pending.current = false;
@@ -431,7 +441,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           </Button>
           <Button
             variant="primary"
-            disabled={!data?.projects.length || loading || !!error || revoking !== null}
+            disabled={!data?.projects.length || loading || !!errorTitle || revoking !== null}
             onClick={() => setCreating(true)}
           >
             {t("Create token")}
@@ -439,7 +449,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         </div>
       }
     >
-      {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+      {errorTitle && <SettingsFeedback state="error">{errorTitle}</SettingsFeedback>}
       {loading && !data && (
         <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>
       )}
@@ -468,27 +478,26 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               ]}
             />
             {data ? (
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
+              <InlineMessage
+                tone="neutral"
+                icon={null}
+                live="polite"
                 className={`${styles.count} tabular-nums`}
-                role="status"
               >
                 {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
-              </Text>
+              </InlineMessage>
             ) : null}
           </div>
         </div>
       ) : null}
-      {!loading && !error && data && !data.projects.length && (
+      {!loading && !errorTitle && data && !data.projects.length && (
         <EmptyState
           size="inline"
           inset="row"
           description={t("Register a project on the local host before creating a token.")}
         />
       )}
-      {!loading && !error && data && data.projects.length > 0 && !data.tokens.length && (
+      {!loading && !errorTitle && data && data.projects.length > 0 && !data.tokens.length && (
         <EmptyState
           size="inline"
           inset="row"
@@ -525,23 +534,37 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               </Text>
               <section>
                 <SectionLabel as="h3">{t("Scopes")}</SectionLabel>
-                {/* The grant list is a grid of auto tracks; a zero base width keeps the list's own
-                    full-row measuring copy from widening the track. */}
-                <Text
-                  as="div"
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className="w-0 min-w-full"
-                >
-                  <BadgeList
-                    label={t("Scopes")}
-                    items={Object.entries(grant.scopes).map(([group, modes]) => ({
-                      id: group,
-                      label: `${groupLabel(group)}: ${modes.map((mode) => (mode === "read" ? t("Read") : t("Write"))).join(", ")}`,
-                    }))}
-                  />
-                </Text>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(grant.scopes).map(([group, modes]) => {
+                    const permissions = modes
+                      .map((mode) => (mode === "read" ? t("Read") : t("Write")))
+                      .join(", ");
+                    const scope = `${groupLabel(group)}: ${permissions}`;
+                    const ScopeIcon =
+                      group === "conversation"
+                        ? MessageSquare
+                        : group === "runtime-logs"
+                          ? Terminal
+                          : group === "social"
+                            ? UsersRound
+                            : Shield;
+                    return (
+                      <InfoTooltip
+                        key={group}
+                        label={t("Scope: {p0}", { p0: scope })}
+                        icon={
+                          <span className="inline-flex gap-1" aria-hidden>
+                            <ScopeIcon className="icon-sm" />
+                            {modes.includes("read") && <Eye className="icon-sm" />}
+                            {modes.includes("write") && <Pencil className="icon-sm" />}
+                          </span>
+                        }
+                      >
+                        {scope}
+                      </InfoTooltip>
+                    );
+                  })}
+                </div>
               </section>
             </div>
             {grant.revokedAt === undefined && (

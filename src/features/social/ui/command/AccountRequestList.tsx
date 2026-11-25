@@ -45,7 +45,9 @@ export function AccountRequestList({
     workflow?: SocialBrowserWorkflow;
   }>();
   const [signinFailed, setSigninFailed] = useState<string>();
-  const { error, is, write } = useAccountWrite(t("The request could not be updated. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The request could not be updated. Try again."),
+  );
 
   const count = items.length;
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reports the waiting count to the screen header after each read.
@@ -128,7 +130,7 @@ export function AccountRequestList({
           {t("Account requests could not be loaded.")}
         </InlineError>
       ) : error ? (
-        <InlineError>{error}</InlineError>
+        <InlineError details={details}>{error}</InlineError>
       ) : null}
       {signinFailed ? (
         <InlineError

@@ -48,13 +48,18 @@ const productScope = "CSS and TSX in src/app and src/features (excluding tests)"
 const viewScope = "TSX in src/app, src/features, src/shared (excluding tests)";
 export const ruleScopes = {
   "inline-help-text": viewScope,
+  "disabled-without-reason": "TSX in src/app and src/features (excluding tests)",
+  "row-text-badge": "TSX in src/app and src/features (excluding tests)",
+  "physical-direction-utility": "TSX in src/features (excluding tests)",
+  "arbitrary-ui-token-override": "TSX in src/app and src/features (excluding tests)",
+  "aria-label-without-role": "TSX in src/app and src/features (excluding tests)",
   "duplicate-feedback-channel": viewScope,
   "nested-card": "TSX in src/app, src/features, src/shared (excluding tests)",
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
   "nested-surface": "TSX in src/app, src/features, src/shared (excluding tests)",
   "tooltip-repeats-label": viewScope,
   "shared-internal-selector":
-    "CSS in src/app and src/features, including CSS-module classes applied to shared UI slots (excluding tests)",
+    "CSS in src/app and src/features, including CSS-module and locally imported global classes applied to shared UI slots (excluding tests)",
   "spacing-step": productScope,
   "arbitrary-spacing": productScope,
   "radius-size": `${productScope}; radius literals in src/shared/ui/arc CSS`,
@@ -69,7 +74,17 @@ export const ruleScopes = {
 
 export const rules = {
   "inline-help-text":
-    "settings Group, Row or Field repeats its label as help (delete the repeated copy; use the info slot or InfoPopover for distinct optional detail)",
+    "settings label repeated as description or optional caption beside a field (use the info slot or InfoPopover for distinct optional help)",
+  "disabled-without-reason":
+    "disabled shared action lacks an explanation (use disabledReason or associate its visible explanation)",
+  "row-text-badge":
+    "text tag in a list row (use an accessible icon and disclose optional details on demand)",
+  "physical-direction-utility":
+    "physical left or right utility in feature UI (use logical start/end utilities)",
+  "arbitrary-ui-token-override":
+    "a className overrides a shared --ui-* token (use the shared variant or define a semantic role)",
+  "aria-label-without-role":
+    "aria-label on a div without a semantic role (use a named semantic element or associate the label with its intended control)",
   "duplicate-feedback-channel":
     "one operation or disabled action repeats the same message across feedback channels (keep one visible owner and associate its message with the control when needed)",
   "nested-card":
@@ -79,7 +94,7 @@ export const rules = {
   "nested-surface":
     "settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)",
   "tooltip-repeats-label":
-    "tooltip repeats its visible trigger label (remove the repeated hint; keep shortcuts, reasons and details in Tooltip, or use OverflowTooltip to recover clipped text)",
+    "tooltip repeats its visible trigger label or accessible name (remove the repeated hint; keep shortcuts, reasons and details in Tooltip, or use OverflowTooltip to recover clipped text)",
   "undefined-var": "var(--x) / Tailwind (--x) with no definition in src CSS or inline style",
   "arc-var-outside-arc":
     "Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root",
@@ -87,7 +102,7 @@ export const rules = {
   "radius-size":
     "literal radius or private size (use a shared component size or a semantic radius token)",
   "shared-internal-selector":
-    "feature CSS selects shared UI internals or restyles a shared control through a local CSS module (use a public prop or variant, or change the shared owner)",
+    "feature CSS selects shared UI internals or restyles a shared control through a locally imported stylesheet (use a public prop or variant, or change the shared owner)",
   "pane-edge-erased":
     "CSS that sets border, border-width or border-color to 0/none/hidden/transparent on a workbench pane root (.bycoda-sidebar, .bycoda-project-rail, .sidebar-pane, .body-glass, [data-side-pane], [data-surface-frame=pane]); the 1px edge between panes is owned by --ui-pane-border, so drop the frame through the Surface edge prop instead",
   "specificity-doubling":
@@ -114,7 +129,7 @@ export const rules = {
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
   "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
   "role-status-banner":
-    'tone-styled <div>/<p>/<span>/<section>/<li>/<small> role="status" (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)',
+    'role="status" on a component or tone-styled native container (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)',
   "portal-outside-shared":
     "floating surface outside canonical shared overlay owners (use Popover, Modal, Sheet or Tooltip)",
   "ui-wrapper-import":
@@ -143,7 +158,7 @@ export const rules = {
     'type="date|time|datetime-local" on inputs or field components (use TimePicker, DatePicker, DateTimePicker, DateRangePicker or DateTimeRangePicker from src/shared/ui)',
   "alert-role-prop": "role= passed to <Alert> (Alert sets alert/status from its tone)",
   "raw-aria-live":
-    "aria-live= on a DOM element in feature code (use InlineMessage live=, LoadingText, Toast or Alert)",
+    "aria-live= in feature code (use InlineMessage live=, LoadingText, Toast or Alert)",
   "loader-icon-spinner":
     "Loader/Loader2/LoaderCircle icon used as a spinner (use Spinner from src/shared/ui)",
   "font-weight":
@@ -531,10 +546,12 @@ export function collectDefinitions(sources, tailwindTheme = "", catalog = []) {
       for (const match of text.matchAll(/@property\s+(--[\w-]+)/g)) defined.add(match[1]);
     } else if (!isTestPath(file)) {
       if (/^src\/(?:app|features)\//.test(file))
-        sharedModuleSlots(file, text, catalogNames, (module, member) => {
+        sharedModuleSlots(file, text, catalogNames, (module, member, component) => {
           if (scopeOf(module) !== "app") return;
-          if (!sharedSlots.has(module)) sharedSlots.set(module, new Set());
-          sharedSlots.get(module).add(member);
+          if (!sharedSlots.has(module)) sharedSlots.set(module, new Map());
+          const slots = sharedSlots.get(module);
+          if (!slots.has(member)) slots.set(member, new Set());
+          slots.get(member).add(component);
           if (!modulesByImporter.has(file)) modulesByImporter.set(file, new Set());
           modulesByImporter.get(file).add(module);
         });
@@ -652,14 +669,21 @@ export function scanFile(file, text, definitions) {
   const lines = text.split("\n");
   // A narrower rule reports first; an appearance rule never reports the same spot again.
   const reported = new Set();
+  const reportedRules = new Set();
   const appearance = scope === "app" && !isBespokeSurface(file);
   // Avatar and Crew Table palette entries paint pixel-art assets in their content owners.
   const artworkPalette =
     /^src\/features\/crews\/model\/(?:crewTableArt|memberAvatar(?:Agent|Art|Droid|Ent|Shared))\.ts$/.test(
       file,
+    ) ||
+    /^src\/features\/sessions\/ui\/crew(?:Characters|Environment|CodeSign|CodeColor)\.ts$/.test(
+      file,
     );
   const add = (rule, offset) => {
     if (rule === "theme-palette-literal" && artworkPalette) return;
+    const key = rule + ":" + offset;
+    if (reportedRules.has(key)) return;
+    reportedRules.add(key);
     if ((rule in appearanceRules || rule === "hover-bg") && reported.has(offset)) return;
     reported.add(offset);
     const line = lineAt(starts, offset);
@@ -769,11 +793,17 @@ export function scanFile(file, text, definitions) {
         const explicitHook = selectors.some((selector) =>
           cssSelectorRules(selector).includes("shared-internal-selector"),
         );
-        const sharedSlot =
-          !explicitHook && selectsSharedModuleSlot(selectors, definitions.sharedSlots?.get(file));
+        const slots = definitions.sharedSlots?.get(file);
+        const matchingSlots = !explicitHook && selectsSharedModuleSlot(selectors, slots);
+        const sharedSlot = Boolean(matchingSlots?.size);
+        const fillable =
+          sharedSlot &&
+          [...matchingSlots].every((name) => ["Surface", "Pane", "ScrollArea"].includes(name));
         const rule =
           focusRuleOfDeclaration(declaration, sharedSlot || explicitHook) ??
-          (sharedSlot && restylesSharedSlot(declaration) ? "shared-internal-selector" : null) ??
+          (sharedSlot && restylesSharedSlot(declaration, fillable)
+            ? "shared-internal-selector"
+            : null) ??
           (explicitHook && restylesSharedSlot(declaration)
             ? null
             : appearanceRuleOfDeclaration(declaration));
@@ -922,7 +952,7 @@ export function scanFile(file, text, definitions) {
     // in its class or style make it a hand-built banner.
     if (
       ["div", "p", "span", "section", "li", "small"].includes(tag.name) &&
-      /\srole=\{?["']status["']/.test(tag.span) &&
+      /\srole\s*=\s*\{?\s*["']status["']/.test(tag.span) &&
       /(?:danger|warning|success|error|banner|notice|callout|tone)/i.test(tag.span) &&
       !/\bsr-only\b/.test(tag.span)
     )
@@ -951,7 +981,7 @@ export function scanFile(file, text, definitions) {
     )
       add("native-date-input", tag.start);
     if (tag.name === "Alert" && /\srole=/.test(attributes)) add("alert-role-prop", tag.start);
-    if (/^[a-z]/.test(tag.name) && /\saria-live=/.test(attributes)) add("raw-aria-live", tag.start);
+    if (/\saria-live\s*=/.test(attributes)) add("raw-aria-live", tag.start);
     if (/^(?:Loader|Loader2|LoaderCircle)$/.test(tag.name) && icons.has(tag.name))
       add("loader-icon-spinner", tag.start);
     for (const match of attributes.matchAll(translatableProps))

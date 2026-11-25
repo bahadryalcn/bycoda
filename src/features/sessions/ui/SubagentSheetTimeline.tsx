@@ -1,4 +1,3 @@
-import { Badge } from "../../../shared/ui/Badge";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Surface } from "../../../shared/ui/Surface";
@@ -138,14 +137,14 @@ export function TimelineInput({ step, input }: { step: AgentStep; input: StepInp
           {senderLabel(input.sender, t)}
         </Text>
         {mode ? (
-          <Badge size="xs" appearance="subtle" tone="neutral">
+          <Text size="caption" tone="muted">
             {mode}
-          </Badge>
+          </Text>
         ) : null}
         {delivery ? (
-          <Badge size="xs" appearance="subtle" tone={delivery.tone}>
+          <Text size="caption" tone={delivery.tone}>
             {delivery.text}
-          </Badge>
+          </Text>
         ) : null}
         <CopyButton
           iconOnly

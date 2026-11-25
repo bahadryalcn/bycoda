@@ -12,6 +12,7 @@ import {
 } from "./toolsTransferLedger";
 import { restoreBrowserDraftTransfer } from "./browserDraftTransfer";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -76,8 +77,15 @@ const SessionHostTools = lazySurface(async () => {
   return { default: module.SessionHostTools };
 });
 
-type ToolPane = ConversationTools & { id: string; onlyTab?: "logs"; detached?: boolean };
-type ToolPaneRequest = ToolPane & { registerOnly?: boolean; existingVisibleOnly?: boolean };
+type ToolPane = ConversationTools & {
+  id: string;
+  onlyTab?: "logs";
+  detached?: boolean;
+};
+type ToolPaneRequest = ToolPane & {
+  registerOnly?: boolean;
+  existingVisibleOnly?: boolean;
+};
 type Placement = "left" | "right" | "top" | "bottom";
 const OPEN_EVENT = "bycoda:open-tool-pane";
 const LAYOUT_KEY = "bycoda.tools-dock.placement.v1";
@@ -154,7 +162,9 @@ function PlacementButton({
 
 export function dockHostTools(tools: ConversationTools, onlyTab?: "logs") {
   window.dispatchEvent(
-    new CustomEvent(OPEN_EVENT, { detail: { ...tools, onlyTab, id: crypto.randomUUID() } }),
+    new CustomEvent(OPEN_EVENT, {
+      detail: { ...tools, onlyTab, id: crypto.randomUUID() },
+    }),
   );
 }
 
@@ -245,7 +255,9 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
   transferRequests.set(transferKey, pending);
   const { requestId, pane, drafts } = pending;
   window.dispatchEvent(
-    new CustomEvent(OPEN_EVENT, { detail: { ...pane, initialUrl: undefined, registerOnly: true } }),
+    new CustomEvent(OPEN_EVENT, {
+      detail: { ...pane, initialUrl: undefined, registerOnly: true },
+    }),
   );
   let destinationWindow = TOOLS_HUB_LABEL;
   const transfer = async () => {
@@ -298,7 +310,11 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
             const { invoke } = await import("@tauri-apps/api/core");
             const created = await invoke<boolean>("open_host_tools_window", {
               title: t("Conversation tools"),
-              payload: { ...payload, initialUrl: undefined, transferRequestId: requestId },
+              payload: {
+                ...payload,
+                initialUrl: undefined,
+                transferRequestId: requestId,
+              },
             });
             // An existing destination has already booted; release the ready listener
             // and send the immutable transfer under the outer mounted acknowledgement.
@@ -328,7 +344,9 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
   else await transfer();
   transferRequests.delete(transferKey);
   window.dispatchEvent(
-    new CustomEvent(OPEN_EVENT, { detail: { ...pane, initialUrl: undefined, detached: true } }),
+    new CustomEvent(OPEN_EVENT, {
+      detail: { ...pane, initialUrl: undefined, detached: true },
+    }),
   );
 }
 
@@ -443,7 +461,10 @@ export function ToolsWorkspace({
   const accessibleRef = useRef(accessibleSessions);
   accessibleRef.current = accessibleSessions;
   const [panes, setPanes] = useState<ToolPane[]>([]);
-  const [roomPane, setRoomPane] = useState<{ id: string; context: RoomToolsUiContext }>();
+  const [roomPane, setRoomPane] = useState<{
+    id: string;
+    context: RoomToolsUiContext;
+  }>();
   const roomPaneRef = useRef(roomPane);
   roomPaneRef.current = roomPane;
   const roomMounted = useRef<string | undefined>(undefined);
@@ -485,7 +506,10 @@ export function ToolsWorkspace({
     session: Pick<ToolsSession, "cwd" | "sessionId">,
     value: Placement,
   ) => {
-    const next = { ...placementsRef.current, [toolsSessionKey(session)]: value };
+    const next = {
+      ...placementsRef.current,
+      [toolsSessionKey(session)]: value,
+    };
     placementsRef.current = next;
     setSessionPlacements(next);
     try {
@@ -662,7 +686,11 @@ export function ToolsWorkspace({
                 : undefined),
             initialTab: expectedTab,
             initialMachine: expectedMachine,
-            viewRequest: { id: crypto.randomUUID(), tab: expectedTab, machine: expectedMachine },
+            viewRequest: {
+              id: crypto.randomUUID(),
+              tab: expectedTab,
+              machine: expectedMachine,
+            },
           };
           setPanes((previous) =>
             existing
@@ -980,7 +1008,13 @@ export function ToolsWorkspace({
                 layoutKey={presentationSession ? toolsSessionKey(presentationSession) : "none"}
                 embedded={embedded}
               >
-                {error ? <Alert tone="danger">{error}</Alert> : null}
+                {error ? (
+                  <Alert
+                    tone="danger"
+                    title={t("Could not move the tools.")}
+                    extra={<ErrorDetails title={t("Could not move the tools.")} detail={error} />}
+                  />
+                ) : null}
                 <div className="tools-workspace-panes">
                   {roomPane && (
                     <section

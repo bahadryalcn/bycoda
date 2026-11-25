@@ -27,10 +27,14 @@ export function TikTokDirectMessage({
   account,
   projects,
   onChanged,
-}: TikTokPanelProps & { account: SocialAccount; projects: HostProject[]; onChanged(): void }) {
+}: TikTokPanelProps & {
+  account: SocialAccount;
+  projects: HostProject[];
+  onChanged(): void;
+}) {
   const t = useT();
   const confirm = useConfirm();
-  const { write, is, error } = useAccountWrite(t("Could not prepare the TikTok message."));
+  const { write, is, error, details } = useAccountWrite(t("Could not prepare the TikTok message."));
   const [project, setProject] = useState("");
   const [username, setUsername] = useState("");
   const [message, setMessage] = useState("");
@@ -67,7 +71,9 @@ export function TikTokDirectMessage({
     const next = await write("draft", async () => {
       const platformId = `web:tiktok:${username}`;
       const previous = (
-        await client.request<SocialContact[]>("contacts.search", { query: platformId })
+        await client.request<SocialContact[]>("contacts.search", {
+          query: platformId,
+        })
       ).find((contact) => contact.accountId === accountId && contact.platformId === platformId);
       const recipient = previous?.projectIds.includes(projectId)
         ? previous
@@ -160,7 +166,10 @@ export function TikTokDirectMessage({
             label={t("Project")}
             value={projectId}
             disabled={disabled || busy || !!draft || !available.length}
-            options={available.map(({ id, name }) => ({ value: id, label: name }))}
+            options={available.map(({ id, name }) => ({
+              value: id,
+              label: name,
+            }))}
             onValueChange={(value) => {
               setProject(value);
               edit();
@@ -260,7 +269,7 @@ export function TikTokDirectMessage({
           {t("New message")}
         </Button>
       )}
-      {error && <InlineError>{error}</InlineError>}
+      {error && <InlineError details={details}>{error}</InlineError>}
       {confirm.dialog}
     </div>
   );

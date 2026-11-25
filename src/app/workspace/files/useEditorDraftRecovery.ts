@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { errorText } from "../../../shared/lib/errors";
 import {
   hideEditorDraftRecovery,
   listEditorDraftRecovery,
@@ -38,7 +39,7 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
   );
   const [records, setRecords] = useState<readonly EditorDraftRecoveryMetadata[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(new Set());
   const [errors, setErrors] = useState<ReadonlySet<string>>(new Set());
   const available = isTauri() && dependencies.enabled !== false;
@@ -62,15 +63,15 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
         if (!result.next) {
           if (mounted.current) {
             setRecords(rows);
-            setError(false);
+            setError(null);
           }
           return;
         }
         after = result.next;
       }
       throw new Error("Recovery inventory bound exceeded");
-    } catch {
-      if (mounted.current) setError(true);
+    } catch (failure) {
+      if (mounted.current) setError(errorText(failure));
     } finally {
       refreshing.current = false;
       if (mounted.current) setLoading(false);

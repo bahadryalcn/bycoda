@@ -33,17 +33,17 @@ export function AccountStatus({
   // Typed inside the confirm dialogs; the dialog body is a snapshot, so the text lives in a ref.
   const reason = useRef("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const deactivated = isDeactivated(user);
   const deletion = user.deletion;
 
-  const run = async (action: () => Promise<unknown>) => {
+  const run = async (action: () => Promise<unknown>, failedTitle: string) => {
     setBusy(true);
-    setError("");
+    setError(null);
     try {
       await action();
     } catch (failure) {
-      setError(errorText(failure));
+      setError({ title: failedTitle, detail: errorText(failure) });
     } finally {
       setBusy(false);
     }
@@ -70,7 +70,11 @@ export function AccountStatus({
       ),
       confirmLabel: t("Deactivate"),
     });
-    if (ok) await run(() => onDeactivate(reason.current.trim() || undefined));
+    if (ok)
+      await run(
+        () => onDeactivate(reason.current.trim() || undefined),
+        t("Could not deactivate your account."),
+      );
   };
 
   const scheduleDeletion = async () => {
@@ -86,19 +90,33 @@ export function AccountStatus({
       pendingLabel: t("Scheduling…"),
       tone: "danger",
     });
-    if (ok) await run(() => schedule.mutateAsync(reason.current.trim() || undefined));
+    if (ok)
+      await run(
+        () => schedule.mutateAsync(reason.current.trim() || undefined),
+        t("Could not schedule the account deletion."),
+      );
   };
 
   return (
     <>
-      <Group title={null} feedback={error ? <InlineError>{error}</InlineError> : undefined}>
+      <Group
+        title={null}
+        feedback={
+          error ? <InlineError details={error.detail}>{error.title}</InlineError> : undefined
+        }
+      >
         {deactivated ? (
           <Row
             label={t("Deactivated")}
             descriptionVisible
             description={t("Devices are signed out and nothing syncs until you reactivate.")}
           >
-            <Button variant="primary" size="sm" loading={busy} onClick={() => run(onReactivate)}>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={busy}
+              onClick={() => run(onReactivate, t("Could not reactivate your account."))}
+            >
               {t("Reactivate account")}
             </Button>
           </Row>
@@ -113,6 +131,7 @@ export function AccountStatus({
               size="sm"
               loading={busy}
               disabled={Boolean(deletion)}
+              disabledReason={deletion ? t("Account deletion is scheduled.") : undefined}
               onClick={() => deactivate().catch(() => undefined)}
             >
               {t("Deactivate…")}
@@ -133,7 +152,9 @@ export function AccountStatus({
               variant="secondary"
               size="sm"
               loading={cancel.isPending}
-              onClick={() => run(() => cancel.mutateAsync())}
+              onClick={() =>
+                run(() => cancel.mutateAsync(), t("Could not cancel the scheduled deletion."))
+              }
             >
               {t("Keep my account")}
             </Button>

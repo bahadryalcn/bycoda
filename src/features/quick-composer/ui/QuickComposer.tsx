@@ -1,16 +1,21 @@
+import { copyMessage } from "../../../platform/tauri/clipboard";
+import { selectedComposerAttachments } from "../../sessions/public/composerMentions";
 import { errorText } from "../../../shared/lib/errors";
+import { usePickerList } from "../../../shared/ui/picker";
+import { Divider } from "../../../shared/ui/Divider";
+import { Surface } from "../../../shared/ui/Surface";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
 import { PromptField } from "../../../shared/ui/PromptField";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { looksLikeProject } from "../../projects/public/recents";
 import { isProjectlessCwd } from "../../sessions/public/projectless";
@@ -39,7 +44,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { prettyParent } from "../../../shared/lib/paths";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { Search, Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
+import { Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
 import { QuickProjectIcon, loadQuickProjectAppearance } from "./QuickProjectIcon";
 import {
   getModelSnapshot,
@@ -228,7 +233,7 @@ export function QuickComposer({
   );
   const [error, setError] = useState<QuickNotice | null>(null);
   const notice = error?.message;
-  const longReason = Boolean(error?.title && notice && !fitsOneLine(notice));
+  const hasErrorDetails = Boolean(error?.title && notice);
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
@@ -601,25 +606,16 @@ export function QuickComposer({
     }
   };
 
-  const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (isImeComposition(event.nativeEvent)) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closePicker();
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (optionCount === 0) return;
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setHighlight((index) => (index + step + optionCount) % optionCount);
-      return;
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      chooseAt(Math.min(highlight, optionCount - 1));
-    }
-  };
+  const projectList = usePickerList({
+    options: projectOptions.map((path) => ({ value: path, title: projectDisplayName(path) })),
+    value: null,
+    activeValue: projectOptions[Math.min(highlight, projectOptions.length - 1)] ?? null,
+    onActiveValueChange: (path) =>
+      setHighlight(projectOptions.findIndex((entry) => entry === path)),
+    onChange: (path) => chooseAt(projectOptions.indexOf(path)),
+    inputRef: queryRef,
+    loop: true,
+  });
 
   const canSubmit = Boolean(
     (nativeQuickLaunches.has(owner.rendererWindowId) ||
@@ -634,10 +630,29 @@ export function QuickComposer({
     !gitOpen,
   );
 
+  const submitDisabledReason =
+    canSubmit || busy || attachments.loading || workspaceBlocked
+      ? undefined
+      : gitOpen
+        ? t("Close the workspace options to continue.")
+        : owner.pending
+          ? t("Working…")
+          : !cwd
+            ? t("Choose a project first.")
+            : !resolvedModel
+              ? t("Choose a model first.")
+              : !attachmentsSupported && attachments.files.length
+                ? t("This conversation does not accept attachments.")
+                : undefined;
+
   return (
     // Selectors expand below the toolbar without moving the prompt.
-    <div
+    <Surface
       ref={frameRef}
+      variant="floating"
+      frame="pane"
+      radius="popup"
+      padding="none"
       data-ui-focus-group=""
       data-external-drop-owner="quick-attachments"
       onPaste={attachments.onPaste}
@@ -650,7 +665,7 @@ export function QuickComposer({
         if (picker) closePicker();
         else dismiss();
       }}
-      className="relative flex max-h-[520px] flex-col overflow-clip rounded-(--ui-radius-floating) border border-(--ui-floating-edge) bg-(--ui-surface-floating) text-content"
+      className="relative flex max-h-[520px] flex-col overflow-clip"
     >
       <div
         className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
@@ -686,7 +701,9 @@ export function QuickComposer({
           canOpen={owner.canMutate}
           prepare={(operation) => owner.prepare(() => operation())}
           onChange={setWorkspaceChoice}
-          onError={(message) => setError({ message })}
+          onError={(message) =>
+            setError({ title: t("Could not open the workspace options."), message })
+          }
           onOpenChange={onGitOpenChange}
           onClose={focusPrompt}
         />
@@ -774,6 +791,21 @@ export function QuickComposer({
           setPrompt(event.target.value);
           syncPromptCommand(event.currentTarget);
         }}
+        onCopy={(event) => {
+          const { value, selectionStart, selectionEnd } = event.currentTarget;
+          const selection = selectedComposerAttachments(
+            value,
+            selectionStart,
+            selectionEnd,
+            attachments.files,
+          );
+          if (!selection) return;
+          event.preventDefault();
+          void copyMessage(selection.text, selection.selected).catch((error: unknown) => {
+            if (owner.canMutate())
+              setError({ title: t("Could not copy the selection."), message: errorText(error) });
+          });
+        }}
         onClick={(event) => syncPromptCommand(event.currentTarget)}
         onKeyDown={onPromptKeyDown}
         onKeyUp={(event) => {
@@ -832,17 +864,20 @@ export function QuickComposer({
           className="mx-3 mb-2 min-w-0 break-words"
           extra={
             <>
-              {longReason && notice ? <ErrorDetails title={error.title} detail={notice} /> : null}
+              {hasErrorDetails && notice ? (
+                <ErrorDetails title={error.title} detail={notice} />
+              ) : null}
               {error.recovery === "screen-recording" ? (
                 <PermissionRecoveryAction id="screen-recording" />
               ) : null}
             </>
           }
         >
-          {longReason ? null : notice}
+          {hasErrorDetails ? null : notice}
         </Alert>
       ) : null}
-      <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke px-3 py-2">
+      <Divider decorative />
+      <div className="flex shrink-0 items-center gap-1.5 px-3 py-2">
         <Button
           iconOnly
           label={t("Add attachment")}
@@ -901,6 +936,7 @@ export function QuickComposer({
             tooltip={t("{p0}↵ start and open", { p0: MOD })}
             onClick={() => void submit(false)}
             disabled={!canSubmit}
+            disabledReason={submitDisabledReason}
             loading={busy}
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
@@ -952,12 +988,13 @@ export function QuickComposer({
       ) : null}
       {picker && picker !== "attachments" ? (
         <div ref={pickerRef} key={picker} className="flex min-h-0 flex-col">
+          {picker === "commands" || picker === "project" ? <Divider decorative /> : null}
           {picker === "commands" ? (
             <PickerListRoot
               ref={listRef}
               id="quick-composer-commands"
               label={t("Commands")}
-              className="shrink-0 border-t border-stroke p-2"
+              className="shrink-0 p-2"
             >
               {commandOptions.length === 0 ? (
                 <EmptyState
@@ -1013,37 +1050,30 @@ export function QuickComposer({
             />
           ) : null}
           {picker === "project" ? (
-            <div className="flex min-h-0 flex-col border-t border-stroke">
-              <Text
-                as="div"
-                size="inherit"
-                tone="secondary"
-                className="flex shrink-0 items-center gap-2 px-4 py-2"
-              >
-                <Search className="icon-sm shrink-0" />
-                <SearchInput
-                  ref={queryRef}
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setHighlight(0);
-                  }}
-                  onKeyDown={onQueryKeyDown}
-                  onBlur={(event) => {
-                    if (!frameRef.current?.contains(event.relatedTarget as Node | null)) {
-                      closePicker();
-                    }
-                  }}
-                  placeholder={t("Search projects…")}
-                  aria-label={t("Search projects")}
-                  spellCheck={false}
-                  autoComplete="off"
-                  className="min-w-0 flex-1"
-                />
-              </Text>
+            <div className="flex min-h-0 flex-col">
+              <PopoverSearchHeader
+                {...projectList.searchProps}
+                value={query}
+                label={t("Search projects")}
+                placeholder={t("Search projects…")}
+                onValueChange={(value) => {
+                  setQuery(value);
+                  setHighlight(0);
+                }}
+                onEscape={closePicker}
+                onBlur={(event) => {
+                  if (!frameRef.current?.contains(event.relatedTarget as Node | null))
+                    closePicker();
+                }}
+                autoFocus={false}
+                divider={false}
+                spellCheck={false}
+                autoComplete="off"
+              />
               <PickerListRoot
                 ref={listRef}
 
+                id={projectList.listId}
                 label={t("Projects")}
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
@@ -1058,9 +1088,10 @@ export function QuickComposer({
                   projectOptions.map((path, index) => (
                     <ListRow
                       key={path}
+                      id={projectList.optionId(index)}
                       role="option"
-                      aria-selected={index === highlight}
-                      active={index === highlight}
+                      aria-selected={index === projectList.activeIndex}
+                      active={index === projectList.activeIndex}
                       tabIndex={-1}
                       onPointerMove={(event) => {
                         if (pointerMoved(event)) setHighlight(index);
@@ -1087,7 +1118,7 @@ export function QuickComposer({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </Surface>
   );
 }
 

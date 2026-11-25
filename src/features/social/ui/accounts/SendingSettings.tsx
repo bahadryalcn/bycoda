@@ -23,7 +23,9 @@ export type SendingSettingsProps = {
  */
 export function SendingSettings({ client, snapshot, hostOnline, onChanged }: SendingSettingsProps) {
   const { confirm, dialog } = useConfirm();
-  const { error, is, write } = useAccountWrite(t("Sending could not be changed. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("Sending could not be changed. Try again."),
+  );
   const offline = hostOnline ? undefined : t("Connect to this computer to change sending.");
   const status = snapshot.stopped ? "paused" : snapshot.sendingEnabled ? "on" : "off";
 
@@ -40,7 +42,9 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
       confirmLabel: t("Enable approved sends"),
       danger: false,
       onConfirm: async () => {
-        await client.request("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+        await client.request("execution.enable", {
+          confirm: "ENABLE_EXTERNAL_SENDS",
+        });
         onChanged();
       },
     }).catch(() => undefined);
@@ -64,7 +68,9 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
       }
       feedback={
         error ? (
-          <InlineError details={error}>{t("Sending could not be changed. Try again.")}</InlineError>
+          <InlineError details={details}>
+            {t("Sending could not be changed. Try again.")}
+          </InlineError>
         ) : null
       }
     >

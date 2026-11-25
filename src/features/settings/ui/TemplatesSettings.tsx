@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -121,7 +122,7 @@ export function TemplatesSettings() {
     () => retainedDraft?.selected ?? saved[0]?.id ?? null,
   );
   const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const [fieldError, setFieldError] = useState<{
     id: string;
     field: "name" | "body" | "trigger";
@@ -170,7 +171,7 @@ export function TemplatesSettings() {
   };
   const reload = () => {
     if (!templateStorageAvailable()) {
-      setError(t("Template storage is unavailable. Retry reading before saving."));
+      setError({ title: t("Template storage is unavailable. Retry reading before saving.") });
       return;
     }
     const current = loadPromptTemplates();
@@ -184,15 +185,15 @@ export function TemplatesSettings() {
   /** True only once storage returns what was written; any refusal keeps the rows. */
   const save = (): boolean => {
     if (!templateStorageAvailable()) {
-      setError(t("Template storage is unavailable. Retry reading before saving."));
+      setError({ title: t("Template storage is unavailable. Retry reading before saving.") });
       return false;
     }
     if (!sameTemplates(loadPromptTemplates(), baseline)) {
-      setError(
-        t(
+      setError({
+        title: t(
           "Templates changed in another window. Reload before saving to avoid overwriting those changes.",
         ),
-      );
+      });
       return false;
     }
     const triggers = new Set<string>();
@@ -201,7 +202,7 @@ export function TemplatesSettings() {
       if (problem) {
         setFieldError({ id: row.id, field: problem.field });
         setSelectedId(row.id);
-        setError(problem.message);
+        setError({ title: problem.message });
         requestAnimationFrame(() =>
           (problem.field === "name"
             ? nameRef.current
@@ -226,7 +227,7 @@ export function TemplatesSettings() {
       retainedDraft = null;
       return true;
     } catch (reason) {
-      setError(errorText(reason));
+      setError({ title: t("Could not save templates."), detail: errorText(reason) });
       return false;
     }
   };
@@ -377,7 +378,7 @@ export function TemplatesSettings() {
                     aria-label={t("Template name")}
                     error={
                       fieldError?.id === selected.id && fieldError.field === "name"
-                        ? (error ?? undefined)
+                        ? error?.title
                         : undefined
                     }
                     value={selected.name}
@@ -391,7 +392,7 @@ export function TemplatesSettings() {
                     aria-label={t("Template trigger")}
                     error={
                       fieldError?.id === selected.id && fieldError.field === "trigger"
-                        ? (error ?? undefined)
+                        ? error?.title
                         : undefined
                     }
                     value={selected.trigger ?? ""}
@@ -406,7 +407,7 @@ export function TemplatesSettings() {
                     aria-label={t("Template text")}
                     error={
                       fieldError?.id === selected.id && fieldError.field === "body"
-                        ? (error ?? undefined)
+                        ? error?.title
                         : undefined
                     }
                     value={selected.body}
@@ -445,7 +446,12 @@ export function TemplatesSettings() {
           >
             {/* A validation error is already announced on its field; do not announce it twice. */}
             {error && !(selected && fieldError?.id === selected.id) ? (
-              <SettingsFeedback state="error">{error}</SettingsFeedback>
+              <SettingsFeedback
+                state="error"
+                extra={error.detail ? <ErrorDetails detail={error.detail} /> : undefined}
+              >
+                {error.title}
+              </SettingsFeedback>
             ) : null}
             {changedElsewhere && dirty ? (
               <SettingsFeedback state="warning">

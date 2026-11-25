@@ -28,7 +28,9 @@ export function InstagramProfileEditor({
   const [avatar, setAvatar] = useState<File>();
   const [saved, setSaved] = useState(false);
   const { confirm, dialog } = useConfirm();
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const busy = is("read") || is("save");
   const patch: InstagramProfilePatch = {};
   if (draft && stored) {
@@ -133,7 +135,7 @@ export function InstagramProfileEditor({
         </>
       ) : null}
       {saved ? <InlineMessage tone="success">{t("Instagram updated.")}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {dialog}
     </FieldGroup>
   );

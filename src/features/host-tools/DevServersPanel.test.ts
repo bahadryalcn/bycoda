@@ -107,6 +107,9 @@ const server: DevServer = {
   logsAvailable: false,
 };
 let details: DevServerDetails;
+// A disabled control with a reason stays focusable and is marked aria-disabled.
+const isDisabled = (node: HTMLButtonElement) =>
+  node.disabled || node.getAttribute("aria-disabled") === "true";
 const button = (text: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (value) => value.textContent === text || value.getAttribute("aria-label") === text,
@@ -255,7 +258,7 @@ it("reveals a failed process request and restores the row after a failed stop", 
   await act(async () => button("Confirm graceful stop").click());
   expect(document.activeElement?.textContent).toContain("The server action failed.");
   expect(container.querySelector(".dev-server-row")?.textContent).toContain("Running");
-  expect(button("Confirm graceful stop").disabled).toBe(false);
+  expect(isDisabled(button("Confirm graceful stop"))).toBe(false);
 });
 
 it("shares the chosen server address including its IPv6 loopback", async () => {
@@ -359,12 +362,12 @@ it("requires exact restart information for external processes and sends user-ent
   };
   await mount();
   await act(async () => button("Restart").click());
-  expect(button("Confirm restart").disabled).toBe(true);
+  expect(isDisabled(button("Confirm restart"))).toBe(true);
   await act(async () => {
     setInput("Restart command", "node ./dev.js --port 4300");
     setInput("Restart working directory", "/repo/custom");
   });
-  expect(button("Confirm restart").disabled).toBe(false);
+  expect(isDisabled(button("Confirm restart"))).toBe(false);
   await act(async () => button("Confirm restart").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "dev.servers", "devServers.restart", {
     id: server.id,
@@ -396,9 +399,9 @@ it("keeps observed external argv read-only until the user defines an exact resta
   expect(container.querySelector(".dev-server-details dl")!.textContent).toContain(observedCommand);
   expect(field("Restart command").value).toBe("");
   expect(field("Restart working directory").value).toBe("/repo with spaces");
-  expect(button("Confirm restart").disabled).toBe(true);
+  expect(isDisabled(button("Confirm restart"))).toBe(true);
   await act(async () => setInput("Restart command", 'node "./dev.js" --title "hello world"'));
-  expect(button("Confirm restart").disabled).toBe(false);
+  expect(isDisabled(button("Confirm restart"))).toBe(false);
   await act(async () => button("Confirm restart").click());
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "dev.servers", "devServers.restart", {
     id: server.id,
@@ -480,7 +483,7 @@ it("shares the initial scan across Strict Mode effect replay", async () => {
   );
   expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
   expect(container.querySelectorAll(".dev-server-row")).toHaveLength(1);
-  expect(button("Refresh").disabled).toBe(false);
+  expect(isDisabled(button("Refresh"))).toBe(false);
 });
 
 it("preserves the last successful rows and scroll position when a background scan fails", async () => {
@@ -494,7 +497,7 @@ it("preserves the last successful rows and scroll position when a background sca
   expect(container.textContent).toContain("Showing the last successful scan. Retry to update.");
   await openDetails();
   expect(document.body.textContent).toContain("Host disconnected");
-  expect(button("Open in preview").disabled).toBe(false);
+  expect(isDisabled(button("Open in preview"))).toBe(false);
   await act(async () => button("Try again").click());
   expect(container.textContent).not.toContain("Host disconnected");
   expect(container.querySelector(".dev-server-row")).toBe(row);
@@ -540,8 +543,8 @@ it("keeps local controls usable during discovery and prevents overlapping scans"
   );
   await act(async () => vi.advanceTimersByTimeAsync(15_000));
   // #1172 keeps background scans quiet after the initial result.
-  expect(button("Refresh").disabled).toBe(false);
-  expect(button("Open in preview").disabled).toBe(false);
+  expect(isDisabled(button("Refresh"))).toBe(false);
+  expect(isDisabled(button("Open in preview"))).toBe(false);
   expect(container.querySelector(".dev-servers-panel")!.getAttribute("aria-busy")).toBe("false");
   await act(async () => {
     setInput("Find server", "4100");
@@ -656,7 +659,7 @@ it("disables process control when a birth identity is unavailable", async () => 
   await mount();
   expect((await menuItem("Stop")).disabled).toBe(true);
   expect((await menuItem("Force terminate")).disabled).toBe(true);
-  expect(button("Restart").disabled).toBe(true);
+  expect(isDisabled(button("Restart"))).toBe(true);
 });
 
 it("restarts managed servers without asking for launch information and includes owned children", async () => {
@@ -675,7 +678,7 @@ it("restarts managed servers without asking for launch information and includes 
   });
   await mount();
   await act(async () => button("Restart").click());
-  expect(button("Confirm restart").disabled).toBe(false);
+  expect(isDisabled(button("Confirm restart"))).toBe(false);
   expect(container.querySelector<HTMLInputElement>('[type="checkbox"]')!.checked).toBe(true);
   expect(container.textContent).toContain("4100, 4101, 4200");
   await act(async () => button("Confirm restart").click());

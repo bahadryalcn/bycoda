@@ -44,7 +44,7 @@ function operationLabel(action: string): string {
     case "clear":
       return t("Clear");
     case "type":
-      return t("Type");
+      return t("Type text");
     case "select":
       return t("Select");
     case "check":

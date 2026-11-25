@@ -6,7 +6,6 @@ import type {
   ModelRoutingPool,
 } from "../../../../shared/model/host-contracts/model-routing";
 import { modelRoutingPoolEntryIds } from "../../../../shared/model/modelRoutingPools";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
 import { Text } from "../../../../shared/ui/Text";
@@ -197,11 +196,11 @@ export function PoolMembers({
             <Text size="secondary" truncate>
               {name}
             </Text>
-            <Badge size="xs">
+            <Text size="caption" tone="secondary">
               {t("{p0} models", {
                 p0: format.formatNumber(modelRoutingPoolEntryIds(pools, id).length),
               })}
-            </Badge>
+            </Text>
           </MemberFrame>
         );
       })}
@@ -212,6 +211,9 @@ export function PoolMembers({
           variant="ghost"
           startIcon={<Plus className="icon-sm" />}
           disabled={!items.length}
+          disabledReason={
+            !items.length ? t("No models or groups are available to add.") : undefined
+          }
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}

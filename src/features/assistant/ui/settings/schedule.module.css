@@ -50,9 +50,6 @@
   margin-block-start: calc(-1 * var(--ui-space-2));
   min-inline-size: 0;
 }
-.hintRow > p {
-  margin: 0;
-}
 
 /* Settings dialog: the range and its switch share the row's control column. */
 .hoursControl {

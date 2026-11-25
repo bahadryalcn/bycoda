@@ -9,7 +9,13 @@ const literal = (node) => {
 const attribute = (opening, name) =>
   opening.attributes.properties.find((item) => ts.isJsxAttribute(item) && item.name.text === name);
 const openingOf = (node) =>
-  ts.isJsxElement(node) ? node.openingElement : ts.isJsxSelfClosingElement(node) ? node : null;
+  !node
+    ? null
+    : ts.isJsxElement(node)
+      ? node.openingElement
+      : ts.isJsxSelfClosingElement(node)
+        ? node
+        : null;
 const hasSpread = (opening) => opening.attributes.properties.some(ts.isJsxSpreadAttribute);
 
 function expressionOf(node) {
@@ -83,10 +89,13 @@ const additionalControls = new Set([
   "TreeRow",
 ]);
 
-function localModuleMembers(node, imports, resolve, add, seen = new Set()) {
+function localModuleMembers(node, imports, resolve, add, stylesheets, seen = new Set()) {
   node = expressionOf(node);
   if (!node) return;
-  if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+  if (ts.isStringLiteralLike(node)) {
+    for (const member of node.text.split(/\s+/).filter((part) => /^-?[A-Za-z_][\w-]*$/.test(part)))
+      for (const stylesheet of stylesheets) add(stylesheet, member);
+  } else if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
     const member = ts.isPropertyAccessExpression(node)
       ? node.name.text
       : literal(node.argumentExpression);
@@ -104,29 +113,36 @@ function localModuleMembers(node, imports, resolve, add, seen = new Set()) {
     )
       return;
     seen.add(declaration);
-    localModuleMembers(declaration.initializer, imports, resolve, add, seen);
+    localModuleMembers(declaration.initializer, imports, resolve, add, stylesheets, seen);
   } else if (
     ts.isCallExpression(node) &&
     /^(?:cn|clsx|twMerge|twJoin)$/.test(node.expression.getText())
   ) {
     for (const argument of node.arguments)
-      localModuleMembers(argument, imports, resolve, add, seen);
+      localModuleMembers(argument, imports, resolve, add, stylesheets, seen);
   } else if (ts.isConditionalExpression(node)) {
-    localModuleMembers(node.whenTrue, imports, resolve, add, seen);
-    localModuleMembers(node.whenFalse, imports, resolve, add, seen);
+    localModuleMembers(node.whenTrue, imports, resolve, add, stylesheets, seen);
+    localModuleMembers(node.whenFalse, imports, resolve, add, stylesheets, seen);
   } else if (
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
   ) {
-    localModuleMembers(node.right, imports, resolve, add, seen);
+    localModuleMembers(node.right, imports, resolve, add, stylesheets, seen);
   }
 }
 
-/** Index exact local CSS module members only, without following a project import graph. */
+/** Index selectors from locally imported stylesheets that are assigned to shared UI slots. */
 export function sharedModuleSlots(file, source, catalogNames, add) {
-  if (!file.endsWith(".tsx") || !/\.module\.css['"]/.test(source)) return;
+  if (!file.endsWith(".tsx") || !/\.css['"]/.test(source)) return;
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const imports = importBindings(file, tree);
+  const stylesheets = tree.statements.flatMap((statement) => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+      return [];
+    const specifier = statement.moduleSpecifier.text;
+    if (!specifier.startsWith(".") || !/(?<!\.module)\.css$/.test(specifier)) return [];
+    return [path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier))];
+  });
   const resolve = lexicalBindings(tree);
   const visit = (node) => {
     const opening = openingOf(node);
@@ -135,7 +151,13 @@ export function sharedModuleSlots(file, source, catalogNames, add) {
       if (catalogNames.has(name) || additionalControls.has(name) || sizedControls.has(name))
         for (const prop of opening.attributes.properties)
           if (ts.isJsxAttribute(prop) && classSlot.test(prop.name.getText()))
-            localModuleMembers(prop.initializer, imports, resolve, add);
+            localModuleMembers(
+              prop.initializer,
+              imports,
+              resolve,
+              (stylesheet, member) => add(stylesheet, member, name),
+              stylesheets,
+            );
     }
     ts.forEachChild(node, visit);
   };
@@ -329,7 +351,37 @@ function visibleLabel(node, imports, resolve) {
     : null;
 }
 
-/** Accessible name equality alone says nothing about the visible label. */
+function sameLabel(left, right, resolve) {
+  left = expressionOf(left);
+  right = expressionOf(right);
+  if (left && right && ts.isConditionalExpression(left) && ts.isConditionalExpression(right)) {
+    const condition = boundValue(left.condition, resolve);
+    return (
+      condition !== null &&
+      condition === boundValue(right.condition, resolve) &&
+      sameLabel(left.whenTrue, right.whenTrue, resolve) &&
+      sameLabel(left.whenFalse, right.whenFalse, resolve)
+    );
+  }
+  const label = textIdentity(left, resolve);
+  return label !== null && label === textIdentity(right, resolve);
+}
+
+function onlyTextChild(node) {
+  if (!ts.isJsxElement(node)) return null;
+  const children = node.children.filter((child) =>
+    ts.isJsxText(child) ? child.text.trim() : !ts.isJsxExpression(child) || child.expression,
+  );
+  return children.length === 1 ? children[0] : null;
+}
+
+function accessibleLabel(node, opening, wrapped) {
+  if (!wrapped) return attribute(opening, "aria-label")?.initializer;
+  const child = onlyTextChild(node);
+  const childOpening = child && openingOf(child);
+  return childOpening && attribute(childOpening, "aria-label")?.initializer;
+}
+
 function tooltipRepeatsLabel(node, opening, imports, resolve) {
   const tag = opening.tagName.getText();
   const isTooltip = (sharedName(imports, tag) ?? (!imports.has(tag) && tag)) === "Tooltip";
@@ -341,7 +393,20 @@ function tooltipRepeatsLabel(node, opening, imports, resolve) {
   if (literal(attribute(opening, when)?.initializer) === "overflow") return null;
   if (extra.some((name) => attribute(opening, name))) return null;
   const wanted = textIdentity(hintProp.initializer, resolve);
-  return wanted && wanted === visibleLabel(node, imports, resolve) ? hintProp : null;
+  const accessible = accessibleLabel(node, opening, isTooltip);
+  const visibleChild = !uncertainVisibility(opening, resolve) && onlyTextChild(node);
+  const repeatsVisible = wanted !== null && wanted === visibleLabel(node, imports, resolve);
+  const target = isTooltip ? onlyTextChild(node) : node;
+  const targetOpening = target && openingOf(target);
+  const repeatsAria =
+    accessible &&
+    targetOpening &&
+    !["iconOnly", "truncate", "lineClamp", "revealLabel"].some((prop) =>
+      attribute(targetOpening, prop),
+    ) &&
+    sameLabel(hintProp.initializer, accessible, resolve);
+  const conditionalLabel = visibleChild && sameLabel(hintProp.initializer, visibleChild, resolve);
+  return repeatsVisible || repeatsAria || conditionalLabel ? hintProp : null;
 }
 
 function hoverOnly(className) {
@@ -400,6 +465,349 @@ function inlineHelpGuard(node, opening, name, imports, resolve, add) {
     )
       add("inline-help-text", help.getStart());
   }
+}
+
+const fieldNames = new Set([
+  "Field",
+  "TextField",
+  "TextareaField",
+  "NumberField",
+  "PasswordField",
+  "NativeSelect",
+  "Select",
+  "Checkbox",
+  "RadioGroup",
+  "Switch",
+  "Input",
+]);
+const controlNames = new Set(["Button", "Row", "Checkbox", "InlineAction"]);
+const rowNames = new Set(["ListRow", "Row", "TreeRow", "PickerRow"]);
+const helpContainers = new Set(["Field", "FieldGroup", "form"]);
+const reasonNames = new Set(["InlineMessage", "InlineError", "SettingsFeedback", "Alert", "Text"]);
+const hintClass = /(?:^|[\s"'\x60.[])[\w-]+(?:-hint|Hint)(?![\w-])/;
+const loadingGate =
+  /^(?:(?:is)(?:Loading|Pending|Busy|Saving|Checking|Submitting)|loading|pending|busy|saving|checking|submitting)(?:[A-Z]\w*)?$/;
+const emptyFieldGate = /^!(?:[\w.]+\.(?:trim\(\)(?:\.length)?|length))$/;
+
+function obviousGate(node) {
+  if (!node) return false;
+  if (ts.isParenthesizedExpression(node)) return obviousGate(node.expression);
+  if (
+    ts.isBinaryExpression(node) &&
+    [ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken].includes(
+      node.operatorToken.kind,
+    )
+  )
+    return obviousGate(node.left) && obviousGate(node.right);
+  const text = node.getText();
+  const value = text.replace(/^!+/, "").split(".").at(-1);
+  return (
+    (!text.startsWith("!") && loadingGate.test(value)) ||
+    (text.startsWith("!!") && loadingGate.test(value)) ||
+    emptyFieldGate.test(text)
+  );
+}
+
+function semanticName(opening, imports, resolve) {
+  const tag = opening?.tagName;
+  if (!tag || !ts.isIdentifier(tag) || resolve(tag)) return null;
+  return sharedName(imports, tag.text) ?? (/^[a-z]/.test(tag.text) ? tag.text : null);
+}
+
+function neighbors(node) {
+  if (!ts.isJsxElement(node.parent) && !ts.isJsxFragment(node.parent)) return [];
+  const siblings = node.parent.children.filter((child) =>
+    ts.isJsxText(child) ? child.text.trim() : !ts.isJsxExpression(child) || child.expression,
+  );
+  const index = siblings.indexOf(node);
+  return [siblings[index - 1], siblings[index + 1]].filter(Boolean);
+}
+
+function gateReason(node, opening, imports, resolve) {
+  if (attribute(opening, "aria-describedby")) return true;
+  for (const sibling of neighbors(node)) {
+    const candidate =
+      ts.isJsxExpression(sibling) &&
+      sibling.expression &&
+      ts.isBinaryExpression(sibling.expression) &&
+      sibling.expression.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+        ? expressionOf(sibling.expression.right)
+        : sibling;
+    const adjacent = openingOf(candidate);
+    if (!adjacent || !reasonNames.has(semanticName(adjacent, imports, resolve))) continue;
+    const disabled = expressionOf(attribute(opening, "disabled")?.initializer);
+    const linked =
+      candidate !== sibling &&
+      boundValue(sibling.expression.left, resolve) !== null &&
+      boundValue(sibling.expression.left, resolve) === boundValue(disabled, resolve);
+    const shown =
+      ["InlineError", "SettingsFeedback"].includes(semanticName(adjacent, imports, resolve)) &&
+      candidate === sibling &&
+      !attribute(adjacent, "hidden");
+    if (
+      linked ||
+      shown ||
+      /(?:reason|disabled)/i.test(attribute(adjacent, "id")?.initializer?.getText() ?? "")
+    )
+      return true;
+  }
+  for (let parent = node.parent; parent && !ts.isFunctionLike(parent); parent = parent.parent) {
+    if (!ts.isJsxElement(parent)) continue;
+    const group = parent.openingElement;
+    const name = semanticName(group, imports, resolve);
+    if (name === "ModalActions" && attribute(group, "reason")) return true;
+    if (
+      ["Row", "FieldGroup", "Group"].includes(name) &&
+      (attribute(group, "disabledReason") || attribute(group, "aria-describedby"))
+    )
+      return true;
+  }
+  return false;
+}
+
+function gateProperty(opening, name, resolve) {
+  const direct = attribute(opening, name);
+  if (direct) return direct.initializer;
+  for (const prop of opening.attributes.properties) {
+    if (!ts.isJsxSpreadAttribute(prop)) continue;
+    const value = expressionOf(prop.expression);
+    const object = ts.isIdentifier(value) ? resolve(value)?.initializer : value;
+    const property = objectValue(object, name);
+    if (property) return property;
+  }
+  return null;
+}
+
+const isSocialGate = (entry, name) =>
+  entry?.name === name && entry.source.endsWith("/social/ui/common/DisabledReason");
+
+function gateReasons(node, imports, resolve, adapter) {
+  const opening = openingOf(node);
+  const reasons = [gateProperty(opening, adapter ? "reason" : "disabledReason", resolve)];
+  for (const prop of opening.attributes.properties) {
+    if (!ts.isJsxSpreadAttribute(prop)) continue;
+    const call = expressionOf(prop.expression);
+    if (
+      !call ||
+      !ts.isCallExpression(call) ||
+      !ts.isIdentifier(call.expression) ||
+      resolve(call.expression)
+    )
+      continue;
+    const adapter = imports.get(call.expression.text);
+    if (
+      adapter?.name !== "gateProps" ||
+      !adapter.source.endsWith("/social/ui/common/DisabledReason")
+    )
+      continue;
+    const collect = (value) => {
+      value = expressionOf(value);
+      if (value && ts.isConditionalExpression(value)) {
+        collect(value.whenTrue);
+        collect(value.whenFalse);
+      } else {
+        const reason = objectValue(value, "disabledReason");
+        if (reason) reasons.push(reason);
+      }
+    };
+    collect(call.arguments[0]);
+  }
+  return reasons.filter(Boolean);
+}
+
+function labelBranches(node, resolve, conditions = new Map()) {
+  node = expressionOf(node);
+  if (node && ts.isConditionalExpression(node)) {
+    const binding = boundValue(node.condition, resolve);
+    return [node.whenTrue, node.whenFalse].flatMap((branch, index) => {
+      if (binding === null) return labelBranches(branch, resolve, conditions);
+      const positive = index === 0;
+      if (conditions.has(binding) && conditions.get(binding) !== positive) return [];
+      return labelBranches(branch, resolve, new Map([...conditions, [binding, positive]]));
+    });
+  }
+  const label = textIdentity(node, resolve);
+  return label === null ? [] : [{ label, conditions }];
+}
+
+function matchedGateLabel(reason, label, resolve) {
+  if (sameLabel(reason, label, resolve)) return true;
+  const branches = labelBranches(label, resolve);
+  return labelBranches(reason, resolve).some((hint) =>
+    branches.some((child) => {
+      if (hint.label !== child.label) return false;
+      const common = [...hint.conditions].filter(([binding]) => child.conditions.has(binding));
+      return (
+        common.length > 0 &&
+        common.every(([binding, positive]) => child.conditions.get(binding) === positive)
+      );
+    }),
+  );
+}
+
+function hasReason(value) {
+  const node = expressionOf(value);
+  return Boolean(
+    node &&
+    literal(node) !== "" &&
+    node.kind !== ts.SyntaxKind.NullKeyword &&
+    node.kind !== ts.SyntaxKind.FalseKeyword &&
+    node.getText() !== "undefined",
+  );
+}
+
+function rowHasBadge(node, name, imports, resolve) {
+  const opening = openingOf(node);
+  if (name === "Badge" && ["count", "icon"].some((prop) => attribute(opening, prop))) return false;
+  const body = onlyTextChild(node) ?? attribute(opening, "children")?.initializer;
+  const label = body && (ts.isJsxText(body) ? body.text.trim() : staticText(body));
+  if (name === "Badge" && (!label || /^\d+[+%]?$/.test(label))) return false;
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (ts.isJsxAttribute(parent)) {
+      const owner = semanticName(parent.parent.parent, imports, resolve);
+      if (
+        rowNames.has(owner) &&
+        /^(?:action|aside|end|meta|trailing|right|description)$/.test(parent.name.getText())
+      )
+        return true;
+      if (!rowNames.has(owner)) return false;
+    }
+    if (ts.isJsxElement(parent)) {
+      const tag = semanticName(parent.openingElement, imports, resolve);
+      if (rowNames.has(tag) || tag === "tr" || tag === "li") return true;
+      if (
+        ["Button", "ActionHost"].includes(tag) &&
+        (attribute(parent.openingElement, "role") ||
+          attribute(parent.openingElement, "className")
+            ?.initializer?.getText()
+            .match(/(?:row|item)/i))
+      )
+        return true;
+      if (["form", "Field", "Modal", "Popover", "TagEditor"].includes(tag)) return false;
+    }
+  }
+  return false;
+}
+
+function scanClassTokens(node, handle) {
+  if (!node) return;
+  if (
+    ts.isStringLiteralLike(node) ||
+    ts.isTemplateHead(node) ||
+    ts.isTemplateMiddle(node) ||
+    ts.isTemplateTail(node)
+  ) {
+    for (const token of node.text.split(/\s+/)) handle(token);
+  }
+  ts.forEachChild(node, (child) => scanClassTokens(child, handle));
+}
+
+function auditView(node, opening, name, imports, resolve, add, file) {
+  const disabled = attribute(opening, "disabled");
+  const disabledValue = expressionOf(disabled?.initializer);
+  if (
+    controlNames.has(name) &&
+    disabled &&
+    disabledValue?.kind !== ts.SyntaxKind.FalseKeyword &&
+    !obviousGate(disabledValue) &&
+    !hasReason(gateProperty(opening, "disabledReason", resolve)) &&
+    !gateReason(node, opening, imports, resolve)
+  )
+    add("disabled-without-reason", disabled.getStart());
+  const adapter =
+    ts.isIdentifier(opening.tagName) &&
+    !resolve(opening.tagName) &&
+    isSocialGate(imports.get(opening.tagName.text), "DisabledReason");
+  if (controlNames.has(name) || adapter) {
+    const label = onlyTextChild(node);
+    if (
+      label &&
+      gateReasons(node, imports, resolve, adapter).some((reason) =>
+        matchedGateLabel(reason, label, resolve),
+      )
+    )
+      add("duplicate-feedback-channel", opening.getStart());
+  }
+  if (["Badge", "BadgeList"].includes(name) && rowHasBadge(node, name, imports, resolve))
+    add("row-text-badge", opening.getStart());
+
+  if (
+    name === "div" &&
+    attribute(opening, "aria-label") &&
+    !attribute(opening, "role") &&
+    !hasSpread(opening)
+  )
+    add("aria-label-without-role", opening.getStart());
+
+  const className = attribute(opening, "className");
+  if (className && /^src\/(?:app|features)\//.test(file)) {
+    const findings = new Set();
+    scanClassTokens(className.initializer, (token) => {
+      if (/(?:^|:)!?\[--ui-[\w-]+:[^\]]+\]!?$/.test(token))
+        findings.add("arbitrary-ui-token-override");
+      if (
+        file.startsWith("src/features/") &&
+        /(?:^|:)!?-?(?:(?:ml|mr|pl|pr)-\S+|text-(?:left|right))!?$/.test(token)
+      )
+        findings.add("physical-direction-utility");
+    });
+    for (const rule of findings) add(rule, className.getStart());
+  }
+
+  if (
+    !ts.isJsxElement(node) ||
+    !["Text", "p"].includes(name) ||
+    ["danger", "warning", "success", "error"].includes(
+      literal(attribute(opening, "tone")?.initializer),
+    ) ||
+    attribute(opening, "role") ||
+    attribute(opening, "aria-live")
+  )
+    return;
+  const child = onlyTextChild(node);
+  const copy = child && (ts.isJsxText(child) ? child.text.trim() : staticText(child));
+  if (!copy) return;
+
+  // A hint can be the final branch of a status expression immediately preceding a form.
+  let location = node;
+  while (
+    ts.isConditionalExpression(location.parent) ||
+    ts.isJsxExpression(location.parent) ||
+    ts.isParenthesizedExpression(location.parent)
+  )
+    location = location.parent;
+  const parent = ts.isJsxElement(location.parent) && location.parent.openingElement;
+  const adjacent = neighbors(location).map(openingOf).filter(Boolean);
+  const nextToField = adjacent.some(
+    (item) =>
+      fieldNames.has(semanticName(item, imports, resolve)) ||
+      semanticName(item, imports, resolve) === "form",
+  );
+  const related = [parent, ...adjacent].filter(Boolean);
+  if (
+    related.some(
+      (item) => semanticName(item, imports, resolve) === "InfoPopover" || attribute(item, "info"),
+    )
+  )
+    return;
+  const caption =
+    name === "Text" &&
+    (literal((attribute(opening, "size") ?? attribute(opening, "variant"))?.initializer) ===
+      "caption" ||
+      ["muted", "secondary"].includes(literal(attribute(opening, "tone")?.initializer)));
+  const fieldHelp =
+    nextToField || (parent && helpContainers.has(semanticName(parent, imports, resolve)));
+  const optionalInstruction =
+    /^(?:add|choose|copy|enter|find|look|open|paste|pick|select|use|you can)\b/i.test(copy);
+  const repeatsField =
+    parent &&
+    copy &&
+    textIdentity(child, resolve) === textIdentity(attribute(parent, "label")?.initializer, resolve);
+  if (
+    hintClass.test(className?.initializer?.getText() ?? "") ||
+    (caption && fieldHelp && (optionalInstruction || repeatsField))
+  )
+    add("inline-help-text", opening.getStart());
 }
 
 const feedbackChannels = new Map([
@@ -594,7 +1002,7 @@ export function scanViewGuards(file, source, add) {
   if (!file.endsWith(".tsx") || !/^src\/(?:app|features|shared)\//.test(file)) return;
   // Avoid parsing most source files; comments and string examples are rejected by the AST.
   if (
-    !/card|opacity-0|invisible|Group|(?:t|T)ooltip|description|muted|secondary|ModalActions|InlineMessage|InlineError|Alert|FailureState|Toast|(?:focus|outline)[-:]/.test(
+    !/card|opacity-0|invisible|Group|(?:t|T)ooltip|description|muted|secondary|className|aria-label|role|disabled|Badge|caption|title|ModalActions|InlineMessage|InlineError|Alert|FailureState|Toast|(?:focus|outline)[-:]/.test(
       source,
     )
   )
@@ -617,6 +1025,19 @@ export function scanViewGuards(file, source, add) {
       if (group) groups++;
       const name = sharedName(imports, opening.tagName.getText());
       inlineHelpGuard(node, opening, name, imports, resolve, add);
+      if (/^src\/(?:app|features)\//.test(file)) {
+        const semantic = semanticName(opening, imports, resolve);
+        auditView(node, opening, semantic, imports, resolve, add, file);
+        if (
+          /^[A-Z]/.test(opening.tagName.getText()) &&
+          (semantic ?? opening.tagName.getText()) !== "Alert" &&
+          literal(attribute(opening, "role")?.initializer) === "status"
+        )
+          add("role-status-banner", opening.getStart(tree));
+        const title = attribute(opening, "title");
+        if (semantic === "TreeRow" && title && literal(title.initializer) !== "")
+          add("native-title", title.getStart(tree));
+      }
       const hint = tooltipRepeatsLabel(node, opening, imports, resolve);
       if (hint) add("tooltip-repeats-label", hint.getStart(tree));
       if (
@@ -705,15 +1126,18 @@ export function cssSelectorRules(selector) {
 
 /** A global selector or an attribute value with the same spelling is not a module member. */
 export function selectsSharedModuleSlot(selectors, members) {
-  if (!members?.size) return false;
-  return selectors.some((selector) => {
-    if (selector.startsWith("@")) return false;
+  const components = new Set();
+  if (!members?.size) return components;
+  for (const selector of selectors) {
+    if (selector.startsWith("@")) continue;
     const local = selector
       .replace(/:global\((?:[^()]|\([^()]*\))*\)/g, "")
       .replace(/\[[^\]]*\]/g, "")
       .replace(/:global\s+[^,]+/g, "");
-    return [...local.matchAll(/\.([\w-]+)/g)].some((match) => members.has(match[1]));
-  });
+    for (const match of local.matchAll(/\.([\w-]+)/g))
+      for (const component of members.get(match[1]) ?? []) components.add(component);
+  }
+  return components;
 }
 
 /** Selector text of an ink rule: the transcript's reading surfaces own their text roles. */

@@ -28,7 +28,12 @@ describe("email account form", () => {
   });
 
   it("checks SMTP server and port", () => {
-    const smtp: EmailDraft = { ...draft, kind: "smtp", host: "", port: "70000" };
+    const smtp: EmailDraft = {
+      ...draft,
+      kind: "smtp",
+      host: "",
+      port: "70000",
+    };
     expect(emailFormError(smtp, "create")).toBe("Enter the SMTP server.");
     expect(emailFormError({ ...smtp, host: "smtp.example.com" }, "create")).toBe(
       "Enter a port between 1 and 65535.",

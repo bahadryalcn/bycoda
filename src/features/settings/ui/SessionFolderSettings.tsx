@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "../../../shared/ui/icons";
@@ -22,7 +23,7 @@ export function SessionFolderGroup() {
   const busy = operation !== null;
   const inFlight = useRef(false);
   const generation = useRef(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
 
   const reload = async () => {
     const current = ++generation.current;
@@ -32,7 +33,8 @@ export function SessionFolderGroup() {
       const value = await loadSessionFolder();
       if (generation.current === current) setFolder(value);
     } catch (cause) {
-      if (generation.current === current) setError(errorText(cause));
+      if (generation.current === current)
+        setError({ title: t("Could not read the session folder."), detail: errorText(cause) });
     } finally {
       if (generation.current === current) setOperation(null);
     }
@@ -52,7 +54,8 @@ export function SessionFolderGroup() {
   }, []);
 
   // choose() and save() report their own failures; this only satisfies the rejection contract.
-  const setErrorFrom = (cause: unknown) => setError(errorText(cause));
+  const setErrorFrom = (cause: unknown) =>
+    setError({ title: t("Could not choose the session folder."), detail: errorText(cause) });
 
   const save = async (next: string | null) => {
     setError(null);
@@ -62,7 +65,8 @@ export function SessionFolderGroup() {
       const value = await loadSessionFolder();
       if (generation.current === current) setFolder(value);
     } catch (cause) {
-      if (generation.current === current) setError(errorText(cause));
+      if (generation.current === current)
+        setError({ title: t("Could not save the session folder."), detail: errorText(cause) });
     } finally {
       if (generation.current === current) setOperation(null);
     }
@@ -81,7 +85,7 @@ export function SessionFolderGroup() {
       });
       if (typeof path === "string") await save(path);
     } catch (cause) {
-      setError(errorText(cause));
+      setErrorFrom(cause);
     } finally {
       inFlight.current = false;
       setOperation(null);
@@ -100,9 +104,10 @@ export function SessionFolderGroup() {
           error ? (
             <SettingsFeedback
               state="error"
+              extra={<ErrorDetails detail={error.detail} />}
               action={{ label: t("Retry"), onClick: () => void reload() }}
             >
-              {error}
+              {error.title}
             </SettingsFeedback>
           ) : undefined
         }

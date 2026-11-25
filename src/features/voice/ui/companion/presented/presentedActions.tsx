@@ -5,7 +5,10 @@ import { Button } from "../../../../../shared/ui/Button";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { OutputBlock } from "../../../../../shared/ui/OutputBlock";
 import { StatusText } from "../../../../../shared/ui/StatusText";
-import type { VoicePresentedActionResponse } from "../../../model/voicePresentedActions";
+import {
+  parsePresentedPress,
+  type VoicePresentedActionResponse,
+} from "../../../model/voicePresentedActions";
 import {
   PresentedHostContext,
   presentedView,
@@ -50,7 +53,17 @@ export function presentedPressParams(action: unknown) {
 function PressFeedback({ press }: { press: PresentedPress }) {
   const t = useT();
   if (press.state === "pending") return null;
-  if (press.state === "failed") return <InlineError>{press.message}</InlineError>;
+  if (press.state === "failed") {
+    return (
+      <InlineError details={press.detail}>
+        {press.reason === "incomplete"
+          ? t("This action is incomplete.")
+          : press.reason === "view-changed"
+            ? t("This view changed. Ask for it again.")
+            : t("Could not run this action.")}
+      </InlineError>
+    );
+  }
   const status = press.response?.status ?? "completed";
   return (
     <div className="grid min-w-0 gap-1.5">
@@ -72,6 +85,7 @@ export const presentedActionViews: Record<string, PresentedView> = {
     action: unknown;
     requires?: unknown[];
   }>(function ButtonView({ label, variant = "secondary", action, requires }) {
+    const t = useT();
     const trigger = useTriggerAction();
     const host = useContext(PresentedHostContext);
     const params = presentedPressParams(action);
@@ -79,6 +93,13 @@ export const presentedActionViews: Record<string, PresentedView> = {
     const current = press?.signature === JSON.stringify(params?.button);
     const pending = press?.state === "pending" && current;
     const missing = (requires ?? []).some(presentedValueMissing);
+    const disabledReason = !host.canPress
+      ? t("This view cannot run actions.")
+      : missing
+        ? t("Fill in the required fields first.")
+        : !params || !parsePresentedPress(params.button).success
+          ? t("This action is incomplete.")
+          : undefined;
     return (
       <div className="grid min-w-0 content-start gap-1.5">
         <div>
@@ -86,7 +107,8 @@ export const presentedActionViews: Record<string, PresentedView> = {
             variant={variant}
             size="sm"
             loading={pending}
-            disabled={!params || !host.canPress || missing || pending}
+            disabled={!!disabledReason}
+            disabledReason={disabledReason}
             onClick={() => void trigger(label, undefined, action as ActionPlan)}
           >
             {label}

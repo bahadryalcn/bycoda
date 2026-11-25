@@ -58,6 +58,7 @@ export function WorkingIndicator({
   text,
   truncate,
   glyph = true,
+  live,
 }: {
   /** Placement only (margins, alignment). Toggle visibility on a wrapper; color and size belong to the component. */
   className?: string;
@@ -70,6 +71,8 @@ export function WorkingIndicator({
   glyph?: boolean;
   /** Announces the activity politely. Omit it when a nearby status already does. */
   label?: string;
+  /** With a visible label (`children`), makes the label itself the polite live region, so a caller never hand-writes `role="status"`. Omit it when a nearby status already announces. */
+  live?: boolean;
   /** Matches the shared icon scale: xs 12px (default), sm 14px, md 16px. */
   size?: WorkingIndicatorSize;
   /** A 6px dot for dense session status slots; bars retain the shared icon size. */
@@ -115,7 +118,11 @@ export function WorkingIndicator({
   );
   if (!labeled) return signal;
   return (
-    <span ref={root} className={[styles.labeled, className].filter(Boolean).join(" ")}>
+    <span
+      ref={root}
+      role={live ? "status" : undefined}
+      className={[styles.labeled, className].filter(Boolean).join(" ")}
+    >
       {glyph ? signal : null}
       <Text size="inherit" tone="secondary" {...text} truncate={truncate} className={styles.label}>
         {children}

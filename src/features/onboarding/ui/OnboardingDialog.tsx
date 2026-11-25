@@ -3,7 +3,10 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Progress } from "../../../shared/ui/Progress";
@@ -163,7 +166,18 @@ export default function OnboardingDialog({ onFinish, onImported, onOpenProject }
                 />
               </div>
             </div>
-            {languageError ? <Alert tone="danger">{languageError}</Alert> : null}
+            {languageError ? (
+              <Alert
+                tone="danger"
+                title={t("Could not change the language.")}
+                extra={
+                  <ErrorDetails
+                    title={t("Could not change the language.")}
+                    detail={languageError}
+                  />
+                }
+              />
+            ) : null}
           </div>
           <div className="onboarding-stepper-wrap">
             <Stepper
@@ -276,6 +290,19 @@ export default function OnboardingDialog({ onFinish, onImported, onOpenProject }
   );
 }
 
+type ProjectsFailure = { action: "load" | "import" | "add"; detail: string };
+
+function projectsFailureTitle(action: ProjectsFailure["action"]): string {
+  switch (action) {
+    case "load":
+      return t("Could not read this computer’s conversation history.");
+    case "import":
+      return t("Could not import the selected projects.");
+    case "add":
+      return t("Could not add the project folders.");
+  }
+}
+
 function Projects({
   onBusy,
   onImported,
@@ -293,7 +320,7 @@ function Projects({
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ProjectsFailure | null>(null);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [adding, setAdding] = useState(false);
@@ -321,7 +348,7 @@ function Projects({
         setSelected(new Set(groupByFolder(next).map((folder) => folder.key)));
       })
       .catch((reason) => {
-        if (alive) setError(String(reason));
+        if (alive) setError({ action: "load", detail: String(reason) });
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -337,7 +364,7 @@ function Projects({
     running.current = true;
     setImporting(true);
     onBusy(true);
-    setError("");
+    setError(null);
     const controller = new AbortController();
     abort.current = controller;
     try {
@@ -351,7 +378,7 @@ function Projects({
       });
       setSummary(result);
     } catch (reason) {
-      setError(String(reason));
+      setError({ action: "import", detail: String(reason) });
     } finally {
       running.current = false;
       setImporting(false);
@@ -371,7 +398,7 @@ function Projects({
       setAddedFolders((current) => [...new Set([...current, ...paths])]);
       onImported();
     } catch (reason) {
-      setError(String(reason));
+      setError({ action: "add", detail: String(reason) });
     } finally {
       running.current = false;
       setAdding(false);
@@ -408,13 +435,19 @@ function Projects({
         />
         <div className="onboarding-scroll">
           {error ? (
-            <Alert tone="danger">{t("Could not complete this action: {p0}", { p0: error })}</Alert>
+            <Alert
+              tone="danger"
+              title={projectsFailureTitle(error.action)}
+              extra={
+                <ErrorDetails title={projectsFailureTitle(error.action)} detail={error.detail} />
+              }
+            />
           ) : null}
           {loading ? (
             <div className="onboarding-scan">
-              <Text as="p" size="inherit" tone="muted" leading="normal" role="status">
+              <LoadingText delay={false}>
                 {t("Scanning this computer’s conversation history…")}
-              </Text>
+              </LoadingText>
               {[0, 1, 2, 3].map((row) => (
                 <Skeleton key={row} aria-hidden className="h-9 w-full" />
               ))}
@@ -561,13 +594,14 @@ function Projects({
             </div>
           ) : null}
           {summary ? (
-            <div role="status">
+            <div>
               <Text as="p" size="inherit" tone="muted" leading="normal">
-                {t("{p0} conversations imported across {p1} projects.", {
-                  p0: summary.imported,
-                  p1: summary.projects,
-                })}
-                {summary.cancelled ? ` ${t("Import cancelled.")}` : ""}
+                <LiveText
+                  text={`${t("{p0} conversations imported across {p1} projects.", {
+                    p0: summary.imported,
+                    p1: summary.projects,
+                  })}${summary.cancelled ? ` ${t("Import cancelled.")}` : ""}`}
+                />
               </Text>
               {summary.failed.length ? (
                 <Alert tone="danger">
@@ -575,9 +609,11 @@ function Projects({
                     {t("{p0} conversations could not be imported.", { p0: summary.failed.length })}
                   </Text>
                   {summary.failed.map((failure, index) => (
-                    <Text as="p" key={index} size="inherit" tone="muted" leading="normal">
-                      {failure.candidate.cwd}: {failure.error}
-                    </Text>
+                    <InlineError key={index} details={failure.error}>
+                      {t("Could not import {p0}.", {
+                        p0: prettyCwd(failure.candidate.cwd),
+                      })}
+                    </InlineError>
                   ))}
                 </Alert>
               ) : null}
@@ -592,9 +628,9 @@ function Projects({
             </div>
           ) : null}
           {addedFolders.length ? (
-            <div role="status">
+            <div>
               <Text as="p" size="inherit" tone="muted" leading="normal">
-                {t("{p0} project folders added.", { p0: addedFolders.length })}
+                <LiveText text={t("{p0} project folders added.", { p0: addedFolders.length })} />
               </Text>
               {addedFolders.map((path) => (
                 <div className="onboarding-project" key={path}>

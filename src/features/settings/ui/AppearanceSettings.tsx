@@ -17,7 +17,6 @@ import {
 import { observeResize } from "../../../shared/lib/observeResize";
 import "./AppearanceSettings.css";
 
-export { AccentColorPicker, ACCENT_COLOR_PRESETS } from "./appearance/controls/AccentColorPicker";
 export { ChatBackgroundCard } from "./appearance/sections/BackgroundSection";
 
 type Section = "theme" | "background" | "interface" | "typography" | "motion";

@@ -6,6 +6,7 @@ import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestam
 import { openExternal } from "../../../../platform/tauri/openExternal";
 import { Button } from "../../../../shared/ui/Button";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { ExternalLink } from "../../../../shared/ui/icons";
 import { SettingsFeedback } from "../../../../shared/ui/settings";
@@ -22,7 +23,7 @@ type Phase =
   | { kind: "starting" }
   | { kind: "waiting"; start: MicrosoftDeviceStart }
   | { kind: "done" }
-  | { kind: "failed"; message: string };
+  | { kind: "failed"; title: string; detail?: string };
 
 /**
  * Microsoft device-code sign-in. Tokens stay native: a finished flow hands the caller only the
@@ -67,8 +68,8 @@ export function MicrosoftDeviceSignIn({
     const lifetimeMs = Math.max(1, start.expiresIn) * 1000;
     let timer: number | undefined;
     const live = () => generation === request.current;
-    const fail = (message: string) => {
-      if (live()) setPhase({ kind: "failed", message });
+    const fail = (title: string, detail?: string) => {
+      if (live()) setPhase({ kind: "failed", title, detail });
     };
     const tick = async () => {
       try {
@@ -78,16 +79,16 @@ export function MicrosoftDeviceSignIn({
           setPhase({ kind: "done" });
           signedInCallback(start.handle);
         } else if (result.status === "expired") {
-          fail(result.error || t("The sign-in code expired. Start sign-in again."));
+          fail(t("The sign-in code expired. Start sign-in again."), result.error || undefined);
         } else if (result.status === "denied") {
-          fail(result.error || t("Microsoft sign-in was declined."));
+          fail(t("Microsoft sign-in was declined."), result.error || undefined);
         } else if (elapsedSince(startedAt) >= lifetimeMs) {
           fail(t("The sign-in code expired. Start sign-in again."));
         } else {
           timer = window.setTimeout(schedule, intervalMs);
         }
       } catch (err: unknown) {
-        fail(errorText(err));
+        fail(t("Microsoft sign-in could not be completed."), errorText(err));
       }
     };
     const schedule = () => {
@@ -114,7 +115,12 @@ export function MicrosoftDeviceSignIn({
       setPhase({ kind: "waiting", start });
       openSignIn(start, generation);
     } catch (err: unknown) {
-      if (generation === request.current) setPhase({ kind: "failed", message: errorText(err) });
+      if (generation === request.current)
+        setPhase({
+          kind: "failed",
+          title: t("Microsoft sign-in could not start."),
+          detail: errorText(err),
+        });
     }
   };
 
@@ -151,7 +157,19 @@ export function MicrosoftDeviceSignIn({
           <Button onClick={cancel}>{t("Cancel")}</Button>
         </div>
         <LoadingText delay={false}>{t("Waiting for you to finish signing in…")}</LoadingText>
-        {browserError ? <SettingsFeedback state="error">{browserError}</SettingsFeedback> : null}
+        {browserError ? (
+          <SettingsFeedback
+            state="error"
+            extra={
+              <ErrorDetails
+                title={t("The sign-in page could not be opened.")}
+                detail={browserError}
+              />
+            }
+          >
+            {t("The sign-in page could not be opened.")}
+          </SettingsFeedback>
+        ) : null}
       </div>
     );
   }
@@ -176,7 +194,16 @@ export function MicrosoftDeviceSignIn({
         </Button>
       </div>
       {phase.kind === "failed" ? (
-        <SettingsFeedback state="error">{phase.message}</SettingsFeedback>
+        <SettingsFeedback
+          state="error"
+          extra={
+            phase.detail && phase.detail !== phase.title ? (
+              <ErrorDetails title={phase.title} detail={phase.detail} />
+            ) : undefined
+          }
+        >
+          {phase.title}
+        </SettingsFeedback>
       ) : null}
     </div>
   );

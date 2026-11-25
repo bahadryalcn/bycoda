@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NoticeButton, NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
@@ -144,9 +143,7 @@ export function RemoteLoadError({
         <strong>{title}</strong>
         {reconnectFailed ? (
           <span className="mt-1 flex min-w-0 flex-wrap items-baseline gap-2">
-            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
-              {t("Reconnecting failed: {p0}", { p0: reconnectError })}
-            </Text>
+            {t("Reconnecting failed")}
             <ErrorDetails
               className="shrink-0"
               title={t("Reconnecting failed")}
@@ -167,12 +164,21 @@ export function RemoteLoadError({
       title={title}
       action={first}
       secondaryAction={second}
-      extra={third ? <NoticeButton action={third} /> : undefined}
+      extra={
+        <>
+          {failure.message ? <ErrorDetails title={title} detail={failure.message} /> : null}
+          {third ? <NoticeButton action={third} /> : null}
+        </>
+      }
       onDismiss={onDismiss}
     >
-      <p className="break-words">{failure.message}</p>
       {reconnectFailed ? (
-        <p className="mt-1 break-words">{t("Reconnecting failed: {p0}", { p0: reconnectError })}</p>
+        <InlineMessage
+          tone="warning"
+          extra={<ErrorDetails title={t("Reconnecting failed")} detail={reconnectError} />}
+        >
+          {t("Reconnecting failed")}
+        </InlineMessage>
       ) : null}
     </Alert>
   );

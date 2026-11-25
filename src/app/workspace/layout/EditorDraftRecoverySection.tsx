@@ -102,6 +102,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
           iconOnly
           label={t("Refresh copies")}
           disabled={recovery.pendingKeys.size > 0}
+          disabledReason={t("A recovery operation is in progress")}
           loading={recovery.loading}
           onClick={() => void recovery.refresh()}
         >
@@ -109,7 +110,10 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
         </Button>
       </div>
       {recovery.error ? (
-        <InlineError retry={{ pending: recovery.loading, onRetry: () => void recovery.refresh() }}>
+        <InlineError
+          details={recovery.error}
+          retry={{ pending: recovery.loading, onRetry: () => void recovery.refresh() }}
+        >
           {t("Couldn’t load file recovery copies")}
         </InlineError>
       ) : null}
@@ -172,6 +176,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
                       iconOnly
                       label={t("Hide from list")}
                       disabled={pending || recovery.loading}
+                      disabledReason={t("A recovery operation is in progress")}
                       onClick={() => void confirmHide(row).catch(() => {})}
                     >
                       <EyeOff className="icon-sm" />

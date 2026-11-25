@@ -221,10 +221,10 @@ it("requires an explicit workflow choice and never posts a required-fields trans
   await click("Move ENG-1");
   await click("Working");
   expect(container.querySelector<HTMLButtonElement>("button:disabled")?.textContent).toBeTruthy();
-  expect(
-    [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Resolve"))
-      ?.disabled,
-  ).toBe(true);
+  const resolve = [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.startsWith("Resolve"),
+  );
+  expect(resolve?.disabled || resolve?.getAttribute("aria-disabled") === "true").toBe(true);
   expect(invoke).not.toHaveBeenCalledWith("jira_issue_transition", expect.anything());
   await click("Cancel");
 });

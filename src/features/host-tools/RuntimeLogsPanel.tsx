@@ -1,7 +1,7 @@
 import { errorText } from "../../shared/lib/errors";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
-import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
+import { levelLabel, RuntimeLogRow } from "./ui/RuntimeLogRow";
 import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
 import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 import { EmptyState } from "../../shared/ui/EmptyState";
@@ -11,6 +11,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Badge } from "../../shared/ui/Badge";
+import { InfoTooltip } from "../../shared/ui/InfoPopover";
 import { LiveText } from "../../shared/ui/LiveText";
 import { Switch } from "../../shared/ui/Switch";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
@@ -373,10 +374,6 @@ function ScopedRuntimeLogsPanel({
     () => buffer.entries.filter((entry) => selected.has(entry.id)),
     [buffer.entries, selected],
   );
-  const sourceMap = useMemo(
-    () => new Map(buffer.sources.map((entry) => [entry.id, entry])),
-    [buffer.sources],
-  );
   const { errorCount, warningCount, typeCounts } = view;
   const filteredCount = view.count;
 
@@ -527,7 +524,10 @@ function ScopedRuntimeLogsPanel({
     setActionError("");
     const revision = generation.current;
     try {
-      const content = exportRuntimeLogs(entries, buffer.sources, { cwd, hostLabel });
+      const content = exportRuntimeLogs(entries, buffer.sources, {
+        cwd,
+        hostLabel,
+      });
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       const path = await save({
         title: t("Export logs"),
@@ -698,7 +698,7 @@ function ScopedRuntimeLogsPanel({
                   ["all", "error", "warn", "debug", "info", "success", "http"] as const
                 ).map((value) => ({
                   value,
-                  label: value === "all" ? t("All levels") : LEVEL_LABELS[value],
+                  label: value === "all" ? t("All levels") : levelLabel(value),
                 }))}
               />
               <Switch
@@ -745,6 +745,7 @@ function ScopedRuntimeLogsPanel({
             size="sm"
             type="button"
             disabled={!chosen.length && !visibleEntries.length}
+            disabledReason={t("No logs to add yet")}
             loading={inspecting}
             onClick={inspect}
           >
@@ -767,6 +768,7 @@ function ScopedRuntimeLogsPanel({
             iconOnly
             type="button"
             disabled={busy}
+            disabledReason={t("Logs are loading")}
             loading={busy}
             onClick={() => void read()}
             label={t("Refresh")}
@@ -833,7 +835,12 @@ function ScopedRuntimeLogsPanel({
                   disabled: exporting || (!chosen.length && !filteredCount),
                 },
                 { kind: "sep" },
-                { kind: "item", id: "clear", label: t("Clear view"), danger: true },
+                {
+                  kind: "item",
+                  id: "clear",
+                  label: t("Clear view"),
+                  danger: true,
+                },
               ]}
               onClose={() => setMoreOpen(false)}
               returnFocusRef={moreTrigger}
@@ -893,12 +900,15 @@ function ScopedRuntimeLogsPanel({
                   size="sm"
                   type="submit"
                   disabled={monitorBusy || !monitorUrl.trim()}
+                  disabledReason={
+                    monitorBusy
+                      ? t("Wait for the current monitor action")
+                      : t("Enter a port or URL")
+                  }
                   loading={monitorOperation?.method === "start"}
                   label={t("Open website and capture logs")}
-                  tooltip={t("Open website and capture logs")}
                 >
                   <Play className="icon-sm" />
-                  <span className="runtime-logs-sr">{t("Capture website logs")}</span>
                 </Button>
                 <Button
                   motion="none"
@@ -906,10 +916,10 @@ function ScopedRuntimeLogsPanel({
                   size="sm"
                   type="button"
                   disabled={monitorBusy}
+                  disabledReason={t("Wait for the current monitor action")}
                   loading={monitorOperation?.method === "list"}
                   onClick={() => void monitorAction("list")}
                   label={t("Load monitors")}
-                  tooltip={t("Load monitors")}
                 >
                   <RefreshCw className="icon-sm" />
                 </Button>
@@ -929,6 +939,7 @@ function ScopedRuntimeLogsPanel({
                       tooltip={monitor.url}
                       tooltipWhen="overflow"
                       disabled={!monitor.sourceId}
+                      disabledReason={t("Not capturing yet")}
                       onClick={() => {
                         const id = monitor.sourceId;
                         if (!id) return;
@@ -948,6 +959,7 @@ function ScopedRuntimeLogsPanel({
                       size="sm"
                       type="button"
                       disabled={monitorBusy}
+                      disabledReason={t("Wait for the current monitor action")}
                       loading={
                         monitorOperation?.method === "stop" && monitorOperation.id === monitor.id
                       }
@@ -960,9 +972,6 @@ function ScopedRuntimeLogsPanel({
                 ))}
               </ul>
             ) : null}
-            <Text as="p" size="caption" tone="secondary">
-              {t("Opens a separate browser. Capture continues until you stop the website monitor.")}
-            </Text>
           </section>
         </Popover>
       ) : null}
@@ -974,11 +983,9 @@ function ScopedRuntimeLogsPanel({
       {actionError ? (
         <Alert tone="danger" extra={<ErrorDetails detail={actionError} />}>
           <p>
-            {t(
-              actionError.includes("ERR_CONNECTION_REFUSED")
-                ? "Website is not running. Start it in Development servers, then try again."
-                : "The action failed. Check the details and retry.",
-            )}
+            {actionError.includes("ERR_CONNECTION_REFUSED")
+              ? t("Website is not running. Start it in Development servers, then try again.")
+              : t("The action failed. Check the details and retry.")}
           </p>
         </Alert>
       ) : null}
@@ -994,7 +1001,9 @@ function ScopedRuntimeLogsPanel({
         tabIndex={0}
         onScroll={(event) => {
           const area = event.currentTarget;
-          patchToolsDraftPart(transferScope, "logs", { scrollTop: area.scrollTop });
+          patchToolsDraftPart(transferScope, "logs", {
+            scrollTop: area.scrollTop,
+          });
           const atEnd = area.scrollHeight - area.scrollTop - area.clientHeight < 32;
           if (atEnd !== follow) setFollow(atEnd);
         }}
@@ -1016,7 +1025,6 @@ function ScopedRuntimeLogsPanel({
                 <RuntimeLogRow
                   key={group.id}
                   group={group}
-                  sourceLabel={sourceMap.get(group.entry.sourceId)?.label ?? group.entry.sourceId}
                   selectedCount={group.entries.reduce(
                     (count, entry) => count + Number(selected.has(entry.id)),
                     0,
@@ -1096,8 +1104,23 @@ function ScopedRuntimeLogsPanel({
               {t("Deselect all")}
             </Button>
           ) : null}
-          {groups.length > visibleGroups.length ? (
-            <span>{t("Showing the latest {p0} rows.", { p0: MAX_RENDERED_RUNTIME_LOGS })}</span>
+          {groups.length > visibleGroups.length || buffer.dropped || buffer.trimmed ? (
+            <InfoTooltip>
+              {[
+                groups.length > visibleGroups.length
+                  ? t("Showing the latest {p0} rows.", {
+                      p0: MAX_RENDERED_RUNTIME_LOGS,
+                    })
+                  : "",
+                buffer.dropped || buffer.trimmed
+                  ? t("{p0} older events were dropped from retained history.", {
+                      p0: buffer.dropped + buffer.trimmed,
+                    })
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            </InfoTooltip>
           ) : null}
         </Text>
         <Text size="micro" tone="inherit" leading="inherit" className="runtime-logs-totals">
@@ -1107,13 +1130,6 @@ function ScopedRuntimeLogsPanel({
           )}
         </Text>
       </footer>
-      {buffer.dropped || buffer.trimmed ? (
-        <Text size="micro" tone="inherit" leading="normal" as="p" className="runtime-logs-hint">
-          {t("{p0} older events were dropped from retained history.", {
-            p0: buffer.dropped + buffer.trimmed,
-          })}
-        </Text>
-      ) : null}
     </section>
   );
 }

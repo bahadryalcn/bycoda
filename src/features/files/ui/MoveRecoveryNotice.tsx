@@ -32,7 +32,9 @@ export function MoveRecoveryNotice({ notice }: { notice: CopyNotice }) {
         {t("Show")}
       </Button>
       {notice.warning ? <InlineError>{notice.warning}</InlineError> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Couldn’t show the recovery copy")}</InlineError>
+      ) : null}
     </Text>
   );
 }

@@ -13,7 +13,8 @@ vi.mock("../../workspaces/model/workspaceClient", async (original) => ({
     environmentId: "fixture-env",
     machineId: "fixture-machine",
   }),
-  getWorkspaceCapabilities: async () => [],
+  getWorkspaceCapabilities: vi.fn(),
+  workspaceRequest: vi.fn(),
 }));
 
 vi.mock("../model/worktrees", async (original) => ({
@@ -73,6 +74,7 @@ import { FolderTree, GitBranch } from "../../../shared/ui/icons";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { DeleteSessionDialog } from "../../sessions/ui/DeleteSessionDialog";
 import { WorktreesPage } from "./WorktreesPage";
+import { getWorkspaceCapabilities, workspaceRequest } from "../../workspaces/model/workspaceClient";
 
 // Deletion is an inline row action; a reasoned disabled state stays focusable (aria-disabled).
 function worktreeDelete(scope: ParentNode, selector: string): HTMLButtonElement | null {
@@ -100,6 +102,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue([]);
   vi.mocked(checkWorktreeRemoval).mockResolvedValue(undefined);
   vi.mocked(useProjectBranchesState).mockReturnValue({
     branches: {
@@ -729,9 +732,7 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(worktreeDelete(container, '[aria-label="Delete feature/alpha"]')).not.toBeNull();
   await act(async () => type(search, "beta-folder"));
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(1);
-  expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="Reveal fix/beta"]')!.disabled,
-  ).toBe(true);
+  expect(unavailable(worktreeDelete(container, '[aria-label="Reveal fix/beta"]'))).toBe(true);
   await act(async () => type(search, "no-matching-worktree"));
   expect(
     [...container.querySelectorAll('[role="status"]')].some((status) =>
@@ -742,6 +743,28 @@ it("searches worktrees by branch and folder, and clears an empty result without 
   expect(search.value).toBe("");
   expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
   expect(onRemove).not.toHaveBeenCalled();
+});
+
+it("blocks local deletion after an inventory failure and re-enables it after Retry", async () => {
+  vi.mocked(getWorkspaceCapabilities).mockResolvedValue(["workspaces.managed.v1"]);
+  vi.mocked(workspaceRequest)
+    .mockRejectedValueOnce(new Error("Inventory read failed"))
+    .mockResolvedValueOnce([]);
+  const onRemove = vi.fn();
+  await act(async () =>
+    root.render(createElement(WorktreesPage, { cwd: "/inventory-retry", onRemove })),
+  );
+  const deleteAction = () => worktreeDelete(container, '[aria-label="Delete feature"]');
+  expect(container.textContent).toContain("Data has not been verified.");
+  expect(container.textContent).not.toContain("Loading managed workspaces…");
+  expect(unavailable(deleteAction())).toBe(true);
+  await act(async () => deleteAction()!.click());
+  expect(button("Delete worktree")).toBeUndefined();
+  expect(onRemove).not.toHaveBeenCalled();
+
+  await act(async () => button("Retry").click());
+  expect(container.textContent).not.toContain("Data has not been verified.");
+  expect(unavailable(deleteAction())).toBe(false);
 });
 
 it("keeps full worktree identity visible without revealing or deleting the folder", async () => {

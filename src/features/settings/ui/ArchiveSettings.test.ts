@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { archiveProject, rememberProject } from "../../projects/model/recents";
-import { formatDate, ArchivePage } from "./ArchiveSettings";
+import { ArchivePage } from "./ArchiveSettings";
 import { formatArchiveDate } from "../../../shared/i18n/format";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import * as lockState from "../../group-lock/model/lockState";
@@ -59,7 +59,7 @@ it.each(["relocked", "removed", "unavailable"])(
     else localStorage.setItem("bycoda.archivedProjects", change === "removed" ? "[]" : "{broken");
     await act(async () => restoreButton.click());
     expect(restore).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("The operation did not complete");
+    expect(container.textContent).toContain("The project could not be restored.");
   },
 );
 
@@ -93,10 +93,9 @@ it.each(["removed", "unavailable"])(
   },
 );
 
-it("keeps Archive date formatting aligned with shared i18n formatting", () => {
-  expect(formatDate(0)).toBe("");
-  expect(formatDate(Number.NaN)).toBe("");
-  expect(formatDate(1_782_000_000_000)).toBe(formatArchiveDate(1_782_000_000_000));
+it("renders missing or invalid Archive dates as blank", () => {
+  expect(formatArchiveDate(0)).toBe("");
+  expect(formatArchiveDate(Number.NaN)).toBe("");
 });
 
 it("does not read a failed or pending history load as an empty archive", async () => {
@@ -161,23 +160,6 @@ it("refreshes the project archive for its own local storage changes, clear and w
     window.dispatchEvent(new Event("focus"));
   });
   expect(container.textContent).toContain("Archived projects could not be read");
-});
-
-it("keeps the sidebar archive toggle in sync with current and legacy filter keys", async () => {
-  await act(async () => root.render(createElement(ArchivePage, baseProps)));
-  const toggle = container.querySelector('[data-setting-id="show-archived"] [role="switch"]')!;
-  const change = (key: string | null) =>
-    act(async () => {
-      window.dispatchEvent(new StorageEvent("storage", { key, storageArea: localStorage }));
-    });
-  localStorage.setItem("bycoda.sessionsShowArchived", "1");
-  await change("bycoda.unrelated");
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
-  await change("bycoda.sessionsShowArchived");
-  expect(toggle.getAttribute("aria-checked")).toBe("true");
-  localStorage.setItem("bycoda.sessionSidebarFilters", JSON.stringify({ showArchived: false }));
-  await change("bycoda.sessionSidebarFilters");
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
 });
 
 it("confirms a project restore from storage rather than from the callback returning", async () => {

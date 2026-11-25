@@ -1,29 +1,19 @@
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { loadStreamingTextMode, subscribeStreamingTextMode } from "../model/settings";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
-import { Row, Segmented, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
+import { Row, Segmented, Toggle, useConfirmedPreferences } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
-  const [failedMode, setFailedMode] = useState<"paced" | "adaptive" | null>(null);
-  const [modePending, setModePending] = useState(false);
-  const saveModeConfirmed = async (next: "paced" | "adaptive") => {
-    setModePending(true);
-    try {
-      const saved = await saveAgentDefaultConfirmed("streamingTextMode", next);
-      setFailedMode(saved && loadStreamingTextMode() === next ? null : next);
-    } catch {
-      setFailedMode(next);
-    } finally {
-      setModePending(false);
-    }
-  };
-  const saveMode = (next: "paced" | "adaptive") => {
-    void saveModeConfirmed(next).catch(console.error);
-  };
+  const { commit, pending, feedback } = useConfirmedPreferences();
+  const saveMode = (next: "paced" | "adaptive") =>
+    commit("streaming-text-mode", {
+      write: () => saveAgentDefaultConfirmed("streamingTextMode", next),
+      verify: () => loadStreamingTextMode() === next,
+    });
   const streamingTextMode = useSyncExternalStore(
     subscribeStreamingTextMode,
     loadStreamingTextMode,
@@ -72,26 +62,13 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       </Row>
       <Row
         id="streaming-text-mode"
-        feedback={
-          modePending ? (
-            <SettingsFeedback state="loading" immediate>
-              {t("Saving…")}
-            </SettingsFeedback>
-          ) : failedMode ? (
-            <SettingsFeedback
-              state="error"
-              action={{ label: t("Retry"), onClick: () => saveMode(failedMode) }}
-            >
-              {t("Could not save changes")}
-            </SettingsFeedback>
-          ) : undefined
-        }
+        feedback={feedback("streaming-text-mode")}
         label={t("Streaming text animation")}
       >
         <Segmented
           label={t("Streaming text animation")}
           value={streamingTextMode}
-          disabled={modePending}
+          disabled={pending("streaming-text-mode")}
           options={[
             { value: "paced", label: t("Paced") },
             { value: "adaptive", label: t("Instant") },

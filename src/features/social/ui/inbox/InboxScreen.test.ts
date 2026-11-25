@@ -258,6 +258,8 @@ it("rechecks a tag search when a saved change removes its last matching conversa
   expect(fake.of("inbox.unified")).toHaveLength(3);
   expect(rows()).toHaveLength(0);
   expect(element.textContent).toContain("No conversations match these filters.");
+  expect(element.querySelector(".inbox-detail")?.textContent).toContain("Ana");
+  expect(element.querySelector(".inbox-detail textarea")).not.toBeNull();
 });
 
 it("reconciles a tag save with a pending list refresh without replaying the old response", async () => {

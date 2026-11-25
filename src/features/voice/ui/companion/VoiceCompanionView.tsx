@@ -235,6 +235,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               label={micLabel}
               loading={connecting}
               disabled={canTalk ? p.startDisabled : !live}
+              disabledReason={
+                canTalk && p.startDisabled
+                  ? t("Select a workspace or session to start voice.")
+                  : undefined
+              }
               selected={live && p.muted}
               pressed={canTalk ? undefined : p.muted}
               onClick={() => (canTalk ? p.onStart() : p.onToggleMute())}

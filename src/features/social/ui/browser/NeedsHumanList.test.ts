@@ -30,7 +30,9 @@ const item: NeedsHumanItem = {
 function clientWith(items: NeedsHumanItem[]) {
   const list = vi.fn(async () => ({ items }));
   const resolve = vi.fn(async () => undefined);
-  const client = { browser: { needsHuman: { list, resolve } } } as unknown as SocialClient;
+  const client = {
+    browser: { needsHuman: { list, resolve } },
+  } as unknown as SocialClient;
   return { client, list, resolve };
 }
 
@@ -82,7 +84,13 @@ it("reports how many items wait so the screen can show a count", async () => {
   const { client } = clientWith([item, { ...item, id: "n2" }]);
   const onCountChange = vi.fn();
   await act(async () => {
-    root.render(createElement(NeedsHumanList, { client, machineId: "machine", onCountChange }));
+    root.render(
+      createElement(NeedsHumanList, {
+        client,
+        machineId: "machine",
+        onCountChange,
+      }),
+    );
   });
   await act(async () => {
     for (let i = 0; i < 5; i++) await Promise.resolve();

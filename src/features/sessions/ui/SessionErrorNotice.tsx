@@ -28,7 +28,7 @@ export function usageLimitFailureId(blocks: readonly Block[]): string | undefine
 
 /**
  * The one transcript failure notice: the reason once, with Retry beside it when the turn can be
- * resent. Protocol diagnostics stay behind Technical details.
+ * resent. Protocol diagnostics stay behind Details.
  */
 export function SessionErrorNotice({ text, errorId }: { text: string; errorId?: string }) {
   const t = useT();
@@ -38,9 +38,7 @@ export function SessionErrorNotice({ text, errorId }: { text: string; errorId?: 
   const detail = message.detail ?? (!fitsOneLine(text) ? text : undefined);
   const summary = errorHeadline(message.summary || t("The last turn failed"));
   const title = message.usageLimit ? t("Usage limit reached") : summary;
-  const details = detail ? (
-    <ErrorDetails title={title} label={t("Technical details")} detail={detail} />
-  ) : undefined;
+  const details = detail ? <ErrorDetails title={title} detail={detail} /> : undefined;
   if (message.usageLimit) {
     if (usageLimitRecovery && usageLimitRecovery.errorId === errorId) {
       return (

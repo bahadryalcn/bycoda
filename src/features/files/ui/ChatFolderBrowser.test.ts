@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { showErrorDetails } from "./errorDetails.test-support";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   list: vi.fn(),
@@ -73,14 +74,22 @@ it("keeps live-folder progress on its action, suppresses duplicates and recovers
   expect(document.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
   expect(document.activeElement).toBe(action);
   await act(async () => reject(new Error("Connection unavailable")));
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Connection unavailable");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not open the shared folder.",
+  );
+  await showErrorDetails(document);
+  expect(document.body.textContent).toContain("Connection unavailable");
   await act(async () => action.click());
   expect(native.live).toHaveBeenCalledTimes(2);
 });
 it("retries an unavailable listing in place", async () => {
   native.list.mockRejectedValueOnce(new Error("Folder unavailable"));
   await render();
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Folder unavailable");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t open this folder",
+  );
+  await showErrorDetails(document);
+  expect(document.body.textContent).toContain("Folder unavailable");
   await act(async () => button("Try again").click());
   expect(native.list).toHaveBeenCalledTimes(2);
   expect(document.querySelector('[aria-label="Folder contents"]')?.textContent).toContain(
@@ -136,8 +145,10 @@ it("locks mapping roots while validation owns their values and restores editing 
   expect(inputs.every((input) => !input.disabled)).toBe(true);
   expect(inputs[1].value).toBe("/shared/retained-folder");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "Mapping connection unavailable",
+    "Could not open the shared folder.",
   );
+  await showErrorDetails(document);
+  expect(document.body.textContent).toContain("Mapping connection unavailable");
   expect(native.open).not.toHaveBeenCalled();
 });
 

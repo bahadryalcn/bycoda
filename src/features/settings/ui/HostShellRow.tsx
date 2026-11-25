@@ -120,11 +120,7 @@ export function HostShellRow({
             </Text>
           ) : null}
         </div>
-        {status.tone === "warning" ? (
-          <Badge tone={status.tone} role="status">
-            {status.label}
-          </Badge>
-        ) : null}
+        {status.tone === "warning" ? <Badge tone={status.tone}>{status.label}</Badge> : null}
         <div className="terminal-host-select">
           <SearchableSelect
             hideLabel

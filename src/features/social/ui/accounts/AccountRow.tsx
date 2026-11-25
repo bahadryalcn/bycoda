@@ -1,10 +1,11 @@
+import { t } from "../../../../shared/i18n";
 import { Text } from "../../../../shared/ui/Text";
 import { Button } from "../../../../shared/ui/Button";
 import { Surface } from "../../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
-import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import type { SocialAccount } from "../../model/social";
 import { PlatformMark } from "../common/PlatformIcon";
+import { AccountStatusMark } from "./AccountStatusMark";
 import type { AccountHealth } from "./accountsModel";
 import "./accounts.css";
 
@@ -13,12 +14,6 @@ export type AccountRowProps = {
   health: AccountHealth;
   selected?: boolean;
   onOpen: () => void;
-};
-
-const HEALTH_TONE: Record<AccountHealth["status"], BadgeTone> = {
-  ok: "success",
-  warn: "warning",
-  error: "danger",
 };
 
 /**
@@ -57,11 +52,12 @@ export function AccountRow({ account, health, selected = false, onOpen }: Accoun
                 {account.name}
               </Text>
             </OverflowTooltip>
-            {health.status !== "ok" ? (
+            {health.status !== "ok" || account.paused ? (
               <span className="social-account-row-status">
-                <Badge tone={HEALTH_TONE[health.status]} size="sm">
-                  {health.text}
-                </Badge>
+                {health.status !== "ok" ? (
+                  <AccountStatusMark status={health.status} label={health.text} />
+                ) : null}
+                {account.paused ? <AccountStatusMark status="paused" label={t("Paused")} /> : null}
               </span>
             ) : null}
           </span>

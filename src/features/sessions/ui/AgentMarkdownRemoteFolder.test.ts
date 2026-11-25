@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
+import { openErrorDetails } from "./errorDetails.fixture";
 
 const actions = vi.hoisted(() => ({
   browseDirectory: vi.fn(),
@@ -237,9 +238,7 @@ it("requests an explicit share mapping and reports OS access failures", async ()
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("//MacBook/assets");
-  expect(dialog.querySelector('[role="alert"]')!.textContent).toContain(
-    "Network share unavailable",
-  );
+  expect(openErrorDetails(dialog)).toContain("Network share unavailable");
 });
 
 it("reports an unavailable mapped folder before asking the OS to open it", async () => {
@@ -256,9 +255,7 @@ it("reports an unavailable mapped folder before asking the OS to open it", async
   );
   expect(actions.isLocalDirectory).toHaveBeenCalledWith("//MacBook/assets");
   expect(actions.openPathWithDefaultApp).not.toHaveBeenCalled();
-  expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(
-    "The shared folder is unavailable on this computer",
-  );
+  expect(openErrorDetails(dialog)).toContain("The shared folder is unavailable on this computer");
 });
 
 it("opens a live read-only folder directly and preserves the share and copy fallbacks", async () => {
@@ -276,7 +273,7 @@ it("opens a live read-only folder directly and preserves the share and copy fall
   expect(dialog.querySelector('[aria-label="Open local copy: özet.md"]')).not.toBeNull();
   actions.openLiveRemoteFolder.mockRejectedValueOnce(new Error("WebClient is not running"));
   await act(async () => button.click());
-  expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("WebClient is not running");
+  expect(openErrorDetails(dialog)).toContain("WebClient is not running");
 });
 
 it("offers local file-manager reveal in the remote context menu", async () => {

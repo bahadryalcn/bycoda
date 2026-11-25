@@ -1,6 +1,7 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
+import { useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
@@ -22,8 +23,11 @@ import { useConversationPanelState } from "./useConversationPanelState";
 import { useConversationPanelMessages } from "./useConversationPanelMessages";
 import { useConversationPanelSend } from "./useConversationPanelSend";
 import { useConversationPanelView } from "./useConversationPanelView";
+import { useAssistantRoom } from "./assistantRoomContext";
 
 export function ConversationPanel(props: ConversationPanelProps) {
+  const { setQuery } = useAssistantRoom();
+  const [showTranscript, setShowTranscript] = useState(false);
   const panelState = useConversationPanelState(props);
   const panelMessages = useConversationPanelMessages({
     ...props,
@@ -73,6 +77,8 @@ export function ConversationPanel(props: ConversationPanelProps) {
     openDraftRecovery,
     checkConversation,
     searching,
+    searchError,
+    retrySearch,
     visible,
     supported,
     summaryRefreshing,
@@ -88,21 +94,30 @@ export function ConversationPanel(props: ConversationPanelProps) {
     threadId,
     query,
     searching,
+    searchFailed: searchError !== undefined,
     loaded: Boolean(loadedThreads[threadId]),
     visibleCount: visible.length,
   });
   const reportFailure = (cause: unknown) => setError(presentRemoteError(cause, { explicit: true }));
   return (
-    <div className={styles.layout}>
-      <ConversationThreadList c={c} onFailure={reportFailure} />
+    <div className={styles.layout} data-show-transcript={showTranscript || undefined}>
+      <ConversationThreadList
+        c={c}
+        onFailure={reportFailure}
+        onShowTranscript={() => setShowTranscript(true)}
+      />
       <div {...surfaceAttributes({ variant: "canvas-chat" }, styles.transcript)}>
-        <ConversationHeader c={c} onFailure={reportFailure} />
+        <ConversationHeader
+          c={c}
+          onFailure={reportFailure}
+          onBack={() => setShowTranscript(false)}
+        />
         <div
           className={styles.messages}
           ref={history}
           onScroll={(event) => onHistoryScroll(event.currentTarget)}
         >
-          {hasMore[threadId] && (
+          {!query.trim() && hasMore[threadId] && (
             <CollectionFooter
               standalone
               hasMore
@@ -113,6 +128,11 @@ export function ConversationPanel(props: ConversationPanelProps) {
               loadMoreLabel={t("Load earlier messages")}
               onLoadMore={() => void load(threadId, messages[threadId]?.[0]).catch(reportFailure)}
             />
+          )}
+          {transcript === "search-failed" && (
+            <InlineError details={searchError} retry={{ onRetry: retrySearch }}>
+              {t("Could not search conversations.")}
+            </InlineError>
           )}
           {transcript === "loading" && (
             <div className={styles.messageSkeleton}>
@@ -125,6 +145,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
             <EmptyState
               size="inline"
               kind={transcript === "filtered" ? "filtered" : "empty"}
+              onReset={transcript === "filtered" ? () => setQuery("") : undefined}
               description={t(
                 transcript === "filtered"
                   ? "No results"

@@ -43,7 +43,8 @@ import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { Text } from "../../../shared/ui/Text";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useReportApprovalCardOnScreen } from "./approvalCardVisibility";
 import { approvalTitle } from "./approvalPresentation";
@@ -1385,9 +1386,9 @@ function ApprovalControls({
 function ApprovalContextUnavailable() {
   const t = useT();
   return (
-    <span className="text-ui-caption text-(--transcript-ink-chrome)">
+    <Text size="caption" tone="secondary">
       {t("Open this request in its conversation to respond.")}
-    </span>
+    </Text>
   );
 }
 
@@ -1415,7 +1416,9 @@ function ConnectedApprovalControls({
       as="div"
       variant="card"
       padding="sm"
-      className="mt-1.5 min-w-0 [--ui-card-border:color-mix(in_oklab,var(--ui-tone-warning-fg)_36%,var(--transcript-inset-border))] [--ui-card-surface:color-mix(in_oklab,var(--ui-tone-warning-fg)_5%,var(--transcript-card-fill))]"
+      tone="warning"
+      frame="warning"
+      className="mt-1.5 min-w-0"
     >
       <ApprovalRequest
         title={approvalTitle(block, t)}
@@ -1424,7 +1427,6 @@ function ConnectedApprovalControls({
             ? [context.session.cwd]
             : [context.session.cwd, t("This request only")]
         }
-        scope={decision.sessionAction ? t("Workspace filename search") : undefined}
         actions={decision.sessionAction ? [decision.sessionAction] : undefined}
         detail={approvalDetail(block)}
         details={
@@ -1450,9 +1452,9 @@ function ConnectedApprovalControls({
         decision.danger ? (
           <InlineError>{decision.feedback}</InlineError>
         ) : (
-          <div role="status" className="mt-1.5 text-ui-caption text-(--transcript-ink-chrome)">
+          <InlineMessage tone="neutral" live="polite" className="mt-1.5">
             {decision.feedback}
-          </div>
+          </InlineMessage>
         )
       ) : null}
     </Surface>

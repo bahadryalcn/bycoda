@@ -73,6 +73,7 @@ export function ApprovalRequest({
               disabled={action.disabled}
               aria-label={action.ariaLabel}
               disabledReason={action.disabledReason}
+              tooltip={action.tooltip}
               onClick={action.onClick}
             >
               {action.label}

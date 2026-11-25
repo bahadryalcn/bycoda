@@ -1806,7 +1806,7 @@ function ProjectGroupSection({
   );
   const itemByPath = new Map(items.map((item) => [item.path, item]));
   const memberCount = items.length + workspaceIds.length + remoteItems.length;
-  const countLabel = `${memberCount} ${memberCount === 1 ? "project" : "projects"}`;
+  const countLabel = t(memberCount === 1 ? "{p0} project" : "{p0} projects", { p0: memberCount });
   const expanded = (!group.collapsed || revealed) && !locked;
   const collapsed = !expanded;
   // Open, the working rows show it themselves; collapsed, the header stands in for them.
@@ -1938,7 +1938,9 @@ function ProjectGroupSection({
           aria-label={
             locked
               ? t("{p0}, locked", { p0: group.name })
-              : `${group.name}, ${countLabel}${headerWorking ? ", working" : ""}`
+              : headerWorking
+                ? t("{p0}, {p1}, working", { p0: group.name, p1: countLabel })
+                : t("{p0}, {p1}", { p0: group.name, p1: countLabel })
           }
           tooltip={group.name}
           tooltipDetails={[locked ? t("Locked") : countLabel, headerWorking && t("Working")]}

@@ -179,6 +179,7 @@ export function useApprovalDecisionControl(
     sessionAction: sessionGrantSupported
       ? {
           label: t("Always allow this session"),
+          tooltip: t("Workspace filename search"),
           pending: pending && current?.allowForSession === true,
           disabled: blocked,
           onClick: () => void decide("allow", true),

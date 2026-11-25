@@ -20,7 +20,7 @@ export function XApiSettings({
   disabled: boolean;
   onChanged(): void;
 }) {
-  const { error, is, write } = useAccountWrite(
+  const { error, details, is, write } = useAccountWrite(
     t("The connection could not be started. Try again."),
   );
   return (
@@ -60,7 +60,7 @@ export function XApiSettings({
       >
         {t("X API pricing")}
       </Button>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
     </div>
   );
 }

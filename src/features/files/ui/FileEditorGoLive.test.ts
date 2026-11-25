@@ -15,6 +15,7 @@ import {
   setLanguagePreference,
 } from "../../../shared/i18n";
 import { invalidateWatchedFiles } from "../model/fileWatch";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -233,7 +234,11 @@ describe("HTML Go Live", () => {
     await click();
     expect(disk).toBe("<h1>Changed elsewhere</h1>\r\n");
     expect(opened()).toHaveLength(0);
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("changed on disk");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Couldn’t open Chrome",
+    );
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("changed on disk");
   });
 
   it("keeps Chrome closed when saving fails", async () => {
@@ -243,9 +248,13 @@ describe("HTML Go Live", () => {
     await click();
     expect(opened()).toHaveLength(0);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Save the file successfully",
+      "Couldn’t open Chrome",
     );
-    expect(container.textContent).toContain("Disk full");
+    await showErrorDetails(container, "Couldn’t open Chrome");
+    expect(document.body.textContent).toContain("Save the file successfully");
+    expect(container.textContent).toContain("Save failed");
+    await showErrorDetails(container, "Save failed");
+    expect(document.body.textContent).toContain("Disk full");
   });
 
   it("shows Chrome errors and allows retry", async () => {
@@ -253,8 +262,10 @@ describe("HTML Go Live", () => {
     chromeError = true;
     await click();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Chrome is not installed",
+      "Couldn’t open Chrome",
     );
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("Chrome is not installed");
     chromeError = false;
     await click();
     expect(opened()).toHaveLength(2);

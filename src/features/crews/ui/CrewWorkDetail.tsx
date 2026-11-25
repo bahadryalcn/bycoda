@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -8,6 +9,8 @@ import { Pause, Play, Square, Trash2 } from "../../../shared/ui/icons";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import type { CrewDefinition } from "../model/crew";
 import type { CrewRunView } from "../model/crewClient";
+import type { CrewActionError } from "../model/crewActionError";
+import { FailureAlert } from "./FailureAlert";
 import {
   crewActivityKnown,
   crewCanStop,
@@ -48,7 +51,7 @@ export function CrewWorkDetail({
   pending: boolean;
   pendingAction: string | null;
   /** The last failed action on this work, shown beside the controls that caused it. */
-  error?: string;
+  error?: CrewActionError;
   canOpen: boolean;
   canDelete: boolean;
   /** The lead's conversation is already shown inline above, so its session row is left out. */
@@ -108,11 +111,7 @@ export function CrewWorkDetail({
         </Heading>
         {run.status !== "finished" ? (
           <div className="flex shrink-0 flex-wrap items-center gap-1">
-            {pendingText ? (
-              <Text role="status" className="me-1">
-                {pendingText}
-              </Text>
-            ) : null}
+            {pendingText ? <LiveText text={pendingText} className="me-1" /> : null}
             <Button
               variant={run.status === "paused" ? "primary" : "secondary"}
               size="sm"
@@ -197,12 +196,12 @@ export function CrewWorkDetail({
       ) : null}
       {error ? (
         <div className="pt-3">
-          <Alert tone="danger">{error}</Alert>
+          <FailureAlert title={error.title} detail={error.detail} />
         </div>
       ) : null}
       {run.error ? (
         <div className="pt-3">
-          <Alert tone="warning">{run.error}</Alert>
+          <FailureAlert tone="warning" title={t("Work stopped with an error")} detail={run.error} />
         </div>
       ) : null}
       <CrewWorkSessions

@@ -1081,7 +1081,7 @@ it("lets the user retry a project change after saving fails", async () => {
   invoke.mockRejectedValueOnce(new Error("Disk full"));
   await chooseProject();
   expect(stored.sourceCwd).toBe("/work/Edefyn");
-  expect(container.textContent).toContain("Disk full");
+  expect(container.textContent).toContain("Could not save note");
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Retry",
   );
@@ -1093,14 +1093,14 @@ it("lets the user retry a project change after saving fails", async () => {
   invoke.mockImplementationOnce(() => retrying);
   retry!.focus();
   await act(async () => retry!.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save note");
   expect(retry!.isConnected).toBe(true);
   expect(retry!.getAttribute("aria-busy")).toBe("true");
   expect(document.activeElement).toBe(retry);
   expect(stored.sourceCwd).toBe("/work/Edefyn");
 
   await act(async () => failRetry(new Error("Still no space")));
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Still no space");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save note");
   const nextRetry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Retry",
   );
@@ -1147,11 +1147,20 @@ it("keeps a completed move after returning to the note while it saves", async ()
   expect(stored.sourceCwd).toBe("/work/portognjeeen");
 });
 
+it("keeps the raw save error behind Details", async () => {
+  await render();
+  invoke.mockRejectedValueOnce(new Error("Disk full"));
+  await chooseProject();
+  expect(container.textContent).not.toContain("Disk full");
+  await act(async () => button("Details").click());
+  expect(document.body.textContent).toContain("Disk full");
+});
+
 it("clears a failed move error when the saved project is selected again", async () => {
   await render();
   invoke.mockRejectedValueOnce(new Error("Disk full"));
   await chooseProject();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save note");
 
   await act(async () => projectButton()!.click());
   const original = pickerRows().find((row) => row.path === "/work/Edefyn")?.button;
@@ -1216,7 +1225,7 @@ it("keeps a conflicting draft on its original version and offers creation as a n
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     "My preserved title",
   );
-  expect(container.textContent).toContain("Your draft is preserved");
+  expect(container.textContent).toContain("Could not save note");
   await act(async () => button("Save as new note").click());
   expect(
     invoke.mock.calls.filter(([command]) => command === "notes_upsert").at(-1)?.[1].note,
@@ -1298,10 +1307,10 @@ it("recovers a failed unmount save after reopening the view", async () => {
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     "Retained draft",
   );
-  expect(container.textContent).toContain("Disk full");
+  expect(container.textContent).toContain("Could not save note");
   await act(async () => button("Retry").click());
   expect(stored.title).toBe("Retained draft");
-  expect(container.textContent).not.toContain("Disk full");
+  expect(container.textContent).not.toContain("Could not save note");
 });
 
 it("offers global retry after the notes view closes", async () => {
@@ -1311,10 +1320,10 @@ it("offers global retry after the notes view closes", async () => {
   await act(async () => root.unmount());
   root = createRoot(container);
   await act(async () => root.render(createElement(NoteDraftRecoveryNotice)));
-  expect(document.body.textContent).toContain("Offline disk");
+  expect(document.body.textContent).toContain("Could not save note");
   await act(async () => button("Retry save").click());
   expect(stored.title).toBe("Global recovery");
-  expect(document.body.textContent).not.toContain("Offline disk");
+  expect(button("Details")).toBeUndefined();
 });
 
 it("resizes the notes list from the keyboard and reports its current width", async () => {
@@ -1365,12 +1374,12 @@ it("restores failed edits when switching away and returning to the note", async 
   await select("Plan");
   await editTitle("Draft to recover");
   await select("Other note");
-  expect(container.textContent).toContain("Unsaved note: Unavailable storage");
+  expect(container.textContent).toContain("Could not save note");
   await act(async () => button("Recover draft").click());
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     "Draft to recover",
   );
-  expect(container.textContent).toContain("Could not save note: Unavailable storage");
+  expect(container.textContent).toContain("Could not save note");
   fail = false;
   await act(async () => button("Retry").click());
   expect(stored.title).toBe("Draft to recover");
@@ -1480,7 +1489,7 @@ it("keeps failed bulk deletions selected, preserves their drafts and never recre
   expect([...deleted]).toEqual(["bulk-a"]);
   expect(all.map((note) => note.id)).toEqual(["bulk-b"]);
   expect(all[0].title).toBe("Unsaved before bulk delete");
-  expect(document.body.textContent).toContain("Delete denied");
+  expect(document.body.textContent).toContain("Could not load or update notes.");
   expect(container.textContent).toContain("1 selected");
   expect(
     container.querySelector<HTMLInputElement>(
@@ -1506,14 +1515,14 @@ it("keeps a failed create apart from list refreshes and retries the create itsel
     return save(command, args);
   });
   await act(async () => button("New note").click());
-  expect(container.textContent).toContain("Create denied");
+  expect(container.textContent).toContain("Could not load or update notes.");
   // A successful list refresh neither hides nor "retries" the failed create.
   await act(async () => window.dispatchEvent(new Event(NOTES_CHANGED_EVENT)));
-  expect(container.textContent).toContain("Create denied");
+  expect(container.textContent).toContain("Could not load or update notes.");
   expect(createAttempts).toBe(1);
   await act(async () => button("Retry").click());
   expect(createAttempts).toBe(2);
-  expect(container.textContent).not.toContain("Create denied");
+  expect(container.textContent).not.toContain("Could not load or update notes.");
 });
 
 it("clears a list error when a later automatic refresh succeeds", async () => {

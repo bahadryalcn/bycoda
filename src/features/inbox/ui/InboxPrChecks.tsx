@@ -5,6 +5,7 @@ import { Text } from "../../../shared/ui/Text";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InboxLoadError } from "./InboxLoadError";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -792,14 +793,10 @@ export function InboxPrChecks({
             {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
           </Text>
           {error ? (
-            <Text as="p" size="caption" tone="inherit" className="break-words">
-              {error}
-            </Text>
-          ) : null}
-          {error ? (
             <>
               <Text as="p" size="caption" tone="inherit" className="break-words">
-                {t("Saved results may be out of date.")}
+                {t("Saved results may be out of date.")}{" "}
+                <ErrorDetails title={t("Checks refresh failed")} detail={error} />
               </Text>
               <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
                 {t("Retry loading checks")}

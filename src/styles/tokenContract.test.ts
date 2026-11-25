@@ -190,6 +190,45 @@ describe("shared declarations", () => {
     expect(rows).toContain('[aria-checked="true"]:not([role^="menuitem"])');
   });
 
+  it("sets no custom property only under the light theme, apart from the light-only knobs", () => {
+    // Walks index.css blocks: a variable declared solely inside html.theme-light has no dark value.
+    const source = index.replace(/\/\*[\s\S]*?\*\//g, "");
+    const stack: string[] = [];
+    const seen = new Map<string, { light: boolean; other: boolean }>();
+    let chunk = "";
+    for (const ch of source) {
+      if (ch === "{") {
+        stack.push(chunk.trim());
+        chunk = "";
+      } else if (ch === "}") {
+        stack.pop();
+        chunk = "";
+      } else if (ch === ";") {
+        const name = /^\s*(--[\w-]+)\s*:/.exec(chunk)?.[1];
+        if (name && stack.length > 0) {
+          const light = /theme-light/.test(stack.join(" "));
+          const entry = seen.get(name) ?? { light: false, other: false };
+          if (light) entry.light = true;
+          else entry.other = true;
+          seen.set(name, entry);
+        }
+        chunk = "";
+      } else {
+        chunk += ch;
+      }
+    }
+    const lightOnly = [...seen]
+      .filter(([, entry]) => entry.light && !entry.other)
+      .map(([name]) => name)
+      .sort();
+    // --ui-diff-fg-ink is only read by light diff palettes; the --theme-light-* knobs name the theme.
+    expect(lightOnly).toEqual([
+      "--theme-light-lightness",
+      "--theme-light-saturation",
+      "--ui-diff-fg-ink",
+    ]);
+  });
+
   it("skeleton bars use the translucent fill role, not a state role (SU-06)", () => {
     const css = readFileSync("src/shared/ui/arc/skeleton/skeleton.module.css", "utf8");
     expect(css).toContain("background: var(--ui-fill-muted)");

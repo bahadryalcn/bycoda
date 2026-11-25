@@ -298,6 +298,7 @@ export function ToolNavigation() {
             label={t("Open in new window")}
             data-tauri-drag-region="false"
             disabled={opening !== null}
+            disabledReason={t("A window is opening")}
             loading={opening === "single"}
             onClick={() => void open(false)}
           >
@@ -308,6 +309,7 @@ export function ToolNavigation() {
             motion="none"
             data-tauri-drag-region="false"
             disabled={opening !== null}
+            disabledReason={t("A window is opening")}
             loading={opening === "grouped"}
             startIcon={<DashboardSquare className="icon-sm" aria-hidden />}
             onClick={() => void open(true)}

@@ -40,7 +40,11 @@ export function youtubePick(
     };
   }
   if (section === "comments")
-    return { values: { commentId: id }, action: "youtube.comment.moderate", title };
+    return {
+      values: { commentId: id },
+      action: "youtube.comment.moderate",
+      title,
+    };
   if (section === "subscriptions")
     return {
       values: { targetChannelId: text(row.channelId) ?? id },
@@ -56,7 +60,11 @@ export function youtubePick(
     };
   if (view === "playlists")
     return typeof draft.playlistId === "string" && draft.playlistId
-      ? { values: { playlistItemId: id }, action: "youtube.playlist.move", title }
+      ? {
+          values: { playlistItemId: id },
+          action: "youtube.playlist.move",
+          title,
+        }
       : {
           values: { playlistId: id },
           action: "youtube.playlist.update",
@@ -64,7 +72,11 @@ export function youtubePick(
           title,
         };
   if (view === "broadcasts")
-    return { values: { broadcastId: id }, action: "youtube.broadcast.transition", title };
+    return {
+      values: { broadcastId: id },
+      action: "youtube.broadcast.transition",
+      title,
+    };
   if (view === "chat")
     return {
       values: {

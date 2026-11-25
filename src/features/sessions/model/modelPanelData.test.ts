@@ -192,6 +192,6 @@ describe("accountUsageSummary", () => {
         }),
         now,
       ),
-    ).toEqual({ usedPercent: 53, resetsAt: now + 120_000 });
+    ).toEqual({ usedPercent: 53, resetsAt: now + 120_000, exhausted: false });
   });
 });

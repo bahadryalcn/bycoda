@@ -258,6 +258,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const moveName = t("Move voice window");
   const moveHint = t("Use arrow keys to reposition.");
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
+  const startDisabledReason = state
+    ? t("Select a workspace or session to start voice.")
+    : t("Connecting voice…");
   const micLabel = t(canTalk ? (status === "idle" ? "Start voice" : "Talk") : "Mute microphone");
   // One close: the floating window returns to the app and voice keeps running,
   // matching the native close. Disconnect stays an explicit body action.
@@ -405,6 +408,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               label={micLabel}
               loading={status === "connecting" || status === "reconnecting"}
               disabled={!state || (canTalk ? !state.canStart : status !== "live")}
+              disabledReason={canTalk && !state?.canStart ? startDisabledReason : undefined}
               selected={status === "live" && muted}
               pressed={canTalk ? undefined : muted}
               onClick={() => send(canTalk ? "start" : "toggleMute")}
@@ -559,7 +563,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   <Button
                     variant="primary"
                     disabled={!state?.canStart}
-                    disabledReason={statusText}
+                    disabledReason={!state?.canStart ? startDisabledReason : undefined}
                     onClick={() => send("start")}
                     startIcon={<Mic className="icon-sm" />}
                   >

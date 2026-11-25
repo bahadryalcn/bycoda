@@ -71,7 +71,7 @@ it.each([
     await fill(urlLabel, "https://target.example.com");
     await fill(tokenLabel, "keep-token");
     await click("Save and test connection");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Invalid token");
+    expect(await detailsText()).toContain("Invalid token");
     expect(
       container.querySelector<HTMLInputElement>(`input[aria-label="${tokenLabel}"]`)?.value,
     ).toBe("keep-token");
@@ -107,7 +107,7 @@ it("does not label a failed GitHub status read as a missing CLI", async () => {
   await act(async () => root.render(createElement(GithubSettings)));
   expect(container.textContent).toContain("Check failed");
   expect(container.textContent).not.toContain("Not installed");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
+  expect(await detailsText()).toContain("Host unavailable");
 });
 
 const installingStatus = {
@@ -116,7 +116,16 @@ const installingStatus = {
   authenticated: false,
   installing: true,
 };
-const badgeText = () => container.querySelector('[role="status"]')?.textContent;
+const badgeText = () =>
+  container.querySelector('[data-size="sm"][data-variant="label"]')?.textContent;
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
 
 it("keeps the GitHub CLI Installing state steady while it silently polls", async () => {
   vi.useFakeTimers();
@@ -195,7 +204,7 @@ it("stops polling a GitHub CLI install when a background read fails and keeps re
     await act(async () => root.render(createElement(GithubSettings)));
     await act(async () => vi.advanceTimersByTimeAsync(2000));
     expect(badgeText()).toBe("Check failed");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Desktop unavailable");
+    expect(await detailsText()).toContain("Desktop unavailable");
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
     expect(reads).toBe(2);
     await click("Check again");
@@ -213,9 +222,7 @@ it("uses Linear save status and keeps a rejected credential for correction", asy
   expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
     "keep-key",
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Connection test failed",
-  );
+  expect(await detailsText()).toContain("Connection test failed");
   expect(container.textContent).not.toContain("Configured");
 });
 
@@ -233,7 +240,7 @@ it("separates a Linear team read failure from saved credentials and offers retry
   expect(container.textContent).toContain("API key saved on this computer");
   // Reading saved credentials never claims the provider accepted them.
   expect(container.querySelector('[data-state="verified"]')).toBeNull();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Teams unavailable");
+  expect(await detailsText()).toContain("Teams unavailable");
   fail = false;
   await click("Retry");
   expect(container.textContent).toContain("Engineering");

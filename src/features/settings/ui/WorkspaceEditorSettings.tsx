@@ -51,7 +51,7 @@ export function WorkspaceEditorSettings() {
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
           ) : undefined
         }
-        description={t(
+        info={t(
           "Uses the project's installed formatter for supported files on manual and automatic saves.",
         )}
       >

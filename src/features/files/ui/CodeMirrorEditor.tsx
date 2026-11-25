@@ -1102,7 +1102,7 @@ function StandardCodeMirrorEditor({
     setMarking({ busy: true, error: null });
     try {
       const saved = (await saveNowRef.current?.()) ?? false;
-      if (!saved || dirtyRef.current) throw new Error(t("Couldn't save the file"));
+      if (!saved || dirtyRef.current) throw new Error(t("Couldn’t save the file"));
       await gitStageFile(cwd, gitRelative);
       notifyGitChanged(cwd, "index");
       setHadConflicts(false);
@@ -1280,14 +1280,18 @@ function StandardCodeMirrorEditor({
           </InlineError>
         ) : null}
         {contextError ? (
-          <InlineError inset="row" className="shrink-0">
-            {contextError}
+          <InlineError inset="row" className="shrink-0" details={contextError}>
+            {t("Couldn’t complete that editor action.")}
           </InlineError>
         ) : null}
         {languageFailure?.path === path ? (
-          <InlineError text={{ wrap: "anywhere" }} inset="row" className="shrink-0">
-            {t("Syntax highlighting unavailable. Editing is still available.")}{" "}
-            {languageFailure.message}
+          <InlineError
+            text={{ wrap: "anywhere" }}
+            inset="row"
+            className="shrink-0"
+            details={languageFailure.message}
+          >
+            {t("Syntax highlighting unavailable. Editing is still available.")}
           </InlineError>
         ) : null}
         {blameOn && blameError ? (

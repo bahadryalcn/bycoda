@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "../errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -13,6 +14,15 @@ import type { MessagingAccount } from "../../../messaging";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => undefined) }));
+
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
 
 let container: HTMLDivElement;
 let root: Root;
@@ -200,7 +210,7 @@ it("keeps a rejected email draft, then lists the verified account", async () => 
   await fill("Email address", "owner@example.com");
   await fill("Password or app password", "app-password-fixture");
   await click("Save and test connection");
-  expect(container.textContent).toContain("IMAP login failed");
+  expect(await detailsText()).toContain("IMAP login failed");
   expect(input("Password or app password").value).toBe("app-password-fixture");
 
   reject = false;
@@ -281,7 +291,11 @@ it("offers the app password when Google sign-in is refused", async () => {
   expect(button("Use an app password instead")).toBeUndefined();
   await click("Sign in with Google");
   await act(async () => vi.advanceTimersByTimeAsync(1500));
-  expect(container.textContent).toContain("Google refused this sign-in.");
+  await expectErrorDetails(
+    container,
+    "Sign-in was declined in the browser.",
+    "Google refused this sign-in.",
+  );
   await click("Use an app password instead");
   expect(input("Password or app password")).not.toBeNull();
   expect(button("Sign in with Google")).toBeUndefined();
@@ -324,7 +338,7 @@ it("saves Slack after browser sign-in and cancels a pending sign-in on unmount",
 it("does not read a failed account list as no accounts", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("Native unavailable"));
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("Native unavailable");
+  await expectErrorDetails(container, "Could not load messaging accounts.", "Native unavailable");
   expect(container.textContent).not.toContain("No email accounts connected yet.");
   expect(container.querySelector('input[aria-label="Email address"]')).toBeNull();
 });
@@ -378,7 +392,8 @@ it("shows a sign-in start failure inline and stops", async () => {
   });
   await act(async () => root.render(createElement(TeamsSettings)));
   await click("Sign in with Microsoft");
-  expect(container.textContent).toContain("needs an app registration");
+  expect(container.textContent).toContain("Microsoft sign-in could not start.");
+  expect(await detailsText()).toContain("needs an app registration");
   expect(
     vi.mocked(invoke).mock.calls.some(([command]) => command === "messaging_microsoft_device_poll"),
   ).toBe(false);

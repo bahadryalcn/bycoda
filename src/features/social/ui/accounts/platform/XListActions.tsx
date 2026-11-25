@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { formatNumber, t } from "../../../../../shared/i18n";
-import { Badge } from "../../../../../shared/ui/Badge";
 import { Button } from "../../../../../shared/ui/Button";
 import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
+import { Lock } from "../../../../../shared/ui/icons";
 import { Surface } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
+import { Tooltip } from "../../../../../shared/ui/Tooltip";
 import { isXResourceId } from "../../../../../integrations/social/adapters/x-identifiers";
 import type {
   getXListMembers,
@@ -24,7 +25,11 @@ type Lists = Awaited<ReturnType<typeof getXOwnedLists>>;
 type List = Lists["items"][number];
 type Members = Awaited<ReturnType<typeof getXListMembers>>;
 
-type Props = { account: SocialAccount; client: SocialClient; disabled: boolean };
+type Props = {
+  account: SocialAccount;
+  client: SocialClient;
+  disabled: boolean;
+};
 
 /** Your X lists: pick a list, then rename it, delete it or manage its members. */
 export function XListActions({ account, client, disabled }: Props) {
@@ -132,10 +137,16 @@ export function XListActions({ account, client, disabled }: Props) {
                   {list.name}
                 </Text>
                 <span className="social-x-actions">
-                  {list.private ? <Badge tone="neutral">{t("Private")}</Badge> : null}
+                  {list.private ? (
+                    <Tooltip label={t("Private")}>
+                      <Lock className="icon-sm" tone="muted" aria-label={t("Private")} />
+                    </Tooltip>
+                  ) : null}
                   {list.memberCount !== undefined ? (
                     <Text as="span" size="caption" tone="muted">
-                      {t("{p0} members", { p0: formatNumber(list.memberCount) })}
+                      {t("{p0} members", {
+                        p0: formatNumber(list.memberCount),
+                      })}
                     </Text>
                   ) : null}
                 </span>
@@ -153,7 +164,10 @@ export function XListActions({ account, client, disabled }: Props) {
                     maxLength={25}
                     disabled={busy}
                     onChange={(event) =>
-                      setRenaming({ id: list.id, name: event.currentTarget.value })
+                      setRenaming({
+                        id: list.id,
+                        name: event.currentTarget.value,
+                      })
                     }
                   />
                   <Button
@@ -269,8 +283,8 @@ export function XListActions({ account, client, disabled }: Props) {
           {t("Create list")}
         </Button>
       </div>
-      {read.error ? <InlineError>{read.error}</InlineError> : null}
-      {x.error ? <InlineError>{x.error}</InlineError> : null}
+      {read.error ? <InlineError details={read.details}>{read.error}</InlineError> : null}
+      {x.error ? <InlineError details={x.details}>{x.error}</InlineError> : null}
       {x.notice ? (
         <Text as="p" size="caption" tone="muted">
           {x.notice}

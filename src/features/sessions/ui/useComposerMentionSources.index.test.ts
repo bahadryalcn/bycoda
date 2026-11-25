@@ -136,6 +136,7 @@ it.each(["composer", "queue"] as const)(
               harness: "codex",
               model: "",
               runtimeMode: "supervised",
+              cwd,
               executionCwd: cwd,
               hideTopBar: true,
               onFocus: vi.fn(),

@@ -158,7 +158,9 @@ export function TodayView() {
       </div>
       {failed ? (
         <Alert tone="warning">
-          {t("Some usage could not be read. Figures may be incomplete.")}
+          {t(
+            "Some usage or model prices could not be read. Figures may be incomplete or use older prices.",
+          )}
         </Alert>
       ) : null}
       {!data ? (
@@ -199,18 +201,19 @@ export function TodayView() {
             <ActivitySources overview={overview} />
             <TodayCharts data={data} activity={activity ? activityBars(activity) : null} />
             <ProjectTable data={data} />
-            <div className={styles.summary}>
-              <SummaryPanel
-                key={`${loadedPeriod}:${locale}`}
-                data={data}
-                pricing={pricing}
-                activeMinutes={activeMinutes}
-                language={locale}
-              />
-            </div>
           </div>
         </Motion>
       )}
+      {data ? (
+        <div className={styles.summary}>
+          <SummaryPanel
+            data={data}
+            pricing={pricing}
+            activeMinutes={activeMinutes}
+            language={locale}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

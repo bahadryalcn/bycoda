@@ -88,11 +88,15 @@ it.each([false, true])(
       await click("Try again");
       mocks.start.mockRejectedValueOnce(new Error("SSH start failed"));
       await click("Start");
-      expect(container.textContent).toContain("SSH start failed");
+      expect(container.textContent).toContain("Port forwarding action failed");
+      expect(container.textContent).not.toContain("SSH start failed");
+      await click("Details");
+      expect(document.body.textContent).toContain("SSH start failed");
+      await click("Details");
       mocks.list.mockRejectedValueOnce(new Error("Status read unavailable again"));
       await act(async () => vi.advanceTimersByTimeAsync(30_000));
       expect(container.textContent).toContain("Couldn’t read forwarding status.");
-      expect(container.textContent).toContain("SSH start failed");
+      expect(container.textContent).toContain("Port forwarding action failed");
       expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2);
       expect(
         [...container.querySelectorAll("button")].find(
@@ -102,7 +106,7 @@ it.each([false, true])(
     }
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
     expect(container.textContent).not.toContain("Couldn’t read forwarding status.");
-    if (actionFailure) expect(container.textContent).toContain("SSH start failed");
+    if (actionFailure) expect(container.textContent).toContain("Port forwarding action failed");
     else expect(container.querySelector('[role="alert"]')).toBeNull();
   },
 );
@@ -222,7 +226,10 @@ it("keeps a stopping forward fenced and offers a stop retry for an unknown outco
   ]);
   await render();
   expect(container.textContent).toContain("Status unknown");
-  expect(container.textContent).toContain("Stop not confirmed");
+  expect(container.textContent).toContain("Port forwarding failed");
+  expect(container.textContent).not.toContain("Stop not confirmed");
+  await click("Details");
+  expect(document.body.textContent).toContain("Stop not confirmed");
   await click("Retry stop");
   expect(mocks.stop).toHaveBeenCalledWith("s1:r1");
   expect(mocks.start).not.toHaveBeenCalled();

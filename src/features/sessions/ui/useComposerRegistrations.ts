@@ -19,7 +19,7 @@ type Options = {
   canMutateDraft: () => boolean;
   addAttachments: (incoming: Attachment[]) => void;
   setAttachments: Dispatch<SetStateAction<Attachment[]>>;
-  setPasteError: Dispatch<SetStateAction<string | null>>;
+  setPasteError: (value: string | null) => void;
   syncHasText: (text: string) => void;
 };
 

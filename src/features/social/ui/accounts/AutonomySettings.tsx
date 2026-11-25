@@ -88,7 +88,10 @@ function payloadFrom(draft: Draft): { ok: true; policy: object } | { ok: false; 
     limits[action] = parsed.value ?? DEFAULT_AUTONOMY.limits[action];
   }
   if (!draft.hours.enabled)
-    return { ok: true, policy: { levels: draft.levels, limits, workingHours: null } };
+    return {
+      ok: true,
+      policy: { levels: draft.levels, limits, workingHours: null },
+    };
   const problem = workingHoursError(draft.hours);
   if (problem) return { ok: false, message: problem };
   return {
@@ -115,11 +118,12 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
   const [draft, setDraft] = useState<Draft>();
   const [loadError, setLoadError] = useState("");
   const [formError, setFormError] = useState("");
-  const { error, is, write } = useAccountWrite(
+  const { error, details, is, write } = useAccountWrite(
     t("The autonomy settings could not be saved. Try again."),
   );
   const confirmation = useConfirm();
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads this account's autonomy policy from the Host; `alive` drops a read that settles after the account changed.
   useEffect(() => {
     let alive = true;
     client.autonomy.get(account.id).then(
@@ -188,7 +192,11 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       .then((ok) => {
         if (ok)
           setDraft(
-            (current) => current && { ...current, levels: { ...current.levels, [action]: next } },
+            (current) =>
+              current && {
+                ...current,
+                levels: { ...current.levels, [action]: next },
+              },
           );
       })
       .catch(() => undefined);
@@ -248,7 +256,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             label={autonomyLabel(action)}
             value={draft.levels[action]}
             disabled={disabled || is("autonomy")}
-            options={AUTONOMY_LEVELS.map((level) => ({ value: level, label: levelText(level) }))}
+            options={AUTONOMY_LEVELS.map((level) => ({
+              value: level,
+              label: levelText(level),
+            }))}
             onValueChange={(next) => askLevel(action, next as AutonomyLevel)}
           />
           <NumberField
@@ -263,7 +274,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             onChange={(event) =>
               setDraft({
                 ...draft,
-                limits: { ...draft.limits, [action]: event.currentTarget.value },
+                limits: {
+                  ...draft.limits,
+                  [action]: event.currentTarget.value,
+                },
               })
             }
           />
@@ -282,7 +296,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             value={draft.hours.timeZone}
             disabled={disabled || is("autonomy")}
             onChange={(event) =>
-              setDraft({ ...draft, hours: { ...draft.hours, timeZone: event.currentTarget.value } })
+              setDraft({
+                ...draft,
+                hours: { ...draft.hours, timeZone: event.currentTarget.value },
+              })
             }
           />
           <TimePicker
@@ -338,7 +355,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         </Button>
       </div>
       {formError ? <InlineError>{formError}</InlineError> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

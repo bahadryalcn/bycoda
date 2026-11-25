@@ -218,7 +218,7 @@ it("keeps autosaving the draft after deletion fails", async () => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(600);
   });
-  expect(container.textContent).toContain("Delete unavailable");
+  expect(container.textContent).toContain("Could not load or update notes.");
   await input(body(), "Keep this draft and the next edit");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(500);
@@ -392,7 +392,12 @@ it("bounds dropdown rendering and finds notes beyond the initial window", async 
 it("shows a load error without creating an empty document on failed reads", async () => {
   invoke.mockRejectedValueOnce(new Error("Disk unavailable"));
   await render();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk unavailable");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load or update notes.",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain("Disk unavailable");
+  await click("Details");
+  expect(document.body.textContent).toContain("Disk unavailable");
   expect(invoke.mock.calls.some(([command]) => command === "notes_upsert")).toBe(false);
   await click("Retry");
   await click("New note");

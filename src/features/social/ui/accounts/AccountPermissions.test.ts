@@ -102,7 +102,9 @@ it("offers the Assistant only reading and drafting, never sending", () => {
 it("saves the Assistant grant against the version that was read", async () => {
   const request = vi.fn(async () => ({}));
   const onChanged = render(request, {
-    account: account({ assistantGrant: { permissions: ["read"], version: "v3" } }),
+    account: account({
+      assistantGrant: { permissions: ["read"], version: "v3" },
+    }),
   });
   expect(checkbox(ASSISTANT, "Can read").checked).toBe(true);
   expect(checkbox(ASSISTANT, "Prepare drafts").checked).toBe(false);
@@ -137,7 +139,9 @@ it("sends no expected version for a first grant and keeps drafting dependent on 
 
 it("tells the owner that Assistant access is paused while voice retirement is pending", () => {
   render(vi.fn(), {
-    account: account({ assistantGrantPending: { permissions: ["read", "draft"] } }),
+    account: account({
+      assistantGrantPending: { permissions: ["read", "draft"] },
+    }),
   });
   expect(element.textContent).toContain(
     "Assistant access is paused while voice retirement is pending.",
@@ -177,7 +181,9 @@ it("invalidates the changed project's content after saving access", async () => 
 
 it("adds and removes single project permissions without touching the others", async () => {
   const request = vi.fn(async () => ({}));
-  const grants: Record<string, SocialPermission[]> = { p1: ["read", "draft", "publish"] };
+  const grants: Record<string, SocialPermission[]> = {
+    p1: ["read", "draft", "publish"],
+  };
   render(request, { account: account({ grants }) });
   expect(checkbox(PROJECT, "Publish").checked).toBe(true);
   expect(checkbox(PROJECT, "Can reply").checked).toBe(false);
@@ -208,7 +214,7 @@ it("says why access cannot be saved and keeps the edit when the Host refuses it"
   const onChanged = render(request);
   act(() => checkbox(PROJECT, "Can read").click());
   await submit(PROJECT);
-  expect(element.textContent).toContain("The grant changed on another computer.");
+  expect(element.textContent).toContain("Project access could not be saved. Try again.");
   expect(checkbox(PROJECT, "Can read").checked).toBe(true);
   expect(onChanged).not.toHaveBeenCalled();
 });

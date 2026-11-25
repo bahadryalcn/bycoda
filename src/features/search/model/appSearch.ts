@@ -25,7 +25,7 @@ export type SearchRequest = {
   conversationScope?: "everywhere" | "group" | "project";
 };
 
-export type ConversationHit = {
+type ConversationHit = {
   id: string;
   kind: "conversation";
   sessionId: string;
@@ -37,7 +37,7 @@ export type ConversationHit = {
   positions: number[];
 };
 
-export type MessageHit = {
+type MessageHit = {
   id: string;
   kind: "message";
   sessionId: string;
@@ -51,7 +51,7 @@ export type MessageHit = {
   score: number;
 };
 
-export type FileHit = {
+type FileHit = {
   id: string;
   kind: "file";
   path: string;
@@ -61,7 +61,7 @@ export type FileHit = {
   positions: number[];
 };
 
-export type ContentHit = {
+type ContentHit = {
   id: string;
   kind: "content";
   path: string;
@@ -72,7 +72,7 @@ export type ContentHit = {
   preview: string;
 };
 
-export type ProjectHit = {
+type ProjectHit = {
   id: string;
   kind: "project";
   path: string;
@@ -83,7 +83,7 @@ export type ProjectHit = {
 
 export type AppSearchHit = ConversationHit | MessageHit | FileHit | ContentHit | ProjectHit;
 
-export type GroupedHits = {
+type GroupedHits = {
   conversations: ConversationHit[];
   messages: MessageHit[];
   files: FileHit[];
@@ -92,7 +92,7 @@ export type GroupedHits = {
 };
 
 /** Counts describe loaded eligible hits, never the backend's total population. */
-export type GroupedHitCounts = Record<
+type GroupedHitCounts = Record<
   keyof GroupedHits,
   {
     available: number;
@@ -551,10 +551,6 @@ export function flattenGrouped(grouped: GroupedHits): AppSearchHit[] {
     ...grouped.content,
     ...grouped.projects,
   ];
-}
-
-export function groupedCount(grouped: GroupedHits): number {
-  return flattenGrouped(grouped).length;
 }
 
 function isSearchableRole(role: Block["role"]): boolean {

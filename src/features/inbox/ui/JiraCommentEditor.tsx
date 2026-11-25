@@ -13,6 +13,7 @@ import {
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { FileField } from "../../../shared/ui/FileField";
+import { errorText } from "../../../shared/lib/errors";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { InboxCommentPreview } from "./InboxCommentPreview";
 import {
@@ -98,7 +99,7 @@ export function JiraCommentEditor({
         })),
       ]);
     } catch (error) {
-      setImageError(String(error));
+      setImageError(errorText(error));
     } finally {
       readPending.current = false;
       setReading(false);
@@ -173,7 +174,7 @@ export function JiraCommentEditor({
       );
       onImages([...images, ...added]);
     } catch (error) {
-      setImageError(String(error));
+      setImageError(errorText(error));
     } finally {
       readPending.current = false;
       setReading(false);
@@ -206,7 +207,7 @@ export function JiraCommentEditor({
         event.preventDefault();
         event.stopPropagation();
         void addFiles(Array.from(event.dataTransfer.files)).catch((error) =>
-          setImageError(String(error)),
+          setImageError(errorText(error)),
         );
       }}
     >
@@ -244,7 +245,7 @@ export function JiraCommentEditor({
               multiple
               disabled={locked}
               onFiles={(files) => {
-                void addFiles(files).catch((error) => setImageError(String(error)));
+                void addFiles(files).catch((error) => setImageError(errorText(error)));
               }}
             />
           </div>
@@ -257,7 +258,7 @@ export function JiraCommentEditor({
             // Notes' Mod+S must never publish a public Jira comment.
             onSave={() => {}}
             onPasteImages={(files) => {
-              void addFiles(files).catch((error) => setImageError(String(error)));
+              void addFiles(files).catch((error) => setImageError(errorText(error)));
             }}
             viewRef={viewRef}
             minHeight={64}
@@ -286,7 +287,7 @@ export function JiraCommentEditor({
           ))}
         </div>
       ) : null}
-      {imageError ? <InlineError>{imageError}</InlineError> : null}
+      {imageError ? <InlineError details={imageError} /> : null}
     </div>
   );
 }

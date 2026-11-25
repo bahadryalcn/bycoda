@@ -19,10 +19,18 @@ import { XApiActions } from "./XApiActions";
 import { XPostActions } from "./XPostActions";
 import "./x.css";
 
-type Props = { account: SocialAccount; client: SocialClient; disabled: boolean };
+type Props = {
+  account: SocialAccount;
+  client: SocialClient;
+  disabled: boolean;
+};
 
 /** Every X page the owner finishes in the browser, each with one line on what happens there. */
-function destinations(): { value: XDestination; label: string; hint: string }[] {
+function destinations(): {
+  value: XDestination;
+  label: string;
+  hint: string;
+}[] {
   return [
     {
       value: "connect",
@@ -39,7 +47,11 @@ function destinations(): { value: XDestination; label: string; hint: string }[] 
       label: t("Edit profile"),
       hint: t("Change your name, bio and photos on X."),
     },
-    { value: "publish", label: t("Publishing"), hint: t("Write and publish a post on X.") },
+    {
+      value: "publish",
+      label: t("Publishing"),
+      hint: t("Write and publish a post on X."),
+    },
     { value: "post", label: t("Open post"), hint: t("Open one post on X.") },
     {
       value: "messages",
@@ -51,7 +63,11 @@ function destinations(): { value: XDestination; label: string; hint: string }[] 
       label: t("Audience"),
       hint: t("See your followers and audience settings on X."),
     },
-    { value: "lists", label: t("X lists"), hint: t("Create and manage lists on X.") },
+    {
+      value: "lists",
+      label: t("X lists"),
+      hint: t("Create and manage lists on X."),
+    },
     {
       value: "analytics",
       label: t("Analytics"),
@@ -67,7 +83,11 @@ function destinations(): { value: XDestination; label: string; hint: string }[] 
       label: "X Live Studio",
       hint: t("Start a live broadcast in X Live Studio, then save its stream details here."),
     },
-    { value: "spaces", label: t("Spaces"), hint: t("Read X's help page about Spaces.") },
+    {
+      value: "spaces",
+      label: t("Spaces"),
+      hint: t("Read X's help page about Spaces."),
+    },
   ];
 }
 
@@ -77,7 +97,7 @@ export function XAccountActions({ account, client, disabled }: Props) {
   const [streamServer, setStreamServer] = useState("");
   const [streamKey, setStreamKey] = useState("");
   const [keySaved, setKeySaved] = useState(false);
-  const { error, is, write } = useAccountWrite(t("Could not open the link."));
+  const { error, details, is, write } = useAccountWrite(t("Could not open the link."));
   const needsTarget = destination === "post";
   const options = destinations();
   const current = options.find((option) => option.value === destination);
@@ -138,7 +158,7 @@ export function XAccountActions({ account, client, disabled }: Props) {
               {t("Open in browser")}
             </Button>
           ) : null}
-          {!chat && error ? <InlineError>{error}</InlineError> : null}
+          {!chat && error ? <InlineError details={details}>{error}</InlineError> : null}
         </div>
         {destination === "live" && account.connected ? (
           <div className="social-x-group">

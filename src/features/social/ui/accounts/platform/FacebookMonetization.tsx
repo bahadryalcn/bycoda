@@ -46,7 +46,9 @@ export function FacebookMonetization({
       if (result) setDashboard(result);
     } else {
       const result = await work.write("load", () =>
-        client.request<InsightsPage>("facebook.earnings.read", { accountId: account.id }),
+        client.request<InsightsPage>("facebook.earnings.read", {
+          accountId: account.id,
+        }),
       );
       if (result) setInsights(result);
     }
@@ -72,7 +74,7 @@ export function FacebookMonetization({
             : t("Read the earnings Facebook estimates for this Page.")}
         </Text>
       ) : null}
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
       {dashboard?.programs.length || typeof estimate === "number" || estimate ? (
         <DescriptionList size="sm">
           {dashboard?.programs.map(({ program, status, earnings }) => (

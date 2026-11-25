@@ -116,11 +116,9 @@ function TurnActivityRow({
     >
       <TurnActivityIcon phase={phase} />
       {/* The label carries the live signal (the shared sweep); the clock stays still. */}
-      <span role="status" className="flex min-w-0">
-        <WorkingIndicator className="min-w-0" truncate glyph={false}>
-          {label}
-        </WorkingIndicator>
-      </span>
+      <WorkingIndicator className="min-w-0" truncate glyph={false} live>
+        {label}
+      </WorkingIndicator>
       {children}
     </Text>
   );

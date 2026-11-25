@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 import {
   clearComposerDraft,
   getComposerDraft,
@@ -157,7 +158,7 @@ it("retains text and cancels a waiting Send when file inspection fails", async (
   await act(async () => fail(new Error("Selected file cannot be read")));
   expect(submit).not.toHaveBeenCalled();
   expect(container.querySelector("textarea")!.value).toBe("Keep the selected file");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("cannot be read");
+  expect(openErrorDetails(container)).toContain("cannot be read");
 });
 
 it("restores the Save draft intent through the real cache after remount", async () => {

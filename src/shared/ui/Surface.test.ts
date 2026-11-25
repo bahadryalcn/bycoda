@@ -81,7 +81,7 @@ it.each(variants)("paints %s through the existing semantic ground", (variant, to
   expect(block).not.toMatch(/padding|display|height|opacity/);
 });
 
-it.each(["none", "pane", "card", "transparent", "danger", "accent"] as const)(
+it.each(["none", "pane", "card", "transparent", "danger", "warning", "accent"] as const)(
   "supports opt-in frame %s",
   (frame) => {
     expect(surfaceAttributes({ frame })["data-surface-frame"]).toBe(frame);
@@ -95,6 +95,7 @@ it.each(["none", "pane", "card", "transparent", "danger", "accent"] as const)(
 it.each([
   ["transparent", "transparent"],
   ["danger", "var(--ui-tone-danger-border)"],
+  ["warning", "var(--ui-tone-warning-border)"],
   ["accent", "var(--ui-tone-accent-border)"],
 ] as const)("preserves the %s frame colour and reserved geometry", (frame, colour) => {
   const block = css.slice(css.indexOf(`.surface[data-surface-frame="${frame}"]`)).split("}")[0];

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -134,7 +135,9 @@ it("automatically finds profiles for setup and uses an explicitly chosen account
 it("shows discovery failures and allows retry", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Profile directory unavailable"));
   await click("Find terminal profiles");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+  await expectErrorDetails(
+    document,
+    "Could not find terminal profiles.",
     "Profile directory unavailable",
   );
   vi.mocked(invoke).mockResolvedValueOnce([]);
@@ -197,7 +200,11 @@ it("does not save a connection receipt after its provider was changed", async ()
 it("shows automatic discovery errors and clears them after a successful retry", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Automatic discovery failed"));
   await renderAutoDiscover();
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Automatic discovery failed");
+  await expectErrorDetails(
+    document,
+    "Could not find terminal profiles.",
+    "Automatic discovery failed",
+  );
   vi.mocked(invoke).mockResolvedValueOnce([]);
   await click("Find terminal profiles");
   expect(document.querySelector('[role="alert"]')).toBeNull();

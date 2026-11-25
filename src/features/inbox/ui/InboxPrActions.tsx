@@ -1,6 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
@@ -157,6 +158,28 @@ export function GithubPrActions(props: GithubPrActionsProps) {
   );
 }
 
+type ActionFailureState = { title: string; detail?: string };
+
+/** A translated title; the raw Host text, when there is one, sits behind the shared Details control. */
+function ActionFailure({
+  failure,
+  className,
+}: {
+  failure: ActionFailureState;
+  className?: string;
+}) {
+  return (
+    <Alert
+      tone="danger"
+      className={className}
+      title={failure.title}
+      extra={
+        failure.detail ? <ErrorDetails title={failure.title} detail={failure.detail} /> : undefined
+      }
+    />
+  );
+}
+
 function GithubPrActionsForItem({
   item,
   baseRef,
@@ -185,7 +208,7 @@ function GithubPrActionsForItem({
     anchor: HTMLElement;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ActionFailureState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const state = item.state.trim().toLowerCase();
@@ -202,7 +225,7 @@ function GithubPrActionsForItem({
       ["merge", "squash", "rebase"].includes(action) &&
       !/^[a-f0-9]{40}$/i.test(reviewedHeadOid ?? "")
     ) {
-      setActionError(t("Refresh and review the pull request before merging."));
+      setActionError({ title: t("Refresh and review the pull request before merging.") });
       return;
     }
     // Draft, ready and reopen are reversible with one click, so they run at once. Merge cannot be
@@ -262,7 +285,7 @@ function GithubPrActionsForItem({
     } catch (error: unknown) {
       if (!active.current) return;
       setConfirmation(null);
-      setActionError(errorText(error));
+      setActionError({ title: t("Could not complete this action."), detail: errorText(error) });
     } finally {
       if (active.current) setBusy(false);
     }
@@ -379,8 +402,8 @@ function GithubPrActionsForItem({
           {t(notice)}
         </InlineMessage>
       ) : null}
-      {refreshError ? <InlineError>{refreshError}</InlineError> : null}
-      {!confirmation && actionError ? <Alert tone="danger">{actionError}</Alert> : null}
+      {refreshError ? <InlineError details={refreshError} /> : null}
+      {!confirmation && actionError ? <ActionFailure failure={actionError} /> : null}
       {confirmation && confirmCopy ? (
         <Popover
           anchor={confirmation.anchor}
@@ -402,11 +425,7 @@ function GithubPrActionsForItem({
                 : ""}
             </Text>
           </div>
-          {actionError ? (
-            <Alert tone="danger" className="mt-2">
-              {actionError}
-            </Alert>
-          ) : null}
+          {actionError ? <ActionFailure failure={actionError} className="mt-2" /> : null}
           <div className="mt-3 flex justify-end gap-2">
             <Button variant="ghost" type="button" disabled={busy} onClick={dismissConfirmation}>
               {t("Cancel")}

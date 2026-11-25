@@ -99,3 +99,12 @@ describe("post lock by job state", () => {
     expect(postHasLockingJob("c1", [])).toBe(false);
   });
 });
+
+it("blocks a draft save until every missing selected target is explicitly removed", () => {
+  const input = { ...base, hasAccounts: true, hasContent: true };
+  expect(draftGate({ ...input, hasMissingAccounts: true })).toMatchObject({
+    disabled: true,
+    disabledReason: "This account is no longer available. Uncheck it to continue.",
+  });
+  expect(draftGate({ ...input, hasMissingAccounts: false })).toEqual({ disabled: false });
+});

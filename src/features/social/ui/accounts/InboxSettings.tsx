@@ -17,7 +17,7 @@ export type InboxSettingsProps = {
 /** One switch: whether the inbox checks connected accounts by itself. */
 export function InboxSettings({ client, enabled, onChanged }: InboxSettingsProps) {
   const [value, setValue] = useState(enabled);
-  const { error, is, write } = useAccountWrite(
+  const { error, details, is, write } = useAccountWrite(
     t("The inbox setting could not be saved. Try again."),
   );
   const [seen, setSeen] = useState(enabled);
@@ -43,7 +43,7 @@ export function InboxSettings({ client, enabled, onChanged }: InboxSettingsProps
         }}
       />
       {error ? (
-        <InlineError live="assertive" icon={null}>
+        <InlineError details={details} live="assertive" icon={null}>
           {error}
         </InlineError>
       ) : null}

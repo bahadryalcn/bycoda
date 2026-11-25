@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -146,9 +147,8 @@ export function TerminalPage() {
             onRefresh={() => scan(true)}
             feedback={
               saveProblem ? (
-                <SettingsFeedback state="error">
-                  {t("Could not save the terminal profile. Select it again to retry.")}{" "}
-                  {saveProblem}
+                <SettingsFeedback state="error" extra={<ErrorDetails detail={saveProblem} />}>
+                  {t("Could not save the terminal profile. Select it again to retry.")}
                 </SettingsFeedback>
               ) : unmirrored && !saving ? (
                 <SettingsFeedback
@@ -169,8 +169,8 @@ export function TerminalPage() {
                   {t("Saving…")}
                 </SettingsFeedback>
               ) : problem ? (
-                <SettingsFeedback state="error">
-                  {t("Could not discover shells. Use Look again to retry.")} {problem}
+                <SettingsFeedback state="error" extra={<ErrorDetails detail={problem} />}>
+                  {t("Could not discover shells. Use Look again to retry.")}
                 </SettingsFeedback>
               ) : scanning && !listed ? (
                 <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
@@ -218,8 +218,9 @@ export function RemoteMachineShells() {
           <SettingsFeedback
             state="error"
             action={{ label: t("Retry"), pending: loading, onClick: refresh }}
+            extra={<ErrorDetails detail={error} />}
           >
-            {error}
+            {t("Could not load connected machines.")}
           </SettingsFeedback>
         </div>
       ) : null}
@@ -265,10 +266,9 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
   const savingRef = useRef(false);
   const generation = useRef(0);
   const [retry, setRetry] = useState(0);
-  const explain = (error: unknown) => {
-    const text = String(error).replace(/^Error: /, "");
-    return /unsupported|unknown method|not supported/i.test(text) ? HOST_UPDATE_NOTICE : text;
-  };
+  const requiresUpdate =
+    problem !== null &&
+    (problem === HOST_UPDATE_NOTICE || /unsupported|unknown method|not supported/i.test(problem));
   useEffect(() => {
     let alive = true;
     generation.current++;
@@ -285,7 +285,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           }
         },
         (error) => {
-          if (alive) setProblem(explain(error));
+          if (alive) setProblem(errorText(error));
         },
       )
       .finally(() => {
@@ -319,7 +319,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         },
         (error) => {
           if (version === generation.current) {
-            setProblem(explain(error));
+            setProblem(errorText(error));
             setNeedsRead(true);
           }
         },
@@ -380,13 +380,20 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         problem ? (
           <SettingsFeedback
             state="error"
+            extra={problem !== HOST_UPDATE_NOTICE ? <ErrorDetails detail={problem} /> : undefined}
             action={{
               label: needsRead ? t("Read current shell") : t("Retry"),
               disabled: saving || loading,
               onClick: reread,
             }}
           >
-            {problem}
+            {requiresUpdate
+              ? t(
+                  "Update bycoda Host in Machines settings to use this on projects on another machine.",
+                )
+              : needsRead
+                ? t("Could not confirm the remote shell change.")
+                : t("Could not read remote shells.")}{" "}
             {needsRead && requestedShell !== null ? (
               <p>
                 {t("Requested shell: {p0}", {

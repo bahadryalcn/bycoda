@@ -4,7 +4,7 @@ import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { Tooltip } from "../../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { todayNoteLines, type TodayNoteLine } from "./todayNotesLines";
 import styles from "./TodayTab.module.css";
 
@@ -60,7 +60,7 @@ export function TodayNotes({
                   </Text>
                 )}
                 {row.text && (
-                  <Tooltip asChild label={row.text} when="overflow">
+                  <OverflowTooltip label={row.text}>
                     <Text
                       size="secondary"
                       tone="secondary"
@@ -70,7 +70,7 @@ export function TodayNotes({
                     >
                       {row.text}
                     </Text>
-                  </Tooltip>
+                  </OverflowTooltip>
                 )}
               </li>
             ))}

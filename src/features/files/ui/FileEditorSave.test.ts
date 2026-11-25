@@ -12,6 +12,7 @@ import { saveAutosave } from "../../settings/model/settings";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
 import { registerFailurePolicy } from "../../../shared/ui/reportFailure";
 import { describeActionFailure } from "../../connections/public/transientFailure";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -86,7 +87,7 @@ it("treats a path change without an explicit document identity as a different do
   const second = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
   expect(second.state.doc.toString()).toBe("second document\n");
   expect(second.state.doc.toString()).not.toContain("first draft");
-  expect(saveButton().disabled).toBe(true);
+  expect(saveButton().getAttribute("aria-disabled")).toBe("true");
 });
 
 it("saves an already dirty buffer when autosave is enabled from settings", async () => {
@@ -333,7 +334,9 @@ it("keeps failed edits dirty and allows retry through the save action", async ()
     return original(command, args);
   });
   await act(async () => saveButton().click());
-  expect(container.textContent).toContain("Save failed: Disk full");
+  expect(container.textContent).toContain("Save failed");
+  await showErrorDetails(container);
+  expect(document.body.textContent).toContain("Disk full");
   expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
   bridge.invoke.mockImplementation(original);
   await act(async () => saveButton().click());
@@ -361,7 +364,9 @@ it.each([
     expect(container.textContent).not.toContain("Save failed");
     await act(async () => vi.advanceTimersByTimeAsync(3_000));
   }
-  expect(container.textContent).toContain(`Save failed: ${text}`);
+  expect(container.textContent).toContain("Save failed");
+  await showErrorDetails(container);
+  expect(document.body.textContent).toContain(text);
   expect(writes()).toHaveLength(1);
   expect(view.state.doc.toString()).toBe("unsaved original\n");
   expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
@@ -434,8 +439,10 @@ it("keeps a mixed draft and reports an imprecise diff without writing", async ()
     await act(async () => saveButton().click());
     expect(disk).toBe("first\r\nsecond\n");
     expect(view.state.doc.toString()).toBe("FIRST\nsecond\n");
-    expect(container.textContent).toContain("Cannot safely preserve mixed line endings");
-    expect(saveButton().disabled).toBe(false);
+    expect(container.textContent).toContain("Save failed");
+    await showErrorDetails(container);
+    expect(document.body.textContent).toContain("Cannot safely preserve mixed line endings");
+    expect(saveButton().getAttribute("aria-disabled")).toBeNull();
   } finally {
     build.mockRestore();
   }

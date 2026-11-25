@@ -24,8 +24,7 @@
   min-width: 0;
 }
 
-.needs-human-platform,
-.needs-human-hint {
+.needs-human-platform {
   margin: 0;
 }
 
@@ -33,4 +32,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+.needs-human-error {
+  flex: 1 0 100%;
+}
+
+.needs-human-live {
+  flex: 1 0 100%;
+  min-width: 0;
 }

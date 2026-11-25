@@ -212,11 +212,6 @@ export function readHiddenLinearTeamIds(): string[] | null {
   }
 }
 
-/** Display fallback only; fetch paths use `requireHiddenLinearTeamIds`. */
-export function loadHiddenLinearTeamIds(): string[] {
-  return readHiddenLinearTeamIds() ?? [];
-}
-
 /** Fails closed so an unreadable saved scope never widens what Linear fetches. */
 export function requireHiddenLinearTeamIds(): string[] {
   const ids = readHiddenLinearTeamIds();

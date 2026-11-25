@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
@@ -303,9 +304,8 @@ export default function GuideHub({
                     tone="secondary"
                     leading="normal"
                     className="guide-hub-blocker"
-                    role="status"
                   >
-                    <span>{blocker.reason}</span>
+                    <LiveText text={blocker.reason} />
                     <Button variant="link" onClick={() => run(blocker.action)}>
                       {blocker.label}
                     </Button>
@@ -327,7 +327,6 @@ export default function GuideHub({
                               variant="ghost"
                               size="sm"
                               iconOnly
-                              title=""
                               pressed={done}
                               label={done ? t("Mark as not done") : t("Mark as done")}
                               aria-disabled={automatic || undefined}

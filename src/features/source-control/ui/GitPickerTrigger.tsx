@@ -10,17 +10,10 @@ type Props = Omit<ComponentPropsWithoutRef<"button">, "children" | "className"> 
   label: string;
   loading?: boolean;
   worktree?: boolean;
-  dimWhenDisabled?: boolean;
 };
 
 /** Keep working-copy and branch modes visually identical in the composer. */
-export function GitPickerTrigger({
-  label,
-  loading = false,
-  worktree = false,
-  dimWhenDisabled: _dimWhenDisabled = true,
-  ...props
-}: Props) {
+export function GitPickerTrigger({ label, loading = false, worktree = false, ...props }: Props) {
   useLocale();
   const host = useNativePopoverHost();
   if (host) return null;

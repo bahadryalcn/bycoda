@@ -1,9 +1,9 @@
-import { InlineError } from "../../../../shared/ui/InlineError";
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { useRef, useState, type SetStateAction } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Button } from "../../../../shared/ui/Button";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Sheet } from "../../../../shared/ui/Sheet";
 import { useSocialPending } from "../../hooks/useSocialPending";
 import type { SocialClient } from "../../model/socialClient";
@@ -18,6 +18,7 @@ import { PlatformPreviews } from "./PlatformPreviews";
 import { mediaOf, scheduledMs, draftName, withUtm, type ContentDraft } from "./contentDraft";
 import {
   accountLabel,
+  buildDraftVariants,
   buildVariants,
   draftProblems,
   hasPostContent,
@@ -54,7 +55,8 @@ export type ContentEditorProps = {
   onBusyChange?: (busy: boolean) => void;
   onMediaBusyChange?: (busy: boolean) => void;
   /** Surfaces a failure on the screen when this editor was unmounted mid-operation (project switch). */
-  onOperationError?: (message: string) => void;
+  operationError?: EditorFailure[];
+  onOperationError?: (failure: EditorFailure[] | undefined) => void;
   /** The Host now holds this post under this identity; the screen keeps it on the draft. */
   onSaved: (identity: { campaignId: string; revision: number }) => void;
   onDone: (outcome: EditorOutcome) => void;
@@ -62,13 +64,20 @@ export type ContentEditorProps = {
   onNavigate: SocialScreenProps["onNavigate"];
 };
 
-function describeBlocked(target: PreviewTarget, accounts: SocialAccount[]): string {
+export type EditorFailure = { title: string; details?: string };
+
+function describeBlocked(target: PreviewTarget, accounts: SocialAccount[]): EditorFailure {
   const account = accounts.find((item) => item.id === target.accountId);
   const name = account ? accountLabel(account) : target.accountId;
-  const reason =
-    target.contentError ??
-    (target.capability ? capabilityReasonText(target.capability) : t("Not available yet"));
-  return `${name}: ${reason}`;
+  const reason = target.contentError
+    ? t("The post could not be published.")
+    : target.capability
+      ? capabilityReasonText(target.capability)
+      : t("Not available yet");
+  return {
+    title: `${name}: ${reason}`,
+    details: target.contentError ? redactDiagnosticText(target.contentError) : undefined,
+  };
 }
 
 /** The post editor: fields, previews and one publish action. Saving runs the Host's exact-revision flow. */
@@ -90,14 +99,26 @@ export function ContentEditor(props: ContentEditorProps) {
     mediaPending,
     onBusyChange,
     onMediaBusyChange,
+    operationError,
     onOperationError,
   } = props;
   const pending = useSocialPending();
   const submitting = useRef(false);
   const uploading = useRef(false);
   const [mediaBusy, setMediaBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const [blocked, setBlocked] = useState<string[]>([]);
+  const [localError, setLocalError] = useState<EditorFailure[]>();
+  const setFailure = onOperationError ?? setLocalError;
+  const failures = onOperationError ? operationError : localError;
+  const fail = (title: string, cause: unknown) =>
+    setFailure([
+      {
+        title,
+        details:
+          cause instanceof Error
+            ? redactDiagnosticText(presentRemoteError(cause, { explicit: true }))
+            : undefined,
+      },
+    ]);
   const accounts = snapshot?.accounts ?? [];
   const selected = selectedAccounts(draft, accounts);
   const creators = useTikTokCreators(client, selected, !locked);
@@ -137,63 +158,80 @@ export function ContentEditor(props: ContentEditorProps) {
           ? t("Saving…")
           : undefined,
   };
-  const publish = publishGate({ ...common, problems });
+  const publish = publishGate({ ...common, problems, prepareOnly: draft.repeat.enabled });
+  const variantInput = {
+    draft,
+    projectId: projectId!,
+    accounts,
+    snapshot,
+    creator: creators,
+    now,
+  };
   const save = draftGate({
     ...common,
     hasAccounts: draft.accountIds.length > 0,
-    hasContent: hasPostContent(draft, selected),
+    hasMissingAccounts: selected.length !== draft.accountIds.length,
+    hasContent:
+      hasPostContent(draft, selected) ||
+      (!!draft.saved &&
+        buildDraftVariants(variantInput).some(
+          (variant) =>
+            variant.text.trim() ||
+            variant.media.length ||
+            variant.linkedinFormat ||
+            variant.reddit?.title?.trim(),
+        )),
   });
-  const variantsNow = () =>
-    buildVariants({
-      draft,
-      projectId: projectId!,
-      accounts,
-      snapshot,
-      creator: creators,
-      now: wallClockNow(),
-    });
-  const campaignInput = () => ({
+  const campaignInput = (saveAsDraft = false) => ({
     campaignId: draft.campaignId,
     revision: draft.revision,
     name: draftName(draft),
     projectIds: [projectId!],
-    variants: variantsNow(),
+    variants: buildDraftVariants({ ...variantInput, now: wallClockNow() }, saveAsDraft),
   });
 
   const saveDraft = () => {
-    if (uploading.current || mediaPending || operationPending) return;
+    if (
+      draft.repeat.enabled ||
+      save.disabled ||
+      submitting.current ||
+      uploading.current ||
+      mediaPending ||
+      operationPending
+    )
+      return;
     void pending
       .run("content.draft", async () => {
         submitting.current = true;
         onBusyChange?.(true);
-        setError(undefined);
-        setBlocked([]);
+        setFailure(undefined);
         try {
-          await saveCampaign(client, campaignInput());
+          await saveCampaign(client, campaignInput(true));
           onDone("draft");
         } catch (caught) {
-          const message =
-            caught instanceof Error
-              ? presentRemoteError(caught, { explicit: true })
-              : t("The post could not be saved.");
-          setError(message);
-          onOperationError?.(message);
+          fail(t("The post could not be saved."), caught);
         } finally {
           submitting.current = false;
           onBusyChange?.(false);
         }
       })
-      .catch(() => setError(t("The post could not be saved.")));
+      .catch((cause: unknown) => fail(t("The post could not be saved."), cause));
   };
 
   const publishNow = () => {
-    if (uploading.current || mediaPending || operationPending) return;
+    if (
+      publish.disabled ||
+      submitting.current ||
+      uploading.current ||
+      mediaPending ||
+      operationPending
+    )
+      return;
     void pending
       .run("content.publish", async () => {
         submitting.current = true;
         onBusyChange?.(true);
-        setError(undefined);
-        setBlocked([]);
+        setFailure(undefined);
         try {
           if (draft.repeat.enabled) {
             await saveRepeatProgram(client, {
@@ -207,6 +245,7 @@ export function ContentEditor(props: ContentEditorProps) {
               repeat: draft.repeat,
               startsAt: scheduledMs(draft) ?? now,
               language: getLocale(),
+              youtube: buildVariants(variantInput).find((variant) => variant.youtube)?.youtube,
             });
             onDone("program");
             return;
@@ -215,25 +254,23 @@ export function ContentEditor(props: ContentEditorProps) {
             onSaved({ campaignId: campaign.id, revision: campaign.revision }),
           );
           if (result.blocked.length) {
-            const reasons = result.blocked.map((target) => describeBlocked(target, accounts));
-            setBlocked(reasons);
-            onOperationError?.(reasons.join("\n"));
+            setFailure(result.blocked.map((target) => describeBlocked(target, accounts)));
             return;
           }
           onDone(isScheduledDraft(draft) ? "scheduled" : "published");
         } catch (caught) {
-          const message =
-            caught instanceof Error
-              ? presentRemoteError(caught, { explicit: true })
-              : t("The post could not be published.");
-          setError(message);
-          onOperationError?.(message);
+          fail(
+            draft.repeat.enabled
+              ? t("Could not save the program.")
+              : t("The post could not be published."),
+            caught,
+          );
         } finally {
           submitting.current = false;
           onBusyChange?.(false);
         }
       })
-      .catch(() => setError(t("The post could not be published.")));
+      .catch((cause: unknown) => fail(t("The post could not be published."), cause));
   };
 
   const footer = (
@@ -243,14 +280,16 @@ export function ContentEditor(props: ContentEditorProps) {
           {t("Open Accounts & Settings")}
         </Button>
       ) : null}
-      <DisabledReason
-        variant="secondary"
-        loading={pending.is("content.draft")}
-        onClick={saveDraft}
-        {...gateProps(save)}
-      >
-        {t("Save draft")}
-      </DisabledReason>
+      {!draft.repeat.enabled ? (
+        <DisabledReason
+          variant="secondary"
+          loading={pending.is("content.draft")}
+          onClick={saveDraft}
+          {...gateProps(save)}
+        >
+          {t("Save draft")}
+        </DisabledReason>
+      ) : null}
       <DisabledReason
         variant="primary"
         loading={pending.is("content.publish")}
@@ -273,8 +312,11 @@ export function ContentEditor(props: ContentEditorProps) {
       <div className="content-editor-body">
         {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
         {/* One notice slot: a failure, or the accounts the post could not go to. */}
-        {error ? <InlineError>{error}</InlineError> : null}
-        {!error ? blocked.map((line) => <InlineError key={line}>{line}</InlineError>) : null}
+        {failures?.map(({ title, details }, index) => (
+          <InlineError key={index} details={details}>
+            {title}
+          </InlineError>
+        ))}
         <ContentEditorFields
           client={client}
           editor={editor}

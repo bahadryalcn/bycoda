@@ -50,7 +50,9 @@ export function InstagramAccountTools({
   projects: readonly HostProject[];
   disabled: boolean;
 }) {
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const [notice, setNotice] = useState("");
   const [chosen, setChosen] = useState<Section>();
   const browser = account.connection === "browser" && account.connected;
@@ -61,36 +63,86 @@ export function InstagramAccountTools({
   const messageStart = available("message.start");
   const sections: { value: Section; label: string; group: Group }[] = [
     ...(analytics
-      ? [{ value: "insights" as const, label: t("Insights"), group: "overview" as const }]
+      ? [
+          {
+            value: "insights" as const,
+            label: t("Insights"),
+            group: "overview" as const,
+          },
+        ]
       : []),
     ...(browser || signedMentions
-      ? [{ value: "mentions" as const, label: t("Mentions"), group: "overview" as const }]
-      : []),
-    ...(browser
-      ? [{ value: "followers" as const, label: t("Followers"), group: "overview" as const }]
+      ? [
+          {
+            value: "mentions" as const,
+            label: t("Mentions"),
+            group: "overview" as const,
+          },
+        ]
       : []),
     ...(browser
       ? [
-          { value: "posts" as const, label: t("Posts"), group: "content" as const },
-          { value: "highlights" as const, label: t("Highlights"), group: "content" as const },
+          {
+            value: "followers" as const,
+            label: t("Followers"),
+            group: "overview" as const,
+          },
+        ]
+      : []),
+    ...(browser
+      ? [
+          {
+            value: "posts" as const,
+            label: t("Posts"),
+            group: "content" as const,
+          },
+          {
+            value: "highlights" as const,
+            label: t("Highlights"),
+            group: "content" as const,
+          },
         ]
       : []),
     ...(browser && messageStart
-      ? [{ value: "messages" as const, label: t("Messages"), group: "messages" as const }]
+      ? [
+          {
+            value: "messages" as const,
+            label: t("Messages"),
+            group: "messages" as const,
+          },
+        ]
       : []),
     ...(browser
       ? [
-          { value: "profile" as const, label: t("Profile"), group: "account" as const },
-          { value: "earnings" as const, label: t("Earnings"), group: "account" as const },
+          {
+            value: "profile" as const,
+            label: t("Profile"),
+            group: "account" as const,
+          },
+          {
+            value: "earnings" as const,
+            label: t("Earnings"),
+            group: "account" as const,
+          },
         ]
       : []),
     ...(account.connection === "browser"
-      ? [{ value: "browser" as const, label: t("Browser"), group: "account" as const }]
+      ? [
+          {
+            value: "browser" as const,
+            label: t("Browser"),
+            group: "account" as const,
+          },
+        ]
       : []),
     ...(browser
       ? [
           { value: "live" as const, label: t("Live"), group: "live" as const },
-          { value: "requests" as const, label: t("Requests"), group: "requests" as const },
+          {
+            value: "requests" as const,
+            label: t("Requests"),
+            group: "requests" as const,
+          },
         ]
       : []),
   ];
@@ -121,13 +173,27 @@ export function InstagramAccountTools({
     }).catch(() => undefined);
   };
   const workflows: { intent: SocialBrowserIntent; label: string }[] = [
-    { intent: "instagram-professional", label: t("Switch to professional account") },
-    { intent: "instagram-profile", label: t("Open Instagram profile settings") },
+    {
+      intent: "instagram-professional",
+      label: t("Switch to professional account"),
+    },
+    {
+      intent: "instagram-profile",
+      label: t("Open Instagram profile settings"),
+    },
     { intent: "instagram-highlights", label: t("Manage Instagram Highlights") },
-    { intent: "instagram-monetization", label: t("Open Instagram monetization") },
+    {
+      intent: "instagram-monetization",
+      label: t("Open Instagram monetization"),
+    },
     ...(browser
       ? []
-      : [{ intent: "instagram-live" as const, label: t("Open Instagram Live Producer") }]),
+      : [
+          {
+            intent: "instagram-live" as const,
+            label: t("Open Instagram Live Producer"),
+          },
+        ]),
   ];
   const panel = (value: Section, children: React.ReactNode) => (
     <div hidden={section !== value}>{children}</div>
@@ -272,7 +338,7 @@ export function InstagramAccountTools({
             )
           : null}
         {notice ? <InlineMessage>{notice}</InlineMessage> : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={details}>{error}</InlineError> : null}
       </div>
     </Disclosure>
   );

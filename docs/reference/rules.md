@@ -68,6 +68,8 @@ fall. Suppress one line only, always with a reason.
   - A `void`-discarded promise with no rejection handler becomes an unhandled rejection; the Host logs it through guardUnhandledRejections (host/server/support.ts) and marks the service degraded, and the failed work is silently lost. Append `.catch(...)` that logs or reports (a `.finally()` alone does not handle the rejection), pass a rejection handler as the second `then` argument, or await it inside a try/catch (an async IIFE whose body has a try/catch is fine).
 - `bycoda/icon-button-needs-label` (`src/**/*.tsx`)
   - Icon-only Button has no accessible name. Pass a translated `label` or `aria-label` (it names the button for assistive technology and adds no visible text or tooltip by itself), or give the Button visible text children; an icon child alone does not name it (src/shared/ui/Button.tsx).
+- `bycoda/literal-translation-key` (`src/**/*.ts, src/**/*.tsx`)
+  - Use a literal message in t() so the locale check can extract it. Translate each branch at its declaration and pass values through positional slots.
 - `bycoda/menu-uses-dropdown` (`src/app/**/*.tsx, src/features/**/*.tsx`)
   - Menus are not built by hand: a Popover holding MenuRow items, or a literal role=menu/menuitem, has no menu role wiring and no arrow-key navigation. Use DropdownMenu from src/shared/ui (items/content) or ContextMenu, which own the role, focus and keyboard behavior.
 - `bycoda/no-raw-error-text` (`src/**/*.ts, src/**/*.tsx`)
@@ -199,8 +201,12 @@ fall. Suppress one line only, always with a reason.
   - role= passed to \<Alert> (Alert sets alert/status from its tone)
 - `arbitrary-spacing` (`CSS and TSX in src/app and src/features (excluding tests)`)
   - arbitrary fixed spacing or inset in a utility (use the spacing scale or a semantic --ui-space-* token)
+- `arbitrary-ui-token-override` (`TSX in src/app and src/features (excluding tests)`)
+  - a className overrides a shared --ui-* token (use the shared variant or define a semantic role)
 - `arc-var-outside-arc` (`src/app, src/features, shared stylesheets`)
   - Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root
+- `aria-label-without-role` (`TSX in src/app and src/features (excluding tests)`)
+  - aria-label on a div without a semantic role (use a named semantic element or associate the label with its intended control)
 - `color-base-hue` (`src/app, src/features, shared stylesheets`)
   - raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed
 - `color-base-opacity` (`src/app, src/features, shared stylesheets`)
@@ -215,6 +221,8 @@ fall. Suppress one line only, always with a reason.
   - named import of a shared/ui export whose catalog status is deprecated (use its @instead)
 - `disabled-opacity` (`src/app, src/features, shared stylesheets`)
   - opacity-30..60 used as the disabled state
+- `disabled-without-reason` (`TSX in src/app and src/features (excluding tests)`)
+  - disabled shared action lacks an explanation (use disabledReason or associate its visible explanation)
 - `duplicate-feedback-channel` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - one operation or disabled action repeats the same message across feedback channels (keep one visible owner and associate its message with the control when needed)
 - `feature-motion` (`src/app, src/features, shared stylesheets`)
@@ -242,7 +250,7 @@ fall. Suppress one line only, always with a reason.
 - `icon-stroke-width` (`src/app, src/features, shared stylesheets`)
   - strokeWidth other than 1.75 or 2
 - `inline-help-text` (`TSX in src/app, src/features, src/shared (excluding tests)`)
-  - settings Group, Row or Field repeats its label as help (delete the repeated copy; use the info slot or InfoPopover for distinct optional detail)
+  - settings label repeated as description or optional caption beside a field (use the info slot or InfoPopover for distinct optional help)
 - `inline-style-layout` (`TSX in src/app and src/features (excluding tests)`)
   - literal fixed layout in an inline style (use a semantic spacing token or a responsive layout class)
 - `inline-style-property` (`src/app, src/features, shared stylesheets`)
@@ -273,6 +281,8 @@ fall. Suppress one line only, always with a reason.
   - settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)
 - `pane-edge-erased` (`src/app, src/features, shared stylesheets`)
   - CSS that sets border, border-width or border-color to 0/none/hidden/transparent on a workbench pane root (.bycoda-sidebar, .bycoda-project-rail, .sidebar-pane, .body-glass, [data-side-pane], [data-surface-frame=pane]); the 1px edge between panes is owned by --ui-pane-border, so drop the frame through the Surface edge prop instead
+- `physical-direction-utility` (`TSX in src/features (excluding tests)`)
+  - physical left or right utility in feature UI (use logical start/end utilities)
 - `popover-menu` (`src/app, src/features, shared stylesheets`)
   - Popover with role=menu/listbox (use DropdownMenu/picker)
 - `portal-outside-shared` (`src/app, src/features, shared stylesheets`)
@@ -282,7 +292,7 @@ fall. Suppress one line only, always with a reason.
 - `raw-anchor` (`src/app, src/features, shared stylesheets`)
   - raw \<a href> in feature code (use Link for a real anchor in prose or a chip, Button variant=link for an action, openExternal() from code)
 - `raw-aria-live` (`src/app, src/features, shared stylesheets`)
-  - aria-live= on a DOM element in feature code (use InlineMessage live=, LoadingText, Toast or Alert)
+  - aria-live= in feature code (use InlineMessage live=, LoadingText, Toast or Alert)
 - `raw-native-control` (`src/app, src/features, shared stylesheets`)
   - raw \<button>/\<input>/\<select>/\<textarea> outside src/shared/ui (use Button, TextField, TextareaField, Select/SearchableSelect, Checkbox; ProgressBar for meters, Tabs/SegmentedControl for choices)
 - `role-alert-container` (`src/app, src/features, shared stylesheets`)
@@ -290,11 +300,13 @@ fall. Suppress one line only, always with a reason.
 - `role-alert-text` (`src/app, src/features, shared stylesheets`)
   - \<p role=alert> / \<span role=alert> (use the shared inline error)
 - `role-status-banner` (`src/app, src/features, shared stylesheets`)
-  - tone-styled \<div>/\<p>/\<span>/\<section>/\<li>/\<small> role="status" (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)
+  - role="status" on a component or tone-styled native container (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)
+- `row-text-badge` (`TSX in src/app and src/features (excluding tests)`)
+  - text tag in a list row (use an accessible icon and disclose optional details on demand)
 - `scrollbar-style` (`src/app, src/features, shared stylesheets`)
   - scrollbar styled in feature code: scrollbar-* properties, ::-webkit-scrollbar or scrollbar-* classes (use ScrollArea)
-- `shared-internal-selector` (`CSS in src/app and src/features, including CSS-module classes applied to shared UI slots (excluding tests)`)
-  - feature CSS selects shared UI internals or restyles a shared control through a local CSS module (use a public prop or variant, or change the shared owner)
+- `shared-internal-selector` (`CSS in src/app and src/features, including CSS-module and locally imported global classes applied to shared UI slots (excluding tests)`)
+  - feature CSS selects shared UI internals or restyles a shared control through a locally imported stylesheet (use a public prop or variant, or change the shared owner)
 - `spacing-step` (`CSS and TSX in src/app and src/features (excluding tests)`)
   - gap, padding, margin or inset off the spacing scale (use a semantic --ui-space-* token for component spacing)
 - `specificity-doubling` (`src/app, src/features, shared stylesheets`)
@@ -308,7 +320,7 @@ fall. Suppress one line only, always with a reason.
 - `theme-palette-literal` (`CSS, TS and TSX in src/app and src/features (excluding tests)`)
   - literal palette paint in feature code (use a semantic --ui-* or --color-* CSS role or a semantic themePalette role)
 - `tooltip-repeats-label` (`TSX in src/app, src/features, src/shared (excluding tests)`)
-  - tooltip repeats its visible trigger label (remove the repeated hint; keep shortcuts, reasons and details in Tooltip, or use OverflowTooltip to recover clipped text)
+  - tooltip repeats its visible trigger label or accessible name (remove the repeated hint; keep shortcuts, reasons and details in Tooltip, or use OverflowTooltip to recover clipped text)
 - `transcript-assistant-surface` (`TSX in src/features/sessions/ui (excluding tests)`)
   - assistant reading surface marked with data-chat-message-surface="assistant"; mark it with data-transcript-reply (the user bubble keeps data-chat-message-surface="user")
 - `transcript-base-ink` (`src/app, src/features, shared stylesheets`)

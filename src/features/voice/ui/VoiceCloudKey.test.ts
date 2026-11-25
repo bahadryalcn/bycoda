@@ -62,7 +62,13 @@ it.each(["elevenlabs", "openrouter"] as const)(
     await click("Save");
     expect(host.querySelector("input")!.value).toBe("draft-secret");
     expect(host.textContent).toContain("Key saved");
+    expect(host.textContent).toContain("Could not save the voice API key.");
+    expect(host.textContent).not.toContain("The key could not be saved.");
+    await click("Details");
+    expect(document.body.textContent).toContain("The key could not be saved.");
+    await click("Details");
     await click("Remove");
+    expect(host.textContent).toContain("Could not remove the voice API key.");
     expect(host.textContent).toContain("Key saved");
     expect(host.querySelector("input")!.value).toBe("draft-secret");
     backend.setCloudKey.mockResolvedValue({ [provider]: false });

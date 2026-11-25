@@ -374,13 +374,15 @@ it("splits the targeted row and keeps both canvases visible while changing focus
       host.querySelector<HTMLButtonElement>('[aria-label="Launch profile…"]')!.click(),
     );
     expect(host.querySelector('[role="menu"]')).not.toBeNull();
-    // Split lives in the toolbar and the tab menu, not in the profile list.
+    // Split lives on the tab rows and their menu, not in the profile list.
     expect(
       Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menu"] button')).some(
         (button) => button.textContent === "Split",
       ),
     ).toBe(false);
-    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Split"]')!.click());
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Split — Terminal 2"]')!.click(),
+    );
     expect(onSplitTerminal).toHaveBeenLastCalledWith("two");
   } finally {
     await act(async () => root.unmount());

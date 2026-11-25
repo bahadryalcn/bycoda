@@ -1,4 +1,5 @@
 import type { Attachment } from "../sessions/model/session";
+import { t } from "../../shared/i18n/technical";
 import {
   parseBrowserAnnotation,
   type BrowserAnnotationCapture,
@@ -11,7 +12,9 @@ const DRAFT_EVENT = "bycoda:browser-selection-draft";
 export class BrowserDraftDeliveryUncertainError extends Error {
   constructor() {
     super(
-      "Attachment delivery could not be confirmed. Check the target composer before trying again.",
+      t(
+        "Attachment delivery could not be confirmed. Check the target composer before trying again.",
+      ),
     );
   }
 }
@@ -60,7 +63,10 @@ function selectionAttachment(
   const size = atob(screenshot.data).length;
   if (size > MAX_BROWSER_SCREENSHOT_BYTES) throw new Error("Invalid browser screenshot");
   const { screenshot: _screenshot, ...annotation } = capture;
-  const parsed = parseBrowserAnnotation({ ...annotation, comment: comment.slice(0, 4000) });
+  const parsed = parseBrowserAnnotation({
+    ...annotation,
+    comment: comment.slice(0, 4000),
+  });
   return {
     id: crypto.randomUUID(),
     name: "browser-element.jpg",
@@ -94,7 +100,10 @@ async function receiveWindowSelections(cwd: string, sessionId: string, receive: 
     } catch {
       // Page content and cross-window data never grant attachment authority.
     }
-    await emitTo(payload.replyTo, `${DRAFT_EVENT}-ack`, { id: payload.id, accepted });
+    await emitTo(payload.replyTo, `${DRAFT_EVENT}-ack`, {
+      id: payload.id,
+      accepted,
+    });
   });
 }
 

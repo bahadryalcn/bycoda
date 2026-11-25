@@ -40,9 +40,7 @@ it("keeps protocol output behind an accessible native details button", async () 
   expect(host.textContent).not.toContain("HTTP 503");
   const button = host.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
   expect(button.tagName).toBe("BUTTON");
-  expect(button.getAttribute("aria-label")).toBe(
-    "Technical details: Provider temporarily unavailable",
-  );
+  expect(button.getAttribute("aria-label")).toBe("Details: Provider temporarily unavailable");
   button.focus();
   expect(document.activeElement).toBe(button);
   await act(async () => button.click());

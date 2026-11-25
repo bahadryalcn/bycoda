@@ -110,3 +110,62 @@ test("no-raw-error-text flags raw error text passed to toast.show", (t) => {
     rejected.map((_, index) => [file, index + 1]),
   );
 });
+
+test("no-raw-error-text follows raw aliases and state setters to visible feedback", (t) => {
+  const file = "src/Screen.tsx";
+  const rejected = [
+    "const a = <Alert>{error}</Alert>;",
+    "const b = <InlineError>{failure}</InlineError>;",
+    "const c = <Text>{result.error.message}</Text>;",
+    "const d = <InlineMessage>{errorText(problem)}</InlineMessage>;",
+    "const e = <FailureState description={run.mergeError} />;",
+    "const f = <Notice>{problem.error}</Notice>;",
+    "const g = <Text>{summary}</Text>;",
+    "const h = <SettingsFeedback message={status} />;",
+    "const i = <InlineError>{String(current)}</InlineError>;",
+  ];
+  const setup = [
+    'import { Alert as Notice } from "@/shared/ui/Alert";',
+    'import { useState } from "react";',
+    "const [summary, setSummary] = useState(null);",
+    "const [status, setStatus] = useState(null);",
+    "const current = job.error;",
+    "save().catch((err) => setSummary(String(err)));",
+    "try { save(); } catch (problem) { setStatus(problem); }",
+  ];
+  const accepted = [
+    'const safe = t("Enter a name"); const j = <InlineError>{safe}</InlineError>;',
+    'const validationError = t("Enter a name"); const k = <Text>{validationError}</Text>;',
+    "const l = <InlineError>{describeRemoteError(problem).message}</InlineError>;",
+    "const m = <ErrorDetails detail={errorText(problem)} />;",
+    'const [hint, setHint] = useState(null); setHint(t("Enter a name")); const n = <Text>{hint}</Text>;',
+  ];
+  assert.deepEqual(
+    scanRule(t, "no-raw-error-text", { [file]: [...setup, ...rejected, ...accepted] }),
+    rejected.map((_, index) => [file, setup.length + index + 1]),
+  );
+});
+
+test("literal-translation-key only flags dynamic keys of the app translator", (t) => {
+  const file = "src/Screen.tsx";
+  const setup = [
+    'import { t, useT as useTranslator } from "@/shared/i18n";',
+    "const localize = useTranslator();",
+  ];
+  const rejected = [
+    "t(message);",
+    'localize("Save " + draft.name);',
+    't(ready ? "Ready" : message);',
+    't(ready ? "Ready" : "Pending");',
+    "t();",
+  ];
+  const accepted = [
+    't("Ready");',
+    "function shadow(t) { t(message); }",
+    "const test = (translate) => translate(message);",
+  ];
+  assert.deepEqual(
+    scanRule(t, "literal-translation-key", { [file]: [...setup, ...rejected, ...accepted] }),
+    rejected.map((_, index) => [file, setup.length + index + 1]),
+  );
+});

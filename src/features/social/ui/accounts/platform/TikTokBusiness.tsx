@@ -23,13 +23,17 @@ export function TikTokBusiness({
   onChanged(status: TikTokBusinessStatus): void;
 }) {
   const t = useT();
-  const { write, is, error } = useAccountWrite(t("Could not connect TikTok for Business."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Could not connect TikTok for Business."),
+  );
   const confirmation = useConfirm();
   const [businessId, setBusinessId] = useState("");
   const busy = is("check") || is("connect");
   const check = async () => {
     const next = await write("check", () =>
-      client.request<TikTokBusinessStatus>("tiktok.business.status", { accountId }),
+      client.request<TikTokBusinessStatus>("tiktok.business.status", {
+        accountId,
+      }),
     );
     if (next) onChanged(next);
   };
@@ -127,7 +131,7 @@ export function TikTokBusiness({
           </div>
         </form>
       )}
-      {error && <InlineError>{error}</InlineError>}
+      {error && <InlineError details={details}>{error}</InlineError>}
       {confirmation.dialog}
     </div>
   );

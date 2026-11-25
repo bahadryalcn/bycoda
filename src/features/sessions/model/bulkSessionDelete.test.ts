@@ -138,7 +138,7 @@ describe("bulk session delete", () => {
       failed: [{ sessionId: "d", error: "disk full" }],
     });
     expect(bulkDeleteNoticeText(notice)).toBe(
-      "2 oturum silindi. Çalışan 1 oturum atlandı. 1 oturum silinemedi: disk full.",
+      "2 konuşma silindi. Çalışan 1 konuşma atlandı. 1 konuşma silinemedi: disk full.",
     );
   });
 });

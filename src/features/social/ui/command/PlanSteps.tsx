@@ -1,6 +1,8 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { Code } from "../../../../shared/ui/Code";
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../shared/ui/Button";
 import { Surface } from "../../../../shared/ui/Surface";
 import { TechnicalDetails } from "../common/TechnicalDetails";
@@ -24,6 +26,7 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
       <ol className="command-steps">
         {plan.steps.map((step) => {
           const result = results[step.id];
+          const failed = result?.status === "failed" || result?.status === "blocked";
           const isApproved = approved.includes(step.id);
           return (
             <li key={step.id} className="command-step">
@@ -35,7 +38,7 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
                   {stepStatusLabel(step, result, isApproved)}
                 </Text>
               </div>
-              {result?.message ? (
+              {result?.message && !failed ? (
                 <Text
                   size="caption"
                   tone="secondary"
@@ -60,9 +63,16 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
                   {t("Approve")}
                 </Button>
               ) : null}
-              <TechnicalDetails>
-                <Code>{step.action}</Code>
-              </TechnicalDetails>
+              {failed && result.message ? (
+                <ErrorDetails
+                  title={step.summary}
+                  detail={redactDiagnosticText(`${step.action}\n${result.message}`)}
+                />
+              ) : (
+                <TechnicalDetails>
+                  <Code>{step.action}</Code>
+                </TechnicalDetails>
+              )}
             </li>
           );
         })}

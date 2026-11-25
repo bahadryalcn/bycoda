@@ -417,9 +417,16 @@ export class SocialPrograms {
           t.url = job.url;
           t.error = job.error;
         }
+    const firstSample =
+      p.approval.mode === "semi" && all.length > page.length
+        ? await this.firstOccurrence(p)
+        : undefined;
     return {
       program: publicProgram(p),
       occurrences: page,
+      ...(firstSample && !page.some((occurrence) => occurrence.id === firstSample.id)
+        ? { firstSample }
+        : {}),
       ...(all.length > 50 ? { nextBefore: page[0].sequence } : {}),
     };
   }

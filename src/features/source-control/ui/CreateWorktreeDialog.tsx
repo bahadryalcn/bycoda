@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -72,7 +72,8 @@ export function CreateWorktreeDialog({
       const tree = await createProjectWorktree(baseCwd, name.trim(), base, existing);
       await onCreated(tree);
     } catch (err) {
-      return presentRemoteError(err, { explicit: true });
+      const { details, message } = describeRemoteError(err);
+      return details || message;
     }
   }, undefined);
   return (
@@ -170,7 +171,7 @@ export function CreateWorktreeDialog({
             layer={LAYER.dialogPopover}
           />
         )}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error}>{t("Couldn’t create worktree")}</InlineError> : null}
       </form>
     </Modal>
   );

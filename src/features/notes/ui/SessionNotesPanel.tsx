@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SessionNoteDocument, type SessionNoteSelection } from "./SessionNoteDocument";
 import { NoteTagsEditor, sameTags } from "./NoteTagsEditor";
@@ -497,26 +498,20 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         </Popover>
       ) : null}
       {error ? (
-        <Alert tone="danger">
-          {error}{" "}
-          <Button variant="ghost" size="sm" type="button" onClick={() => void refresh()}>
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <Alert
+          tone="danger"
+          title={t("Could not load or update notes.")}
+          extra={<ErrorDetails title={t("Could not load or update notes.")} detail={error} />}
+          action={{ label: t("Retry"), onClick: () => void refresh() }}
+        />
       ) : null}
       {detailError ? (
-        <Alert tone="danger">
-          {detailError}{" "}
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            loading={detailRetrying}
-            onClick={retryDetail}
-          >
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <Alert
+          tone="danger"
+          title={t("Could not load this note.")}
+          extra={<ErrorDetails title={t("Could not load this note.")} detail={detailError} />}
+          action={{ label: t("Retry"), onClick: retryDetail, pending: detailRetrying }}
+        />
       ) : null}
     </>
   );
@@ -855,7 +850,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
       saveTimer.current = null;
       saveTimerWork.current = null;
       return enqueueSave(note.id, save, work)
-        .catch((error) => setSaveError(String(error)))
+        .catch((error) => setSaveError(errorText(error)))
         .finally(() => {
           delayed?.();
           work();

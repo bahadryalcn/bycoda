@@ -41,15 +41,20 @@ export function popupNativeDropdownMenu(
   anchor: HTMLElement,
   items: readonly Pick<
     DropdownMenuAction,
-    "id" | "label" | "description" | "disabled" | "checked"
+    "id" | "label" | "description" | "disabled" | "disabledReason" | "checked"
   >[],
   onPick: (id: string) => void,
 ): Promise<void> {
   return popupNativeActionMenu(
     anchor,
-    items.map(({ id, label, description, disabled, checked }) => ({
+    items.map(({ id, label, description, disabled, disabledReason, checked }) => ({
       id,
-      label: description ? `${label} — ${description}` : label,
+      label:
+        disabled && disabledReason
+          ? `${label} — ${disabledReason}`
+          : description
+            ? `${label} — ${description}`
+            : label,
       disabled,
       checked,
     })),
@@ -493,11 +498,13 @@ function MenuSurface({
         aria-setsize={windowIndex === undefined ? undefined : actions.length}
         onFocus={virtual ? () => setActiveId(item.id) : undefined}
         aria-label={item.label}
-        aria-description={item.description}
+        aria-description={
+          item.disabled && item.disabledReason ? item.disabledReason : item.description
+        }
         aria-haspopup={hasBranch ? "menu" : undefined}
         aria-expanded={hasBranch ? branch?.id === item.id : undefined}
         disabled={item.disabled}
-        title={item.title}
+        title={item.title ?? (item.disabled ? item.disabledReason : undefined)}
         destructive={item.danger}
         data-menu-id={item.id}
         data-menu-label={item.label}

@@ -126,8 +126,6 @@ export function GithubSettings() {
         <Badge
           size="sm"
           appearance="subtle"
-          role="status"
-          aria-live="polite"
           aria-busy={checking || (status?.installing && !slow) || undefined}
         >
           {label}

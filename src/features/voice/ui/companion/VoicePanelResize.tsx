@@ -164,7 +164,7 @@ export function VoicePanelResize({
     });
   };
   const keyStart = useRef<DOMRect | null>(null);
-  const commit = (size: Size, next: Position) => {
+  const commit = (size: Size | undefined, next: Position) => {
     onPosition(next);
     save(STORAGE_KEY, size);
     save("bycoda:voice-position", next);
@@ -225,9 +225,9 @@ export function VoicePanelResize({
     if (!node) return;
     const bottom = node.getBoundingClientRect().bottom;
     applySize(node, undefined);
-    save(STORAGE_KEY, undefined);
     const rect = node.getBoundingClientRect();
-    onPosition(
+    commit(
+      undefined,
       clampVoicePosition(
         rect.x,
         bottom - rect.height,

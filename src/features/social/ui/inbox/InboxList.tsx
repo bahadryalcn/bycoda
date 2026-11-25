@@ -1,9 +1,9 @@
-import { StatusDot } from "../../../../shared/ui/StatusDot";
+import { SocialStatusDot } from "../common/SocialStatusDot";
 import { Text } from "../../../../shared/ui/Text";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
-import { BadgeList } from "../../../../shared/ui/BadgeList";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { ListBullet } from "../../../../shared/ui/icons";
 import { Button } from "../../../../shared/ui/Button";
 import { ContinuousList } from "../../../../shared/ui/ContinuousList";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
@@ -16,8 +16,7 @@ import "./inbox.css";
 const ROW_ESTIMATE = 96;
 
 /**
- * One conversation. The tags sit beside the row button, not inside it: the "+N" overflow is a
- * button of its own, and a button cannot nest in a button. Unread shows once, as a named dot.
+ * One conversation. The tags popover sits beside its row button.
  */
 function InboxRow({
   item,
@@ -43,7 +42,7 @@ function InboxRow({
         <SocialAvatar name={name} platform={item.platform} size="md" />
         <span className="inbox-row-body">
           <span className="inbox-row-top">
-            {unread ? <StatusDot label={t("Unread")} /> : null}
+            {unread ? <SocialStatusDot label={t("Unread")} /> : null}
             <Text
               as="span"
               size="secondary"
@@ -74,20 +73,23 @@ function InboxRow({
           </Text>
           {unread ? null : (
             <span className="inbox-row-meta">
-              <Badge size="xs" tone={statusTone(item.status)}>
-                {statusText(item.status)}
-              </Badge>
+              <SocialStatusDot tone={statusTone(item.status)} label={statusText(item.status)} />
             </span>
           )}
         </span>
       </Button>
       {item.tags.length > 0 ? (
-        <BadgeList
+        <InfoPopover
           className="inbox-row-tags"
           label={t("Tags")}
-          size="xs"
-          items={item.tags.map((tag) => ({ id: tag, label: tag }))}
-        />
+          icon={<ListBullet className="icon-sm" aria-hidden />}
+        >
+          <ul>
+            {item.tags.map((tag) => (
+              <li key={tag}>{tag}</li>
+            ))}
+          </ul>
+        </InfoPopover>
       ) : null}
     </div>
   );

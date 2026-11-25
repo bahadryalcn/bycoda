@@ -46,7 +46,9 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
           <ExternalLink className="icon-sm" aria-hidden />
         </Button>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Couldn’t open the saved file")}</InlineError>
+      ) : null}
     </div>
   );
 }

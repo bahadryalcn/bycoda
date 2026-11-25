@@ -219,7 +219,19 @@ export function TaskDetail({
                 className="resize-y"
               />
               <div className="flex items-center gap-2">
-                <Button variant="primary" type="submit" loading={saving} disabled={!canSave}>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  loading={saving}
+                  disabled={!canSave}
+                  disabledReason={
+                    saving || canSave
+                      ? undefined
+                      : title.trim()
+                        ? t("Add a description first.")
+                        : t("Enter a title first.")
+                  }
+                >
                   {t("Save")}
                 </Button>
                 <Button

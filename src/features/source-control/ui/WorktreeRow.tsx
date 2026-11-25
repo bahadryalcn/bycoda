@@ -3,14 +3,22 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
-import { Badge } from "../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Heading } from "../../../shared/ui/Heading";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { shortSha } from "../../../shared/lib/shortSha";
-import { FolderOpen, Trash2 } from "../../../shared/ui/icons";
+import {
+  ArrowUp,
+  CircleAlert,
+  CircleHelp,
+  FolderOpen,
+  Clock,
+  Lock,
+  Trash2,
+} from "../../../shared/ui/icons";
 import type { Worktree } from "../model/worktrees";
 import styles from "./WorktreesPage.module.css";
 
@@ -55,7 +63,7 @@ export function WorktreeRow({
   const caption = [branchLabel === folderName ? undefined : branchLabel, sessions]
     .filter(Boolean)
     .join(" · ");
-  // A clean tree is the default and carries no badge; only exceptions are labeled.
+  // Only exceptions need a status icon.
   const statusLabel = tree.missing
     ? t("Missing folder")
     : tree.dirty == null
@@ -63,7 +71,7 @@ export function WorktreeRow({
       : tree.dirty
         ? t("Uncommitted changes")
         : undefined;
-  const statusTone = tree.missing || tree.dirty ? "warning" : "neutral";
+  const StatusIcon = tree.missing || tree.dirty ? CircleAlert : CircleHelp;
   return (
     <ActionHost
       role="listitem"
@@ -86,24 +94,33 @@ export function WorktreeRow({
             </Heading>
           </Tooltip>
           {statusLabel && (
-            <Badge size="sm" tone={statusTone}>
+            <InfoTooltip label={t("Status")} icon={<StatusIcon aria-hidden className="icon-xs" />}>
               {statusLabel}
-            </Badge>
+            </InfoTooltip>
           )}
           {!!tree.unpushed && (
-            <Tooltip label={t("Counted against remote branches already fetched locally.")} asChild>
-              <Badge size="sm" tone="info">
-                {tree.unpushed === 1
-                  ? t("{p0} unpublished commit", { p0: tree.unpushed })
-                  : t("{p0} unpublished commits", { p0: tree.unpushed })}
-              </Badge>
-            </Tooltip>
+            <InfoTooltip
+              label={t("Unpushed commits")}
+              icon={<ArrowUp aria-hidden className="icon-xs" />}
+            >
+              {tree.unpushed === 1
+                ? t("{p0} unpublished commit", { p0: tree.unpushed })
+                : t("{p0} unpublished commits", { p0: tree.unpushed })}{" "}
+              {t("Counted against remote branches already fetched locally.")}
+            </InfoTooltip>
           )}
-          {removing && <Badge size="sm">{t("Removing directory…")}</Badge>}
+          {removing && (
+            <InfoTooltip
+              label={t("Directory removal")}
+              icon={<Clock aria-hidden className="icon-xs" />}
+            >
+              {t("Removing directory…")}
+            </InfoTooltip>
+          )}
           {tree.locked && (
-            <Badge size="sm" tone="warning">
+            <InfoTooltip label={t("Lock status")} icon={<Lock aria-hidden className="icon-xs" />}>
               {t("Locked")}
-            </Badge>
+            </InfoTooltip>
           )}
         </div>
         {caption && (
@@ -149,6 +166,7 @@ export function WorktreeRow({
           motion="none"
           type="button"
           disabled={tree.missing}
+          disabledReason={t("This folder is not on disk.")}
           tooltip={t("Reveal folder")}
           onClick={onReveal}
         >

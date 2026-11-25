@@ -98,11 +98,6 @@
   min-inline-size: 0;
   text-align: start;
 }
-.project {
-  flex: 0 1 auto;
-  min-inline-size: 0;
-  max-inline-size: 40%;
-}
 .progressLine {
   display: flex;
   align-items: center;

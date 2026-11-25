@@ -1398,10 +1398,14 @@ export function appearanceRuleOfDeclaration(declaration) {
     !/^(?:inherit|normal|unset|revert(?:-layer)?|var\(\s*--(?:ui-)?text-)/.test(raw.trim())
   )
     return "feature-typography";
+  // Paint-skipping constraints can change on focus to keep the keyboard ring visible.
+  if (property === "content-visibility" || /^contain-intrinsic(?:-[\w-]+)?$/.test(property))
+    return null;
   // One finding per declaration: a state block is reported as a state, not as its contents.
   if (selectors.some((selector) => stateSelector.test(selector))) return "interaction-state";
   if (typeProperty.test(property)) return null;
-  if (/^(?:font-weight|letter-spacing|color|font)$/.test(property)) return "feature-typography";
+  if (/^(?:font-weight|font-variant-numeric|letter-spacing|color|font)$/.test(property))
+    return "feature-typography";
   if (/^(?:text-overflow|-webkit-line-clamp|line-clamp)$/.test(property)) return "text-truncation";
   if (
     /^(?:border(?!-collapse|-spacing)|outline|background|box-shadow)/.test(property) &&
@@ -1420,7 +1424,16 @@ export function appearanceRuleOfDeclaration(declaration) {
 }
 
 /** Visual changes to a shared slot. Outer placement and responsive constraints are public. */
-export function restylesSharedSlot({ property, value }) {
+export function restylesSharedSlot({ property, value, selectors = [] }, fillable = false) {
+  const outerSlot =
+    fillable &&
+    selectors.every((selector) => selector.startsWith("@") || /^\.[\w-]+$/.test(selector.trim()));
+  if (
+    outerSlot &&
+    /^(?:min-|max-)?(?:height|block-size)$/.test(property) &&
+    /^(?:100%|0(?:px)?|auto|stretch|fill-available|100[dls]?vh)$/.test(value.trim())
+  )
+    return false;
   if (property === "@apply")
     return value
       .trim()
@@ -1428,7 +1441,13 @@ export function restylesSharedSlot({ property, value }) {
       .some((token) => {
         const { utility } = utilityParts(token);
         const arbitrary = /^\[([\w-]+):(.+)\]$/.exec(utility);
-        if (arbitrary) return restylesSharedSlot({ property: arbitrary[1], value: arbitrary[2] });
+        if (arbitrary)
+          return restylesSharedSlot(
+            { property: arbitrary[1], value: arbitrary[2], selectors },
+            fillable,
+          );
+        if (outerSlot && /^(?:h-full|(?:min-|max-)?h-(?:0|screen|dvh|svh|lvh|auto))$/.test(utility))
+          return false;
         if (
           /^text-(?:left|center|right|justify|start|end|wrap|nowrap|balance|pretty)$/.test(utility)
         )

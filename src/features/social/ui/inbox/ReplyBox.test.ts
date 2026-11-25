@@ -625,3 +625,24 @@ it("keeps a refused job for review without claiming it queued or enabling anothe
   expect(fake.writes().filter((call) => call.action === "replies.send")).toHaveLength(1);
   expect(fake.calls.find((call) => call.action === "jobs.status")?.input).toEqual({ id: "j1" });
 });
+
+it.each(["failed", "cancelled", "review"] as const)(
+  "keeps a %s receipt visible and unlocks the original draft only after a terminal status",
+  async (status) => {
+    const fake = fakeClient({
+      handlers: {
+        "replies.send": () => ({ id: "j1", draftId: "draft-1", status }),
+        "jobs.status": () => ({ id: "j1", draftId: "draft-1", status: "cancelled" }),
+      },
+    });
+    await mount(fake.client);
+    await type("Keep these words");
+    await click(button("Send"));
+    expect(editor().disabled).toBe(true);
+    if (status === "review") await click(button("Retry same reply"));
+    await click(button("Edit reply"));
+    expect(editor().disabled).toBe(false);
+    expect(editor().value).toBe("Keep these words");
+    expect(fake.writes().filter((call) => call.action === "replies.send")).toHaveLength(1);
+  },
+);

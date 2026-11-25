@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -49,7 +50,11 @@ it("keeps the saved status and offers retry when native consent fails", async ()
   vi.mocked(configureFileAccess).mockRejectedValueOnce(new Error("Storage unavailable"));
   await act(async () => root.render(createElement(FileAccessSettings)));
   await act(async () => changeButton().click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
+  await expectErrorDetails(
+    container,
+    "Could not confirm the file access operation.",
+    "Storage unavailable",
+  );
   expect(container.textContent).toContain("All files allowed");
   expect(changeButton().disabled).toBe(false);
   await act(async () => changeButton().click());
@@ -61,7 +66,9 @@ it("reports unavailable status after an initial read failure without implying co
   vi.mocked(getFileAccessMode).mockRejectedValueOnce(new Error("Access status unavailable"));
   await act(async () => root.render(createElement(FileAccessSettings)));
   expect(container.querySelector('[role="status"]')?.textContent).toBe("Status unavailable");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+  await expectErrorDetails(
+    container,
+    "Could not read file access status.",
     "Access status unavailable",
   );
   expect(configureFileAccess).not.toHaveBeenCalled();
@@ -92,7 +99,9 @@ it("reads back permissions after an uncertain consent failure without invoking c
   expect(configureFileAccess).toHaveBeenCalledOnce();
   expect(getFileAccessMode).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Selected folders only");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+  await expectErrorDetails(
+    container,
+    "Could not confirm the file access operation.",
     "Cleanup failed after saving",
   );
 });
@@ -115,7 +124,7 @@ it("keeps the last known access visible and says so when a refresh fails", async
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(container.querySelector('[role="status"]')?.textContent).toBe("Status unavailable");
   expect(container.textContent).toContain("Last known access");
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Status read failed");
+  await expectErrorDetails(container, "Could not read file access status.", "Status read failed");
 });
 
 it("ignores a read that finishes after the surface closed", async () => {
@@ -169,7 +178,7 @@ it("keeps the notice visible when dismissing it fails", async () => {
   vi.mocked(dismissFileAccessRecovery).mockRejectedValueOnce(new Error("Disk full"));
   await act(async () => root.render(createElement(FileAccessSettings)));
   await act(async () => dismissButton().click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Disk full");
+  await expectErrorDetails(container, "Could not dismiss the notice.", "Disk full");
   expect(container.textContent).toContain("Saved folder permissions could not be read");
   expect(dismissButton()).toBeDefined();
 });

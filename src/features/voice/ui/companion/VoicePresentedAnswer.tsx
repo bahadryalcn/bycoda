@@ -3,7 +3,8 @@ import { useState } from "react";
 import { errorText } from "../../../../shared/lib/errors";
 import type { VoiceLiveResult } from "../../model/voiceLiveWork";
 import {
-  VoicePresentedActionButtonSchema,
+  parsePresentedPress,
+  VoicePresentedViewChanged,
   type VoicePresentedActionButton,
   type VoicePresentedActionResponse,
 } from "../../model/voicePresentedActions";
@@ -21,20 +22,8 @@ type PresentedView = {
   /** The voice turn's observed results, for components that draw what the turn measured. */
   observed?: readonly VoiceLiveResult[];
   /** Runs one button. It resolves with what the app reported, or rejects with the reason. */
-  onAction: (button: VoicePresentedActionButton) => Promise<VoicePresentedActionResponse | void>;
+  onAction?: (button: VoicePresentedActionButton) => Promise<VoicePresentedActionResponse | void>;
 };
-
-/** A field the owner left empty is not sent as null; the action's own schema decides if it is needed. */
-const withoutNull = (value: unknown): unknown =>
-  Array.isArray(value)
-    ? value
-    : value && typeof value === "object"
-      ? Object.fromEntries(
-          Object.entries(value)
-            .filter(([, item]) => item !== null && item !== undefined)
-            .map(([key, item]) => [key, withoutNull(item)]),
-        )
-      : value;
 
 /**
  * Draws a validated view. Model text never becomes code: the view is compiled to an OpenUI program
@@ -57,34 +46,48 @@ export default function VoicePresentedAnswer({
   const [selected, setSelected] = useState<string>();
   const feedback = presses.version === version ? presses.byNode : new Map<number, PresentedPress>();
 
-  const record = (node: number, press: PresentedPress) =>
+  const record = (node: number, press: PresentedPress, pending?: PresentedPress) =>
     setPresses((previous) => {
+      // A completion only owns the pending press it recorded for this view and node.
+      if (
+        previous.version > version ||
+        (pending && (previous.version !== version || previous.byNode.get(node) !== pending))
+      ) {
+        return previous;
+      }
       const byNode = new Map(previous.version === version ? previous.byNode : []);
       byNode.set(node, press);
       return { version, byNode };
     });
 
   const run = async (event: ActionEvent) => {
-    if (event.type !== PRESENTED_ACTION) return;
+    if (!onAction || event.type !== PRESENTED_ACTION) return;
     const node = event.params.node;
     if (typeof node !== "number") return;
     const signature = JSON.stringify(event.params.button);
-    const parsed = VoicePresentedActionButtonSchema.safeParse(withoutNull(event.params.button));
+    const parsed = parsePresentedPress(event.params.button);
     if (!parsed.success) {
-      record(node, { signature, state: "failed", message: "This action is incomplete." });
+      record(node, { signature, state: "failed", reason: "incomplete" });
       return;
     }
-    record(node, { signature, state: "pending" });
+    const pending = { signature, state: "pending" } as const;
+    record(node, pending);
     try {
       const response = (await onAction(parsed.data)) ?? undefined;
-      record(node, { signature, state: "sent", ...(response ? { response } : {}) });
+      record(node, { signature, state: "sent", ...(response ? { response } : {}) }, pending);
     } catch (error) {
-      record(node, { signature, state: "failed", message: errorText(error) });
+      record(
+        node,
+        error instanceof VoicePresentedViewChanged
+          ? { signature, state: "failed", reason: "view-changed" }
+          : { signature, state: "failed", detail: errorText(error) },
+        pending,
+      );
     }
   };
 
   return (
-    <PresentedHostContext.Provider value={{ version, observed, feedback, canPress: true }}>
+    <PresentedHostContext.Provider value={{ version, observed, feedback, canPress: !!onAction }}>
       <WorkRecordsProvider
         value={{
           records: observedWorkRecords(observed),

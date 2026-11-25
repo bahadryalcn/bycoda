@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 /**
  * The editor's merge-conflict strip: how many blocks are left and a way to
@@ -98,21 +99,21 @@ export function EditorConflictBar({
         </>
       ) : (
         <>
-          <Text
-            size="inherit"
-            tone="secondary"
-            wrap="anywhere"
-            className="min-w-0 flex-1"
-            role="status"
-          >
-            {error ? (
-              <Text size="inherit" tone="danger">
-                {error}
-              </Text>
-            ) : (
-              t("All conflicts resolved")
-            )}
-          </Text>
+          {error ? (
+            <InlineError className="min-w-0 flex-1" details={error}>
+              {t("Couldn’t mark the file as resolved")}
+            </InlineError>
+          ) : (
+            <Text
+              size="inherit"
+              tone="secondary"
+              wrap="anywhere"
+              className="min-w-0 flex-1"
+              role="status"
+            >
+              {t("All conflicts resolved")}
+            </Text>
+          )}
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
               <Text

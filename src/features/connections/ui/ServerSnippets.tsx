@@ -223,6 +223,11 @@ function ServerSnippetsForm({
               success={notice === "saved"}
               successLabel={t("Saved")}
               disabled={busy || !isSingleLineCommand(command)}
+              disabledReason={
+                !busy && !isSingleLineCommand(command)
+                  ? t("Enter a valid single-line command")
+                  : undefined
+              }
             >
               {t("Save")}
             </Button>

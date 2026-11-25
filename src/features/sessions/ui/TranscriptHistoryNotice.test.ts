@@ -64,7 +64,8 @@ it("shows one state at a time: a failed read beats a page error, and neither sit
   expect(host.textContent).not.toContain("Page unavailable");
   expect(host.textContent).not.toContain("Loading");
   await show({ loading: true, pageError: "Page unavailable", onRetryPage });
-  expect(host.textContent).toContain("Page unavailable");
+  expect(host.textContent).toContain("Earlier messages could not be loaded.");
+  expect(host.textContent).toContain("Details");
   expect(host.textContent).not.toContain("Loading");
   act(() => retry()!.click());
   expect(onRetryPage).toHaveBeenCalledOnce();

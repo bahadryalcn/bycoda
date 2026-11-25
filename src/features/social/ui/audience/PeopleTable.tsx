@@ -1,14 +1,16 @@
 import { Text } from "../../../../shared/ui/Text";
 import { useMemo } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
+import { SocialStatusDot } from "../common/SocialStatusDot";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { ListBullet } from "../../../../shared/ui/icons";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { Button } from "../../../../shared/ui/Button";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import { SortableDataTable, type DataColumn } from "../../../../shared/ui/SortableDataTable";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import type { SocialPerson } from "../../model/audience";
-import { stageLabel, stageTone, visibleTags } from "./audienceModel";
+import { stageLabel, stageTone } from "./audienceModel";
 import { PlatformMarks } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
 import "./audience.css";
@@ -90,21 +92,15 @@ function ScoreCell({ person }: { person: SocialPerson }) {
 }
 
 function TagsCell({ person }: { person: SocialPerson }) {
-  const tags = visibleTags(person.tags);
-  return (
-    <span className="audience-badges">
-      {tags.shown.map((tag) => (
-        <Badge key={tag} size="xs" tone="neutral">
-          {tag}
-        </Badge>
-      ))}
-      {tags.hidden > 0 ? (
-        <Badge size="xs" tone="neutral">
-          {t("+{p0}", { p0: tags.hidden })}
-        </Badge>
-      ) : null}
-    </span>
-  );
+  return person.tags.length ? (
+    <InfoPopover label={t("Tags")} icon={<ListBullet className="icon-sm" aria-hidden />}>
+      <ul>
+        {person.tags.map((tag) => (
+          <li key={tag}>{tag}</li>
+        ))}
+      </ul>
+    </InfoPopover>
+  ) : null;
 }
 
 /**
@@ -165,9 +161,10 @@ export function PeopleTable({
         sortable: !hasMore,
         label: t("Status"),
         render: (_, row) => (
-          <Badge size="sm" tone={stageTone(row.person.stage)}>
-            {stageLabel(row.person.stage)}
-          </Badge>
+          <SocialStatusDot
+            tone={stageTone(row.person.stage)}
+            label={stageLabel(row.person.stage)}
+          />
         ),
       },
       {

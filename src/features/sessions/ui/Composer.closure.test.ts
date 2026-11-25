@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 import {
   beginComposerClosure,
   mountedComposerObservation,
@@ -274,7 +275,7 @@ it("retries inspection of the actual selected paths without reopening their succ
   await draw();
   await chooseFile();
   await vi.waitFor(() =>
-    expect(container.textContent).toContain("Inspection temporarily unavailable"),
+    expect(openErrorDetails(container)).toContain("Inspection temporarily unavailable"),
   );
   const closure = close();
   await expect(closure.captureAndFlush()).rejects.toThrow("Inspection temporarily unavailable");
@@ -305,7 +306,7 @@ it("does not retry a failed selection into a genuinely later cleared draft", asy
   await draw();
   await chooseFile();
   await vi.waitFor(() =>
-    expect(container.textContent).toContain("Inspection temporarily unavailable"),
+    expect(openErrorDetails(container)).toContain("Inspection temporarily unavailable"),
   );
   await draw({ draftResetToken: 1 });
   expect(container.querySelector("textarea")!.value).toBe("");
@@ -342,7 +343,7 @@ it("one failed selection does not make another failed selection's explicit retry
   await draw();
   await chooseFile();
   await vi.waitFor(() =>
-    expect(container.textContent).toContain("Selected file inspection unavailable"),
+    expect(openErrorDetails(container)).toContain("Selected file inspection unavailable"),
   );
   await chooseFile();
   await vi.waitFor(() => expect(ports.dialog).toHaveBeenCalledTimes(2));
@@ -473,7 +474,9 @@ it("retries a failed Native draft ACK without opening the picker or replaying it
   ports.picker.mockResolvedValue([file]);
   failWrites = 1;
   await chooseFile();
-  await vi.waitFor(() => expect(container.textContent).toContain("Native draft ACK unavailable"));
+  await vi.waitFor(() =>
+    expect(openErrorDetails(container)).toContain("Native draft ACK unavailable"),
+  );
   const closure = close();
   await expect(closure.captureAndFlush()).rejects.toThrow("Native draft ACK unavailable");
   await closure.retryFailed(owner);

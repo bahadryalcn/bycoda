@@ -10,6 +10,7 @@ import { Folder, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { reportFailure } from "../../../shared/ui/reportFailure";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
@@ -250,12 +251,14 @@ export function FileEditor({
   const openingRef = useRef(false);
   const [openingChrome, setOpeningChrome] = useState(false);
   // The message belongs to the path it was raised for, so another file shows none.
-  const [chromeFailure, setChromeFailure] = useState<{ path: string; message: string } | null>(
-    null,
-  );
-  const chromeError = chromeFailure?.path === path ? chromeFailure.message : null;
-  const setChromeError = (message: string | null) =>
-    setChromeFailure(message === null ? null : { path, message });
+  const [chromeFailure, setChromeFailure] = useState<{
+    path: string;
+    title: string;
+    details?: string;
+  } | null>(null);
+  const chromeError = chromeFailure?.path === path ? chromeFailure : null;
+  const setChromeError = (failure: { title: string; details?: string } | null) =>
+    setChromeFailure(failure === null ? null : { path, ...failure });
   const goLive = async () => {
     if (openingRef.current) return;
     openingRef.current = true;
@@ -271,7 +274,12 @@ export function FileEditor({
       await saveQueue.current;
       await openHtmlInChrome(path);
     } catch (error) {
-      await reportFailure(error, { toast: { show: ({ message }) => setChromeError(message) } });
+      await reportFailure(error, {
+        toast: {
+          show: ({ message }) =>
+            setChromeError({ title: t("Couldn’t open Chrome"), details: message }),
+        },
+      });
     } finally {
       openingRef.current = false;
       setOpeningChrome(false);
@@ -1131,7 +1139,7 @@ export function FileEditor({
     async (contents: string) => {
       const relative = displayPath(path, cwd);
       if (!cwd || cwd === "~" || !relative || relative === path) {
-        throw new Error(t("Can't stage this file"));
+        throw new Error(t("Can’t stage this file"));
       }
       if (!gitDiff || gitDiff.kind !== "unstaged") {
         throw new Error(t("Only unstaged changes can be staged"));
@@ -1333,6 +1341,7 @@ export function FileEditor({
       aria-label={t("Save")}
       shortcut="Mod+S"
       disabled={editorClosure.closed() || (!dirty && saveState.status !== "error")}
+      disabledReason={editorClosure.closed() ? t("Preparing checkpoint…") : t("No unsaved changes")}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
       onClick={() => void requestSave()}
@@ -1349,7 +1358,7 @@ export function FileEditor({
       : saveState.status === "saved" && !dirty
         ? t("Saved")
         : saveState.status === "error"
-          ? t("Save failed: {p0}", { p0: saveState.message })
+          ? t("Save failed")
           : dirty
             ? t("Unsaved changes")
             : "";
@@ -1359,18 +1368,23 @@ export function FileEditor({
     (saveState.status === "saved" && !dirty) ||
     saveState.status === "error";
   const saveStatus = (
-    <LiveText
-      text={saveStatusText}
-      tone={saveStatusVisible && saveState.status === "error" ? "danger" : "inherit"}
-      truncate={saveStatusVisible && saveState.status !== "error"}
-      className={
-        !saveStatusVisible
-          ? "sr-only"
-          : saveState.status === "error"
-            ? "min-w-0 basis-full break-words py-1"
-            : "min-w-0 max-w-64"
-      }
-    />
+    <>
+      <LiveText
+        text={saveStatusText}
+        tone={saveStatusVisible && saveState.status === "error" ? "danger" : "inherit"}
+        truncate={saveStatusVisible && saveState.status !== "error"}
+        className={
+          !saveStatusVisible
+            ? "sr-only"
+            : saveState.status === "error"
+              ? "min-w-0 break-words py-1"
+              : "min-w-0 max-w-64"
+        }
+      />
+      {saveState.status === "error" ? (
+        <ErrorDetails title={t("Save failed")} detail={saveState.message} className="shrink-0" />
+      ) : null}
+    </>
   );
   const hasMarkdownShell = Boolean(markdown || svg || html || viewKind);
   // One document/save/recovery/capture binding list for the plain file and the
@@ -1582,8 +1596,11 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <InlineError {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 px-2.5 py-1")}>
-          {chromeError}
+        <InlineError
+          {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 px-2.5 py-1")}
+          details={chromeError.details}
+        >
+          {chromeError.title}
         </InlineError>
       ) : null}
       <UiText
@@ -1608,7 +1625,10 @@ export function FileEditor({
             variant="ghost"
             onClick={() =>
               void revealInFileManager(path).catch((error: unknown) =>
-                setChromeError(String(error)),
+                setChromeError({
+                  title: t("Couldn’t open the file location"),
+                  details: String(error),
+                }),
               )
             }
           >

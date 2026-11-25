@@ -1,5 +1,8 @@
 import { useEffect, type ComponentProps, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
+import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../shared/lib/errors";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { UsageLimit } from "../model/session";
 import { ComposerNoticeStack } from "./ComposerNoticeStack";
@@ -8,6 +11,8 @@ import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 
 type ProviderAccountProvider = NonNullable<ComponentProps<typeof UsageLimitNotice>["provider"]>;
+
+export type ComposerFeedback = string | { title: string; detail: string } | null;
 
 type Props = {
   /** Pane-level notices (interrupted turn, provider retry), rendered first. */
@@ -23,12 +28,12 @@ type Props = {
   onUsageLimitDismiss?: () => void;
   onSelectProviderAccount?: (provider: ProviderAccountProvider, accountId: string) => void;
   onSwitchModel?: () => void;
-  pasteError?: string | null;
+  pasteError?: ComposerFeedback;
   /** Recovery action for the paste error (microphone settings). */
   pasteErrorAction?: ReactNode;
-  sessionFolderError: string | null;
+  sessionFolderError: ComposerFeedback;
   sessionFolderMutationBlocked: boolean;
-  onSessionFolderRecovered: (message: string | null) => void;
+  onSessionFolderRecovered: (message: ComposerFeedback) => void;
 };
 
 /** The one stack above the composer card: every composer notice renders here, in stable order. */
@@ -102,29 +107,53 @@ export function ComposerNotices({
           onDismiss={onUsageLimitDismiss ? () => guard(onUsageLimitDismiss) : undefined}
         />
       ) : null}
-      {pasteError ? (
-        <TranscriptNotice kind="error" title={pasteError} actions={pasteErrorAction} />
-      ) : null}
-      {sessionFolderError ? (
-        <TranscriptNotice
-          kind="error"
-          title={sessionFolderError}
-          actions={
-            sessionFolderMutationBlocked ? (
-              <NoticeActionButton
-                action={{
-                  label: t("Check again"),
-                  onClick: () => {
-                    void recheckSessionFolderState()
-                      .then(onSessionFolderRecovered)
-                      .catch((error: unknown) => onSessionFolderRecovered(String(error)));
-                  },
-                }}
-              />
-            ) : undefined
-          }
-        />
-      ) : null}
+      <ComposerErrorNotice feedback={pasteError} action={pasteErrorAction} />
+      <ComposerErrorNotice
+        feedback={sessionFolderError}
+        action={
+          sessionFolderMutationBlocked ? (
+            <NoticeActionButton
+              action={{
+                label: t("Check again"),
+                onClick: () => {
+                  void recheckSessionFolderState()
+                    .then(onSessionFolderRecovered)
+                    .catch((error: unknown) =>
+                      onSessionFolderRecovered({
+                        title: t("Could not refresh the session folders."),
+                        detail: errorText(error),
+                      }),
+                    );
+                },
+              }}
+            />
+          ) : undefined
+        }
+      />
     </ComposerNoticeStack>
+  );
+}
+
+function ComposerErrorNotice({
+  feedback,
+  action,
+}: {
+  feedback?: ComposerFeedback;
+  action?: ReactNode;
+}) {
+  if (!feedback) return null;
+  if (typeof feedback === "string")
+    return <TranscriptNotice kind="error" title={feedback} actions={action} />;
+  return (
+    <Alert
+      tone="danger"
+      title={feedback.title}
+      extra={
+        <>
+          <ErrorDetails title={feedback.title} detail={feedback.detail} />
+          {action}
+        </>
+      }
+    />
   );
 }

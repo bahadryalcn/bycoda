@@ -139,7 +139,6 @@ export function NotificationRequestCard({
           <ApprovalRequest
             title={approvalTitle(block, t)}
             actions={decision.sessionAction ? [decision.sessionAction] : undefined}
-            scope={decision.sessionAction ? t("Workspace filename search") : undefined}
             detail={detail}
             details={
               block && hasToolInspection(block)

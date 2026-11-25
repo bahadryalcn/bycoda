@@ -38,8 +38,16 @@ export type AccountConnectionProps = {
   onBrowserStatusChange?(status: string): void;
 };
 
-type BrowserState = { status: string; error?: string; source?: "existing-chrome" | "dedicated" };
-type OAuthState = { status: string; candidates: { id: string; name: string }[]; error?: string };
+type BrowserState = {
+  status: string;
+  error?: string;
+  source?: "existing-chrome" | "dedicated";
+};
+type OAuthState = {
+  status: string;
+  candidates: { id: string; name: string }[];
+  error?: string;
+};
 
 function browserStatusText(status: string): string {
   switch (status) {
@@ -95,7 +103,7 @@ export function AccountConnection({
   const requestedOperations = operations.filter((operation) =>
     operationOptions.includes(operation),
   );
-  const { error, is, write } = useAccountWrite(
+  const { error, details, is, write } = useAccountWrite(
     t("The connection could not be started. Try again."),
   );
   const usesBrowser = account.connection === "browser";
@@ -396,7 +404,7 @@ export function AccountConnection({
         <InlineError>{t("Could not reach this computer.")}</InlineError>
       ) : null}
       {error ? (
-        <InlineError details={error}>
+        <InlineError details={details}>
           {t("The connection could not be started. Try again.")}
         </InlineError>
       ) : null}

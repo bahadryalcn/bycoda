@@ -37,7 +37,7 @@ export function McpProjectCredentials({
     { id: 0, name: http ? "Authorization" : "", value: "" },
   ]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [errorTitle, setErrorTitle] = useState("");
   const dirty = fields.some(
     (field) => field.value || field.name !== (field.id === 0 && http ? "Authorization" : ""),
   );
@@ -60,15 +60,18 @@ export function McpProjectCredentials({
     if (operating.current) return;
     operating.current = true;
     setBusy(true);
-    setError("");
+    setErrorTitle("");
     try {
       await request(values ? "set" : "clear", name, values);
       onClose();
     } catch {
-      setError(
+      // Credential RPC failures can include submitted values. Keep this feedback safe to disclose.
+      setErrorTitle(
         projectName
           ? t("Could not update project credentials. Check the Host connection and try again.")
-          : t("Save failed"),
+          : values
+            ? t("Could not save credentials.")
+            : t("Could not remove credentials."),
       );
     } finally {
       operating.current = false;
@@ -84,7 +87,7 @@ export function McpProjectCredentials({
       names.some((key) => !valid.test(key)) ||
       new Set(http ? names.map((key) => key.toLowerCase()) : names).size !== names.length
     ) {
-      setError(t("Use a valid, unique name for each credential."));
+      setErrorTitle(t("Use a valid, unique name for each credential."));
       return;
     }
     void change(Object.fromEntries(fields.map((field, index) => [names[index], field.value])));
@@ -183,7 +186,7 @@ export function McpProjectCredentials({
             {http ? t("Add header") : t("Add variable")}
           </Button>
         </div>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {errorTitle ? <InlineError>{errorTitle}</InlineError> : null}
         <ModalActions>
           {configured ? (
             <Button
@@ -200,7 +203,7 @@ export function McpProjectCredentials({
                 })
                   .then((confirmed) => (confirmed ? change() : undefined))
                   .catch(() => {
-                    setError(
+                    setErrorTitle(
                       t(
                         "Could not update project credentials. Check the Host connection and try again.",
                       ),

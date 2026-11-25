@@ -34,6 +34,7 @@ export { accountNotificationsPort } from "./model/notificationsPort";
 export { AccountAvatar } from "./ui/AccountAvatar";
 export { AccountMenu, type AccountMenuPresence } from "./ui/AccountMenu";
 export { AccountRailRow } from "./ui/AccountRailRow";
+export { signInFailure } from "./ui/AccountSignIn";
 export { isSignedIn } from "./model/accountState";
 export {
   isPhoneConnectEnabled,

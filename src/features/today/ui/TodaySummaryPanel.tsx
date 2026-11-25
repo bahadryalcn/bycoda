@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { t } from "../../../shared/i18n";
+import { formatDate, t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -18,11 +18,7 @@ import {
   saveDailyNote,
 } from "../model/todaySummary";
 
-type SummaryState =
-  | { status: "idle" }
-  | { status: "running" }
-  | { status: "done"; text: string; saved: boolean }
-  | { status: "failed" };
+type SummaryState = { status: "idle" } | { status: "running" } | { status: "failed" };
 
 /** Opt-in summary: preview the exact request, see the estimate, then Send and Save. */
 export function SummaryPanel({
@@ -39,6 +35,12 @@ export function SummaryPanel({
   const [open, setOpen] = useState(false);
   const [includeTitles, setIncludeTitles] = useState(false);
   const [state, setState] = useState<SummaryState>({ status: "idle" });
+  const [result, setResult] = useState<{
+    text: string;
+    saved: boolean;
+    period: string;
+    language: string;
+  } | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const saveInFlight = useRef(false);
@@ -58,10 +60,20 @@ export function SummaryPanel({
     controller.current?.abort();
     const next = new AbortController();
     controller.current = next;
+    const periodLabel = t(data.period === "today" ? "Today" : "This week");
+    const context = {
+      period: data.window
+        ? `${periodLabel} (${formatDate(data.window.start)} – ${formatDate(data.window.end)})`
+        : periodLabel,
+      language,
+    };
     setState({ status: "running" });
     try {
       const text = await generateSummary(prompt, provider.run, next.signal);
-      if (!next.signal.aborted) setState({ status: "done", text, saved: false });
+      if (!next.signal.aborted) {
+        setResult({ text, saved: false, ...context });
+        setState({ status: "idle" });
+      }
     } catch {
       if (!next.signal.aborted) setState({ status: "failed" });
     }
@@ -73,7 +85,9 @@ export function SummaryPanel({
     setSaveFailed(false);
     try {
       await saveDailyNote(dailyNoteApi, text, new Date());
-      setState({ status: "done", text, saved: true });
+      setResult((current) =>
+        current && current.text === text ? { ...current, saved: true } : current,
+      );
     } catch {
       setSaveFailed(true);
     } finally {
@@ -161,25 +175,31 @@ export function SummaryPanel({
       {state.status === "failed" && (
         <Alert tone="danger">{t("The summary could not be written. Nothing was saved.")}</Alert>
       )}
-      {state.status === "done" && (
+      {result && (
         <>
+          <Text size="caption" tone="muted">
+            {t("Summary context: {p0} · {p1}", {
+              p0: result.period,
+              p1: result.language,
+            })}
+          </Text>
           <TextareaField
             label={t("Summary")}
             hideLabel
             readOnly
-            value={state.text}
+            value={result.text}
             minRows={3}
             maxRows={12}
             fieldSize="sm"
           />
           <Button
             size="sm"
-            onClick={() => save(state.text).catch(() => undefined)}
-            disabled={state.saved}
+            onClick={() => save(result.text).catch(() => undefined)}
+            disabled={result.saved || state.status === "running"}
             loading={saving}
             loadingLabel={t("Saving…")}
           >
-            {state.saved ? t("Saved to today's note") : t("Save to daily note")}
+            {result.saved ? t("Saved to today's note") : t("Save to daily note")}
           </Button>
           {saveFailed && <Alert tone="danger">{t("The note could not be saved.")}</Alert>}
         </>

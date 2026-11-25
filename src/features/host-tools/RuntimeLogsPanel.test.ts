@@ -490,7 +490,7 @@ it("filters the unified retained timeline without sending view filters to cursor
   );
   await act(async () =>
     [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
-      .find((node) => node.textContent === "INFO")!
+      .find((node) => node.textContent === "Info")!
       .click(),
   );
   await act(async () => {

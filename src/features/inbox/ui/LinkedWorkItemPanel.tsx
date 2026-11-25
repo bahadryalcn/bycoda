@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Sash } from "../../../shared/ui/Sash";
@@ -138,9 +139,12 @@ export function LinkedWorkItemPanel({
         ) : error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-(--space-10) text-center">
             <CircleX tone="danger" className="icon-lg" strokeWidth={1.75} />
-            <Alert tone="danger" className="max-w-sm">
-              {error}
-            </Alert>
+            <Alert
+              tone="danger"
+              className="max-w-sm"
+              title={t("Could not load this item.")}
+              extra={<ErrorDetails title={t("Could not load this item.")} detail={error} />}
+            />
             {openError ? <InlineError>{openError}</InlineError> : null}
             <Button
               variant="secondary"

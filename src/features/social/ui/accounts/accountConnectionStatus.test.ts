@@ -4,7 +4,13 @@ import type { SocialAccount } from "../../model/social";
 
 const NOW = Date.UTC(2026, 10, 7);
 const account = (patch: Partial<SocialAccount> = {}) =>
-  ({ id: "a1", platform: "x", connected: false, accessApproved: false, ...patch }) as SocialAccount;
+  ({
+    id: "a1",
+    platform: "x",
+    connected: false,
+    accessApproved: false,
+    ...patch,
+  }) as SocialAccount;
 
 describe("account connection status", () => {
   it("reports a connected account whose platform access is approved as connected", () => {

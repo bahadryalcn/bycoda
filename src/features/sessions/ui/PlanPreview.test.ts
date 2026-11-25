@@ -47,6 +47,7 @@ describe("plan card open control", () => {
       createElement(PlanPreview, { text, busy: true, onOpen: () => {}, onBuild: () => {} }),
     );
 
-    expect(markup).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Build/);
+    expect(markup).toMatch(/<button[^>]*aria-disabled="true"[^>]*>[\s\S]*Build/);
+    expect(markup).toContain("Wait for the plan to finish");
   });
 });

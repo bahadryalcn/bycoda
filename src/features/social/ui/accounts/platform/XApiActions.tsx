@@ -17,7 +17,11 @@ import { XListActions } from "./XListActions";
 import { XPostActions } from "./XPostActions";
 import "./x.css";
 
-type Props = { account: SocialAccount; client: SocialClient; disabled: boolean };
+type Props = {
+  account: SocialAccount;
+  client: SocialClient;
+  disabled: boolean;
+};
 
 /** Paid X API tools: reviewed writes on posts, accounts and lists, then insights and Spaces. */
 export function XApiActions({ account, client, disabled }: Props) {
@@ -33,7 +37,7 @@ export function XApiActions({ account, client, disabled }: Props) {
 function XReadouts({ account, client, disabled }: Props) {
   const [insights, setInsights] = useState<Awaited<ReturnType<typeof xReadInsights>>>();
   const [spaces, setSpaces] = useState<Awaited<ReturnType<typeof xListOwnSpaces>>>();
-  const { error, is, write } = useAccountWrite(t("Could not load data."));
+  const { error, details, is, write } = useAccountWrite(t("Could not load data."));
   const read = (operation: string, fetch: () => Promise<void>) => void write(operation, fetch);
   const enterprise = account.xApiProduct === "enterprise";
   const spaceStates: Record<string, string> = {
@@ -109,14 +113,16 @@ function XReadouts({ account, client, disabled }: Props) {
               </div>
               {space.participantCount !== undefined ? (
                 <Text as="p" size="caption" tone="muted">
-                  {t("{p0} participants", { p0: formatNumber(space.participantCount) })}
+                  {t("{p0} participants", {
+                    p0: formatNumber(space.participantCount),
+                  })}
                 </Text>
               ) : null}
             </Surface>
           ))}
         </ul>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
     </div>
   );
 }

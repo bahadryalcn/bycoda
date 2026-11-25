@@ -48,7 +48,10 @@ export type YouTubeForm = {
 export function youtubeSections(browser: boolean) {
   return [
     { value: "channel", label: t("Channel profile") },
-    { value: "videos", label: browser ? t("Videos") : t("Videos and playlists") },
+    {
+      value: "videos",
+      label: browser ? t("Videos") : t("Videos and playlists"),
+    },
     { value: "comments", label: t("Comments") },
     ...(browser ? [{ value: "community", label: t("Community posts") }] : []),
     ...(!browser ? [{ value: "subscriptions", label: t("Subscriptions") }] : []),
@@ -72,7 +75,10 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
     required = true,
   ): YouTubeFormField => ({
     ...field(key, label, undefined, required),
-    choices: options.map(([value, label]) => ({ value: value!, label: label! })),
+    choices: options.map(([value, label]) => ({
+      value: value!,
+      label: label!,
+    })),
   });
   const named = (key: string, label: string, idLabel: string): YouTubeFormField => ({
     ...field(key, label, "text", true),
@@ -85,7 +91,10 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
   const broadcastId = named("broadcastId", t("Broadcast"), t("Broadcast ID"));
   const channelId = (key: string) => field(key, t("Channel ID"), "text", true);
   const title = (required = false) => field("title", t("Title"), "text", required);
-  const description = { ...field("description", t("Description"), "textarea"), emptyAllowed: true };
+  const description = {
+    ...field("description", t("Description"), "textarea"),
+    emptyAllowed: true,
+  };
   const privacy = (required = false) =>
     choice(
       "privacy",
@@ -107,7 +116,10 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
       ],
       required,
     );
-  const later = (item: YouTubeFormField): YouTubeFormField => ({ ...item, advanced: true });
+  const later = (item: YouTubeFormField): YouTubeFormField => ({
+    ...item,
+    advanced: true,
+  });
   const madeForKids = (required = false) => yesNo("madeForKids", t("Made for kids"), required);
   const update = (
     action: string,
@@ -115,14 +127,24 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
     capability: SocialOperation,
     fields: YouTubeFormField[],
     options: Partial<YouTubeForm> = {},
-  ): YouTubeForm => ({ action, label, capability, fields, write: true, ...options });
+  ): YouTubeForm => ({
+    action,
+    label,
+    capability,
+    fields,
+    write: true,
+    ...options,
+  });
   const remove = (
     action: string,
     label: string,
     capability: SocialOperation,
     fields: YouTubeFormField[],
   ): YouTubeForm =>
-    update(action, label, capability, fields, { danger: true, fixed: { confirm: true } });
+    update(action, label, capability, fields, {
+      danger: true,
+      fixed: { confirm: true },
+    });
   switch (section) {
     case "channel":
       return [
@@ -152,7 +174,10 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
               "channel.profile.update",
               [
                 description,
-                later({ ...field("keywords", t("Keywords")), emptyAllowed: true }),
+                later({
+                  ...field("keywords", t("Keywords")),
+                  emptyAllowed: true,
+                }),
                 later(field("country", t("Country code"))),
                 field("bannerUploadId", t("Banner"), "images"),
                 later(madeForKids()),
@@ -319,7 +344,11 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             whenKind: "image",
           },
         ]),
-        { action: "youtube.community.list", label: t("List Community posts"), fields: [status] },
+        {
+          action: "youtube.community.list",
+          label: t("List Community posts"),
+          fields: [status],
+        },
         update("youtube.community.edit", t("Edit Community post"), "community.publish", [
           postId,
           status,
@@ -360,7 +389,12 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
     }
     case "analytics":
       return browser
-        ? [{ action: "youtube.monetization.status", label: t("Read monetization status") }]
+        ? [
+            {
+              action: "youtube.monetization.status",
+              label: t("Read monetization status"),
+            },
+          ]
         : [
             {
               action: "youtube.analytics.report",
@@ -397,7 +431,11 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
             ["complete", t("End broadcast")],
           ]),
         ]),
-        { action: "youtube.liveChat.list", label: t("Read live chat"), fields: [broadcastId] },
+        {
+          action: "youtube.liveChat.list",
+          label: t("Read live chat"),
+          fields: [broadcastId],
+        },
         update("youtube.liveChat.send", t("Send live chat message"), "live.chat", [
           broadcastId,
           field("message", t("Message"), "textarea", true),
@@ -431,7 +469,12 @@ export function youtubeForms(section: YouTubeSection, browser: boolean): YouTube
         { action: "youtube.superChats.list", label: t("List Super Chats") },
       ];
     case "review":
-      return [{ action: "youtube.operations.list", label: t("List YouTube operations") }];
+      return [
+        {
+          action: "youtube.operations.list",
+          label: t("List YouTube operations"),
+        },
+      ];
   }
 }
 
@@ -524,7 +567,10 @@ export const youtubeIdKeys = new Set([
 ]);
 
 export type YouTubeDraft = Record<string, string | File[]>;
-export type YouTubeRefSource = { action: string; input?: Record<string, string> };
+export type YouTubeRefSource = {
+  action: string;
+  input?: Record<string, string>;
+};
 
 /** The list action whose rows can fill an identifier field, when one exists for the draft so far. */
 export function youtubeRefSource(key: string, draft: YouTubeDraft): YouTubeRefSource | undefined {
@@ -536,14 +582,20 @@ export function youtubeRefSource(key: string, draft: YouTubeDraft): YouTubeRefSo
       return { action: "youtube.playlists.list" };
     case "playlistItemId":
       return text("playlistId")
-        ? { action: "youtube.playlists.list", input: { playlistId: text("playlistId") } }
+        ? {
+            action: "youtube.playlists.list",
+            input: { playlistId: text("playlistId") },
+          }
         : undefined;
     case "broadcastId":
       return { action: "youtube.broadcasts.list" };
     case "messageId":
     case "replyToMessageId":
       return text("broadcastId")
-        ? { action: "youtube.liveChat.list", input: { broadcastId: text("broadcastId") } }
+        ? {
+            action: "youtube.liveChat.list",
+            input: { broadcastId: text("broadcastId") },
+          }
         : undefined;
     default:
       return undefined;

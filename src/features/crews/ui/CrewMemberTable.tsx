@@ -1,11 +1,13 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useMemo, type ReactNode } from "react";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
@@ -169,12 +171,7 @@ export function CrewMemberTable({
   if (agents.length === 0)
     return (
       <div className="flex flex-col items-start gap-3 py-2">
-        <Text as="p" size="body">
-          {t(
-            "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
-          )}
-        </Text>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" startIcon={<Plus />} onClick={onAdd}>
             {t("Add members")}
           </Button>
@@ -185,6 +182,11 @@ export function CrewMemberTable({
           >
             {t("Use starter roster")}
           </Button>
+          <InfoPopover>
+            {t(
+              "A crew needs a coordinator, at least one specialist and a reviewer. Pick members from your library or start with one of each.",
+            )}
+          </InfoPopover>
         </div>
         {unfinishedNote ? <Text as="p">{unfinishedNote}</Text> : null}
       </div>
@@ -348,12 +350,13 @@ export function CrewMemberTable({
         );
       })}
       {queryActive ? (
-        <p role="status" className="sr-only">
-          {t("{p0} of {p1} members shown", {
+        <LiveText
+          className="sr-only"
+          text={t("{p0} of {p1} members shown", {
             p0: matchCount,
             p1: agents.length,
           })}
-        </p>
+        />
       ) : null}
       {issues.size === "large" ? (
         <InlineError>{t("A crew can have at most 20 members.")}</InlineError>

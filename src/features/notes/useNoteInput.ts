@@ -144,7 +144,3 @@ export function useNoteExternal(owner: NoteInputOwner, value: unknown) {
     } else owner.refresh();
   }, [owner, value, target]);
 }
-
-export function useNoteObserver(owner: NoteInputOwner, key: string): NativeInputObserver {
-  return owner.observer(key);
-}

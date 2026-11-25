@@ -172,6 +172,10 @@
 .appearance[data-surface-frame="danger"] {
   border: 1px solid var(--ui-tone-danger-border);
 }
+.surface[data-surface-frame="warning"],
+.appearance[data-surface-frame="warning"] {
+  border: 1px solid var(--ui-tone-warning-border);
+}
 .surface[data-surface-frame="accent"],
 .appearance[data-surface-frame="accent"] {
   border: 1px solid var(--ui-tone-accent-border);

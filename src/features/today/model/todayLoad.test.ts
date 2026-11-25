@@ -10,11 +10,15 @@ vi.mock("../../providers/public/providerAccounts", () => ({
   PROVIDER_ACCOUNT_PROVIDERS: ["claude"],
   providerAccounts: () => accounts,
 }));
+const mocks = vi.hoisted(() => ({
+  prices: vi.fn(async () => ({ models: [] })),
+  failAccount: true,
+}));
 vi.mock("../../providers/public/providerUsage", () => ({
   createUsagePricing: () => ({}),
-  fetchModelPrices: async () => ({ models: [] }),
+  fetchModelPrices: mocks.prices,
   fetchProviderUsage: async (_provider: string, id: string) => {
-    if (id === "b") throw new Error("unreadable");
+    if (id === "b" && mocks.failAccount) throw new Error("unreadable");
     return { rows: [] };
   },
 }));
@@ -31,6 +35,15 @@ const earlier = (since: number): TodaySources => ({
 });
 
 describe("fetchTodaySources", () => {
+  it("reports a price read failure and retains previous pricing", async () => {
+    mocks.failAccount = false;
+    mocks.prices.mockRejectedValueOnce(new Error("prices unavailable"));
+    const previous = earlier(0);
+    const { value, failed } = await fetchTodaySources("today", previous);
+    expect(failed).toBe(true);
+    expect(value.pricing).toBe(previous.pricing);
+    mocks.failAccount = true;
+  });
   it("keeps the earlier rows of an account that cannot be read now", async () => {
     const { value, failed } = await fetchTodaySources("today", earlier(0));
     expect(failed).toBe(true);

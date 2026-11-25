@@ -117,7 +117,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     }
   };
   /** `wide`: a full-width form field; otherwise a compact header control. Both keep the label. */
-  const projectPicker = (disabled: boolean, wide = false) => {
+  const projectPicker = (disabled: boolean, wide = false, canCreate = true) => {
     if (!machine) return null;
     const listed = (projects.data ?? []).map((project) => hostProjectCwd(machine, project));
     const options = [
@@ -145,20 +145,24 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
           disabled={disabled || creating}
           onChange={setScopeCwd}
           // Pinned below the list, so it stays visible however many projects there are.
-          footer={({ close }) => (
-            <Button
-              variant="ghost"
-              size="sm"
-              startIcon={<FolderPlus className="icon-sm" />}
-              onClick={() => {
-                close();
-                setCreateError("");
-                setNewName("");
-              }}
-            >
-              {t("New project…")}
-            </Button>
-          )}
+          footer={
+            canCreate
+              ? ({ close }) => (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    startIcon={<FolderPlus className="icon-sm" />}
+                    onClick={() => {
+                      close();
+                      setCreateError("");
+                      setNewName("");
+                    }}
+                  >
+                    {t("New project…")}
+                  </Button>
+                )
+              : undefined
+          }
         />
         {newName !== null ? (
           <Modal
@@ -249,7 +253,10 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
         {machineList.error ? (
           <InlineError
             details={describeRemoteError(machineList.error).details}
-            retry={{ onRetry: () => void machineList.refetch(), pending: machineList.isFetching }}
+            retry={{
+              onRetry: () => void machineList.refetch(),
+              pending: machineList.isFetching,
+            }}
           >
             {describeRemoteError(machineList.error).message}
           </InlineError>

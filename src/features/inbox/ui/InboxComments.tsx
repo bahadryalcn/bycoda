@@ -398,6 +398,7 @@ export function InboxCommentForm({
             size="sm"
             type="submit"
             disabled={!canPost}
+            disabledReason={!busy && !canPost ? t("Write a comment first.") : undefined}
             loading={busy}
             loadingLabel={t("Posting…")}
             className="shrink-0"
@@ -406,7 +407,7 @@ export function InboxCommentForm({
           </Button>
         </div>
       </div>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error}>{t("Could not post the comment.")}</InlineError> : null}
     </form>
   );
 }

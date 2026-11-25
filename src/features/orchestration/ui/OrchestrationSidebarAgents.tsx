@@ -2,6 +2,8 @@ import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useContext, useRef, useState, useSyncExternalStore } from "react";
@@ -33,7 +35,7 @@ export function OrchestrationSidebarAgents({
     orchestrator.snapshot,
     orchestrator.snapshot,
   );
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; detail: string }>();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pending = pendingAction !== null;
   const inFlight = useRef(false);
@@ -64,7 +66,7 @@ export function OrchestrationSidebarAgents({
   );
   const resumeBlocker = run?.status === "paused" ? orchestrator.resumeBlocker(leadId) : undefined;
   const leadBusy = run?.status === "paused" && orchestrator.resumeLeadBusy(leadId);
-  const perform = async (key: string, operation: () => Promise<void>) => {
+  const perform = async (key: string, label: string, operation: () => Promise<void>) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setPendingAction(key);
@@ -72,7 +74,7 @@ export function OrchestrationSidebarAgents({
     try {
       await operation();
     } catch (reason) {
-      setError(errorText(reason));
+      setError({ title: t("{p0} failed", { p0: label }), detail: errorText(reason) });
     } finally {
       inFlight.current = false;
       setPendingAction(null);
@@ -95,7 +97,6 @@ export function OrchestrationSidebarAgents({
         a second scroll region here made rows clip mid-line.
       */}
       <div
-        aria-label={t("Orchestrated agents")}
         className="-mx-2 flex touch-pan-y flex-col gap-0"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
@@ -181,9 +182,7 @@ export function OrchestrationSidebarAgents({
                     <ModelLabel model={task.model} harness={task.harness} name={model} wrap />
                   </Text>
                   {live?.error && (
-                    <Text as="p" size="micro" tone="danger">
-                      {live.error}
-                    </Text>
+                    <InlineError details={live.error}>{t("Task failed")}</InlineError>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
@@ -191,7 +190,6 @@ export function OrchestrationSidebarAgents({
                         variant="ghost"
                         type="button"
                         tooltip={t("Open this agent beside the orchestrator")}
-
                         onClick={() =>
                           workers.openDetails?.({
                             sessionId: task.sessionId,
@@ -208,11 +206,10 @@ export function OrchestrationSidebarAgents({
                       <Button
                         variant="ghost"
                         type="button"
-
                         disabled={pending}
                         loading={pendingAction === `cancel:${live.id}`}
                         onClick={() =>
-                          void perform(`cancel:${live.id}`, () =>
+                          void perform(`cancel:${live.id}`, t("Stop task"), () =>
                             orchestrator.cancelTask(leadId, live.id),
                           )
                         }
@@ -227,7 +224,19 @@ export function OrchestrationSidebarAgents({
           );
         })}
       </div>
-      {(error || run?.error) && <Alert tone="danger">{error ?? run?.error}</Alert>}
+      {error ? (
+        <Alert
+          tone="danger"
+          title={error.title}
+          extra={<ErrorDetails title={error.title} detail={error.detail} />}
+        />
+      ) : run?.error ? (
+        <Alert
+          tone="danger"
+          title={t("Orchestration failed")}
+          extra={<ErrorDetails title={t("Orchestration failed")} detail={run.error} />}
+        />
+      ) : null}
       {/* Stopping a run belongs to the composer, which stops the lead and its
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
@@ -248,12 +257,11 @@ export function OrchestrationSidebarAgents({
                   )}
             </Text>
           ) : null}
-          <div className="-mr-1.5 flex items-center justify-end gap-1">
+          <div className="-me-1.5 flex items-center justify-end gap-1">
             {resumeBlocker && actions && (
               <Button
                 variant="ghost"
                 type="button"
-
                 disabled={pending}
                 onClick={() => actions.open(resumeBlocker.id)}
               >
@@ -263,24 +271,18 @@ export function OrchestrationSidebarAgents({
             <Button
               variant="ghost"
               type="button"
-
               disabled={pending || stopping || leadBusy || !!resumeBlocker}
               loading={pendingAction === "resume"}
+              // The paragraphs above already say why Resume waits, so only the enabled state hints.
               tooltip={
-                stopping
-                  ? t("Wait for interrupted agents to stop")
-                  : leadBusy
-                    ? t("Wait for the lead's interrupted turn to finish")
-                    : resumeBlocker
-                      ? t("Stop {p0} before resuming", {
-                          p0: resumeBlocker.title || t("Another conversation"),
-                        })
-                      : t(
-                          "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
-                        )
+                stopping || leadBusy || resumeBlocker
+                  ? undefined
+                  : t(
+                      "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                    )
               }
               onClick={() =>
-                void perform("resume", () =>
+                void perform("resume", t("Resume"), () =>
                   orchestrator.start(leadId, run.allowedHarnesses, run.maxWorkers),
                 )
               }

@@ -282,6 +282,7 @@ export function EventTriggerSentence({
             emptyLabel={projectChosen ? t("No branches found") : t("Choose a project first")}
             onChange={(value) => onChange({ ...trigger, branch: value })}
           />
+          {!projectChosen ? <span>{t("Choose a project first")}</span> : null}
         </>
       ) : null}
     </>

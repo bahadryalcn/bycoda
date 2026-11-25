@@ -17,7 +17,7 @@ export function ViewerFooter({ name, children }: { name: string; children?: Reac
       as="footer"
       {...surfaceAttributes(
         { frame: "pane", edge: "top" },
-        "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-(--ui-pane-border) px-3 py-1",
+        "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 px-3 py-1",
       )}
     >
       <OverflowTooltip label={name}>

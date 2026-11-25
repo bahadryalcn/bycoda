@@ -74,7 +74,7 @@ it("renders one row per conversation with its title and status, and the unread s
   expect(rows[0].textContent).toContain("Ana");
   expect(rows[0].querySelector('[role="img"][aria-label="Unread"]')).not.toBeNull();
   expect(rows[0].textContent).not.toContain("Unread");
-  expect(rows[1].textContent).toContain("Replied");
+  expect(rows[1].querySelector('[aria-label="Replied"]')).not.toBeNull();
 });
 
 it("keeps tags beside the row button, so the row is one interactive control", () => {
@@ -82,7 +82,10 @@ it("keeps tags beside the row button, so the row is one interactive control", ()
   const rows = conversationButtons();
   expect(rows[0].querySelector("button")).toBeNull();
   expect(rows[0].textContent).not.toContain("vip");
-  expect(element.textContent).toContain("vip");
+  const tags = element.querySelector<HTMLButtonElement>('button[aria-label="Tags"]')!;
+  expect(tags).toBeDefined();
+  act(() => tags.click());
+  expect(document.body.textContent).toContain("vip");
 });
 
 it("marks the selected conversation with aria-current", () => {

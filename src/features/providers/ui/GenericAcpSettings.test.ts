@@ -107,7 +107,11 @@ it("retains the form after a failed save and allows retry", async () => {
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host save failed");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("ACP operation failed.");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Host save failed");
   expect(
     container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
   ).toBeTruthy();
@@ -159,11 +163,15 @@ it("names the remote machine in the scope line instead of its environment id", a
   expect(container.textContent).not.toContain("host-one");
 });
 
-it("shows a load failure as its message without a raw Error prefix", async () => {
+it("shows a load failure in details without a raw Error prefix", async () => {
   mock.invoke.mockRejectedValue(new Error("Host offline"));
   await render();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host offline");
-  expect(container.textContent).not.toContain("Error: Host offline");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("ACP operation failed.");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Host offline");
+  expect(document.body.textContent).not.toContain("Error: Host offline");
 });
 
 it("reveals a collapsed agent form without discarding its draft", async () => {
@@ -209,10 +217,16 @@ it.each([false, true])(
         await act(async () => reject(new Error("Remove failed")));
         expect(container.querySelector('[data-state="error"]')).not.toBeNull();
         expect(container.querySelector('[data-state="done"]')).toBeNull();
-        expect(container.textContent).toContain("Remove failed");
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+        );
+        expect(document.body.textContent).toContain("Remove failed");
       } else {
         expect(container.querySelector('[data-state="done"]')?.textContent).toContain("Removed");
-        expect(container.textContent).toContain("List refresh failed");
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
+        );
+        expect(document.body.textContent).toContain("List refresh failed");
       }
     } finally {
       clock.mockRestore();

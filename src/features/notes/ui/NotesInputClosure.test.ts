@@ -884,7 +884,7 @@ it("continues one original bulk-delete across closure for twenty undrafted rows 
     expect(
       host.querySelector<HTMLInputElement>('[aria-label="Select note: Bulk note 20"]')!.checked,
     ).toBe(true);
-    expect(document.body.textContent).toContain("Original selected row denied");
+    expect(document.body.textContent).toContain("Could not load or update notes.");
     await expect(deleteNote("still-closed-row", 1)).rejects.toThrow("Preparing checkpoint");
     expect(invoke.mock.calls.filter(([command]) => command === "notes_delete")).toHaveLength(21);
   } finally {

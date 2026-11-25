@@ -85,7 +85,10 @@ export function AccountsScreen({
         {t("Accounts")}
       </SectionLabel>
       {loadProblem ? (
-        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
+        <InlineError
+          details={data.error ? data.errorDetails : undefined}
+          retry={{ onRetry: data.reload, label: t("Try again") }}
+        >
           {loadProblem}
         </InlineError>
       ) : null}
@@ -113,14 +116,7 @@ export function AccountsScreen({
             ))}
           </ul>
         ) : snapshot ? (
-          <EmptyHint
-            message={t("No accounts yet. Connect one to start.")}
-            action={{
-              label: t("Connect account"),
-              onClick: () => setConnectOpen(true),
-              ...connectGate,
-            }}
-          />
+          <EmptyHint message={t("No accounts yet. Connect one to start.")} />
         ) : null}
       </section>
       {snapshot ? (

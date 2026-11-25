@@ -1,6 +1,6 @@
 import { popupListClassName } from "./Popover";
 import { optionalTextAttributes } from "./Text";
-import { OverflowTooltip } from "./Tooltip";
+import { Tooltip } from "./Tooltip";
 import {
   useEffect,
   useId,
@@ -108,6 +108,8 @@ export type SelectProps = Omit<
   hideLabel?: boolean;
   description?: string;
   error?: string;
+  /** Why the selector is unavailable while `disabled`: shown as its tooltip and exposed to assistive tech. */
+  disabledReason?: string;
   /** Only used with the field composition above. */
   fieldVariant?: FieldVariant;
   fieldSize?: "sm" | "md";
@@ -130,6 +132,7 @@ export function Select({
   options,
   onValueChange,
   disabled = false,
+  disabledReason,
   onOpen,
   loopNavigation = false,
   hideLabel = false,
@@ -151,6 +154,7 @@ export function Select({
   // A disabled select cannot stay open: close during render so re-enabling does not reopen it.
   if (disabled && open) setOpen(false);
   const expanded = open && !disabled;
+  const reason = disabled ? disabledReason?.trim() || undefined : undefined;
   // Keyboard cursor restarts on open / committed-value change, not on a new `options` array.
   const [active, setActive] = useKeyedActiveIndex(`${open}:${value}`, options.length, () =>
     initialActive(options, value),
@@ -241,7 +245,11 @@ export function Select({
 
   const select = (
     <div ref={root} className={composed ? "relative" : "relative max-w-52"}>
-      <OverflowTooltip label={expanded ? undefined : (selected?.label ?? value)}>
+      <Tooltip
+        label={reason ?? (expanded ? undefined : (selected?.label ?? value))}
+        when={reason ? "always" : "overflow"}
+        asChild
+      >
         <SelectTrigger
           {...triggerProps}
           controlWidth={controlWidth}
@@ -263,6 +271,7 @@ export function Select({
           data-disabled={disabled || undefined}
           disabled={disabled}
           aria-label={triggerProps["aria-label"] ?? `${label}: ${selected?.label ?? value}`}
+          aria-description={reason}
           aria-expanded={expanded}
           aria-haspopup="listbox"
           aria-controls={expanded ? listId : undefined}
@@ -299,7 +308,7 @@ export function Select({
             strokeWidth={1.75}
           />
         </SelectTrigger>
-      </OverflowTooltip>
+      </Tooltip>
       {expanded ? (
         <Popover
           id={listId}

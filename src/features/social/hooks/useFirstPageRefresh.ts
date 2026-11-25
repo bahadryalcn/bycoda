@@ -9,6 +9,7 @@ export type FirstPageRefreshOptions<Page, Param> = {
   intervalMs: number;
   /** Reads the newest page only, with the same request the query uses for its first page. */
   read: () => Promise<Page>;
+  onRefreshError?: (error: unknown) => void;
   /** Folds the fresh newest page into the loaded pages without dropping them or their cursors. */
   merge: (data: InfiniteData<Page, Param>, fresh: Page) => InfiniteData<Page, Param>;
 };
@@ -28,6 +29,7 @@ export function useFirstPageRefresh<Page, Param>({
   intervalMs,
   read,
   merge,
+  onRefreshError,
 }: FirstPageRefreshOptions<Page, Param>) {
   const cache = useQueryClient();
   usePollingRefresh({
@@ -42,7 +44,13 @@ export function useFirstPageRefresh<Page, Param>({
       if (!before?.data || before.fetchStatus !== "idle" || before.isInvalidated) return;
       // The list was just loaded (or the poll only just started): reading again would repeat it.
       if (Date.now() - before.dataUpdatedAt < intervalMs / 2) return;
-      const fresh = await read();
+      let fresh: Page;
+      try {
+        fresh = await read();
+      } catch (cause) {
+        if (isCurrent()) onRefreshError?.(cause);
+        throw cause;
+      }
       const after = cache.getQueryState<InfiniteData<Page, Param>>(queryKey);
       if (
         !isCurrent() ||
@@ -52,6 +60,7 @@ export function useFirstPageRefresh<Page, Param>({
         after.dataUpdatedAt !== before.dataUpdatedAt
       )
         return;
+      onRefreshError?.(undefined);
       cache.setQueryData<InfiniteData<Page, Param>>(queryKey, (old) =>
         old ? merge(old, fresh) : old,
       );

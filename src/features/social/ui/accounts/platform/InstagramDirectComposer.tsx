@@ -159,7 +159,10 @@ async function checkMessage(
   accountId: string,
   attempt: Attempt,
 ): Promise<SocialJob | undefined> {
-  if (attempt.job) return await client.request<SocialJob>("jobs.status", { id: attempt.job.id });
+  if (attempt.job)
+    return await client.request<SocialJob>("jobs.status", {
+      id: attempt.job.id,
+    });
   const { jobs } = await client.request<SocialJobsPage>("jobs.status", {
     page: true,
     offset: 0,
@@ -181,7 +184,11 @@ function showReceipt(store: ReturnType<typeof createComposerStore>, job: SocialJ
     return;
   }
   if (job.status === "queued" || job.status === "running" || job.status === "succeeded") {
-    store.update({ attempt: undefined, input: { ...input, text: "" }, feedback: "queued" });
+    store.update({
+      attempt: undefined,
+      input: { ...input, text: "" },
+      feedback: "queued",
+    });
   } else if (!job.dispatchedAt && (job.status === "failed" || job.status === "cancelled")) {
     store.update({ attempt: undefined, feedback: "notQueued" });
   } else {
@@ -273,7 +280,12 @@ function Composer({
       saved.input.projectId === project.value
         ? saved
         : newAttempt(input);
-    store.update({ attempt, pending: "review", feedback: undefined, error: undefined });
+    store.update({
+      attempt,
+      pending: "review",
+      feedback: undefined,
+      error: undefined,
+    });
     try {
       const draft = await prepareDraft(client, account.id, store, attempt);
       if (!mounted.current) return;
@@ -295,7 +307,9 @@ function Composer({
         { id: draft.id, reviewedDraft: draft },
         attempt.requestIds.approve,
       );
-      store.update({ attempt: { ...store.read().attempt!, sendAttempted: true } });
+      store.update({
+        attempt: { ...store.read().attempt!, sendAttempted: true },
+      });
       const job = await client.request<SocialJob>(
         "messages.send",
         { id: draft.id },

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -68,9 +67,9 @@ export function NestedSubagentList({
                 ) : null}
               </span>
               {agent.needsInput ? (
-                <Badge size="xs" tone="warning" appearance="subtle">
+                <Text size="caption" tone="warning">
                   {t("Needs input")}
-                </Badge>
+                </Text>
               ) : (
                 <Text size="caption" tone="secondary">
                   {statusWord[agent.status]}

@@ -3,6 +3,7 @@ import {
   createRefreshScheduler,
   type RefreshScheduler,
 } from "../../automations/public/refreshScheduler";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { BrowserViewFrame, BrowserViewRead } from "../model/socialActions";
 import type { SocialClient } from "../model/socialClient";
 
@@ -10,6 +11,12 @@ import type { SocialClient } from "../model/socialClient";
 export const LIVE_VIEW_POLL_MS = 700;
 /** Longest wait after repeated failures; the owner is watching, so this stays short. */
 export const LIVE_VIEW_MAX_BACKOFF_MS = 15_000;
+
+function errorDetails(cause: unknown): string | undefined {
+  return cause === undefined
+    ? undefined
+    : presentRemoteError(cause, { explicit: true }) || undefined;
+}
 
 export type LiveBrowserViewStatus = "connecting" | "live" | "waiting" | "error";
 
@@ -19,6 +26,8 @@ type View = {
   accountId: string;
   frame: BrowserViewFrame | null;
   status: LiveBrowserViewStatus;
+  /** Raw text of the failure behind `status: "error"`. */
+  details?: string;
 };
 
 /**
@@ -29,18 +38,24 @@ type View = {
  * saw (input) for the view it was sent to, and is ignored once the view moved on.
  */
 export function useLiveBrowserView(client: SocialClient, accountId: string) {
-  const [view, setView] = useState<View>({ client, accountId, frame: null, status: "connecting" });
+  const [view, setView] = useState<View>({
+    client,
+    accountId,
+    frame: null,
+    status: "connecting",
+  });
   const schedulerRef = useRef<RefreshScheduler | null>(null);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the Host frame reads attached while the panel is mounted and visible, and restarts them for a new client or account.
   useEffect(() => {
     // Sequence of the picture on screen; the Host answers "unchanged" instead of resending it.
     let seen: number | undefined;
-    const publish = (patch: Partial<Pick<View, "frame" | "status">>) =>
+    const publish = (patch: Partial<Pick<View, "frame" | "status" | "details">>) =>
       setView((prev) => ({
         ...(prev.client === client && prev.accountId === accountId
           ? prev
           : { client, accountId, frame: null, status: "connecting" as const }),
+        details: undefined,
         ...patch,
       }));
     const scheduler = createRefreshScheduler({
@@ -50,7 +65,7 @@ export function useLiveBrowserView(client: SocialClient, accountId: string) {
           next = await client.browserViewFrame(accountId, seen);
         } catch (cause) {
           // The scheduler backs off on the rejection; the last picture stays on screen.
-          if (isCurrent()) publish({ status: "error" });
+          if (isCurrent()) publish({ status: "error", details: errorDetails(cause) });
           throw cause;
         }
         if (!isCurrent()) return;
@@ -94,10 +109,10 @@ export function useLiveBrowserView(client: SocialClient, accountId: string) {
     scheduler.refresh().catch(() => undefined);
   };
 
-  const markError = (forClient: SocialClient, forAccountId: string) =>
+  const markError = (forClient: SocialClient, forAccountId: string, cause?: unknown) =>
     setView((prev) =>
       prev.client === forClient && prev.accountId === forAccountId
-        ? { ...prev, status: "error" }
+        ? { ...prev, status: "error", details: errorDetails(cause) }
         : prev,
     );
 
@@ -105,6 +120,7 @@ export function useLiveBrowserView(client: SocialClient, accountId: string) {
   return {
     frame: current ? view.frame : null,
     status: current ? view.status : ("connecting" as const),
+    details: current ? view.details : undefined,
     retry,
     markError,
   };

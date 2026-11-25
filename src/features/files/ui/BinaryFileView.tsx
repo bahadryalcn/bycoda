@@ -3,7 +3,6 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { DocumentMessage } from "./DocumentMessage";
-import { reportFailure } from "../../../shared/ui/reportFailure";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +16,6 @@ import {
   copyFileToClipboard,
   prepareLocalFile,
   readBinaryFile,
-  revealPath,
 } from "../../../platform/tauri/fs";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useImageZoom } from "../../../shared/hooks/useImageZoom";
@@ -28,6 +26,7 @@ import { useGracedFailure } from "../../connections/public/transientFailure";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
 import { OpenInDefaultAppButton, ViewerFooter } from "./ViewerFooter";
 import { useDefaultAppOpen } from "./useDefaultAppOpen";
+import { useRevealFile } from "./useRevealFile";
 
 type Props = { path: string; cwd: string };
 
@@ -156,6 +155,7 @@ export function BinaryFileView({ path }: Props) {
     scope: path,
   });
   const loadShownCentrally = useConnectionErrorShownCentrally(visibleError);
+  const { reveal, failure: revealFailure } = useRevealFile(path);
 
   if (visibleError) {
     if (loadShownCentrally) return null;
@@ -165,11 +165,12 @@ export function BinaryFileView({ path }: Props) {
         error
         detail={visibleError}
         onRetry={reload}
-        action={{
-          label: t("Reveal"),
-          onClick: () => void revealPath(path).catch((e) => console.warn("Reveal failed", e)),
-        }}
-      />
+        action={{ label: t("Reveal"), onClick: () => void reveal() }}
+      >
+        {revealFailure ? (
+          <InlineError details={revealFailure}>{t("Couldn’t open the file location")}</InlineError>
+        ) : null}
+      </DocumentMessage>
     );
   }
   if (state.status === "loading" || state.status === "error") {
@@ -235,7 +236,7 @@ function ImageView({ path, url, size }: { path: string; url: string; size: numbe
       <div
         ref={scrollRef}
         tabIndex={0}
-        role="group"
+        role="region"
         aria-label={t("Image preview: {p0}", { p0: basename(path) })}
         {...imageZoom.bindings}
         onDoubleClick={(event) => {
@@ -283,13 +284,13 @@ function ImageView({ path, url, size }: { path: string; url: string; size: numbe
         />
       </div>
       {copyError ? (
-        <InlineError inset="row" className="shrink-0 break-words">
-          {copyError}
+        <InlineError inset="row" className="shrink-0 break-words" details={copyError}>
+          {t("Couldn’t copy the file")}
         </InlineError>
       ) : null}
       {openAction.error ? (
-        <InlineError inset="row" className="shrink-0 break-words">
-          {openAction.error}
+        <InlineError inset="row" className="shrink-0 break-words" details={openAction.error}>
+          {t("Couldn’t open the file in its default app")}
         </InlineError>
       ) : null}
       <ViewerFooter name={basename(path)}>
@@ -370,24 +371,7 @@ function UnsupportedFile({ path, size }: { path: string; size: number }) {
   const openOwner = useMemo(() => ({ path }), [path]);
   const openAction = useDefaultAppOpen(openOwner, path);
   const localCopy = !!parseRemotePath(path) && !localExplorerPath(path);
-  const [revealing, setRevealing] = useState(false);
-  const [error, setError] = useState<string>();
-  const revealRunning = useRef(false);
-  const reveal = async () => {
-    if (revealRunning.current) return;
-    revealRunning.current = true;
-    setRevealing(true);
-    setError(undefined);
-    try {
-      await revealPath(path);
-    } catch (error) {
-      await reportFailure(error, { toast: { show: ({ message }) => setError(message) } });
-    } finally {
-      revealRunning.current = false;
-      setRevealing(false);
-    }
-  };
-  const failure = error ?? openAction.error;
+  const { reveal, revealing, failure: revealFailure } = useRevealFile(path);
   return (
     <DocumentMessage
       title={t("{p0} can’t be previewed", { p0: basename(path) })}
@@ -421,8 +405,15 @@ function UnsupportedFile({ path, size }: { path: string; size: number }) {
       <Text as="span" size="secondary" tone="secondary" className="break-words">
         {`${formatFileSize(size)} · ${t("Not an image")}`}
       </Text>
-      {failure ? (
-        <InlineError className="mt-2 justify-center break-words">{failure}</InlineError>
+      {revealFailure ? (
+        <InlineError className="mt-2 justify-center break-words" details={revealFailure}>
+          {t("Couldn’t open the file location")}
+        </InlineError>
+      ) : null}
+      {openAction.error ? (
+        <InlineError className="mt-2 justify-center break-words" details={openAction.error}>
+          {t("Couldn’t open the file in its default app")}
+        </InlineError>
       ) : null}
     </DocumentMessage>
   );

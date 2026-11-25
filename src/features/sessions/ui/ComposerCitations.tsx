@@ -29,6 +29,7 @@ export function ComposerCitations({
   inlineText,
   openFileComment,
   onCloseFileComment,
+  drafts,
 }: {
   citations: readonly ComposerCitation[];
   disabled?: boolean;
@@ -37,6 +38,7 @@ export function ComposerCitations({
   inlineText?: string;
   openFileComment?: { id: string; anchor: HTMLElement };
   onCloseFileComment?: () => void;
+  drafts?: { current: Map<string, string> };
 }) {
   const t = useT();
   const [editing, setEditing] = useState<{
@@ -47,12 +49,16 @@ export function ComposerCitations({
     openFileComment
       ? {
           ...openFileComment,
-          comment: citations.find((c) => c.id === openFileComment.id)?.comment ?? "",
+          comment:
+            drafts?.current.get(openFileComment.id) ??
+            citations.find((c) => c.id === openFileComment.id)?.comment ??
+            "",
         }
       : null,
   );
   const [error, setError] = useState("");
-  const commentDrafts = useRef(new Map<string, string>());
+  const localDrafts = useRef(new Map<string, string>());
+  const commentDrafts = drafts ?? localDrafts;
   const editingCitation = citations.find((c) => c.id === editing?.id);
   const inlineFileComments =
     inlineText && citations.some((citation) => citation.file)
@@ -74,11 +80,13 @@ export function ComposerCitations({
       comment: commentDrafts.current.get(citation.id) ?? citation.comment,
       anchor,
     });
-  const removeCitation = (index: number) =>
+  const removeCitation = (index: number) => {
+    commentDrafts.current.delete(citations[index].id);
     onChange(
       citations.filter((_, i) => i !== index),
       index,
     );
+  };
   const preview = (citation: ChatCitation, navigate = false) => {
     if (
       !highlightChatCitation(citation, {

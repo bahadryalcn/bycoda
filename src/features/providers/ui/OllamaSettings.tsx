@@ -8,6 +8,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import type { OllamaModel, OllamaStatus } from "../../../shared/model/host-contracts/ollama";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Progress } from "../../../shared/ui/Progress";
 import { RefreshCw } from "../../../shared/ui/icons";
@@ -171,11 +172,11 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
   const feedback = (() => {
     if (loadError)
       return (
-        <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: () => void load() }}>
-          {loadError}
-        </SettingsFeedback>
+        <InlineError details={loadError} retry={{ onRetry: () => void load() }}>
+          {t("Could not load Ollama.")}
+        </InlineError>
       );
-    if (error) return <SettingsFeedback state="error">{error}</SettingsFeedback>;
+    if (error) return <InlineError details={error}>{t("Ollama operation failed.")}</InlineError>;
     return undefined;
   })();
 

@@ -54,6 +54,10 @@ async function existingJob(call: RequestFn, operation: InboxReplyOperation) {
   return result.jobs.find((job) => job.draftId === operation.draft!.id);
 }
 
+export function canEditAfterReceipt(status: SocialJob["status"] | undefined): boolean {
+  return status === "failed" || status === "cancelled";
+}
+
 /** Receipt replay uses the exact request and reviewed draft; Host still owns every gate. */
 export function resumeInboxReply(call: RequestFn, operation: InboxReplyOperation): Promise<void> {
   if (operation.pending) return operation.pending;
@@ -86,7 +90,7 @@ export function resumeInboxReply(call: RequestFn, operation: InboxReplyOperation
         operation.requests.send,
       );
     }
-    if (operation.job && ["failed", "cancelled", "review"].includes(operation.job.status)) return;
+    if (canEditAfterReceipt(operation.job?.status) || operation.job?.status === "review") return;
     operation.queued = true;
     await call(
       "inbox.setStatus",

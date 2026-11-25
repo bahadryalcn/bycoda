@@ -557,9 +557,11 @@ describe("orchestration composer and card", () => {
     expect(start.getAttribute("aria-disabled")).toBe("true");
     expect(start.getAttribute("aria-busy")).toBe("true");
     await act(async () => fail(new Error("Approval unavailable")));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Approval unavailable",
-    );
+    // A translated title leads; the raw Host text sits behind Details, not in the line.
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not start orchestration");
+    expect(alert?.textContent).not.toContain("Approval unavailable");
+    expect(alert?.textContent).toContain("Details");
     expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
       "Retained instructions\n".repeat(20),
     );
@@ -1052,7 +1054,8 @@ describe("orchestration composer and card", () => {
       ),
     );
 
-    expect(button("Resume").hasAttribute("data-tooltip-owner")).toBe(true);
+    // The paragraph below already names the blocker, so Resume carries no second hint.
+    expect(button("Resume").hasAttribute("data-tooltip-owner")).toBe(false);
     expect(container.textContent).toContain(
       "Investigating the failure is still running in this project.",
     );

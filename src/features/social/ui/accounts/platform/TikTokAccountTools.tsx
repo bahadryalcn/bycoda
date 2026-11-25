@@ -36,7 +36,9 @@ export function TikTokAccountTools({
   const t = useT();
   const browser = account.connection === "browser";
   const [section, setSection] = useState("profile");
-  const [changeDraft, setChangeDraft] = useState<TikTokChange>({ kind: "follow" });
+  const [changeDraft, setChangeDraft] = useState<TikTokChange>({
+    kind: "follow",
+  });
   const [businessStatus, setBusinessStatus] = useState<TikTokBusinessStatus>();
   const props = { client, accountId: account.id, disabled };
   // Eleven sections would wrap into two tab rows, so related ones share a tab and a view switch.
@@ -104,7 +106,9 @@ export function TikTokAccountTools({
       onOpenChange={(open) => {
         if (open && browser && !disabled && businessStatus === undefined)
           client
-            .request<TikTokBusinessStatus>("tiktok.business.status", { accountId: account.id })
+            .request<TikTokBusinessStatus>("tiktok.business.status", {
+              accountId: account.id,
+            })
             .then((status) => setBusinessStatus((current) => current ?? status))
             .catch(() => undefined);
       }}

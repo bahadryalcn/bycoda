@@ -1,5 +1,6 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -53,9 +54,11 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [tag, setTag] = useState("");
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; details: string }>();
   const [result, setResult] = useState<BulkResult>();
 
+  const reasonId = useId();
+  // Load sequence choices for this dialog and ignore results after close.
   useEffect(() => {
     if (action !== "sequence") return;
     let active = true;
@@ -65,7 +68,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
         if (active) setSequences(listResult.items);
       })
       .catch((err: unknown) => {
-        if (active) setError(errorMessage(err));
+        if (active) setError({ title: t("Could not read sequences."), details: errorMessage(err) });
       });
     return () => {
       active = false;
@@ -99,7 +102,10 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
       }
       onDone();
     } catch (err) {
-      setError(presentRemoteError(err, { explicit: true }));
+      setError({
+        title: t("Could not update the selected people."),
+        details: presentRemoteError(err, { explicit: true }),
+      });
     } finally {
       setRunning(false);
     }
@@ -112,9 +118,13 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
       onClose={() => {
         if (!running) onClose();
       }}
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
+      footerStart={
+        error ? (
+          <InlineError details={redactDiagnosticText(error.details)}>{error.title}</InlineError>
+        ) : undefined
+      }
       footer={
-        <ModalActions reason={result || error ? undefined : reason}>
+        <ModalActions reason={result ? undefined : reason} reasonId={reasonId}>
           <Button variant="ghost" disabled={running} onClick={onClose}>
             {result ? t("Done") : t("Cancel")}
           </Button>
@@ -122,8 +132,8 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
             <Button
               variant="primary"
               loading={running}
-              disabled={Boolean(reason)}
-              disabledReason={reason}
+              aria-disabled={!!reason || undefined}
+              aria-describedby={reason ? reasonId : undefined}
               onClick={() => void run().catch(() => undefined)}
             >
               {titleOf(action)}
@@ -189,7 +199,9 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
                 const name = people.find((person) => person.id === item.personId)?.name;
                 return (
                   <li key={item.personId}>
-                    {name ? t("{p0}: {p1}", { p0: name, p1: item.reason }) : item.reason}
+                    <InlineError details={redactDiagnosticText(item.reason)}>
+                      {t("{p0}: {p1}", { p0: name ?? item.personId, p1: t("Failed") })}
+                    </InlineError>
                   </li>
                 );
               }}

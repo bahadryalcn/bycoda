@@ -66,7 +66,7 @@ export function EmailAccountDialog({
   const formId = useId();
   const reasonId = useId();
   const [draft, setDraft] = useState<EmailDraft>(EMPTY);
-  const { error, is, write } = useAccountWrite(
+  const { error, details, is, write } = useAccountWrite(
     t("The email account could not be saved. Try again."),
   );
   const update = (patch: Partial<EmailDraft>) => setDraft((current) => ({ ...current, ...patch }));
@@ -125,7 +125,10 @@ export function EmailAccountDialog({
         <Select
           label={t("Email provider")}
           value={draft.kind}
-          options={EMAIL_KINDS.map((kind) => ({ value: kind, label: kindText(kind) }))}
+          options={EMAIL_KINDS.map((kind) => ({
+            value: kind,
+            label: kindText(kind),
+          }))}
           onValueChange={(value) => update({ kind: value as EmailKind, secret: "" })}
         />
         <TextField
@@ -179,7 +182,7 @@ export function EmailAccountDialog({
           onChange={(event) => update({ secret: event.currentTarget.value })}
         />
         {error ? (
-          <InlineError details={error}>
+          <InlineError details={details}>
             {t("The email account could not be saved. Try again.")}
           </InlineError>
         ) : null}

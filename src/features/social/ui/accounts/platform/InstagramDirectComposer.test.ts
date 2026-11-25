@@ -91,13 +91,21 @@ function fixture() {
     kind: "message",
     status: "queued",
   };
-  const browserInstagramRecipient = vi.fn(async () => ({ handle: "ada", platformId: "71" }));
+  const browserInstagramRecipient = vi.fn(async () => ({
+    handle: "ada",
+    platformId: "71",
+  }));
   const send = vi.fn(async () => job);
   const jobs = vi.fn(async () => ({ jobs: [job] }));
   const request = vi.fn(async (action: string, _input: unknown, _requestId?: string) => {
     switch (action) {
       case "contacts.upsert":
-        return { id: "contact-1", accountId: "ig", platformId: "71", projectIds: ["p1"] };
+        return {
+          id: "contact-1",
+          accountId: "ig",
+          platformId: "71",
+          projectIds: ["p1"],
+        };
       case "messages.draft":
         return draft;
       case "drafts.approve":
@@ -176,7 +184,10 @@ it("retains an uncertain send on return and checks only the original job", async
 
 it("stops before writing a contact if the browser resolves a different username", async () => {
   const { browserInstagramRecipient, client, request } = fixture();
-  browserInstagramRecipient.mockResolvedValue({ handle: "different", platformId: "71" });
+  browserInstagramRecipient.mockResolvedValue({
+    handle: "different",
+    platformId: "71",
+  });
   render(client);
   typeMessage();
   await act(async () => button("Review Instagram message").click());

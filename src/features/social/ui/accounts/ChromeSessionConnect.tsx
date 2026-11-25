@@ -4,11 +4,16 @@ import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import type { SocialClient } from "../../model/socialClient";
 import type { SocialChromeTab } from "../../model/socialBrowser";
 import { useAccountWrite } from "./useAccountWrite";
+
+function tabLabel(tab: SocialChromeTab): string {
+  return tab.title ? `${tab.title} (${tab.site})` : tab.site;
+}
 
 /** Explicit owner consent and tab selection for the ordinary, already signed-in Chrome profile. */
 export function ChromeSessionConnect({
@@ -28,7 +33,9 @@ export function ChromeSessionConnect({
   const [tabs, setTabs] = useState<SocialChromeTab[]>();
   const [selected, setSelected] = useState("");
   const [connected, setConnected] = useState(false);
-  const { error, is, write } = useAccountWrite(t("Could not connect to Chrome. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("Could not connect to Chrome. Try again."),
+  );
   const busy = is("chrome:tabs") || is("chrome:connect");
   const find = () =>
     void write("chrome:tabs", async () => {
@@ -89,14 +96,19 @@ export function ChromeSessionConnect({
           >
             {t("Find Chrome tabs")}
           </Button>
-          {tabs?.length ? (
+          {tabs?.length === 1 ? (
+            <Text as="span" size="caption" tone="muted" truncate>
+              {tabLabel(tabs[0]!)}
+            </Text>
+          ) : null}
+          {tabs && tabs.length > 1 ? (
             <Select
               label={t("Chrome tab")}
               value={selected}
               disabled={disabled || busy}
               options={tabs.map((tab) => ({
                 value: tab.id,
-                label: tab.title ? `${tab.title} (${tab.site})` : tab.site,
+                label: tabLabel(tab),
               }))}
               onValueChange={(value) => {
                 setSelected(value);
@@ -130,7 +142,7 @@ export function ChromeSessionConnect({
             )}
           </InlineMessage>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={details}>{error}</InlineError> : null}
       </div>
     </Disclosure>
   );

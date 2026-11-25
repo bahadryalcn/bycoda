@@ -5,26 +5,48 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { memo, useRef, useState } from "react";
-import { t, getLocale } from "../../../shared/i18n/technical";
+import { t, formatDate } from "../../../shared/i18n";
+import { Globe, Terminal } from "../../../shared/ui/icons";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import type { OpenFileFn } from "../../search/model/search";
 import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "../runtimeLogPresentation";
 import { runtimeLogFileTarget, type RuntimeLogGroup } from "../runtimeLogsModel";
 import { ObjectInspector } from "./RuntimeLogObjectInspector";
 
-export const LEVEL_LABELS: Record<RuntimeLogDisplayLevel, string> = {
-  error: "ERROR",
-  warn: "WARN",
-  info: "INFO",
-  debug: "DEBUG",
-  http: "HTTP",
-  success: "SUCCESS",
-};
+/** Level names the user reads in the row and the level filter; the raw level stays in log text. */
+export function levelLabel(level: RuntimeLogDisplayLevel): string {
+  switch (level) {
+    case "error":
+      return t("Error");
+    case "warn":
+      return t("Warning");
+    case "info":
+      return t("Info");
+    case "debug":
+      return t("Debug");
+    case "success":
+      return t("Success");
+    case "http":
+      return "HTTP";
+  }
+}
+
+/** Seconds-resolution 24-hour clock for an event timestamp; empty when the date is invalid. */
+function clockTime(timestamp: number | string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return formatDate(date, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+}
 
 const LEVEL_TONES: Record<RuntimeLogDisplayLevel, TextTone> = {
   error: "danger",
@@ -37,14 +59,12 @@ const LEVEL_TONES: Record<RuntimeLogDisplayLevel, TextTone> = {
 
 export const RuntimeLogRow = memo(function RuntimeLogRow({
   group,
-  sourceLabel,
   selectedCount,
   onSelect,
   cwd,
   onOpenFile,
 }: {
   group: RuntimeLogGroup;
-  sourceLabel: string;
   selectedCount: number;
   onSelect: (group: RuntimeLogGroup, checked: boolean) => void;
   cwd: string;
@@ -53,12 +73,16 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
   const [expanded, setExpanded] = useState(false);
   const checkbox = useRef<HTMLInputElement>(null);
   const entry = group.entry;
-  const time = new Date(entry.timestamp).toLocaleTimeString(getLocale(), { hour12: false });
+  const time = clockTime(entry.timestamp);
   const file = runtimeLogFileTarget(cwd, entry.location);
   return (
     <li
       {...surfaceAttributes(
-        { variant: selectedCount > 0 ? "selected" : undefined, frame: "pane", edge: "block-end" },
+        {
+          variant: selectedCount > 0 ? "selected" : undefined,
+          frame: "pane",
+          edge: "block-end",
+        },
         "runtime-log-row",
       )}
       data-level={runtimeLogDisplayLevel(entry)}
@@ -86,15 +110,20 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
               as="div"
               className="runtime-log-meta"
             >
-              <Code
-                size="caption"
-                tone={entry.source === "browser" ? "info" : "feature"}
-                weight="medium"
-                className="runtime-log-kind"
-                data-source={entry.source}
-              >
-                {entry.source === "browser" ? "[BROWSER]" : "[SERVER]"}
-              </Code>
+              <Tooltip label={entry.source === "browser" ? t("Browser") : t("Server")}>
+                <span
+                  className="runtime-log-kind"
+                  data-source={entry.source}
+                  role="img"
+                  aria-label={entry.source === "browser" ? t("Browser") : t("Server")}
+                >
+                  {entry.source === "browser" ? (
+                    <Globe className="icon-xs" aria-hidden />
+                  ) : (
+                    <Terminal className="icon-xs" aria-hidden />
+                  )}
+                </span>
+              </Tooltip>
               <Code>
                 <Timestamp
                   value={entry.timestamp}
@@ -109,26 +138,17 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                 tone={LEVEL_TONES[runtimeLogDisplayLevel(entry)]}
                 className="runtime-log-level"
               >
-                {LEVEL_LABELS[runtimeLogDisplayLevel(entry)]}
+                {levelLabel(runtimeLogDisplayLevel(entry))}
               </Text>
-              <OverflowTooltip label={sourceLabel}>
-                <Text
-                  size="inherit"
-                  tone="secondary"
-                  leading="inherit"
-                  truncate
-                  className="runtime-log-source-label"
-                >
-                  {sourceLabel}
-                </Text>
-              </OverflowTooltip>
               {group.entries.length > 1 ? (
                 <Badge
                   variant="count"
                   size="xs"
                   tone="neutral"
                   className="runtime-log-count"
-                  label={t("{p0} repeated events", { p0: group.entries.length })}
+                  label={t("{p0} repeated events", {
+                    p0: group.entries.length,
+                  })}
                 >
                   {group.entries.length}
                 </Badge>
@@ -207,7 +227,7 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                 className="runtime-logs-hint"
               >
                 {t("First seen {p0}; last seen {p1}.", {
-                  p0: new Date(group.firstTimestamp).toLocaleTimeString(getLocale()),
+                  p0: clockTime(group.firstTimestamp),
                   p1: time,
                 })}
               </Text>

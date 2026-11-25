@@ -297,7 +297,12 @@ function ConversationHostTools({
       renewControl: (deviceId, leaseId) => request("control.renew", { deviceId, leaseId }),
       inspect: (deviceId, leaseId) => request("inspect", { deviceId, leaseId }),
       action: (deviceId, action, leaseId) =>
-        request("action", { deviceId, action, leaseId, requestId: crypto.randomUUID() }),
+        request("action", {
+          deviceId,
+          action,
+          leaseId,
+          requestId: crypto.randomUUID(),
+        }),
     };
   }, [cwd, target]);
   // Keep explicitly opened views on their original route when the picker merges their rows.
@@ -355,7 +360,12 @@ function ConversationHostTools({
           description: explicitLocalProjectView ? undefined : t("Project host"),
         },
         ...(!projectIsLocal
-          ? [{ value: localRoute ? targetValue : "local", label: t("This computer") }]
+          ? [
+              {
+                value: localRoute ? targetValue : "local",
+                label: t("This computer"),
+              },
+            ]
           : []),
         ...machines
           .filter((machine) => machine !== projectMachine && !isLocalSyncMachine(machine))
@@ -495,9 +505,6 @@ function ConversationHostTools({
                   <Text size="inherit" tone="primary" truncate className="host-tools-host-name">
                     {ownerLabel}
                   </Text>
-                  <Text size="inherit" className="host-tools-host-role">
-                    {t("Project host")}
-                  </Text>
                 </span>
               </Tooltip>
             )}
@@ -544,15 +551,33 @@ function ConversationHostTools({
               }}
               items={[
                 ...(onExpand
-                  ? [{ kind: "item" as const, id: "expand", label: t("Expand / restore") }]
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "expand",
+                        label: t("Expand / restore"),
+                      },
+                    ]
                   : []),
-                { kind: "item", id: "layout", label: t("Place in layout") },
+                { kind: "item", id: "layout", label: t("Move to layout") },
                 ...(tab === "logs" && !onlyTab
-                  ? [{ kind: "item" as const, id: "layout-logs", label: t("Separate Logs panel") }]
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "layout-logs",
+                        label: t("Move Logs to layout"),
+                      },
+                    ]
                   : []),
                 { kind: "item", id: "window", label: t("Open in new window") },
                 ...(tab === "logs" && !onlyTab
-                  ? [{ kind: "item" as const, id: "window-logs", label: t("Logs in new window") }]
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "window-logs",
+                        label: t("Open Logs in new window"),
+                      },
+                    ]
                   : []),
               ]}
             />
@@ -575,7 +600,9 @@ function ConversationHostTools({
           />
         ) : null}
         {hostScoped && target.kind === "machine" && !selectedMachine && !machinesLoading ? (
-          <Alert tone="danger">{t("Selected machine unavailable")}</Alert>
+          <Alert tone="danger" title={t("Selected machine unavailable")}>
+            {t("Choose another machine.")}
+          </Alert>
         ) : null}
         <div
           id={`${panelId}-panel`}
@@ -609,7 +636,12 @@ function ConversationHostTools({
                   attachDeviceImageAcrossWindows(
                     cwd,
                     composerSessionId ?? sessionId,
-                    { device, computer: { label: hostLabel, target }, frame, comment },
+                    {
+                      device,
+                      computer: { label: hostLabel, target },
+                      frame,
+                      comment,
+                    },
                     composerWindow,
                     operation,
                   )

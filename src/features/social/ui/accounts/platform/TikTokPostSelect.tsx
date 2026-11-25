@@ -33,7 +33,10 @@ export function TikTokPostSelect({
       disabled: true,
     },
     ...(value && !posts.some((post) => post.id === value) ? [{ value, label: value }] : []),
-    ...posts.map((post) => ({ value: post.id, label: post.text?.trim() || post.id })),
+    ...posts.map((post) => ({
+      value: post.id,
+      label: post.text?.trim() || post.id,
+    })),
   ];
   return (
     <Select

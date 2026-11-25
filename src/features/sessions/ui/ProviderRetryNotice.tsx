@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { useRetryCountdown } from "./useRetryCountdown";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { sessionRetryNotice } from "../model/sessionIssue";
 import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
@@ -47,6 +48,12 @@ export function ProviderRetryNotice({
     remaining === undefined
       ? undefined
       : t("Retrying in {p0}", { p0: formatDuration(Math.ceil(remaining / 1000) * 1000) });
+  // The counter ("2/5") is the notice's own detail; any other text is the provider's raw message.
+  const counter = notice.detail && /^\d+\/\d+$/.test(notice.detail) ? notice.detail : undefined;
+  const rawMessage = counter ? undefined : notice.detail;
+  const title = t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", {
+    p0: provider,
+  });
   const pending = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -57,10 +64,9 @@ export function ProviderRetryNotice({
   return (
     <TranscriptNotice
       kind="retry"
-      title={t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", { p0: provider })}
-      detail={
-        countdown ? (notice.detail ? `${countdown} · ${notice.detail}` : countdown) : notice.detail
-      }
+      title={title}
+      detail={countdown ? (counter ? `${countdown} · ${counter}` : countdown) : counter}
+      extra={rawMessage ? <ErrorDetails title={title} detail={rawMessage} /> : undefined}
       actions={
         <>
           <NoticeActionButton

@@ -1,3 +1,4 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
@@ -18,6 +19,9 @@ import type { SocialScreenProps } from "../shell/screens";
 import { ContentCalendar } from "./ContentCalendar";
 import { ContentEditor, type EditorOutcome } from "./ContentEditor";
 import { ContentList, type ContentListStatus } from "./ContentList";
+import { ContentProgramReview } from "./ContentProgramReview";
+import { localDateTimeInput } from "../../model/socialProgramForm";
+import { socialQueryScope } from "../../model/socialQuery";
 import {
   calendarEntries,
   dayKey,
@@ -50,8 +54,14 @@ export function ContentScreen({
   onNavigate,
 }: SocialScreenProps) {
   const confirmation = useConfirm();
+  const reviewScope = JSON.stringify([...socialQueryScope(client), projectId]);
+  const [programReview, setProgramReview] = useState<{ scope: string; id: string }>();
+  const reviewId = programReview?.scope === reviewScope ? programReview.id : undefined;
   const editor = useSocialMediaEditor(client);
-  const [view, setView] = useState<CalendarView>("week");
+  const [views, setViews] = useState<Record<string, CalendarView>>({});
+  const view = views[reviewScope] ?? "week";
+  const setView = (next: CalendarView) =>
+    setViews((current) => ({ ...current, [reviewScope]: next }));
   const [anchor, setAnchor] = useState(() => Date.now());
   // The calendar asks the Host for the posts scheduled in the days it shows, not for the newest pages.
   const data = useContentData(
@@ -85,12 +95,19 @@ export function ContentScreen({
       : undefined;
 
   const openNew = (day?: number) => {
+    let scheduledAt = "";
+    if (day !== undefined) {
+      const now = Date.now();
+      const preferred = new Date(`${dayKey(day)}T09:00`).getTime();
+      const nextMinute = (Math.floor(now / 60_000) + 1) * 60_000;
+      const start = Math.max(preferred, nextMinute);
+      if (dayKey(start) !== dayKey(day)) return;
+      scheduledAt = localDateTimeInput(start);
+    }
     setNotice(undefined);
     if (!dirty) {
       workspace.loadDraft(
-        day === undefined
-          ? emptyDraft()
-          : { ...emptyDraft(), when: "later", scheduledAt: `${dayKey(day)}T09:00` },
+        day === undefined ? emptyDraft() : { ...emptyDraft(), when: "later", scheduledAt },
       );
     }
     setOpen(true);
@@ -132,11 +149,16 @@ export function ContentScreen({
     }));
   const done = (outcome: EditorOutcome) => {
     workspace.reset();
+    if (outcome === "program") setView("list");
     setNotice({ tone: "success", text: OUTCOME_TEXT[outcome]() });
     data.refetch();
   };
 
-  const isEmpty = !!snapshot && snapshot.campaigns.length === 0 && data.programs.length === 0;
+  const isEmpty =
+    !!snapshot &&
+    snapshot.campaigns.length === 0 &&
+    data.programs.length === 0 &&
+    !data.programsError;
   const youtubeAccounts = accounts.filter(
     (account) =>
       account.platform === "youtube" && account.connected && account.connection !== "browser",
@@ -151,6 +173,25 @@ export function ContentScreen({
       ? `${formatDate(days[0]!, { day: "numeric", month: "short" })} – ${formatDate(days[6]!, { day: "numeric", month: "short" })}`
       : formatDate(anchor, { month: "long", year: "numeric" });
 
+  const collectionErrors = projectId
+    ? [
+        {
+          cause: data.refreshError,
+          title: t("Could not refresh posts."),
+          retry: data.retrySnapshot,
+        },
+        {
+          cause: data.programsError,
+          title: t("Could not load repeating programs."),
+          retry: data.retryPrograms,
+        },
+        {
+          cause: data.scheduledError,
+          title: t("Could not load scheduled posts."),
+          retry: data.retryScheduled,
+        },
+      ]
+    : [];
   return (
     <section className="content-screen">
       {!isEmpty || youtubeAccount ? (
@@ -205,7 +246,7 @@ export function ContentScreen({
                 {t("Videos and playlists")}
               </Button>
             ) : null}
-            {!isEmpty ? (
+            {!isEmpty && projectId ? (
               <DisabledReason
                 variant="primary"
                 size="sm"
@@ -224,6 +265,13 @@ export function ContentScreen({
           {notice.text}
         </InlineMessage>
       ) : null}
+      {!open
+        ? workspace.operationError?.map(({ title, details }, index) => (
+            <InlineError key={index} details={details}>
+              {title}
+            </InlineError>
+          ))
+        : null}
       {!open && dirty ? (
         <InlineMessage
           tone="neutral"
@@ -237,10 +285,24 @@ export function ContentScreen({
           {t("You have an unsaved post.")}
         </InlineMessage>
       ) : null}
+      {collectionErrors.map(({ cause, title, retry }) =>
+        cause ? (
+          <InlineError
+            key={title}
+            details={cause instanceof Error ? redactDiagnosticText(cause.message) : undefined}
+            retry={{ onRetry: retry, label: t("Try again") }}
+          >
+            {title}
+          </InlineError>
+        ) : null,
+      )}
       {!projectId ? (
         <EmptyHint message={t("Choose a project at the top to see its posts.")} />
       ) : data.error ? (
-        <InlineError retry={{ onRetry: data.refetch, label: t("Try again") }}>
+        <InlineError
+          details={redactDiagnosticText(data.error.message)}
+          retry={{ onRetry: data.retrySnapshot ?? data.refetch, label: t("Try again") }}
+        >
           {t("Could not load posts.")}
         </InlineError>
       ) : data.loading ? (
@@ -265,6 +327,9 @@ export function ContentScreen({
               statusFilter={statusFilter}
               onAccountFilter={setAccountFilter}
               onStatusFilter={setStatusFilter}
+              onReviewProgram={(program) =>
+                setProgramReview({ scope: reviewScope, id: program.id })
+              }
               onOpen={(campaignId) => {
                 const campaign = findCampaign(campaignId);
                 if (campaign) openCampaign(campaign);
@@ -272,7 +337,7 @@ export function ContentScreen({
             />
           ) : data.scheduledLoading ? (
             <LoadingText delay={false}>{t("Loading…")}</LoadingText>
-          ) : (
+          ) : data.scheduledUnavailable ? null : (
             <ContentCalendar
               view={view}
               anchor={anchor}
@@ -287,13 +352,20 @@ export function ContentScreen({
         </>
       )}
       {/* Older pages only matter to the list; the calendar already holds everything scheduled in its days. */}
-      <CollectionFooter
-        hasMore={view === "list" && data.hasMore}
-        loading={data.loadingMore}
-        error={view === "list" ? data.moreError : undefined}
-        onLoadMore={data.loadMore}
-        onRetry={data.loadMore}
-      />
+      {view === "list" && data.moreError ? (
+        <InlineError
+          details={redactDiagnosticText(data.moreError)}
+          retry={{ onRetry: data.loadMore, label: t("Try again") }}
+        >
+          {t("Could not load more posts.")}
+        </InlineError>
+      ) : (
+        <CollectionFooter
+          hasMore={view === "list" && data.hasMore}
+          loading={data.loadingMore}
+          onLoadMore={data.loadMore}
+        />
+      )}
       {snapshot ? (
         <SnapchatContentList
           key={projectId}
@@ -325,11 +397,27 @@ export function ContentScreen({
           mediaPending={workspace.uploading}
           onBusyChange={workspace.setBusy}
           onMediaBusyChange={workspace.setUploading}
-          onOperationError={(text) => setNotice({ tone: "warning", text })}
+          operationError={workspace.operationError}
+          onOperationError={workspace.setOperationError}
           onSaved={saved}
           onDone={done}
           onClose={close}
           onNavigate={onNavigate}
+        />
+      ) : null}
+      {reviewId && active && projectId ? (
+        <ContentProgramReview
+          key={`${reviewScope}:${reviewId}`}
+          id={reviewId}
+          client={client}
+          accounts={accounts}
+          available={shellState.hostOnline && !shellState.unreachable}
+          onChange={data.refetch}
+          onClose={() =>
+            setProgramReview((current) =>
+              current?.scope === reviewScope && current.id === reviewId ? undefined : current,
+            )
+          }
         />
       ) : null}
       {confirmation.dialog}

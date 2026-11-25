@@ -1,3 +1,4 @@
+import type { InboxItem } from "./inboxTypes";
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
@@ -40,8 +41,7 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
   const snapshot = useInboxAccounts(client, active);
   const [filter, setFilter] = useState<InboxFilterState>(NO_FILTER);
   const [chosen, setChosen] = useState<string | undefined>(() => targetThreadId(target));
-  /** Last selected thread the list has shown; proves a later absence is a removal. */
-  const [seenId, setSeenId] = useState<string>();
+  const [pinnedItem, setPinnedItem] = useState<InboxItem>();
   const [lastTarget, setLastTarget] = useState(target);
   // Retained screens receive navigation occurrences without remounting reply drafts.
   if (target !== lastTarget) {
@@ -84,7 +84,9 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
   const names = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
   const accountOptions = accounts.map((account) => ({ value: account.id, label: account.name }));
   const selectedId = chosen;
-  const selectedItem = loadedItems.find((item) => item.threadId === selectedId);
+  const filtered = filter.status !== "all" || filter.accountId !== "" || filter.query.trim() !== "";
+  const listedItem = loadedItems.find((item) => item.threadId === selectedId);
+  const selectedItem = listedItem ?? (pinnedItem?.threadId === selectedId ? pinnedItem : undefined);
   // The list is only trusted to say a conversation is gone once every page is loaded and no
   // refresh is in flight; a not-yet-listed navigation target is kept until it has been seen.
   const listSettled =
@@ -93,13 +95,12 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
   // conversation. It only moves when nothing is open yet or the open one left the list.
   if (selectedId === undefined) {
     if (items[0]) setChosen(items[0].threadId);
-  } else if (selectedItem) {
-    if (seenId !== selectedId) setSeenId(selectedId);
-  } else if (listSettled && seenId === selectedId) {
-    setSeenId(undefined);
+  } else if (listedItem) {
+    if (pinnedItem !== listedItem) setPinnedItem(listedItem);
+  } else if (!filtered && listSettled && pinnedItem?.threadId === selectedId) {
+    setPinnedItem(undefined);
     setChosen(items[0]?.threadId);
   }
-  const filtered = filter.status !== "all" || filter.accountId !== "" || filter.query.trim() !== "";
 
   const toggleAutoRefresh = async (next: boolean) => {
     setSavingRefresh(true);

@@ -28,11 +28,15 @@ export function TikTokPrivacy({
   const [saved, setSaved] = useState<Privacy>();
   const [draft, setDraft] = useState<Privacy>();
   const [uncertain, setUncertain] = useState(false);
-  const { is, write, error } = useAccountWrite(
+  const { is, write, error, details } = useAccountWrite(
     t("Could not read or save TikTok privacy settings."),
   );
   const confirm = useConfirm();
-  const labels = { comments: t("Comments"), duet: t("Duet"), stitch: t("Stitch") };
+  const labels = {
+    comments: t("Comments"),
+    duet: t("Duet"),
+    stitch: t("Stitch"),
+  };
   const scopeLabels = {
     everyone: t("Everyone"),
     followers: t("Followers"),
@@ -110,7 +114,10 @@ export function TikTokPrivacy({
               checked={draft.privateAccount}
               disabled={disabled || busy}
               onChange={(event) =>
-                setDraft({ ...draft, privateAccount: event.currentTarget.checked })
+                setDraft({
+                  ...draft,
+                  privateAccount: event.currentTarget.checked,
+                })
               }
             />
           )}
@@ -122,7 +129,10 @@ export function TikTokPrivacy({
                     key={field}
                     label={labels[field]}
                     value={draft[field]}
-                    options={scopes.map((value) => ({ value, label: scopeLabels[value] }))}
+                    options={scopes.map((value) => ({
+                      value,
+                      label: scopeLabels[value],
+                    }))}
                     disabled={disabled || busy}
                     onValueChange={(value) => {
                       const scope = scopes.find((candidate) => candidate === value);
@@ -175,7 +185,7 @@ export function TikTokPrivacy({
           </div>
         </div>
       )}
-      {error && <InlineError>{error}</InlineError>}
+      {error && <InlineError details={details}>{error}</InlineError>}
       {confirm.dialog}
     </div>
   );

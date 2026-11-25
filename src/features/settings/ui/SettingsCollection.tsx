@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import type { ReactNode } from "react";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import "./SettingsCollection.css";
@@ -46,15 +46,14 @@ export function CollectionToolbar({
       </div>
       {children ? <div className="settings-collection-tools">{children}</div> : null}
       {count != null && count !== false ? (
-        <Text
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          role="status"
+        <InlineMessage
+          tone="neutral"
+          icon={null}
+          live="polite"
           className="settings-collection-count"
         >
           {count}
-        </Text>
+        </InlineMessage>
       ) : null}
     </div>
   );

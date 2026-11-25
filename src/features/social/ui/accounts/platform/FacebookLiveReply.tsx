@@ -46,14 +46,29 @@ export function FacebookLiveReply({
         { threadId: "", text, factIds: [] },
         {
           action: "facebook.live.replyDraft",
-          input: { accountId, liveId, commentId: comment.id, text, ...(cursor ? { cursor } : {}) },
+          input: {
+            accountId,
+            liveId,
+            commentId: comment.id,
+            text,
+            ...(cursor ? { cursor } : {}),
+          },
         },
       );
-    state.update({ operation: attempt, busy: "send", error: "", queued: false });
+    state.update({
+      operation: attempt,
+      busy: "send",
+      error: "",
+      queued: false,
+    });
     try {
       await resumeInboxReply(client.request, attempt);
       if (attempt.queued)
-        state.update({ operation: undefined, draft: { text: "", factIds: [] }, queued: true });
+        state.update({
+          operation: undefined,
+          draft: { text: "", factIds: [] },
+          queued: true,
+        });
       else
         state.update({
           error: t("Reply requires review in Activity. Its original draft has been kept."),
@@ -73,7 +88,10 @@ export function FacebookLiveReply({
         value={draft.text}
         disabled={!!operation || !!busy}
         onChange={(event) =>
-          state.update({ draft: { text: event.currentTarget.value, factIds: [] }, queued: false })
+          state.update({
+            draft: { text: event.currentTarget.value, factIds: [] },
+            queued: false,
+          })
         }
       />
       <div className="social-field-row">

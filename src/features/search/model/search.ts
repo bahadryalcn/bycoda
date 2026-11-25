@@ -68,7 +68,7 @@ export function cancelProjectSearch(cwd: string, searchId: string): Promise<void
   return invokeWorkspace<void>("cancel_project_search", { cwd, searchId });
 }
 
-export type ProjectReplaceResult = {
+type ProjectReplaceResult = {
   filesChanged: number;
   replacements: number;
   failures: string[];

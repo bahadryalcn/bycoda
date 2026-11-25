@@ -46,7 +46,9 @@ export function FacebookLivePanel({
   const [uncertain, setUncertain] = useState(false);
   const load = async () => {
     const result = await work.write("list", () =>
-      client.request<{ broadcasts: LiveState[] }>("facebook.live.list", { accountId }),
+      client.request<{ broadcasts: LiveState[] }>("facebook.live.list", {
+        accountId,
+      }),
     );
     if (result) {
       const current = result.broadcasts[0] ?? null;
@@ -97,7 +99,11 @@ export function FacebookLivePanel({
     setUncertain(result.phase === "creating");
     if (action === "create") setPage(undefined);
   };
-  const labels = { create: t("Create live video"), start: t("Go live"), end: t("End live video") };
+  const labels = {
+    create: t("Create live video"),
+    start: t("Go live"),
+    end: t("End live video"),
+  };
   const phases = {
     creating: t("Unconfirmed"),
     unpublished: t("Unpublished"),
@@ -288,7 +294,7 @@ export function FacebookLivePanel({
           {t("Refresh the live video before trying again.")}
         </InlineMessage>
       ) : null}
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
       {confirm.dialog}
     </section>
   );

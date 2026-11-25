@@ -97,6 +97,9 @@ export function DeviceBar({
           label={t("Refresh devices")}
           loading={refreshing}
           disabled={refreshDisabled}
+          disabledReason={
+            refreshDisabled ? t("Wait for the current device operation to finish") : undefined
+          }
           onClick={onRefresh}
         >
           <RefreshCw className="icon-sm" aria-hidden />

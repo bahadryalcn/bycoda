@@ -6,6 +6,7 @@ import {
 import { mergeProviderCliChecks } from "../model/providerCliChecks";
 import type { HarnessVersionCheck } from "../model/providerCliChecks";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -512,9 +513,9 @@ export function ProvidersPage({
                     </>
                   ) : null}
                   {accountBusy ? (
-                    <Text role="status" as="p" size="caption" tone="secondary">
+                    <InlineMessage tone="neutral" icon={null} live="polite">
                       {t("Finish or cancel the account operation before switching providers.")}
-                    </Text>
+                    </InlineMessage>
                   ) : null}
                   <ProviderAccountsSettings
                     harness={activeProvider ?? undefined}

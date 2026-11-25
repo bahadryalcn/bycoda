@@ -43,6 +43,8 @@ import {
   VIEW_DELEGATED_EVENT,
 } from "./delegatedFocus";
 import { requestViewSubagent } from "./subagentFocus";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { useStopRequests } from "./useStopRequests";
 import { SubagentChatComposer } from "./SubagentMessageForm";
 import { SubagentSheet, type SubagentRelay } from "./SubagentSheet";
 import { NestedSubagentList } from "./NestedSubagentList";
@@ -404,6 +406,7 @@ export function SessionSubagentSheet({
     return native.block;
   });
   const selected = !currentBlock && !!child && delegated.isOpen !== false;
+  const composerStops = useStopRequests();
   // A child's Host owner connects only while its panel is open or a Stop needs it;
   // children otherwise leave no sessions, queues or notices in the parent.
   const stopping = new Set([...(delegated.stopping ?? []), ...(delegated.connecting ?? [])]);
@@ -577,18 +580,27 @@ export function SessionSubagentSheet({
         onOpenDiff={onOpenDiff}
         composer={
           selected && !isHostChild(child, readHostBinding) ? (
-            <SubagentChatComposer
-              {...localQueueActions?.(child.id)}
-              key={child.id}
-              name={childBlock.text}
-              session={child}
-              visible={visible}
-              parentSessionId={parentSessionId}
-              onStop={() => void Promise.resolve(onStopSession(child.id)).catch(() => {})}
-              onSubmit={(text, attachments, options, admission) =>
-                onSubmitToSession(child.id, text, options ?? {}, attachments, admission)
-              }
-            />
+            <>
+              {composerStops.failed.has(child.id) ? (
+                <InlineError inset="row">{translate("Could not stop this subagent.")}</InlineError>
+              ) : null}
+              <SubagentChatComposer
+                {...localQueueActions?.(child.id)}
+                key={child.id}
+                name={childBlock.text}
+                session={child}
+                visible={visible}
+                parentSessionId={parentSessionId}
+                onStop={() =>
+                  composerStops.request(child.id, async () => {
+                    await onStopSession(child.id);
+                  })
+                }
+                onSubmit={(text, attachments, options, admission) =>
+                  onSubmitToSession(child.id, text, options ?? {}, attachments, admission)
+                }
+              />
+            </>
           ) : undefined
         }
       />

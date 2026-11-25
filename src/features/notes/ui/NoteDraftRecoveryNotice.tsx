@@ -1,6 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
@@ -118,6 +119,11 @@ export function NoteDraftRecoveryNotice() {
           key={id}
           tone="danger"
           title={t("Could not save note")}
+          extra={
+            draft.error ? (
+              <ErrorDetails title={t("Could not save note")} detail={draft.error} />
+            ) : undefined
+          }
           action={{
             label: t("Retry save"),
             pending: retryingDrafts.has(id),
@@ -129,11 +135,6 @@ export function NoteDraftRecoveryNotice() {
             {(draft.edits.current.title ?? draft.saved?.title ?? draft.base.title).trim() ||
               t("Untitled")}
           </Text>
-          {draft.error ? (
-            <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">
-              {draft.error}
-            </Text>
-          ) : null}
         </Toast>
       ))}
     </>

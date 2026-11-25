@@ -7,7 +7,8 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Sheet } from "../../../shared/ui/Sheet";
 import { Group, Row, Toggle, useLeaveGuard } from "../../../shared/ui/settings";
-import { FolderOpen } from "../../../shared/ui/icons";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { FolderOpen, Server } from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { revealPath } from "../../../platform/tauri/fs";
 import {
@@ -113,13 +114,18 @@ export function McpServerDetail({
     managed?.enabled === false;
   const configLocked = stale || actions.locked;
   const staleReason = stale ? t("This server is no longer listed.") : undefined;
+  const configLockedReason =
+    staleReason ??
+    (actions.locked ? t("Wait for the current MCP operation to finish.") : undefined);
   const hubLockedReason =
     staleReason ??
     (hub.loading?.corrupt
       ? t("Hub settings could not be read.")
       : managed?.enabled === false
         ? t("Enable this server first.")
-        : undefined);
+        : hub.saving || hub.busy || hub.signingIn
+          ? t("Wait for the current MCP operation to finish.")
+          : undefined);
   const [fileError, setFileError] = useState("");
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [managedEditor, setManagedEditor] = useState<
@@ -318,6 +324,12 @@ export function McpServerDetail({
                         variant="secondary"
                         loading={hub.busy === hubEntry.name || hub.waiting === hubEntry.name}
                         disabled={hubLocked || hub.waiting === hubEntry.name}
+                        disabledReason={
+                          hubLockedReason ??
+                          (hub.waiting === hubEntry.name
+                            ? t("Finish signing in in your browser…")
+                            : undefined)
+                        }
                         onClick={() => void hub.signIn(hubEntry.name)}
                       >
                         {hubEntry.oauthInherited ? t("Use a different account") : t("Sign in")}
@@ -358,9 +370,23 @@ export function McpServerDetail({
                 <Row label={t("Found in")}>
                   <span className="flex flex-wrap justify-end gap-1">
                     {hubEntry.sources.map((source) => (
-                      <Badge key={source} size="sm" tone="neutral">
+                      <InfoTooltip
+                        key={source}
+                        label={t("Source: {p0}", { p0: sourceLabel(source) })}
+                        icon={
+                          source.startsWith("claude") ? (
+                            <ProviderIcon provider="claude" />
+                          ) : source.startsWith("codex") ? (
+                            <ProviderIcon provider="codex" />
+                          ) : source === "opencode" ? (
+                            <ProviderIcon provider="opencode" />
+                          ) : (
+                            <Server aria-hidden className="icon-sm" />
+                          )
+                        }
+                      >
                         {sourceLabel(source)}
-                      </Badge>
+                      </InfoTooltip>
                     ))}
                   </span>
                 </Row>
@@ -449,6 +475,7 @@ export function McpServerDetail({
                       variant="secondary"
                       loading={actions.busyKey === `${key}:login`}
                       disabled={configLocked}
+                      disabledReason={configLockedReason}
                       onClick={() => void actions.providerSignIn(server)}
                     >
                       {server.auth === "signed_in" ? t("Sign in again") : t("Sign in")}
@@ -462,6 +489,7 @@ export function McpServerDetail({
                       tone="danger"
                       loading={actions.busyKey === `${key}:remove`}
                       disabled={configLocked}
+                      disabledReason={configLockedReason}
                       onClick={() => leave.guard(() => void actions.remove(server))}
                     >
                       {t("Remove")}

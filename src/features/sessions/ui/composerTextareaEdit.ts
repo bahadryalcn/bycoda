@@ -1,4 +1,31 @@
 import { applyComposerInlineDeletion } from "./composerInlineInput";
+import { attachmentTokens, findTokens, rewriteTokenMatches } from "../model/attachmentTokens";
+import type { Attachment } from "../model/session";
+
+/** Extract the whole chips that intersect the selection and renumber the copied references. */
+export function selectedComposerAttachments(
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+  attachments: Attachment[],
+) {
+  if (selectionStart === selectionEnd) return;
+  const matches = findTokens(value, attachments).filter(
+    (token) => token.start < selectionEnd && token.end > selectionStart,
+  );
+  if (!matches.length) return;
+  const start = Math.min(selectionStart, matches[0].start);
+  const end = Math.max(selectionEnd, matches[matches.length - 1].end);
+  const indices = [...new Set(matches.map((match) => match.index))].sort((a, b) => a - b);
+  const selected = indices.map((index) => attachments[index]);
+  const tokens = attachmentTokens(selected);
+  const text = rewriteTokenMatches(
+    value.slice(start, end),
+    matches.map((match) => ({ ...match, start: match.start - start, end: match.end - start })),
+    (match) => tokens[indices.indexOf(match.index)],
+  );
+  return { attachments, selected, text, start, end };
+}
 
 /** Edits the textarea the way typing would, so React and every draft listener see it. */
 export function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: number) {

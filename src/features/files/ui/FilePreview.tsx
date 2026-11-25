@@ -87,9 +87,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
     <div
       {...surfaceAttributes(
         { frame: variant === "card" ? "card" : undefined, edge: "all" },
-        variant === "card"
-          ? "overflow-hidden rounded-(--ui-radius-card) border-(--ui-card-border)"
-          : "min-w-0",
+        variant === "card" ? "overflow-hidden" : "min-w-0",
       )}
     >
       <div className="flex items-center gap-2 px-2.5 py-2">
@@ -141,6 +139,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
                 : undefined
             }
             tabIndex={variant === "popover" ? 0 : undefined}
+            role={variant === "popover" ? "region" : undefined}
             aria-label={variant === "popover" ? t("Preview lines") : undefined}
           >
             {preview.contentOnly && !lines.length ? (
@@ -173,14 +172,20 @@ function PreviewLine({
   scrollable?: boolean;
 }) {
   useLocale();
-  const bg = line.kind === "add" ? "bg-diff-add-bg" : line.kind === "del" ? "bg-diff-del-bg" : "";
+  const rowVariant =
+    line.kind === "add" ? "diff-add" : line.kind === "del" ? "diff-delete" : undefined;
   const bar =
     line.kind === "add" ? "bg-diff-add" : line.kind === "del" ? "bg-diff-del" : "bg-transparent";
   const mark = line.kind === "add" ? "+" : line.kind === "del" ? "−" : " ";
   const markTone = line.kind === "add" ? "added" : line.kind === "del" ? "removed" : "inherit";
 
   return (
-    <div className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}>
+    <div
+      {...surfaceAttributes(
+        { variant: rowVariant },
+        `relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""}`,
+      )}
+    >
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
       <Text size="micro" tone="muted" className="w-7 shrink-0 pr-1 text-right font-mono">
         {line.number ?? " "}

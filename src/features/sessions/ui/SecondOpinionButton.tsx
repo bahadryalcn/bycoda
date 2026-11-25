@@ -53,6 +53,8 @@ type Props = {
    */
   excludeFromModel?: boolean;
   disabled?: boolean;
+  /** Why the caller disabled it; replaces the tooltip while `disabled` is set. */
+  disabledReason?: string;
   triggerClassName?: string;
   triggerVariant?: "ghost" | "secondary";
   renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
@@ -85,12 +87,14 @@ export function BuildTargetButton({
   model,
   settings,
   disabled,
+  disabledReason,
   onPick,
 }: {
   from: HarnessId;
   model?: string;
   settings?: Record<string, string>;
   disabled?: boolean;
+  disabledReason?: string;
   onPick: (target: ModelTarget) => void;
 }) {
   const t = useT();
@@ -106,6 +110,7 @@ export function BuildTargetButton({
       menuLabel={t("Build this plan with another model or provider")}
       includeCurrent
       disabled={disabled}
+      disabledReason={disabledReason}
       triggerVariant="secondary"
     />
   );
@@ -123,6 +128,7 @@ export function SecondOpinionButton({
   includeCurrent = false,
   excludeFromModel = false,
   disabled: disabledByCaller = false,
+  disabledReason,
   triggerClassName,
   triggerVariant = "ghost",
   renderTrigger,
@@ -197,7 +203,11 @@ export function SecondOpinionButton({
         });
   const noTargets = targets.length === 0 || !hasSelectableModel;
   const disabled = disabledByCaller || noTargets;
-  const label = noTargets ? disabledText : titleText;
+  const label = noTargets
+    ? disabledText
+    : disabledByCaller && disabledReason
+      ? disabledReason
+      : titleText;
 
   const modelsOf = (harness: HarnessId) => {
     const list = catalog.modelsFor(harness);

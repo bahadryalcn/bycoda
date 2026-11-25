@@ -14,7 +14,7 @@ import {
 import { Group, Row, Segmented, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { WorkspaceFeatureSettings, WorkspaceToolsHelp } from "./WorkspaceFeatureSettings";
 import { loadExactGitRewind, saveExactGitRewind } from "../model/exactGitRewind";
-import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import "./WorkspaceSettings.css";
 
 export function ExactGitRewindSetting() {
@@ -80,11 +80,12 @@ export function ExactGitRewindSetting() {
             {isSaving ? t("Saving…") : t("Loading…")}
           </SettingsFeedback>
         ) : error ? (
-          <SettingsFeedback state="error">
-            {error}{" "}
-            <Button variant="link" onClick={() => setReadAttempt((value) => value + 1)}>
-              {t("Retry")}
-            </Button>
+          <SettingsFeedback
+            state="error"
+            extra={<ErrorDetails detail={error} />}
+            action={{ label: t("Retry"), onClick: () => setReadAttempt((value) => value + 1) }}
+          >
+            {loaded ? t("Could not save Exact Git rewind.") : t("Could not load Exact Git rewind.")}
           </SettingsFeedback>
         ) : undefined
       }
@@ -131,7 +132,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
         <Row
           id="file-tabs"
           label={t("File tabs")}
-          description={t("Choose where files open. Both layouts support split panes.")}
+          info={t("Choose where files open. Both layouts support split panes.")}
           feedback={
             fileTabError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -166,7 +167,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
         <Row
           id="working-agents"
           label={t("Working agents")}
-          description={t("Show running and recently finished chats in the project rail.")}
+          info={t("Show running and recently finished chats in the project rail.")}
           feedback={
             liveAgentsError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>

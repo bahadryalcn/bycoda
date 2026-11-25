@@ -8,6 +8,9 @@ import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { chatCitationPreview, extractChatCitations } from "../model/chatCitation";
+import { findCitationTokens } from "../model/citationTokens";
+import { rewriteTokenMatches } from "../model/attachmentTokens";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import {
@@ -33,9 +36,17 @@ import {
 } from "../data/parentInputClosure";
 import { useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
+import type { Attachment } from "../model/session";
 import "./chat-controls.css";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { GripVertical, Pause, Pencil, Play, Trash2 } from "../../../shared/ui/icons";
+import {
+  GripVertical,
+  Pause,
+  Pencil,
+  Play,
+  Trash2,
+  ArrowLeftRight,
+} from "../../../shared/ui/icons";
 import {
   useEffect,
   useCallback,
@@ -123,7 +134,9 @@ export function MessageQueue({
   onReorder,
   onSteer,
   onResume,
-}: MessageQueueProps) {
+}: Omit<MessageQueueProps, "onEdit"> & {
+  onEdit?: (messageId: string, text: string, attachments: Attachment[]) => boolean | void;
+}) {
   const t = useT();
   // The account lists live in storage; the string snapshot keeps the subscription value-stable.
   const accountListsJson = useSyncExternalStore(
@@ -660,13 +673,23 @@ export function MessageQueue({
                 : undefined;
             const routeNote =
               route === "switch"
-                ? t("Steer switches provider")
+                ? t(
+                    "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
+                  )
                 : route === "restart"
-                  ? t("Steer restarts with this model")
+                  ? t(
+                      "Steer stops the running turn, including its background work, and starts this message as a new turn with its saved model.",
+                    )
                   : undefined;
             const files = message.attachments.length;
+            const { text, citations } = extractChatCitations(message.text);
             const label =
-              message.text.trim() ||
+              rewriteTokenMatches(
+                text,
+                findCitationTokens(text, citations.length),
+                () => "",
+              ).trim() ||
+              citations.map(chatCitationPreview).filter(Boolean).join(" · ") ||
               t(files === 1 ? "1 attachment" : "{p0} attachments", { p0: files });
             return (
               <Text
@@ -748,7 +771,19 @@ export function MessageQueue({
                           {targetLabel}
                         </Text>
                       </OverflowTooltip>
-                      {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
+                      {routeNote ? (
+                        <InfoTooltip
+                          label={t(
+                            route === "switch"
+                              ? "Steer switches provider"
+                              : "Steer restarts with this model",
+                          )}
+                          icon={<ArrowLeftRight className="icon-sm" aria-hidden="true" />}
+                          className="shrink-0"
+                        >
+                          {routeNote}
+                        </InfoTooltip>
+                      ) : null}
                     </Text>
                   ) : null}
                 </div>
@@ -796,19 +831,6 @@ export function MessageQueue({
                                     "This host cannot steer the active turn. The message remains queued.",
                                   )
                                 : undefined)
-                      }
-                      tooltip={
-                        busy && (message.intent === "plan" || message.intent === "orchestrate")
-                          ? undefined
-                          : route === "switch"
-                            ? t(
-                                "Steer stops the running turn, including its background work, and continues this conversation on the saved provider, as switching provider in the composer does.",
-                              )
-                            : route === "restart"
-                              ? t(
-                                  "Steer stops the running turn, including its background work, and starts this message as a new turn with its saved model.",
-                                )
-                              : undefined
                       }
                       loading={
                         pendingAction === message.id ||
@@ -895,9 +917,11 @@ export function MessageQueue({
           references={references}
           suggestions={suggestions}
           onSave={(text, attachments) => {
-            if (!queueOwner.canMutate()) return;
-            onEdit?.(editingMessage.id, text, attachments);
+            if (!queueOwner.canMutate() || !onEdit) return false;
+            const result = onEdit(editingMessage.id, text, attachments);
+            if (result === false) return false;
             setEditingId(undefined);
+            return true;
           }}
           onRemove={() => removeMessage(editingMessage.id)}
           onCancel={cancelEdit}

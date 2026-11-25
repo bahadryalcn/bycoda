@@ -94,8 +94,10 @@ it("isolates drafts by connected identity and does not echo secret-bearing error
   enter("streamUrl", streamUrl);
   const key = enter("streamKey", streamKey);
   await act(async () => element.querySelector("form")!.requestSubmit());
-  expect(element.textContent).toContain("Could not save LinkedIn Live credentials.");
-  expect(element.textContent).not.toContain(streamKey);
+  expect(element.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not update LinkedIn Live.",
+  );
+  expect(document.body.textContent).not.toContain(streamKey);
   expect(key.value).toBe(streamKey);
   render(request, { ...fixtureAccount, platformId: "urn:li:organization:891" });
   expect(element.querySelector<HTMLInputElement>('input[name="streamKey"]')?.value).toBe("");

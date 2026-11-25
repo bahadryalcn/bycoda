@@ -56,7 +56,7 @@ it.each([
   const labels = [...host.querySelectorAll("button")].map(
     (b) => b.getAttribute("aria-label") ?? "",
   );
-  expect(labels.every((label) => label.startsWith("Technical details"))).toBe(true);
+  expect(labels.every((label) => label.startsWith("Details"))).toBe(true);
   expect(onSubmit).not.toHaveBeenCalled();
 });
 

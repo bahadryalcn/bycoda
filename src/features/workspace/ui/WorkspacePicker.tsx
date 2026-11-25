@@ -195,7 +195,13 @@ function ComposerWorkspacePicker({
         mode={mode}
         enabled={enabled && !!resolvedBase}
         // A busy composer disables the chip for its own reason, which the chip needs no sentence for.
-        disabledReason={enabled && !settled ? t("Loading branches…") : undefined}
+        disabledReason={
+          enabled && !resolvedBase
+            ? settled
+              ? t("No base branch available")
+              : t("Loading branches…")
+            : undefined
+        }
         onChange={(next) => onModeChange(next, next === "worktree" ? effectiveBase : undefined)}
         onSelectWorktree={onSelectWorktree}
         onOpenSettings={onOpenSettings}

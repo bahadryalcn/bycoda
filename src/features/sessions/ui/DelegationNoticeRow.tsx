@@ -52,11 +52,8 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
               ) : section.status === "failed" ? (
                 <CircleX className="icon-sm shrink-0" tone="danger" aria-label={t("Failed")} />
               ) : section.status ? (
-                <Square
-                  className="icon-sm shrink-0"
-                  tone="warning"
-                  aria-label={t("Stopped by you")}
-                />
+                // The host also cancels runs itself (capacity eviction), so a cancel is not a user stop.
+                <Square className="icon-sm shrink-0" tone="muted" aria-label={t("Cancelled")} />
               ) : null}
             </span>
           }

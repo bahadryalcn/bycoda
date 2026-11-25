@@ -164,9 +164,9 @@ export function SubagentStateLine({
         {waiting ? t("Needs input") : lifecycleLabel(lifecycle, t)}
       </Badge>
       {run?.round && run.round > 1 ? (
-        <Badge size="xs" appearance="subtle" tone="neutral">
+        <Text size="inherit" tone="muted">
           {t("Round {p0}", { p0: run.round })}
-        </Badge>
+        </Text>
       ) : null}
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {identity || visibleSummary ? (

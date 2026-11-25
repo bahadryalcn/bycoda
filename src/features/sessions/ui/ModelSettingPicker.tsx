@@ -264,6 +264,15 @@ export function ModelSettingPicker({
                 (!clearShown &&
                   (addShown.length === 0 || modelCount >= DELEGATION_LIMITS.subagentModels))
               }
+              disabledReason={
+                disabled
+                  ? undefined
+                  : !clearShown && modelCount >= DELEGATION_LIMITS.subagentModels
+                    ? t("Remove a selected model before adding more.")
+                    : !clearShown && addShown.length === 0
+                      ? t("No shown models can be added.")
+                      : undefined
+              }
               onClick={() =>
                 setDraft((previous) =>
                   (clearShown ? selectedShown : addShown).reduce(
@@ -298,6 +307,13 @@ export function ModelSettingPicker({
             size="sm"
             type="button"
             disabled={bulk && (disabled || draft === saved || blockedDraft)}
+            disabledReason={
+              blockedDraft
+                ? t(
+                    "A selected account has reached its limit. Remove its newly selected models to apply.",
+                  )
+                : undefined
+            }
             onClick={onApply ? () => onApply(draft || "[]") : onClose}
           >
             {bulk ? t("Apply") : t("Done")}

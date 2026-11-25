@@ -211,7 +211,7 @@ export function CrewBulkTeamAdd({
         <div className="basis-full">
           <Alert tone="warning">
             <p>{t("Skipped {p0}:", { p0: result.skipped.length })}</p>
-            <ul className="mt-1 list-disc pl-4">
+            <ul className="mt-1 list-disc ps-4">
               {result.skipped.map((skip, index) => (
                 <li key={`${index}:${skip.name}`} className="break-words [overflow-wrap:anywhere]">
                   {skip.name}: {skip.reason}

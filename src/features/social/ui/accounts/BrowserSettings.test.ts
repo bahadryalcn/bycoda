@@ -6,7 +6,9 @@ import type { SocialClient } from "../../model/socialClient";
 import { BrowserSettings } from "./BrowserSettings";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
-vi.mock("../browser/LiveBrowserPanel", () => ({ LiveBrowserPanel: () => null }));
+vi.mock("../browser/LiveBrowserPanel", () => ({
+  LiveBrowserPanel: () => null,
+}));
 
 let element: HTMLDivElement, root: Root;
 
@@ -33,7 +35,9 @@ function button(text: string) {
 
 it("starts with the window hidden and no desktop control", async () => {
   const get = vi.fn(async () => settings);
-  const client = { browser: { settings: { get, set: vi.fn() } } } as unknown as SocialClient;
+  const client = {
+    browser: { settings: { get, set: vi.fn() } },
+  } as unknown as SocialClient;
   act(() =>
     root.render(
       createElement(BrowserSettings, {

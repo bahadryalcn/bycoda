@@ -141,7 +141,7 @@ export function CrewLibraryBulkBar({
       {failures.length ? (
         <Alert tone="danger">
           <p>{t("Updated {p0} profiles, {p1} failed:", { p0: done ?? 0, p1: failures.length })}</p>
-          <ul className="mt-1 list-disc pl-4">
+          <ul className="mt-1 list-disc ps-4">
             {failures.map((failure) => (
               <li key={failure.name} className="break-words [overflow-wrap:anywhere]">
                 {failure.name}: {failure.reason}

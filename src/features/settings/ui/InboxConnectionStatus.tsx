@@ -11,6 +11,7 @@ import { MoreHorizontal, Check, CircleDashed, AlertCircle } from "../../../share
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 
 /**
  * Remembers, for this page only, that Save and test accepted the entered credentials.
@@ -49,7 +50,16 @@ export function InboxConnectionStatus({
       info={t(
         "Checking reads the saved configuration and does not test access. Save and test verifies the credentials you enter; Verified applies to this visit only.",
       )}
-      feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
+      feedback={
+        error ? (
+          <SettingsFeedback
+            state="error"
+            extra={<ErrorDetails title={t("Connection check failed.")} detail={error} />}
+          >
+            {t("Connection check failed.")}
+          </SettingsFeedback>
+        ) : undefined
+      }
     >
       <Tooltip
         label={
@@ -76,8 +86,6 @@ export function InboxConnectionStatus({
               <CircleDashed className="icon-sm" />
             )
           }
-          role="status"
-          aria-live="polite"
           data-state={
             checking
               ? "checking"
@@ -121,7 +129,13 @@ export function InboxAccountChecking() {
 }
 
 export function InboxConnectionError({ error }: { error: string | null }) {
-  return error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null;
+  if (!error) return null;
+  const title = t("The inbox request did not complete.");
+  return (
+    <SettingsFeedback state="error" extra={<ErrorDetails title={title} detail={error} />}>
+      {title}
+    </SettingsFeedback>
+  );
 }
 
 /** Account actions keep credential deletion behind an explicit confirmation. */

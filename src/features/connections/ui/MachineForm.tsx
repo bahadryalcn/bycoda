@@ -218,6 +218,17 @@ export function MachineForm({
         reserveLabels={[t("Saving…"), t("Connecting…")]}
         loading={busy}
         disabled={busy || (ssh ? !draft.target.trim() : !url.trim() || !token)}
+        disabledReason={
+          busy
+            ? undefined
+            : ssh && !draft.target.trim()
+              ? t("Enter an SSH target")
+              : !ssh && !url.trim()
+                ? t("Enter the Host URL")
+                : !ssh && !token
+                  ? t("Enter the device token")
+                  : undefined
+        }
         variant="primary"
         type="submit"
         form={formId}

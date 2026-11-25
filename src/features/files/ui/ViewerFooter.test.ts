@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BinaryFileView } from "./BinaryFileView";
 import { DocumentView } from "./DocumentView";
 import { MediaView } from "./MediaView";
+import { showErrorDetails } from "./errorDetails.test-support";
 
 const mocks = vi.hoisted(() => ({
   readBinary: vi.fn(),
@@ -78,8 +79,10 @@ it("keeps a failed image open visible until the next open attempt succeeds", asy
   );
   await act(async () => findButton(container, "Open in default app").click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Application unavailable",
+    "Couldn’t open the file in its default app",
   );
+  await showErrorDetails(container);
+  expect(document.body.textContent).toContain("Application unavailable");
   await act(async () => findButton(container, "Open in default app").click());
   expect(mocks.open).toHaveBeenCalledTimes(2);
   expect(container.querySelector('[role="alert"]')).toBeNull();

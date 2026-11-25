@@ -93,9 +93,10 @@ export function TurnOutputActions({
         items={items}
       />
       {/* Result words are no longer drawn on the icon, so the spoken confirmation lives here. */}
-      <span role="status" className="sr-only">
-        {copy.copied ? t("Copied") : save.copied ? t("Saved to Notes") : ""}
-      </span>
+      <LiveText
+        className="sr-only"
+        text={copy.copied ? t("Copied") : save.copied ? t("Saved to Notes") : ""}
+      />
       {failures.map((message) => (
         <LiveText
           key={message}

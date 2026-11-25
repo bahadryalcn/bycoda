@@ -94,7 +94,9 @@ export function registrationProfile(
   accountType: string,
   draft: Partial<Record<SocialRegistrationField, string>>,
 ): SocialRegistrationProfile {
-  const profile: SocialRegistrationProfile = { accountKind: registrationAccountKind(accountType) };
+  const profile: SocialRegistrationProfile = {
+    accountKind: registrationAccountKind(accountType),
+  };
   for (const field of SIGNUP_FIELD_ORDER) {
     const value = draft[field]?.trim();
     if (value && !registrationFieldProblem(field, value)) profile[field] = value;
@@ -142,7 +144,10 @@ export function blockerLabel(blocker: SocialRegistrationBlocker): string {
   }
 }
 
-export function signupStatus(workflow: SocialBrowserWorkflow): { label: string; tone: BadgeTone } {
+export function signupStatus(workflow: SocialBrowserWorkflow): {
+  label: string;
+  tone: BadgeTone;
+} {
   switch (workflow.status) {
     case "queued":
       return { label: t("Opening the window"), tone: "neutral" };

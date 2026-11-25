@@ -171,6 +171,13 @@ describe("AudienceScreen bulk tag", () => {
     await loaded();
 
     expect(bodyText()).toContain("1 updated, 1 could not be updated");
+    expect(bodyText()).toContain("Grace: Failed");
+    expect(bodyText()).not.toContain("Rate limit reached.");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="Details: Grace: Failed"]')!
+        .click(),
+    );
     expect(bodyText()).toContain("Rate limit reached.");
     // After a result the action cannot run a second time; the footer offers Done.
     expect(buttonByText("Done")).toBeTruthy();
@@ -292,6 +299,15 @@ describe("AudienceScreen opt-out", () => {
     openBulk("Stop contacting…");
     await loaded();
     expect(bodyText()).toContain("1 people opted out, 1 could not be updated");
+    expect(bodyText()).toContain("Grace: Failed");
+    expect(bodyText()).toContain("1 selected");
+    clickButton("Retry");
+    await loaded();
+    expect(mock.suppressions.add.mock.calls.map(([input]) => input.personId)).toEqual([
+      "p1",
+      "p2",
+      "p2",
+    ]);
   });
 });
 

@@ -20,7 +20,7 @@ import {
 import { CrewWorkDetail } from "./CrewWorkDetail";
 import { CrewWorkList, type CrewWorkView } from "./CrewWorkList";
 import { useCrewMachineScope } from "./CrewMachineScope";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { FailureAlert } from "./FailureAlert";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -79,9 +79,6 @@ export function CrewWorkManager({
   const pending = pendingAction !== null;
   const pendingGate = useRef(false);
   const [actionError, setActionError] = useState<CrewActionError>();
-  const error = actionError?.message ?? "";
-  const setError = (message: string) =>
-    setActionError(message ? { message, at: Date.now(), connection: false } : undefined);
   // A failure to reach the machine is retired once the machine answers a read again.
   if (crewActionErrorRecovered(actionError, state.dataUpdatedAt)) setActionError(undefined);
   // The filter belongs to this view, so polling never resets it.
@@ -161,7 +158,7 @@ export function CrewWorkManager({
         projectId: data.project.id,
         sessionId,
       });
-    }).catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })));
+    });
   };
   const noWork = all.length === 0;
   // A single piece of work needs no list column; its detail is the whole view.
@@ -176,7 +173,8 @@ export function CrewWorkManager({
       <div className="@container/crew-management min-w-0" aria-busy={pending}>
         <div className="flex flex-wrap items-end gap-2 px-4 pb-2 pt-2 empty:hidden">
           {scope.picker(pending)}
-          {scope.projectPicker(pending)}
+          {/* Read-only work view: the project is chosen elsewhere, shown only when scoped away from home. */}
+          {cwd !== homeCwd ? scope.projectPicker(pending, false, false) : null}
           {data && crews.length > 1 ? (
             <div className="min-w-0 flex-1 basis-48">
               <SearchableSelect
@@ -195,7 +193,7 @@ export function CrewWorkManager({
                   setSelectedId("");
                   setView("ongoing");
                   setQuery("");
-                  setError("");
+                  setActionError(undefined);
                 }}
               />
             </div>
@@ -226,15 +224,18 @@ export function CrewWorkManager({
               <div className="pb-3">
                 <Alert
                   tone="warning"
-                  action={{ label: t("Retry"), onClick: () => void state.refetch() }}
+                  action={{
+                    label: t("Retry"),
+                    onClick: () => void state.refetch(),
+                  }}
                 >
                   {data.catalogError ?? state.visibleError}
                 </Alert>
               </div>
             ) : null}
-            {error ? (
+            {actionError ? (
               <div className="pb-3">
-                <Alert tone="danger">{error}</Alert>
+                <FailureAlert title={actionError.title} detail={actionError.detail} />
               </div>
             ) : null}
             <EmptyState context="panel" kind="empty" title={t("No crew work yet")} />
@@ -264,13 +265,13 @@ export function CrewWorkManager({
                     if (pendingGate.current) return;
                     setView(next);
                     setSelectedId("");
-                    setError("");
+                    setActionError(undefined);
                   }}
                   onQueryChange={setQuery}
                   onSelect={(id) => {
                     setSelectedId(id);
                     setPane("detail");
-                    setError("");
+                    setActionError(undefined);
                   }}
                 />
               </div>
@@ -278,7 +279,7 @@ export function CrewWorkManager({
             {hasDetail ||
             data.catalogError ||
             (state.visibleError && !refreshShownCentrally) ||
-            error ? (
+            actionError ? (
               <div
                 className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
               >
@@ -298,7 +299,10 @@ export function CrewWorkManager({
                 {data.catalogError ? (
                   <Alert
                     tone="warning"
-                    action={{ label: t("Retry"), onClick: () => void state.refetch() }}
+                    action={{
+                      label: t("Retry"),
+                      onClick: () => void state.refetch(),
+                    }}
                   >
                     {data.catalogError}
                   </Alert>
@@ -306,7 +310,10 @@ export function CrewWorkManager({
                 {state.visibleError && !refreshShownCentrally ? (
                   <Alert
                     tone="warning"
-                    action={{ label: t("Retry"), onClick: () => void state.refetch() }}
+                    action={{
+                      label: t("Retry"),
+                      onClick: () => void state.refetch(),
+                    }}
                   >
                     {state.visibleError}
                   </Alert>
@@ -327,7 +334,10 @@ export function CrewWorkManager({
                 {gone ? (
                   <InlineMessage
                     tone="neutral"
-                    action={{ label: t("Choose other work"), onClick: () => setSelectedId("") }}
+                    action={{
+                      label: t("Choose other work"),
+                      onClick: () => setSelectedId(""),
+                    }}
                   >
                     {t("This work no longer exists.")}
                   </InlineMessage>
@@ -340,7 +350,7 @@ export function CrewWorkManager({
                     catalog={data.catalog}
                     pending={pending}
                     pendingAction={pendingAction}
-                    error={error}
+                    error={actionError}
                     canOpen={!!onOpen}
                     onOpen={open}
                     canDelete={!!data.runDeleteSupported}
@@ -368,7 +378,9 @@ export function CrewWorkManager({
                     }
                     onStop={() =>
                       void act(`stop:${selected.id}`, t("Stop work"), async () => {
-                        await state.call("crews.stop", { runId: selected.id });
+                        await state.call("crews.stop", {
+                          runId: selected.id,
+                        });
                         markStopped(selected.id, true);
                       })
                     }
@@ -383,8 +395,8 @@ export function CrewWorkManager({
                       })
                     }
                   />
-                ) : error ? (
-                  <Alert tone="danger">{error}</Alert>
+                ) : actionError ? (
+                  <FailureAlert title={actionError.title} detail={actionError.detail} />
                 ) : null}
               </div>
             ) : null}

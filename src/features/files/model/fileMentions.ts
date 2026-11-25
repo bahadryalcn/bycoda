@@ -19,14 +19,14 @@ export type MentionIndex = {
   labelOf: Map<string, string>;
 };
 
-export type MentionHit = {
+type MentionHit = {
   start: number;
   end: number;
   label: string;
   file: ProjectFile;
 };
 
-export type MentionTextPart = {
+type MentionTextPart = {
   text: string;
   file?: ProjectFile;
 };

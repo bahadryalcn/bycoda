@@ -451,9 +451,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
             persistence={{ mode: "automatic" }}
           >
             <div className="inbox-scope">
-              {boardsError ? (
-                <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
-              ) : null}
+              <InboxConnectionError error={boardsError} />
               {boardScope.error ? (
                 <SettingsFeedback
                   state="error"

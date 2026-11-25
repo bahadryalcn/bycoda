@@ -58,13 +58,15 @@ export function WorkspacePolicyEditor({
       title={t("Defaults for new workspaces")}
       layout="full"
       id="workspace-policy"
-      descriptionVisible
-      description={t(
-        "Saving stores every value as a project override. Reset removes the whole override immediately.",
-      )}
+      description={t("Saving stores every value as a project override.")}
       action={
         hasProjectOverride ? (
-          <Button variant="link" disabled={saving || loading} onClick={async () => await save({})}>
+          <Button
+            variant="link"
+            disabled={saving || loading}
+            tooltip={t("Reset removes the whole override immediately.")}
+            onClick={async () => await save({})}
+          >
             {t("Reset to Host defaults")}
           </Button>
         ) : undefined

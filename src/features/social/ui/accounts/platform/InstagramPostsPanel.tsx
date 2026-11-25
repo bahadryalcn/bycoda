@@ -23,7 +23,9 @@ export function InstagramPostsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const queryClient = useQueryClient();
   const confirmation = useConfirm();
   const [notice, setNotice] = useState("");
@@ -63,7 +65,9 @@ export function InstagramPostsPanel({
           const result = await client.browserInstagramPost(accountId, change);
           if (result.deletion) {
             queryClient.setQueryData(statusKey, { deletion: result.deletion });
-            await queryClient.invalidateQueries({ queryKey: [...scope, "management"] });
+            await queryClient.invalidateQueries({
+              queryKey: [...scope, "management"],
+            });
           } else {
             setNotice(t("Instagram updated."));
           }
@@ -122,7 +126,7 @@ export function InstagramPostsPanel({
       ) : null}
       {deletion === "deleted" ? <InlineMessage tone="success">{t("Deleted")}</InlineMessage> : null}
       {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

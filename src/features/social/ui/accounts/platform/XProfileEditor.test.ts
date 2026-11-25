@@ -19,7 +19,12 @@ afterEach(() => {
   element.remove();
 });
 
-const profile: XProfileState = { name: "Studio", bio: "Hello", location: "", website: "" };
+const profile: XProfileState = {
+  name: "Studio",
+  bio: "Hello",
+  location: "",
+  website: "",
+};
 
 function button(text: string) {
   return [...element.querySelectorAll("button")].find((node) => node.textContent === text);
@@ -35,7 +40,10 @@ function expectErrorDetails(summary: string, detail: string) {
 
 it("reads the profile only when asked", async () => {
   const xProfileRead = vi.fn(async () => profile);
-  const client = { xProfileRead, xProfileUpdate: vi.fn() } as unknown as SocialClient;
+  const client = {
+    xProfileRead,
+    xProfileUpdate: vi.fn(),
+  } as unknown as SocialClient;
   act(() => root.render(createElement(XProfileEditor, { client, accountId: "a1" })));
   expect(xProfileRead).not.toHaveBeenCalled();
   await act(async () => button("Read profile")?.click());
@@ -43,7 +51,10 @@ it("reads the profile only when asked", async () => {
 });
 
 it("saves only the fields that changed, with the read-back of the Host", async () => {
-  const xProfileUpdate = vi.fn(async () => ({ ...profile, location: "Istanbul" }));
+  const xProfileUpdate = vi.fn(async () => ({
+    ...profile,
+    location: "Istanbul",
+  }));
   const client = {
     xProfileRead: vi.fn(async () => profile),
     xProfileUpdate,
@@ -160,12 +171,17 @@ it("does not send a save for an unchanged profile even when the form is submitte
 });
 
 it("shows what the Host read back after a save and treats it as the new saved profile", async () => {
-  const xProfileUpdate = vi.fn(async () => ({ ...profile, name: "Studio Official" }));
+  const xProfileUpdate = vi.fn(async () => ({
+    ...profile,
+    name: "Studio Official",
+  }));
   mount({ xProfileRead: vi.fn(async () => profile), xProfileUpdate });
   await act(async () => button("Read profile")?.click());
   typeInto("Profile name", "studio official");
   await submitProfile();
-  expect(xProfileUpdate).toHaveBeenCalledExactlyOnceWith("a1", { name: "studio official" });
+  expect(xProfileUpdate).toHaveBeenCalledExactlyOnceWith("a1", {
+    name: "studio official",
+  });
   expect(control("Profile name").value).toBe("Studio Official");
   expect(button("Save profile")?.disabled).toBe(true);
 });
@@ -194,7 +210,11 @@ it("follows an exact username on its own action, without touching the profile", 
     changed: true,
   }));
   const xProfileUpdate = vi.fn();
-  mount({ xProfileRead: vi.fn(async () => profile), xProfileUpdate, xProfileFollow });
+  mount({
+    xProfileRead: vi.fn(async () => profile),
+    xProfileUpdate,
+    xProfileFollow,
+  });
   expect(button("Follow")?.disabled).toBe(true);
   expect(reasons()).toContain("Enter an X username of 1 to 15 letters, digits or underscores.");
   typeInto("X username to follow", "@bycoda");

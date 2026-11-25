@@ -91,7 +91,7 @@ export type SurfaceAppearance = {
   variant?: SurfaceVariant;
   /** Opt-in frame: none removes border space; other roles retain a 1px boundary.
    * Hairlines are two roles: `pane` for edges between panes, rows and lists, `card` around a whole card.
-   * `transparent` reserves border space without painting a boundary; `danger` frames an error summary.
+   * `transparent` reserves border space without painting a boundary; `danger` frames an error summary, `warning` a caution or limit summary (pair with `tone="warning"` for the fill, which tone alone does not frame).
    * `focus` marks a detaching surface; `muted` frames a hollow progress marker. */
   frame?:
     | "none"
@@ -102,6 +102,7 @@ export type SurfaceAppearance = {
     | "neutral-marker"
     | "transparent"
     | "danger"
+    | "warning"
     | "accent"
     | "focus"
     | "muted";

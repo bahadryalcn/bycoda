@@ -27,7 +27,9 @@ export function InstagramLiveProducer({
 }) {
   const [live, setLive] = useState<InstagramLiveState>();
   const [notice, setNotice] = useState<string>();
-  const { is, write, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { is, write, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const confirmation = useConfirm();
   const run = (action: InstagramLiveAction, confirm?: string) => {
     setNotice(undefined);
@@ -135,7 +137,7 @@ export function InstagramLiveProducer({
         </Button>
       ) : null}
       {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

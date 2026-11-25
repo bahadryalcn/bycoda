@@ -75,7 +75,7 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
   const [loaded, setLoaded] = useState<ServerConfig>();
   const [draft, setDraft] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [saveError, setSaveError] = useState("");
+  const [saveError, setSaveError] = useState<{ title: string; detail?: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const epoch = useRef(0);
   const identity = `${server.provider}:${server.scope}:${server.configPath}:${server.name}`;
@@ -92,7 +92,7 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
       if (version !== epoch.current) return;
       setLoaded(result);
       setDraft(result.config);
-      setSaveError("");
+      setSaveError(null);
     } catch (cause) {
       if (version === epoch.current) setLoadError(errorText(cause));
     }
@@ -113,11 +113,14 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
     if (!loaded || saving) return false;
     const invalid = jsonError(draft);
     if (invalid) {
-      setSaveError(invalid);
+      setSaveError({
+        title: t("Enter a valid JSON object for the MCP configuration."),
+        detail: invalid,
+      });
       return false;
     }
     setSaving(true);
-    setSaveError("");
+    setSaveError(null);
     let written = false;
     try {
       const result = await invokeMcpConfig<ServerConfig>(
@@ -134,7 +137,12 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
       setDraft(result.config);
       await onSaved();
     } catch (cause) {
-      setSaveError(errorText(cause));
+      setSaveError({
+        title: written
+          ? t("Could not refresh the saved MCP configuration.")
+          : t("Could not save MCP configuration."),
+        detail: errorText(cause),
+      });
     } finally {
       setSaving(false);
     }
@@ -153,7 +161,7 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
           save,
           discard: () => {
             setDraft(loaded.config);
-            setSaveError("");
+            setSaveError(null);
           },
         }
       : null,
@@ -179,10 +187,10 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
         disabled={disabled || saving}
         onChange={(event) => {
           setDraft(event.target.value);
-          setSaveError("");
+          setSaveError(null);
         }}
       />
-      {saveError ? <InlineError>{saveError}</InlineError> : null}
+      {saveError ? <InlineError details={saveError.detail}>{saveError.title}</InlineError> : null}
       <div className="flex justify-end gap-2">
         <Button
           variant="ghost"
@@ -192,7 +200,7 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
           disabled={!dirty || saving}
           onClick={() => {
             setDraft(loaded.config);
-            setSaveError("");
+            setSaveError(null);
           }}
         >
           <RotateCcw aria-hidden />

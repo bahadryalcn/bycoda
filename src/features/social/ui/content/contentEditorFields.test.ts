@@ -160,19 +160,15 @@ describe("ContentEditorFields accounts", () => {
     const snapshot = snapshotOf([x, noAccess]);
     render({}, { snapshot });
     expect(accountBox("Studio LinkedIn")?.disabled).toBe(true);
-    // The reason rides a tooltip on the row, not a text line per account.
     expect(element.textContent).not.toContain("No access to this project");
-    const target = accountBox("Studio LinkedIn")!;
-    await act(async () => {
-      target.dispatchEvent(new Event("pointerover", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 520));
-    });
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+    const reason = element.querySelector<HTMLButtonElement>(
+      'button[aria-label="Studio LinkedIn: Help"]',
+    );
+    expect(reason).toBeTruthy();
+    await act(async () => reason!.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "No access to this project. Grant it in Accounts & Settings.",
     );
-    await act(async () => {
-      target.dispatchEvent(new Event("pointerout", { bubbles: true }));
-    });
     expect(accountBox("Studio X")?.disabled).toBe(false);
     render({ accountIds: ["li1"] }, { snapshot });
     expect(accountBox("Studio LinkedIn")?.disabled).toBe(false);

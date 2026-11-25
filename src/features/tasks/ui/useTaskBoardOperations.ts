@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import type { RemoteDataState } from "../../connections";
@@ -36,6 +36,7 @@ export function useTaskBoardOperations(refreshQueries: () => Promise<unknown>) {
   }, []);
   const [saving, setSaving] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
+  const running = useRef(false);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const refresh = useCallback(() => refreshQueries(), [refreshQueries]);
 
@@ -46,7 +47,9 @@ export function useTaskBoardOperations(refreshQueries: () => Promise<unknown>) {
     action: () => Promise<T>,
     commit?: (saved: T) => void,
   ) => {
-    if (acting) return;
+    // A ref, not `acting` state: two presses before the next render must not both pass.
+    if (running.current) return;
+    running.current = true;
     setActing(task.machineId ? JSON.stringify([task.machineId, task.id]) : task.id);
     try {
       const saved = await action();
@@ -58,6 +61,7 @@ export function useTaskBoardOperations(refreshQueries: () => Promise<unknown>) {
       // A merge that failed is recorded on its task, which stays in review.
       void refresh().catch(() => {});
     } finally {
+      running.current = false;
       setActing(null);
     }
   };

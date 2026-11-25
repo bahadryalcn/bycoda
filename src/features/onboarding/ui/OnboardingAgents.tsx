@@ -4,6 +4,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Heading } from "../../../shared/ui/Heading";
@@ -111,14 +112,15 @@ export function OnboardingAgents({
   const [probed, setProbed] = useState(false);
   // Providers whose status is being re-read. Their last known status stays visible meanwhile.
   const [reading, setReading] = useState<ReadonlySet<HarnessId>>(() => new Set());
-  const [error, setError] = useState("");
+  // `status`: the provider scan failed; `guide`: an install guide did not open.
+  const [error, setError] = useState<{ kind: "status" | "guide"; detail: string } | null>(null);
   const alive = useRef(true);
   const scan = useRef(0);
   const refresh = useCallback(() => {
     const revision = ++scan.current;
     const current = () => alive.current && scan.current === revision;
     setChecking(true);
-    setError("");
+    setError(null);
     setReading(new Set(HARNESSES.filter(isHarnessAvailable)));
     void probeHarnessAvailability({ force: true })
       .then(() => {
@@ -133,7 +135,7 @@ export function OnboardingAgents({
               if (current()) setAuth((previous) => ({ ...previous, [provider]: status }));
             })
             .catch((reason) => {
-              if (current()) setError(String(reason));
+              if (current()) setError({ kind: "status", detail: String(reason) });
             })
             .finally(() => {
               if (!current()) return;
@@ -148,7 +150,7 @@ export function OnboardingAgents({
       .catch((reason) => {
         if (!current()) return;
         setReading(new Set());
-        setError(String(reason));
+        setError({ kind: "status", detail: String(reason) });
       })
       .finally(() => {
         if (!current()) return;
@@ -216,7 +218,7 @@ export function OnboardingAgents({
           </div>
         ) : null}
         {probed && listed.length === 0 ? (
-          <div className="onboarding-provider-empty" role="status">
+          <div className="onboarding-provider-empty">
             <EmptyState size="inline" kind="empty" description={t("No providers found")} />
           </div>
         ) : null}
@@ -272,7 +274,7 @@ export function OnboardingAgents({
                 <Button
                   onClick={() =>
                     void openUrl(guide).catch((reason) => {
-                      if (alive.current) setError(String(reason));
+                      if (alive.current) setError({ kind: "guide", detail: String(reason) });
                     })
                   }
                   variant="secondary"
@@ -404,7 +406,26 @@ export function OnboardingAgents({
             </InfoTooltip>
           </div>
         ) : null}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            title={
+              error.kind === "guide"
+                ? t("Could not open the install guide.")
+                : t("Could not read the provider status.")
+            }
+            extra={
+              <ErrorDetails
+                title={
+                  error.kind === "guide"
+                    ? t("Could not open the install guide.")
+                    : t("Could not read the provider status.")
+                }
+                detail={error.detail}
+              />
+            }
+          />
+        ) : null}
       </div>
       {adding ? (
         <Modal title={t("Add provider")} size="sm" onClose={closeAdd}>
@@ -440,7 +461,7 @@ export function OnboardingAgents({
                     variant="link"
                     onClick={() =>
                       void openUrl(INSTALL_GUIDES[candidate]!).catch((reason) =>
-                        setError(String(reason)),
+                        setError({ kind: "guide", detail: String(reason) }),
                       )
                     }
                   >

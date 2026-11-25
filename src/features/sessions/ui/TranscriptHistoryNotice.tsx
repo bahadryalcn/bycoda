@@ -48,9 +48,10 @@ export function TranscriptHistoryNotice({
       <InlineError
         className={LINE}
         inset="panel"
+        details={pageError}
         retry={onRetryPage ? { label: t("Retry"), onRetry: onRetryPage } : undefined}
       >
-        {pageError}
+        {t("Earlier messages could not be loaded.")}
       </InlineError>
     );
   if (loading)

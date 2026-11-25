@@ -100,6 +100,9 @@ export function VoiceCompanionControls({
           size="lg"
           data-voice-start
           disabled={startDisabled}
+          disabledReason={
+            startDisabled ? t("Select a workspace or session to start voice.") : undefined
+          }
           onClick={onStart}
           startIcon={<Mic className="icon-sm" />}
         >

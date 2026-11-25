@@ -14,7 +14,10 @@ vi.mock("../../../connections/model/connections", () => ({
 vi.mock("./GeneralSettings", () => ({ GeneralSettings: () => null }));
 vi.mock("./AccountDetail", () => ({
   AccountDetail: (props: { account: { id: string } }) =>
-    createElement("div", { "data-testid": "detail", "data-account": props.account.id }),
+    createElement("div", {
+      "data-testid": "detail",
+      "data-account": props.account.id,
+    }),
 }));
 vi.mock("./ConnectAccountDialog", () => ({
   ConnectAccountDialog: (props: { onClose(): void; onCreated(id: string): void }) =>
@@ -24,7 +27,10 @@ vi.mock("./ConnectAccountDialog", () => ({
       createElement("button", { "data-testid": "close-dialog", onClick: props.onClose }, "close"),
       createElement(
         "button",
-        { "data-testid": "create-dialog", onClick: () => props.onCreated("a2") },
+        {
+          "data-testid": "create-dialog",
+          onClick: () => props.onCreated("a2"),
+        },
         "create",
       ),
     ),
@@ -127,7 +133,7 @@ it("lists each account by name and shows health text only when it needs attentio
   expect(rows).toHaveLength(2);
   expect(rows[0]?.textContent).toContain("Account a1");
   expect(rows[0]?.textContent).not.toContain("Connected");
-  expect(rows[1]?.textContent).toContain("Connection needed");
+  expect(rows[1]?.querySelector('[aria-label="Connection needed"]')).not.toBeNull();
 });
 
 it("keeps a retry line when the accounts cannot be read and offers Try again", async () => {
@@ -200,7 +206,9 @@ it("opens the Connect account dialog from the header and closes it again", async
 });
 
 it("opens the detail of a new account after it is created and reads the list again", async () => {
-  const read = vi.fn(async () => ({ snapshot: snapshot([account("a1"), account("a2")]) }));
+  const read = vi.fn(async () => ({
+    snapshot: snapshot([account("a1"), account("a2")]),
+  }));
   act(() => root.render(createElement(AccountsScreen, props(read))));
   await flush();
   const connect = [...element.querySelectorAll("button")].find(
@@ -217,7 +225,9 @@ it("opens the detail of a new account after it is created and reads the list aga
 });
 
 it("opens the account's detail when its row is chosen and closes it with the sheet", async () => {
-  const read = vi.fn(async () => ({ snapshot: snapshot([account("a1"), account("a2")]) }));
+  const read = vi.fn(async () => ({
+    snapshot: snapshot([account("a1"), account("a2")]),
+  }));
   act(() => root.render(createElement(AccountsScreen, props(read))));
   await flush();
   expect(element.querySelector('[data-testid="detail"]')).toBeNull();
@@ -251,7 +261,10 @@ it("says why a new account cannot be connected while this computer cannot be rea
 });
 
 it("leaves the offline Host notice to the shell", async () => {
-  const offline = { ...snapshot([account("a1")]), hostOnline: false } as SocialSnapshot;
+  const offline = {
+    ...snapshot([account("a1")]),
+    hostOnline: false,
+  } as SocialSnapshot;
   act(() =>
     root.render(
       createElement(
@@ -272,6 +285,6 @@ it("shows unknown health and retry when intervention read fails", async () => {
   act(() => root.render(createElement(AccountsScreen, input)));
   await flush();
   expect(element.textContent).toContain("Could not check whether accounts need your attention.");
-  expect(element.textContent).toContain("Connection status unknown");
+  expect(element.querySelector('[aria-label="Connection status unknown"]')).not.toBeNull();
   expect(element.textContent).toContain("Try again");
 });

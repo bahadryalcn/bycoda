@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -53,7 +54,11 @@ it("owns one pending picker and clears cancellation without changing the saved f
     await act(async () => cancel([]));
     expect(choose.disabled).toBe(false);
     await act(async () => choose.click());
-    expect(container.textContent).toContain("picker failed");
+    await expectErrorDetails(
+      container,
+      "Could not choose the folder for new projects.",
+      "picker failed",
+    );
     expect(container.textContent).toContain("C:/home/Projects");
   } finally {
     await act(async () => root.unmount());

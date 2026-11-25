@@ -132,10 +132,13 @@ it("shows translated tool group labels, keeps unknown ids, and formats expiry wi
   try {
     await act(async () => root.render(createElement(ExternalMcpAccess, { cwd: "/fixture" })));
     const text = container.textContent ?? "";
-    expect(text).toContain("Conversation: Read");
-    expect(text).toContain("Runtime logs: Read");
-    expect(text).toContain("legacy-group: Write");
-    expect(text).not.toContain("conversation: Read");
+    const scopeNames = [...container.querySelectorAll('[role="img"][aria-label]')].map((icon) =>
+      icon.getAttribute("aria-label"),
+    );
+    expect(scopeNames).toContain("Scope: Conversation: Read");
+    expect(scopeNames).toContain("Scope: Runtime logs: Read");
+    expect(scopeNames).toContain("Scope: legacy-group: Write");
+    expect(scopeNames).not.toContain("Scope: conversation: Read");
     expect(text).toContain(
       `Expires: ${formatDate(expiresAt, { dateStyle: "medium", timeStyle: "short" })}`,
     );

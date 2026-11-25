@@ -113,7 +113,10 @@ export function PublishedPostManagement({
             disabled={busy}
             options={[
               { value: "", label: t("Choose a post") },
-              ...page.posts.map((item) => ({ value: item.jobId, label: label(item) })),
+              ...page.posts.map((item) => ({
+                value: item.jobId,
+                label: label(item),
+              })),
             ]}
             onValueChange={setPicked}
           />
@@ -157,7 +160,7 @@ export function PublishedPostManagement({
           ) : null}
         </>
       ) : null}
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
       {confirmation.dialog}
     </div>
   );

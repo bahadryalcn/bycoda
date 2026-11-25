@@ -16,6 +16,24 @@ export const VoicePresentedActionButtonSchema = z.strictObject({
 
 export type VoicePresentedActionButton = z.infer<typeof VoicePresentedActionButtonSchema>;
 
+/** A field left empty is omitted so the action's own schema can decide if it is required. */
+const withoutNull = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([, item]) => item !== null && item !== undefined)
+            .map(([key, item]) => [key, withoutNull(item)]),
+        )
+      : value;
+
+export const parsePresentedPress = (button: unknown) =>
+  VoicePresentedActionButtonSchema.safeParse(withoutNull(button));
+
+/** The presentation lost its live scope before the owner action could run. */
+export class VoicePresentedViewChanged extends Error {}
+
 export type VoicePresentedActionResponse = {
   status: "accepted" | "queued" | "running" | "pending" | "completed" | "returned";
   preview?: string;

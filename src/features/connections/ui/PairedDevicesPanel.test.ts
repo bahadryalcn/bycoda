@@ -204,7 +204,8 @@ it("omits built-in desktop credentials and keeps access between computers visibl
   expect(container.textContent).toContain("Home Mac desktop");
   expect(container.textContent).toContain("Windows desktop");
   expect(container.textContent).toContain("Local sync");
-  expect(container.textContent?.match(/This desktop/g)).toHaveLength(1);
+  // The current desktop is marked by an icon whose name is "This desktop", not a text tag.
+  expect(container.querySelectorAll('[role="img"][aria-label="This desktop"]')).toHaveLength(1);
   expect(buttons().filter((button) => button.textContent?.trim() === "Revoke")).toHaveLength(2);
 });
 

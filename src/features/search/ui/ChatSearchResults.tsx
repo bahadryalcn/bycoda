@@ -144,6 +144,26 @@ export function ChatFilterBar({
   );
 }
 
+/** Searchable message roles only (`isSearchableRole`); each gets its translated name. */
+function roleLabel(role: string): string {
+  switch (role) {
+    case "user":
+      return t("You");
+    case "assistant":
+      return t("Assistant");
+    case "tool":
+      return t("Tool");
+    case "tasks":
+      return t("Tasks");
+    case "plan":
+      return t("Plan");
+    case "image":
+      return t("Image");
+    default:
+      return role;
+  }
+}
+
 function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) {
   useLocale();
   const positions: number[] = [];
@@ -349,7 +369,7 @@ export function ChatSearchResults({
                         <Marked text={hit.snippet} ranges={hit.ranges} />
                       </Text>
                       <Text size="micro" tone="muted" className="shrink-0">
-                        {hit.role === "user" ? t("You") : hit.role}
+                        {roleLabel(hit.role)}
                       </Text>
                     </ListRow>
                   );

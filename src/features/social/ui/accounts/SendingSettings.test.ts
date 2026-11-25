@@ -20,7 +20,12 @@ afterEach(() => {
 });
 
 const snapshot = (patch: Partial<SocialSnapshot> = {}) =>
-  ({ sendingEnabled: false, stopped: false, hostOnline: true, ...patch }) as SocialSnapshot;
+  ({
+    sendingEnabled: false,
+    stopped: false,
+    hostOnline: true,
+    ...patch,
+  }) as SocialSnapshot;
 
 function render(props: {
   snapshot: SocialSnapshot;
@@ -74,7 +79,9 @@ it("enables approved sends only after the owner confirms in the dialog", async (
   expect(request).not.toHaveBeenCalled();
   expect(document.body.textContent).toContain("Enable approved sends?");
   await act(async () => dialogButton("Enable approved sends")?.click());
-  expect(request).toHaveBeenCalledWith("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
+  expect(request).toHaveBeenCalledWith("execution.enable", {
+    confirm: "ENABLE_EXTERNAL_SENDS",
+  });
 });
 
 it("sends nothing when the owner cancels the enable confirmation", async () => {
@@ -119,17 +126,25 @@ it("offers no enable control once approved sends are on, and shows that state", 
 });
 
 it("stops all sending and refreshes the screen", async () => {
-  const { request, onChanged } = renderWith({ snapshot: snapshot({ sendingEnabled: true }) });
+  const { request, onChanged } = renderWith({
+    snapshot: snapshot({ sendingEnabled: true }),
+  });
   await act(async () => buttonOf("Stop")?.click());
-  expect(request).toHaveBeenCalledExactlyOnceWith("execution.stop", { stopped: true });
+  expect(request).toHaveBeenCalledExactlyOnceWith("execution.stop", {
+    stopped: true,
+  });
   expect(onChanged).toHaveBeenCalledTimes(1);
 });
 
 it("shows a stopped Host as paused, keeps its pending jobs and resumes through the same action", async () => {
-  const { request } = renderWith({ snapshot: snapshot({ sendingEnabled: true, stopped: true }) });
+  const { request } = renderWith({
+    snapshot: snapshot({ sendingEnabled: true, stopped: true }),
+  });
   expect(element.querySelector('[data-status="paused"]')).not.toBeNull();
   await act(async () => buttonOf("Resume")?.click());
-  expect(request).toHaveBeenCalledExactlyOnceWith("execution.stop", { stopped: false });
+  expect(request).toHaveBeenCalledExactlyOnceWith("execution.stop", {
+    stopped: false,
+  });
 });
 
 it("shows the failure and does not refresh when the Host refuses to enable sending", async () => {

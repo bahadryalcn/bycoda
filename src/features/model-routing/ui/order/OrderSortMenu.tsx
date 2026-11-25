@@ -24,6 +24,7 @@ export function OrderSortMenu({
         size="sm"
         startIcon={<ListFilter className="icon-sm" />}
         disabled={disabled}
+        disabledReason={disabled ? t("Add at least two models to sort.") : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}

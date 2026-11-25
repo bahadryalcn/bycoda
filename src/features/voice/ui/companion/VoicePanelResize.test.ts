@@ -73,6 +73,9 @@ it("restores a stored size and resets it on double-click", () => {
   expect(node.hasAttribute("data-sized")).toBe(false);
   expect(localStorage.getItem("bycoda:voice-size")).toBeNull();
   expect(onPosition).toHaveBeenCalled();
+  expect(JSON.parse(localStorage.getItem("bycoda:voice-position")!)).toEqual(
+    onPosition.mock.lastCall?.[0],
+  );
 });
 
 const viewProps = (panel: RefObject<HTMLElement | null>, noop = () => {}) =>

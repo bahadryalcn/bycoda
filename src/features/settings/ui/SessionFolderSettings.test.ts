@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -92,7 +93,7 @@ it("retains verified path and exposes failed native save", async () => {
       (button) => button.textContent === "C:\\verified",
     )!;
     await act(async () => choose.click());
-    expect(container.textContent).toContain("folder denied");
+    await expectErrorDetails(container, "Could not save the session folder.", "folder denied");
     expect(container.textContent).toContain("C:\\verified");
     expect(container.textContent).not.toContain("C:\\new");
     expect(choose.disabled).toBe(false);

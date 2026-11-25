@@ -23,7 +23,9 @@ export function SnapchatStoryRemoval({
   const [id, setId] = useState("");
   const [target, setTarget] = useState("");
   const [deleted, setDeleted] = useState(false);
-  const { error, is, setError, write } = useAccountWrite(t("Could not delete the Public Story."));
+  const { error, details, is, setError, write } = useAccountWrite(
+    t("Could not delete the Public Story."),
+  );
   const confirmation = useConfirm();
   const pending = is("delete");
   const request = (storyId: string) => ({
@@ -84,7 +86,7 @@ export function SnapchatStoryRemoval({
             {t("Delete")}
           </Button>
         </div>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={details}>{error}</InlineError> : null}
         {deleted ? (
           <InlineMessage tone="success">{t("Public Story deleted.")}</InlineMessage>
         ) : null}

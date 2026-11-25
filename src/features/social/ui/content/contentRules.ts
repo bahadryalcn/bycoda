@@ -415,6 +415,8 @@ export function draftProblems(input: RuleInput): Problem[] {
     if (!(minMinutes >= 1 && maxMinutes >= minMinutes))
       problems.push({ text: t("Repeat: the longest interval must be at least the shortest.") });
     if (!(totalPosts >= 1)) problems.push({ text: t("Repeat: enter how many posts to make.") });
+    if (accounts.filter((account) => account.platform === "youtube").length > 1)
+      problems.push({ text: t("Choose one YouTube account per repeating program.") });
   }
   // A chosen account that is missing from the snapshot would be dropped from the variants silently.
   for (const id of draft.accountIds) {
@@ -723,6 +725,55 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
     if (account.platform === "facebook" && native && (target === "feed" || target === "video"))
       variant.facebook = { target, scheduledPublishAt: new Date(native).getTime() };
     return variant;
+  });
+}
+
+/** Saves existing per-account values unless the corresponding editor field changed. */
+export function buildDraftVariants(input: RuleInput, preserveSchedule = true): CampaignVariant[] {
+  const variants = buildVariants(input);
+  const { draft } = input;
+  if (!draft.saved) return variants;
+
+  const { fields, variants: originals } = draft.saved;
+  const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+  const sameMedia = same(draft.media, fields.media);
+  const sameLink =
+    draft.link === fields.link && Object.values(draft.utm).every((part) => !part.trim());
+  const sameTime = draft.when === fields.when && draft.scheduledAt === fields.scheduledAt;
+  const sameText = draft.text === fields.text;
+  const sameFacts = same(draft.factIds, fields.factIds);
+  const existing = new Map(originals.map((variant) => [variant.accountId, variant]));
+
+  return variants.map((variant) => {
+    const original = existing.get(variant.accountId);
+    if (!original) return variant;
+    const previousOptions = fields.platform[variant.accountId];
+    const currentOptions = draft.platform[variant.accountId];
+    const next = { ...variant };
+    if (sameMedia && same(previousOptions, currentOptions)) {
+      // The editor only exposes part of some provider payloads. Preserve the stored payload.
+      Object.assign(next, original);
+      if (!sameLink && original.reddit && variant.reddit) {
+        next.reddit = { ...original.reddit, kind: variant.reddit.kind };
+      }
+    }
+    next.text =
+      sameText && previousOptions?.instagram?.format === currentOptions?.instagram?.format
+        ? original.text
+        : variant.text;
+    next.media =
+      sameMedia && same(previousOptions?.instagram?.altText, currentOptions?.instagram?.altText)
+        ? original.media
+        : variant.media;
+    next.scheduledAt = sameTime && preserveSchedule ? original.scheduledAt : variant.scheduledAt;
+    next.factIds = sameFacts ? original.factIds : variant.factIds;
+    const link =
+      sameLink && previousOptions?.instagram?.format === currentOptions?.instagram?.format
+        ? original.link
+        : variant.link;
+    if (link === undefined) delete next.link;
+    else next.link = link;
+    return next;
   });
 }
 

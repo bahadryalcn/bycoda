@@ -2,86 +2,937 @@
   "schemaVersion": 1,
   "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
   "counts": {
+    "src/app/shell/RailAction.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/app/shell/RailToolGroup.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/app/shell/SessionRecoveryPanel.tsx": {
+      "role-status-banner": 1
+    },
     "src/app/shell/Sidebar.module.css": {
       "shared-internal-selector": 4
     },
     "src/app/shell/Sidebar.tsx": {
-      "theme-palette-literal": 1
+      "disabled-without-reason": 2,
+      "role-status-banner": 1,
+      "theme-palette-literal": 1,
+      "tooltip-repeats-label": 2
     },
     "src/app/shell/SidebarAccountFooter.module.css": {
       "shared-internal-selector": 1
     },
+    "src/app/shell/SidebarAccountFooter.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/app/shell/TitleBar.tsx": {
+      "tooltip-repeats-label": 2
+    },
+    "src/app/shell/UnknownUsageBar.tsx": {
+      "tooltip-repeats-label": 1
+    },
+    "src/app/shell/UsageProviderChip.tsx": {
+      "disabled-without-reason": 2,
+      "role-status-banner": 2
+    },
+    "src/app/shell/UsageRefreshButton.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/app/shell/sessionList.css": {
+      "shared-internal-selector": 2
+    },
+    "src/app/shell/toolNavigation.css": {
+      "shared-internal-selector": 4
+    },
+    "src/app/workspace/layout/EditorDraftRecoverySection.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/account/ui/AccountDevices.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/account/ui/AccountExternalLink.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/account/ui/AccountNotifications.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/account/ui/AccountSecurity.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/assistant/ui/AssistantBriefingCard.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/AssistantNoteEditor.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/AssistantOwnerQuestions.tsx": {
+      "aria-label-without-role": 1
+    },
+    "src/features/assistant/ui/AssistantRemoteAccess.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/AssistantSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/AssistantSetup.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/assistant/ui/AssistantView.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/ManualSessionSupervision.tsx": {
+      "disabled-without-reason": 9
+    },
+    "src/features/assistant/ui/builder/AssistantBuilderDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/builder/AvatarGenerator.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/builder/BuilderInterview.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/room/CollectionToolbar.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/room/ConversationDraftRecovery.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/ConversationHeader.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/ConversationMessage.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/assistant/ui/room/ConversationThreadList.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/JobDetailDialog.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/assistant/ui/room/JobDiscussion.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/JobReviewDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/JobRow.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/Jobs.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/assistant/ui/room/JobsTab.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/assistant/ui/room/NotesTab.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/room/RoomStatusPopovers.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/assistant/ui/room/TrashPanel.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/assistant/ui/room/TrashPanel.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/settings/AssistantStandingConsentFields.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/assistant/ui/settings/folders/AssistantFoldersSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/automations/ui/AutomationRuns.tsx": {
+      "tooltip-repeats-label": 1
+    },
+    "src/features/automations/ui/AutomationsView.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/automations/ui/TriggerEditor.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/automations/ui/automations.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/connections/ui/AddProjectToMachineDialog.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/connections/ui/AddRemoteProjectDialog.tsx": {
+      "disabled-without-reason": 6
+    },
+    "src/features/connections/ui/AdoptedSessionNotice.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/connections/ui/ConnectionsSettings.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/DelegatedSessionRequests.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/ExternalTunnelsPanel.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/MachineRoutesLine.tsx": {
+      "row-text-badge": 2
+    },
+    "src/features/connections/ui/MachineRow.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/MachineUnavailable.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/PairedDevicesPanel.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/connections/ui/PhonePairingFlow.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/RemoteConnectionDetails.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/RemoteDataStatus.tsx": {
+      "disabled-without-reason": 2,
+      "physical-direction-utility": 1,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/connections/ui/RemoteSession.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/RemoveMachineDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/ServerActivity.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/ServerFiles.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 5,
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/ServerForwards.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/connections/ui/ServerItem.tsx": {
+      "physical-direction-utility": 1,
+      "row-text-badge": 1
+    },
+    "src/features/connections/ui/ServerStatus.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/ServerTerminalRestorePreview.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/connections/ui/ServersView.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 5,
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/SshCertificateInspection.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/SshGroupSettings.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/connections/ui/SshIdentityField.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/SshJumpChainEditor.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 4
+    },
+    "src/features/connections/ui/SshJumpPolicyEditor.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/connections/ui/SshRunbooks.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/SshSettings.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/SshSetupPromptForm.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/connections/ui/TermiusImportDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/connections/ui/TunnelRows.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/connections/ui/TunnelStartForm.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/connections/ui/connections-settings.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/connections/ui/external-tunnels.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/connections/ui/phone-pairing.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/connections/ui/useSshHttpProxyApproval.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewAppearancePicker.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewBulkModelBar.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewEditorAdd.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewEditorParts.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewLibrary.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewLibraryBulk.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewLibraryTeams.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/crews/ui/CrewMachineScope.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/crews/ui/CrewMemberPicker.tsx": {
       "surface-style": 1
     },
+    "src/features/crews/ui/CrewMemberTable.tsx": {
+      "disabled-without-reason": 1,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/crews/ui/CrewWorkOwnerActions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/CrewWorkSessions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/MemberAppearancePicker.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/page/CrewsActive.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/crews/ui/page/CrewsPage.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/decision-models/ui/AddMenu.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/decision-models/ui/ApiProviderDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/decision-models/ui/DecisionModelsSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/decision-models/ui/FolderModelDialog.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/decision-models/ui/LocalInstallWizard.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/decision-models/ui/ManualPathDialog.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/decision-models/ui/RoutingTable.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/decision-models/ui/ScanSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/decision-models/ui/SourceOrderPicker.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/decision-models/ui/decisionModels.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/devices/DevicePanel.css": {
+      "shared-internal-selector": 11
+    },
+    "src/features/devices/DevicePanel.tsx": {
+      "disabled-without-reason": 8
+    },
+    "src/features/devices/ui/DeviceBar.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/devices/ui/DeviceInspector.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/devices/ui/DeviceNotices.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/devices/ui/DeviceSetupPanel.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/devices/ui/DeviceStageStates.tsx": {
+      "disabled-without-reason": 4,
+      "role-status-banner": 4
+    },
+    "src/features/files/ui/BinaryFileView.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/files/ui/ChatFolderBrowser.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/files/ui/CodeMirrorEditor.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/files/ui/EditorConflictBar.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1,
+      "role-status-banner": 4
+    },
+    "src/features/files/ui/ExplorerSyncStatus.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/files/ui/FileEditor.tsx": {
+      "disabled-without-reason": 2,
+      "role-status-banner": 3
+    },
+    "src/features/files/ui/FileLoadError.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/files/ui/FilePane.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/files/ui/FilePicker.tsx": {
+      "aria-label-without-role": 1,
+      "role-status-banner": 1
+    },
     "src/features/files/ui/FilePreview.tsx": {
+      "physical-direction-utility": 3,
       "surface-style": 2
+    },
+    "src/features/files/ui/FilePreviewSearch.tsx": {
+      "disabled-without-reason": 2,
+      "physical-direction-utility": 1
+    },
+    "src/features/files/ui/FileTree.tsx": {
+      "disabled-without-reason": 2,
+      "native-title": 1,
+      "physical-direction-utility": 2,
+      "role-status-banner": 3
+    },
+    "src/features/files/ui/FileViews.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/files/ui/MoveRecoveryNotice.tsx": {
+      "role-status-banner": 1
     },
     "src/features/files/ui/ViewerFooter.tsx": {
       "surface-style": 1
     },
+    "src/features/group-lock/ui/GroupLockSettings.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/group-lock/ui/PasswordPromptDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/group-lock/ui/SetLockPasswordDialog.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1
+    },
+    "src/features/host-tools/BrowserInspectorNavigation.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/host-tools/BrowserPanel.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 10
+    },
+    "src/features/host-tools/BrowserPanel.tsx": {
+      "disabled-without-reason": 4
+    },
     "src/features/host-tools/DesktopControlSettings.module.css": {
       "shared-internal-selector": 1
+    },
+    "src/features/host-tools/DesktopHelperSetup.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/host-tools/DevServersPanel.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/host-tools/HostToolsWindow.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/host-tools/SessionHostTools.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/host-tools/ToolsWorkspace.tsx": {
+      "disabled-without-reason": 1
     },
     "src/features/host-tools/runtime-logs.css": {
       "shared-internal-selector": 2
     },
+    "src/features/host-tools/ui/BrowserStartPage.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/inbox/ui/CheckEvidence.tsx": {
+      "physical-direction-utility": 2
+    },
+    "src/features/inbox/ui/CheckRepairProgress.tsx": {
+      "aria-label-without-role": 1
+    },
+    "src/features/inbox/ui/InboxCard.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/inbox/ui/InboxComments.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1
+    },
+    "src/features/inbox/ui/InboxDetail.tsx": {
+      "physical-direction-utility": 1
+    },
     "src/features/inbox/ui/InboxPrChecks.tsx": {
-      "surface-style": 2
+      "disabled-without-reason": 2,
+      "physical-direction-utility": 4,
+      "surface-style": 2,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/inbox/ui/InboxPrDiff.tsx": {
+      "aria-label-without-role": 1
+    },
+    "src/features/inbox/ui/InboxPrOverview.tsx": {
+      "physical-direction-utility": 1
     },
     "src/features/inbox/ui/InboxProviderMark.tsx": {
       "theme-palette-literal": 5
     },
+    "src/features/inbox/ui/InboxView.tsx": {
+      "disabled-without-reason": 2,
+      "physical-direction-utility": 1
+    },
+    "src/features/inbox/ui/JiraBoardToolbar.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/inbox/ui/JiraBoardView.tsx": {
+      "disabled-without-reason": 1,
+      "inline-help-text": 1
+    },
+    "src/features/inbox/ui/JiraCommentEditor.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/inbox/ui/LinkedWorkItemPanel.tsx": {
       "surface-style": 1
+    },
+    "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
+      "disabled-without-reason": 3,
+      "physical-direction-utility": 4
+    },
+    "src/features/inbox/ui/jira-board.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/live-stream/ui/LiveDestinationPicker.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/live-stream/ui/LiveGoLive.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/live-stream/ui/LiveSection.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/live-stream/ui/LiveStreamConnection.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/live-stream/ui/LiveStreamControls.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/live-stream/ui/ObsControls.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/messaging/ui/MessageReplyComposer.tsx": {
+      "disabled-without-reason": 1
     },
     "src/features/messaging/ui/threadMessageItems.tsx": {
       "surface-style": 1
     },
+    "src/features/model-routing/ui/choice/ModelChoiceField.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/model-routing/ui/delegation/DelegationKeyMenu.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/model-routing/ui/delegation/DelegationLayerRows.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/model-routing/ui/delegation/DelegationSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/model-routing/ui/order/ModelOrderLimits.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/model-routing/ui/order/ModelOrderRow.tsx": {
+      "disabled-without-reason": 1,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/model-routing/ui/order/OrderSelectionBar.tsx": {
+      "raw-aria-live": 1
+    },
+    "src/features/model-routing/ui/order/PoolMembers.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/model-routing/ui/roles/ModelRolePreview.tsx": {
+      "tooltip-repeats-label": 1
+    },
+    "src/features/model-routing/ui/roles/ModelRoleRow.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/notes/ui/NoteChatAction.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/notes/ui/NoteMiniCard.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/notes/ui/NoteSaveStatus.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/notes/ui/NotesView.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 6
+    },
+    "src/features/notes/ui/SessionNotesPanel.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/notes/ui/notes.css": {
+      "shared-internal-selector": 5
+    },
     "src/features/notifications/ui/InboxApprovalPreview.tsx": {
       "surface-style": 1
+    },
+    "src/features/notifications/ui/NotificationMuteControl.tsx": {
+      "disabled-without-reason": 3,
+      "role-status-banner": 1
+    },
+    "src/features/notifications/ui/NotificationMuteDatePicker.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/notifications/ui/OwnerSecretInput.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/notifications/ui/ProjectNotificationSettings.css": {
+      "shared-internal-selector": 4
+    },
+    "src/features/onboarding/ui/GuideHub.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/onboarding/ui/OnboardingAccount.tsx": {
+      "inline-help-text": 1
+    },
+    "src/features/onboarding/ui/OnboardingAgents.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/onboarding/ui/OnboardingDialog.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/onboarding/ui/OnboardingHost.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/onboarding/ui/UsageGuideTooltip.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/onboarding/ui/featureHighlights.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/onboarding/ui/guideHub.css": {
+      "shared-internal-selector": 5
+    },
+    "src/features/onboarding/ui/onboarding.css": {
+      "shared-internal-selector": 4
+    },
+    "src/features/onboarding/ui/usageGuide.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 2
+    },
+    "src/features/orchestration/ui/OrchestrationPreview.tsx": {
+      "disabled-without-reason": 2,
+      "row-text-badge": 1
+    },
+    "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/permissions/ui/PermissionRestartButton.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/permissions/ui/PermissionRow.tsx": {
+      "disabled-without-reason": 1,
+      "row-text-badge": 1
+    },
+    "src/features/permissions/ui/PermissionSetupSheet.tsx": {
+      "disabled-without-reason": 3
     },
     "src/features/projects/model/projectCodeIcons.ts": {
       "theme-palette-literal": 56
     },
+    "src/features/projects/ui/CwdPicker.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/projects/ui/FolderPicker.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/projects/ui/GroupFetchPopover.tsx": {
+      "raw-aria-live": 1
+    },
+    "src/features/projects/ui/GroupGitPopover.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/projects/ui/ProjectActionDialog.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1
+    },
+    "src/features/projects/ui/ProjectBackgroundDialog.tsx": {
+      "physical-direction-utility": 2
+    },
+    "src/features/projects/ui/ProjectMultiSelect.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/projects/ui/ProjectQuickActions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/projects/ui/ProjectSearch.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/projects/ui/ProjectSearchResults.tsx": {
+      "physical-direction-utility": 2
+    },
     "src/features/projects/ui/RailBackgroundControls.tsx": {
+      "disabled-without-reason": 1,
       "surface-style": 2
+    },
+    "src/features/projects/ui/RenameProjectFolderDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/projects/ui/SearchableProjectPicker.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1
+    },
+    "src/features/providers/ui/AccountColorPicker.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/providers/ui/CatalogReceiptStatus.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/providers/ui/GenericAcpSettings.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 1
+    },
+    "src/features/providers/ui/OllamaSettings.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/providers/ui/ProviderAccountEditor.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/providers/ui/ProviderAccountUsage.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/providers/ui/ProviderList.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/providers/ui/ProviderStatusGroup.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 4,
+      "physical-direction-utility": 4
+    },
+    "src/features/quick-composer/ui/QuickModelSelector.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/search/ui/ChatSearchResults.tsx": {
+      "disabled-without-reason": 1,
+      "row-text-badge": 1
+    },
+    "src/features/sessions/ui/ActivityDock.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 2
+    },
+    "src/features/sessions/ui/ActivityDockApproval.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/ActivityDockStopAll.tsx": {
+      "disabled-without-reason": 1
     },
     "src/features/sessions/ui/AgentTabView.tsx": {
       "surface-style": 1
     },
+    "src/features/sessions/ui/AgentTranscript.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
+      "aria-label-without-role": 3,
+      "physical-direction-utility": 8
+    },
+    "src/features/sessions/ui/AssistantSessionControl.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/sessions/ui/AttachmentChip.module.css": {
       "shared-internal-selector": 1
+    },
+    "src/features/sessions/ui/AttachmentTokenText.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/ChatCitationText.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/sessions/ui/ClaudeSessionPicker.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/sessions/ui/CodeExecutionContext.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/Composer.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/ComposerAction.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/sessions/ui/ComposerAddMenu.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/ComposerCitations.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/sessions/ui/ComposerTips.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/sessions/ui/ContextMeter.tsx": {
+      "disabled-without-reason": 1,
+      "inline-help-text": 2
+    },
+    "src/features/sessions/ui/DelegationSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/DeliveryReviewChoice.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/sessions/ui/EditFromHereDialog.tsx": {
+      "role-status-banner": 1
     },
     "src/features/sessions/ui/LocalMedia.tsx": {
       "transcript-reply-fill": 1
     },
+    "src/features/sessions/ui/LocalSessionReferenceLink.tsx": {
+      "disabled-without-reason": 5,
+      "role-status-banner": 2
+    },
+    "src/features/sessions/ui/MediaPlayer.module.css": {
+      "feature-typography": 2
+    },
+    "src/features/sessions/ui/ModelExtras.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/sessions/ui/ModelFlyout.tsx": {
+      "physical-direction-utility": 2
+    },
+    "src/features/sessions/ui/ModelPicker.tsx": {
+      "physical-direction-utility": 2
+    },
+    "src/features/sessions/ui/ModelSettingsColumn.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/sessions/ui/NotificationRequestCard.tsx": {
+      "role-status-banner": 2
+    },
+    "src/features/sessions/ui/PlanStepsBurst.css": {
+      "feature-typography": 1
+    },
     "src/features/sessions/ui/PromptOutline.css": {
+      "shared-internal-selector": 3,
       "specificity-doubling": 1
     },
     "src/features/sessions/ui/PromptOutline.tsx": {
       "transcript-reply-fill": 1
     },
+    "src/features/sessions/ui/ProviderSignInPanel.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/QuestionFields.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/sessions/ui/QuestionForm.tsx": {
+      "aria-label-without-role": 1,
+      "disabled-without-reason": 2
+    },
+    "src/features/sessions/ui/QueueRemovalNotice.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/sessions/ui/SearchSourceChips.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/sessions/ui/SecondOpinionButton.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/SessionDirsPicker.tsx": {
+      "disabled-without-reason": 4
+    },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
+      "disabled-without-reason": 6,
+      "physical-direction-utility": 4,
+      "role-status-banner": 1,
       "surface-style": 1
     },
+    "src/features/sessions/ui/SessionReview.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 2,
+      "role-status-banner": 1
+    },
+    "src/features/sessions/ui/SessionTaskLinkDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/SubagentCards.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/SubagentMessageForm.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/SubagentRetryButton.tsx": {
+      "disabled-without-reason": 1
+    },
     "src/features/sessions/ui/SubagentSheet.tsx": {
+      "disabled-without-reason": 1,
       "surface-style": 2
     },
+    "src/features/sessions/ui/TaskListPreview.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/sessions/ui/ToolInspectionSplitDiff.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/TranscriptFind.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/TranslationResultDialog.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/sessions/ui/TranslationResultDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/sessions/ui/TurnChangedFiles.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/sessions/ui/UserDraftFooter.tsx": {
+      "disabled-without-reason": 3
+    },
     "src/features/sessions/ui/UserLinkPreview.tsx": {
+      "aria-label-without-role": 1,
       "surface-style": 1
     },
     "src/features/sessions/ui/chat-controls.css": {
-      "shared-internal-selector": 2
-    },
-    "src/features/sessions/ui/crewCharacters.ts": {
-      "theme-palette-literal": 135
+      "shared-internal-selector": 9
     },
     "src/features/sessions/ui/crewCodeArt.ts": {
       "theme-palette-literal": 2
-    },
-    "src/features/sessions/ui/crewEnvironment.ts": {
-      "theme-palette-literal": 63
     },
     "src/features/sessions/ui/lotr/lotrCrew.ts": {
       "theme-palette-literal": 7
@@ -94,6 +945,10 @@
     },
     "src/features/sessions/ui/matrix/matrixPainter.ts": {
       "theme-palette-literal": 8
+    },
+    "src/features/sessions/ui/notification-sheet.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 3
     },
     "src/features/sessions/ui/pacingAgentArt.ts": {
       "theme-palette-literal": 10
@@ -122,14 +977,101 @@
     "src/features/settings/model/appearance.ts": {
       "theme-palette-literal": 1
     },
-    "src/features/settings/ui/BycodaSettings.css": {
+    "src/features/settings/ui/ArchiveSettings.css": {
       "shared-internal-selector": 1
+    },
+    "src/features/settings/ui/ArchiveSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/ArchivedConversations.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/settings/ui/BycodaSettings.css": {
+      "shared-internal-selector": 7
+    },
+    "src/features/settings/ui/ChatSettings.css": {
+      "feature-typography": 1
+    },
+    "src/features/settings/ui/ExternalMcpAccess.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/settings/ui/FileAccessSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/settings/ui/GeneralProductDetails.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/GeneralSettings.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/settings/ui/GeneralSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/HostShellRow.tsx": {
+      "disabled-without-reason": 3,
+      "row-text-badge": 1,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/settings/ui/InboxConnectionStatus.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/settings/ui/InboxScopeCollection.tsx": {
+      "disabled-without-reason": 2
     },
     "src/features/settings/ui/InboxSettings.css": {
       "shared-internal-selector": 1
     },
+    "src/features/settings/ui/JiraSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/McpServerConfigEditor.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/McpServerDetail.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/McpSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/ProviderAccountsSettings.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/settings/ui/ProviderBinarySettings.tsx": {
+      "disabled-without-reason": 7
+    },
+    "src/features/settings/ui/ProviderModelsGroup.tsx": {
+      "disabled-without-reason": 2,
+      "row-text-badge": 1
+    },
+    "src/features/settings/ui/ProviderSettings.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/settings/ui/SettingsCollection.css": {
+      "shared-internal-selector": 3
+    },
+    "src/features/settings/ui/ShortcutSettings.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/TemplatesSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/settings/ui/TerminalProfileDiscovery.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/settings/ui/TerminalSettings.tsx": {
       "nested-surface": 1
+    },
+    "src/features/settings/ui/appearance/controls/BackgroundLibrary.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/appearance/controls/GradientStrip.tsx": {
+      "aria-label-without-role": 1
+    },
+    "src/features/settings/ui/appearance/controls/InterfaceSizeGroup.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/settings/ui/appearance/controls/SavedThemes.tsx": {
+      "disabled-without-reason": 1
     },
     "src/features/settings/ui/appearance/controls/SceneStrip.module.css": {
       "shared-internal-selector": 1
@@ -138,7 +1080,16 @@
       "theme-palette-literal": 2
     },
     "src/features/settings/ui/appearance/controls/ThemeControls.css": {
-      "shared-internal-selector": 1
+      "shared-internal-selector": 11
+    },
+    "src/features/settings/ui/appearance/controls/ThemeGenerationActivity.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/settings/ui/appearance/controls/ThemeGenerator.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/settings/ui/appearance/controls/ThemeNameDialog.tsx": {
+      "disabled-without-reason": 1
     },
     "src/features/settings/ui/appearance/controls/TranscriptPreview.module.css": {
       "feature-typography": 3,
@@ -147,26 +1098,484 @@
     "src/features/settings/ui/appearance/controls/TranscriptPreview.tsx": {
       "inline-style-property": 1
     },
+    "src/features/settings/ui/integrations/BrowserSignIn.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/settings/ui/integrations/MessagingAccountsCard.tsx": {
+      "disabled-without-reason": 3,
+      "row-text-badge": 1
+    },
+    "src/features/settings/ui/integrations/MicrosoftDeviceSignIn.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/settings/ui/providerDefaultsTargetsPicker.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/skills/ui/AutoGroupDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/skills/ui/RecommendedSkills.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/skills/ui/SkillPicker.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/skills/ui/SkillRow.tsx": {
+      "disabled-without-reason": 1,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/skills/ui/SkillsLibraryToolbar.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/skills/ui/SkillsPage.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/SocialShortcut.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/AccountConnection.tsx": {
+      "disabled-without-reason": 9
+    },
+    "src/features/social/ui/accounts/AccountPermissions.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/social/ui/accounts/AccountStatusMark.tsx": {
+      "tooltip-repeats-label": 1
+    },
+    "src/features/social/ui/accounts/AutonomySettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/BrowserSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/ChromeSessionConnect.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/social/ui/accounts/ConnectAccountDialog.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/SnapchatProfilePanel.tsx": {
+      "disabled-without-reason": 3,
+      "inline-help-text": 1
+    },
+    "src/features/social/ui/accounts/SnapchatReviews.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/social/ui/accounts/SnapchatStoryRemoval.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/accounts.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/social/ui/accounts/platform/BrowserInboxHandoff.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/FacebookLivePanel.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/FacebookManagementRequests.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/FacebookProfileEditor.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/FacebookProfileForms.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/InstagramDirectComposer.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/InstagramHighlightsPanel.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/InstagramLiveProducer.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/social/ui/accounts/platform/InstagramManagementRequests.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/social/ui/accounts/platform/InstagramPostsPanel.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/InstagramProfileEditor.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/PublishedPostManagement.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/TikTokBusiness.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/TikTokChanges.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/social/ui/accounts/platform/TikTokDirectMessage.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/social/ui/accounts/platform/TikTokPrivacy.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/social/ui/accounts/platform/TikTokProfile.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/TikTokReadouts.tsx": {
+      "disabled-without-reason": 6
+    },
+    "src/features/social/ui/accounts/platform/XAccountActions.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/XApiActions.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/accounts/platform/XListActions.tsx": {
+      "disabled-without-reason": 2,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/social/ui/accounts/platform/XPostActions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/XProfileEditor.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/platform/facebook.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/social/ui/accounts/platform/instagram.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/social/ui/accounts/platform/snapchat.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/social/ui/accounts/platform/x.css": {
+      "shared-internal-selector": 1
+    },
+    "src/features/social/ui/accounts/youtube/YouTubeBrowse.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/accounts/youtube/YouTubeManage.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/audience/BulkBar.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/audience/ListsSidebar.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/social/ui/audience/PersonPanelSections.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/social/ui/audience/SequenceEditor.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/audience/SequenceStepEditor.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/social/ui/audience/audience.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 6
+    },
+    "src/features/social/ui/browser/LiveBrowserPanel.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/browser/NeedsHumanList.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/command/AiSetupCard.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/command/CommandInput.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/command/SnapchatInsights.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/common/activity-row.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 3
+    },
+    "src/features/social/ui/common/common.css": {
+      "shared-internal-selector": 5
+    },
+    "src/features/social/ui/content/ContentEditorAi.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/content/ContentEditorFields.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/content/ContentMediaField.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/content/SnapchatContentList.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/content/content.css": {
+      "feature-typography": 3,
+      "shared-internal-selector": 1
+    },
+    "src/features/social/ui/content/platform-fields/InstagramFields.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/content/platform-fields/TikTokFields.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/inbox/ConversationView.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/inbox/FacebookCommentActions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/inbox/InstagramCommentActions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/inbox/InstagramModerationReviews.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/social/ui/inbox/ReplyBox.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/inbox/SnapchatNewChat.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/social/ui/inbox/inbox.css": {
+      "shared-internal-selector": 8
+    },
+    "src/features/social/ui/linkedin/LinkedInAnalytics.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/linkedin/LinkedInBrowserProfile.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/linkedin/LinkedInHandoff.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/linkedin/LinkedInLive.tsx": {
+      "disabled-without-reason": 2,
+      "inline-help-text": 1
+    },
+    "src/features/social/ui/linkedin/LinkedInLiveComments.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/social/ui/linkedin/LinkedInNetwork.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/linkedin/LinkedInPostManagement.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/social/ui/linkedin/linkedin.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/social/ui/shell/SocialShellBar.tsx": {
+      "duplicate-feedback-channel": 1
+    },
     "src/features/source-control/model/gitGraph.ts": {
       "theme-palette-literal": 7
     },
+    "src/features/source-control/ui/AheadBehindCount.tsx": {
+      "tooltip-repeats-label": 1
+    },
+    "src/features/source-control/ui/BranchPicker.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/source-control/ui/ChangeRow.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/source-control/ui/CheckoutHeader.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/source-control/ui/ConflictLayout.tsx": {
+      "disabled-without-reason": 3,
+      "role-status-banner": 1
+    },
+    "src/features/source-control/ui/DeleteWorktreeDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/source-control/ui/FileSection.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/source-control/ui/GitActionsMenu.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/source-control/ui/GitChangesList.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/source-control/ui/GitChangesPanel.tsx": {
+      "disabled-without-reason": 4,
+      "role-status-banner": 2
+    },
+    "src/features/source-control/ui/GitCommitActions.tsx": {
+      "disabled-without-reason": 1
+    },
     "src/features/source-control/ui/GitCommitBlameView.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 2,
       "text-truncation": 1
     },
+    "src/features/source-control/ui/GitConflictCompare.tsx": {
+      "role-status-banner": 1
+    },
+    "src/features/source-control/ui/GitConflictRows.tsx": {
+      "disabled-without-reason": 2,
+      "physical-direction-utility": 2
+    },
+    "src/features/source-control/ui/GitFeedback.tsx": {
+      "disabled-without-reason": 2,
+      "role-status-banner": 1
+    },
+    "src/features/source-control/ui/GitFileInspector.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1
+    },
+    "src/features/source-control/ui/GitGenerationSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/source-control/ui/GitGraphBranches.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/source-control/ui/GitGraphColumnFilter.tsx": {
+      "disabled-without-reason": 1
+    },
     "src/features/source-control/ui/GitGraphCommitInspector.tsx": {
+      "disabled-without-reason": 3,
       "surface-style": 1
     },
+    "src/features/source-control/ui/GitGraphConflictEditor.tsx": {
+      "disabled-without-reason": 4
+    },
+    "src/features/source-control/ui/GitGraphList.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/source-control/ui/GitGraphList.tsx": {
+      "physical-direction-utility": 8
+    },
+    "src/features/source-control/ui/GitGraphWorkspace.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/source-control/ui/GitHistoryGraph.tsx": {
+      "physical-direction-utility": 1
+    },
     "src/features/source-control/ui/GitStashSection.tsx": {
+      "disabled-without-reason": 1,
       "surface-style": 1
+    },
+    "src/features/source-control/ui/MergeConflictEditor.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/source-control/ui/QuickDeleteWorktreeDialog.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
+      "disabled-without-reason": 2,
+      "tooltip-repeats-label": 1
+    },
+    "src/features/source-control/ui/SwitchBranchDialog.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/source-control/ui/UnifiedDiffView.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 5
+    },
+    "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/source-control/ui/WorktreePicker.tsx": {
+      "disabled-without-reason": 1
     },
     "src/features/source-control/ui/WorktreesPage.module.css": {
       "specificity-doubling": 1
     },
+    "src/features/source-control/ui/WorktreesPage.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/source-control/ui/conflict-layout.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 7,
       "specificity-doubling": 1
     },
+    "src/features/tasks/ui/GoalForm.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/tasks/ui/GoalPlanSteps.tsx": {
+      "row-text-badge": 1
+    },
+    "src/features/tasks/ui/SprintManagement.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/tasks/ui/TaskAcceptanceEvidence.tsx": {
+      "physical-direction-utility": 2,
+      "role-status-banner": 1
+    },
+    "src/features/tasks/ui/TaskAttemptHistory.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/tasks/ui/TaskBoardCard.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/tasks/ui/TaskBudgetControls.tsx": {
+      "physical-direction-utility": 1,
+      "role-status-banner": 1
+    },
+    "src/features/tasks/ui/TaskBulkToolbar.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/tasks/ui/TaskCardActions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/tasks/ui/TaskDetail.tsx": {
+      "physical-direction-utility": 1,
+      "role-status-banner": 1
+    },
+    "src/features/tasks/ui/TaskFormFields.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/tasks/ui/TaskList.tsx": {
+      "disabled-without-reason": 1,
+      "physical-direction-utility": 1
+    },
+    "src/features/tasks/ui/TaskReviewNotes.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/tasks/ui/TaskRunInsights.tsx": {
+      "role-status-banner": 1,
       "surface-style": 1
+    },
+    "src/features/tasks/ui/TaskStewards.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/tasks/ui/TaskWorkflowControls.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/tasks/ui/TaskWorkspacePicker.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/tasks/ui/TasksViewRecovery.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/tasks/ui/sprints.css": {
+      "shared-internal-selector": 6
+    },
+    "src/features/tasks/ui/task-board.css": {
+      "shared-internal-selector": 4
+    },
+    "src/features/tasks/ui/task-detail.css": {
+      "shared-internal-selector": 5
+    },
+    "src/features/tasks/ui/task-form.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/tasks/ui/task-goals.css": {
+      "feature-typography": 1,
+      "shared-internal-selector": 9
+    },
+    "src/features/tasks/ui/task-ops.css": {
+      "shared-internal-selector": 2
+    },
+    "src/features/tasks/ui/tasks-shell.css": {
+      "feature-typography": 1
+    },
+    "src/features/tasks/ui/tasks.css": {
+      "shared-internal-selector": 5
     },
     "src/features/terminal/model/terminalRenderingPolicy.ts": {
       "theme-palette-literal": 1
@@ -174,20 +1583,109 @@
     "src/features/terminal/runtime/terminalTheme.ts": {
       "theme-palette-literal": 37
     },
+    "src/features/terminal/ui/CodeTerminalDialog.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/terminal/ui/RemoteShellSuggestions.tsx": {
+      "aria-label-without-role": 1,
+      "role-status-banner": 2
+    },
     "src/features/terminal/ui/TerminalTools.module.css": {
       "shared-internal-selector": 1
     },
+    "src/features/terminal/ui/TerminalTools.tsx": {
+      "disabled-without-reason": 4,
+      "role-status-banner": 2
+    },
+    "src/features/today/ui/TodaySummaryPanel.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/usage/ui/UsageAnalytics.css": {
-      "shared-internal-selector": 3
+      "feature-typography": 6,
+      "shared-internal-selector": 5
+    },
+    "src/features/usage/ui/UsageBudgets.tsx": {
+      "physical-direction-utility": 1
     },
     "src/features/usage/ui/UsagePage.css": {
-      "shared-internal-selector": 1
+      "feature-typography": 3,
+      "shared-internal-selector": 3
+    },
+    "src/features/usage/ui/UsageVisualizations.css": {
+      "feature-typography": 1
+    },
+    "src/features/usage/ui/UsageVisualizations.tsx": {
+      "disabled-without-reason": 3
+    },
+    "src/features/voice/ui/DictationButton.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/DictationDictionarySettings.tsx": {
+      "disabled-without-reason": 5
+    },
+    "src/features/voice/ui/DictationOptions.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/HiddenDictationIndicator.tsx": {
+      "disabled-without-reason": 2
+    },
+    "src/features/voice/ui/LocalDictationModels.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/MicrophoneInputSettings.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/VoiceCloudKey.tsx": {
+      "disabled-without-reason": 2
     },
     "src/features/voice/ui/VoiceCompanion.module.css": {
       "spacing-step": 6
     },
+    "src/features/voice/ui/VoiceJobReview.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/VoiceSetupRow.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/VoiceTurnControl.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/companion/VoiceCompanionControls.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/voice/ui/companion/VoiceCompanionParts.module.css": {
+      "feature-typography": 1
+    },
+    "src/features/voice/ui/companion/VoiceCompanionRecovery.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/workspace/ui/TabGroupMenu.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "physical-direction-utility": 1
+    },
+    "src/features/workspaces/ui/WorkspaceDirectoryRemoval.tsx": {
+      "disabled-without-reason": 2
+    },
     "src/features/workspaces/ui/WorkspaceManagedRow.module.css": {
       "specificity-doubling": 1
+    },
+    "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
+      "disabled-without-reason": 1,
+      "role-status-banner": 1
+    },
+    "src/features/workspaces/ui/WorkspaceReview.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/workspaces/ui/WorkspaceRewindPreview.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/features/workspaces/ui/WorkspaceStorageSummary.tsx": {
+      "disabled-without-reason": 1
+    },
+    "src/shared/ui/ColorPickerPopover.tsx": {
+      "tooltip-repeats-label": 2
     },
     "src/shared/ui/arc/activity-heatmap/activity-heatmap.module.css": {
       "motion-literal": 2,

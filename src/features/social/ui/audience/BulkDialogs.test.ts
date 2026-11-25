@@ -103,6 +103,15 @@ describe("BulkDialog list", () => {
     await flush();
     clickButton("Add to list");
     await flush();
+    expect(bodyText()).toContain("Could not update the selected people.");
+    expect(bodyText()).not.toContain("List is read only.");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Details: Could not update the selected people."]',
+        )!
+        .click(),
+    );
     expect(bodyText()).toContain("List is read only.");
     expect(props.onDone).not.toHaveBeenCalled();
     expect(buttonByText("Add to list")).toBeTruthy();
@@ -179,9 +188,16 @@ describe("BulkDialog failure report", () => {
     setFieldValue(fieldByLabel("Tag"), "lead");
     clickButton("Add a tag");
     await flush();
-    expect(bodyText()).toContain("Person 0: Not allowed");
-    expect(bodyText()).toContain("Person 19: Not allowed");
-    expect(bodyText()).not.toContain("Person 20: Not allowed");
+    expect(bodyText()).toContain("Person 0: Failed");
+    expect(bodyText()).toContain("Person 19: Failed");
+    expect(bodyText()).not.toContain("Person 20: Failed");
+    expect(bodyText()).not.toContain("Not allowed");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label="Details: Person 0: Failed"]')!
+        .click(),
+    );
+    expect(bodyText()).toContain("Not allowed");
     expect(bodyText()).toContain("And 2 more could not be updated.");
   });
 });
@@ -212,6 +228,15 @@ describe("BulkDialog sequence", () => {
     });
     renderDialog(mock, { action: "sequence" });
     await flush();
+    expect(bodyText()).toContain("Could not read sequences.");
+    expect(bodyText()).not.toContain("Sequences are unavailable.");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Details: Could not read sequences."]',
+        )!
+        .click(),
+    );
     expect(bodyText()).toContain("Sequences are unavailable.");
     expect(buttonByText("Add to sequence")?.getAttribute("aria-disabled")).toBe("true");
   });

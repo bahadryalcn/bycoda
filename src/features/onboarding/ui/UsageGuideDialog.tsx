@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ACTIONS, EVENTS, Joyride, STATUS, type EventData, type Step } from "react-joyride";
 import { t, useLocale } from "../../../shared/i18n";
@@ -125,9 +126,10 @@ export default function UsageGuideDialog({
               tone="secondary"
               leading="inherit"
               className="usage-guide-missing"
-              role="status"
             >
-              <p>{help.reason}</p>
+              <p>
+                <LiveText text={help.reason} />
+              </p>
               <div className="usage-guide-missing-actions">
                 <Button
                   variant="secondary"

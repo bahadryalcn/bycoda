@@ -1,3 +1,4 @@
+import literalTranslationKey from "./rules/literal-translation-key.mjs";
 /**
  * Repository lint rules, switched on in scripts/checks/lint-config.mjs. One file per rule in rules/; each
  * carries its message and file scope, and docs/reference/rules.md is
@@ -46,6 +47,7 @@ export const rules = {
   "icon-button-needs-label": iconButtonNeedsLabel,
   "menu-uses-dropdown": menuUsesDropdown,
   "toast-needs-tone": toastNeedsTone,
+  "literal-translation-key": literalTranslationKey,
   "no-raw-error-text": noRawErrorText,
   "translation-slot-names": translationSlotNames,
   "utf8-child-locale": utf8ChildLocale,

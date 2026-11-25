@@ -7,8 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import type { Attachment, QueuedMessage } from "../model/session";
 import * as attachmentApi from "../model/attachments";
-import { attachmentDraftTokens } from "../model/attachmentTokens";
+import { attachmentDraftTokens, attachmentTokens } from "../model/attachmentTokens";
 import { withChatCitations } from "../model/chatCitation";
+import { copyMessage } from "../../../platform/tauri/clipboard";
+
+vi.mock(import("../../../platform/tauri/clipboard"), async (original) => ({
+  ...(await original()),
+  copyMessage: vi.fn().mockResolvedValue(undefined),
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -122,6 +128,51 @@ describe("QueuedMessageEditDialog", () => {
     act(() => field.setSelectionRange(9, 13));
     expect([field.selectionStart, field.selectionEnd]).toEqual([8, field.value.length]);
   });
+  it("copies attached selections and restores the file when a cut is undone", async () => {
+    const { field, button, onSave } = await open();
+    const original = field.value;
+    field.setSelectionRange(8, original.length);
+    await act(async () =>
+      field.dispatchEvent(new Event("copy", { bubbles: true, cancelable: true })),
+    );
+    expect(copyMessage).toHaveBeenLastCalledWith(
+      attachmentTokens(message.attachments)[0],
+      message.attachments,
+    );
+    expect(field.value).toBe(original);
+    await act(async () =>
+      field.dispatchEvent(new Event("cut", { bubbles: true, cancelable: true })),
+    );
+    expect(field.value).toBe("look at ");
+    await act(async () =>
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "z",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(field.value).toBe(original);
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenLastCalledWith(message.text, message.attachments);
+  });
+
+  it("keeps the draft and attachments after a refused save", async () => {
+    const onSave = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    const { field, button } = await open({ onSave });
+    await typeInto(field, "edited [image1]");
+    await act(async () => button("Save").click());
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not save changes.",
+    );
+    expect(field.value).toBe("edited [image1]");
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenLastCalledWith("edited [image1]", message.attachments);
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it("keeps a rejected queue edit available for correction and retry", async () => {
     const onSave = vi.fn().mockImplementationOnce(() => {
       throw new Error("Remote queue is full");
@@ -130,8 +181,10 @@ describe("QueuedMessageEditDialog", () => {
     await typeInto(field, "oversized draft [image1]");
     await act(async () => button("Save").click());
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-      "Remote queue is full",
+      "Could not save changes.",
     );
+    await act(async () => button("Details").click());
+    expect(document.body.textContent).toContain("Remote queue is full");
     expect(field.value).toBe("oversized draft [image1]");
     await typeInto(field, "smaller draft [image1]");
     await act(async () => button("Save").click());

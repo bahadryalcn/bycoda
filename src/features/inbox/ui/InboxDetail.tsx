@@ -536,6 +536,17 @@ export function InboxDetail({
                             (chooseStartProject &&
                               (projects.length === 0 || !startProject || loading || !!error))
                           }
+                          disabledReason={
+                            starting || !chooseStartProject
+                              ? undefined
+                              : projects.length === 0 || !startProject
+                                ? t("Choose a project first.")
+                                : loading
+                                  ? t("Loading…")
+                                  : error
+                                    ? t("Could not load this item.")
+                                    : undefined
+                          }
                           onClick={() => {
                             if (starting) return;
                             setStarting(true);
@@ -734,7 +745,6 @@ export function InboxDetail({
                   title={t("Could not load this item.")}
                   error={error}
                   retrying={retrying}
-                  disabled={false}
                   onRetry={() => void retry()}
                 />
               ) : (
@@ -744,7 +754,6 @@ export function InboxDetail({
                       title={t("Could not refresh this item.")}
                       error={error}
                       retrying={retrying}
-                      disabled={false}
                       onRetry={() => void retry()}
                     />
                   ) : null}

@@ -5,6 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AddServerModal } from "./McpAddServer";
 
 vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -130,7 +138,8 @@ it("retains JSON draft and exact provider/scope identity after a rejected save",
   expect(config.value).toBe(value);
   // The JSON supplies the server name, so the separate name field is not offered.
   expect(dialog().querySelector('input[placeholder="my-server"]')).toBeNull();
-  expect(dialog().textContent).toContain("Configuration changed; reload before saving");
+  expect(dialog().textContent).toContain("The MCP server could not be saved.");
+  expect(await detailsText()).toContain("Configuration changed; reload before saving");
   expect(onClose).not.toHaveBeenCalled();
   expect(onAdded).not.toHaveBeenCalled();
 });

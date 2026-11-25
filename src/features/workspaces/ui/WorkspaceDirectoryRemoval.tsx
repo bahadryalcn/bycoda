@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { projectName } from "../../../shared/lib/paths";
@@ -205,7 +206,9 @@ export function WorkspaceDirectoryRemoval({
               </InlineMessage>
             )}
             {!!plan.links.length && (
-              <p>{t("Dependency links are detached without deleting their targets.")}</p>
+              <InfoTooltip label={t("Dependency links")}>
+                {t("Dependency links are detached without deleting their targets.")}
+              </InfoTooltip>
             )}
             {plan.blockers.length > 0 && (
               <Alert tone="danger" title={t("Cleanup blocked")}>

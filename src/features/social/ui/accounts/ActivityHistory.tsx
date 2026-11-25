@@ -2,7 +2,7 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
@@ -21,6 +21,7 @@ import {
   type LoadedHistory,
 } from "./activityHistoryModel";
 import { useAccountWrite } from "./useAccountWrite";
+import { useRequestToken } from "./useRequestToken";
 import "./accounts.css";
 
 export type ActivityHistoryProps = {
@@ -99,12 +100,15 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
   const [moreLoading, setMoreLoading] = useState<object>();
   const [moreFailed, setMoreFailed] = useState<object>();
   const [attempt, setAttempt] = useState(0);
-  const { error, write } = useAccountWrite(t("The action could not be undone. Try again."));
+  const { error, details, write } = useAccountWrite(
+    t("The action could not be undone. Try again."),
+  );
 
   // A new request object marks every reload as pending until its read settles.
-  const request = useMemo(() => ({}), [attempt, client, projectId]);
+  const request = useRequestToken([attempt, client, projectId]);
   const loading = settled !== request;
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads the Host job and AI action history for this request; `alive` drops a read that settles after a reload or scope change.
   useEffect(() => {
     let alive = true;
     Promise.all([readJobs(client, projectId), readActions(client)])
@@ -132,7 +136,7 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
     };
   }, [request, client, projectId]);
 
-  const reload = useCallback(() => setAttempt((value) => value + 1), []);
+  const reload = () => setAttempt((value) => value + 1);
   const loadMore = () => {
     if (history.request !== request || moreLoading === request) return;
     const { jobsNext, actionsNext } = history;
@@ -179,8 +183,9 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
     >
       {loadError ? (
         <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
+      ) : error ? (
+        <InlineError details={details}>{error}</InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
       {loading && !entries.length ? (
         <LoadingText delay={false} className="social-muted">
           {t("Loading…")}
@@ -201,7 +206,10 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
             <div key={`job:${job.id}`}>
               <ActivityRow
                 title={`${jobKindText(job.kind)} · ${nameOf(job.accountId)}`}
-                time={formatDate(job.createdAt, { dateStyle: "medium", timeStyle: "short" })}
+                time={formatDate(job.createdAt, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
                 status={job.status}
                 kind={jobActivityKind(job.kind)}
                 details={
@@ -228,12 +236,14 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
           <ActivityRow
             key={`action:${action.id}`}
             title={action.summary}
-            time={formatDate(action.at, { dateStyle: "medium", timeStyle: "short" })}
+            time={formatDate(action.at, {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}
             status={aiStatus(action.status)}
             kind="other"
             details={
               <>
-                {action.undo ? null : <p>{t("This action cannot be undone.")}</p>}
                 <TechnicalDetails>
                   <p>{action.action}</p>
                   {action.reason ? <p>{action.reason}</p> : null}
@@ -250,7 +260,9 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
                     ...(action.status === "undone"
                       ? { blockedReason: t("Already undone.") }
                       : action.status !== "done"
-                        ? { blockedReason: t("Only finished actions can be undone.") }
+                        ? {
+                            blockedReason: t("Only finished actions can be undone."),
+                          }
                         : {}),
                   }
                 : undefined

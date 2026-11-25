@@ -45,7 +45,7 @@ describe("clipped status sentences stay readable", () => {
       ),
     );
     expect(
-      container.querySelector('svg[aria-label="Summary goes with next message"]'),
+      container.querySelector('[role="img"][aria-label="Summary goes with next message"]'),
     ).not.toBeNull();
     expect(container.textContent).not.toContain("Summary goes with next message");
   });

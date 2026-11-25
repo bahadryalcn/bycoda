@@ -99,12 +99,12 @@ it("keeps the previous catalog when a later pagination refresh fails", async () 
     .mockRejectedValueOnce(new Error("unavailable"));
   await act(async () => result.refresh());
   expect(result.records).toEqual([row()]);
-  expect(result.error).toBe(true);
+  expect(result.error).toContain("unavailable");
 });
 it("refuses duplicate inventory identities instead of fabricating a complete list", async () => {
   bridge.list.mockResolvedValue(page([row(), row()]));
   await mount();
-  expect(result.error).toBe(true);
+  expect(result.error).toContain("Recovery inventory changed");
   expect(result.records).toHaveLength(0);
 });
 

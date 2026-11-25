@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { t, useLocale } from "../../../shared/i18n";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { ArchivedConversations, type ArchiveConversationProps } from "./ArchivedConversations";
@@ -30,9 +31,6 @@ import {
 import { Group, RevealedSetting, Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "./SettingsCollection";
 import "./ArchiveSettings.css";
-
-export { formatArchiveDate as formatDate } from "../../../shared/i18n/format";
-export { projectDisplayName as archivedProjectLabel } from "../../projects/public/projectNames";
 
 /** Archived projects plus whether the stored list could be read at all. */
 export function useArchivedProjectsRead(): {
@@ -265,8 +263,16 @@ export function ArchivePage({
                       </div>
                       {errors[`restore:${project.path}`] ? (
                         <div className="settings-collection-feedback">
-                          <SettingsFeedback state="error">
-                            {errors[`restore:${project.path}`]}
+                          <SettingsFeedback
+                            state="error"
+                            extra={
+                              <ErrorDetails
+                                title={t("The project could not be restored.")}
+                                detail={errors[`restore:${project.path}`]}
+                              />
+                            }
+                          >
+                            {t("The project could not be restored.")}
                           </SettingsFeedback>
                         </div>
                       ) : null}

@@ -104,6 +104,7 @@ export const lint = {
         "bycoda/transcript-ink-roles": "error",
         "bycoda/transcript-row-trigger": "error",
         "bycoda/no-raw-error-text": "error",
+        "bycoda/literal-translation-key": "error",
         "bycoda/shared-container-appearance": "error",
         "bycoda/button-pressed-prop": "error",
         "bycoda/dialog-single-translator": "error",

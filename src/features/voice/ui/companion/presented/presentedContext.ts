@@ -11,7 +11,8 @@ export type PresentedPress = {
   /** The exact descriptor that was sent; once the owner edits an input it no longer matches. */
   signature: string;
   state: "pending" | "failed" | "sent";
-  message?: string;
+  reason?: "incomplete" | "view-changed";
+  detail?: string;
   response?: VoicePresentedActionResponse;
 };
 

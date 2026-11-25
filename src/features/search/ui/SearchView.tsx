@@ -295,17 +295,20 @@ export function SearchView({
   );
   const liveMessageHits = useMemo(() => {
     if (!localConversationsEnabled) return [];
-    const eligibleIds = new Set(conversationRows.map((session) => session.id));
+    // The row's recency is the session's own timestamp (`Session` carries none).
+    const eligibleUpdatedAt = new Map(
+      conversationRows.map((session) => [session.id, session.updatedAt]),
+    );
     return messageSearch.search(
       deferredTrimmed
         ? deferredSessions
-            .filter((session) => eligibleIds.has(session.id))
+            .filter((session) => eligibleUpdatedAt.has(session.id))
             .map((session) => ({
               id: session.id,
               cwd: session.cwd,
               harness: session.harness,
               title: session.title,
-              updatedAt: Date.now(),
+              updatedAt: eligibleUpdatedAt.get(session.id) ?? 0,
               blocks: session.blocks,
             }))
         : [],
@@ -328,7 +331,7 @@ export function SearchView({
       return { groups, assignments: loadProjectGroupAssignments(groups) };
     },
     // Re-read when the search opens or the project list changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadProjectGroups reads stored state, so it must re-run on open and on recents change only
     [open, recents],
   );
   // The filters belong to the Conversations tab; the All tab searches everywhere.
@@ -657,7 +660,6 @@ export function SearchView({
           extra={
             <>
               <ErrorDetails
-                title={t("Search failed")}
                 detail={[
                   showFileError ? error : null,
                   showConversationError ? conversationError : null,

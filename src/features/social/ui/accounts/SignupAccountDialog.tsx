@@ -73,7 +73,9 @@ export function SignupAccountDialog({
   const [workflow, setWorkflow] = useState<SocialBrowserWorkflow | undefined>(initialWorkflow);
   const [draft, setDraft] = useState<Partial<Record<SocialRegistrationField, string>>>({});
   const [pollError, setPollError] = useState("");
-  const { error, is, write } = useAccountWrite(t("The signup could not be started. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The signup could not be started. Try again."),
+  );
   const live = isSignupLive(workflow);
 
   // Keep the signup status current while the Host drives the window; the owner works there, not here.
@@ -180,7 +182,9 @@ export function SignupAccountDialog({
 
   return (
     <Modal
-      title={t("Create a {p0} account", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+      title={t("Create a {p0} account", {
+        p0: SOCIAL_PLATFORM_NAMES[platform],
+      })}
       onClose={() => {
         if (!busy && !live) leave();
       }}
@@ -307,7 +311,7 @@ export function SignupAccountDialog({
         {problem ? <InlineMessage tone="warning">{problem}</InlineMessage> : null}
         {pollError ? <InlineMessage tone="warning">{pollError}</InlineMessage> : null}
         {error ? (
-          <InlineError details={error}>
+          <InlineError details={details}>
             {live
               ? t("The signup could not continue.")
               : t("The signup could not be started. Try again.")}

@@ -41,11 +41,20 @@ function CodeTerminalPresentation({
   onClose,
   onReport,
   dockToolbarTarget,
-}: RemoteCodeRun & { onClose?: () => void; dockToolbarTarget?: HTMLDivElement | null }) {
+}: RemoteCodeRun & {
+  onClose?: () => void;
+  dockToolbarTarget?: HTMLDivElement | null;
+}) {
   const t = useT();
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
-  const readFailure = useGracedFailure({ error: state.readError, scope: state.id });
-  const actionFailure = useGracedFailure({ error: state.actionError, scope: state.id });
+  const readFailure = useGracedFailure({
+    error: state.readError,
+    scope: state.id,
+  });
+  const actionFailure = useGracedFailure({
+    error: state.actionError,
+    scope: state.id,
+  });
   const [autoReport, setAutoReport] = useState(loadCodeRunReport);
   const [reported, setReported] = useState(false);
   const [reportError, setReportError] = useState<string>();
@@ -77,7 +86,9 @@ function CodeTerminalPresentation({
       })
       .catch((error: unknown) => {
         reportSent.current = false;
-        return reportFailure(error, { toast: { show: ({ message }) => setReportError(message) } });
+        return reportFailure(error, {
+          toast: { show: ({ message }) => setReportError(message) },
+        });
       })
       .finally(() => setReporting(false))
       .catch(() => {});
@@ -258,8 +269,7 @@ function CodeTerminalPresentation({
             className="h-full p-3"
             aria-busy={readFailure.pending || actionFailure.pending || undefined}
           >
-            {stripAnsi(state.output) ||
-              (onClose && !notStarted && !actionFailure.pending ? status : undefined)}
+            {stripAnsi(state.output)}
           </OutputBlock>
         )}
       </Surface>

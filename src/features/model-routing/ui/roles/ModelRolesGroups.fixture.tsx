@@ -415,19 +415,22 @@ it("warns once above the list and badges only the jobs without an eligible model
   expect(container.textContent?.indexOf(warning)).toBeLessThan(
     container.textContent?.indexOf("Unattended work") ?? 0,
   );
-  expect(rowOf("Task worker").textContent).toContain("No model");
+  expect(rowOf("Task worker").querySelector(waitMarker)).not.toBeNull();
   expect(rowOf("Task worker").textContent).not.toContain("Now uses");
   expect(rowOf("Task reviewer").textContent).toContain("Now uses");
-  expect(rowOf("Task reviewer").textContent).not.toContain("No model");
-  expect(container.textContent?.split("No model").length).toBe(2);
+  expect(rowOf("Task reviewer").querySelector(waitMarker)).toBeNull();
+  expect(container.querySelectorAll(waitMarker)).toHaveLength(1);
 });
+
+/** The icon that marks a job which would wait for a model. */
+const waitMarker = '[aria-label="No eligible model; this job will wait."]';
 
 it("shows no list warning while every job has a model", async () => {
   await render(
     <Groups initial={draftOf({ entries: [entry], roles: { "task.worker": { kind: "order" } } })} />,
   );
   expect(container.textContent).not.toContain("Runs wait");
-  expect(container.textContent).not.toContain("No model");
+  expect(container.querySelector(waitMarker)).toBeNull();
 });
 
 it("does not claim the helper's own model when the preview fails or is slow", async () => {

@@ -53,7 +53,7 @@ it("explains an empty day beside the active-time stat when the read succeeded", 
   expect(markup).toContain("No agent activity recorded today.");
   expect(markup).toContain("Active time");
   expect(markup).toContain("42");
-  expect(markup).not.toContain("Some usage could not be read");
+  expect(markup).not.toContain("Some usage or model prices could not be read");
   expect(markup).not.toContain("Active time, last 7 days");
   expect(markup).not.toContain("3h 27m");
   expect(markup).not.toContain('data-surface-role="card"');
@@ -62,11 +62,14 @@ it("explains an empty day beside the active-time stat when the read succeeded", 
 
 it("does not claim there is no activity when a read failed", () => {
   read.failed = true;
-  const markup = renderToStaticMarkup(createElement(TodayView));
-  expect(markup).toContain("Some usage could not be read");
-  expect(markup).not.toContain("No agent activity recorded");
-  expect(markup).toContain("Active time");
-  read.failed = false;
+  try {
+    const markup = renderToStaticMarkup(createElement(TodayView));
+    expect(markup).toContain("Some usage or model prices could not be read");
+    expect(markup).not.toContain("No agent activity recorded");
+    expect(markup).toContain("Active time");
+  } finally {
+    read.failed = false;
+  }
 });
 
 it("shows when the figures were last read", () => {

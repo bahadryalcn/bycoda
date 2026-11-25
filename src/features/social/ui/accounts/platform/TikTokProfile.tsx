@@ -50,7 +50,9 @@ export function TikTokProfile({
   const [avatar, setAvatar] = useState<File>();
   const [unconfirmed, setUnconfirmed] = useState(false);
   const confirmation = useConfirm();
-  const { write, error, is } = useAccountWrite(t("Could not read or save the TikTok profile."));
+  const { write, error, details, is } = useAccountWrite(
+    t("Could not read or save the TikTok profile."),
+  );
   const patch: Partial<Record<ProfileField, string>> = {};
   for (const field of fields)
     if (saved && draft && draft[field] !== saved[field]) patch[field] = draft[field] ?? "";
@@ -99,7 +101,10 @@ export function TikTokProfile({
           return await client.request<Profile | { status: "unknown" }>("tiktok.profile.update", {
             accountId,
             confirm: true,
-            patch: { ...patch, ...(upload ? { avatarUploadId: upload.uploadId } : {}) },
+            patch: {
+              ...patch,
+              ...(upload ? { avatarUploadId: upload.uploadId } : {}),
+            },
           });
         });
         if (profile && "status" in profile) {
@@ -247,7 +252,7 @@ export function TikTokProfile({
           </div>
         </form>
       )}
-      {error && <InlineError>{error}</InlineError>}
+      {error && <InlineError details={details}>{error}</InlineError>}
       {confirmation.dialog}
     </div>
   );

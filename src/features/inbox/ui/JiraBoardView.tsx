@@ -29,7 +29,7 @@ import {
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
-import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import {
   columnTransitions,
   jiraBoardConfiguration,
@@ -966,12 +966,11 @@ export function JiraBoardView({
             {group.verifiedAt ? (
               <>
                 {" "}
-                <ErrorDetails
-                  title={source}
-                  detail={t("Last verified {p0}", {
+                <InfoTooltip>
+                  {t("Last verified {p0}", {
                     p0: formatDate(group.verifiedAt, { dateStyle: "medium", timeStyle: "short" }),
                   })}
-                />
+                </InfoTooltip>
               </>
             ) : null}
           </Text>
@@ -1102,6 +1101,7 @@ export function JiraBoardView({
                 key={choice.id}
                 type="button"
                 disabled={choice.requiresFields}
+                disabledReason={t("This transition needs fields. Change it in Jira.")}
                 onClick={() => void transition(pick.issue, choice.id, pick.anchor)}
               >
                 {choice.name}

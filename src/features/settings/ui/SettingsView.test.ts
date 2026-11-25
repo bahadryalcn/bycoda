@@ -15,6 +15,7 @@ import { resetRetainedProvidersPage } from "./ProviderSettings";
 import { navigationGroups } from "./SettingsAccountRow";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
+import { openErrorDetails } from "../../sessions/ui/errorDetails.fixture";
 import {
   SETTINGS_INDEX,
   SETTINGS_SECTIONS,
@@ -1437,9 +1438,11 @@ describe("settings pages", () => {
     await act(async () => openCodeDetails.click());
 
     await save("Codex", "/bad/codex");
-    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
-      "Codex failed to start",
+    const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not inspect the CLI executable.",
     );
+    expect(openErrorDetails(dialog())).toContain("Codex failed to start");
     expect(container.textContent).not.toContain("/opt/codex/bin/codex");
     expect(JSON.parse(localStorage.getItem("bycoda.providerBinaryPaths.v1") ?? "{}").codex).toBe(
       "/opt/codex/bin/codex",
@@ -1453,9 +1456,10 @@ describe("settings pages", () => {
 
     failAutoCodex = true;
     await save("Codex", "");
-    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
-      "Codex auto-detection failed",
+    expect(dialog().querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not inspect the CLI executable.",
     );
+    expect(openErrorDetails(dialog())).toContain("Codex auto-detection failed");
     expect(JSON.parse(localStorage.getItem("bycoda.providerBinaryPaths.v1") ?? "{}").codex).toBe(
       "/opt/codex/bin/codex",
     );
@@ -1940,8 +1944,12 @@ describe("settings pages", () => {
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Open Codex CLI location"]')!.click(),
     );
-    expect(document.body.textContent).toContain(
-      "Could not open the CLI location: File manager unavailable",
+    expect(document.body.textContent).toContain("Could not open the CLI location.");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!.click(),
+    );
+    expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toContain(
+      "File manager unavailable",
     );
   });
 
@@ -2143,7 +2151,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(container.textContent).toContain("Could not save shortcuts");
+    expect(container.textContent).toContain("Could not save shortcut.");
   });
 
   it("records an Alt shortcut on a keybinding row", async () => {

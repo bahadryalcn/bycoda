@@ -151,7 +151,7 @@ export const PROGRAM_OPERATION_FIELDS: Record<string, string[]> = {
   "programs.status": ["id", "before"],
   "programs.configure": ["id", "config", "expectedRevision"],
   "programs.generate": ["id"],
-  "programs.preview-schedule": ["config"],
+  "programs.preview-schedule": ["config", "id"],
   "programs.suggest": ["config", "instructions"],
   "programs.activate": ["id", "expectedRevision", "confirm"],
   "programs.pause": ["id"],

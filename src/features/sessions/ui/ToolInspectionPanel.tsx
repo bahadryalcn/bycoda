@@ -1,4 +1,5 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
@@ -242,9 +243,10 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                     iconOnly
                     items={actions}
                   />
-                  <span role="status" className="sr-only">
-                    {feedback.copied ? t("Copied") : feedback.failed ? t("Copy failed") : ""}
-                  </span>
+                  <LiveText
+                    className="sr-only"
+                    text={feedback.copied ? t("Copied") : feedback.failed ? t("Copy failed") : ""}
+                  />
                 </div>
               ) : null}
             </div>

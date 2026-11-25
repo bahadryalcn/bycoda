@@ -398,7 +398,9 @@ it("a possibly accepted launch is never automatically replayed by closure retry"
     return quickNativeReply(command, args, "pending");
   });
   await act(async () => button("Start").click());
-  expect(container.textContent).toContain("Launch outcome unknown");
+  expect(container.textContent).toContain("Could not start the session.");
+  await act(async () => button("Details").click());
+  expect(document.body.textContent).toContain("Launch outcome unknown");
   await expect(close().captureAndFlush()).rejects.toThrow("Launch outcome unknown");
   await expect(closed!.retryFailed(key)).rejects.toThrow("unknown");
   expect(calls("quick_composer_submit_intent")).toHaveLength(1);

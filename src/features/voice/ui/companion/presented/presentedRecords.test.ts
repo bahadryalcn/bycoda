@@ -108,10 +108,10 @@ it("sends date, period, free-text and list values to an action as their own type
     onAction,
   );
   // A list starts with nothing picked, so the button that needs a pick waits for one.
-  expect(button("Go").disabled).toBe(true);
+  expect(button("Go").getAttribute("aria-disabled")).toBe("true");
   expect(host.querySelector("fieldset legend")?.textContent).toBe("When");
   await act(async () => option("Review notes").click());
-  expect(button("Go").disabled).toBe(false);
+  expect(button("Go").getAttribute("aria-disabled")).not.toBe("true");
   await act(async () => button("Go").click());
   expect(onAction).toHaveBeenCalledWith({
     label: "Go",
@@ -143,7 +143,8 @@ it("holds a period back until it is set", async () => {
     },
     onAction,
   );
-  expect(button("Open").disabled).toBe(true);
+  expect(button("Open").getAttribute("aria-disabled")).toBe("true");
+  await act(async () => button("Open").click());
   expect(onAction).not.toHaveBeenCalled();
 });
 

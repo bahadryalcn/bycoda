@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -494,8 +494,8 @@ export function TaskForm({
                       ) : null}
                       {crewLoading ? <LoadingText>{t("Loading crews…")}</LoadingText> : null}
                       {crewQuery.error && !centralCrewError ? (
-                        <InlineMessage
-                          tone="warning"
+                        <InlineError
+                          details={crewQuery.error.message}
                           retry={{
                             onRetry: () => {
                               void crewQuery.refetch().catch(() => {});
@@ -503,8 +503,8 @@ export function TaskForm({
                             pending: crewQuery.isFetching,
                           }}
                         >
-                          {crewQuery.error.message}
-                        </InlineMessage>
+                          {t("Could not load the crews for this project.")}
+                        </InlineError>
                       ) : !crewValid && !crewLoading && !crewQuery.error ? (
                         <InlineMessage tone="warning">
                           {t("Connect an updated host and choose an available crew.")}

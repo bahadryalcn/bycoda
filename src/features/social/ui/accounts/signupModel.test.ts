@@ -57,7 +57,10 @@ describe("registration profile", () => {
 
   it("lists required fields that are empty or invalid, in display order", () => {
     expect(
-      missingFields(["username", "email", "givenName"], { email: "nope", givenName: "Ada" }),
+      missingFields(["username", "email", "givenName"], {
+        email: "nope",
+        givenName: "Ada",
+      }),
     ).toEqual(["email", "username"]);
   });
 });

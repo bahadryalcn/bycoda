@@ -151,6 +151,16 @@ export function ContentCalendar({
                   label={t("New post on {p0}", {
                     p0: formatDate(day, { day: "numeric", month: "short" }),
                   })}
+                  disabled={
+                    startOfDay(day) < startOfDay(now) ||
+                    (today && dayKey(now + 60_000) !== dayKey(day))
+                  }
+                  disabledReason={
+                    startOfDay(day) < startOfDay(now) ||
+                    (today && dayKey(now + 60_000) !== dayKey(day))
+                      ? t("Pick a time in the future.")
+                      : undefined
+                  }
                   onClick={() => onPickDay(startOfDay(day))}
                 >
                   <Plus className="icon-xs" aria-hidden />

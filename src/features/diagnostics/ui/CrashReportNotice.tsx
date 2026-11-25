@@ -52,7 +52,11 @@ export function CrashReportNotice() {
       width="lg"
       actionsPlacement="footer"
       actions={[
-        { label: t("Send"), pending: busy, onClick: () => void send().catch(() => undefined) },
+        {
+          label: failed ? t("Try again") : t("Send"),
+          pending: busy,
+          onClick: () => void send().catch(() => undefined),
+        },
         {
           label: t("Don't send"),
           disabled: busy,

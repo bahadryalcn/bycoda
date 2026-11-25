@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "../../../shared/ui/settings";
@@ -84,7 +85,7 @@ export function TerminalProfileDiscovery({
   const [profiles, setProfiles] = useState<TerminalProfile[] | null>(null);
   const [activeOperation, setActiveOperation] = useState<string | null>(null);
   const busy = activeOperation !== null;
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [openPopover, setOpenPopover] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -114,7 +115,7 @@ export function TerminalProfileDiscovery({
       (caught: unknown) => {
         if (!cancelled && revision === discoveryRevision.current) {
           setProfiles(null);
-          setError(errorText(caught));
+          setError({ title: t("Could not find terminal profiles."), detail: errorText(caught) });
         }
       },
     );
@@ -158,7 +159,14 @@ export function TerminalProfileDiscovery({
     try {
       await action(current);
     } catch (caught) {
-      if (current()) setError(errorText(caught));
+      if (current())
+        setError({
+          title:
+            key === "find"
+              ? t("Could not find terminal profiles.")
+              : t("Could not choose a terminal profile folder."),
+          detail: errorText(caught),
+        });
     } finally {
       if (current()) {
         operationBusy.current = false;
@@ -329,7 +337,11 @@ export function TerminalProfileDiscovery({
               </ul>
             </ScrollArea>
             {message ? <SettingsFeedback state="success">{message}</SettingsFeedback> : null}
-            {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+            {error ? (
+              <SettingsFeedback state="error" extra={<ErrorDetails detail={error.detail} />}>
+                {error.title}
+              </SettingsFeedback>
+            ) : null}
           </div>
         </Popover>
       ) : null}

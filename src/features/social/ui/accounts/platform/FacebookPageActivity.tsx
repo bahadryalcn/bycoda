@@ -102,7 +102,10 @@ export function FacebookPageActivity({
       ),
     );
     if (result)
-      setAnalytics((current) => ({ ...current, [key]: postId ? result[postId] : result }));
+      setAnalytics((current) => ({
+        ...current,
+        [key]: postId ? result[postId] : result,
+      }));
   };
 
   const pageStats = analytics[""] as InsightsPage | undefined;
@@ -167,7 +170,10 @@ export function FacebookPageActivity({
                     label={t("Edit post")}
                     value={editing.text}
                     onChange={(event) =>
-                      setEditing({ id: post.id, text: event.currentTarget.value })
+                      setEditing({
+                        id: post.id,
+                        text: event.currentTarget.value,
+                      })
                     }
                   />
                 ) : (
@@ -248,7 +254,7 @@ export function FacebookPageActivity({
           {t("Load more")}
         </Button>
       ) : null}
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
       {confirm.dialog}
     </section>
   );

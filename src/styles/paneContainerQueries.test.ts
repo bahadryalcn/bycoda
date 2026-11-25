@@ -12,7 +12,7 @@ const panes = [
   { css: `${room}/room/RoomShell.module.css`, container: "assistant-room", widths: [720] },
   { css: `${room}/room/RoomTabs.module.css`, container: "assistant-room", widths: [540] },
   { css: `${room}/room/TodayTab.module.css`, container: "assistant-room", widths: [900] },
-  { css: `${room}/room/Conversation.module.css`, container: "assistant-room", widths: [900] },
+  { css: `${room}/room/Conversation.module.css`, container: "assistant-room", widths: [540, 900] },
   { css: `${room}/AssistantOwnerQuestions.module.css`, container: "assistant-room", widths: [720] },
   { css: `${room}/AssistantHistory.module.css`, container: "assistant-room", widths: [540] },
   { css: `${room}/AssistantMemoryPanel.module.css`, container: "assistant-room", widths: [540] },

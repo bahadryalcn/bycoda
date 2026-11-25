@@ -70,7 +70,11 @@ import { OutputBlock } from "../../shared/ui/OutputBlock";
 import { MAX_POLL_FAILURES, pollDelay } from "./model/pollBackoff";
 
 type Intent = "details" | "stop" | "kill" | "restart";
-type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
+type Launch = {
+  input: DevServerStart;
+  result?: DevServerStartResult;
+  pending?: boolean;
+};
 const stateLabels = {
   starting: "Starting",
   running: "Running",
@@ -453,6 +457,11 @@ function ProjectDevServersPanel({
     });
   const disabled = busy || !!launch?.pending;
   const unavailable = (name: string) => !!launch?.pending || (busy && operation !== name);
+  const waitReason = t("Another action is in progress");
+  const controlReason = (server: DevServer) =>
+    canControl(server)
+      ? waitReason
+      : t("Process identity unavailable; process control is disabled.");
   const query = search.trim().toLocaleLowerCase();
   const servers = scan?.servers ?? [];
   const visibleServers = servers.filter(
@@ -500,14 +509,20 @@ function ProjectDevServersPanel({
   const openLocal = (server: DevServer, address: DevServerEndpoint) =>
     void action(`${server.id}:open`, async () => {
       await openUrl(
-        await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address }),
+        await accessibleDevelopmentUrl(cwd, address.url, {
+          server,
+          endpoint: address,
+        }),
       );
     });
   const copyUrl = (server: DevServer, address: DevServerEndpoint) =>
     void action(
       `${server.id}:copy`,
       async () => {
-        const url = await accessibleDevelopmentUrl(cwd, address.url, { server, endpoint: address });
+        const url = await accessibleDevelopmentUrl(cwd, address.url, {
+          server,
+          endpoint: address,
+        });
         if (!alive.current) return;
         const copied = await copyAsync(() =>
           navigator.clipboard.writeText(url).catch((cause) => {
@@ -587,6 +602,7 @@ function ProjectDevServersPanel({
           iconOnly
           label={t("Close details")}
           disabled={disabled}
+          disabledReason={waitReason}
           onClick={() => setDetails(undefined)}
         >
           <X className="icon-sm" aria-hidden />
@@ -665,19 +681,13 @@ function ProjectDevServersPanel({
         </Surface>
       ) : null}
       <div className="dev-server-confirm">
-        {intent !== "details" ? (
-          <Text as="p" size="caption" tone="secondary">
-            {t(
-              "Review the affected ports before confirming. The host verifies process identity before sending a signal.",
-            )}
-          </Text>
-        ) : null}
         <div className="dev-server-actions">
           {intent === "stop" && !requiresForce ? (
             <Button
               tone="danger"
               loading={operation === `${current.server.id}:stop`}
               disabled={unavailable(`${current.server.id}:stop`) || !canControl(current.server)}
+              disabledReason={controlReason(current.server)}
               onClick={() => void control("stop")}
             >
               {t("Confirm graceful stop")}
@@ -688,6 +698,11 @@ function ProjectDevServersPanel({
               tone="danger"
               loading={operation === `${current.server.id}:kill`}
               disabled={unavailable(`${current.server.id}:kill`) || !hasIdentity(current.server)}
+              disabledReason={
+                hasIdentity(current.server)
+                  ? waitReason
+                  : t("Process identity unavailable; process control is disabled.")
+              }
               onClick={() => void control("kill")}
             >
               {t("Confirm force terminate")}
@@ -702,6 +717,11 @@ function ProjectDevServersPanel({
                 !canControl(current.server) ||
                 (!current.server.managed && (!restartCommand.trim() || !restartCwd.trim()))
               }
+              disabledReason={
+                !canControl(current.server) || unavailable(`${current.server.id}:restart`)
+                  ? controlReason(current.server)
+                  : t("Enter a command and directory")
+              }
               onClick={() => void control("restart")}
             >
               {t("Confirm restart")}
@@ -709,13 +729,14 @@ function ProjectDevServersPanel({
           ) : null}
           <Button
             disabled={unavailable(`${current.server.id}:logs`)}
+            disabledReason={waitReason}
             loading={operation === `${current.server.id}:logs`}
             onClick={() =>
               void action(`${current.server.id}:logs`, async () => {
-                const result = await request<{ available: boolean; output: string }>(
-                  "logs",
-                  target(current.server),
-                );
+                const result = await request<{
+                  available: boolean;
+                  output: string;
+                }>("logs", target(current.server));
                 if (alive.current) setLogs(result);
               })
             }
@@ -783,6 +804,7 @@ function ProjectDevServersPanel({
           variant="primary"
           startIcon={<Eye />}
           disabled={!endpoint}
+          disabledReason={t("No address detected")}
           onClick={() => endpoint && setPreview(endpoint.url)}
         >
           {t("Open in preview")}
@@ -792,6 +814,7 @@ function ProjectDevServersPanel({
           label={t("Open in this computer's browser")}
           loading={operation === `${server.id}:open`}
           disabled={unavailable(`${server.id}:open`) || !endpoint}
+          disabledReason={endpoint ? waitReason : t("No address detected")}
           onClick={() => endpoint && openLocal(server, endpoint)}
         >
           <ExternalLink className="icon-sm" aria-hidden />
@@ -801,6 +824,7 @@ function ProjectDevServersPanel({
           label={t("Copy URL")}
           loading={operation === `${server.id}:copy`}
           disabled={unavailable(`${server.id}:copy`) || !endpoint}
+          disabledReason={endpoint ? waitReason : t("No address detected")}
           onClick={() => endpoint && copyUrl(server, endpoint)}
         >
           <Copy className="icon-sm" aria-hidden />
@@ -811,6 +835,7 @@ function ProjectDevServersPanel({
           label={t("Restart")}
           loading={operation === `${server.id}:select:restart`}
           disabled={unavailable(`${server.id}:select:restart`) || !canControl(server)}
+          disabledReason={controlReason(server)}
           onClick={() => void select(server, "restart")}
         >
           <RotateCcw className="icon-sm" aria-hidden />
@@ -971,6 +996,7 @@ function ProjectDevServersPanel({
             label={t("Refresh")}
             loading={operation === "refresh"}
             disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
+            disabledReason={waitReason}
             onClick={retryScan}
           >
             <RefreshCw />
@@ -992,6 +1018,7 @@ function ProjectDevServersPanel({
             iconOnly
             label={t("External tunnels")}
             disabled={disabled}
+            disabledReason={waitReason}
             onClick={() => setSharing("3000")}
           >
             <Share className="icon-sm" aria-hidden />
@@ -1000,6 +1027,7 @@ function ProjectDevServersPanel({
             <Button
               startIcon={<Plus />}
               disabled={disabled}
+              disabledReason={waitReason}
               aria-expanded={showStart}
               onClick={() => setShowStart((value) => !value)}
             >
@@ -1110,6 +1138,9 @@ function ProjectDevServersPanel({
                 variant="primary"
                 loading={operation === "start" || !!launch?.pending}
                 disabled={unavailable("start") || !name.trim() || !command.trim()}
+                disabledReason={
+                  name.trim() && command.trim() ? waitReason : t("Enter a name and command")
+                }
               >
                 {t("Start command")}
               </Button>
@@ -1125,13 +1156,19 @@ function ProjectDevServersPanel({
           aria-label={t("Port conflict")}
         >
           <Alert tone="danger">
-            {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
+            {t("Port {p0} is already in use.", {
+              p0: startResult.conflict.port,
+            })}
           </Alert>
           <Text as="p" size="caption" tone="secondary">
             {t("Inspect and stop the existing process, or define a command using another port.")}
           </Text>
           <ul className="dev-server-list">{startResult.conflict.servers.map(renderServer)}</ul>
-          <Button disabled={disabled} onClick={() => setShowStart(true)}>
+          <Button
+            disabled={disabled}
+            disabledReason={waitReason}
+            onClick={() => setShowStart(true)}
+          >
             {t("Use another port")}
           </Button>
         </Surface>
@@ -1140,7 +1177,11 @@ function ProjectDevServersPanel({
         <EmptyState
           kind="empty"
           description={t("No servers found")}
-          action={{ label: t("Start server"), disabled, onClick: () => setShowStart(true) }}
+          action={{
+            label: t("Start server"),
+            disabled,
+            onClick: () => setShowStart(true),
+          }}
         />
       ) : scan && visibleServers.length === 0 && query ? (
         <EmptyState

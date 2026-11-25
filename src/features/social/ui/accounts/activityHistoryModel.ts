@@ -37,7 +37,10 @@ export async function readJobs(
   const page = response.snapshot?.pages?.jobs;
   // The Host clamps an offset past the end, so the effective offset comes from its page.
   const end = (page?.offset ?? offset) + jobs.length;
-  return { jobs, ...(page && jobs.length && end < page.total ? { next: end } : {}) };
+  return {
+    jobs,
+    ...(page && jobs.length && end < page.total ? { next: end } : {}),
+  };
 }
 
 /** One AI action page; the Host scopes it to the accounts the principal can read. */
@@ -67,8 +70,16 @@ export function mergeActivity(
   actionsMore: boolean,
 ): { entries: ActivityEntry[]; held: number } {
   const all: ActivityEntry[] = [
-    ...jobs.map((job): ActivityEntry => ({ kind: "job", at: job.createdAt, job })),
-    ...actions.map((action): ActivityEntry => ({ kind: "action", at: action.at, action })),
+    ...jobs.map((job): ActivityEntry => ({
+      kind: "job",
+      at: job.createdAt,
+      job,
+    })),
+    ...actions.map((action): ActivityEntry => ({
+      kind: "action",
+      at: action.at,
+      action,
+    })),
   ].sort((a, b) => b.at - a.at);
   const edges = [
     ...(jobsMore ? [oldest(jobs.map((job) => job.createdAt))] : []),

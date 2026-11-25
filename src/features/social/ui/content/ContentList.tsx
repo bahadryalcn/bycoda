@@ -3,14 +3,14 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { ClampText } from "../../../../shared/ui/ClampText";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
+import { SocialStatusDot } from "../common/SocialStatusDot";
 import { Button } from "../../../../shared/ui/Button";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Select } from "../../../../shared/ui/Select";
 import type { SocialAccount, SocialCampaign, SocialJob } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
 import { PlatformMark } from "../common/PlatformIcon";
-import { ContentStateBadge, type ContentState } from "./ContentStatus";
+import { ContentStateDot, type ContentState } from "./ContentStatus";
 
 export type ContentListStatus =
   | "all"
@@ -31,6 +31,7 @@ export type ContentListProps = {
   onAccountFilter: (accountId: string) => void;
   onStatusFilter: (status: ContentListStatus) => void;
   onOpen: (campaignId: string) => void;
+  onReviewProgram: (program: SocialProgram) => void;
 };
 
 /** The newest publish job per campaign, found in one pass; on a tie the first loaded job wins. */
@@ -48,9 +49,9 @@ export function latestPublishJobs(jobs: SocialJob[]): Map<string, SocialJob> {
 /** The campaign's state in one word: its newest job, or Draft / Paused when it has none. */
 export function campaignState(
   campaign: SocialCampaign,
-  latestJobs: ReadonlyMap<string, SocialJob>,
+  latestJobs: ReadonlyMap<string, SocialJob> | undefined,
 ): ContentState {
-  const latest = latestJobs.get(campaign.id);
+  const latest = latestJobs?.get(campaign.id);
   if (latest) return latest.status;
   return campaign.paused ? "paused" : "draft";
 }
@@ -85,16 +86,40 @@ export function ContentList({
   onAccountFilter,
   onStatusFilter,
   onOpen,
+  onReviewProgram,
 }: ContentListProps) {
-  const latestJobs = latestPublishJobs(jobs);
+  const latestByAccount = new Map<string, SocialJob[]>();
+  for (const job of jobs) {
+    if (job.kind !== "publish" || !job.campaignId) continue;
+    const key = job.accountId;
+    const found = latestByAccount.get(key);
+    if (found) found.push(job);
+    else latestByAccount.set(key, [job]);
+  }
+  const accountJobs = new Map(
+    [...latestByAccount].map(([id, rows]) => [id, latestPublishJobs(rows)]),
+  );
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const rows = campaigns
     .filter(
       (campaign) =>
         !accountFilter || campaign.variants.some((variant) => variant.accountId === accountFilter),
     )
-    .map((campaign) => ({ campaign, state: campaignState(campaign, latestJobs) }))
-    .filter((row) => matchesStatus(row.state, statusFilter));
+    .map((campaign) => {
+      const targets = campaign.variants.filter(
+        (variant) => !accountFilter || variant.accountId === accountFilter,
+      );
+      const states = [
+        ...new Set(
+          targets.map(({ accountId }) => campaignState(campaign, accountJobs.get(accountId))),
+        ),
+      ];
+      return { campaign, targets, states };
+    })
+    .filter(
+      ({ states }) =>
+        statusFilter === "all" || states.some((state) => matchesStatus(state, statusFilter)),
+    );
   return (
     <div className="content-list">
       <div className="content-list-filters">
@@ -153,17 +178,17 @@ export function ContentList({
             "content-rows",
           )}
         >
-          {rows.map(({ campaign, state }, index) => {
+          {rows.map(({ campaign, targets, states }, index) => {
             const platforms = [
               ...new Set(
-                campaign.variants
+                targets
                   .map((variant) => accountsById.get(variant.accountId)?.platform)
                   .filter(
                     (platform): platform is NonNullable<typeof platform> => platform !== undefined,
                   ),
               ),
             ];
-            const first = campaign.variants[0];
+            const first = targets[0];
             const at = first?.scheduledAt;
             const preview = first?.text.trim();
             return (
@@ -225,7 +250,9 @@ export function ContentList({
                           })}
                         </Text>
                       ) : null}
-                      <ContentStateBadge state={state} />
+                      {states.map((state) => (
+                        <ContentStateDot key={state} state={state} />
+                      ))}
                     </span>
                   </span>
                 </Button>
@@ -251,25 +278,39 @@ export function ContentList({
               "content-rows",
             )}
           >
-            {programs.map((program) => (
-              <li key={program.id} className="content-row-static">
-                <Text
-                  size="inherit"
-                  tone="inherit"
-                  weight="medium"
-                  truncate
-                  className="content-row-name"
-                >
-                  {program.name}
-                </Text>
-                <Badge
-                  size="sm"
-                  tone={program.cancelled || !program.enabled ? "neutral" : "success"}
-                >
-                  {program.cancelled ? t("Cancelled") : program.enabled ? t("Active") : t("Paused")}
-                </Badge>
-              </li>
-            ))}
+            {programs.map((program) => {
+              const status = program.cancelled
+                ? t("Cancelled")
+                : program.enabled
+                  ? t("Active")
+                  : t("Paused");
+              const row = (
+                <span className="content-row-body">
+                  <Text size="inherit" weight="medium" truncate className="content-row-name">
+                    {program.name}
+                  </Text>
+                  <SocialStatusDot
+                    label={status}
+                    tone={program.cancelled ? "neutral" : program.enabled ? "success" : "warning"}
+                  />
+                </span>
+              );
+              return (
+                <li key={program.id} className="content-row-host">
+                  <Button
+                    variant="item"
+                    layout="stacked"
+                    fullWidth
+                    align="start"
+                    size="sm"
+                    className="content-row"
+                    onClick={() => onReviewProgram(program)}
+                  >
+                    {row}
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}

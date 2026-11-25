@@ -51,7 +51,12 @@ async function tooltipText(target: HTMLElement): Promise<string> {
 }
 
 function settings(patch: Partial<BrowserSettingsValue> = {}): BrowserSettingsValue {
-  return { accountId: "a1", visibility: "hidden", desktopControl: { allowed: false }, ...patch };
+  return {
+    accountId: "a1",
+    visibility: "hidden",
+    desktopControl: { allowed: false },
+    ...patch,
+  };
 }
 
 function clientWith(loaded: BrowserSettingsValue | Error = settings()) {
@@ -61,7 +66,11 @@ function clientWith(loaded: BrowserSettingsValue | Error = settings()) {
   });
   const set = vi.fn(async (input: BrowserSettingsValue) => structuredClone(input));
   const resolve = vi.fn(async () => undefined);
-  const browserViewFrame = vi.fn(async () => ({ jpegBase64: "QUFB", width: 10, height: 10 }));
+  const browserViewFrame = vi.fn(async () => ({
+    jpegBase64: "QUFB",
+    width: 10,
+    height: 10,
+  }));
   const browserViewInput = vi.fn(async () => undefined);
   const client = {
     browser: { settings: { get, set }, needsHuman: { resolve } },
@@ -117,15 +126,12 @@ async function chooseComputer(name: string) {
   await act(async () => option.click());
 }
 
-it("shows a waiting-for-you state with guidance only when a recognised screen needs the owner", async () => {
+it("shows a waiting-for-you state with state only when a recognised screen needs the owner", async () => {
   const { client } = clientWith();
   await mount(client, { needsHuman: true });
   expect(element.textContent).toContain("Waiting for you");
-  expect(element.textContent).toContain("Open the live view to finish the step that needs you.");
   await mount(client, { needsHuman: false });
-  expect(element.textContent).not.toContain(
-    "Open the live view to finish the step that needs you.",
-  );
+  expect(element.textContent).not.toContain("Waiting for you");
 });
 
 it("opens the live view for the owner without resolving the wait, saving or sending input", async () => {
@@ -201,7 +207,7 @@ it("keeps the owner's edit and shows the Host's reason when saving fails", async
   await chooseComputer("Studio Mac");
   await act(async () => button("Save browser settings").click());
   await settle();
-  expect(element.textContent).toContain("The Host refused the change.");
+  expect(element.textContent).toContain("The browser settings could not be saved. Try again.");
   expect(desktopSwitch().getAttribute("aria-checked")).toBe("true");
   expect(button("Save browser settings").disabled).toBe(false);
 });

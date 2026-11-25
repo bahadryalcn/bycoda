@@ -17,8 +17,7 @@ import type { WorkspaceMode } from "../../sessions/model/session";
 import type { QuickWorkspace } from "../model/quickWorkspace";
 import { describeLocalError } from "../../connections/public/remoteFailure";
 
-const workspaceError = (error: unknown) =>
-  describeLocalError(error, t("Could not open the workspace options."));
+const workspaceErrorDetails = (error: unknown) => describeLocalError(error, "").trim();
 
 export function QuickWorkspaceControls({
   value,
@@ -99,7 +98,7 @@ export function QuickWorkspaceControls({
           setReady(true);
         }
       })
-      .catch((error) => props.current.onError?.(workspaceError(error)));
+      .catch((error) => props.current.onError?.(workspaceErrorDetails(error)));
     return () => {
       disposed = true;
       stop?.();
@@ -163,10 +162,19 @@ export function QuickWorkspaceControls({
       activeKind.current = null;
       setOpen(null);
       props.current.onOpenChange(false);
-      props.current.onError?.(workspaceError(error));
+      props.current.onError?.(workspaceErrorDetails(error));
     }
   };
   const disabled = !enabled || !ready || !branches?.current;
+  const disabledReason = !enabled
+    ? t("Close the current picker or wait for the session to start.")
+    : !ready
+      ? t("Workspace options are unavailable.")
+      : unreachable
+        ? t("This machine is unreachable")
+        : settled && !branches?.current
+          ? t("No repo")
+          : undefined;
   const Icon = resolvedMode === "worktree" ? FolderTree : Folder;
   const label = resolvedMode === "worktree" ? t("New worktree") : t("Current checkout");
   return (
@@ -177,6 +185,8 @@ export function QuickWorkspaceControls({
         truncate
         startIcon={<Icon className="icon-sm shrink-0" />}
         disabled={disabled}
+        disabledReason={disabledReason}
+        loading={!settled && !!cwd && enabled}
         aria-label={t("Workspace {p0}", { p0: label })}
         aria-haspopup="dialog"
         aria-expanded={open === "workspace"}
@@ -206,6 +216,7 @@ export function QuickWorkspaceControls({
         aria-expanded={open === "branch" || open === "base"}
         loading={!settled}
         disabled={disabled}
+        aria-description={!enabled || !ready ? disabledReason : undefined}
         worktree={!!value.tree && !value.tree.isMain}
         onMouseDown={(event) => {
           event.preventDefault();

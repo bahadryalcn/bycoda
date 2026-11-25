@@ -27,14 +27,34 @@ const actions: PostAction[] = [
   { value: "deletePost", label: () => t("Delete post"), target: "post" },
   { value: "like", label: () => t("Like"), target: "post", toggle: true },
   { value: "repost", label: () => t("Repost"), target: "post", toggle: true },
-  { value: "bookmark", label: () => t("Bookmark"), target: "post", toggle: true },
-  { value: "hideReply", label: () => t("Hide reply"), target: "post", toggle: true },
+  {
+    value: "bookmark",
+    label: () => t("Bookmark"),
+    target: "post",
+    toggle: true,
+  },
+  {
+    value: "hideReply",
+    label: () => t("Hide reply"),
+    target: "post",
+    toggle: true,
+  },
   { value: "follow", label: () => t("Follow"), target: "user", toggle: true },
   { value: "mute", label: () => t("Mute"), target: "user", toggle: true },
-  { value: "block", label: () => t("Block"), target: "user", toggle: true, enterprise: true },
+  {
+    value: "block",
+    label: () => t("Block"),
+    target: "user",
+    toggle: true,
+    enterprise: true,
+  },
 ];
 
-type Props = { account: SocialAccount; client: SocialClient; disabled: boolean };
+type Props = {
+  account: SocialAccount;
+  client: SocialClient;
+  disabled: boolean;
+};
 
 /** One reviewed action on a post or an account. Posts are picked from your published posts. */
 export function XPostActions({ account, client, disabled }: Props) {
@@ -62,7 +82,9 @@ export function XPostActions({ account, client, disabled }: Props) {
       const page = await client.workspaceSnapshot({
         section: "history",
         limit: 50,
-        filters: { jobs: { accountId: account.id, kind: "publish", status: "succeeded" } },
+        filters: {
+          jobs: { accountId: account.id, kind: "publish", status: "succeeded" },
+        },
       });
       setJobs(page.snapshot?.jobs ?? []);
     });
@@ -100,7 +122,10 @@ export function XPostActions({ account, client, disabled }: Props) {
         <Select
           label={t("X API action")}
           value={action.value}
-          options={options.map((item) => ({ value: item.value, label: item.label() }))}
+          options={options.map((item) => ({
+            value: item.value,
+            label: item.label(),
+          }))}
           onValueChange={(value) => setKind(value as XApplyKind)}
           disabled={busy}
         />
@@ -117,7 +142,10 @@ export function XPostActions({ account, client, disabled }: Props) {
                   value: "",
                   label: posts.length ? t("Choose a post") : t("Load your posts first"),
                 },
-                ...posts.map((job) => ({ value: job.id, label: xPostLabel(job) })),
+                ...posts.map((job) => ({
+                  value: job.id,
+                  label: xPostLabel(job),
+                })),
               ]}
               onValueChange={(value) => {
                 setPicked(value);
@@ -182,8 +210,8 @@ export function XPostActions({ account, client, disabled }: Props) {
       >
         {t("Review")}
       </Button>
-      {listing.error ? <InlineError>{listing.error}</InlineError> : null}
-      {x.error ? <InlineError>{x.error}</InlineError> : null}
+      {listing.error ? <InlineError details={listing.details}>{listing.error}</InlineError> : null}
+      {x.error ? <InlineError details={x.details}>{x.error}</InlineError> : null}
       {x.notice ? <InlineMessage tone="info">{x.notice}</InlineMessage> : null}
       {x.dialog}
     </div>

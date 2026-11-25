@@ -42,15 +42,22 @@ export function FacebookProfileEditor({
   const [patch, setPatch] = useState<FacebookPagePatch>({});
   const [emails, setEmails] = useState<string>();
   const [reviewRequired, setReviewRequired] = useState(false);
-  const [browserPatch, setBrowserPatch] = useState<{ name?: string; username?: string }>({});
+  const [browserPatch, setBrowserPatch] = useState<{
+    name?: string;
+    username?: string;
+  }>({});
   const [notice, setNotice] = useState("");
-  const { error, write, is } = useAccountWrite(t("Could not save this change. Try again."));
+  const { error, details, write, is } = useAccountWrite(
+    t("Could not save this change. Try again."),
+  );
   const confirm = useConfirm();
   const browser = account.connection === "browser";
 
   const read = async () => {
     const result = await write("read", () =>
-      client.request<FacebookPageProfile>("facebook.page.read", { accountId: account.id }),
+      client.request<FacebookPageProfile>("facebook.page.read", {
+        accountId: account.id,
+      }),
     );
     if (result) {
       setProfile(result);
@@ -214,7 +221,10 @@ export function FacebookProfileEditor({
                   maxLength={2000}
                   disabled={is("save")}
                   onChange={(event) =>
-                    setPatch({ ...patch, description: event.currentTarget.value })
+                    setPatch({
+                      ...patch,
+                      description: event.currentTarget.value,
+                    })
                   }
                 />
               </div>
@@ -275,7 +285,7 @@ export function FacebookProfileEditor({
         {t("Save profile")}
       </Button>
       {notice ? <InlineMessage tone="info">{notice}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
       {confirm.dialog}
     </section>
   );

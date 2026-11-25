@@ -128,6 +128,24 @@ it("opens controlled chip content without composer mode or base controls", async
   expect(change).not.toHaveBeenCalled();
 });
 
+it("explains why the workspace picker is unavailable when no base is resolved", async () => {
+  await act(async () =>
+    root.render(
+      createElement(WorkspacePicker, {
+        cwd: "/work/project",
+        mode: "current",
+        onModeChange: change,
+        onBaseChange: vi.fn(),
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Workspace Current checkout"]',
+  )!;
+  expect(trigger.getAttribute("aria-disabled")).toBe("true");
+  expect(trigger.disabled).toBe(false);
+});
+
 it("dismisses with a non-composition Escape without selecting", async () => {
   await act(async () => {
     press("Escape");

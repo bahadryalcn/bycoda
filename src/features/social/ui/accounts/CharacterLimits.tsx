@@ -101,7 +101,9 @@ function LimitFields({
   const fields = limitFields();
   const [drafts, setDrafts] = useState<Drafts>(() => unsaved ?? draftsOf(stored));
   const [localError, setLocalError] = useState("");
-  const { error, is, write } = useAccountWrite(t("The limits could not be saved. Try again."));
+  const { error, details, is, write } = useAccountWrite(
+    t("The limits could not be saved. Try again."),
+  );
 
   const edit = (key: LimitKey, value: string) => {
     const next = { ...drafts, [key]: value };
@@ -161,7 +163,9 @@ function LimitFields({
       {localError ? (
         <InlineError>{localError}</InlineError>
       ) : error ? (
-        <InlineError details={error}>{t("The limits could not be saved. Try again.")}</InlineError>
+        <InlineError details={details}>
+          {t("The limits could not be saved. Try again.")}
+        </InlineError>
       ) : null}
     </form>
   );

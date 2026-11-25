@@ -75,7 +75,12 @@ export function TikTokChanges({
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState("");
-  const { write, is, error } = useAccountWrite(t("Could not complete the TikTok change."));
+  const {
+    write,
+    is,
+    error,
+    details: errorDetails,
+  } = useAccountWrite(t("Could not complete the TikTok change."));
   const reviewsKey = [...socialQueryScope(client), "tiktok", accountId, "changes"];
   const query = useQuery({
     queryKey: reviewsKey,
@@ -145,7 +150,10 @@ export function TikTokChanges({
             ? rows?.filter((item) => item.id !== review.id)
             : rows?.map((item) =>
                 item.id === review.id
-                  ? { ...item, state: result.status === "unknown" ? "unknown" : "done" }
+                  ? {
+                      ...item,
+                      state: result.status === "unknown" ? "unknown" : "done",
+                    }
                   : item,
               ),
         );
@@ -238,7 +246,10 @@ export function TikTokChanges({
             <TikTokRow
               key={review.id}
               title={reviewLabels[review.change.kind]}
-              meta={format.formatDate(review.at, { dateStyle: "medium", timeStyle: "short" })}
+              meta={format.formatDate(review.at, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              })}
               badge={
                 <Badge
                   size="sm"
@@ -373,7 +384,10 @@ export function TikTokChanges({
                 { value: "photo", label: t("Photo") },
               ]}
               onValueChange={(value) =>
-                onDraftChange({ ...draft, mediaType: value === "photo" ? "photo" : "video" })
+                onDraftChange({
+                  ...draft,
+                  mediaType: value === "photo" ? "photo" : "video",
+                })
               }
             />
           )}
@@ -417,7 +431,7 @@ export function TikTokChanges({
             onChange={(event) => onDraftChange({ ...draft, text: event.currentTarget.value })}
           />
         )}
-        {error && <InlineError>{error}</InlineError>}
+        {error && <InlineError details={errorDetails}>{error}</InlineError>}
         <div className="tiktok-actions">
           <Button
             type="submit"

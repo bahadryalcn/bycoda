@@ -20,8 +20,8 @@ import { SessionHostTools } from "./SessionHostTools";
 import { Alert } from "../../shared/ui/Alert";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { ErrorDetails } from "../../shared/ui/ErrorDetails";
-import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
+import { Button } from "../../shared/ui/Button";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { withTimeout } from "../../shared/lib/withTimeout";
 import {
@@ -92,7 +92,12 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   selectedRef.current = selected;
   const latestSelectionRevision = useRef(0);
   const [retained, setRetained] = useState<ToolsRegistration[]>([
-    { ...props, initialUrl: undefined, id: toolsSessionKey(props), detached: true },
+    {
+      ...props,
+      initialUrl: undefined,
+      id: toolsSessionKey(props),
+      detached: true,
+    },
   ]);
   const retainedRef = useRef(retained);
   retainedRef.current = retained;
@@ -181,7 +186,10 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         (epoch < previous.epoch || (epoch === previous.epoch && next.revision <= previous.revision))
       )
         return;
-      sourceRevisions.current.set(next.sourceWindow, { epoch, revision: next.revision });
+      sourceRevisions.current.set(next.sourceWindow, {
+        epoch,
+        revision: next.revision,
+      });
       setSources((previous) => mergeToolsSource(previous, next));
       if (next.selectionRevision > latestSelectionRevision.current) {
         latestSelectionRevision.current = next.selectionRevision;
@@ -443,6 +451,13 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   const returnErrorTitle = t("Could not return to conversation");
   const cancelled = returnFailed && error === returnCancelled;
   const showReturnDetails = returnFailed && !cancelled && error !== returnChanged;
+  // Cancel and changed-tools are our own translated sentences; anything else is raw cause text.
+  const errorTitle =
+    !showReturnDetails && returnFailed
+      ? error
+      : returnFailed
+        ? returnErrorTitle
+        : t("Could not complete this in the tools window.");
   const reattach = async () => {
     if (!currentPane?.composerWindow || returning.current) return;
     returning.current = true;
@@ -613,18 +628,18 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       {error ? (
         <Alert
           tone={cancelled ? "info" : "danger"}
-          title={showReturnDetails ? returnErrorTitle : undefined}
+          title={errorTitle}
           extra={
-            showReturnDetails ? <ErrorDetails title={returnErrorTitle} detail={error} /> : undefined
+            showReturnDetails || !returnFailed ? (
+              <ErrorDetails title={errorTitle} detail={error} />
+            ) : undefined
           }
           action={
             returnFailed && currentPane?.composerWindow && !pending
               ? { label: t("Try again"), onClick: () => void reattach() }
               : undefined
           }
-        >
-          {showReturnDetails ? undefined : error}
-        </Alert>
+        ></Alert>
       ) : null}
       <div className="tools-hub-body">
         {retained.map((pane) => {

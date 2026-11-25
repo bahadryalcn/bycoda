@@ -7,7 +7,6 @@ import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
-import { Text } from "../../../../shared/ui/Text";
 import type { LinkedInAnalyticsResult } from "../../../../integrations/social/adapters/linkedin-analytics";
 import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
@@ -93,15 +92,10 @@ export function LinkedInAnalytics({
             loading={is("analytics")}
             onClick={() => void load().catch(() => undefined)}
           >
-            {t("Refresh")}
+            {data ? t("Refresh") : t("Read analytics")}
           </Button>
         </div>
         {error ? <InlineError>{error}</InlineError> : null}
-        {!data && !is("analytics") && !error ? (
-          <Text as="p" size="secondary" tone="muted">
-            {t("Refresh to read the latest numbers from LinkedIn.")}
-          </Text>
-        ) : null}
         {data && !Object.keys(data.metrics).length ? (
           <EmptyState
             size="inline"

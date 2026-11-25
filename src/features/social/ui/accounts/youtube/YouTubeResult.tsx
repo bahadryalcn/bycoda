@@ -379,7 +379,10 @@ export function listRows(result: unknown): Record<string, unknown>[] | undefined
 const titleKeys = ["title", "text", "message", "name", "handle", "authorName"];
 
 /** One readable line for a list row: its title and a few short facts, never raw JSON. */
-export function rowSummary(row: Record<string, unknown>): { title: string; meta: string[] } {
+export function rowSummary(row: Record<string, unknown>): {
+  title: string;
+  meta: string[];
+} {
   const titleKey = titleKeys.find((key) => typeof row[key] === "string" && row[key] !== "");
   const title = titleKey ? String(row[titleKey]) : String(row.id ?? "");
   const metaKeys = [

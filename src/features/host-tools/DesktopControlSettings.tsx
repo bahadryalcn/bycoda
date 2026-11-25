@@ -122,8 +122,7 @@ export function DesktopControlSettings({
         }
       })
       .catch((cause) => {
-        if (!cancelled && captured === generation.current)
-          setError(String(cause instanceof Error ? cause.message : cause));
+        if (!cancelled && captured === generation.current) setError(errorText(cause));
       });
     return () => {
       cancelled = true;
@@ -176,7 +175,11 @@ export function DesktopControlSettings({
   });
   async function perform(
     op: "configure" | "stop" | "resume" | "status",
-    options: { rethrow?: boolean; switchOnly?: boolean; enabled?: boolean } = {},
+    options: {
+      rethrow?: boolean;
+      switchOnly?: boolean;
+      enabled?: boolean;
+    } = {},
   ) {
     if (pending || stoppingRef.current) {
       if (options.rethrow) throw new Error(t("Computer controls are still saving. Try again."));
@@ -310,6 +313,7 @@ export function DesktopControlSettings({
       label={t("Refresh")}
       startIcon={<RefreshCw className="icon-sm" />}
       disabled={pending}
+      disabledReason={t("Another change is being applied")}
       onClick={() => void perform("status")}
     />
   );
@@ -319,7 +323,12 @@ export function DesktopControlSettings({
     status?.stopped || computerOn || (!showPermissionControls && draft && !draft.enabled) ? (
       <div className={styles.stopActions}>
         {status?.stopped && (
-          <Button type="button" disabled={pending} onClick={() => void perform("resume")}>
+          <Button
+            type="button"
+            disabled={pending}
+            disabledReason={t("Another change is being applied")}
+            onClick={() => void perform("resume")}
+          >
             {t("Resume")}
           </Button>
         )}
@@ -327,6 +336,7 @@ export function DesktopControlSettings({
           <Button
             type="button"
             disabled={pending}
+            disabledReason={t("Another change is being applied")}
             onClick={() => draft && setDraft({ ...draft, enabled: true })}
           >
             {t("Turn on")}
@@ -376,7 +386,12 @@ export function DesktopControlSettings({
               const driver = DESKTOP_DRIVERS.find((item) => item === value);
               // A new driver needs its own verified helper; the setup row fills it in.
               if (driver && driver !== draft.driver)
-                setDraft({ ...draft, driver, binaryPath: "", binarySha256: "" });
+                setDraft({
+                  ...draft,
+                  driver,
+                  binaryPath: "",
+                  binarySha256: "",
+                });
             }}
           />
         </Row>
@@ -458,11 +473,17 @@ export function DesktopControlSettings({
               </Row>
               {draft.permissionMode === "full"
                 ? !embedded && (
-                    <Alert tone="warning" title={t("Full access asks nothing")}>
-                      {t(
-                        "The assistant can use any app, launch apps, use the clipboard and use physical input without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
-                      )}
-                    </Alert>
+                    <Alert
+                      tone="warning"
+                      title={t("Full access asks nothing")}
+                      extra={
+                        <InfoTooltip>
+                          {t(
+                            "The assistant can use any app, launch apps, use the clipboard and use physical input without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
+                          )}
+                        </InfoTooltip>
+                      }
+                    />
                   )
                 : !!saved?.allowedApps.length && (
                     <Row
@@ -481,7 +502,10 @@ export function DesktopControlSettings({
                         multiple
                         label={t("Approved apps")}
                         value={draft.allowedApps}
-                        options={saved.allowedApps.map((value) => ({ value, label: value }))}
+                        options={saved.allowedApps.map((value) => ({
+                          value,
+                          label: value,
+                        }))}
                         onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
                         disabled={pending}
                       />
@@ -531,9 +555,13 @@ export function DesktopControlSettings({
       <AdvancedSettings title={t("Custom helper")} defaultOpen={false} keepMounted>
         <Row
           label={t("Helper file")}
-          description={t(
-            "Use a helper you built or trust instead of the verified one. Its checksum must match.",
-          )}
+          info={
+            <InfoTooltip>
+              {t(
+                "Use a helper you built or trust instead of the verified one. Its checksum must match.",
+              )}
+            </InfoTooltip>
+          }
           stacked
         >
           <TextField

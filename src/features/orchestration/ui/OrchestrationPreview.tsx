@@ -8,6 +8,7 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
@@ -214,6 +215,14 @@ function InstructionsField({ value, onChange }: { value: string; onChange(value:
   );
 }
 
+/** Literal `t()` calls, so extraction and key checks see every run status. */
+const RUN_STATUS_LABEL = {
+  active: () => t("Active"),
+  paused: () => t("Paused"),
+  stopped: () => t("Stopped"),
+  finished: () => t("Finished"),
+} as const;
+
 export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boolean }) {
   useLocale();
   const actions = useContext(OrchestrationActions);
@@ -228,14 +237,16 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
   );
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; detail: string }>();
   const [expanded, setExpanded] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     if (actions)
       void orchestrator
         .hydrate(proposal.leadId)
-        .catch((reason: unknown) => setError(String(reason)));
+        .catch((reason: unknown) =>
+          setError({ title: t("Could not load orchestration"), detail: errorText(reason) }),
+        );
   }, [actions, proposal.leadId]);
   const editable = proposal.status === "ready" && !run && !pending && !busy && !!actions;
   const planning = proposal.status === "planning";
@@ -249,7 +260,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
     try {
       await fn();
     } catch (reason) {
-      setError(errorText(reason));
+      setError({ title: t("Could not start orchestration"), detail: errorText(reason) });
     } finally {
       inFlight.current = false;
       setPending(false);
@@ -284,16 +295,17 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           </Text>
           {!!proposal.tasks.length && (
             <Text as="div" size="micro" tone="secondary" leading="tight" className="mt-1">
-              {proposal.tasks.length} {proposal.tasks.length === 1 ? t("task") : t("tasks")}
+              {proposal.tasks.length === 1
+                ? t("{p0} task", { p0: 1 })
+                : t("{p0} tasks", { p0: proposal.tasks.length })}
             </Text>
           )}
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <div className="ms-auto flex shrink-0 items-center gap-0.5">
           {!run && proposal.status === "invalid" && (
             <Button
               variant="ghost"
               type="button"
-
               disabled={busy || !actions}
               onClick={() => actions?.retry(proposal.leadId, block.id)}
             >
@@ -316,7 +328,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
             <Button
               variant="ghost"
               type="button"
-
               onClick={() =>
                 actions?.openAgents?.(
                   run.tasks.map((task) => ({
@@ -364,7 +375,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         open ? prev.filter((id) => id !== task.id) : [...prev, task.id],
                       )
                     }
-                    className="min-w-0 flex-1 text-left"
+                    className="min-w-0 flex-1 text-start"
                   >
                     <OverflowTooltip label={task.title}>
                       <Text
@@ -410,7 +421,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     as="div"
                     size="micro"
                     tone="secondary"
-                    className="space-y-2.5 px-3 pb-3 pl-8"
+                    className="space-y-2.5 px-3 pb-3 ps-8"
                   >
                     {editable ? (
                       <>
@@ -464,16 +475,27 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           expanded={showAll}
           chevron="start"
           onClick={() => setShowAll(!showAll)}
-          className="w-full text-left"
+          className="w-full text-start"
         >
           {showAll
             ? t("Show fewer tasks")
-            : t(proposal.tasks.length === 4 ? "Show {p0} more task" : "Show {p0} more tasks", {
-                p0: proposal.tasks.length - 3,
-              })}
+            : proposal.tasks.length === 4
+              ? t("Show {p0} more task", { p0: 1 })
+              : t("Show {p0} more tasks", { p0: proposal.tasks.length - 3 })}
         </Button>
       )}
-      {(error || proposal.error) && <Alert tone="danger">{error ?? proposal.error}</Alert>}
+      {error || proposal.error ? (
+        <Alert
+          tone="danger"
+          title={error?.title ?? t("Orchestration failed")}
+          extra={
+            <ErrorDetails
+              title={error?.title ?? t("Orchestration failed")}
+              detail={error?.detail ?? proposal.error ?? ""}
+            />
+          }
+        />
+      ) : null}
       {!planning && (
         <Text
           as="div"
@@ -506,19 +528,16 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               </>
             ) : (
               <span>
-                {t(
-                  proposal.settings.maxWorkers === 1
-                    ? "{p0} parallel worker"
-                    : "{p0} parallel workers",
-                  { p0: proposal.settings.maxWorkers },
-                )}
+                {proposal.settings.maxWorkers === 1
+                  ? t("{p0} parallel worker", { p0: 1 })
+                  : t("{p0} parallel workers", { p0: proposal.settings.maxWorkers })}
               </span>
             )}
             <WorkerHelp />
           </div>
           <span>
             {run?.status
-              ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
+              ? RUN_STATUS_LABEL[run.status]()
               : proposal.status === "approved"
                 ? t("Approved")
                 : ""}

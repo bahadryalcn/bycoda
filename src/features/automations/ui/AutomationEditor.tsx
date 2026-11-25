@@ -380,6 +380,7 @@ export function AutomationEditor({
               onClick={onRun}
               loading={running}
               disabled={saving || dirty}
+              disabledReason={dirty ? t("Save or reset your changes before running.") : undefined}
               startIcon={<Play className="icon-sm" />}
               variant="secondary"
             >

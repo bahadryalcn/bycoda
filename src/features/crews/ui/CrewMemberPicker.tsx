@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -137,12 +138,12 @@ export function CrewMemberPicker({
                 )}
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
-                  <Text role="status">
-                    {t("{p0} selected, {p1} hidden by filter", {
+                  <LiveText
+                    text={t("{p0} selected, {p1} hidden by filter", {
                       p0: picked.length,
                       p1: hiddenCount,
                     })}
-                  </Text>
+                  />
                   <span className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" onClick={clearFilters}>
                       {t("Clear filters")}

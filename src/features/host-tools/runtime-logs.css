@@ -282,11 +282,6 @@
   white-space: nowrap;
 }
 
-.runtime-log-source-label {
-  flex: 1;
-  min-inline-size: 25px;
-}
-
 .runtime-log-count {
   flex: none;
 }
@@ -387,9 +382,6 @@
 .runtime-logs-hint {
   margin: 0;
   overflow-wrap: break-word;
-}
-
-.runtime-logs-hint {
   color: var(--runtime-log-muted);
 }
 
@@ -470,14 +462,6 @@
   min-inline-size: 0;
   overflow: clip;
   text-overflow: ellipsis;
-}
-.runtime-logs-sr {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: clip;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 .runtime-logs-filter-content {
   display: grid;

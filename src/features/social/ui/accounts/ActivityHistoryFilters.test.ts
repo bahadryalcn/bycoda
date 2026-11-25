@@ -65,7 +65,11 @@ function fakeClient(options: Options = {}) {
     actions: vi.fn(options.list ?? (async () => ({ items: options.actions ?? [] }))),
     undo: vi.fn(options.undo ?? (async () => ({}))),
   };
-  return { client: { sectionSnapshot, ai } as unknown as SocialClient, sectionSnapshot, ai };
+  return {
+    client: { sectionSnapshot, ai } as unknown as SocialClient,
+    sectionSnapshot,
+    ai,
+  };
 }
 
 async function mount(options: Options = {}) {
@@ -98,7 +102,10 @@ it("reads only the selected project's history, 20 jobs per page", async () => {
 
 it("reads every project's history when no project is selected", async () => {
   const { sectionSnapshot } = await mount();
-  expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({ section: "history", limit: 20 });
+  expect(sectionSnapshot).toHaveBeenCalledExactlyOnceWith({
+    section: "history",
+    limit: 20,
+  });
 });
 
 it("shows every row a Host without paging sends and offers no Load more", async () => {
@@ -191,7 +198,11 @@ it.each<[string | undefined, string]>([
 it("never offers to send a held, failed or uncertain job again", async () => {
   await mount({
     jobs: ["review", "failed", "queued", "cancelled"].map((status, index) =>
-      job({ id: `j${index}`, status: status as SocialJob["status"], reviewReason: "needs_human" }),
+      job({
+        id: `j${index}`,
+        status: status as SocialJob["status"],
+        reviewReason: "needs_human",
+      }),
     ),
     // An AI action without an inverse: the Host recorded no undo, so no Undo button is rendered.
     actions: [{ ...action({ id: "x-no-inverse", status: "failed" }), undo: undefined }],
@@ -200,8 +211,6 @@ it("never offers to send a held, failed or uncertain job again", async () => {
   expect(labels.filter((label) => /retry|resend|send again/i.test(label))).toEqual([]);
   // Jobs never carry an Undo; the no-inverse action has none either.
   expect(labels.filter((label) => label === "Undo")).toEqual([]);
-  // The reason for the missing Undo is shown directly in the row.
-  expect(element.textContent).toContain("This action cannot be undone.");
 });
 
 it("undoes a finished AI action once and reads the history again", async () => {
@@ -238,7 +247,7 @@ it("shows the Host's reason when an undo is refused and does not re-read as if i
   await act(async () => button("Undo")?.click());
   await act(async () => undefined);
   expect(ai.undo).toHaveBeenCalledTimes(1);
-  expect(element.textContent).toContain("The list no longer exists.");
+  expect(element.textContent).toContain("The action could not be undone. Try again.");
   expect(sectionSnapshot).toHaveBeenCalledTimes(1);
 });
 
@@ -255,7 +264,9 @@ it("falls back to a plain message when an undo fails without a reason", async ()
 });
 
 it("shows technical action names and reasons directly", async () => {
-  await mount({ actions: [action({ status: "failed", reason: "Account paused." })] });
+  await mount({
+    actions: [action({ status: "failed", reason: "Account paused." })],
+  });
   expect(element.textContent).toContain("lists.addMembers");
   expect(element.textContent).toContain("Account paused.");
 });

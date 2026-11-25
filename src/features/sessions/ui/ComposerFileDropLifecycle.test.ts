@@ -8,6 +8,7 @@ import {
   type ExplorerFilePointerDragDetail,
 } from "../../../shared/lib/drag";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 
 const { invoke, listen, platform } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -442,9 +443,7 @@ describe("Composer image drops", () => {
     invoke.mockRejectedValue(new Error("Cannot read the dropped file."));
     await nativeDrop(["/project/image.png"]);
 
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      "Cannot read the dropped file.",
-    );
+    expect(openErrorDetails(container)).toBe("Cannot read the dropped file.");
   });
 
   it("discards an earlier read even when attachment support returns before it resolves", async () => {

@@ -367,7 +367,7 @@ export function StewardForm({
         {error ? <InlineError className="mt-3">{error}</InlineError> : null}
       </div>
       <ModalFooter>
-        <ModalActions reason={!saving && !error ? reason : undefined}>
+        <ModalActions reason={!saving ? reason : undefined}>
           <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
             {t("Cancel")}
           </Button>

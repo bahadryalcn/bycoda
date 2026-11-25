@@ -153,7 +153,7 @@ export function useConversationPanelMessages(
       if (alive.current) setSummaryRefreshing(false);
     }
   }
-  async function open() {
+  async function open(onOpened: () => void) {
     if (pending || clearingRef.current) return;
     if (scope !== "global" && !canSeeProject(project)) return;
     setPending(true);
@@ -163,7 +163,10 @@ export function useConversationPanelMessages(
         op: "threads.open",
         ...(scope !== "global" && project ? { projectId: project } : {}),
       });
-      if (result.thread) setThreadId(result.thread.id);
+      if (result.thread) {
+        setThreadId(result.thread.id);
+        onOpened();
+      }
     } catch (cause) {
       setError(t(actionError(cause)));
     } finally {

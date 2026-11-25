@@ -17,6 +17,7 @@ import {
 import { QuestionForm } from "./QuestionForm";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import { Composer } from "./Composer";
+import { openErrorDetails } from "./errorDetails.fixture";
 import { beginComposerClosure, type MountedComposerClosure } from "../data/composerClosure";
 import {
   beginNativeProducerInputClosure,
@@ -935,7 +936,7 @@ it("retains an unknown original Send without turning Raw draft recovery into pro
   rawClosures.push({ close: raw, owner });
   await act(async () => read.finish());
   expect(dispatched).toHaveBeenCalledOnce();
-  expect(container.textContent).toContain("fixture lost provider disposition");
+  expect(openErrorDetails(container)).toContain("fixture lost provider disposition");
   const retained = await captureParentInputs(id);
   expect(
     retained.snapshots.some(
@@ -1414,9 +1415,7 @@ it("retains the original queue save after a callback dispatches then throws with
     (item) => item.textContent?.trim() === "Save",
   )!;
   await act(async () => button.click());
-  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-    "reply lost after dispatch",
-  );
+  expect(openErrorDetails(document.body)).toContain("reply lost after dispatch");
   expect(document.body.querySelector("textarea")!.value).toBe("  original queue input  ");
   expect(save).toHaveBeenCalledTimes(1);
   expect(dispatched).toHaveLength(1);

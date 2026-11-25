@@ -54,7 +54,10 @@ export function AccountPermissions({
   );
   // The project picked by the owner (undefined: the first project) and the edits made to it.
   const [picked, setPicked] = useState<string>();
-  const [edit, setEdit] = useState<{ projectId: string; permissions: SocialPermission[] }>();
+  const [edit, setEdit] = useState<{
+    projectId: string;
+    permissions: SocialPermission[];
+  }>();
   const projectId =
     picked && projects.some((project) => project.id === picked) ? picked : (projects[0]?.id ?? "");
   const grants =
@@ -89,7 +92,10 @@ export function AccountPermissions({
       .then((result) => {
         if (result === undefined) return;
         void cache
-          .invalidateQueries({ queryKey: socialContentSnapshotKey(client, projectId), exact: true })
+          .invalidateQueries({
+            queryKey: socialContentSnapshotKey(client, projectId),
+            exact: true,
+          })
           .catch(() => undefined);
         onChanged();
       })
@@ -144,14 +150,19 @@ export function AccountPermissions({
           {t("Save permissions")}
         </Button>
       </form>
-      {assistantWrite.error ? <InlineError>{assistantWrite.error}</InlineError> : null}
+      {assistantWrite.error ? (
+        <InlineError details={assistantWrite.details}>{assistantWrite.error}</InlineError>
+      ) : null}
 
       <div className="social-field-row">
         <SearchableSelect
           disabled={locked || !projects.length}
           label={t("Project")}
           value={projectId}
-          options={projects.map((project) => ({ value: project.id, label: project.name }))}
+          options={projects.map((project) => ({
+            value: project.id,
+            label: project.name,
+          }))}
           onChange={(next) => {
             setPicked(next);
             setEdit(undefined);
@@ -203,7 +214,9 @@ export function AccountPermissions({
           description={t("Create a project first to give this account project access.")}
         />
       )}
-      {projectWrite.error ? <InlineError>{projectWrite.error}</InlineError> : null}
+      {projectWrite.error ? (
+        <InlineError details={projectWrite.details}>{projectWrite.error}</InlineError>
+      ) : null}
     </section>
   );
 }

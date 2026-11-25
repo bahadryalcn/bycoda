@@ -233,7 +233,13 @@ function OrderSettingsForm({
         onSave={editor.save}
       >
         {editor.validation ? <InlineError action={show}>{t(editor.validation)}</InlineError> : null}
-        {editor.error ? <InlineError action={show}>{t(editor.error)}</InlineError> : null}
+        {editor.error ? (
+          <InlineError action={show} details={editor.error}>
+            {editor.error.startsWith("Models saved; work limits were not saved.")
+              ? t("Models saved; work limits were not saved.")
+              : t("Could not save or reload model settings.")}
+          </InlineError>
+        ) : null}
         {editor.conflict ? (
           <InlineMessage tone="warning">
             {t(

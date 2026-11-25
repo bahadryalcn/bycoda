@@ -42,6 +42,11 @@ export function PlanPreview({
     plan?.status === "streaming" ||
     plan?.status === "building" ||
     plan?.status === "built";
+  // Building and Built say why in their label, and an empty plan has nothing to explain.
+  const buildDisabledReason =
+    busy || streaming || plan?.status === "streaming"
+      ? t("Wait for the plan to finish")
+      : undefined;
   const buildLabel =
     plan?.status === "building"
       ? t("Building…")
@@ -128,6 +133,7 @@ export function PlanPreview({
                 variant="secondary"
                 type="button"
                 disabled={buildDisabled}
+                disabledReason={buildDisabledReason}
                 onClick={() => onBuild()}
               >
                 <Play className="icon-xs" strokeWidth={1.75} />
@@ -139,6 +145,7 @@ export function PlanPreview({
                   model={model}
                   settings={modelSettings}
                   disabled={buildDisabled}
+                  disabledReason={buildDisabledReason}
                   onPick={onBuild}
                 />
               ) : null}

@@ -4294,10 +4294,11 @@ slow("queues a plain Send while the host turn runs, and sends the messages in or
   openRunningChat();
   await render();
   await whenStopShown();
+  // While a turn runs, a queueing follow-up is the primary action, labelled "Queue message".
   await type("first follow-up");
-  await act(async () => byLabel("Send")!.click());
+  await act(async () => byLabel("Queue message")!.click());
   await type("second follow-up");
-  await act(async () => byLabel("Send")!.click());
+  await act(async () => byLabel("Queue message")!.click());
   await settle();
   expect(commands).toHaveLength(0);
   expect(queueCard()?.textContent).toContain("first follow-up");

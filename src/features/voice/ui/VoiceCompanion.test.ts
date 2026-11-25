@@ -1975,11 +1975,12 @@ describe("presented custom views", () => {
     expect(workspace.execute).toHaveBeenLastCalledWith("workspace.usage.open", {
       period: "month-to-date",
     });
-    expect(
-      [...container.querySelectorAll("[data-work-panel] [role='alert']")].map(
-        (alert) => alert.textContent,
-      ),
-    ).toContain("Usage is locked.");
+    const panel = container.querySelector("[data-work-panel]")!;
+    expect(panel.textContent).toContain("Could not run this action.");
+    expect(panel.textContent).not.toContain("Usage is locked.");
+    await act(async () => panelButton("Details")!.click());
+    expect(document.body.textContent).toContain("Usage is locked.");
+    await act(async () => panelButton("Details")!.click());
     expect(container.querySelector("[data-full-screen]")).not.toBeNull();
 
     workspace.execute.mockResolvedValueOnce({ status: "completed" } as never);

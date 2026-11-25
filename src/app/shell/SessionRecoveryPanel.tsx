@@ -338,6 +338,7 @@ export function SessionRecoveryPanel({
         aria-expanded={menuOpen}
         className={showToolbar ? "ms-auto" : undefined}
         disabled={pending && !listMaintenancePending}
+        disabledReason={t("A recovery operation is in progress")}
         loading={listMaintenancePending}
         onClick={() => setMenuOpen((value) => !value)}
       >
@@ -418,6 +419,7 @@ export function SessionRecoveryPanel({
             variant="ghost"
             size="sm"
             disabled={pending}
+            disabledReason={t("A recovery operation is in progress")}
             onClick={() => setSelected(new Set())}
           >
             {t("Clear selection")}
@@ -441,7 +443,11 @@ export function SessionRecoveryPanel({
                   <Checkbox
                     checked={selected.has(stub.id)}
                     disabled={pending}
-                    aria-label={t("Select {p0}", { p0: title })}
+                    aria-label={
+                      pending
+                        ? t("Select {p0}. A recovery operation is in progress", { p0: title })
+                        : t("Select {p0}", { p0: title })
+                    }
                     onChange={() => toggle(stub.id)}
                   />
                   <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
@@ -494,6 +500,7 @@ export function SessionRecoveryPanel({
                     size="sm"
                     motion="none"
                     disabled={pending}
+                    disabledReason={t("A recovery operation is in progress")}
                     loading={pendingAction === `open:${stub.id}`}
                     onClick={() => void open([stub.id], false, `open:${stub.id}`)}
                   >
@@ -501,12 +508,24 @@ export function SessionRecoveryPanel({
                   </Button>
                   <InlineAction
                     reveal="always"
-                    label={t("Remove {p0} from recovery list", { p0: title })}
+                    label={
+                      pending
+                        ? t("Remove {p0} from recovery list. A recovery operation is in progress", {
+                            p0: title,
+                          })
+                        : t("Remove {p0} from recovery list", { p0: title })
+                    }
                     motion="none"
                     className="recovery-remove"
                     disabled={pending}
                     loading={pendingAction === `remove:${stub.id}`}
-                    aria-label={t("Remove {p0} from recovery list", { p0: title })}
+                    aria-label={
+                      pending
+                        ? t("Remove {p0} from recovery list. A recovery operation is in progress", {
+                            p0: title,
+                          })
+                        : t("Remove {p0} from recovery list", { p0: title })
+                    }
                     title=""
                     onClick={() => void remove([stub.id], `remove:${stub.id}`)}
                   >
@@ -567,6 +586,7 @@ export function SessionRecoveryPanel({
                   variant="ghost"
                   size="sm"
                   disabled={pending}
+                  disabledReason={t("A recovery operation is in progress")}
                   loading={pendingAction === "retry-open"}
                   onClick={() =>
                     void open(

@@ -149,6 +149,17 @@ afterEach(() => {
   element.remove();
 });
 
+async function expectTechnicalDetails(title: string, message: string) {
+  expect(body()).toContain(title);
+  expect(body()).not.toContain(message);
+  const details = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
+    (item) => item.getAttribute("aria-label") === `Details: ${title}`,
+  );
+  expect(details).toBeDefined();
+  await act(async () => details!.click());
+  expect(body()).toContain(message);
+}
+
 describe("publishing", () => {
   it("saves, checks, approves and schedules, then reports the post as published", async () => {
     render();
@@ -207,7 +218,10 @@ describe("publishing", () => {
     });
     render();
     await click("Publish");
-    expect(body()).toContain("X · Studio: This text is too long.");
+    await expectTechnicalDetails(
+      "X · Studio: The post could not be published.",
+      "This text is too long.",
+    );
     expect(actions()).toEqual(["campaigns.create", "campaigns.preview"]);
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
@@ -237,10 +251,10 @@ describe("publishing", () => {
     });
     render();
     await click("Publish");
-    expect(body()).toContain("This text is too long.");
+    expect(body()).toContain("X · Studio: The post could not be published.");
     handlers["campaigns.preview"] = () => okPreview;
     await click("Publish");
-    expect(body()).not.toContain("This text is too long.");
+    expect(body()).not.toContain("X · Studio: The post could not be published.");
     expect(onDone).toHaveBeenCalledWith("published");
   });
 
@@ -277,7 +291,7 @@ describe("publishing", () => {
     };
     render();
     await click("Publish");
-    expect(body()).toContain("Scheduling is offline.");
+    await expectTechnicalDetails("The post could not be published.", "Scheduling is offline.");
     expect(onDone).not.toHaveBeenCalled();
     expect(button("Publish")?.disabled).toBe(false);
   });
@@ -297,7 +311,10 @@ describe("saving a draft", () => {
     };
     render();
     await click("Save draft");
-    expect(body()).toContain("The campaign was changed by someone else.");
+    await expectTechnicalDetails(
+      "The post could not be saved.",
+      "The campaign was changed by someone else.",
+    );
     expect(onDone).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(onDraft).not.toHaveBeenCalled();
@@ -367,12 +384,17 @@ describe("closed gates", () => {
     expect(reasonOf("Save draft")).toBe("Write the post or attach media.");
   });
 
-  it("blocks publishing when a chosen account is gone, and names the reason", () => {
+  it("blocks publishing and saving when a chosen account is gone", async () => {
     render({ draft: draftOf({ accountIds: ["x1", "gone"] }) });
     expect(button("Publish")?.disabled).toBe(true);
     expect(reasonOf("Publish")).toBe(
       "This account is no longer available. Uncheck it to continue.",
     );
+    expect(reasonOf("Save draft")).toBe(
+      "This account is no longer available. Uncheck it to continue.",
+    );
+    await click("Save draft");
+    expect(request).not.toHaveBeenCalled();
   });
 
   it("waits for the accounts to load", () => {
@@ -387,8 +409,47 @@ describe("repeating posts", () => {
   it("saves a paused program instead of publishing, and never creates a campaign", async () => {
     render({ draft: draftOf({ repeat }) });
     expect(button("Publish")).toBeUndefined();
+    expect(button("Save draft")).toBeUndefined();
     await click("Save as paused program");
     expect(actions()).toEqual(["programs.configure"]);
+    expect(onDone).toHaveBeenCalledWith("program");
+  });
+
+  it("carries supported YouTube declarations from the editor to the paused program", async () => {
+    const youtube = {
+      title: "  Upload  ",
+      privacy: "unlisted" as const,
+      madeForKids: true,
+      containsSyntheticMedia: true,
+      format: "video" as const,
+      categoryId: "22",
+    };
+    render({
+      snapshot: snapshot({
+        accounts: [{ ...account, id: "yt", platform: "youtube" }],
+        capabilities: { yt: [available] },
+      }),
+      draft: draftOf({
+        accountIds: ["yt"],
+        repeat,
+        platform: { yt: { youtube } },
+        media: [
+          { localId: "video", name: "video.mp4", media: { kind: "video", uploadId: "video" } },
+        ],
+      }),
+    });
+    await click("Save as paused program");
+    expect(request).toHaveBeenCalledWith("programs.configure", {
+      config: expect.objectContaining({
+        youtube: {
+          title: "Upload",
+          privacy: "unlisted",
+          madeForKids: true,
+          containsSyntheticMedia: true,
+          format: "video",
+        },
+      }),
+    });
     expect(onDone).toHaveBeenCalledWith("program");
   });
 
@@ -406,7 +467,7 @@ describe("repeating posts", () => {
     };
     render({ draft: draftOf({ repeat }) });
     await click("Save as paused program");
-    expect(body()).toContain("Program limit reached.");
+    await expectTechnicalDetails("Could not save the program.", "Program limit reached.");
     expect(onDone).not.toHaveBeenCalled();
   });
 });
@@ -451,7 +512,9 @@ it("unfreezes failed saves and reports retained-scope recovery feedback", async 
   expect(fields.props!.locked).toBeUndefined();
   expect(onDone).not.toHaveBeenCalled();
   expect(onBusyChange).toHaveBeenLastCalledWith(false);
-  expect(onOperationError).toHaveBeenCalledWith("Revision conflict");
+  expect(onOperationError).toHaveBeenCalledWith([
+    { title: "The post could not be saved.", details: "Revision conflict" },
+  ]);
   act(() => fields.props!.onDraft(draftOf({ text: "Keep editing" })));
   expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({ text: "Keep editing" }));
 });

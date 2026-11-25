@@ -27,7 +27,7 @@ export function BrowserInboxHandoff({
 }) {
   const [workflow, setWorkflow] = useState<SocialBrowserWorkflow | null>();
   const [statusError, setStatusError] = useState(false);
-  const { error, is, write } = useAccountWrite(t("Could not open the link."));
+  const { error, details, is, write } = useAccountWrite(t("Could not open the link."));
   const active = isRunning(workflow);
   const checking = workflow === undefined && !statusError;
   const loadWorkflow = async (id?: string) => {
@@ -107,7 +107,7 @@ export function BrowserInboxHandoff({
       {["failed", "expired", "interrupted"].includes(workflow?.status ?? "") ? (
         <InlineError>{t("Could not open the link. Try again.")}</InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
     </div>
   );
 }

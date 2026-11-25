@@ -1,3 +1,4 @@
+import type { ComposerFeedback } from "./ComposerNotices";
 import { errorText } from "../../../shared/lib/errors";
 import {
   useCallback,
@@ -84,7 +85,7 @@ type LifecycleOptions = {
   borrowedAttachmentIdsRef: RefObject<Set<string>>;
   pasteGenerationRef: RefObject<number>;
   mountedClosure: MountedClosure;
-  setPasteError: Dispatch<SetStateAction<string | null>>;
+  setPasteError: Dispatch<SetStateAction<ComposerFeedback>>;
 };
 
 /**
@@ -159,7 +160,7 @@ type ReadOptions = {
   pasteFailuresRef: RefObject<number>;
   /** Pasted and dropped files still reading; Send waits for it. */
   pasteFlightRef: RefObject<Promise<void> | null>;
-  setPasteError: Dispatch<SetStateAction<string | null>>;
+  setPasteError: Dispatch<SetStateAction<ComposerFeedback>>;
 };
 
 // Module level: React Compiler cannot lower try/finally inside a hook.
@@ -240,7 +241,7 @@ export function useComposerAttachmentReads({
           // later reset/send still makes its explicit retry stale before work.
           generation = pasteGenerationRef.current;
           failures = pasteFailuresRef.current;
-          setPasteError(errorText(reason));
+          setPasteError({ title: t("Could not read attachments."), detail: errorText(reason) });
         },
       );
       const previous = pasteFlightRef.current;
@@ -302,7 +303,7 @@ export function useComposerAttachmentReads({
           .catch((reason: unknown) => {
             if (!accepted.isCurrent()) return;
             accepted.fail(reason);
-            setPasteError(errorText(reason));
+            setPasteError({ title: t("Could not read attachments."), detail: errorText(reason) });
           }),
       );
     },

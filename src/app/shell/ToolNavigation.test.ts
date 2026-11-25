@@ -256,7 +256,9 @@ it.each([false, true])(
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(selected.getAttribute("aria-busy")).toBe("true");
     expect(other.hasAttribute("aria-busy")).toBe(false);
-    expect(other.disabled).toBe(true);
+    expect(other.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => other.click());
+    expect(invoke).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(selected);
     await act(async () => resolve());
     expect(selected.hasAttribute("aria-busy")).toBe(false);

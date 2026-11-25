@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { Text } from "../../../shared/ui/Text";
@@ -107,7 +108,15 @@ export function AutomationMoreOptions({
         ) : null}
         {draft.runInBackground ? null : (
           <>
-            <Row label={t("Session")}>
+            <Row
+              label={t("Session")}
+              description={
+                draft.workspaceMode === "worktree"
+                  ? t("Worktrees always start a fresh session.")
+                  : undefined
+              }
+              descriptionVisible
+            >
               <PillSelect
                 label={t("Session")}
                 value={draft.reuseSession ? "reuse" : "fresh"}
@@ -121,7 +130,9 @@ export function AutomationMoreOptions({
               description={
                 foldersUnavailable
                   ? t("Open a project to use folders")
-                  : (folders.error ?? (folders.loading ? t("Loading folders…") : undefined))
+                  : folders.loading
+                    ? t("Loading folders…")
+                    : undefined
               }
               descriptionVisible
             >
@@ -137,6 +148,11 @@ export function AutomationMoreOptions({
                 onChange={(value) => update("sessionFolderId", value)}
               />
             </Row>
+            {folders.error ? (
+              <InlineError inset="row" details={folders.error}>
+                {t("Could not load session folders.")}
+              </InlineError>
+            ) : null}
           </>
         )}
         <Row label={t("Missed-run grace")}>

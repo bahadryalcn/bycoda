@@ -37,7 +37,7 @@ function row(name: string, unsaved: boolean, updatedAt = 1): EditorDraftRecovery
 }
 const recovery = {
   loading: false,
-  error: false,
+  error: null,
   pendingKeys: new Set<string>(),
   errors: new Set<string>(),
   refresh: async () => {},

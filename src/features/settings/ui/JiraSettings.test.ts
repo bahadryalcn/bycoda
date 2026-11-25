@@ -15,6 +15,15 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  // The Details popover opens last, above any enclosing dialog.
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
+
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
@@ -189,7 +198,7 @@ it("shows authentication errors without claiming a successful connection", async
   await input("Jira API token", "bad-token");
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Jira email or API token is invalid"));
   await submit();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("invalid");
+  expect(await detailsText()).toContain("invalid");
   expect(container.querySelector("form")).not.toBeNull();
   expect(jiraField("Jira site").value).toBe("acme");
   expect(jiraField("Atlassian email").value).toBe("ada@example.com");

@@ -38,10 +38,14 @@ export function QuickDeleteWorktreeDialog({
   const [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [deleteBranch, setDeleteBranch] = useState(false);
+  const [branchConsent, setBranchConsent] = useState<{ path: string; branch: string }>();
   const tree = trees?.find((entry) => pathKey(entry.path) === pathKey(path));
+  const deleteBranch =
+    !!branchConsent && branchConsent.path === tree?.path && branchConsent.branch === tree.branch;
+  if (branchConsent && !deleteBranch) setBranchConsent(undefined);
   const index = status?.path === tree?.path ? status?.value : undefined;
 
+  // Reload the worktree inventory when the request changes or the owner retries.
   useEffect(() => {
     let cancelled = false;
     setError(undefined);
@@ -63,6 +67,7 @@ export function QuickDeleteWorktreeDialog({
     };
   }, [request, revision]);
 
+  // Verify that the newly selected worktree is available and read its change counts.
   useEffect(() => {
     let cancelled = false;
     setStatus(undefined);
@@ -203,7 +208,13 @@ export function QuickDeleteWorktreeDialog({
             }
             checked={deleteBranch && !branchDeleteBlock(tree)}
             disabled={busy || !!branchDeleteBlock(tree)}
-            onChange={(event) => setDeleteBranch(event.target.checked)}
+            onChange={(event) =>
+              setBranchConsent(
+                event.target.checked && tree.branch
+                  ? { path: tree.path, branch: tree.branch }
+                  : undefined,
+              )
+            }
           />
         ) : null}
         {error ? (

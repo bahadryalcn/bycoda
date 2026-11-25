@@ -50,7 +50,10 @@ it("requires the owner to confirm creation and keeps the member draft after an u
     throw new Error("Fixture outcome unknown.");
   });
   const onChanged = vi.fn();
-  const client = { snapchatProfileRead, snapchatProfileCreate } as unknown as SocialClient;
+  const client = {
+    snapchatProfileRead,
+    snapchatProfileCreate,
+  } as unknown as SocialClient;
   const render = (disabled: boolean) =>
     act(() =>
       root.render(
@@ -88,7 +91,9 @@ it("requires the owner to confirm creation and keeps the member draft after an u
       document.querySelector<HTMLElement>('[role="dialog"]')!,
     ).click(),
   );
-  expect(snapchatProfileCreate).toHaveBeenCalledWith(member.id, { name: "Draft profile" });
+  expect(snapchatProfileCreate).toHaveBeenCalledWith(member.id, {
+    name: "Draft profile",
+  });
   expect(onChanged).not.toHaveBeenCalled();
   expect(element.querySelector("input")?.value).toBe("Draft profile");
   expect(button("Create Public Profile").disabled).toBe(true);

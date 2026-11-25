@@ -1,3 +1,4 @@
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { useState, useSyncExternalStore } from "react";
 import { FACEBOOK_PRIVATE_REPLY_WINDOW_MS } from "../../../../integrations/social/adapters/facebook-engagement";
 import { t } from "../../../../shared/i18n";
@@ -8,6 +9,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { FileField } from "../../../../shared/ui/FileField";
 import { Sparkles } from "../../../../shared/ui/icons";
 import { PromptField } from "../../../../shared/ui/PromptField";
+import { Modal } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { ActionGate } from "../common/DisabledReason";
@@ -19,9 +21,10 @@ import type { SocialMedia, SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { socialQueryScope } from "../../model/socialQuery";
 import { inboxApi } from "./inboxApi";
-import { createInboxReplyOperation } from "./inboxReplyOperation";
+import { canEditAfterReceipt, createInboxReplyOperation } from "./inboxReplyOperation";
 import { inboxReplyState, type ReplyDraft } from "./inboxReplyState";
 import { replyBlockedText } from "./inboxModel";
+import { ActivityHistory } from "../accounts/ActivityHistory";
 import { FacebookCommentActions } from "./FacebookCommentActions";
 import {
   useInboxAccounts,
@@ -38,7 +41,9 @@ const MAX_FACTS = 20;
  * Reply editor for one conversation. The Host decides whether a reply is allowed (replyOptions);
  * a blocked reply shows its reason next to the disabled Send button. AI text lands in the editor.
  */
-export function ReplyBox(props: { client: SocialClient; thread: SocialThread }) {
+type ReplyBoxProps = { client: SocialClient; thread: SocialThread };
+
+export function ReplyBox(props: ReplyBoxProps) {
   return (
     <ThreadReplyBox
       key={socialQueryScope(props.client).join(":") + ":" + props.thread.id}
@@ -47,7 +52,7 @@ export function ReplyBox(props: { client: SocialClient; thread: SocialThread }) 
   );
 }
 
-function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: SocialThread }) {
+function ThreadReplyBox({ client, thread }: ReplyBoxProps) {
   const api = inboxApi(client);
   const options = useInboxReplyOptions(client, thread.id);
   const projectFacts = useInboxProjectFacts(client, thread.projectId);
@@ -57,6 +62,8 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     state.subscribe,
     state.snapshot,
   );
+  const receipt = operation?.job;
+  const terminalReceipt = canEditAfterReceipt(receipt?.status);
   const { text } = draft;
   const attachment = draft.instagramAttachment;
   const hasAttachment = !!attachment?.url.trim() || !!attachment?.file;
@@ -67,6 +74,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   const setError = (error: string, errorDetail = "") => state.update({ error, errorDetail });
   const setQueued = (queued: boolean) => state.update({ queued });
   const confirmation = useConfirm();
+  const [activityOpen, setActivityOpen] = useState(false);
   const [openedAt] = useState(Date.now);
   const accounts = useInboxAccounts(client, false);
   const facebookCapabilities =
@@ -213,8 +221,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         state.update({ operation: attempt });
       }
       await api.sendReply(attempt);
-      if (attempt.job && ["failed", "cancelled", "review"].includes(attempt.job.status)) {
-        setError(t("Reply requires review in Activity. Its original draft has been kept."));
+      if (canEditAfterReceipt(attempt.job?.status) || attempt.job?.status === "review") {
         return;
       }
       state.update({ draft: { text: "", factIds: [] }, operation: undefined });
@@ -233,7 +240,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               "Reply result is unconfirmed. Retry the same reply to check its status; do not send a separate copy.",
             )
           : t("Reply preparation could not finish. Retry the same reply or edit its draft."),
-        cause instanceof Error ? cause.message : "",
+        cause instanceof Error ? redactDiagnosticText(cause.message) : "",
       );
     } finally {
       setBusy("");
@@ -334,6 +341,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
                 variant="secondary"
                 size="sm"
                 disabled={busy !== "" || !text.trim()}
+                disabledReason={!text.trim() ? t("Write a reply first.") : undefined}
                 onClick={() => void send(true).catch(() => undefined)}
               >
                 {t("Send private reply")}
@@ -376,16 +384,66 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         </Button>
       ) : null}
       {error ? <InlineError details={errorDetail || undefined}>{error}</InlineError> : null}
-      {operation && !operation.sendAttempted && !busy ? (
+      {!error && (terminalReceipt || receipt?.status === "review") ? (
+        <InlineError
+          details={receipt?.error ? redactDiagnosticText(receipt.error) : undefined}
+          action={{ label: t("Activity history"), onClick: () => setActivityOpen(true) }}
+        >
+          {receipt?.status === "failed"
+            ? t("Reply failed.")
+            : receipt?.status === "cancelled"
+              ? t("Reply cancelled.")
+              : t("Reply requires review in Activity. Its original draft has been kept.")}
+        </InlineError>
+      ) : null}
+      {operation && (!operation.sendAttempted || terminalReceipt) && !busy ? (
         <Button
           variant="link"
           layout="text"
-          onClick={() => state.update({ operation: undefined, error: "", errorDetail: "" })}
+          onClick={() => {
+            const current = state.snapshot();
+            if (current.busy || current.operation !== operation) return;
+            if (!operation.sendAttempted) {
+              state.update({ operation: undefined, error: "", errorDetail: "" });
+              return;
+            }
+            setBusy("send");
+            void api
+              .sendReply(operation)
+              .then(() => {
+                if (canEditAfterReceipt(operation.job?.status)) {
+                  state.update({ operation: undefined, error: "", errorDetail: "" });
+                } else if (operation.queued) {
+                  state.update({
+                    draft: { text: "", factIds: [] },
+                    operation: undefined,
+                    queued: true,
+                  });
+                  return invalidate();
+                }
+              })
+              .catch((cause: unknown) => {
+                setError(
+                  t("The activity could not be read. Try again."),
+                  cause instanceof Error ? redactDiagnosticText(cause.message) : "",
+                );
+              })
+              .finally(() => setBusy(""));
+          }}
         >
           {t("Edit reply")}
         </Button>
       ) : null}
       {queued ? <InlineMessage tone="success">{t("Reply queued.")}</InlineMessage> : null}
+      {activityOpen ? (
+        <Modal title={t("Activity history")} onClose={() => setActivityOpen(false)}>
+          <ActivityHistory
+            client={client}
+            accounts={accounts.data?.accounts ?? []}
+            projectId={thread.projectId}
+          />
+        </Modal>
+      ) : null}
       {confirmation.dialog}
     </div>
   );

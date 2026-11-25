@@ -1,3 +1,4 @@
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
@@ -86,6 +87,7 @@ export function MessagingAccountsCard({
           error ? (
             <SettingsFeedback
               state="error"
+              extra={<ErrorDetails detail={error} />}
               action={{
                 label: t("Retry"),
                 pending: loading,
@@ -94,7 +96,7 @@ export function MessagingAccountsCard({
                 },
               }}
             >
-              {error}
+              {t("Could not load messaging accounts.")}
             </SettingsFeedback>
           ) : undefined
         }

@@ -68,18 +68,6 @@
   padding-block-start: var(--space-2);
 }
 
-.social-li-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  align-items: end;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.social-li-grid > * {
-  min-width: 0;
-}
-
 /* A step LinkedIn only allows in the browser: the page name and what happens there, then one button. */
 .social-li-handoff {
   display: grid;

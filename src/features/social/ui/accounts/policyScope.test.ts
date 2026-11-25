@@ -16,7 +16,10 @@ describe("policy scopes", () => {
   });
 
   it("keeps the other scope untouched when one scope changes", () => {
-    const next = writeScope(base, "global", { ...base.global, maxCommentCharacters: 100 });
+    const next = writeScope(base, "global", {
+      ...base.global,
+      maxCommentCharacters: 100,
+    });
     expect(next.platforms).toEqual(base.platforms);
     expect(next.global.maxCommentCharacters).toBe(100);
   });

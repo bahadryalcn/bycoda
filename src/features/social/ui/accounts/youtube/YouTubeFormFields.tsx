@@ -31,7 +31,10 @@ function fieldValue(field: YouTubeFormField, value: string) {
         const split = line.indexOf("|");
         if (split < 0)
           throw new Error(t("One link per line in Name | https://example.com format."));
-        return { title: line.slice(0, split).trim(), url: line.slice(split + 1).trim() };
+        return {
+          title: line.slice(0, split).trim(),
+          url: line.slice(split + 1).trim(),
+        };
       });
   return field.choices && (value === "true" || value === "false") ? value === "true" : value;
 }

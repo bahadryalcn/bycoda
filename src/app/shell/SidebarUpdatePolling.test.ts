@@ -3,6 +3,7 @@ import { act, createElement, Fragment } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
+import { openErrorDetails } from "../../features/sessions/ui/errorDetails.fixture";
 import { installAppUpdate, setAppUpdateSnapshot } from "../model/useAppUpdater";
 
 const mocks = vi.hoisted(() => ({ probe: vi.fn(), install: vi.fn() }));
@@ -112,7 +113,10 @@ it("shares one check and one download across both entry points and retains insta
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Update failed"]')!;
     expect(trigger).not.toBeNull();
     await act(async () => trigger.click());
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Download failed");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not update the app",
+    );
+    expect(openErrorDetails(document.body)).toContain("Download failed");
   } finally {
     await act(async () => root.unmount());
   }

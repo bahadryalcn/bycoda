@@ -62,7 +62,7 @@ export async function fetchTodaySources(
     fetchModelPrices().catch(() => null),
   ]);
   return {
-    failed: turns === null || (accounts.length > 0 && reports.some((report) => report.failed)),
+    failed: prices === null || turns === null || reports.some((report) => report.failed),
     value: {
       usage: reports.map(({ account, rows }) => ({ account, rows })),
       turns: turns?.turns ?? kept?.turns ?? [],

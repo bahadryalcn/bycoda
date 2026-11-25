@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { remoteRequest } from "../../../connections/public/connections";
@@ -7,11 +7,14 @@ import type { SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { usePollingRefresh } from "../../hooks/usePollingRefresh";
+import { useRequestToken } from "./useRequestToken";
 
 export type AccountsData = {
   loading: boolean;
   /** A plain sentence when the accounts could not be read. */
   error: string;
+  /** The Host text behind `error`, for the Details popover. */
+  errorDetails?: string;
   snapshot?: SocialSnapshot;
   projects: HostProject[];
   /** Account ids with a recognized screen waiting for the owner. */
@@ -45,15 +48,17 @@ export function useAccountsData(input: {
   const [attempt, setAttempt] = useState(0);
   const [settled, setSettled] = useState<object>();
   const [error, setError] = useState("");
+  const [errorDetails, setErrorDetails] = useState<string>();
   const [snapshot, setSnapshot] = useState<SocialSnapshot>();
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [needsHumanIds, setNeedsHumanIds] = useState<ReadonlySet<string>>(() => new Set());
 
   // A new request marks a scope change pending. Background refreshes keep the current rows visible.
-  const request = useMemo(() => ({}), [active, client, machineId, projectId]);
+  const request = useRequestToken([active, client, machineId, projectId]);
   const loading = settled !== request && (active || settled === undefined);
 
   // Host projects change rarely, so they are read on mount, project change or explicit reload only.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads the Host project list while the screen is active; `alive` drops a read that settles after a scope change.
   useEffect(() => {
     if (!active) return;
     let alive = true;
@@ -89,11 +94,15 @@ export function useAccountsData(input: {
             setSnapshot(response.snapshot);
             if (response.snapshot) setCheckedAt(Date.now());
             setError(response.snapshot ? "" : t("Could not read the accounts. Try again."));
+            setErrorDetails(undefined);
             return Boolean(response.snapshot);
           },
           (reason: unknown) => {
-            if (isCurrent() && presentRemoteError(reason)) {
-              setError(t("Could not reach this computer."));
+            if (isCurrent()) {
+              // A connection failure is shown centrally, so its stale sentence must not linger here.
+              const raw = presentRemoteError(reason);
+              setError(raw ? t("Could not reach this computer.") : "");
+              setErrorDetails(raw || undefined);
             }
             return false;
           },
@@ -119,12 +128,9 @@ export function useAccountsData(input: {
         },
       );
       const [accounts, needsHuman] = await Promise.allSettled([snapshotRead, needsHumanRead]);
-      if (
-        accounts.status === "rejected" ||
-        !accounts.value ||
-        needsHuman.status === "rejected" ||
-        !needsHuman.value
-      ) {
+      // The needs-human read reports its own failure (needsHumanError); it must not fail the accounts refresh.
+      void needsHuman;
+      if (accounts.status === "rejected" || !accounts.value) {
         throw new Error("Accounts refresh failed");
       }
     },
@@ -138,6 +144,7 @@ export function useAccountsData(input: {
   return {
     loading,
     error,
+    errorDetails,
     snapshot,
     projects,
     needsHumanIds,

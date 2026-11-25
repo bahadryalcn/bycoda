@@ -1,6 +1,7 @@
 import { t, useLocale } from "../../../../shared/i18n";
 import type { ModelRoutingResolution } from "../../../../shared/model/host-contracts/model-routing";
-import { Badge } from "../../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
+import { TriangleAlert } from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
 
@@ -15,7 +16,7 @@ export function waitsForModel(preview: RolePreview | undefined, helper: boolean)
 
 /**
  * One job's "which model now" line. Helpers fall back immediately when no entry is eligible; that
- * is only claimed when the Host answered. A job that would wait shows just a "No model" badge;
+ * is only claimed when the Host answered. A job that would wait shows just a warning icon;
  * the list explains it once.
  */
 export function ModelRolePreview({ preview, helper }: { preview: RolePreview; helper: boolean }) {
@@ -23,9 +24,12 @@ export function ModelRolePreview({ preview, helper }: { preview: RolePreview; he
   const result = preview.data;
   if (waitsForModel(preview, helper))
     return (
-      <Badge tone="warning" size="xs">
-        {t("No model")}
-      </Badge>
+      <InfoTooltip
+        label={t("No eligible model; this job will wait.")}
+        icon={<TriangleAlert className="icon-sm" aria-hidden />}
+      >
+        {t("No eligible model; this job will wait.")}
+      </InfoTooltip>
     );
   // A failed read is stated once by the list, and a pending read shows no line at all.
   if (preview.isError || !result) return null;

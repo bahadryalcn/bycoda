@@ -47,6 +47,7 @@ import {
 } from "../model/voicePresentedResult";
 import {
   VoicePresentedActionButtonSchema,
+  VoicePresentedViewChanged,
   voicePresentedActionResponse,
   voicePresentedRequestKey,
 } from "../model/voicePresentedActions";
@@ -1442,7 +1443,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           presentedVersionShown(version),
         );
       if (!origin || !latest.current.workspace || !current())
-        throw new Error("This view changed. Ask for it again.");
+        throw new VoicePresentedViewChanged(t("This view changed. Ask for it again."));
       const {
         family = "workspace",
         action,
@@ -1467,7 +1468,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           annotations?: { readOnlyHint?: boolean };
         }[];
       };
-      if (!current()) throw new Error("This view changed. Ask for it again.");
+      if (!current())
+        throw new VoicePresentedViewChanged(t("This view changed. Ask for it again."));
       const tool = catalog.tools.find(
         (entry) => entry.family === family && entry.action === action,
       );

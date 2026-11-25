@@ -52,7 +52,11 @@ describe("YouTube list picking", () => {
         description: "All shorts",
         privacy: "private",
       }),
-    ).toEqual({ title: "Shorts", description: "All shorts", privacy: "private" });
+    ).toEqual({
+      title: "Shorts",
+      description: "All shorts",
+      privacy: "private",
+    });
     expect(
       youtubePrefill("youtube.channel.update", {
         name: "Fixture",
@@ -61,15 +65,29 @@ describe("YouTube list picking", () => {
         country: "TR",
         madeForKids: true,
       }),
-    ).toEqual({ description: "About", keywords: "a b", country: "TR", madeForKids: "true" });
+    ).toEqual({
+      description: "About",
+      keywords: "a b",
+      country: "TR",
+      madeForKids: "true",
+    });
     expect(youtubePrefill("youtube.comment.moderate", { title: "x" })).toEqual({});
   });
 
   it("sends only the prefilled values the owner changed", () => {
     expect(
       youtubeChanged(
-        { videoId: "v1", title: "Summer release", description: "New notes", privacy: "public" },
-        { title: "Summer release", description: "Old notes", privacy: "public" },
+        {
+          videoId: "v1",
+          title: "Summer release",
+          description: "New notes",
+          privacy: "public",
+        },
+        {
+          title: "Summer release",
+          description: "Old notes",
+          privacy: "public",
+        },
       ),
     ).toEqual({ videoId: "v1", description: "New notes" });
   });

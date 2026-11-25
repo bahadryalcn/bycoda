@@ -37,20 +37,6 @@
     },
     {
       "baseline": "ui-drift-baseline.json",
-      "rule": "theme-palette-literal",
-      "from": 0,
-      "to": 421,
-      "reason": "New rule theme-palette-literal recorded with its existing debt."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
-      "rule": "feature-typography",
-      "from": 0,
-      "to": 4359,
-      "reason": "New appearance ownership rule feature-typography recorded with its existing debt."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
       "rule": "surface-style",
       "from": 0,
       "to": 984,
@@ -69,13 +55,6 @@
       "from": 0,
       "to": 523,
       "reason": "New appearance ownership rule text-truncation recorded with its existing debt."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
-      "rule": "interaction-state",
-      "from": 0,
-      "to": 133,
-      "reason": "Widened interaction-state to known tab-bar and segmented-row recipes; use Tabs or SegmentedControl."
     },
     {
       "baseline": "ui-drift-baseline.json",
@@ -233,13 +212,6 @@
     },
     {
       "baseline": "ui-drift-baseline.json",
-      "rule": "native-title",
-      "from": 0,
-      "to": 7,
-      "reason": "Widened native-title from interactive controls to native DOM and shared text/badge tooltips, preserving heading title APIs."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
       "rule": "portal-outside-shared",
       "from": 0,
       "to": 24,
@@ -300,27 +272,6 @@
       "from": 0,
       "to": 5,
       "reason": "New rule nested-surface (settings Group nested in a Group or card Surface) widens the view guards on 2026-11-15 and records existing debt; future per-file counts may only fall via --ratchet."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
-      "rule": "tooltip-repeats-label",
-      "from": 0,
-      "to": 0,
-      "reason": "New rule tooltip-repeats-label (tooltip that only repeats the visible label) widens the view guards on 2026-11-15 and records existing debt; future per-file counts may only fall via --ratchet."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
-      "rule": "inline-help-text",
-      "from": 0,
-      "to": 1,
-      "reason": "New low-noise inline-help-text guard records existing long translated secondary copy directly under settings labels on 2026-11-15; future per-file counts may only fall."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
-      "rule": "shared-internal-selector",
-      "from": 0,
-      "to": 87,
-      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
     },
     {
       "baseline": "ui-drift-baseline.json",
@@ -387,13 +338,6 @@
     },
     {
       "baseline": "invariants-baseline.json",
-      "rule": "bycoda/no-raw-error-text",
-      "from": 0,
-      "to": 7,
-      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
-    },
-    {
-      "baseline": "invariants-baseline.json",
       "rule": "bycoda/transcript-row-trigger",
       "from": 0,
       "to": 9,
@@ -419,6 +363,104 @@
       "from": 0,
       "to": 4,
       "reason": "UI hardening wave 2 2026-11-22: new rule, hand-built menus without role wiring or arrow keys (audit 28, K11)."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "disabled-without-reason",
+      "from": 0,
+      "to": 651,
+      "reason": "New or widened rule (audit2): require an explanation for disabled shared controls with non-obvious gates."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "role-status-banner",
+      "from": 0,
+      "to": 58,
+      "reason": "New or widened rule (audit2): include capitalized JSX status regions."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "raw-aria-live",
+      "from": 0,
+      "to": 2,
+      "reason": "New or widened rule (audit2): include aria-live on capitalized JSX components."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "tooltip-repeats-label",
+      "from": 0,
+      "to": 20,
+      "reason": "New or widened rule (audit2): compare accessible names and aligned conditional labels."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "inline-help-text",
+      "from": 1,
+      "to": 6,
+      "reason": "New or widened rule (audit2): include optional field captions and explicitly styled hint paragraphs."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "row-text-badge",
+      "from": 0,
+      "to": 17,
+      "reason": "New or widened rule (audit2): identify text badges and tag lists within rows."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "physical-direction-utility",
+      "from": 0,
+      "to": 96,
+      "reason": "New or widened rule (audit2): require logical direction utilities in feature JSX."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "aria-label-without-role",
+      "from": 0,
+      "to": 18,
+      "reason": "New or widened rule (audit2): detect aria-label on a generic div without a role."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "duplicate-feedback-channel",
+      "from": 0,
+      "to": 1,
+      "reason": "New or widened rule (audit2): detect disabled gate reasons repeating the visible label."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "native-title",
+      "from": 0,
+      "to": 1,
+      "reason": "New or widened rule (audit2): include imported shared TreeRow and aliases."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "shared-internal-selector",
+      "from": 0,
+      "to": 191,
+      "reason": "New or widened rule (audit2): include shared slots backed by locally imported global classes."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "feature-typography",
+      "from": 0,
+      "to": 37,
+      "reason": "New or widened rule (audit2): include font-variant-numeric outside the shared owner."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/no-raw-error-text",
+      "from": 0,
+      "to": 348,
+      "reason": "New or widened rule (audit2): detect raw error text in error fields, feedback children and local UI state."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "bycoda/literal-translation-key",
+      "from": 0,
+      "to": 710,
+      "reason": "New or widened rule (audit2): require literal messages at app translator call sites."
     }
   ]
 }

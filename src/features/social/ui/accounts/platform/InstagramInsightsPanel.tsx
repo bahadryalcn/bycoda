@@ -26,7 +26,9 @@ export function InstagramInsightsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, error, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const [mediaId, setMediaId] = useState("");
   const [demographics, setDemographics] = useState<InstagramInsightInput["demographics"]>();
   const [insights, setInsights] = useState<InstagramInsightResult>();
@@ -96,10 +98,12 @@ export function InstagramInsightsPanel({
       ) : null}
       {insights?.unavailable.length ? (
         <InlineMessage tone="info">
-          {t("Unavailable metrics: {p0}", { p0: insights.unavailable.join(", ") })}
+          {t("Unavailable metrics: {p0}", {
+            p0: insights.unavailable.join(", "),
+          })}
         </InlineMessage>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={details}>{error}</InlineError> : null}
     </FieldGroup>
   );
 }

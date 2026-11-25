@@ -29,6 +29,23 @@ describe("ComposerAction", () => {
     expect(typed).not.toContain(" title=");
   });
 
+  it("keeps Stop and shows one queue action when both follow-up shortcuts queue", () => {
+    const html = renderToStaticMarkup(
+      createElement(ComposerAction, {
+        busy: true,
+        hasValue: true,
+        followUpAction: "queue",
+        queueShortcut: "Ctrl+Shift+Enter",
+        onSend: vi.fn(),
+        onQueue: vi.fn(),
+        onStop: vi.fn(),
+      }),
+    );
+    expect(html.match(/data-usage-guide="queue-button"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Stop"');
+    expect(html).not.toContain("data-composer-stop-optional");
+  });
+
   it("keeps a blocked Send focusable and exposes its reason without renaming it", () => {
     const blocked = renderToStaticMarkup(
       createElement(ComposerAction, {

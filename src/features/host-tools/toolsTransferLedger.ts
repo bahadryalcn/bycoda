@@ -160,5 +160,5 @@ export class ToolsTransferLedger<Ack> {
 }
 
 export function toolsTransferError(cause: unknown) {
-  return t(errorText(cause));
+  return errorText(cause);
 }

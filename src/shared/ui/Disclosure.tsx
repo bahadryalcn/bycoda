@@ -69,6 +69,8 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   children?: ReactNode;
   /** Hairlines between the existing body children; no wrapper or mount change. */
   bodyDividers?: SurfaceAppearance["dividers"];
+  /** The summary text changes while work runs and is announced politely (a status row, an activity fold). A static row (`collapsible={false}`) becomes a status region; an openable one sets `aria-live="polite"`. Never hand-write `role`/`aria-live` on a Disclosure. */
+  live?: boolean;
 };
 
 /**
@@ -105,6 +107,7 @@ export function Disclosure({
   className,
   children,
   bodyDividers,
+  live,
   ref,
   ...props
 }: DisclosureProps) {
@@ -171,6 +174,7 @@ export function Disclosure({
     return (
       <div
         {...(props as ComponentPropsWithRef<"div">)}
+        role={live ? "status" : props.role}
         aria-label={summaryLabel}
         data-variant={variant}
         data-size={size}
@@ -186,6 +190,7 @@ export function Disclosure({
   return (
     <details
       {...props}
+      aria-live={live ? "polite" : props["aria-live"]}
       ref={setRef}
       name={name}
       open={controlled ? open : defaultOpen}

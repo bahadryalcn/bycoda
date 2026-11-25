@@ -76,6 +76,7 @@ export function useSessionReminders(
   const callbacks = useRef({ onOpenSession, ensureSaved });
   callbacks.current = { onOpenSession, ensureSaved };
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const configure = useCallback(async () => {
     const request = ++configurationRevision.current;
     // Native preferences are global state. Keep writes ordered and skip queued
@@ -109,6 +110,7 @@ export function useSessionReminders(
     }
   }, []);
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const refresh = useCallback(async () => {
     const request = ++revision.current;
     try {
@@ -142,6 +144,7 @@ export function useSessionReminders(
     });
   };
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const schedule = useCallback(
     async (ids: readonly string[], dueAt: number) => {
       try {
@@ -155,6 +158,7 @@ export function useSessionReminders(
     [refresh],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const cancel = useCallback(
     async (ids: readonly string[], expectedDueAt?: number) => {
       try {
@@ -167,6 +171,7 @@ export function useSessionReminders(
     [refresh],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const dismissDue = useCallback(
     async (sessionId: string) => {
       const reminder = remindersRef.current.find(
@@ -178,6 +183,7 @@ export function useSessionReminders(
     [cancel],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const openHere = useCallback(
     async (reminder: ReminderTarget) => {
       try {
@@ -278,6 +284,7 @@ export function useSessionReminders(
     }).catch((error) => setError(localError(error)));
   }, [sessionIdsKey]);
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable callbacks
   const open = useCallback(async (reminder: ReminderTarget) => {
     try {
       await invoke("reminder_open", {
@@ -289,6 +296,7 @@ export function useSessionReminders(
     }
   }, []);
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this hook is uncompiled (it writes refs during render), so its effect dependencies need stable values
   const due = useMemo(
     () =>
       reminders.filter((reminder) => {
