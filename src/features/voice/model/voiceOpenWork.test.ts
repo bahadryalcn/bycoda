@@ -34,8 +34,8 @@ it("lists non-terminal visible jobs with status, hold reason and question count"
     visibleP1,
   );
   expect(text).toContain("data only");
-  expect(text).toContain("- Job a (running)");
-  expect(text).toContain("- Job d (queued, held: limits)");
+  expect(text).toContain("- Job a (running; id a)");
+  expect(text).toContain("- Job d (queued, held: limits; id d)");
   expect(text).toContain("Pending owner questions: 1");
   expect(text).not.toMatch(/Job b|Secret/);
 });

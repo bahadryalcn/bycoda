@@ -3620,7 +3620,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
   const { render } = await setup();
   await act(async () => {
     mock.realtime.captureTurn()();
-    mock.realtime.transcript("Secret project proposal");
+    mock.realtime.transcript("Create a job for the secret project proposal");
   });
   let receipt!: Promise<unknown>;
   await act(async () => {
@@ -3634,7 +3634,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
     await render("a");
     expect(page.querySelector<HTMLInputElement>('input[value="Private proposal"]')).toBeNull();
     expect(page.textContent).not.toContain("Private proposal");
-    expect(page.textContent).not.toContain("Secret project proposal");
+    expect(page.textContent).not.toContain("secret project proposal");
     expect((overlay.host as any)?.state.jobReview).toBeNull();
     expect((overlay.host as any)?.state.transcript).toBe("");
   } finally {

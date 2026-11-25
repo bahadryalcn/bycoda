@@ -92,6 +92,35 @@ describe("runVoiceWork", () => {
     expect(work.entries()[0]).toMatchObject({ status: "done", sessionIds: ["s1"] });
   });
 
+  it("guards only work started before the current voice connection", async () => {
+    const work = ledger();
+    await runVoiceWork(work, voiceWorkCall("submit_work", { text: "Fix login" }), "fix login", () =>
+      Promise.resolve({ accepted: true }),
+    );
+    await settled();
+    const startedAt = work.entries()[0]!.startedAt;
+    const execute = vi.fn(async () => ({ accepted: true }));
+    // Same connection: the model still holds the result, the tool's own replay rules apply.
+    await runVoiceWork(
+      work,
+      voiceWorkCall("submit_work", { text: "Fix login" }),
+      "fix login",
+      execute,
+      startedAt,
+    );
+    expect(execute).toHaveBeenCalledOnce();
+    // A later connection has forgotten it: answer from the ledger.
+    const retry = await runVoiceWork(
+      work,
+      voiceWorkCall("submit_work", { text: "Fix login" }),
+      "fix login",
+      execute,
+      startedAt + 1,
+    );
+    expect(execute).toHaveBeenCalledOnce();
+    expect(retry).toMatchObject({ status: "already_started" });
+  });
+
   it("answers an identical retry for the same request without executing it", async () => {
     const work = ledger();
     await runVoiceWork(work, voiceWorkCall("app_tool_call", create("r1")), "build a game", () =>
