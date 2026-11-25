@@ -18,6 +18,7 @@ export type * as storedBlockFormApi from "./public/storedBlockForm";
 export type * as modelHostFeatureClientApi from "./public/hostFeatureClient";
 export type * as modelLocalHostServiceApi from "./public/localHostService";
 export type * as modelLocalSyncApi from "./public/localSync";
+export type * as adoptedStoppingApi from "./public/adoptedStopping";
 export type * as modelLocalHostRetryApi from "./public/localHostRetry";
 export type * as modelProjectAppearanceApi from "./public/projectAppearance";
 export type * as modelProtocolApi from "./public/protocol";

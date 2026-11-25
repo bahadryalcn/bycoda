@@ -241,6 +241,8 @@ The conversation follows the latest reply until you scroll up or navigate to an
 earlier message. **Jump to latest** appears above the composer when you scroll up.
 Click it, or focus it and press Enter or Space, to return to the end and resume
 following new messages.
+**Load newer messages** appears when there are newer turns outside the open page
+that are still hidden. It loads the next page of conversation history.
 With **Anchor prompts to top** enabled, the active prompt stays at the top while
 the assistant works. When the turn finishes, the conversation ends at the latest
 reply.

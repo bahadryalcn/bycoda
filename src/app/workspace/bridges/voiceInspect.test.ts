@@ -187,12 +187,18 @@ describe("voice workspace inspect tools", () => {
       projectPath: "/locked",
     }));
     const { execute } = setup(inspect);
-    expect(await execute("workspace.views.open", { view: "settings", section: "voice" })).toMatchObject({
+    expect(
+      await execute("workspace.views.open", { view: "settings", section: "voice" }),
+    ).toMatchObject({
       status: "completed",
       view: "settings",
     });
     expect(calls).toEqual([
-      [{ global: true, title: "Voice navigation" }, "ui.workspace.open", { view: "settings", section: "voice" }],
+      [
+        { global: true, title: "Voice navigation" },
+        "ui.workspace.open",
+        { view: "settings", section: "voice" },
+      ],
     ]);
     expect((await execute("workspace.views.open", { view: "crews" })).status).toBe("rejected");
     expect((await execute("workspace.views.close", { view: "tasks" })).status).toBe("rejected");

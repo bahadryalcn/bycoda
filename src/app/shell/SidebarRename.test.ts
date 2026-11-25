@@ -1854,6 +1854,7 @@ describe("sidebar session GitHub links", () => {
         url: "https://github.com/acme/widgets/pull/27",
         state: "open",
         updatedAt: "",
+        projectPath: "/repo",
         labels: [],
         assignees: [],
         draft: false,

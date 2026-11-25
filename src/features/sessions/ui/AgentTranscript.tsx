@@ -533,6 +533,10 @@ function AgentTranscriptComponent({
   )
     renderedTurns.push({ turn: turns[latestIndex], index: latestIndex });
   renderedTurns.sort((a, b) => a.index - b.index);
+  const hasHiddenNewerTurns =
+    lastVisibleTurn < turns.length &&
+    renderedTurns.filter(({ index }) => index >= lastVisibleTurn).length <
+      turns.length - lastVisibleTurn;
   const renderTurns = renderedTurns.map((entry) => entry.turn);
   const { searchCurrent } = useTranscriptSearch({
     scroller,
@@ -844,9 +848,11 @@ function AgentTranscriptComponent({
         </div>
         {lastVisibleTurn < turns.length ? (
           <div className="flex justify-center gap-2 px-4 py-3">
-            <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
-              {t("Load newer messages")}
-            </Button>
+            {hasHiddenNewerTurns ? (
+              <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
+                {t("Load newer messages")}
+              </Button>
+            ) : null}
             <Button motion="none" variant="ghost" type="button" onClick={jumpToLatest}>
               {t("Jump to latest")}
             </Button>

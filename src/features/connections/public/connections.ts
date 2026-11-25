@@ -2,6 +2,7 @@
 export { classifyCommandFailure } from "../model/remoteCommandRetry";
 export {
   bindStoredAdoptedImageReaders,
+  cachedRemoteCapabilities,
   loadRemoteBlock,
   loadRemoteCapabilities,
   loadRemoteHistoryPage,

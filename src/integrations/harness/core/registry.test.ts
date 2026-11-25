@@ -1845,6 +1845,18 @@ describe("harness registry", () => {
     },
   );
 
+  it("gives ACP text helpers the provider's own model ID", async () => {
+    const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => "done");
+    registerHarness(stub("cursor", { runTextPrompt }));
+    await runHarnessTextPrompt({
+      harness: "cursor",
+      cwd: "/tmp",
+      prompt: "question",
+      model: "cursor:composer-2.5",
+    });
+    expect(runTextPrompt.mock.calls[0]?.[0].model).toBe("composer-2.5");
+  });
+
   it("keeps foreign model remapping and never fabricates no-dispatch proof after adapter entry", async () => {
     const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => {
       throw new Error("entered adapter failed");
