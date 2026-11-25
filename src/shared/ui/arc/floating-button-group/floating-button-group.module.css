@@ -33,6 +33,10 @@
 .group[data-padding="none"] {
   padding: 0;
 }
+.xs {
+  --fbg-h: var(--ui-control-height-xs);
+  --fbg-icon: var(--ui-icon-sm);
+}
 .sm {
   --fbg-h: var(--ui-control-height-sm);
 }
@@ -97,8 +101,8 @@
 }
 .iconSpace {
   display: block;
-  inline-size: var(--ui-icon-md);
-  block-size: var(--ui-icon-md);
+  inline-size: var(--fbg-icon, var(--ui-icon-md));
+  block-size: var(--fbg-icon, var(--ui-icon-md));
   flex: none;
 }
 .phase {
@@ -112,8 +116,8 @@
   flex: none;
 }
 .icon svg {
-  inline-size: var(--ui-icon-md);
-  block-size: var(--ui-icon-md);
+  inline-size: var(--fbg-icon, var(--ui-icon-md));
+  block-size: var(--fbg-icon, var(--ui-icon-md));
   stroke-width: var(--ui-icon-stroke);
 }
 .text {

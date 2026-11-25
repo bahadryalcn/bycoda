@@ -276,7 +276,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                     // Same bare icon row as the message actions: no tray padding.
                     variant="muted"
                     padding="none"
-                    size="sm"
+                    size="xs"
                     iconOnly
                     items={actions}
                   />
