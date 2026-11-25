@@ -41,8 +41,10 @@
 .header[data-chrome-inset] {
   padding-inline-start: 0;
 }
-/* The header is its own query container so secondary actions can give way to the overflow menu. */
-.header {
+/* A header with an overflow menu is its own query container so secondary actions can give way to it.
+   Only then: inline-size containment drops the content width, so a header sized by its content
+   (absolutely positioned, or a flex item in a row) would collapse and push its actions out of view. */
+.header[data-pane-header-collapsible] {
   container: pane-header / inline-size;
 }
 .secondary {
