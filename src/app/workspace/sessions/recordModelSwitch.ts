@@ -3,7 +3,7 @@ import {
   sessionProviderAccountId,
   supportsProviderAccounts,
 } from "../../../features/providers/model/providerAccounts";
-import { resolveModel } from "../../../features/sessions/model/models";
+import { modelEffortLabel, resolveModel } from "../../../features/sessions/model/models";
 import {
   withModelSwitch,
   type ModelSwitchState,
@@ -12,23 +12,28 @@ import {
 import { HARNESS_TITLE, type Session } from "../../../features/sessions/model/session";
 import { setSessions } from "../../../features/sessions/model/sessionsStore";
 
-type SwitchSource = Pick<Session, "harness" | "model" | "providerAccountId" | "providerSessionId">;
+type SwitchSource = Pick<
+  Session,
+  "harness" | "model" | "providerAccountId" | "providerSessionId" | "modelSettings"
+>;
 
 /** Provider, account label and model name a session runs under; `accountId` overrides its account. */
 export function modelSwitchState(session: SwitchSource, accountId?: string): ModelSwitchState {
   const harness = session.harness;
+  const model = resolveModel(harness, session.model);
+  const effort = modelEffortLabel(model, session.modelSettings);
   return {
     harness,
     ...(supportsProviderAccounts(harness)
-      ? {
-          account: providerAccountLabel(
-            harness,
-            accountId ?? sessionProviderAccountId(harness, session),
-          ),
-        }
+      ? accountState(harness, accountId ?? sessionProviderAccountId(harness, session))
       : {}),
-    model: resolveModel(harness, session.model).name,
+    model: model.name,
+    ...(effort ? { effort } : {}),
   };
+}
+
+function accountState(harness: Parameters<typeof providerAccountLabel>[0], id: string) {
+  return { account: providerAccountLabel(harness, id), accountId: id };
 }
 
 /**
@@ -45,7 +50,10 @@ export function recordModelSwitch(
   setSessions((prev) => {
     const index = prev.findIndex((session) => session.id === sessionId);
     if (index < 0) return prev;
-    const to = { ...modelSwitchState(prev[index], options.accountId), note: options.note };
+    const to = {
+      ...modelSwitchState(prev[index], options.accountId),
+      note: options.note,
+    };
     const next = withModelSwitch(prev[index], from, to, switchText(to));
     if (next === prev[index]) return prev;
     const sessions = prev.slice();

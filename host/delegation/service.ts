@@ -399,9 +399,7 @@ export class ConversationDelegation {
             atUsageLimit: [...limitedSubagents, ...(limitedAdvisor ? [limitedAdvisor] : [])].map(
               (entry) => ({
                 ref: delegateRefKey(entry.ref),
-                ...(entry.resetsAt === undefined
-                  ? {}
-                  : { resetsAt: isoTimestamp(entry.resetsAt) }),
+                ...(entry.resetsAt === undefined ? {} : { resetsAt: isoTimestamp(entry.resetsAt) }),
               }),
             ),
           }

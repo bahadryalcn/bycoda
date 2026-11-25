@@ -228,3 +228,9 @@ html[data-performance-no-blur] {
     pointer-events: auto;
   }
 }
+
+/* Model switch divider: its hairlines use the transcript inset border, like the handoff divider,
+   so they stay visible on the darker transcript ground where the pane border fades out. */
+[data-model-switch] {
+  --ui-pane-border: var(--transcript-inset-border);
+}

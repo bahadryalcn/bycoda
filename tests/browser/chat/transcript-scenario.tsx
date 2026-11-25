@@ -420,9 +420,92 @@ const child = (index: number, title: string, patch: Partial<Session>, tools: Blo
 
 // streaming=1 marks the last block as the streaming reply of a busy session.
 const streaming = q.get("streaming") === "1";
-const sceneBlocks = (q.get("scene") === "interleaved" ? interleavedBlocks : blocks).map(
-  (block, index, all) =>
-    streaming && index === all.length - 1 ? { ...block, streaming: true } : block,
+// scene=switch shows the model switch row: one switch, an account swap, effort, several hops.
+const switchStep = (
+  model: string,
+  accountId: string | undefined,
+  labels: Record<string, string>,
+  extra = {},
+) => ({
+  harness: "claude" as const,
+  model,
+  ...(accountId ? { accountId, account: labels[accountId] } : {}),
+  at: now,
+  ...extra,
+});
+if (q.get("scene") === "switch") {
+  localStorage.setItem(
+    "bycoda.providerAccounts.v2",
+    JSON.stringify({
+      claude: [
+        { id: "default", label: "Personal", isDefault: true },
+        { id: "a2", label: "Work", color: "blue" },
+        { id: "a3", label: "Team", color: "green" },
+      ],
+    }),
+  );
+}
+const labels = { default: "Personal", a2: "Work", a3: "Team" };
+const switchBlocks: Block[] = [
+  { id: "su", role: "user", text: "Switch models between turns." },
+  { id: "sa", role: "assistant", text: "Here is a reply before the first switch." },
+  {
+    id: "sw1",
+    role: "system",
+    text: "Continuing with Claude Code · Opus 5.5",
+    modelSwitch: {
+      steps: [
+        switchStep("Sonnet 5.5", "default", labels),
+        switchStep("Opus 5.5", "a2", labels, { effort: "High" }),
+      ],
+    },
+  },
+  { id: "su2", role: "user", text: "And again with another account." },
+  { id: "sa2", role: "assistant", text: "Same model, another account." },
+  {
+    id: "sw2",
+    role: "system",
+    text: "Continuing with Claude Code · Opus 5.5",
+    modelSwitch: {
+      steps: [switchStep("Opus 5.5", "a2", labels), switchStep("Opus 5.5", "a3", labels)],
+    },
+  },
+  { id: "su3", role: "user", text: "Now several hops in a row." },
+  { id: "sa3", role: "assistant", text: "Done." },
+  {
+    id: "sw3",
+    role: "system",
+    text: "Continuing with Claude Code · Opus 5.5",
+    modelSwitch: {
+      steps: [
+        { harness: "codex", model: "6.2 Astra", at: now },
+        { harness: "codex", model: "6.2 Sol", at: now },
+        switchStep("Opus 5.5", "a2", labels),
+      ],
+    },
+  },
+  { id: "su4", role: "user", text: "An old row recorded without an account id." },
+  { id: "sa4", role: "assistant", text: "Fine." },
+  {
+    id: "sw4",
+    role: "system",
+    text: "Continuing",
+    modelSwitch: {
+      steps: [
+        { harness: "claude", account: "Personal", model: "Opus 5.5", at: now },
+        { harness: "claude", account: "Work", model: "Sonnet 5.5", at: now },
+      ],
+    },
+  },
+];
+const sceneBlocks = (
+  q.get("scene") === "interleaved"
+    ? interleavedBlocks
+    : q.get("scene") === "switch"
+      ? switchBlocks
+      : blocks
+).map((block, index, all) =>
+  streaming && index === all.length - 1 ? { ...block, streaming: true } : block,
 );
 
 const toolBlocks = (prefix: string, count: number, failed: number): Block[] =>

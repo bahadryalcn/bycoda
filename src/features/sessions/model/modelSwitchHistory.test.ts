@@ -93,6 +93,42 @@ describe("withModelSwitch", () => {
   });
 });
 
+describe("account and effort in the record", () => {
+  const two: ModelSwitchState = { ...personal, accountId: "p2" };
+  const three: ModelSwitchState = { ...personal, account: "Team", accountId: "p3" };
+
+  it("records a switch between two accounts of the same model and keeps their ids", () => {
+    const next = withModelSwitch(session([user(), answer()]), two, three, "x");
+    const steps = switches(next)[0].modelSwitch!.steps;
+    expect(steps.map((step) => step.accountId)).toEqual(["p2", "p3"]);
+    expect(steps.every((step) => step.model === "Opus 5.5")).toBe(true);
+  });
+
+  it("tells accounts apart by id even when their labels match", () => {
+    const sameLabel = { ...two, accountId: "p9" };
+    const next = withModelSwitch(session([user(), answer()]), two, sameLabel, "x");
+    expect(switches(next)).toHaveLength(1);
+  });
+
+  it("keeps account id and effort through a reload and reads old rows without them", () => {
+    const meta = sanitizeModelSwitch({
+      steps: [
+        { harness: "claude", account: "work", model: "Opus 5.5", at: 1 },
+        {
+          harness: "claude",
+          account: "Team",
+          accountId: "p3",
+          model: "Opus 5.5",
+          effort: "High",
+          at: 2,
+        },
+      ],
+    });
+    expect(meta?.steps[0]).not.toHaveProperty("accountId");
+    expect(meta?.steps[1]).toMatchObject({ accountId: "p3", effort: "High" });
+  });
+});
+
 describe("transcript placement", () => {
   it("keeps the switch row out of the status trail", () => {
     const s = withModelSwitch(session([user(), answer()]), work, personal, "x");
