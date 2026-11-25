@@ -132,7 +132,7 @@ describe("tracked direct work", () => {
       f.store.db
         .prepare("INSERT INTO assistant_jobs(id,value,version,updated_at) VALUES(?,?,1,1)")
         .run(id, JSON.stringify({ id, status, sessionIds: [], ...extra }));
-    const run = (value: { id: string }) =>
+    const run = (value: { id: string } & Record<string, unknown>) =>
       f.store.db
         .prepare("INSERT INTO automation_runs(id,value) VALUES(?,?)")
         .run(value.id, JSON.stringify(value));

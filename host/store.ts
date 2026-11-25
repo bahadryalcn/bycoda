@@ -3500,7 +3500,8 @@ export class HostStore {
       const hash = this.hash(token);
       const row = await this.db.prepare("SELECT proof_jkt FROM devices WHERE hash=?").get(hash);
       if (!row) return "unknown";
-      if (typeof row.proof_jkt === "string") return row.proof_jkt === key.jkt ? "same" : "different";
+      if (typeof row.proof_jkt === "string")
+        return row.proof_jkt === key.jkt ? "same" : "different";
       const changed = await this.db
         .prepare("UPDATE devices SET proof_jkt=?, proof_x=? WHERE hash=? AND proof_jkt IS NULL")
         .run(key.jkt, key.x, hash);

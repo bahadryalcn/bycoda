@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   TasksHelpersResultSchema,
@@ -70,19 +69,13 @@ export function useHelperFailures(
       retry: false,
     })),
   });
-  const stamp = results.map((result) => result.dataUpdatedAt).join(",");
-  return useMemo(
-    () =>
-      new Map(
-        [
-          ...failuresByTask(
-            machineIds,
-            results.map((result) => result.data ?? []),
-          ),
-        ].map(([key, helper]) => [key, helper.error ?? ""]),
+  return new Map(
+    [
+      ...failuresByTask(
+        machineIds,
+        results.map((result) => result.data ?? []),
       ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `stamp` changes exactly when a result's data does.
-    [machineIds.join(","), stamp],
+    ].map(([key, helper]) => [key, helper.error ?? ""]),
   );
 }
 
