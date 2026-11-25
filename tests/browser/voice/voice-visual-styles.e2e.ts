@@ -786,7 +786,7 @@ async function open(
     await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
   await expect(panel).toHaveAttribute(
     "data-voice-state",
-    state === "working" ? "listening" : state,
+    state === "working" ? "listening" : state === "muted" ? "connected" : state,
   );
   return panel;
 }
@@ -807,7 +807,9 @@ for (const theme of ["light", "dark"])
           "working",
         ]) {
           const panel = await open(page, visual, state, theme, width);
-          const actualState = state === "working" ? "listening" : state;
+          // A muted microphone keeps the call connected; the mic button stays selected.
+          const actualState =
+            state === "working" ? "listening" : state === "muted" ? "connected" : state;
           const artworkState = state === "thinking" ? "transcribing" : actualState;
           await expect(
             panel.locator(`canvas[data-call-art="orb"][data-state="${artworkState}"]`),

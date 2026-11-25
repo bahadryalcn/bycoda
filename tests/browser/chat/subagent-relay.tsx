@@ -16,7 +16,10 @@ import { SubagentStack } from "../../../src/features/sessions/ui/SubagentCards";
 import { SubagentStateLine } from "../../../src/features/sessions/ui/SubagentAnatomy";
 import { Button } from "../../../src/shared/ui/Button";
 import type { AgentStep, Block } from "../../../src/features/sessions/model/session";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import "../../../src/styles/index.css";
+
+installInputModality();
 
 const agent: Block = {
   id: "agent-1",

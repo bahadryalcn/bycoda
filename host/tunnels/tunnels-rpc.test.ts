@@ -40,7 +40,7 @@ async function setup() {
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as { port: number }).port;
-  const device = await store.issueDevice("Owner desktop");
+  const device = await store.issueDevice("Owner desktop", "desktop", true);
   const call = async (
     method: string,
     options: { token?: string; environmentId?: string; origin?: string; params?: unknown } = {},

@@ -129,15 +129,15 @@ for (const theme of ["light", "dark"])
       const outline = await output.evaluate((node) => {
         const s = getComputedStyle(node);
         const probe = document.createElement("span");
-        probe.style.outline = "2px solid var(--ui-focus-ring-color)";
+        probe.style.outline = "1px solid var(--ui-focus-ring-color)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).outlineColor;
         probe.remove();
         return { width: s.outlineWidth, offset: s.outlineOffset, color: s.outlineColor, expected };
       });
       expect(outline).toEqual({
-        width: "2px",
-        offset: "-2px",
+        width: "1px",
+        offset: "-1px",
         color: outline.expected,
         expected: outline.expected,
       });

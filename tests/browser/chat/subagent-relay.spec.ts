@@ -111,7 +111,7 @@ for (const theme of ["light", "dark"])
         const outline = await node.evaluate((element) => {
           const s = getComputedStyle(element);
           const probe = document.createElement("span");
-          probe.style.outline = "2px solid var(--ui-focus-ring-color)";
+          probe.style.outline = "1px solid var(--ui-focus-ring-color)";
           element.appendChild(probe);
           const expected = getComputedStyle(probe).outlineColor;
           probe.remove();
@@ -123,8 +123,8 @@ for (const theme of ["light", "dark"])
           };
         });
         expect(outline).toEqual({
-          width: "2px",
-          offset: "-2px",
+          width: "1px",
+          offset: "-1px",
           color: outline.expected,
           expected: outline.expected,
         });
