@@ -34,6 +34,7 @@ impl Fixture {
             token: "secret-native-token".into(),
             ssh: None,
             local_host: true,
+            proof_seed: None,
         };
         write(
             &root.join("connections.json"),

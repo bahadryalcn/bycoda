@@ -15,6 +15,7 @@ export type ClaudeSpawnInput = {
   includePartialMessages?: boolean;
   maxTurns?: number;
   isolated?: boolean;
+  chrome?: boolean;
   /** Retain only the provider transcript while preserving isolated hooks/MCP policy. */
   persistSession?: boolean;
   /** Bycoda owns the conversation history while normal Claude tools stay available. */

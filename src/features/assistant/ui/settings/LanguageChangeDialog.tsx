@@ -57,7 +57,7 @@ export function LanguageChangeDialog({
       <Text as="p" leading="inherit">
         {body}
       </Text>
-      <ul className="mt-2 list-disc pl-5">
+      <ul className="mt-2 list-disc ps-5">
         {change.items.map((item) => (
           <li key={item.key}>
             <Text as="span" leading="inherit">

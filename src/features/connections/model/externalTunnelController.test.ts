@@ -16,6 +16,7 @@ const status = (): TunnelOverview => ({
   providers: [
     { provider: "cloudflare", installed: true, credential: "not-required" },
     { provider: "ngrok", installed: true, credential: "missing" },
+    { provider: "tailscale", installed: true, credential: "not-required" },
   ],
   tunnels: [],
 });
@@ -25,6 +26,7 @@ function setup() {
     start: vi.fn(async () => ({})),
     stop: vi.fn(async () => ({})),
     credential: vi.fn(async () => ({})),
+    phones: vi.fn(async () => ({})),
   };
   return { api, controller: new ExternalTunnelController("env", api) };
 }
@@ -140,6 +142,43 @@ describe("external tunnel status routing", () => {
     );
     expect(JSON.stringify(value)).not.toContain("private-secret");
     expect(value.tunnels[0].publicUrl).toBe("https://owned.trycloudflare.com");
+  });
+});
+
+describe("public phone access and Funnel approval", () => {
+  const funnel = {
+    id: "22222222-2222-4222-8222-222222222222",
+    provider: "tailscale",
+    target: "host",
+    localUrl: "http://127.0.0.1:3776",
+    state: "error",
+    issue: "approval-required",
+    canStop: false,
+    startedAt: 1,
+  };
+  it("reads the opt-in flag and keeps only a Tailscale admin approval link", () => {
+    expect(
+      readTunnelOverview({ ...status(), phonesOverPublic: true }, "env").phonesOverPublic,
+    ).toBe(true);
+    expect(readTunnelOverview(status(), "env").phonesOverPublic).toBeUndefined();
+    const ok = readTunnelOverview(
+      {
+        ...status(),
+        tunnels: [{ ...funnel, approvalUrl: "https://login.tailscale.com/f/funnel?node=n1" }],
+      },
+      "env",
+    );
+    expect(ok.tunnels[0].approvalUrl).toBe("https://login.tailscale.com/f/funnel?node=n1");
+    const bad = readTunnelOverview(
+      { ...status(), tunnels: [{ ...funnel, approvalUrl: "https://evil.example/" }] },
+      "env",
+    );
+    expect(bad.tunnels[0].approvalUrl).toBeUndefined();
+  });
+  it("sends the owner's choice through the phones call", async () => {
+    const { controller, api } = setup();
+    expect(await controller.setPhonesOverPublic(true)).toBe(true);
+    expect(api.phones).toHaveBeenCalledWith(true);
   });
 });
 

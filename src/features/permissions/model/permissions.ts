@@ -63,6 +63,15 @@ export function permissionBadge(state: PermissionState) {
 export function permissionNeedsRestart(entry: PermissionEntry) {
   return entry.state !== "granted" && entry.detail === "restart-required";
 }
+export function permissionCanAddAppInSettings(
+  id: PermissionId,
+  platform?: SystemPermissionsReport["platform"],
+) {
+  return (
+    platform === "macos" &&
+    (id === "accessibility" || id === "screen-recording" || id === "full-disk-access")
+  );
+}
 /**
  * macOS applies Screen Recording and Full Disk Access to a running app only
  * after it restarts, and reads cannot always see the pending switch. After
@@ -89,10 +98,14 @@ export function permissionInstructions(
       return t("Open System Settings > Notifications > {p0}. Turn on Allow notifications.", {
         p0: PRODUCT_IDENTITY.displayName,
       });
-    return t(
-      "Open System Settings > Privacy & Security > {p0}. Turn on {p1}. If it is missing, add it with the + button.",
-      { p0: permissionInfo(id).toggle, p1: PRODUCT_IDENTITY.displayName },
-    );
+    const values = { p0: permissionInfo(id).toggle, p1: PRODUCT_IDENTITY.displayName };
+    if (permissionCanAddAppInSettings(id, platform)) {
+      return t(
+        "Open System Settings > Privacy & Security > {p0}. Turn on {p1}. If it is missing, add it with the + button.",
+        values,
+      );
+    }
+    return t("Open System Settings > Privacy & Security > {p0}. Turn on {p1}.", values);
   }
   if (platform === "windows") {
     if (id === "microphone")

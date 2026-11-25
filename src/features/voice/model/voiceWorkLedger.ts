@@ -262,7 +262,7 @@ export class VoiceWorkLedger {
     } catch {
       // Persistence is best effort; the in-memory ledger stays authoritative.
     }
-    for (const listener of [...this.listeners]) listener();
+    for (const listener of Array.from(this.listeners)) listener();
   }
 
   start(input: {

@@ -81,6 +81,7 @@ export type HostServices = {
     describe: (
       params: EnvironmentDescribeParams,
       options?: EnvironmentReadOptions,
+      caller?: { principalId?: string },
     ) => Promise<unknown>;
   };
   projects: {
@@ -224,7 +225,9 @@ export function createHostDispatcher(services: HostServices) {
           operations.has(method)
             ? operations.get(method)!(params, domainContext)
             : method === "environment.describe"
-              ? services.environment.describe(params, options)
+              ? services.environment.describe(params, options, {
+                principalId: context.principal.id,
+              })
               : services.projects.list(options, domainContext);
         const result = await waitForRead(
           () => (context.trackWork ? context.trackWork(read) : read()),

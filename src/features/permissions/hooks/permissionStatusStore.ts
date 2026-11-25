@@ -1,5 +1,4 @@
 import {
-  listenSystemPermissionsChanged,
   systemPermissionsStatus,
   type SystemPermissionsReport,
 } from "../../../platform/tauri/systemPermissions";
@@ -66,14 +65,9 @@ function sync() {
     // One focus listener and one native-change subscription serve every consumer.
     window.addEventListener("focus", readQuietly);
     document.addEventListener("visibilitychange", readWhileVisible);
-    const dispose = listenSystemPermissionsChanged((report) => {
-      generation++;
-      publish({ report, loading: false, failed: false });
-    });
     detach = () => {
       window.removeEventListener("focus", readQuietly);
       document.removeEventListener("visibilitychange", readWhileVisible);
-      dispose();
     };
     readQuietly();
   } else if (!active && detach) {
@@ -105,7 +99,7 @@ export function subscribePermissionStatus(listener: () => void) {
   };
 }
 
-/** Polling runs only while at least one setup sheet watches for the grant. */
+/** Polling runs only while at least one setup dialog watches for the grant. */
 export function watchPermissionSetup() {
   setupWatchers++;
   sync();

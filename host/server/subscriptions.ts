@@ -30,6 +30,7 @@ export function createSubscriptionsRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "deviceProofGate"
     | "deviceHost"
     | "tasks"
     | "goals"
@@ -107,6 +108,7 @@ export function createSubscriptionsRuntime(
   const bulkHandler = createHostBulkHandler({
     transfers: bulkTransfers,
     authenticate: authenticateDevice,
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
   });
   // Sender state of tail streams (newest page first, compact deltas), per principal and session.
   const streamDeltas = new StreamDeltaEncoder();

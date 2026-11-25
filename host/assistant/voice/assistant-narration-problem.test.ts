@@ -85,7 +85,7 @@ async function setup(profile: Record<string, unknown> = {}) {
 it("narrates a job problem once with the job title and never the error text", async () => {
   const f = await setup();
   await f.job("waiting");
-  await f.activity("p1", "job.problem", "Job status check failed: C:\secret\path exploded");
+  await f.activity("p1", "job.problem", "Job status check failed: C:\\secret\\path exploded");
   f.advance(1000);
   await f.activity("p2", "job.problem", "Job status check failed: a different message");
   const events = await f.pending();

@@ -14,13 +14,6 @@ vi.mock("../dev-servers/dev-server-tunnel", () => ({
   TUNNEL_CAPABILITY: "transport.ws.tunnel.v1",
   attachDevServerTunnel: () => ({ close: async () => undefined }),
 }));
-vi.mock("../mobile/tailnet-serve-hosts", () => ({
-  createTailnetServeHosts: () => ({
-    current: () => [],
-    observe: () => undefined,
-    refresh: () => undefined,
-  }),
-}));
 
 import { createWebsocketRuntime } from "./websocket";
 import { HOST_WS_READ_CAPABILITY } from "../transport/ws/server";
@@ -31,7 +24,6 @@ describe("Host websocket capabilities", () => {
       server: createServer(),
       engine: { store: { environmentId: "environment" } },
       domainDispatcher: { methods: [] },
-      mobileAccess: { status: () => undefined, observe: () => undefined },
     } as never);
     await websocket.close();
     // The server adds the read capability itself; the voice socket cannot fall back to HTTP,

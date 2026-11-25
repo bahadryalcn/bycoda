@@ -622,9 +622,6 @@
     "src/app/workspace/tabs/useTabHibernation.ts": {
       "bycoda/effect-names-its-sync": 3
     },
-    "src/app/workspace/terminal/useDockGridSizing.ts": {
-      "bycoda/effect-names-its-sync": 1
-    },
     "src/app/workspace/windows/useNativeFullscreen.ts": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -2240,7 +2237,7 @@
     "src/features/voice/ui/VoiceCompanion.tsx": {
       "bycoda/effect-names-its-sync": 22,
       "bycoda/shared-resize-observer": 1,
-      "oxlint/no-console": 2
+      "oxlint/no-console": 1
     },
     "src/features/voice/ui/VoiceCompanionGate.tsx": {
       "bycoda/effect-names-its-sync": 1

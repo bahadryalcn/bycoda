@@ -117,7 +117,8 @@ export type VoiceWorkspaceActionsDeps = {
   onClose?: (sessionId: string) => void | boolean | Promise<void | boolean>;
   onRename?: (sessionId: string, title: string) => void | Promise<void>;
   onArchive?: (sessionId: string, archived: boolean) => boolean | Promise<boolean>;
-  /** Must open the existing owner deletion flow; never wire the confirmed/Now variant. */
+  /** Opens the owner deletion flow. The confirmed variant is wired separately and runs only
+   * under the native Full access grant (`VoiceSessionDeleteDeps`). */
   onDelete?: (sessionId: string) => void | boolean | Promise<void | boolean>;
   onSubmit?: (sessionId: string, text: string) => boolean | Promise<boolean>;
   onStop?: (sessionId: string) => void | Promise<void>;

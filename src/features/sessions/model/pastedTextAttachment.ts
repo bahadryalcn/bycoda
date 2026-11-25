@@ -1,4 +1,4 @@
-import { captureDraft, insertRestoredText } from "../../../shared/lib/draftRestore";
+import { captureDraft } from "../../../shared/lib/draftRestore";
 import { MAX_EMBED_BYTES } from "./attachments";
 import { PASTED_TEXT_FILENAME } from "./attachmentPresentation";
 import { insertAtSelection, type TextSelection } from "./attachmentTokens";
@@ -6,38 +6,28 @@ import { insertAtSelection, type TextSelection } from "./attachmentTokens";
 const MIN_PASTED_TEXT_LENGTH = 8_000;
 
 /** A stand-alone card needs no inline reference. Prose keeps the paste position. */
-export function replacePastedText(value: string, range: TextSelection, token: string) {
+export function insertPastedTextReference(value: string, range: TextSelection, token: string) {
   const remaining = value.slice(0, range.start) + value.slice(range.end);
   return remaining.trim()
     ? insertAtSelection(value, range, token)
     : { text: remaining, caret: range.start };
 }
 
-/** Keep the original paste in the draft until its file has a durable path. */
+/** Capture the insertion point without writing clipboard text into the draft. */
 export function capturePastedTextAttachment(target: EventTarget | null, text: string) {
   if (text.length < MIN_PASTED_TEXT_LENGTH || text.length > MAX_EMBED_BYTES || !text.trim()) return;
   const captured = captureDraft(target);
   if (!captured) return;
   const file = new File([text], PASTED_TEXT_FILENAME, { type: "text/plain" });
   if (file.size > MAX_EMBED_BYTES) return;
-  const draftText = text.replace(/\r\n?/g, "\n");
-  const alreadyPresent = captured.value.includes(draftText);
   return {
     file,
-    text: draftText,
     field: captured.field,
-    insert: () => insertRestoredText(captured, draftText),
     range(value: string) {
-      // A prior paste may shorten the draft before this one. Follow a uniquely
-      // identifiable paste, while leaving edited or ambiguous text intact.
-      const atOriginalPosition = value.startsWith(draftText, captured.start);
-      const start = atOriginalPosition
-        ? captured.start
-        : alreadyPresent
-          ? -1
-          : value.indexOf(draftText);
-      if (start < 0 || (!atOriginalPosition && start !== value.lastIndexOf(draftText))) return;
-      return { start, end: start + draftText.length };
+      if (value === captured.value) return { start: captured.start, end: captured.end };
+      // Another edit can change the captured selection while the file is being saved.
+      const caret = value === captured.field.value ? captured.field.selectionEnd : null;
+      return { start: caret ?? value.length, end: caret ?? value.length };
     },
   };
 }

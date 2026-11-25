@@ -110,13 +110,16 @@ fn fetch_chunk(
 ) -> Result<Vec<u8>, ChunkFailure> {
     endpoint.set_query(Some(&format!("offset={offset}")));
     let remaining = deadline.saturating_duration_since(Instant::now());
-    let response = match agent
+    let mut request = agent
         .get(endpoint.as_str())
         .set("Authorization", &format!("Bearer {token}"))
         .set("Accept-Encoding", "identity")
-        .timeout(remaining.min(Duration::from_secs(12)))
-        .call()
-    {
+        .timeout(remaining.min(Duration::from_secs(12)));
+    // Each chunk is its own request: a fresh proof of the same path.
+    if let Some(proof) = crate::remote::device_proof::header_for(token, "GET", endpoint.path()) {
+        request = request.set(crate::remote::device_proof::HEADER, &proof);
+    }
+    let response = match request.call() {
         Ok(response) => response,
         Err(ureq::Error::Status(status, _)) if status >= 500 => {
             return Err(ChunkFailure::Transient)

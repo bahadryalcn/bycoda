@@ -94,6 +94,46 @@ directory. The URL changes whenever the tunnel starts. The Host starts it again
 after restart or verified unexpected exit if you enabled the option. Use **Stop tunnel**
 on the shared link or **Stop automatic Host access** in the Cloudflare Host form to
 stop automatic access.
+### Private and public paths
+
+Settings → Connections → Devices separates the two kinds of phone path. **Private — only
+your devices** holds **Local network** and **Tailscale (private)**: the encrypted phone
+listener answers only on your network or Tailscale address, never from the internet.
+**Public internet** covers the Cloudflare, ngrok and **Tailscale Funnel (public)** tunnels
+started under Sharing. Anyone on the internet can reach a public address; only a device
+credential protects it. Tailscale (private) and Tailscale Funnel are different options.
+
+**Tailscale Funnel (public)** is a Host-only provider. It runs
+`tailscale funnel --https=<port> <tunnel ingress>` in the foreground, so stopping the
+tunnel removes the funnel. It picks the first free port of 443, 8443 and 10000 and never
+changes your existing Serve or Funnel configuration. If Funnel is not enabled for your
+tailnet, the row reports it and **Open approval page** opens the Tailscale admin page;
+start the tunnel again afterwards.
+
+Phones do not use public paths unless you turn on **Allow phones over the public
+internet** (off by default; turning it on asks first). While it is on, the Host accepts
+phone credentials and phone pairing on its public tunnels and advertises live public Host
+tunnel addresses as the last route; phones keep preferring the local network, then
+Tailscale. Turning it off refuses phones on new requests and connections again.
+
+While it is on and a public Host tunnel is ready, the phone pairing dialog offers a third
+choice, **Public internet**, next to **Same Wi-Fi** and **Tailscale (private)**. Its QR code
+points at the public tunnel address (https, no network key) and is labelled with a warning.
+The choice is hidden when the setting is off or no public Host tunnel is ready.
+
+### Device keys
+
+Every computer or phone paired with a Host is bound to its own Ed25519 key, and every
+request and WebSocket upgrade carries a short-lived signed proof. A stolen device token alone
+is useless. This desktop generates the key when it pairs (pairing codes, account-approved
+pairing, SSH setup and the automatic link to this computer's Host), keeps its 32-byte seed
+sealed in the saved connection beside the token, and replaces or removes it together with
+the token. A computer paired before keys existed is bound the next time it connects over a
+private route. A Host that answers with a refused proof on a public tunnel shows **Re-pair
+this computer over a private connection** on that machine. The automatic link to this
+computer's Host is re-paired once per launch when the Host reports its credential as not
+this computer's own or without a key.
+
 A running tunnel keeps its URL through isolated origin errors, such as the Host
 restarting, and through a single lost connection; it is retired and reported as a
 connection failure only when every connection stays down for 30 seconds or the
@@ -147,7 +187,7 @@ outcome is never replayed on another route. Closing the pairing dialog cancels
 pending setup and status waits before a ticket can be redeemed.
 Plain HTTP is used only for loopback. The other computer must be signed in with the same
 account, online, and have "Let my signed-in phones find this computer" on; pairing needs
-an HTTPS route there (Tailscale Serve or a tunnel). The home-network phone route is not
+an HTTPS route there (a tunnel). Tunnels are for other computers; phones use one only when public phone access is allowed. The home-network phone route is not
 used between desktops: without an HTTPS route or an SSH address, **Add** stays off and its
 info icon says so.
 

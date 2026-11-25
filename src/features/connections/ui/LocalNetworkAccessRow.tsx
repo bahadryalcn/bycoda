@@ -9,16 +9,21 @@ import type { RemoteMachine } from "../model/protocol";
 import { errorText } from "../../../shared/lib/errors";
 
 /**
- * This computer's local network listener for phones. Reading never enables anything;
- * turning it off acts at once, since turning it on again is one click.
+ * One of this computer's phone listeners: the local network one, or the Tailscale one, which
+ * is bound to this computer's tailnet address only. Reading never enables anything; turning
+ * it off acts at once, since turning it on again is one click.
  */
 export function LocalNetworkAccessRow({
   machine,
   active,
+  mode = "lan",
 }: {
   machine: RemoteMachine;
   active: boolean;
+  mode?: "lan" | "tailscale";
 }) {
+  const lan = mode === "lan";
+  const label = lan ? t("Local network access") : t("Tailscale (private)");
   const [status, setStatus] = useState<MobileAccessStatus>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -28,7 +33,7 @@ export function LocalNetworkAccessRow({
   useEffect(() => {
     alive.current = true;
     if (!active) return;
-    void phonePairingApi.access(machine, "lan").then(
+    void phonePairingApi.access(machine, mode).then(
       (next) => {
         if (alive.current) setStatus(next);
       },
@@ -39,15 +44,15 @@ export function LocalNetworkAccessRow({
     return () => {
       alive.current = false;
     };
-  }, [active, machine]);
+  }, [active, machine, mode]);
 
   const change = async (on: boolean) => {
     setPending(true);
     setError("");
     try {
       const next = on
-        ? await phonePairingApi.enable(machine, "lan")
-        : await phonePairingApi.disable?.(machine);
+        ? await phonePairingApi.enable(machine, mode)
+        : await phonePairingApi.disable?.(machine, mode);
       if (alive.current && next) setStatus(next);
     } catch (reason) {
       if (alive.current) setError(errorText(reason));
@@ -57,10 +62,18 @@ export function LocalNetworkAccessRow({
   };
 
   const on = status?.state === "ready";
+  // No tailnet address means Tailscale is not running or signed in on this computer.
+  const noTailnet = !lan && status?.state === "unavailable" && !status.addresses?.length;
   const feedback = error ? (
     <InlineError details={error}>{t("Could not change local network access.")}</InlineError>
   ) : status?.networkHint ? (
     <InlineMessage tone="warning">{status.networkHint}</InlineMessage>
+  ) : noTailnet ? (
+    <InlineMessage tone="neutral">
+      {t(
+        "Tailscale is not connected on this computer. Install Tailscale and sign in, then check again.",
+      )}
+    </InlineMessage>
   ) : status && !on && status.state !== "setup-required" && status.reason ? (
     <InlineMessage tone="neutral">{status.reason}</InlineMessage>
   ) : undefined;
@@ -68,16 +81,22 @@ export function LocalNetworkAccessRow({
   return (
     <>
       <Row
-        label={t("Local network access")}
-        info={t(
-          "Phones on the same Wi-Fi or local network can reach this computer. Pairing and workspace data are encrypted.",
-        )}
+        label={label}
+        info={
+          lan
+            ? t(
+                "Phones on the same Wi-Fi or local network can reach this computer. Pairing and workspace data are encrypted.",
+              )
+            : t(
+                "Only devices signed in to the same Tailscale network can connect. This computer is never reachable from the public internet.",
+              )
+        }
         feedback={feedback}
       >
         <Switch
           checked={on}
-          disabled={!status || pending}
-          aria-label={t("Local network access")}
+          disabled={!status || pending || noTailnet}
+          aria-label={label}
           onCheckedChange={(next) => void change(next)}
         />
       </Row>

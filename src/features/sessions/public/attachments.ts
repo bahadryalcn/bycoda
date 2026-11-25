@@ -21,4 +21,7 @@ export {
 } from "../model/attachmentTokens";
 export type { Attachment } from "../model/session";
 export { beginAttachmentRead, type AttachmentReadCapacity } from "../model/attachmentReadCapacity";
-export { capturePastedTextAttachment, replacePastedText } from "../model/pastedTextAttachment";
+export {
+  capturePastedTextAttachment,
+  insertPastedTextReference,
+} from "../model/pastedTextAttachment";

@@ -413,7 +413,7 @@ export async function compactClaudeContext(input: CompactContextInput): Promise<
       input.sessionId,
       input.operationContext,
       async () => {
-        const settingsKey = settingsKeyFor(input);
+        const settingsKey = settingsKeyFor(input, await chromeAccess(input));
         let live = liveByThread.get(input.sessionId);
         if (!live || live.cwd !== input.cwd || live.settingsKey !== settingsKey) {
           live = await ensureLive(input);
@@ -910,7 +910,9 @@ function newLiveState(input: {
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
-  const settingsKey = settingsKeyFor(input);
+  const chrome = await chromeAccess(input);
+  assertProviderOperation(input.operationContext);
+  const settingsKey = settingsKeyFor(input, chrome);
   const planning = input.intent === "plan";
   const existing = liveByThread.get(input.sessionId);
   if (
@@ -977,7 +979,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       providerSessionId: claudeSessionId,
       tasks: claudeTasks,
     });
-    const launch = launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId);
+    const launch = {
+      ...launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId),
+      chrome,
+    };
 
     const live: Live = newLiveState({
       operation: input.operationContext?.operation,
@@ -2748,10 +2753,27 @@ function writeJson(
     : writeChild(live.handle, JSON.stringify(payload));
 }
 
-function settingsKeyFor(input: HarnessSessionInput): string {
+let readChromeAccess: (() => Promise<boolean>) | undefined;
+
+/** The Host supplies its owner-controlled browser setting for regular Claude sessions. */
+export function configureClaudeChromeAccess(read: () => Promise<boolean>) {
+  readChromeAccess = read;
+}
+
+async function chromeAccess(input: HarnessSessionInput) {
+  if (
+    input.privateDelegateHistory ||
+    bycodaMcpOnly(input.modelSettings) ||
+    claudeNativeLaunch(input).nativeReadOnly
+  )
+    return false;
+  return readChromeAccess?.();
+}
+
+function settingsKeyFor(input: HarnessSessionInput, chrome: boolean | undefined): string {
   const account = input.providerAccountId ?? "default";
   const historyScope = input.privateDelegateHistory ? ":private" : "";
-  return `${account}${historyScope}:${claudeSettingsKey({
+  return `${account}${historyScope}:${chrome}:${claudeSettingsKey({
     model: nativeModelId(input.model),
     effort: input.modelSettings?.effort,
     fast: input.modelSettings?.fast,

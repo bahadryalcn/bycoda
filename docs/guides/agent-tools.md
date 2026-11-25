@@ -35,12 +35,27 @@ Browser's initial address prefills a new view without navigating; open it when
 ready. Address-bar search is disabled by default. When enabled, search terms use
 the selected engine. A custom HTTP or HTTPS search URL uses one `{query}`
 placeholder for encoded search terms and cannot contain credentials. Browser
-viewport offers presets or custom integer dimensions: width 240–2560 and height
+viewport offers presets or custom integer dimensions: width 240–3840 and height
 240–2160 pixels. The viewport applies on the first explicit open of a fresh
 Browser session; an active session keeps its viewport.
 
 Live view does not claim device control or start the Host. Log and server
 refreshes pause while hidden and retain their existing backoff behavior.
+
+The Devices tab has two switches. **Use devices** shows or removes the Devices
+tool in conversation tool views; turning it off stops nothing that is already
+running on a Host. **Agents can use devices** is stored on this computer's Host:
+while it is off, the Host refuses every agent and assistant `devices.*` tool call,
+including calls an agent routes to another computer. Agent sessions running on
+another computer's Host follow that Host's own switch, which stays on. Both rows
+show the pinned hub and agent-device versions.
+
+**Device sources** lists this computer and each saved computer running bycoda Host,
+with iOS and Android availability read from that Host. **Test connection** reads the
+status again. **Edit** and **Add source** open Connections, where computers are
+added and changed. **Remove from Devices** only hides a saved computer from the
+Devices machine picker; the computer, its connection and its other tools are kept,
+and **Show in Devices** brings it back.
 
 ## Delegation readiness
 
@@ -149,15 +164,42 @@ When you ask for a web application to be checked in the browser, the assistant
 uses the integrated preview first when available. The preview opens in the
 originating conversation's Browser panel by default. A responsive check can resize
 the browser viewport; this does not simulate a physical phone. The dimensions control
-in the Browser toolbar opens presets for desktop, tablet and phone, custom dimensions,
+in the Browser toolbar opens desktop, 1K, Full HD, 2K, 4K, tablet and phone presets, custom dimensions,
 and rotation. Width must be
-240–2560 pixels and height 240–2160 pixels. Resizing requires browser control and
+240–3840 pixels and height 240–2160 pixels. Resizing requires browser control and
 invalidates the previous element selection and frame geometry.
 
 On desktop, click a remote conversation's HTTP development link to open it in
 your system browser. For a matching project server, bycoda creates a private
 address on this computer and forwards requests to the remote Host. HTTPS links,
 unmatched servers and unavailable forwarding use the project's Host Browser.
+
+**Settings / Conversation tools / Browser** controls agent browser access on the
+local Host, browser profiles, automatic preview presentation, recording frame rate,
+and the default viewport. A preview can
+request its own visibility, and a recording can request its own supported frame
+rate.
+
+Use **Import browser profile** to import a Playwright storage-state JSON file up to
+256 KB. The filename becomes the profile name. Bycoda stores the imported cookies
+and local storage on the computer and opens a fresh isolated context from that
+snapshot when a conversation starts using the profile. New website sign-ins and
+other changes stay in that active context. Turning off a profile grant blocks
+subsequent agent reads and input for that profile.
+
+To choose a profile from a conversation, say “Open this site with the Work
+browser profile.” `browser.status` lists profiles the owner has granted to agents.
+`browser.open` and `browser.preview` accept the exact profile name or ID. Use `isolated`
+to open a clean context. The default profile is for regular URLs. The development
+profile applies to `localhost`, `127.0.0.1` and `[::1]` on the browser's Host.
+Both selectors offer Isolated and every imported profile. Agents open an isolated
+context if the selected profile has no agent grant. An explicit profile choice
+continues within that conversation until it changes between regular and loopback
+addresses or the browser closes.
+
+**Claude in Chrome** lets local Claude sessions start with the official Chrome
+extension. Claude controls which browser connects and requests site approval.
+The setting takes effect on the next Claude turn.
 
 Before a page is open, the Browser panel lists recently opened addresses on this
 computer; choose one to open it, or remove it from the list. Addresses with a user
@@ -294,8 +336,9 @@ Saved Servers can be edited through `servers.*`. To run a command, ask the
 assistant to use `servers.ssh.execute` with the saved server's ID. The connected
 desktop asks you to approve the exact target and command inside bycoda before starting it,
 unless the original coding session has **Full access** verified by the Host.
-Other modes and Assistant Room still ask; reducing access before execution stops
-a command that skipped approval.
+An Assistant Room skips the prompt only when this computer's standing permission
+is **Full access** with no exceptions ticked. Other modes still ask; reducing
+access before execution stops a command that skipped approval.
 Execution uses the saved SSH settings, separate from any terminal you opened
 yourself. Existing SSH tabs stay private.
 
@@ -717,4 +760,4 @@ returns the earlier result without asking again.
 
 Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, MCP tool calls, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
 
-Full access reuses execution permission for saved SSH commands, non-read-only MCP tool calls and application operations such as commit, stage and file writes in the original coding session. Push, social sends and desktop input still ask. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
+Full access reuses execution permission for saved SSH commands, non-read-only MCP tool calls and application operations such as commit, stage, file writes, push, merge, social sends, Inbox writes and task delete, transfer or note resolve in the original coding session. A push or merge to main, a pull request merge, a social send or an Inbox comment or review still asks while the matching exception (**Push to main**, **Send messages**) is ticked under Settings, Assistant, Access. A Jira board move or transition requested by a session still shows its review on the desktop. An operation that skipped the prompt is marked in its receipt as approved by Full access. It does not grant credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.

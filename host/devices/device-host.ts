@@ -20,6 +20,7 @@ import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./d
 import { readSimulatorVideo } from "./simulator-video";
 import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
 import {
+  AGENT_DEVICE_VERSION,
   DEVICE_HUB_VERSION,
   DEVICE_STILL_MIN_GAP_MS,
   type DeviceAction,
@@ -30,8 +31,7 @@ import {
 } from "../../src/shared/model/host-contracts/native-devices";
 
 export * from "./device-authority";
-export { DEVICE_HUB_VERSION };
-export const AGENT_DEVICE_VERSION = "0.21.23";
+export { AGENT_DEVICE_VERSION, DEVICE_HUB_VERSION };
 /** Use native screen points, not the CLI's cropped alert viewport scaling. */
 export function elementPressArgs(nodes: unknown, label: string): string[] {
   if (!Array.isArray(nodes))

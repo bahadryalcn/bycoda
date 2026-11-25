@@ -56,7 +56,7 @@ out the next time it connects. Signing out this computer from here also signs it
 
 In Settings → Machines → Phone, **Let my signed-in phones find this computer**
 (off by default) stores this computer's name, its Host environment id and its phone route
-addresses (a private local-network address with its public key, and a Tailscale address) in
+addresses (a private local-network address with its public key, and a Tailscale address with its public key; only when you allow phones over the public internet, also public tunnel addresses, flagged as public) in
 your account so your signed-in phones can ask to connect. These are new stored data: route
 hints only, never sessions, prompts, code or credentials. The entry is removed when you turn the
 switch off or remove the device, and every connection still needs your approval on the computer
@@ -140,7 +140,7 @@ In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Sen
 
 Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
 
-Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. **Send every time** gives you a short review window. Opening the details pauses automatic sending, and you can cancel the pending transfer. After a successful upload, the receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
+Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. In the active-time preview, **Send once** sends the reviewed data with the current preference. **Always send** sends it and sets the active-time preference to **Send every time**. This setting gives future transfers a short review window. Opening the details pauses automatic sending, and you can cancel the pending transfer. After a successful upload, the receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
 once in first-run setup or in a small non-blocking notice for existing installations.

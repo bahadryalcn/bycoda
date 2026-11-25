@@ -5,6 +5,7 @@ import {
   connectionIndicator,
   connectionOutcome,
   INITIAL_CONNECTION,
+  isPairingRefused,
   reduceConnection,
   sanitizeConnectionError,
   sendAfterReconnect,
@@ -13,6 +14,7 @@ import {
   shouldRetryBlocked,
   type RemoteConnectionState,
 } from "./remoteConnection";
+import { PROOF_REQUIRED } from "./connectionReason";
 
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const denied =
@@ -204,6 +206,17 @@ describe("reduceConnection", () => {
     expect(state).toMatchObject({ status: "identity-mismatch", lastSeen: 10 });
     expect(reduceConnection(state, ok(30))).toBe(state);
     expect(blocksSending(state.status)).toBe(true);
+  });
+
+  it("tells the owner to re-pair privately when a public tunnel refused an unbound computer", () => {
+    const text =
+      "Host rejected request [RPC_AUTHORIZATION] [RPC_PROOF_REQUIRED] (environment.describe). Re-pair this computer over a private connection (SSH, the local network or Tailscale): this machine does not accept an unbound computer over a public tunnel.";
+    const outcome = connectionOutcome(text);
+    expect(outcome).toMatchObject({ status: "identity-mismatch", specific: true });
+    expect(outcome.error).toBe(PROOF_REQUIRED);
+    const state = reduceConnection({ status: "connected", lastSeen: 10 }, fail(text, 20));
+    expect(isPairingRefused(state)).toBe(true);
+    expect(reduceConnection(state, ok(30))).toBe(state);
   });
 
   it("blocks a machine whose route a proxy refused, with its own reason", () => {

@@ -1037,8 +1037,6 @@
   "Privacy settings are unavailable. Retry reading them before making changes.": "Gizlilik ayarları okunamıyor. Değişiklik yapmadan önce ayarları yeniden okumayı deneyin.",
   "Privacy settings are unavailable. Your workspace stays concealed until they can be read.": "Gizlilik ayarları okunamıyor. Ayarlar okunana kadar çalışma alanınız gizli kalır.",
   "Enter your lock password.": "Kilit parolanızı girin.",
-  "Add bycoda from Finder": "bycoda’yı Finder’dan ekleyin",
-  "Reveal bycoda in Finder, then drag the app from Finder into the system permission list.": "bycoda’yı Finder’da gösterin, ardından uygulamayı Finder’dan sistem izin listesine sürükleyin.",
   "Checking permission status…": "İzin durumu kontrol ediliyor…",
   "Access is restricted by system policy. Contact your administrator.": "Erişim sistem ilkesiyle kısıtlanmış. Yöneticinizle iletişime geçin.",
   "Could not read file access status. Retry to check current access.": "Dosya erişim durumu okunamadı. Geçerli erişimi kontrol etmek için yeniden deneyin.",

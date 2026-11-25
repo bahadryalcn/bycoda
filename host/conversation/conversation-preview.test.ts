@@ -174,6 +174,35 @@ it("keeps current same-page drafts and allows explicit background-only verificat
   expect(ports.present).not.toHaveBeenCalled();
 });
 
+it("honors the requested profile and retains same-profile drafts on the same page", async () => {
+  const { workflow, ports } = fixture();
+  const url = "http://localhost:3000/";
+  const execute = ports.browser.getMockImplementation()!;
+  ports.browser.mockImplementation(async (method, input) =>
+    method === "browser.status"
+      ? {
+          open: true,
+          controlling: true,
+          leaseId: "lease",
+          url,
+          profileId: "work-id",
+          profiles: [{ id: "work-id", name: "Work" }],
+        }
+      : execute(method, input),
+  );
+  await workflow.run({ requestId: "keep-work", url, profile: "work" }, scope, ports);
+  expect(ports.browser).not.toHaveBeenCalledWith("browser.open", expect.anything());
+  await workflow.run({ requestId: "new-isolated", url, profile: "isolated" }, scope, {
+    ...ports,
+    autoShow: false,
+  });
+  expect(ports.browser).toHaveBeenCalledWith("browser.open", {
+    url,
+    leaseId: "lease",
+    profile: "isolated",
+  });
+});
+
 it("rechecks authorization before disclosing a cached frame", async () => {
   const { workflow, ports } = fixture();
   const input = { requestId: "cached", url: "http://localhost:3000" };

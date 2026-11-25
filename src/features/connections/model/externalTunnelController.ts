@@ -2,6 +2,7 @@ import {
   TUNNEL_PROVIDERS,
   TUNNEL_ISSUES,
   TunnelError,
+  tailscaleApprovalUrl,
   tunnelLocalUrl,
   tunnelPublicUrl,
   type TunnelIssue,
@@ -26,6 +27,8 @@ export type TunnelApi = {
   stop: (id: string) => Promise<unknown>;
   stopAutomatic?: () => Promise<unknown>;
   credential: (token: string) => Promise<unknown>;
+  /** Owner opt-in: let phones connect through public tunnels. */
+  phones: (enabled: boolean) => Promise<unknown>;
 };
 
 export function externalTunnelApi(machine: RemoteMachine): TunnelApi {
@@ -35,6 +38,7 @@ export function externalTunnelApi(machine: RemoteMachine): TunnelApi {
     stop: (id) => remoteRequest(machine.id, "tunnels.stop", { id }, false, true),
     credential: (token) =>
       remoteRequest(machine.id, "tunnels.credential", { provider: "ngrok", token }, false, true),
+    phones: (enabled) => remoteRequest(machine.id, "tunnels.phones", { enabled }, false, true),
     stopAutomatic: () =>
       remoteRequest(machine.id, "tunnels.stop", { automatic: true }, false, true),
   };
@@ -57,7 +61,7 @@ export function readTunnelOverview(value: unknown, environmentId: string): Tunne
     !Array.isArray(overview.tunnels) ||
     overview.tunnels.length > 32 ||
     !Array.isArray(overview.providers) ||
-    overview.providers.length !== 2
+    overview.providers.length !== TUNNEL_PROVIDERS.length
   )
     invalid();
   let hostLocalUrl: string;
@@ -74,9 +78,9 @@ export function readTunnelOverview(value: unknown, environmentId: string): Tunne
     const entry = matches[0];
     if (
       typeof entry.installed !== "boolean" ||
-      !(
-        provider === "cloudflare" ? ["not-required"] : ["saved", "missing", "unavailable"]
-      ).includes(String(entry.credential))
+      !(provider === "ngrok" ? ["saved", "missing", "unavailable"] : ["not-required"]).includes(
+        String(entry.credential),
+      )
     )
       invalid();
     return {
@@ -123,6 +127,12 @@ export function readTunnelOverview(value: unknown, environmentId: string): Tunne
       canStop: item.canStop,
       ...(item.state === "ready" ? { publicUrl } : {}),
       ...(item.issue ? { issue: item.issue as TunnelIssue } : {}),
+      ...(item.issue === "approval-required" && typeof item.approvalUrl === "string"
+        ? (() => {
+            const approvalUrl = tailscaleApprovalUrl(item.approvalUrl);
+            return approvalUrl ? { approvalUrl } : {};
+          })()
+        : {}),
     };
   });
   const repair = readTunnelRepair(overview.repair);
@@ -130,6 +140,9 @@ export function readTunnelOverview(value: unknown, environmentId: string): Tunne
     environmentId,
     ...(typeof overview.automaticHostAccess === "boolean"
       ? { automaticHostAccess: overview.automaticHostAccess }
+      : {}),
+    ...(typeof overview.phonesOverPublic === "boolean"
+      ? { phonesOverPublic: overview.phonesOverPublic }
       : {}),
     hostLocalUrl,
     providers,
@@ -259,6 +272,7 @@ export class ExternalTunnelController {
     );
   stop = (id: string) => this.mutate(() => this.api.stop(id));
   credential = (token: string) => this.mutate(() => this.api.credential(token));
+  setPhonesOverPublic = (enabled: boolean) => this.mutate(() => this.api.phones(enabled));
   stopAutomatic = () =>
     this.mutate(() => {
       if (!this.api.stopAutomatic) throw new Error("Update bycoda Host");

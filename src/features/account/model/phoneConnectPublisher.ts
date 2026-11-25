@@ -5,7 +5,7 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 export type PhoneConnectHost = {
   environmentId: string;
   name: string;
-  mobileRoutes?: { endpoint: string; lanKey?: string }[];
+  mobileRoutes?: { endpoint: string; lanKey?: string; public?: true }[];
 };
 
 /** The Host is re-read this often; a change is published at the next check. */
@@ -27,9 +27,7 @@ export function buildConnectInfo(host: PhoneConnectHost): ConnectInfoUpdate | nu
       return true;
     })
     .sort((left, right) => routePriority(left) - routePriority(right));
-  const tunnel = candidates.find((route) => routePriority(route) === 2);
-  const routes = candidates.filter((route) => routePriority(route) !== 2).slice(0, tunnel ? 3 : 4);
-  if (tunnel) routes.push(tunnel);
+  const routes = candidates.slice(0, 4);
   const hostName = truncateGraphemes(host.name.trim(), 80, "");
   const parsed = ConnectInfoUpdate.safeParse({
     environmentId: host.environmentId,
@@ -39,9 +37,9 @@ export function buildConnectInfo(host: PhoneConnectHost): ConnectInfoUpdate | nu
   return parsed.success ? parsed.data : null;
 }
 
-function routePriority(route: { endpoint: string; lanKey?: string }): number {
-  if (route.lanKey) return 0;
-  return new URL(route.endpoint).hostname.endsWith(".trycloudflare.com") ? 2 : 1;
+/** Private keyed routes first; a public tunnel route (only advertised on the owner's opt-in) last. */
+function routePriority(route: { endpoint: string; lanKey?: string; public?: true }): number {
+  return route.public ? 2 : route.lanKey ? 0 : 1;
 }
 
 export type PhoneConnectPublisherDeps = {

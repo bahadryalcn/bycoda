@@ -30,6 +30,16 @@ const REQUEST_TIMEOUT_MS = 240_000;
 export const CAPTURE_REQUEST_MS = 30_000;
 const CANCELLED = "Desktop relay request was cancelled by its caller.";
 const CAPTURE_ACTIONS = new Set(["privacy.scope.capture", "privacy.account.capture"]);
+/**
+ * Requests whose native prompt a Full access coding session skips. Native asks the Host with
+ * `<action>.permission`; the answer comes from the caller-supplied `fullAccess`, never from input.
+ */
+const SESSION_FULL_ACCESS_ACTIONS = new Set([
+  "servers.ssh.execute",
+  "tasks.write.authorize",
+  "inbox.write.authorize",
+]);
+const PERMISSION_QUERY = ".permission";
 
 type TakeOptions = {
   /** Hold an empty claim open for up to this long; clamped to `DESKTOP_TAKE_WAIT_MS`. */
@@ -94,7 +104,9 @@ export class ConversationDesktopRelay {
       },
       authorized,
       undefined,
-      principal.kind === "session" && action === "servers.ssh.execute" ? fullAccess : undefined,
+      principal.kind === "session" && SESSION_FULL_ACCESS_ACTIONS.has(action)
+        ? fullAccess
+        : undefined,
     );
   }
   callAssistantThread(
@@ -536,8 +548,9 @@ export class ConversationDesktopRelay {
   /** Native owner rechecks after a dialog and immediately before an effect. */
   async authorize(id: string, action: string, owner = "desktop") {
     // Private native policy query; legacy callers retain the one-field reply.
-    const sshPermission = action === "servers.ssh.execute.permission";
-    const requestedAction = sshPermission ? "servers.ssh.execute" : action;
+    const base = action.endsWith(PERMISSION_QUERY) ? action.slice(0, -PERMISSION_QUERY.length) : "";
+    const permissionQuery = SESSION_FULL_ACCESS_ACTIONS.has(base);
+    const requestedAction = permissionQuery ? base : action;
     const entry = this.pending.get(id);
     if (!entry) return { authorized: false };
     const deadline = entry.request.deadline;
@@ -549,7 +562,7 @@ export class ConversationDesktopRelay {
       typeof deadline === "number" &&
       deadline > Date.now();
     if (!current() || !(await entry.authorized()) || !current()) return { authorized: false };
-    if (!sshPermission) return { authorized: true };
+    if (!permissionQuery) return { authorized: true };
     const fullAccess = entry.fullAccess ? (await entry.fullAccess()) === true : false;
     if (!current() || !(await entry.authorized()) || !current()) return { authorized: false };
     return { authorized: true, fullAccess };

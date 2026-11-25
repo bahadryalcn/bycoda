@@ -7181,12 +7181,32 @@ const SessionCard = memo(function SessionCard({
         )}
       </InlineAction>
     ) : null;
-  // Compact idle rows let hover actions sit over the time instead of reserving a gutter.
-  const compactActionCount = compact
-    ? [onPin, settleable || settleCommand, onArchive, onDelete].filter(Boolean).length
-    : 0;
+  // Only the idle timestamp can yield. In compact rows, trailing badges share its line.
+  const trailingActionCount = [
+    compact && onPin,
+    settleable || settleCommand,
+    onArchive,
+    onDelete,
+  ].filter(Boolean).length;
   const timeYields =
-    compactActionCount && idle && !linkedWorkItem && !session.automationId && !orchestration;
+    trailingActionCount > 0 &&
+    idle &&
+    (!compact || (!linkedWorkItem && !session.automationId && !orchestration));
+  const statusSlot = (
+    <span className="flex shrink-0 items-center gap-1.5">
+      {linkedUpdateDot}
+      {timeYields ? (
+        <span
+          data-action-yield=""
+          className={`flex shrink-0 justify-end ${YIELD_WIDTH[trailingActionCount]}`}
+        >
+          {status}
+        </span>
+      ) : (
+        status
+      )}
+    </span>
+  );
   const rowCommands = (
     <span
       data-session-row-actions
@@ -7381,10 +7401,7 @@ const SessionCard = memo(function SessionCard({
               </Text>
             )}
             {rowCommands}
-            <span className="flex shrink-0 items-center gap-1.5">
-              {linkedUpdateDot}
-              {status}
-            </span>
+            {statusSlot}
           </Text>
         ) : null}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
@@ -7453,21 +7470,7 @@ const SessionCard = memo(function SessionCard({
                 local={!remoteSession}
               />
               {compact ? modelLabel : null}
-              {!compact ? null : (
-                <span className="flex shrink-0 items-center gap-1.5">
-                  {linkedUpdateDot}
-                  {timeYields ? (
-                    <span
-                      data-action-yield=""
-                      className={`flex shrink-0 justify-end ${YIELD_WIDTH[compactActionCount]}`}
-                    >
-                      {status}
-                    </span>
-                  ) : (
-                    status
-                  )}
-                </span>
-              )}
+              {compact ? statusSlot : null}
             </Button>
           )}
           {compact ? actions : null}

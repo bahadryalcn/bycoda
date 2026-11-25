@@ -36,6 +36,14 @@ Host that has running sessions or shells. It grants no other install or stop aut
 A version difference prompts the owner app-wide rather than only in Settings. The stop
 still follows the owner's confirmation in that prompt.
 
+> tamamda 2 defa onay vermiş oluyorum install and restart dedim zaten. bunun gelmesine
+> gerek yokki çalışan birşey yoksa (2026-11-25)
+
+A live Host, app-owned or login service, that runs no session, shell or automation is
+upgraded without a second prompt. The desktop asks it to stop only if still idle; the
+Host decides that itself, so work started meanwhile keeps it running and the prompt
+appears as before. An unreadable activity also keeps the prompt.
+
 ## Local Host lifecycle with the desktop app
 
 Apply when changing when the local Host starts, stops or switches between app-owned and

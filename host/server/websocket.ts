@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { DEVICE_PROOF_CAPABILITY } from "../../src/integrations/device-proof";
 import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
 import { attachDevServerTunnel, TUNNEL_CAPABILITY } from "../dev-servers/dev-server-tunnel";
 import { hostBulkDependencies } from "../transport/http/bulk";
@@ -6,7 +7,6 @@ import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
 import type { ServerBindings } from "./bindings";
-import { createTailnetServeHosts } from "../mobile/tailnet-serve-hosts";
 import { attachBrowserMedia } from "../browser/browser-media";
 import { resolveBrowserScope } from "./rpc-browser";
 export function createWebsocketRuntime(
@@ -15,6 +15,7 @@ export function createWebsocketRuntime(
     | "server"
     | "engine"
     | "mobileIngressSecret"
+    | "deviceProofGate"
     | "domainDispatcher"
     | "subscriptionHub"
     | "bulkTransfers"
@@ -26,24 +27,11 @@ export function createWebsocketRuntime(
     | "withWorkspaceOwner"
     | "tasks"
     | "attachmentOwnership"
-    | "mobileAccess"
     | "sharedBrowser"
     | "featureMeta"
   >,
 ) {
-  const tailnetHosts = createTailnetServeHosts(() => dependencies.mobileAccess.status());
-  // Any status or enable the owner flow already read (Settings enabling Serve) is
-  // visible to the Host check at once instead of after the next 60 s probe.
-  dependencies.mobileAccess.observe(tailnetHosts.observe);
-  // The first probe at creation runs before the Host listens and cannot know its port;
-  // probe again as soon as the Host listens so the name is known right after boot.
-  if (dependencies.server.listening) tailnetHosts.refresh();
-  else dependencies.server.once("listening", tailnetHosts.refresh);
   const websocket = attachHostWebSocketTransport({
-    // Phones away from home reach /ws through this Host's own Tailscale Serve name;
-    // the proxy connects from loopback and the bearer credential still authenticates.
-    allowedHosts: tailnetHosts.current,
-    retryUnknownHost: tailnetHosts.retryUnknownHost,
     server: dependencies.server,
     environmentId: dependencies.engine.store.environmentId,
     mobileIngressSecret: dependencies.mobileIngressSecret,
@@ -89,7 +77,9 @@ export function createWebsocketRuntime(
       "transport.ws.automations.v2",
       "transport.ws.health.v2",
       "transport.ws.bulk.v2",
+      DEVICE_PROOF_CAPABILITY,
     ],
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
     subscriptions: dependencies.subscriptionHub,
     bulk: dependencies.bulkTransfers,
     bulkDependencies: async (method, params) => {
@@ -136,7 +126,6 @@ export function createWebsocketRuntime(
   // also closes every open dev-server tunnel.
   const tunnel = attachDevServerTunnel({
     server: dependencies.server,
-    allowedHosts: tailnetHosts.current,
     mobileIngressSecret: dependencies.mobileIngressSecret,
     authenticate: async (token) =>
       await dependencies.engine.store.db.outsideScope(async () =>
@@ -147,13 +136,14 @@ export function createWebsocketRuntime(
             }
           : null,
       ),
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
     endpoint: async (params) => await dependencies.devServerAccess.endpoint(params),
   });
   const closeBrowserMedia = attachBrowserMedia({
     server: dependencies.server,
     environmentId: dependencies.engine.store.environmentId,
-    allowedHosts: tailnetHosts.current,
     mobileIngressSecret: dependencies.mobileIngressSecret,
+    proof: (request, token) => dependencies.deviceProofGate(request, token),
     authorized: async (token, scope) =>
       await dependencies.engine.store.db.outsideScope(async () => {
         if (!(await dependencies.engine.store.authenticated(token))) return false;

@@ -767,10 +767,10 @@ pub fn connection_info_script(platform: HostPlatform) -> String {
     }
 }
 
-pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
+pub fn pairing_script(platform: HostPlatform, name: &str, proof_key: &str) -> String {
     match platform {
-        HostPlatform::Unix => format!("set -eu\n\"$HOME/.bycoda-host/bin/bycoda-host\" pair --name {} --json\n", shell_quote(name)),
-        HostPlatform::Windows => format!("$ErrorActionPreference = 'Stop'\n$base = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bycoda-host'\n$runtime = [IO.File]::ReadAllText((Join-Path $base 'runtime-path')).Trim()\n& (Join-Path $runtime 'node.exe') (Join-Path $runtime 'host.mjs') pair --name {} --json\nif ($LASTEXITCODE -ne 0) {{ throw 'Host pairing failed.' }}\n", powershell_quote(name)),
+        HostPlatform::Unix => format!("set -eu\n\"$HOME/.bycoda-host/bin/bycoda-host\" pair --name {} --proof-key {} --json\n", shell_quote(name), shell_quote(proof_key)),
+        HostPlatform::Windows => format!("$ErrorActionPreference = 'Stop'\n$base = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.bycoda-host'\n$runtime = [IO.File]::ReadAllText((Join-Path $base 'runtime-path')).Trim()\n& (Join-Path $runtime 'node.exe') (Join-Path $runtime 'host.mjs') pair --name {} --proof-key {} --json\nif ($LASTEXITCODE -ne 0) {{ throw 'Host pairing failed.' }}\n", powershell_quote(name), powershell_quote(proof_key)),
     }
 }
 

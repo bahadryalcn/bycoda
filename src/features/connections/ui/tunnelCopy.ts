@@ -12,6 +12,7 @@ export const issueCopy = (issue: TunnelUiIssue): string =>
     "host-target-required": t(
       "This is the bycoda host port. Select bycoda host access to share it.",
     ),
+    "approval-required": t("Tailscale Funnel is not enabled for this computer yet."),
     "origin-unreachable": t("The local service is not listening on this computer."),
     "connection-failed": t("The tunnel provider could not connect."),
     "startup-timeout": t("The tunnel did not connect in time."),
@@ -40,4 +41,8 @@ export const stateCopy = (
   })[state];
 
 export const providerName = (provider: TunnelProvider) =>
-  provider === "ngrok" ? "ngrok" : "Cloudflare";
+  provider === "ngrok"
+    ? "ngrok"
+    : provider === "tailscale"
+      ? "Tailscale Funnel (public)"
+      : "Cloudflare";

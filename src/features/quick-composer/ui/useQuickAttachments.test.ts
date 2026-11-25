@@ -126,26 +126,42 @@ it("writes just the available slot when several files are pasted into an almost 
   );
 });
 
-it("replaces a long plain paste at its selection after saving it", async () => {
-  const field = document.createElement("textarea");
-  container.append(field);
-  field.value = "before replace after";
-  field.setSelectionRange(7, 14);
-  const text = "pasted source ".repeat(800);
-  const preventDefault = vi.fn();
-  await act(async () => {
-    api.onPaste({
-      target: field,
-      clipboardData: { files: [], getData: (type: string) => (type === "text/plain" ? text : "") },
-      preventDefault,
-    } as never);
-    expect(field.value).toBe(`before ${text} after`);
-    await vi.waitFor(() => expect(field.value).not.toContain(text));
-  });
-  expect(preventDefault).toHaveBeenCalled();
-  expect(field.value).toMatch(/^before \[.+\] after$/);
-  expect(api.files).toMatchObject([{ name: "Pasted text.txt", size: text.length }]);
-});
+it.each([false, true])(
+  "shows a long plain paste only as an attachment (draft edited: %s)",
+  async (editDraft) => {
+    const write = Promise.withResolvers<string>();
+    const invokeOriginal = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation((command, args) =>
+      command === "write_attachment" ? write.promise : invokeOriginal(command, args),
+    );
+    const field = document.createElement("textarea");
+    container.append(field);
+    field.value = "before replace after";
+    field.setSelectionRange(7, 14);
+    const text = "pasted source ".repeat(800);
+    const preventDefault = vi.fn();
+    const expected = editDraft ? /^revised \[.+\] draft$/ : /^before \[.+\] after$/;
+    await act(async () => {
+      api.onPaste({
+        target: field,
+        clipboardData: {
+          files: [],
+          getData: (type: string) => (type === "text/plain" ? text : ""),
+        },
+        preventDefault,
+      } as never);
+      expect(field.value).toBe("before replace after");
+      if (editDraft) {
+        field.value = "revised draft";
+        field.setSelectionRange(0, 7);
+      }
+      write.resolve("/tmp/Pasted text.txt");
+      await vi.waitFor(() => expect(field.value).toMatch(expected));
+    });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(api.files).toMatchObject([{ name: "Pasted text.txt", size: text.length }]);
+  },
+);
 
 it("attaches a copied file instead of leaving its URI in the prompt", async () => {
   clipboardPaths = ["/tmp/image.png"];

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { DEVICE_PROOF_HEADER, DEVICE_PROOF_MAX_BYTES } from "../../src/integrations/device-proof";
 import {
   request as httpRequest,
   STATUS_CODES,
@@ -28,8 +29,10 @@ export type MobileWssOptions = {
 
 const token = /^Bearer [A-Za-z0-9_-]{43}$/;
 const bulkPath = /^\/ws-bulk\/[A-Za-z0-9_-]{1,200}\?offset=(0|[1-9][0-9]{0,15})$/;
+const proofShape = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const singular = new Set([
   "host",
+  DEVICE_PROOF_HEADER.toLowerCase(),
   "authorization",
   "origin",
   "content-length",
@@ -43,6 +46,21 @@ const singular = new Set([
 const tunnelPath = /^\/ws-tunnel\?[A-Za-z0-9_.~%=&+-]{1,1500}$/;
 const authority = (address: string, port: number) =>
   `${isIP(address) === 6 ? `[${address}]` : address}:${port}`;
+
+/** The client's `DPoP` header is optional here (the Host decides) but must be one JWS-shaped value. */
+function validProof(request: IncomingMessage): boolean {
+  const proof = request.headers[DEVICE_PROOF_HEADER.toLowerCase()];
+  return (
+    proof === undefined ||
+    (typeof proof === "string" && proof.length <= DEVICE_PROOF_MAX_BYTES && proofShape.test(proof))
+  );
+}
+
+/** Relays the client's proof; the Host verifies it. */
+function proofHeader(request: IncomingMessage): Record<string, string> {
+  const proof = request.headers[DEVICE_PROOF_HEADER.toLowerCase()];
+  return typeof proof === "string" ? { [DEVICE_PROOF_HEADER]: proof } : {};
+}
 
 function uniqueHeaders(request: IncomingMessage): boolean {
   const found = new Set<string>();
@@ -110,6 +128,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       request.headers.origin === undefined &&
       uniqueHeaders(request) &&
       token.test(request.headers.authorization ?? "") &&
+      validProof(request) &&
       request.headers["transfer-encoding"] === undefined &&
       (request.headers["content-length"] === undefined || request.headers["content-length"] === "0")
     );
@@ -201,6 +220,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       headers: {
         Host: `127.0.0.1:${internalPort}`,
         Authorization: request.headers.authorization!,
+        ...proofHeader(request),
         "Accept-Encoding": "identity",
       },
     });
@@ -307,6 +327,7 @@ export function createMobileWssGateway(options: MobileWssOptions) {
       headers: {
         Host: `127.0.0.1:${internalPort}`,
         Authorization: request.headers.authorization!,
+        ...proofHeader(request),
         ...(options.ingressSecret ? { "X-Bycoda-Mobile-Ingress": options.ingressSecret } : {}),
         Connection: "Upgrade",
         Upgrade: "websocket",

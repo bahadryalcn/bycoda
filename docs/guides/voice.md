@@ -120,6 +120,12 @@ If the connection dropped before your last request was answered, the assistant
 says so after reconnecting and asks whether to continue instead of repeating it.
 If what you were saying never reached the provider, it asks you to repeat only
 that sentence. A resumed call keeps recent turns and does not greet you again.
+The app keeps its own record of the work voice started (sessions and jobs with
+their state), also when the connection drops while a tool is still running. A
+resumed call is given that record, so the assistant reports what really happened
+and does not start the same work twice. The expanded companion lists it under
+**Work started by voice**; select an entry to open its session. When a session
+or job it started finishes or fails, the assistant says so.
 When an action fails or its result is unknown, the assistant tells you what
 blocked it and asks how to continue; for example, a new project whose name is
 taken prompts a choice between continuing that project and picking another name.
@@ -695,12 +701,10 @@ the microphone.
 **Settings → Permissions** lists every OS permission bycoda uses (microphone,
 camera, screen recording, accessibility, notifications, Full Disk Access) with
 the system's current answer. A permission that is already allowed shows only its
-badge. **Allow** shows the system prompt in place when one exists; if access is
-still missing afterwards, or when the system has no prompt, **Open settings**
-opens a short guide that launches the right settings pane, names the toggle and
-closes itself once the system reports access. On macOS a small card docks to
-System Settings and shows where to add bycoda. Permissions the system does not
-ask for collapse into one line.
+badge. **Allow** opens the system prompt for permissions such as the microphone.
+**Review access** opens a compact dialog with the next step. **Open settings**
+opens the relevant system pane and the dialog checks access when you return.
+Permissions the system does not ask for collapse into one line.
 
 Native macOS and Windows denial messages offer **Review access** in the
 **Microphone** row, the message box and the companion, which opens the same guide. Opening a
@@ -726,6 +730,27 @@ if no session was selected, a later tab does not become that turn's target.
 A newer accepted transcript cancels an older
 pending side reply and prevents a stale decision from submitting work. An acoustic
 onset alone does not cancel the reply or stop playback.
+
+An ordinary build or fix request ("make me a small game") goes to a normal coding
+session in the matching project and the assistant says in one sentence where it
+sent it. Tracked Assistant jobs, tasks and goals are used only when you ask for
+them. A short answer to its question (a project name, "yes", "start") continues
+the request it belongs to. While it waits for your answer or approval the status
+line says so, and while a tool runs it names the tool.
+
+With **Full access** saved under Settings, Assistant, Access (standing permission
+**Everything**, no exceptions), voice asks for no confirmation: deleting a job, a
+note or a session you named happens directly, and a deleted session keeps its
+worktree. Sessions the assistant opens use its worker permission, and goals it
+creates skip plan approval when plan approval is set to never. Without that saved
+permission every operation still asks first, even when the worker itself is set to
+Full access.
+
+The same saved Full access also covers Git push and merge, social sends, saved SSH
+commands, Inbox comments, reviews and pull request changes, and Jira reads and board
+changes requested from the Room or voice: none of them shows a dialog. An exception
+you tick keeps its own dialog (**Push to main**, **Send messages**), and any ticked
+exception keeps the SSH dialog, because a remote command could do anything.
 
 **Experimental OpenAI turn detection** is off by default. In automatic mode it
 sends microphone frames continuously to OpenAI while listening and uses semantic
@@ -874,17 +899,18 @@ panes. Historical remote sessions may need opening before a lifecycle change.
 
 Voice can request a Git push of the current branch (to its upstream, or to a remote
 and branch you name), a merge of a local branch into the current branch (fast-forward or
-merge commit), and a direct social send of a saved draft. Each opens the native approval
-with the exact operation: repository, branch, remote address without credentials, target
+merge commit), and a direct social send of a saved draft. Unless Full access is saved
+without the matching exception, each opens the native approval with the exact operation: repository, branch, remote address without credentials, target
 ref and commits for a push; source and commits for a merge; account, recipient and the
 complete reviewed text for a send. A paired phone can answer the same approval. A changed
 HEAD, upstream or draft after review cancels the operation, and a merge conflict is
 aborted with the checkout restored. Force push, deleting remote branches, history
 rewrite and sending anything other than the reviewed draft are never available by voice.
-Existing owner approvals still apply, including social sends and Inbox/PR writes.
+Outside Full access, existing owner approvals still apply, including social sends and
+Inbox/PR writes.
 In a project, voice can ask which Inbox providers are connected, read GitHub and Jira
 items, and read the Jira boards enabled in Inbox settings. Moving or transitioning a
-Jira issue opens the native approval with the exact issue and change.
+Jira issue opens the native approval with the exact issue and change, except under Full access.
 An automation's **pause** stops future launches; **stop run** targets a specific
 active run. Acceptance or queuing does not mean completion. When a tool result
 is uncertain, the assistant must inspect its state rather than blindly retry.
@@ -1066,14 +1092,17 @@ accessibility, notifications, camera and Full Disk Access. Each row lists its us
 Opening this page reads status without asking for access. Unknown means bycoda could
 not read the OS answer, not that access is allowed.
 
-Choose **Allow** or **Open settings** to open the setup guide. Follow the exact OS
-path in the guide; it checks access while open and confirms the OS change. On macOS,
-the helper reveals bycoda in Finder so you can add the running app to the list.
-macOS applies screen recording and Full Disk Access to a running app only after it
-restarts: when bycoda sees the switch is on (or after you open System Settings from
-the guide), the row shows **Restart to apply** with **Restart now**. Full Disk Access
-is read by opening a file macOS protects with it.
-Unsigned macOS builds can lose grants after updates.
+Choose **Review access** and follow the instructions in the dialog.
+For Accessibility, Screen Recording and Full Disk Access on macOS, choose
+**Open settings** to reach the system pane. When there is room, a small bycoda
+card sits next to System Settings. Drag the bycoda row directly into the
+permission list. Click the row to locate the running app in Finder. If macOS
+cannot start the drag, Finder opens automatically and you can use the **+**
+button to add the app. The dialog also offers **Reveal bycoda in Finder**.
+After enabling Screen Recording or Full Disk Access on macOS, relaunch bycoda.
+Use **Restart now** if the guide offers it. If Full Disk Access is enabled in
+System Settings and bycoda still shows **Waiting for access** after reopening,
+follow the [Full Disk Access recovery steps](diagnostics.md#full-disk-access-stays-on-waiting-for-access).
 
 Windows microphone access requires both **Microphone access** and **Let desktop apps
 access your microphone**. Desktop control cannot reach an app running as administrator

@@ -30,6 +30,7 @@ import type { PhoneConnectionPanelProps } from "../model/phonePairingTypes";
 import type { RemoteMachine } from "../model/protocol";
 import { usePhonePairing } from "../model/usePhonePairing";
 import { LocalNetworkAccessRow } from "./LocalNetworkAccessRow";
+import { PublicPhoneAccessRow } from "./PublicPhoneAccessRow";
 import { PhonePairingDialog } from "./PhonePairingDialog";
 import { entryKey, usePairedDevices, type PairedDevicesEntry } from "./usePairedDevices";
 
@@ -353,8 +354,17 @@ export function PairedDevicesPanel({
               </Row>
             </Group>
           ) : null}
-          <Group title={t("Phone access")}>
+          <Group
+            title={t("Private — only your devices")}
+            description={t(
+              "Reachable only from your own network or Tailscale network. Never from the public internet.",
+            )}
+            descriptionVisible
+          >
             {local ? <LocalNetworkAccessRow machine={local} active={active} /> : null}
+            {local ? (
+              <LocalNetworkAccessRow machine={local} active={active} mode="tailscale" />
+            ) : null}
             <Row
               label={t("Let my signed-in phones find this computer")}
               info={t(
@@ -371,6 +381,24 @@ export function PairedDevicesPanel({
               />
             </Row>
           </Group>
+          {local ? (
+            <Group
+              title={t("Public internet")}
+              description={t(
+                "Cloudflare, ngrok and Tailscale Funnel tunnels (started under Sharing) are public: anyone on the internet can reach the address, and only a device credential protects it.",
+              )}
+              descriptionVisible
+              feedback={
+                <InlineMessage tone="warning">
+                  {t(
+                    "Public paths are separate from the private ones above and are used only by choice.",
+                  )}
+                </InlineMessage>
+              }
+            >
+              <PublicPhoneAccessRow machine={local} active={active} />
+            </Group>
+          ) : null}
         </div>
       </div>
       {pairing && state.stage !== "closed" ? (

@@ -83,6 +83,12 @@ pub async fn remote_browser_frames_open(
             .parse()
             .map_err(|_| "Invalid Host credential")?,
     );
+    if let Some(proof) = device_proof::header_for(&machine.token, "GET", endpoint.path()) {
+        headers.insert(
+            device_proof::HEADER,
+            proof.parse().map_err(|_| "Invalid device proof")?,
+        );
+    }
     headers.insert(
         "x-bycoda-environment",
         machine

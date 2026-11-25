@@ -6,3 +6,4 @@ export {
 } from "../model/toolPreferences";
 export type { ToolPreferenceKey } from "../model/toolPreferences";
 export { validBrowserHome, validBrowserSearchTemplate } from "../model/browserAddress";
+export { browserViewportPresetName } from "../model/browserViewportPresetName";

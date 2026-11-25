@@ -13,7 +13,7 @@ the workspace project. The project picker next to **Send to agent** sets the
 agent's destination for the current item.
 
 After an app update, open What's new from the expanded sidebar footer. Hover or
-focus the icon to see the installed version, or use the adjacent close button to
+focus the icon to see the installed version, or use the close button at its upper corner to
 dismiss the notice.
 
 ## Session machine
@@ -410,11 +410,12 @@ Use the project rail to choose a project or workspace, the sessions list to
 choose a conversation, and the top tabs to switch open work. These keep their
 existing saved widths, layout and density settings. Standard and detailed session
 rows show project identity above the conversation title. Within one project,
-rows keep neutral backgrounds while showing the saved project mark. Pin, archive
-and delete appear in the project header on hover or keyboard focus. Pin replaces
-the project mark beside its name; pinned rows keep the pin visible. Touch keeps
-them available. Status stays at the upper right; hover or keyboard focus hides
-its word while keeping its icon and Working elapsed time. Plain branch text and larger
+rows keep neutral backgrounds while showing the saved project mark. Pin, Settle,
+Archive and Delete appear in the project header on hover or keyboard focus. Pin replaces
+the project mark beside its name; pinned rows keep the pin visible. Settle, Archive
+and Delete take the place of the idle timestamp. Touch keeps the actions available.
+Status stays at the upper right; hover or keyboard focus hides its word while
+keeping its icon and Working elapsed time. Plain branch text and larger
 provider icons sit below the title without shifting when actions appear.
 Previous providers appear muted; the last provider used retains its color. Hover or focus the title for model, location and handoff
 details. Compact density keeps one-line rows.

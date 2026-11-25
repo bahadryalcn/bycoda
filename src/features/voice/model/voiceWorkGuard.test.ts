@@ -115,7 +115,7 @@ describe("runVoiceWork", () => {
       voiceWorkCall("submit_work", { text: "Fix login" }),
       "fix login",
       execute,
-      startedAt + 1,
+      work.entries()[0]!.startedAt + 1,
     );
     expect(execute).toHaveBeenCalledOnce();
     expect(retry).toMatchObject({ status: "already_started" });

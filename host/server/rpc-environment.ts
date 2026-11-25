@@ -6,7 +6,11 @@ export async function handleEnvironmentRpc(
 ): Promise<void> {
   switch (request.input.method) {
     case "environment.describe":
-      request.result = await dependencies.environmentService.describe(request.params);
+      request.result = await dependencies.environmentService.describe(
+        request.params,
+        {},
+        { principalId: request.tokenHash },
+      );
       break;
 
     case "environment.persistence.status":

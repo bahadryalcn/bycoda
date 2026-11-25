@@ -1,7 +1,7 @@
 import { Button } from "../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useT } from "../../shared/i18n";
-import { Sparkles, X } from "../../shared/ui/icons";
+import { BookOpen, X } from "../../shared/ui/icons";
 import type { InstalledUpdate } from "../model/updateNotice";
 
 type Props = {
@@ -17,18 +17,51 @@ export function UpdateRailCard({ update, onOpen, onDismiss, inline = false }: Pr
   // The complete message is one translation key so translators can reorder the version.
   const label = t("What's new in {p0}", { p0: update.version });
   const open = () => onOpen(update.version);
+  const dismissLabel = t("Dismiss update notification");
+
+  if (inline) {
+    return (
+      <section
+        role="status"
+        className="relative flex shrink-0 pe-[calc(var(--ui-control-height-xs)/2+var(--space-1)/4)]"
+      >
+        <Button
+          iconOnly
+          variant="ghost"
+          motion="none"
+          label={label}
+          tooltipSide="top"
+          aria-haspopup="dialog"
+          onClick={open}
+        >
+          <BookOpen className="icon-md" aria-hidden />
+        </Button>
+        <Button
+          iconOnly
+          label={dismissLabel}
+          variant="ghost"
+          size="xs"
+          motion="none"
+          className="absolute end-0 inset-bs-[calc((var(--ui-control-height-compact)-var(--ui-control-height-xs)-var(--space-1))/2-var(--space-2))]"
+          tooltipSide="top"
+          onClick={onDismiss}
+        >
+          <X className="icon-xs relative -start-1" aria-hidden />
+        </Button>
+      </section>
+    );
+  }
 
   return (
     <section role="status" className="min-w-0">
       <ActionHost className="flex min-w-0 items-center">
         <Button
-          variant={inline ? "ghost" : "item"}
+          variant="item"
           motion="none"
           type="button"
           label={label}
           aria-haspopup="dialog"
-          startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />}
-          revealLabel={inline}
+          startIcon={<BookOpen className="icon-sm" strokeWidth={1.75} aria-hidden />}
           onClick={open}
           truncate
         >
@@ -36,7 +69,7 @@ export function UpdateRailCard({ update, onOpen, onDismiss, inline = false }: Pr
         </Button>
         <InlineAction
           reveal="interaction"
-          label={t("Dismiss update notification")}
+          label={dismissLabel}
           motion="none"
           type="button"
           onClick={onDismiss}

@@ -373,6 +373,13 @@ export function LocalDictationModels({
                   model.available === false ||
                   settings.dictationLocalModelPath === model.path
                 }
+                disabledReason={
+                  settings.dictationLocalModelPath === model.path
+                    ? t("This model is already selected.")
+                    : model.available === false
+                      ? t("Unavailable on this platform")
+                      : t("Wait for the current operation to finish")
+                }
                 onClick={() => change({ dictationLocalModelPath: model.path })}
               >
                 {settings.dictationLocalModelPath === model.path ? t("Selected") : t("Select")}
@@ -380,6 +387,11 @@ export function LocalDictationModels({
               <Button
                 variant="ghost"
                 disabled={busy || model.available === false}
+                disabledReason={
+                  model.available === false
+                    ? t("Unavailable on this platform")
+                    : t("Wait for the current operation to finish")
+                }
                 loading={active("test", model.id)}
                 loadingLabel={t("Testing…")}
                 onClick={() => void action("test", model)}
@@ -401,6 +413,11 @@ export function LocalDictationModels({
             <Button
               variant="secondary"
               disabled={busy || model.available === false}
+              disabledReason={
+                model.available === false
+                  ? t("Unavailable on this platform")
+                  : t("Wait for the current operation to finish")
+              }
               loading={active("download", model.id)}
               loadingLabel={t("Downloading…")}
               onClick={() => void action("download", model)}

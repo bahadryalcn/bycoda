@@ -19,6 +19,9 @@ pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
 pub(crate) mod browser_frames;
 mod credential_store;
+pub(crate) mod device_proof;
+mod proof_binding;
+pub(crate) use proof_binding::PairingKey;
 pub(crate) mod host_proof;
 pub(crate) mod protocol;
 pub(crate) mod response_limit;
@@ -284,6 +287,10 @@ struct StoredMachine {
     ssh: Option<SshTarget>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     local_host: bool,
+    /// Base64url seed of the Ed25519 key this credential is bound to. Sealed in the store
+    /// beside `token` and replaced or removed with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proof_seed: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -299,6 +306,12 @@ pub struct Machine {
 }
 
 impl StoredMachine {
+    fn seed(&self) -> Option<device_proof::Seed> {
+        self.proof_seed
+            .as_deref()
+            .and_then(device_proof::decode_seed)
+    }
+
     fn public(&self) -> Machine {
         Machine {
             id: self.id.clone(),
@@ -414,6 +427,15 @@ pub(crate) fn read_store_values(path: &Path) -> Result<Vec<Value>, String> {
     }
 }
 
+/// Makes the saved machines' keys available to every request signed with their token.
+fn register_proofs(machines: &[StoredMachine]) {
+    device_proof::replace_saved(machines.iter().filter_map(|machine| {
+        machine
+            .seed()
+            .map(|seed| (machine.token.clone(), machine.environment_id.clone(), seed))
+    }));
+}
+
 fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
     let mut records = read_store_values(path)?;
     credential_store::open(path, &mut records)?;
@@ -424,6 +446,7 @@ fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
             serde_json::from_value(record).map_err(|_| "Remote connection store is invalid".into())
         })
         .collect::<Result<_, String>>()?;
+    register_proofs(&machines);
     // A direct loopback machine is the Host on this computer. An SSH machine's
     // forward listens on loopback too and is never one.
     crate::host_ws::local_endpoints::replace(
@@ -453,7 +476,9 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
         }
         records.push(record);
     }
-    write_store_values(path, &records)
+    write_store_values(path, &records)?;
+    register_proofs(machines);
+    Ok(())
 }
 
 pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), String> {
@@ -808,13 +833,16 @@ fn rpc_exchange(
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params }).to_string();
     let exchange = transport_health::Exchange::new(endpoint, environment_id, method, timeout);
     let response = exchange.send(|timeout| {
-        agent
+        let mut request = agent
             .post(&format!("{endpoint}/rpc"))
             .timeout(timeout)
             .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/json")
-            .send_string(&payload)
-            .map_err(Box::new)
+            .set("Content-Type", "application/json");
+        // A fresh proof per attempt: the Host refuses a repeated identifier.
+        if let Some(proof) = device_proof::header_for(token, "POST", "/rpc") {
+            request = request.set(device_proof::HEADER, &proof);
+        }
+        request.send_string(&payload).map_err(Box::new)
     });
     let response = match response {
         Ok(response) => response,
@@ -827,6 +855,7 @@ fn rpc_exchange(
         }
     };
     let status = response.status();
+    let proof_stage = status == 401 && response.header(device_proof::STAGE_HEADER) == Some("proof");
     let device_effect = device_http_effect(method);
     let denied = status == 401 || status == 403;
     // The Host names why it refused in the body. Read it (bounded, best effort) so a
@@ -840,7 +869,16 @@ fn rpc_exchange(
     {
         read_failure = Some(error);
     }
-    let rejection = |error: Option<&str>| authorization_failure(method, status, error);
+    let proof_reason = proof_stage.then(|| {
+        serde_json::from_slice::<Value>(&bytes)
+            .ok()
+            .and_then(|value| value["reason"].as_str().map(str::to_owned))
+            .unwrap_or_default()
+    });
+    let rejection = |error: Option<&str>| match &proof_reason {
+        Some(reason) => proof_failure(method, reason),
+        None => authorization_failure(method, status, error),
+    };
     if denied && !device_effect {
         let error = serde_json::from_slice::<Value>(&bytes)
             .ok()
@@ -929,6 +967,17 @@ fn rpc_exchange(
 
 /// Host body of the 403 that rejects the origin or route before any credential check.
 const ROUTE_REJECTED_BODY: &str = "Unsupported request origin or route";
+
+/// The Host refused the device proof (`X-Bycoda-Auth-Stage: proof`), not the pairing itself. A
+/// credential without a key is only accepted on a private connection, so the owner has to pair
+/// again there; any other reason is a proof the Host could not verify.
+fn proof_failure(method: &str, reason: &str) -> String {
+    if reason == "proof-required" {
+        format!("Host rejected request [RPC_AUTHORIZATION] [RPC_PROOF_REQUIRED] ({method}). Re-pair this computer over a private connection (SSH, the local network or Tailscale): this machine does not accept an unbound computer over a public tunnel.")
+    } else {
+        format!("Host rejected request [RPC_PROOF_INVALID] ({method}). This computer's device proof was not accepted. Check this computer's clock; if it stays this way, pair it again.")
+    }
+}
 
 /// A 401 means the device row is gone on the remote (at the gate or mid-dispatch), so
 /// retrying with this token cannot succeed. A 403 with the route body means a proxy or
@@ -1410,7 +1459,7 @@ pub async fn remote_connect(
 ) -> Result<Machine, String> {
     crate::harness::run_blocking("remote_connect", move || {
         let state = app.state::<RemoteConnections>();
-        connect_host(app.clone(), state, name, url, token, false)
+        connect_host(app.clone(), state, name, url, token, false, None)
     })
     .await
 }
@@ -1422,8 +1471,9 @@ pub(crate) fn local_host_pair(
     name: String,
     url: String,
     token: String,
+    key: PairingKey,
 ) -> Result<Machine, String> {
-    connect_host(app, state, name, url, token, true)
+    connect_host(app, state, name, url, token, true, Some(key))
 }
 
 fn normalize_device_token(token: &str) -> Result<String, String> {
@@ -1460,10 +1510,19 @@ fn connect_host(
     url: String,
     token: String,
     local_host: bool,
+    key: Option<PairingKey>,
 ) -> Result<Machine, String> {
     let endpoint = endpoint(&url)?;
     let token = normalize_device_token(&token)?;
+    // The credential was issued bound to this key: sign the verification and everything after.
+    let _signing = key.as_ref().map(|key| key.sign_for(&token));
     let (descriptor, environment_id) = describe_for_pairing(&endpoint, &token)?;
+    if key
+        .as_ref()
+        .is_some_and(|key| key.environment_id != environment_id)
+    {
+        return Err("Host identity changed".into());
+    }
     let name = if name.trim().is_empty() {
         descriptor
             .get("name")
@@ -1496,6 +1555,7 @@ fn connect_host(
         } else {
             existing.and_then(|m| m.ssh.clone())
         },
+        proof_seed: key.map(|key| key.encoded_seed()),
     };
     machines.retain(|m| m.id != id);
     machines.push(machine.clone());
@@ -1719,6 +1779,10 @@ pub(crate) fn probe_local_link_token(
         (machine.endpoint.clone(), machine.token.clone())
     };
     let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
+    // A credential that is not this computer's own, or has no key, is replaced once per launch.
+    if proof_binding::needs_local_repair(&descriptor) {
+        return Err("[RPC_AUTHORIZATION] Local desktop pairing needs to be renewed".into());
+    }
     let supports_management = descriptor["capabilities"]
         .as_array()
         .is_some_and(|items| items.iter().any(|item| item == "devices.setManagement"));
@@ -1745,6 +1809,7 @@ fn apply_local_repair(
     machine_id: &str,
     environment_id: &str,
     token: &str,
+    proof_seed: Option<String>,
     local_name: &str,
 ) -> Result<StoredMachine, String> {
     let index = machines
@@ -1754,6 +1819,7 @@ fn apply_local_repair(
     if machines[index].environment_id == environment_id {
         let machine = &mut machines[index];
         machine.token = token.to_string();
+        machine.proof_seed = proof_seed;
         machine.local_host = true;
         return Ok(machine.clone());
     }
@@ -1772,6 +1838,7 @@ fn apply_local_repair(
         token: token.to_string(),
         ssh: None,
         local_host: true,
+        proof_seed,
     };
     machines.push(machine.clone());
     Ok(machine)
@@ -1784,6 +1851,7 @@ pub(crate) fn replace_local_pairing(
     state: &RemoteConnections,
     machine_id: &str,
     token: &str,
+    key: PairingKey,
 ) -> Result<Machine, String> {
     let token = normalize_device_token(token)?;
     let local_name = crate::local_host::local_device_name();
@@ -1799,14 +1867,18 @@ pub(crate) fn replace_local_pairing(
             .endpoint
             .clone()
     };
+    let _signing = key.sign_for(&token);
     let (descriptor, environment_id) = describe_for_pairing(&endpoint, &token)?;
+    if key.environment_id != environment_id {
+        return Err("Host identity changed".into());
+    }
     let _guard = state
         .store
         .lock()
         .map_err(|_| "Connection store is locked")?;
     let path = store_path(app)?;
     let mut machines = read(&path)?;
-    let previous_token = machines
+    let previous = machines
         .iter()
         .find(|machine| {
             machine.id == machine_id
@@ -1814,12 +1886,13 @@ pub(crate) fn replace_local_pairing(
                 && is_local_sync(machine, &local_name)
                 && machine.token != token
         })
-        .map(|machine| machine.token.clone());
+        .map(|machine| (machine.token.clone(), machine.seed()));
     let machine = apply_local_repair(
         &mut machines,
         machine_id,
         &environment_id,
         &token,
+        Some(key.encoded_seed()),
         &local_name,
     )?;
     write(&path, &machines)?;
@@ -1827,7 +1900,10 @@ pub(crate) fn replace_local_pairing(
     state.invalidate_ws(&machine.id);
     state.observe_ws_capability(&machine, &descriptor);
     drop(_guard);
-    if let Some(previous_token) = previous_token {
+    if let Some((previous_token, previous_seed)) = previous {
+        // The replaced credential may be bound too; its key left the store with it.
+        let _previous_signing = previous_seed
+            .map(|seed| device_proof::PendingProof::new(&previous_token, &environment_id, seed));
         let _ = rpc(
             &endpoint,
             &previous_token,
@@ -2471,6 +2547,9 @@ fn remote_request_blocking(
     {
         return Err("Host identity changed. Add this machine again before continuing.".into());
     }
+    if method == "environment.describe" {
+        proof_binding::upgrade(app, state, &machine, &result);
+    }
     Ok(result)
 }
 
@@ -2955,6 +3034,7 @@ impl NativeWorkspaceTransport {
                 token: "fixture-token".into(),
                 ssh: None,
                 local_host: true,
+                proof_seed: None,
             },
             workspace: None,
         }
@@ -3238,6 +3318,10 @@ fn merge_known_machine(
     named: bool,
 ) {
     machine.id = old.id.clone();
+    // The same credential keeps the key it was bound to while the job ran.
+    if machine.token == old.token && machine.proof_seed.is_none() {
+        machine.proof_seed = old.proof_seed.clone();
+    }
     // Setup/reconnect may have started before a key was assigned. Keep the
     // latest saved binding instead of writing the job's older target over it.
     if let (Some(new), Some(previous)) = (machine.ssh.as_mut(), old.ssh.as_ref()) {

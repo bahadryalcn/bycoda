@@ -246,6 +246,8 @@ function normalizeImageMime(mime: string): string {
 
 export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
   const args = ["--output-format", "stream-json", "--verbose", "--input-format", "stream-json"];
+  if (input.chrome !== undefined && !input.isolated)
+    args.push(input.chrome ? "--chrome" : "--no-chrome");
   const disallowed = claudeDisallowedTools(input);
   if (disallowed.length) args.push("--disallowedTools", ...disallowed);
   if (!input.isolated) {

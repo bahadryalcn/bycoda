@@ -9,6 +9,12 @@ export interface OwnerRpcRequest {
   domainContext: HostDomainContext;
   tokenHash: string;
   request: IncomingMessage;
+  /**
+   * This computer's own desktop credential, sent straight to the loopback listener with no
+   * browser origin. Forwarded requests (phone listener, tunnel) never qualify, whatever
+   * their socket address.
+   */
+  thisComputer: boolean;
   pollState: { revoked: boolean };
   response: ServerResponse;
   closing: boolean;

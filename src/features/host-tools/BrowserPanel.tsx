@@ -152,7 +152,11 @@ function ProjectBrowserPanel({
   const localAddress = useRef("");
   const localPreviewAvailable =
     localBrowserTarget && !roomSubject && isTauri() && (IS_WIN || IS_MAC);
-  const canUseLocal = (address: string) => localPreviewAvailable && isLocalBrowserAddress(address);
+  const canUseLocal = (address: string) =>
+    localPreviewAvailable &&
+    !toolPreferences.browserDevelopmentUsesImportedProfile.load() &&
+    toolPreferences.browserViewport.load() === "desktop" &&
+    isLocalBrowserAddress(address);
   const startLocal = (address: string) => {
     localAddress.current = address;
     setLocalPage({ id: crypto.randomUUID(), address });

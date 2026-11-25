@@ -287,6 +287,19 @@ describe("external tunnels host ownership", () => {
     expect((await s.service.status()).tunnels[0]).toMatchObject({ canStop: false });
   });
 
+  it("never lets a dev-server tunnel expose the Host's own loopback listener", async () => {
+    const s = await setup();
+    // The Host tunnel targets the tunnel ingress (3776 here); 4100 is the main listener.
+    const service = new ExternalTunnels(s.directory, "host-a", () => "http://127.0.0.1:3776", {
+      executable: s.executable,
+      reservedPorts: () => ["4100"],
+    });
+    await expect(service.start({ ...dev, localUrl: "http://127.0.0.1:4100" })).rejects.toThrow(
+      "host-target-required",
+    );
+    await service.close();
+  });
+
   it("forces host access to the authenticated host port and prevents disguising it as a dev server", async () => {
     const s = await setup();
     await expect(s.service.start({ ...dev, localUrl: "http://localhost:3776" })).rejects.toThrow(

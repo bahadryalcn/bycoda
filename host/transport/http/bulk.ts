@@ -1,4 +1,5 @@
 import { readNormalizedJsonWire, type NormalizedJsonWire } from "../normalized-wire";
+import { DEVICE_PROOF_REFUSAL_HEADERS, type DeviceProofGate } from "../../security/device-proof";
 import { createHash, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -517,6 +518,8 @@ export function automationBulkDeleteKeys(automation: { id: string }): readonly s
 export function createHostBulkHandler(options: {
   transfers: HostBulkTransfers;
   authenticate: (token: string) => Promise<string | null>;
+  /** Device proof-of-possession for this request; runs once, before the credential is read. */
+  proof?: DeviceProofGate;
 }) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     if (!request.url?.startsWith("/ws-bulk/")) return false;
@@ -538,6 +541,11 @@ export function createHostBulkHandler(options: {
         url.searchParams.getAll("offset").length !== 1
       ) {
         response.writeHead(400).end();
+        return true;
+      }
+      const proof = await options.proof?.(request, token);
+      if (proof && !proof.ok) {
+        response.writeHead(401, DEVICE_PROOF_REFUSAL_HEADERS).end();
         return true;
       }
       const principal = await options.authenticate(token);

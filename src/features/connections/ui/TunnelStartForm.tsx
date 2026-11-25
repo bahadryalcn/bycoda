@@ -32,7 +32,10 @@ export function useTunnelStart(session: TunnelSession, draft: TunnelDraft, onSta
   const selected = overview?.providers.find((entry) => entry.provider === provider);
   const canStart =
     ready &&
-    (provider === "cloudflare" || (!!selected?.installed && selected.credential === "saved"));
+    // Funnel publishes this Host only, never a dev server.
+    !(provider === "tailscale" && target !== "host") &&
+    (provider === "cloudflare" ||
+      (!!selected?.installed && (provider === "tailscale" || selected.credential === "saved")));
   const start = (automatic: boolean) => {
     if (!canStart) return;
     void run("start", () =>
@@ -95,7 +98,8 @@ export function TunnelStartForm({
             label={t("Tunnel target")}
             value={target}
             onValueChange={(value) => {
-              if (!state.pending) setTarget(value as TunnelTarget);
+              if (!state.pending && !(provider === "tailscale" && value !== "host"))
+                setTarget(value as TunnelTarget);
             }}
             options={[
               { value: "dev-server", label: t("Dev server") },
@@ -108,11 +112,14 @@ export function TunnelStartForm({
             label={t("Tunnel provider")}
             value={provider}
             onValueChange={(value) => {
-              if (!state.pending) setProvider(value as TunnelProvider);
+              if (state.pending) return;
+              setProvider(value as TunnelProvider);
+              if (value === "tailscale") setTarget("host");
             }}
             options={[
               { value: "cloudflare", label: "Cloudflare" },
               { value: "ngrok", label: "ngrok" },
+              { value: "tailscale", label: t("Tailscale Funnel (public)") },
             ]}
           />
         </Field>
@@ -139,6 +146,13 @@ export function TunnelStartForm({
               )}
             </p>
           ) : null}
+          {provider === "tailscale" ? (
+            <p>
+              {t(
+                "Tailscale Funnel publishes this computer on the internet at a ts.net address. It differs from Tailscale (private), which only your own devices can reach. Funnel must be allowed for your tailnet.",
+              )}
+            </p>
+          ) : null}
           {provider === "cloudflare" ? (
             <p>
               {t(
@@ -148,9 +162,17 @@ export function TunnelStartForm({
           ) : null}
         </InfoPopover>
       </div>
-      {provider === "ngrok" && selected && !selected.installed ? (
+      <InlineMessage tone="warning">
+        {t(
+          "Tunnels are public internet addresses. Anyone on the internet can reach the address; only device credentials protect it.",
+        )}
+      </InlineMessage>
+      {(provider === "ngrok" || provider === "tailscale") && selected && !selected.installed ? (
         <InlineMessage tone="warning">
-          {t("Install {p0} on {p1}, then check again.", { p0: "ngrok", p1: machineLabel })}
+          {t("Install {p0} on {p1}, then check again.", {
+            p0: provider === "ngrok" ? "ngrok" : "Tailscale",
+            p1: machineLabel,
+          })}
         </InlineMessage>
       ) : null}
       {provider === "ngrok" ? (

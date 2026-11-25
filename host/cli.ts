@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { version } from "../package.json";
+import { deviceProofThumbprint, parseDeviceProofJwk } from "../src/integrations/device-proof";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import { readHostBuildIdentity } from "./build-identity";
 import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
@@ -164,7 +165,7 @@ async function main() {
   build-info            Print packaged source identity (no service access)
   status                Check the running host
   stop                  Stop the host and interrupt its running turns
-  pair --name <device>  Issue a device credential (shown once)
+  pair --name <device>  Issue a device credential (shown once); --proof-key <x> binds it to a client key
   devices               List paired devices
   revoke <device-id>    Revoke a device credential
   native-admission-preview-enroll   Review native installation key enrollment
@@ -551,10 +552,18 @@ Connect another computer using an SSH forward to the loopback port.`);
     throw error;
   }
   if (command === "pair") {
+    // The launcher binds its machine credential to the key it keeps next to it.
+    const proofX = option("proof-key", "");
+    const proofKey = args.includes("--proof-key")
+      ? parseDeviceProofJwk({ kty: "OKP", crv: "Ed25519", x: proofX })
+      : undefined;
+    if (args.includes("--proof-key") && !proofKey)
+      throw new Error("--proof-key must be a base64url Ed25519 public key (32 bytes)");
     const device = await store.issueDevice(
       option("name", "Desktop"),
       "desktop",
       args.includes("--local-sync"),
+      proofKey && { jkt: deviceProofThumbprint(proofKey), x: proofKey.x },
     );
     console.log(
       JSON.stringify(

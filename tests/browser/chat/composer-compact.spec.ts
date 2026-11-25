@@ -5,6 +5,7 @@ import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayou
 // Fixture evidence for the composer reading mode (V2-001). Captures are written
 // only when V2_CAPTURE is set; the assertions always run.
 const captureDir = process.env.V2_CAPTURE_DIR ?? "temp/verification/v2-001";
+const DRAFT_HEIGHT_LIMIT = 224;
 if (process.env.V2_CAPTURE) mkdirSync(captureDir, { recursive: true });
 async function capture(page: Page, name: string) {
   if (process.env.V2_CAPTURE) {
@@ -245,6 +246,9 @@ for (const [width, light] of [
       await editor.evaluate((element) => (element.scrollTop = 32));
       await capture(page, `toolbar-spacing-${kind}-${surface}`);
       await expect
+        .poll(() => editor.evaluate((element) => element.clientHeight))
+        .toBeGreaterThanOrEqual(200);
+      await expect
         .poll(async () => {
           const editorBox = await editor.boundingBox();
           const controlsBox = await controls.boundingBox();
@@ -295,13 +299,17 @@ for (const [width, light] of [
     await editor.focus();
     const scroller = page.locator(".cm-scroller");
     const shortHeight = await scroller.evaluate((element) => element.clientHeight);
-    expect(shortHeight).toBeLessThan(180);
+    expect(shortHeight).toBeLessThan(DRAFT_HEIGHT_LIMIT);
     await field(page).evaluate((input: HTMLTextAreaElement) => {
       input.setSelectionRange(input.value.length, input.value.length);
     });
     await page.keyboard.insertText(`\n${"\nBir satır daha.".repeat(15)}`);
-    await expect.poll(() => scroller.evaluate((element) => element.clientHeight)).toBe(180);
-    expect(await scroller.evaluate((element) => element.scrollHeight)).toBeGreaterThan(180);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.clientHeight))
+      .toBe(DRAFT_HEIGHT_LIMIT);
+    expect(await scroller.evaluate((element) => element.scrollHeight)).toBeGreaterThan(
+      DRAFT_HEIGHT_LIMIT,
+    );
     await scroller.evaluate((element) => (element.scrollTop = 0));
     await capture(page, `markdown-${surface}`);
   });

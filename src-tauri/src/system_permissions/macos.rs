@@ -265,6 +265,43 @@ pub fn request(id: PermissionId) -> (PermissionState, Option<&'static str>) {
     (state, None)
 }
 
+/// Finds the installed bundle containing the running executable.
+fn bundle_path(executable: &std::path::Path) -> Option<std::path::PathBuf> {
+    let macos = executable.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+    let is_bundle = macos.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && bundle.extension()? == "app";
+    is_bundle.then(|| bundle.to_path_buf())
+}
+
+pub(super) fn running_app_bundle() -> Result<std::path::PathBuf, String> {
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    bundle_path(&executable).ok_or_else(|| "bycoda is not running from an app bundle.".to_string())
+}
+
+/// Selects the installed app in Finder without changing its permissions.
+pub fn reveal_app() -> Result<(), String> {
+    let bundle = running_app_bundle()?;
+    let workspace =
+        AnyClass::get(c"NSWorkspace").ok_or_else(|| "Finder is unavailable.".to_string())?;
+    let revealed = objc2::rc::autoreleasepool(|_| unsafe {
+        // SAFETY: NSWorkspace class and instance methods with NSString
+        // arguments that live until the call returns.
+        let path = NSString::from_str(&bundle.to_string_lossy());
+        let root = NSString::from_str("");
+        let shared: *mut AnyObject = msg_send![workspace, sharedWorkspace];
+        let ok: Bool = msg_send![shared, selectFile: &*path, inFileViewerRootedAtPath: &*root];
+        ok.as_bool()
+    });
+    if revealed {
+        Ok(())
+    } else {
+        Err("Could not reveal bycoda in Finder.".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +333,23 @@ mod tests {
     fn missing_grant_is_denied_only_after_a_prompt() {
         assert_eq!(ungranted(false), PermissionState::NotDetermined);
         assert_eq!(ungranted(true), PermissionState::Denied);
+    }
+
+    #[test]
+    fn finds_the_app_bundle_of_the_executable() {
+        assert_eq!(
+            bundle_path(std::path::Path::new(
+                "/Applications/bycoda.app/Contents/MacOS/bycoda"
+            )),
+            Some(std::path::Path::new("/Applications/bycoda.app").to_path_buf())
+        );
+        assert_eq!(
+            bundle_path(std::path::Path::new("/usr/local/bin/bycoda")),
+            None
+        );
+        assert_eq!(
+            bundle_path(std::path::Path::new("/tmp/Contents/MacOS/bycoda")),
+            None
+        );
     }
 }

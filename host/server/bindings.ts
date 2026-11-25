@@ -146,6 +146,7 @@ export interface ServerBindings {
   featureDirectory: ReturnType<typeof createDevicesRuntime>["featureDirectory"];
   devServers: DevServersService;
   server: ReturnType<typeof createHttpRuntime>["server"];
+  tunnelIngress: ReturnType<typeof createHttpRuntime>["tunnelIngress"];
   assertHostMayRun: Awaited<ReturnType<typeof createSessionQueueRuntime>>["assertHostMayRun"];
   providers: RemoteProvider[];
   refresh: Awaited<ReturnType<typeof createSessionQueueRuntime>>["refresh"];
@@ -210,7 +211,7 @@ export interface ServerBindings {
   environmentService: ReturnType<typeof createEnvironmentRuntime>["environmentService"];
   persistenceService: ReturnType<typeof createNativeRuntime>["persistenceService"];
   tunnels: ReturnType<typeof createMobileRuntime>["tunnels"];
-  mobileAccess: ReturnType<typeof createMobileRuntime>["mobileAccess"];
+  mobileTailnet: MobileLanAccess;
   featureClaims: ReturnType<typeof createWorkspacesRuntime>["featureClaims"];
   projectsService: ReturnType<typeof createSessionServicesRuntime>["projectsService"];
   workspacePolicy: ReturnType<typeof createWorkspacesRuntime>["workspacePolicy"];
@@ -378,6 +379,7 @@ export interface ServerBindings {
   crewsService: ReturnType<typeof createNativeRuntime>["crewsService"];
   bindQuestionUpload: ReturnType<typeof createSessionServicesRuntime>["bindQuestionUpload"];
   mobileIngressSecret: ReturnType<typeof createMobileRuntime>["mobileIngressSecret"];
+  deviceProofGate: ReturnType<typeof createMobileRuntime>["deviceProofGate"];
   subscriptionHub: HostSubscriptionHub;
   bulkTransfers: HostBulkTransfers;
   closing: ReturnType<typeof createHttpRuntime>["closing"];

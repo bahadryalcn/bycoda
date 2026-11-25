@@ -10,6 +10,7 @@ export {
   remoteMachineFor,
   remoteRequest,
   remoteSessionFor,
+  requestMachineEdit,
   sessionAccessForMachine,
   useRemoteMachines,
 } from "../model/connections";

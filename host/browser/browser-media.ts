@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { DEVICE_PROOF_REFUSAL_HEADERS, type DeviceProofGate } from "../security/device-proof";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
@@ -48,8 +49,9 @@ function packet({ data, width, height, documentId, navigationId }: Frame) {
 export function attachBrowserMedia(options: {
   server: Server;
   environmentId: string;
-  allowedHosts: () => readonly string[];
   mobileIngressSecret?: string;
+  /** Device proof-of-possession for the upgrade request; checked once, after the credential. */
+  proof?: DeviceProofGate;
   authorized(token: string, scope?: Record<string, string>): Promise<boolean>;
   open(scope: Record<string, string>, token: string): Promise<Reader>;
 }) {
@@ -150,7 +152,7 @@ export function attachBrowserMedia(options: {
       request.headers.origin !== undefined ||
       request.headers["sec-websocket-protocol"] !== PROTOCOL ||
       request.headers["x-bycoda-environment"] !== options.environmentId ||
-      !hostHeaderAllowed(request, options.server, options.allowedHosts)
+      !hostHeaderAllowed(request, options.server)
     ) {
       rejectUpgrade(socket, 400);
       return;
@@ -169,6 +171,8 @@ export function attachBrowserMedia(options: {
     });
     void (async () => {
       if (!(await options.authorized(token))) return rejectUpgrade(socket, 401);
+      const proof = await options.proof?.(request, token);
+      if (proof && !proof.ok) return rejectUpgrade(socket, 401, DEVICE_PROOF_REFUSAL_HEADERS);
       const reader = await options.open(scope, token);
       if (closing || socket.destroyed) {
         reader.release();

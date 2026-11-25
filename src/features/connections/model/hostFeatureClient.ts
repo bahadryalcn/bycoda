@@ -208,6 +208,8 @@ const PROJECT_BROWSER_METHODS = new Set([
 ]);
 const OWNER_HOST_METHOD_CAPABILITIES: Readonly<Record<string, string>> = {
   ...Object.fromEntries(Object.keys(LIVE_STREAM_RPC).map((method) => [method, "liveStream.v1"])),
+  "browser.profiles.list": "browser.profiles.v1",
+  "browser.profiles.update": "browser.profiles.v1",
   "assistant.request": "assistant.v1",
   "voice.tools.list": "voice.tools.v1",
   "voice.tools.call": "voice.tools.v1",

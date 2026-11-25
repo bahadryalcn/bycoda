@@ -19,6 +19,7 @@ import {
 } from "react";
 import {
   closestScroll,
+  type RowScrollOwner,
   selectedVirtualRange,
   TranscriptVirtualizationContext,
   useTranscriptRevealTarget,
@@ -78,6 +79,13 @@ function MeasuredTranscriptRows({
   const [oldCount, setOldCount] = useState(rows.length);
   const transition = useRef<{ node: HTMLElement; top: number } | null>(null);
   const [scroll, setScroll] = useState<HTMLElement | null>(null);
+  // Plain rows need their scroll container only if the transcript anchors on one of them.
+  const plainScroll = useRef<HTMLElement | null>(null);
+  // One resolver for the list's lifetime: a new function each render would re-render every memoized row.
+  const [resolvePlainScroll] = useState(() => () => {
+    if (!plainScroll.current && root.current) plainScroll.current = closestScroll(root.current);
+    return plainScroll.current;
+  });
   const [margin, setMargin] = useState(0);
   const [width, setWidth] = useState(0);
   // Newest measured width, ahead of `width` while a live resize holds the commit back.
@@ -123,10 +131,8 @@ function MeasuredTranscriptRows({
     if (!element) return;
     // Ordinary lists use native layout. Take their geometry on the commit that
     // crosses the threshold so the virtualizer starts with the measured row sizes.
-    if (!needsMeasurement) {
-      setScroll(closestScroll(element));
-      return;
-    }
+    plainScroll.current = null;
+    if (!needsMeasurement) return;
     // A committed width clears every measured row size (`virtual.measure()` below), so a live
     // resize commits it once at the end instead of letting scrollHeight fall back to estimates
     // on each frame.
@@ -138,6 +144,7 @@ function MeasuredTranscriptRows({
     // Observers pass their entries as the first argument; only the mount call is immediate.
     const measure = (immediate?: unknown) => {
       const parent = closestScroll(element);
+      plainScroll.current = parent;
       setScroll((previous) => (previous === parent ? previous : parent));
       const rect = element.getBoundingClientRect();
       liveWidth.current = rect.width;
@@ -215,7 +222,8 @@ function MeasuredTranscriptRows({
 
   useLayoutEffect(() => {
     if (!virtualized && rows.length > TRANSCRIPT_VIRTUAL_THRESHOLD) {
-      const node = scroll && owner ? owner.firstVisibleRow(scroll) : null;
+      const parent = plainScroll.current;
+      const node = parent && owner ? owner.firstVisibleRow(parent) : null;
       if (node) transition.current = { node, top: node.getBoundingClientRect().top };
       // The plain list never measured its rows: keep their real heights so the
       // virtualized list does not place every row at its estimate.
@@ -273,7 +281,7 @@ function MeasuredTranscriptRows({
               ownerId={id}
               folds={folds}
               measure={virtualized ? virtual.measureElement : noMeasure}
-              scroll={scroll}
+              scroll={scroll ?? resolvePlainScroll}
             />
           </Fragment>
         );
@@ -292,13 +300,13 @@ function MeasuredTranscriptRows({
 function useRowNode(
   owner: ContextType<typeof TranscriptVirtualizationContext>,
   measure: (node: HTMLDivElement | null) => void,
-  scroll: HTMLElement | null,
+  scroll: RowScrollOwner,
 ) {
   const element = useRef<HTMLDivElement | null>(null);
   const setNode = useCallback(
     (node: HTMLDivElement | null) => {
       element.current = node;
-      if (node && scroll) owner?.rowScroll.set(node, scroll);
+      if (node) owner?.rowScroll.set(node, scroll);
       measure(node);
     },
     [measure, owner, scroll],
@@ -320,7 +328,7 @@ const MeasuredRow = memo(function MeasuredRow({
   ownerId: string;
   folds: Map<string, Record<string, boolean>>;
   measure: (node: HTMLDivElement | null) => void;
-  scroll: HTMLElement | null;
+  scroll: RowScrollOwner;
 }) {
   const owner = useContext(TranscriptVirtualizationContext);
   const rowId = row.id;

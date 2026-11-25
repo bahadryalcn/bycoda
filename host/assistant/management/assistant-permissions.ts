@@ -4,6 +4,19 @@ import type { RoomManagementAdmission, RoomManagementCall } from "./assistant-ma
 
 type Policy = Pick<AssistantProfilePatch, "permissionLevel" | "permissionProjectIds">;
 
+/** The owner's ticked critical exclusions; a mirror that never saved them has all of them. */
+export const assistantCriticalExclusions = (
+  profile: Pick<AssistantProfilePatch, "criticalExclusions">,
+): NonNullable<AssistantProfilePatch["criticalExclusions"]> =>
+  profile.criticalExclusions ?? [
+    "pushMain",
+    "deleteProject",
+    "deleteSession",
+    "sendMessages",
+    "computerUse",
+    "spend",
+  ];
+
 /** Host mirrors may narrow native authority, never grant it. */
 export function assistantCriticalApprovalRequired(
   profile: Pick<AssistantProfilePatch, "criticalExclusions">,
@@ -12,14 +25,7 @@ export function assistantCriticalApprovalRequired(
   if (!raw || typeof raw !== "object") return true;
   const operation = raw as { action?: unknown; input?: Record<string, unknown> };
   const action = operation.action;
-  const exclusions = profile.criticalExclusions ?? [
-    "pushMain",
-    "deleteProject",
-    "deleteSession",
-    "sendMessages",
-    "computerUse",
-    "spend",
-  ];
+  const exclusions = assistantCriticalExclusions(profile);
   if (
     typeof action === "string" &&
     ((exclusions.includes("spend") &&

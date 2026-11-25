@@ -58,16 +58,15 @@ async function publishedTunnelEndpoint(machine: RemoteMachine): Promise<string |
     false,
     machine.environmentId,
   );
-  return host.mobileRoutes?.find((route) => {
-    try {
-      const url = new URL(route.endpoint);
-      return (
-        !route.lanKey && url.protocol === "https:" && url.hostname.endsWith(".trycloudflare.com")
-      );
-    } catch {
-      return false;
-    }
-  })?.endpoint;
+  if (!host.tunnelRoute) return undefined;
+  try {
+    const url = new URL(host.tunnelRoute);
+    return url.protocol === "https:" && url.hostname.endsWith(".trycloudflare.com")
+      ? host.tunnelRoute
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

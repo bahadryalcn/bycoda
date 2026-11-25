@@ -279,37 +279,75 @@ test("captures both themes and widths with disabled and pending shared actions",
   await page.screenshot({ path: `${captureRoot}/footer-dark-1280-normal-motion.png` });
 });
 
-test("installed update fits beside Settings and opens notes before dismissal", async ({ page }) => {
+test("installed update stays on one row with a corner dismiss action", async ({ page }) => {
   const capture = "temp/verification/whats-new-footer";
   mkdirSync(capture, { recursive: true });
   writeFileSync(
     `${capture}/README.md`,
-    "# Installed update notice\n\nChromium account footer fixture with a seeded installed update and mocked native operations.\n",
+    "# Installed update notice\n\nChromium account footer with a seeded update, real quick settings, and mocked account and voice state.\n",
   );
   await page.goto(`${route}?account&installed-notice`);
-  const footer = page.locator("[data-sidebar-account-footer]");
+  const rail = page.locator("[data-account-fixture-rail]");
+  const footer = rail.locator("[data-sidebar-account-footer]");
   const notice = footer.getByRole("button", { name: "What's new", exact: true });
   const dismiss = footer.getByRole("button", { name: "Dismiss update notification" });
   const settings = footer.getByRole("button", { name: "Settings", exact: true });
+  const voice = footer.getByRole("button", { name: "Talk to Arif", exact: true });
+  const voiceSettings = footer.getByRole("button", { name: "Voice settings", exact: true });
+  const notifications = footer.getByRole("button", { name: "Notifications", exact: true });
   await expect(notice).toBeVisible();
   await expect(dismiss).toBeVisible();
+  await expect(voice).toBeVisible();
+  await expect(voiceSettings.locator("svg")).toBeVisible();
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
-    for (const width of [1280, 800]) {
-      await page.setViewportSize({ width, height: 800 });
-      const [noticeBox, settingsBox] = await Promise.all([
-        notice.boundingBox(),
-        settings.boundingBox(),
-      ]);
-      expect(Math.abs(noticeBox!.y - settingsBox!.y)).toBeLessThan(2);
-      await page.locator("[data-account-fixture-rail]").screenshot({
-        path: `${capture}/${theme}-${width}.png`,
+    for (const [viewportWidth, railWidth] of [
+      [1280, 380],
+      [800, 280],
+    ]) {
+      await page.setViewportSize({ width: viewportWidth, height: 800 });
+      await rail.evaluate((element, width) => (element.style.inlineSize = `${width}px`), railWidth);
+      await page.mouse.move(viewportWidth - 10, 10);
+      await footer.screenshot({
+        path: `${capture}/${theme}-${viewportWidth}.png`,
       });
+      await expect(notice).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+      const bounds = async () =>
+        Promise.all(
+          [voice, notice, notifications, settings, voiceSettings].map(
+            async (button) => (await button.boundingBox())!,
+          ),
+        );
+      const resting = await bounds();
+      for (const box of resting)
+        expect(Math.abs(centerY(box) - centerY(resting[1]))).toBeLessThan(2);
+      const close = (await dismiss.boundingBox())!;
+      expect(resting[4].x).toBeCloseTo(resting[0].x + resting[0].width, 0);
+      const book = (await notice.locator("svg").boundingBox())!;
+      const cross = (await dismiss.locator("svg").boundingBox())!;
+      expect(centerY(cross)).toBeCloseTo(book.y, 0);
+      expect(
+        Math.abs(close.x + close.width / 2 - (resting[1].x + resting[1].width)),
+      ).toBeLessThanOrEqual(2);
+      expect(Math.abs(cross.x + cross.width / 2 - (book.x + book.width))).toBeLessThanOrEqual(4);
+      expect(close.x).toBeGreaterThan(resting[1].x + resting[1].width / 2);
+      await notice.hover();
+      await expect(
+        page.getByRole("tooltip").filter({ hasText: `Updated to ${appVersion}` }),
+      ).toBeVisible();
+      expect(await bounds()).toEqual(resting);
     }
   }
+  await expect(notice.locator("svg.lucide-book-open")).toBeVisible();
+  await voiceSettings.click();
+  const quickSettings = page.getByRole("dialog", { name: "Voice settings" });
+  await expect(quickSettings.getByRole("switch", { name: "Wake and sleep phrases" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(voiceSettings).toBeFocused();
   await notice.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("[data-fixture-notes]")).toHaveText(appVersion);

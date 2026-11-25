@@ -89,7 +89,7 @@ const dependencies = () => ({
     endpoint: "http://192.168.1.1",
   }),
   privateNetwork: async () => ({
-    state: "offline" as const,
+    state: "setup-required" as const,
     machineName: "PRIVATE_FIXTURE_MACHINE",
   }),
   tunnels: async () => overview,
@@ -97,7 +97,7 @@ const dependencies = () => ({
 it("projects connection states without pairing keys, tickets, private names, vault material or host-local URL", async () => {
   const result = await readHostAccess("host", dependencies(), () => 42);
   expect(result.lan).toEqual({ state: "ready" });
-  expect(result.privateNetwork).toEqual({ state: "offline" });
+  expect(result.privateNetwork).toEqual({ state: "setup-required" });
   expect(result.tunnels?.tunnels[0].publicUrl).toBe("https://fixture.trycloudflare.com");
   for (const forbidden of ["PRIVATE_FIXTURE", "approvalUrl", "endpoint", "lanKey", "hostLocalUrl"])
     expect(JSON.stringify(result)).not.toContain(forbidden);

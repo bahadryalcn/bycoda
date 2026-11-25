@@ -1,4 +1,4 @@
-import { useT } from "../../../../shared/i18n";
+import { t, useLocale } from "../../../../shared/i18n";
 import { CollectionRow } from "../../../../shared/ui/CollectionRow";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { StatusText, type StatusTextTone } from "../../../../shared/ui/StatusText";
@@ -8,12 +8,12 @@ import { voiceActionLabel } from "../VoiceToolActivityPanel";
 
 /** Tone and label of an entry: dispatch outcome first, then the observed progress. */
 export function voiceWorkStatus(entry: VoiceWorkEntry): [StatusTextTone, string] {
-  if (entry.status === "running") return ["running", "Starting"];
-  if (entry.status === "failed" || entry.progress === "failed") return ["failed", "Failed"];
-  if (entry.status === "uncertain") return ["needs-you", "Unknown"];
-  if (entry.progress === "working") return ["running", "Working"];
-  if (entry.progress === "finished") return ["done", "Finished"];
-  return ["idle", "Started"];
+  if (entry.status === "running") return ["running", t("Starting")];
+  if (entry.status === "failed" || entry.progress === "failed") return ["failed", t("Failed")];
+  if (entry.status === "uncertain") return ["needs-you", t("Unknown")];
+  if (entry.progress === "working") return ["running", t("Working")];
+  if (entry.progress === "finished") return ["done", t("Finished")];
+  return ["idle", t("Started")];
 }
 
 const folderOf = (path?: string) =>
@@ -34,7 +34,7 @@ export function VoiceWorkList({
   /** Opens the entry's session; without it rows are not actionable. */
   onOpenSession?: (entry: VoiceWorkEntry) => void;
 }) {
-  const t = useT();
+  useLocale();
   if (!entries.length) return null;
   return (
     <section aria-label={t("Work started by voice")} className="grid min-w-0 gap-1">
@@ -51,7 +51,7 @@ export function VoiceWorkList({
               secondary={folderOf(entry.projectPath)}
               trailing={
                 <span className="flex items-center gap-2">
-                  <StatusText tone={tone}>{t(label)}</StatusText>
+                  <StatusText tone={tone}>{label}</StatusText>
                   <Timestamp
                     value={entry.startedAt}
                     format="relative"

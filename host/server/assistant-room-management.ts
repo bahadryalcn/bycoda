@@ -24,6 +24,7 @@ import {
   listHostDevices,
 } from "../assistant/room/assistant-room-app-reads";
 import { isRoomFileAction, isRoomFileWrite } from "../assistant/room/assistant-room-files";
+import { assertAgentDevicesEnabled } from "../devices/device-agent-access";
 import { isRoomFolderAction } from "../assistant/folders/assistant-folder-schemas";
 import { isGlobalFolderFileWrite } from "../assistant/folders/assistant-folder-tools";
 import { isRoomInboxAction } from "../assistant/room/assistant-room-inbox";
@@ -297,8 +298,10 @@ export function registerRoomManagement(
               principal,
               authorized,
             );
-          if (call.action === "devices.list")
+          if (call.action === "devices.list") {
+            await assertAgentDevicesEnabled(dependencies.engine.store);
             return listHostDevices(dependencies.deviceHost, call.input, authorized);
+          }
           if (isDesktopControlConversationTool(call.action))
             return dependencies.conversationDesktopControl.call(
               call.action,

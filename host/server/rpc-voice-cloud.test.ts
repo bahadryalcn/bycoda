@@ -18,7 +18,7 @@ const dependencies = {
 } as unknown as Parameters<typeof handleVoiceRpc>[0];
 const call = (
   method: string,
-  options: { origin?: string; address?: string; owner?: boolean },
+  options: { origin?: string; thisComputer?: boolean; owner?: boolean },
 ): Parameters<typeof handleVoiceRpc>[1] =>
   ({
     input: { method },
@@ -27,8 +27,10 @@ const call = (
     domainContext: { authorized: async () => options.owner === true },
     request: {
       headers: options.origin ? { origin: options.origin } : {},
-      socket: { remoteAddress: options.address ?? "100.64.0.9" },
+      // Forwarded phone and tunnel requests arrive from loopback; the address grants nothing.
+      socket: { remoteAddress: "127.0.0.1" },
     },
+    thisComputer: options.thisComputer === true && !options.origin,
   }) as unknown as Parameters<typeof handleVoiceRpc>[1];
 
 it("serves cloud status to a paired owner device but refuses guests and browser origins", async () => {
@@ -48,7 +50,7 @@ it("keeps cloud credentials and setup methods local even for an owner device", a
     await expect(handleVoiceRpc(dependencies, call(method, { owner: true }))).rejects.toThrow(
       "only on this computer",
     );
-  const local = call("voice.cloud.status", { address: "127.0.0.1" });
+  const local = call("voice.cloud.status", { thisComputer: true });
   await handleVoiceRpc(dependencies, local);
   expect(local.result).toEqual({ openrouter: true, openai: true, xai: false });
 });

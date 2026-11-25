@@ -82,6 +82,8 @@ struct Job {
     output_full: bool,
     total: u64,
     settled_at: Option<Instant>,
+    /// Who admitted the command: `owner`, `sessionFullAccess` or `standingConsent`.
+    approved_by: Option<&'static str>,
 }
 impl Job {
     fn activity(&self, request: &str) -> Option<Value> {
@@ -213,7 +215,7 @@ impl Job {
             .map(|i| self.output[i])
             .collect();
         json!({"requestId":request,"serverId":self.server,"state":self.state,"exitCode":self.exit_code,
-            "reason":self.reason,"remoteOutcomeUnknown":self.remote_unknown,"cancelRequested":self.cancel,
+            "reason":self.reason,"approvedBy":self.approved_by,"remoteOutcomeUnknown":self.remote_unknown,"cancelRequested":self.cancel,
             "output":String::from_utf8_lossy(&self.output[start..end]),"cursor":end,"nextOffset":end,
             "stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),
             "hasMore":end<self.output.len(),"truncated":self.total>self.output.len() as u64,
@@ -343,6 +345,7 @@ fn cancel_or_reserve(
         output_full: false,
         total: 0,
         settled_at: None,
+        approved_by: None,
     }));
     jobs.insert(key.clone(), job.clone());
     Ok(job)
@@ -859,9 +862,26 @@ pub(super) fn call(
         Ok(())
     };
     let bypassed_approval = std::cell::Cell::new(false);
+    // A Room command skips its prompt only under the registered Room's live Full access grant
+    // with no exclusions (arbitrary remote commands may conceal any of them).
+    let room_full_access = || match &key.source {
+        SshSource::AssistantThread { thread } => {
+            crate::assistant_standing_consent::room_gate_approved(
+                app,
+                issuer,
+                thread,
+                "servers.ssh.execute",
+            )
+        }
+        SshSource::Session { .. } => false,
+    };
+    let standing_consent = std::cell::Cell::new(false);
     let authorize_current = || -> Result<bool, String> {
         check_room()?;
         let full_access = authorize(request, issuer, taken, bypassed_approval.get())?;
+        if standing_consent.get() && !room_full_access() {
+            return Err("Native assistant consent changed before execution".into());
+        }
         check_room()?;
         Ok(full_access)
     };
@@ -968,6 +988,7 @@ pub(super) fn call(
             output_full: false,
             total: 0,
             settled_at: None,
+            approved_by: None,
         }));
         jobs.insert(key.clone(), job.clone());
         job
@@ -976,6 +997,14 @@ pub(super) fn call(
     let start = (|| -> Result<(), String> {
         let full_access = authorize_current()?;
         bypassed_approval.set(full_access);
+        standing_consent.set(!full_access && room_full_access());
+        let approved_by = if full_access {
+            "sessionFullAccess"
+        } else if standing_consent.get() {
+            "standingConsent"
+        } else {
+            "owner"
+        };
         check(request, issuer, taken)?;
         check_room()?;
         let shell = endpoint
@@ -993,7 +1022,7 @@ pub(super) fn call(
         };
         let message=format!("Run this exact command on saved SSH server?\n\nServer ID: {}\nTarget: {}@{}:{}\n{}\nShell: {:?}\nTimeout: {} seconds\n\nCommand (escaped literal):\n{}\n\nThis can change remote files and services. Command output will be disclosed to the calling AI conversation. Cancellation stops local SSH; remote work may continue.",literal(&server),literal(endpoint.user.as_deref().unwrap_or("(default)")),literal(&endpoint.host),endpoint.port,source,shell,timeout,literal(&script));
         // At most one open approval dialog per conversation; others queue here.
-        let approved = if full_access {
+        let approved = if full_access || standing_consent.get() {
             true
         } else {
             let slot = loop {
@@ -1042,6 +1071,15 @@ pub(super) fn call(
             });
             j.settled_at = Some(Instant::now());
             return Ok(());
+        }
+        job.lock()
+            .map_err(|_| "SSH execution unavailable")?
+            .approved_by = Some(approved_by);
+        if approved_by != "owner" {
+            log::info!(
+                "SSH command admitted without a prompt ({approved_by}); request {}",
+                literal(&key.request)
+            );
         }
         authorize_current()?;
         if endpoint_digest(&crate::server_inventory::resolve_ssh_endpoint(
@@ -1243,6 +1281,16 @@ mod tests {
             output_full: false,
             total: 0,
             settled_at: None,
+            approved_by: None,
+        }
+    }
+    #[test]
+    fn status_receipt_names_who_admitted_the_command() {
+        let mut job = fixture_job();
+        assert_eq!(job.result("r", 0, 16)["approvedBy"], Value::Null);
+        for by in ["owner", "sessionFullAccess", "standingConsent"] {
+            job.approved_by = Some(by);
+            assert_eq!(job.result("r", 0, 16)["approvedBy"], by);
         }
     }
     #[test]
@@ -1509,6 +1557,7 @@ mod tests {
             output_full: false,
             total: 0,
             settled_at: None,
+            approved_by: None,
         };
         job.append(&vec![b'x'; OUTPUT_LIMIT + 99], false);
         let page = job.result("r", 100, 12);

@@ -104,13 +104,17 @@ const primary = (container: HTMLElement) =>
   )!;
 const ai = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Plan setup with AI",
+    (button) =>
+      button.textContent === "Plan setup with AI" || button.textContent?.startsWith("Planning"),
   )!;
+/** A disabled action with a reason stays focusable: it is `aria-disabled`, not `disabled`. */
+const unavailable = (button: HTMLButtonElement) =>
+  button.disabled || button.getAttribute("aria-disabled") === "true";
 async function planWithAi(container: HTMLElement) {
   expect(ai(container)).toBeTruthy();
   await vi.waitFor(async () => {
     await act(async () => {});
-    expect(ai(container).disabled).toBe(false);
+    expect(unavailable(ai(container))).toBe(false);
   });
   await act(async () => ai(container).click());
 }
@@ -247,9 +251,9 @@ it("shows pending state while planning and drops the result after unmount", asyn
   const { edits, container, root } = await mount();
   await planWithAi(container);
   expect(ai(container).getAttribute("aria-busy")).toBe("true");
-  expect(ai(container).getAttribute("aria-label")).toBe("Planning…");
-  expect(primary(container).disabled).toBe(true);
-  expect(container.textContent).toContain("Planning with Sol · Codex · Work");
+  // The pending action names the planner itself; no separate planning notice.
+  expect(ai(container).textContent).toBe("Planning with Sol · Codex · Work");
+  expect(unavailable(primary(container))).toBe(true);
   const signal = vi.mocked(planSmartSetup).mock.calls[0]![2].signal!;
   await act(() => root.unmount());
   roots.length = 0;
@@ -272,5 +276,5 @@ it("cancels planning without applying a late answer", async () => {
   expect(vi.mocked(planSmartSetup).mock.calls[0]![2].signal?.aborted).toBe(true);
   await act(async () => finish({ candidates: [candidate], plan }));
   expect(edits).toHaveLength(0);
-  expect(primary(container).disabled).toBe(false);
+  expect(unavailable(primary(container))).toBe(false);
 });

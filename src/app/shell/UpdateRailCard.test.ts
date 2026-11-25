@@ -19,7 +19,7 @@ describe("UpdateRailCard", () => {
     expect(markup).toContain('aria-label="Dismiss update notification"');
   });
 
-  it("uses the shared label reveal in the compact rail", () => {
+  it("shows an icon action with its dismiss control in the compact rail", () => {
     const markup = renderToStaticMarkup(
       createElement(UpdateRailCard, {
         update: { version: "0.1.25" },
@@ -30,7 +30,7 @@ describe("UpdateRailCard", () => {
     );
 
     expect(markup).toContain('aria-label="What&#x27;s new in 0.1.25"');
-    expect(markup).toContain("data-button-reveal-label");
+    expect(markup).not.toContain("data-button-reveal-label");
     expect(markup).toContain('aria-label="Dismiss update notification"');
   });
 

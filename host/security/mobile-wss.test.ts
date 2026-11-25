@@ -47,6 +47,7 @@ async function fixture(maxSocketsPerDevice = 4, limits?: MobileWssOptions["limit
     origin?: string;
     authorization?: string;
     cookie?: string;
+    dpop?: string;
   }> = [];
   const bulk = createHostBulkHandler({
     transfers,
@@ -59,6 +60,7 @@ async function fixture(maxSocketsPerDevice = 4, limits?: MobileWssOptions["limit
       origin: request.headers.origin,
       authorization: request.headers.authorization,
       cookie: request.headers.cookie,
+      dpop: request.headers.dpop as string | undefined,
     });
     void bulk(request, response).then((handled) => {
       if (!handled) response.writeHead(404).end();
@@ -71,6 +73,7 @@ async function fixture(maxSocketsPerDevice = 4, limits?: MobileWssOptions["limit
       origin: request.headers.origin,
       authorization: request.headers.authorization,
       cookie: request.headers.cookie,
+      dpop: request.headers.dpop as string | undefined,
     }),
   );
   const transport = attachHostWebSocketTransport({
@@ -246,6 +249,25 @@ it("proxies real verified TLS WS through the existing authenticated Host and rew
     origin: undefined,
     cookie: undefined,
   });
+});
+
+it("relays the client's DPoP proof to the Host on upgrades and bulk reads and refuses a malformed one", async () => {
+  const input = await fixture();
+  const proof = "eyJhIjoxfQ.eyJiIjoyfQ.c2ln";
+  const socket = await input.socket({ headers: { Authorization: `Bearer ${TOKEN}`, DPoP: proof } });
+  expect(input.requests).toContainEqual(expect.objectContaining({ url: "/ws", dpop: proof }));
+  socket.close();
+  const lease = input.transfers.begin("paired.device", "fixture.resource");
+  const result = input.transfers.encode(lease, { payload: "x".repeat(100) }, 100) as {
+    $bulk: { transferId: string };
+  };
+  const path = `/ws-bulk/${result.$bulk.transferId}?offset=0`;
+  expect((await input.request(path, { headers: { DPoP: proof } })).status).toBe(200);
+  expect(input.requests).toContainEqual(expect.objectContaining({ url: path, dpop: proof }));
+  expect((await input.request(path, { headers: { DPoP: "not a proof" } })).status).toBe(403);
+  await expect(
+    input.socket({ headers: { Authorization: `Bearer ${TOKEN}`, DPoP: "not a proof" } }),
+  ).rejects.toThrow(/403/);
 });
 
 it("forwards /ws-tunnel with its own subprotocol, pipes bytes and propagates the error code", async () => {

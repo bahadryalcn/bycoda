@@ -7,8 +7,6 @@ import { openRouterTranscriptionModels } from "../voice/voice-transcription-cata
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 const dictationCleanupRuns = new DictationCleanupRuns();
-const isLoopback = (request: OwnerRpcRequest) =>
-  ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.request.socket.remoteAddress ?? "");
 export async function handleVoiceRpc(
   dependencies: Pick<ServerBindings, "engine" | "voiceCloud" | "localVoice" | "voiceSetup">,
   request: OwnerRpcRequest,
@@ -41,7 +39,7 @@ export async function handleVoiceRpc(
       if (
         request.request.headers.origin ||
         !(
-          isLoopback(request) ||
+          request.thisComputer ||
           ((request.input.method === "voice.cloud.transcribe" ||
             request.input.method === "voice.cloud.status" ||
             request.input.method === "voice.cloud.models") &&
@@ -93,12 +91,7 @@ export async function handleVoiceRpc(
     case "voice.local.setup":
 
     case "voice.local.setupStatus":
-      if (
-        request.request.headers.origin ||
-        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
-          request.request.socket.remoteAddress ?? "",
-        )
-      )
+      if (!request.thisComputer)
         throw new Error("Voice installation is available only on this computer.");
       if (request.input.method === "voice.local.setup") {
         if (voiceModels.status().state === "working")
@@ -122,7 +115,7 @@ export async function handleVoiceRpc(
       // The paired owner phone manages the same models from Settings → Voice.
       if (
         request.request.headers.origin ||
-        !(isLoopback(request) || (await request.domainContext.authorized()))
+        !(request.thisComputer || (await request.domainContext.authorized()))
       )
         throw new Error("Voice model management is available only on this computer.");
       if (request.input.method === "voice.local.models") request.result = await voiceModels.list();

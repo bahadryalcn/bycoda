@@ -170,6 +170,9 @@ function pressInTerminal(init: KeyboardEventInit) {
 it.each([
   { key: "@", code: "KeyQ" },
   { key: "{", code: "Digit7", shiftKey: true },
+  { key: "[", code: "Digit8" },
+  { key: "]", code: "Digit9" },
+  { key: "}", code: "Digit0", shiftKey: true },
   { key: "€", code: "KeyE" },
   { key: "Dead", code: "KeyU" },
 ])(

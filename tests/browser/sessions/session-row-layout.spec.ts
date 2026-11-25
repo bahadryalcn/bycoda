@@ -892,6 +892,43 @@ test("new session retains selector and error when selected project becomes unava
   await expect(dialog.getByRole("combobox")).toBeEnabled();
 });
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`idle session time yields to row actions in ${theme} at ${width}px`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/sessions/session-row-layout.html?local-bulk-settle&${theme}`);
+      const row = page.locator('[data-session-card="row-long"]');
+      const header = row.locator("[data-session-row-project]");
+      const time = header.getByText(/^(59m|1h)$/);
+      const actions = header.locator("[data-session-row-actions]");
+      const yieldSlot = header.locator("[data-action-yield]");
+      const evidence = path.resolve("temp/verification/sidebar-row-actions");
+      const name = `${theme}-${width}`;
+      await mkdir(evidence, { recursive: true });
+      await page.mouse.move(width - 10, 760);
+      await expect(time).toBeVisible();
+      const timeBox = await time.boundingBox();
+      expect(timeBox).not.toBeNull();
+      await row.screenshot({ path: path.join(evidence, `${name}-rest.png`) });
+
+      await row.hover();
+      await row.screenshot({ path: path.join(evidence, `${name}-hover.png`) });
+      await expect(yieldSlot).toHaveCSS("opacity", "0", { timeout: 1500 });
+      for (const label of [/^Settle /, /^Archive /, /^Delete /]) {
+        await expect(actions.getByRole("button", { name: label })).toBeVisible();
+      }
+      const actionBox = (await actions.boundingBox())!;
+      expect(actionBox.x + actionBox.width).toBeCloseTo(timeBox!.x + timeBox!.width, 0);
+
+      await page.mouse.move(width - 10, 760);
+      await expect(yieldSlot).toHaveCSS("opacity", "1");
+      await row.locator("[data-session-select]").focus();
+      await expect(yieldSlot).toHaveCSS("opacity", "0");
+    });
+  }
+}
+
 for (const density of ["standard", "detailed"]) {
   for (const light of [false, true]) {
     for (const width of [1280, 800]) {

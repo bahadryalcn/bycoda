@@ -35,7 +35,8 @@ export type RoomBrowserSource = {
   deviceHash: string;
 };
 export function createRoomBrowserTools(ports: {
-  registry: Pick<SessionBrowserRegistry, "dispatchForRoom">;
+  registry: Pick<SessionBrowserRegistry, "dispatchForRoom"> &
+    Partial<Pick<SessionBrowserRegistry, "profiles">>;
   previews: ConversationPreviewWorkflow;
   describe(value: object): Promise<unknown>;
   present?(source: RoomBrowserSource): Promise<PreviewPresentation>;
@@ -149,7 +150,11 @@ export function createRoomBrowserTools(ports: {
             principalId: credential,
           },
           {
-            authorize: check,
+            autoShow: (await ports.registry.profiles?.list())?.autoShow,
+            authorize: async () => {
+              await check();
+              if (!ownerControl) await ports.registry.profiles?.resolve(input.profile, false);
+            },
             browser: async (method, params) =>
               (await dispatch(method, params)) as unknown as PreviewBrowserState,
             present: async () => {

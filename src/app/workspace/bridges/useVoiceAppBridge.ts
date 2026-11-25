@@ -5,6 +5,7 @@ import {
 } from "../../../features/workspace/model/tabGroups";
 import { voiceProjectNames } from "../../../features/voice/model/voiceProjectNames";
 import { useVoiceWorkspaceActions } from "./useVoiceWorkspaceActions";
+import { readStandingConsent } from "../../../features/assistant/public/standingConsent";
 import { createVoiceInspectPorts } from "./voiceInspectPorts";
 import type {
   VoiceProjectCreate,
@@ -16,6 +17,8 @@ import {
   newDefaultSession,
   newSession,
   HARNESSES,
+  runtimeModeForNewSession,
+  type RuntimeMode,
   type Session,
 } from "../../../features/sessions/model/session";
 import { getSession, listSessionsByProject } from "../../../features/sessions/data/sessionStore";
@@ -47,6 +50,25 @@ import {
   projectFolderName,
 } from "../../../features/projects/model/newProjectFolder";
 import { projectNameTaken } from "../../../features/voice/model/voiceProjectConflict";
+import {
+  assistantRequest,
+  latestAssistantSnapshot,
+} from "../../../features/assistant/model/assistantClient";
+
+/**
+ * Full access is the owner's rule for the assistant: a session it opens must not stop at tool
+ * approvals while the owner only talks. Any other profile keeps the provider default.
+ */
+async function assistantWorkerRuntimeMode(): Promise<RuntimeMode | undefined> {
+  // The polled snapshot is the existing source; one profile read covers a window that has none yet.
+  const profile =
+    latestAssistantSnapshot()?.profile ??
+    (await assistantRequest({ op: "profile.get" }).then(
+      (response) => ("profile" in response ? response.profile : undefined),
+      () => undefined,
+    ));
+  return profile?.execution?.runtimeMode === "full-access" ? "full-access" : undefined;
+}
 
 type Deps = {
   projects: readonly VoiceWorkspaceProject[];
@@ -70,7 +92,10 @@ type Deps = {
   | "onSubmit"
   | "onStop"
   | "onStopForRoom"
->;
+> & {
+    /** The confirmed delete the owner dialog runs; voice uses it only under native Full access. */
+    onDeleteNow?: (sessionId: string) => boolean | Promise<boolean>;
+  };
 
 /**
  * Match the rail's project directory, including a not-yet-remembered current folder.
@@ -184,10 +209,12 @@ export function useVoiceAppBridge(deps: Deps) {
     const harness = (request.harness ?? choice.harness) as Session["harness"];
     if (!isHarnessAvailable(harness))
       throw new Error("The requested voice session provider is unavailable.");
+    const workerMode = await assistantWorkerRuntimeMode();
     const session = newSession(
       harness,
       request.projectPath,
       request.model ?? (harness === choice.harness ? choice.model : undefined),
+      workerMode && runtimeModeForNewSession(harness, workerMode),
     );
     if (request.workspaceRequestId) {
       const { createRoomSession } = await import("../../../features/sessions/data/sessionStore");
@@ -326,6 +353,8 @@ export function useVoiceAppBridge(deps: Deps) {
       ? (id, archived) => latest.current.onArchive!(actionId(id), archived)
       : undefined,
     onDelete: deps.onDelete ? (id) => latest.current.onDelete!(actionId(id)) : undefined,
+    onDeleteNow: deps.onDeleteNow ? (id) => latest.current.onDeleteNow!(actionId(id)) : undefined,
+    fullAccess: async () => (await readStandingConsent()).fullAccess,
     onSubmit: deps.onSubmit
       ? (id, prompt) => latest.current.onSubmit!(actionId(id), prompt)
       : undefined,

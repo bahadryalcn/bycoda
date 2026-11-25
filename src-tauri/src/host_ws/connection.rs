@@ -172,6 +172,17 @@ async fn connect(
     request
         .headers_mut()
         .insert(header::AUTHORIZATION, authorization);
+    // The proof of a bound credential is checked once, on the upgrade.
+    let path = request.uri().path().to_owned();
+    if let Some(proof) =
+        crate::remote::device_proof::header_for(shared.route.token.as_str(), "GET", &path)
+    {
+        let mut proof = HeaderValue::from_str(&proof).map_err(|_| ("authentication", true))?;
+        proof.set_sensitive(true);
+        request
+            .headers_mut()
+            .insert(crate::remote::device_proof::HEADER, proof);
+    }
     request.headers_mut().insert(
         header::SEC_WEBSOCKET_PROTOCOL,
         HeaderValue::from_str(contracts.protocol()).map_err(|_| ("schema", true))?,

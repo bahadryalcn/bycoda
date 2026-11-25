@@ -14,12 +14,13 @@ import {
 import { usePermissionStatus } from "../hooks/usePermissionStatus";
 import {
   permissionBadge,
+  permissionCanAddAppInSettings,
   permissionInfo,
   permissionNeedsRestart,
   permissionReady,
 } from "../model/permissions";
 import { PermissionRestartButton } from "./PermissionRestartButton";
-import { PermissionSetupSheet } from "./PermissionSetupSheet";
+import { PermissionSetupDialog } from "./PermissionSetupDialog";
 import styles from "./PermissionRow.module.css";
 
 /**
@@ -41,6 +42,7 @@ export function PermissionRow({
   recheck?: boolean;
 }) {
   const {
+    report,
     entries: [entry],
     loading,
     failed,
@@ -53,6 +55,9 @@ export function PermissionRow({
   const info = permissionInfo(id);
   const ready = permissionReady(entry.state);
   const restart = !failed && permissionNeedsRestart(entry);
+  const promptInPlace =
+    entry.canRequest &&
+    !(entry.canOpenSettings && permissionCanAddAppInSettings(id, report?.platform));
 
   async function allow() {
     if (requesting) return;
@@ -103,19 +108,19 @@ export function PermissionRow({
               </Button>
             )}
             {restart && <PermissionRestartButton />}
-            {!failed && !restart && entry.canRequest && (
+            {!failed && !restart && promptInPlace && (
               <Button loading={requesting} onClick={() => void allow()}>
                 {t("Allow")}
               </Button>
             )}
-            {!failed && !restart && !entry.canRequest && (
+            {!failed && !restart && !promptInPlace && (
               <Button onClick={() => setSetup(true)}>{t("Review access")}</Button>
             )}
           </span>
         )}
       </Row>
       {setup && (
-        <PermissionSetupSheet
+        <PermissionSetupDialog
           id={id}
           requested={afterPrompt}
           onClose={() => {

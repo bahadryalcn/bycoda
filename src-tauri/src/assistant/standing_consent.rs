@@ -205,6 +205,43 @@ pub(crate) fn decision(
     Ok(classify(&grant, request))
 }
 
+/// Room prompts outside the management dialog skip only for a live Full access grant
+/// (`decision` keeps the registered Room, live issuer and channel checks). Any other
+/// answer, missing grant or failed read keeps the prompt.
+pub(crate) fn room_gate_approved(
+    app: &AppHandle,
+    channel: &Arc<crate::remote::NativeServiceChannel>,
+    thread: &str,
+    action: &str,
+) -> bool {
+    debug_assert!(room_gate_critical(action).is_some());
+    let request =
+        serde_json::json!({"threadId": thread, "input": {"operation": {"action": action}}});
+    matches!(decision(app, &request, channel), Ok(Some(true)))
+}
+
+/// The exclusions that keep a Room gate's prompt at level everything.
+enum RoomGateKeeps {
+    Nothing,
+    AnyExclusion,
+    Exclusion(&'static str),
+}
+
+/// Room gates outside `MANAGEMENT_APPROVAL_ACTIONS`; `None` for every other action.
+fn room_gate_critical(action: &str) -> Option<RoomGateKeeps> {
+    Some(match action {
+        // Arbitrary remote commands may conceal any selected exclusion.
+        "servers.ssh.execute" => RoomGateKeeps::AnyExclusion,
+        "inbox.comment" | "inbox.review" => RoomGateKeeps::Exclusion("sendMessages"),
+        // The pull request's base is not reviewed natively; every merge counts as main.
+        "inbox.pullRequest.merge" => RoomGateKeeps::Exclusion("pushMain"),
+        "inbox.pullRequest.state" | "inbox.jira.read" | "inbox.jira.board" => {
+            RoomGateKeeps::Nothing
+        }
+        _ => return None,
+    })
+}
+
 fn classify(grant: &Grant, request: &Value) -> Option<bool> {
     if grant.permission_level == "ask" {
         return None;
@@ -214,6 +251,16 @@ fn classify(grant: &Grant, request: &Value) -> Option<bool> {
     }
     let operation = &request["input"]["operation"];
     let action = operation["action"].as_str()?;
+    if let Some(critical) = room_gate_critical(action) {
+        let kept = match critical {
+            RoomGateKeeps::AnyExclusion => !grant.critical_exclusions.is_empty(),
+            RoomGateKeeps::Exclusion(key) => {
+                grant.critical_exclusions.iter().any(|item| item == key)
+            }
+            RoomGateKeeps::Nothing => false,
+        };
+        return (grant.permission_level == "everything" && !kept).then_some(true);
+    }
     if grant.permission_level == "projects" {
         let Some(project) = request["projectId"].as_str() else {
             return Some(false);
@@ -622,6 +669,60 @@ mod tests {
             None
         );
     }
+    #[test]
+    fn room_gates_skip_only_for_everything_and_keep_their_exclusions() {
+        let mut grant = Grant {
+            revision: 1,
+            environment_id: "host".into(),
+            permission_level: "everything".into(),
+            project_ids: vec!["p".into()],
+            critical_exclusions: vec![],
+            issuer: "i".into(),
+            principal: "p".into(),
+        };
+        let gate = |grant: &Grant, action: &str| {
+            classify(
+                grant,
+                &json!({"projectId":"p","input":{"operation":{"action":action}}}),
+            )
+        };
+        let gates = [
+            "servers.ssh.execute",
+            "inbox.comment",
+            "inbox.review",
+            "inbox.pullRequest.merge",
+            "inbox.pullRequest.state",
+            "inbox.jira.read",
+            "inbox.jira.board",
+        ];
+        for action in gates {
+            assert_eq!(gate(&grant, action), Some(true), "{action}");
+            assert!(
+                !crate::conversation_tools_bridge::MANAGEMENT_APPROVAL_ACTIONS.contains(&action)
+            );
+        }
+        // Any exclusion keeps the arbitrary-command prompt; a relevant one keeps its own.
+        grant.critical_exclusions = vec!["spend".into()];
+        assert_eq!(gate(&grant, "servers.ssh.execute"), None);
+        assert_eq!(gate(&grant, "inbox.comment"), Some(true));
+        grant.critical_exclusions = vec!["sendMessages".into()];
+        assert_eq!(gate(&grant, "inbox.comment"), None);
+        assert_eq!(gate(&grant, "inbox.review"), None);
+        assert_eq!(gate(&grant, "inbox.pullRequest.merge"), Some(true));
+        assert_eq!(gate(&grant, "inbox.jira.read"), Some(true));
+        grant.critical_exclusions = vec!["pushMain".into()];
+        assert_eq!(gate(&grant, "inbox.pullRequest.merge"), None);
+        assert_eq!(gate(&grant, "inbox.pullRequest.state"), Some(true));
+        // Other levels keep today's prompt: only `Some(true)` skips it.
+        grant.critical_exclusions.clear();
+        for level in ["ask", "watch", "projects"] {
+            grant.permission_level = level.into();
+            for action in gates {
+                assert_ne!(gate(&grant, action), Some(true), "{level} {action}");
+            }
+        }
+    }
+
     #[test]
     fn corrupt_native_grants_fail_closed() {
         let db = Connection::open_in_memory().unwrap();

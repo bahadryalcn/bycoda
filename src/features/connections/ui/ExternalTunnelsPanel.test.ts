@@ -76,6 +76,7 @@ const overview = (machine = local): TunnelOverview => ({
   providers: [
     { provider: "cloudflare", installed: true, credential: "not-required" },
     { provider: "ngrok", installed: true, credential: "missing" },
+    { provider: "tailscale", installed: true, credential: "not-required" },
   ],
   tunnels: [info],
 });
@@ -396,24 +397,12 @@ it("shows missing dependencies and locked credentials and never renders secret d
   expect(container.textContent).toContain("selected computer could not be reached");
 });
 
-it("uses the existing owner-issued pairing ticket with the host tunnel endpoint", async () => {
+it("says a host tunnel is for other computers and never offers phone pairing", async () => {
   current.tunnels[0] = { ...info, target: "host", localUrl: "http://127.0.0.1:3776" };
   await render();
-  await act(async () => button("Connect your phone").click());
-  // The tunnel row already asked to connect a phone, so the dialog goes straight to the QR.
-  expect(remoteRequest).toHaveBeenCalledWith(
-    "local",
-    "mobile.pairing.create",
-    expect.anything(),
-    false,
-    true,
-  );
-  expect(container.querySelector('[role="dialog"]')?.textContent).not.toContain("Local network");
-  expect(container.querySelector('[role="dialog"] svg title')?.textContent).toBe(
-    "Scan this code in bycoda on your phone",
-  );
-  // The encoded ticket binds this URL and environment; no reusable device credential is generated in the renderer.
-  expect(container.textContent).not.toContain("A".repeat(43));
+  expect(container.textContent).toContain("Public internet");
+  expect(container.textContent).toContain("Phones use a tunnel only when you allow it");
+  expect(container.textContent).not.toContain("Connect your phone");
 });
 
 it("groups links under a heading per computer, This computer first", async () => {
@@ -495,3 +484,38 @@ it.each([false, true])(
     if (failed) expect(container.textContent).toContain("could not be reached");
   },
 );
+
+it("offers Tailscale Funnel as a public host-only provider and warns about public reach", async () => {
+  await render();
+  await openShare();
+  expect(container.textContent).toContain("Anyone on the internet can reach the address");
+  await choose("Tunnel provider", "Tailscale Funnel (public)");
+  await act(async () => button("Share").click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.start",
+    { provider: "tailscale", target: "host" },
+    false,
+    true,
+  );
+});
+
+it("shows the approval page action only for a validated Tailscale approval URL", async () => {
+  const funnel = {
+    ...info,
+    provider: "tailscale" as const,
+    target: "host" as const,
+    localUrl: "http://127.0.0.1:3776",
+    state: "error" as const,
+    issue: "approval-required" as const,
+    publicUrl: undefined,
+    canStop: false,
+  };
+  current.tunnels[0] = { ...funnel, approvalUrl: "https://login.tailscale.com/f/funnel?node=n1" };
+  await render();
+  expect(container.textContent).toContain("Funnel is not enabled");
+  expect(container.textContent).toContain("Open approval page");
+  current.tunnels[0] = { ...funnel, approvalUrl: "https://evil.example/f/funnel" };
+  await act(async () => vi.advanceTimersByTimeAsync(3_100));
+  expect(container.textContent).not.toContain("Open approval page");
+});

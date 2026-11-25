@@ -1,18 +1,22 @@
 import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
+import { DEVICE_PROOF_HEADER, DEVICE_PROOF_MAX_BYTES } from "../../src/integrations/device-proof";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { hostname } from "node:os";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   isLanAddress,
+  isTailnetAddress,
   MOBILE_LAN_MAX_BYTES,
   MOBILE_LAN_MAX_WIRE_BYTES,
   MOBILE_LAN_WINDOW_MS,
+  type MobileAccessMode,
 } from "../../src/integrations/mobile-lan";
 import type { MobileAccessStatus } from "../../src/integrations/mobile-access";
 import { createLanIdentity, openLanRequest } from "./mobile-lan-crypto";
 import { ownerRpcDeadlineMs } from "../server/owner-rpc";
 import type { Socket } from "node:net";
+import { MOBILE_INGRESS_HEADER } from "../security/ingress";
 import { createMobileWssGateway } from "../security/mobile-wss";
 import { GATEWAY_ADMISSION, OVER_CAPACITY_HTTP_RESPONSE } from "../security/gateway-admission";
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
@@ -54,9 +58,12 @@ export function reachableAddresses(
   lan.sort((a, b) => Number(b === preferred) - Number(a === preferred));
   return [...new Set([...lan, ...tailnet])];
 }
-function isTailnetAddress(address: string): boolean {
-  const [a, b] = address.split(".").map(Number);
-  return a === 100 && b >= 64 && b <= 127;
+/** This machine's Tailscale IPv4 addresses: the only ones the tailnet listener binds. */
+export function tailnetMobileAddresses(
+  interfaces = currentNetworkInterfaces(),
+  preferred = knownDefaultRouteAddress(),
+): string[] {
+  return reachableAddresses(interfaces, preferred).filter(isTailnetAddress);
 }
 function interfaceForAddress(address: string): string | undefined {
   return Object.entries(currentNetworkInterfaces()).find(([, entries]) =>
@@ -65,9 +72,12 @@ function interfaceForAddress(address: string): string | undefined {
     ),
   )?.[0];
 }
-function addressForInterface(name: string): string | undefined {
+function addressForInterface(
+  name: string,
+  accepts: (address: string) => boolean,
+): string | undefined {
   return (currentNetworkInterfaces()[name] ?? []).find(
-    (entry) => !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
+    (entry) => !entry.internal && entry.family === "IPv4" && accepts(entry.address),
   )?.address;
 }
 
@@ -128,6 +138,8 @@ export function createLanGateway(
   identity: ReturnType<typeof createLanIdentity>,
   environmentId: string,
   getPort: () => number,
+  /** Per-boot secret that marks forwarded requests as the phone listener's. */
+  ingressSecret?: string,
 ) {
   const seen = new Map<string, number>();
   const epoch = randomBytes(32).toString("hex");
@@ -203,7 +215,13 @@ export function createLanGateway(
           Buffer.byteLength(input.body) > MOBILE_LAN_MAX_BYTES ||
           (input.path === "/rpc" &&
             (typeof input.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(input.token))) ||
-          (input.path === "/mobile/pairing/redeem" && input.token !== undefined)
+          (input.path === "/mobile/pairing/redeem" && input.token !== undefined) ||
+          // Device proof of possession: a compact JWS that only /rpc requests carry.
+          (input.proof !== undefined &&
+            (input.path !== "/rpc" ||
+              typeof input.proof !== "string" ||
+              input.proof.length > DEVICE_PROOF_MAX_BYTES ||
+              !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(input.proof)))
         )
           throw new Error("Invalid request");
         // Remember before dispatch; a captured write can never execute twice.
@@ -220,6 +238,10 @@ export function createLanGateway(
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(input.body),
                 ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+                // The gateway only relays the client's proof; the Host verifies it.
+                ...(input.proof ? { [DEVICE_PROOF_HEADER]: input.proof } : {}),
+                // Marks this as the phone listener, so the Host never takes it for this computer.
+                ...(ingressSecret ? { [MOBILE_INGRESS_HEADER]: ingressSecret } : {}),
               },
             },
             (reply) => {
@@ -360,7 +382,17 @@ export class MobileLanAccess {
     private readonly addresses = localMobileAddresses,
     private readonly makeGateway = createLanGateway,
     private readonly tlsOptions?: MobileLanTlsOptions,
-  ) {}
+    /** `tailscale`: the same encrypted phone listener, bound to this machine's tailnet
+     * address instead of a home-network one. */
+    private readonly mode: MobileAccessMode = "lan",
+  ) {
+    this.accepts = mode === "tailscale" ? isTailnetAddress : isLanAddress;
+    // Both listeners share the stable-port hash but bind different addresses; offset the
+    // slots anyway so a saved port never points at the other listener's choice.
+    this.slotOffset = mode === "tailscale" ? 2 : 0;
+  }
+  private readonly accepts: (address: string) => boolean;
+  private readonly slotOffset: number;
 
   private load(): Promise<void> {
     if (this.loading) return this.loading;
@@ -376,7 +408,7 @@ export class MobileLanAccess {
       if (
         typeof saved.enabled !== "boolean" ||
         typeof saved.key !== "string" ||
-        (saved.address !== undefined && !isLanAddress(saved.address)) ||
+        (saved.address !== undefined && !this.accepts(saved.address)) ||
         (saved.interfaceName !== undefined &&
           (typeof saved.interfaceName !== "string" ||
             !saved.interfaceName ||
@@ -431,7 +463,7 @@ export class MobileLanAccess {
         ? this.tlsBootstrap
         : undefined;
     return {
-      mode: "lan",
+      mode: this.mode,
       state: ready
         ? "ready"
         : this.notice
@@ -472,7 +504,7 @@ export class MobileLanAccess {
         const selected = this.saved?.address;
         if (!selected) return;
         const current = this.saved?.interfaceName
-          ? addressForInterface(this.saved.interfaceName)
+          ? addressForInterface(this.saved.interfaceName, this.accepts)
           : selected;
         const available = !!current && this.addresses().includes(current);
         const active = this.gateway?.address();
@@ -511,7 +543,7 @@ export class MobileLanAccess {
       if (this.addresses === localMobileAddresses) await defaultRouteAddress();
       const addresses = this.orderedAddresses();
       const selected = address === undefined ? addresses[0] : address;
-      if (typeof selected !== "string" || !isLanAddress(selected) || !addresses.includes(selected))
+      if (typeof selected !== "string" || !this.accepts(selected) || !addresses.includes(selected))
         return this.status();
       if (
         this.gateway?.address() &&
@@ -528,10 +560,15 @@ export class MobileLanAccess {
           material = await this.tlsOptions.tlsAuthority.issue([selected]);
         }
       } catch {
-        return { mode: "lan", state: "unavailable", addresses };
+        return { mode: this.mode, state: "unavailable", addresses };
       }
       await this.closeGateway();
-      const gateway = this.makeGateway(this.identity, this.environmentId, this.getPort);
+      const gateway = this.makeGateway(
+        this.identity,
+        this.environmentId,
+        this.getPort,
+        this.tlsOptions?.ingressSecret,
+      );
       let wss: ReturnType<typeof createMobileWssGateway> | undefined;
       try {
         let portChanged = false;
@@ -560,7 +597,7 @@ export class MobileLanAccess {
           });
         // A paired device holds this endpoint. Never silently replace a saved
         // port when another process owns it; surface unavailable instead.
-        await listenSaved(listenGateway, this.saved?.port, 0);
+        await listenSaved(listenGateway, this.saved?.port, this.slotOffset);
         if (this.disposed) throw new Error("Host is closing");
         const active = gateway.address();
         if (!active || typeof active === "string") throw new Error("LAN access unavailable");
@@ -581,7 +618,7 @@ export class MobileLanAccess {
                 resolve();
               });
             });
-          await listenSaved(listen, this.saved?.tlsPort, 1);
+          await listenSaved(listen, this.saved?.tlsPort, this.slotOffset + 1);
           const address = wss.address();
           if (!address || typeof address === "string")
             throw new Error("Mobile TLS access unavailable");
@@ -627,7 +664,7 @@ export class MobileLanAccess {
               ? "The mobile port is blocked by Windows or system policy. Choose another port or check network permissions."
               : (error as NodeJS.ErrnoException).code === "EADDRNOTAVAIL"
                 ? "The selected mobile address is no longer available. Choose an active network and retry."
-                : "Mobile LAN access could not start. Check the selected network and retry.";
+                : "Mobile access could not start. Check the selected network and retry.";
         if (this.gateway === gateway || (wss && this.wssGateway === wss)) {
           await this.closeGateway();
         } else {
@@ -637,7 +674,7 @@ export class MobileLanAccess {
           wss?.close();
         }
         return {
-          mode: "lan",
+          mode: this.mode,
           state: "unavailable",
           addresses,
           reason: this.notice,

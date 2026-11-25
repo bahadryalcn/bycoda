@@ -8,7 +8,10 @@ import {
   type MobilePairingStatus,
   type MobilePairingRedemption as MobilePairingCredential,
 } from "../../src/integrations/mobile-pairing";
+import { deviceProofThumbprint, parseDeviceProofJwk } from "../../src/integrations/device-proof";
+import type { DeviceProofBinding } from "../security/device-proof";
 import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
+import { isTunnelIngress } from "../security/ingress";
 import { hostProof, matchesHostProof } from "./host-proof";
 
 export type {
@@ -34,9 +37,12 @@ export type MobilePairingStore = {
   canIssuePairing: (hash: string) => boolean | Promise<boolean>;
   deviceProofKeys?: () => Promise<string[]>;
   proofOrigins?: () => Promise<string[]>;
+  /** The owner allowed phones over public tunnels; read at redemption time. */
+  phonesOverPublic?: () => boolean;
   issueDevice: (
     name: string,
-    kind?: "phone" | "desktop",
+    kind: "phone" | "desktop" | undefined,
+    proofKey: DeviceProofBinding,
   ) => { id: string; token: string } | Promise<{ id: string; token: string }>;
   transaction?<T>(action: () => T | Promise<T>): T | Promise<T>;
 };
@@ -50,6 +56,8 @@ type Pairing = {
   suggestedName: string;
   kind: "phone" | "desktop";
   claimHash?: string;
+  /** Thumbprint of the key the issued credential is bound to; a retry must present the same one. */
+  proofJkt?: string;
   deviceName?: string;
   credential?: MobilePairingCredential;
   expiryTimer: ReturnType<typeof setTimeout>;
@@ -182,13 +190,17 @@ export class MobilePairing {
     return await this.enqueueClaim(input);
   }
 
-  private enqueueClaim(input: Record<string, unknown>): Promise<MobilePairingCredential> {
+  /** `viaTunnel`: the redemption arrived through the public tunnel ingress listener. */
+  private enqueueClaim(
+    input: Record<string, unknown>,
+    viaTunnel = false,
+  ): Promise<MobilePairingCredential> {
     const captured = structuredClone(input);
     const result = this.redemptionTail.then(async () => {
       if (this.closed) throw new MobilePairingError(INVALID_TICKET);
       return this.store.transaction
-        ? await this.store.transaction(async () => await this.claim(captured))
-        : await this.claim(captured);
+        ? await this.store.transaction(async () => await this.claim(captured, viaTunnel))
+        : await this.claim(captured, viaTunnel);
     });
     this.redemptionTail = result.then(
       () => {},
@@ -197,7 +209,10 @@ export class MobilePairing {
     return result;
   }
 
-  private async claim(input: Record<string, unknown>): Promise<MobilePairingCredential> {
+  private async claim(
+    input: Record<string, unknown>,
+    viaTunnel: boolean,
+  ): Promise<MobilePairingCredential> {
     await this.prune();
     if (
       input.version !== MOBILE_PAIRING_VERSION ||
@@ -222,10 +237,22 @@ export class MobilePairing {
       if (entry) this.remove(entry.id);
       throw new MobilePairingError(INVALID_TICKET);
     }
+    // Phones pair over a public tunnel only when the owner allowed it. The code stays valid,
+    // so the same phone can still pair over the local network or Tailscale before it expires.
+    if (viaTunnel && entry.kind === "phone" && !this.store.phonesOverPublic?.())
+      throw new MobilePairingError(
+        "Phones pair only over the local network or Tailscale unless public access is allowed.",
+        403,
+      );
     const name = deviceName(input.deviceName, entry.suggestedName);
     const claimHash = hash(input.claimId);
+    // Every credential is bound to a client key at issuance; a stolen token alone is useless.
+    const jwk = parseDeviceProofJwk(input.proofKey);
+    if (!jwk) throw new MobilePairingError("A device proof key is required to pair.");
+    const proofKey: DeviceProofBinding = { jkt: deviceProofThumbprint(jwk), x: jwk.x };
     if (entry.state === "paired") {
       if (
+        entry.proofJkt !== proofKey.jkt ||
         entry.claimHash !== claimHash ||
         entry.deviceName !== name ||
         !entry.credential ||
@@ -241,7 +268,7 @@ export class MobilePairing {
     // keeps issuer validation and device creation in one durable operation.
     let issued: { id: string; token: string };
     try {
-      issued = await this.store.issueDevice(name, entry.kind);
+      issued = await this.store.issueDevice(name, entry.kind, proofKey);
       if (
         this.closed ||
         this.pairings.get(entry.id) !== entry ||
@@ -261,6 +288,7 @@ export class MobilePairing {
     };
     entry.state = "paired";
     entry.claimHash = claimHash;
+    entry.proofJkt = proofKey.jkt;
     entry.deviceName = name;
     entry.credential = credential;
     this.retainForRetry(entry);
@@ -343,7 +371,9 @@ export class MobilePairing {
       this.httpRedeemRate(request.socket.remoteAddress ?? "unknown");
       response.end(
         JSON.stringify({
-          result: proving ? await this.prove(input) : await this.enqueueClaim(input),
+          result: proving
+            ? await this.prove(input)
+            : await this.enqueueClaim(input, isTunnelIngress(request)),
         }),
       );
     } catch (error) {

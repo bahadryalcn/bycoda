@@ -42,6 +42,8 @@ pub(super) fn start_ssh_job(
         let prepared = (|| -> Result<(StoredMachine, Tunnel), String> {
             let askpass = job.askpass()?;
             let mut target = target;
+            // Signs the first requests of a credential that is issued here and not saved yet.
+            let mut signing = None;
             let mut machine = if let Some(mut existing) = existing {
                 if upgrade {
                     let (platform, dial) = remote_ssh::detect_platform(&target, &job, &askpass)?;
@@ -91,10 +93,15 @@ pub(super) fn start_ssh_job(
                     .filter(|p| *p > 0)
                     .ok_or("Host did not report a valid port")?;
                 job.message("Pairing this desktop with the host…");
+                let seed = device_proof::generate_seed()?;
                 let pair = remote_ssh::run_script(
                     &dial,
                     platform,
-                    remote_ssh::pairing_script(platform, &remote_ssh::device_name()),
+                    remote_ssh::pairing_script(
+                        platform,
+                        &remote_ssh::device_name(),
+                        &device_proof::public_x(&seed)?,
+                    ),
                     &job,
                     &askpass,
                 )?;
@@ -117,6 +124,8 @@ pub(super) fn start_ssh_job(
                     .ok_or("Host identity is missing")?
                     .to_string();
                 check_expected_host(expected_environment_id.as_deref(), &environment_id)?;
+                let key = PairingKey::new(seed, &environment_id);
+                signing = Some(key.sign_for(&token));
                 StoredMachine {
                     id: uuid::Uuid::new_v4().to_string(),
                     name,
@@ -125,6 +134,7 @@ pub(super) fn start_ssh_job(
                     token,
                     ssh: Some(target.clone()),
                     local_host: false,
+                    proof_seed: Some(key.encoded_seed()),
                 }
             };
             job.message("Opening the secure connection…");
@@ -201,6 +211,7 @@ pub(super) fn start_ssh_job(
                     .take(100)
                     .collect();
             }
+            drop(signing);
             Ok((machine, tunnel))
         })();
         job.complete(|| {

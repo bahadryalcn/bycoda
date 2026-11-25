@@ -1,3 +1,7 @@
+import {
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+} from "../../../shared/lib/browserViewport";
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 type Stream = {
@@ -28,10 +32,10 @@ export function parseBrowserFrame(raw: ArrayBuffer) {
     typeof identity.navigationId !== "string" ||
     !Number.isInteger(identity.width) ||
     identity.width < 1 ||
-    identity.width > 2560 ||
+    identity.width > BROWSER_VIEWPORT_MAX_WIDTH ||
     !Number.isInteger(identity.height) ||
     identity.height < 1 ||
-    identity.height > 2160
+    identity.height > BROWSER_VIEWPORT_MAX_HEIGHT
   )
     throw new Error("Invalid browser frame identity");
   return { sequence, identity, jpeg: new Blob([bytes.subarray(end)], { type: "image/jpeg" }) };

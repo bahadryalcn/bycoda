@@ -89,7 +89,11 @@ export type HostDescriptor = {
   /** The Host's home-network and Tailscale IPv4 addresses; desktops learn them as SSH routes. */
   addresses?: string[];
   /** The phone routes the Host serves now; paired phones add them as routes. */
-  mobileRoutes?: { endpoint: string; lanKey?: string }[];
+  mobileRoutes?: { endpoint: string; lanKey?: string; public?: true }[];
+  /** The Host's public tunnel origin for other computers. Phones get public routes only in `mobileRoutes`, when allowed. */
+  tunnelRoute?: string;
+  /** The caller's own credential, never another device's; absent on Hosts without device proofs. */
+  credential?: { kind?: "phone" | "desktop"; localDesktop: boolean; proofBound: boolean };
 };
 /** A missing capability requires an update; callers must never fall back to the project checkout. */
 export function requireWorkspaceCapability(

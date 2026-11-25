@@ -259,6 +259,14 @@ closes after its active turn ends. Verify the macOS bundle signature/version,
 Windows installer checksum, and installed binary against the built artifact.
 Keep rollback files. This local pipeline does not notarize macOS bundles.
 
+On macOS, inspect the installed bundle with
+`codesign -dv --verbose=4 /Applications/bycoda.app`. If it reports
+`Signature=adhoc`, a previous permission grant may still appear enabled in
+System Settings while referring to a different signature. Check the affected
+permission in the relaunched app and follow the
+[macOS permission recovery steps](guides/diagnostics.md#macos-permissions)
+if access is missing.
+
 Windows app updates snapshot the complete installation directory under the package's
 `rollback-app/installation/`, with file hashes in `windows-installation-hashes.json`.
 If setup or executable verification fails, the helper stops the replacement,

@@ -21,9 +21,13 @@ describe("mobile pairing QR contract", () => {
   it("accepts private IPv4 only when its LAN key is pinned", () => {
     const lan = { ...code, endpoint: "http://192.168.1.20:3777", lanKey: "ab".repeat(32) };
     expect(parseMobilePairingCode(JSON.stringify(lan), now)).toEqual(lan);
+    // This computer's tailnet address is private to the tailnet, so a keyed route may use it.
+    const tailnet = { ...code, endpoint: "http://100.101.102.103:3777", lanKey: "ab".repeat(32) };
+    expect(parseMobilePairingCode(JSON.stringify(tailnet), now)).toEqual(tailnet);
     for (const endpoint of [
       "http://8.8.8.8",
-      "http://100.64.1.2",
+      "http://100.63.255.255",
+      "http://100.128.0.1",
       "http://127.0.0.1",
       "http://private.local",
       "https://pc.example",

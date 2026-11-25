@@ -19,9 +19,9 @@ export function voiceStatusText(state: {
     if (phase === "transcribing") return t("Transcribing locally…");
     if (phase === "replying") {
       if (waitingOwner)
-        return t(
-          waitingOwner === "question" ? "Waiting for your answer" : "Waiting for your approval",
-        );
+        return waitingOwner === "question"
+          ? t("Waiting for your answer")
+          : t("Waiting for your approval");
       if (tool)
         return tool.target
           ? t("Working: {p0} · {p1}", { p0: tool.name, p1: tool.target })

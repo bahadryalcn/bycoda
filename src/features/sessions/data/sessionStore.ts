@@ -1282,6 +1282,8 @@ export async function searchSessionContent(options: {
 export type SessionHydrationOptions = {
   /** Read the recent window and wait for explicit requests for older pages. */
   deferHistory?: boolean;
+  /** A detached native preview. Its blocks can be reused after a fresh native stamp check. */
+  cachedPreview?: Session;
   /** Applied only if the consumer still owns the original, idle snapshot. */
   onHydrated?: (original: Session, hydrated: Session) => void;
   onHydrationFailed?: (original: Session) => void;
@@ -1296,6 +1298,67 @@ type StoredTranscriptPage = {
 const STORED_HISTORY_INITIAL_BLOCKS = 48;
 const STORED_HISTORY_INITIAL_TURNS = 10;
 const STORED_HISTORY_PAGE_BLOCKS = 80;
+
+// A new block array (edits, live output, older pages) cannot inherit the original page's stamp.
+const previewStamps = new WeakMap<
+  Block[],
+  {
+    id: string;
+    createdAt: number;
+    totalBlocks: number;
+    before: number;
+    revision: number;
+    blockLeadId?: string;
+  }
+>();
+
+export function canRetainStoredPreview(session: Session): boolean {
+  return (
+    !!session.historyLoading &&
+    !!session.storedHistory &&
+    previewStamps.has(session.blocks) &&
+    !session.historyPartial &&
+    !session.inboxAsk &&
+    !session.remoteExecutionEnvironmentId &&
+    !isRemoteProjectPath(session.cwd) &&
+    !hostSessionBinding(session)
+  );
+}
+
+async function readOpeningPage(sessionId: string, limit: number, preview?: Session) {
+  const stamp = preview && previewStamps.get(preview.blocks);
+  if (preview && stamp?.id === sessionId) {
+    // before:0 returns current metadata and revision under the usual deletion/rewind guards.
+    const head = await invoke<StoredTranscriptPage | null>("session_get_page", {
+      sessionId,
+      before: 0,
+      limit: 1,
+    });
+    if (!head) return { page: null };
+    if (
+      head.revision === stamp.revision &&
+      head.session.transcriptRevision === stamp.revision &&
+      head.totalBlocks === stamp.totalBlocks &&
+      head.session.createdAt === stamp.createdAt &&
+      !head.session.adoptedBase
+    ) {
+      return {
+        page: {
+          ...head,
+          before: stamp.before,
+          session: {
+            ...head.session,
+            orchestrationLeadId: head.session.orchestrationLeadId ?? stamp.blockLeadId,
+          },
+        },
+        blocks: preview.blocks,
+      };
+    }
+  }
+  return {
+    page: await invoke<StoredTranscriptPage | null>("session_get_page", { sessionId, limit }),
+  };
+}
 
 export async function getEarlierStoredHistory(session: Session, forFind = false) {
   const cursor = session.storedHistory;
@@ -1390,15 +1453,17 @@ async function loadStoredSession(
     }
   }
   let page: StoredTranscriptPage | null;
+  let cachedBlocks: Block[] | undefined;
   let queueRead: Promise<unknown> | undefined;
   try {
-    const pageRead = invoke<StoredTranscriptPage | null>("session_get_page", {
+    const pageRead = readOpeningPage(
       sessionId,
-      limit: options.deferHistory ? STORED_HISTORY_INITIAL_BLOCKS : 80,
-    });
+      options.deferHistory ? STORED_HISTORY_INITIAL_BLOCKS : 80,
+      options.deferHistory ? options.cachedPreview : undefined,
+    );
     // Opening a recent tail also restores its queue. Check attachment paths only after the page exists.
     if (options.deferHistory) queueRead = readStoredQueue(sessionId).catch(() => []);
-    page = await pageRead;
+    ({ page, blocks: cachedBlocks } = await pageRead);
   } catch (error) {
     finish();
     throw error;
@@ -1408,8 +1473,9 @@ async function loadStoredSession(
     return null;
   }
   const record = page.session;
-  const session = recordToSession(record);
+  const session = recordToSession(record, cachedBlocks);
   if (options.deferHistory) {
+    const loadedBlocks = session.blocks;
     let turns = 0;
     for (let index = session.blocks.length - 1; index > 0; index--) {
       if (session.blocks[index].role !== "user" || ++turns !== STORED_HISTORY_INITIAL_TURNS)
@@ -1418,8 +1484,20 @@ async function loadStoredSession(
       page.before = (page.before ?? 0) + index;
       break;
     }
-    if (page.before != null)
+    if (page.before != null) {
       session.storedHistory = { before: page.before, revision: page.revision };
+      if (!cachedBlocks && record.transcriptRevision === page.revision && !record.adoptedBase)
+        previewStamps.set(session.blocks, {
+          id: sessionId,
+          createdAt: record.createdAt,
+          totalBlocks: page.totalBlocks,
+          before: page.before,
+          revision: page.revision,
+          blockLeadId: loadedBlocks.find(
+            (block) => block.orchestrationLeadId && block.orchestrationLeadId !== sessionId,
+          )?.orchestrationLeadId,
+        });
+    }
   }
   session.historyLoading = page.before != null;
   finish({ blocks: session.blocks.length, revision: page.revision });
@@ -2683,12 +2761,14 @@ function normalizeSummary(summary: SessionSummary): SessionSummary {
   };
 }
 
-function recordToSession(record: SessionRecord): Session {
-  const blocks = Array.isArray(record.blocks)
-    ? record.blocks
-        .map((block) => sanitizeBlock(block, { hydrate: true }))
-        .filter((block): block is Block => block != null)
-    : [];
+function recordToSession(record: SessionRecord, validatedBlocks?: Block[]): Session {
+  const blocks =
+    validatedBlocks ??
+    (Array.isArray(record.blocks)
+      ? record.blocks
+          .map((block) => sanitizeBlock(block, { hydrate: true }))
+          .filter((block): block is Block => block != null)
+      : []);
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(record.rewindHistory);
   const adoptedDivergence = parseAdoptedDivergence(record.adoptedDivergence);

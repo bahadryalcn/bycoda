@@ -3110,14 +3110,23 @@ for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
     test(`long plain paste becomes a downloadable sent text card at ${width}px in ${theme}`, async ({
       page,
+      context,
+      browserName,
     }) => {
       await initializeChatLayout(page);
       const source =
-        "First line: Izmir \u0130zmir\r\n" + "A detailed line of clipboard text.\r\n".repeat(8500);
+        "First line: Izmir \u0130zmir\n" + "A detailed line of clipboard text.\n".repeat(3400);
+      const realClipboard = browserName === "chromium";
+      if (realClipboard) await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      const bytes = Buffer.from(
+        realClipboard && process.platform === "win32" ? source.replaceAll("\n", "\r\n") : source,
+      );
       const saved: Buffer[] = [];
       const copies: { name: string; data: Buffer }[] = [];
-      await page.exposeFunction("writePastedFixture", (encoded: string) => {
+      const write = Promise.withResolvers<void>();
+      await page.exposeFunction("writePastedFixture", async (encoded: string) => {
         saved.push(Buffer.from(encoded, "base64"));
+        await write.promise;
       });
       await page.exposeFunction(
         "savePastedFixture",
@@ -3155,32 +3164,42 @@ for (const theme of ["light", "dark"] as const) {
       }, theme);
       const field = page.getByRole("textbox", { name: "Message", exact: true });
       await field.fill("");
-      await pastePlainText(field, source);
+      await pastePlainText(field, source, realClipboard);
       const draftCard = page.locator('[data-attachment-name="Pasted text.txt"]');
+      try {
+        await expect.poll(() => saved.length).toBe(1);
+        await expect(field).toHaveValue("");
+        await expect(draftCard).toHaveCount(0);
+      } finally {
+        write.resolve();
+      }
       await expect(draftCard).toBeVisible({ timeout: 3500 });
-      await expect(draftCard).toContainText("299 KB");
+      await expect(draftCard).toContainText(/\d+ KB/);
       await expect(draftCard.getByRole("button", { name: "Remove Pasted text" })).toBeVisible();
-      expect(saved).toEqual([Buffer.from(source)]);
+      expect(saved[0].equals(bytes)).toBe(true);
       expect(
         await field.evaluate(
           (element) => (element as HTMLTextAreaElement).value ?? element.textContent,
         ),
       ).toBe("");
-      await page.screenshot({ path: `temp/verification/pasted-text/draft-${theme}-${width}.png` });
+      await page.screenshot({
+        path: `temp/verification/pasted-text-direct/draft-${theme}-${width}.png`,
+      });
       await page.getByRole("button", { name: "Send", exact: true }).click();
       const sent = page.locator("[data-prompt-anchor=pasted-fixture]");
       await expect(sent.getByText("Pasted text", { exact: true })).toBeVisible();
       await expect(sent).not.toContainText("First line");
       const download = sent.getByRole("button", { name: "Save Pasted text" });
       await expect(download).toBeVisible();
-      await page.screenshot({ path: `temp/verification/pasted-text/sent-${theme}-${width}.png` });
+      await page.screenshot({
+        path: `temp/verification/pasted-text-direct/sent-${theme}-${width}.png`,
+      });
       await sent.getByRole("button", { name: "Open Pasted text" }).click();
       await expect(page.getByRole("dialog").getByText(/^First line:/)).toBeVisible();
       await page.keyboard.press("Escape");
       await download.click();
-      await expect
-        .poll(() => copies)
-        .toEqual([{ name: "Pasted text.txt", data: Buffer.from(source) }]);
+      await expect.poll(() => copies.map(({ name }) => name)).toEqual(["Pasted text.txt"]);
+      expect(copies[0].data.equals(bytes)).toBe(true);
       await page.goto(
         "/tests/browser/chat/composer-extras.html?chat-layout&pasted-text&queue-state=one",
       );
@@ -3201,9 +3220,12 @@ for (const theme of ["light", "dark"] as const) {
       const queue = page.getByRole("dialog", { name: "Edit queued message" });
       const queuedField = queue.getByRole("textbox", { name: "Queued message text" });
       await queuedField.fill("");
-      await pastePlainText(queuedField, source);
+      await pastePlainText(queuedField, source, realClipboard);
       await expect(queue.getByText("Pasted text", { exact: true })).toBeVisible();
-      await page.screenshot({ path: `temp/verification/pasted-text/queue-${theme}-${width}.png` });
+      await expect(queuedField).toHaveValue("");
+      await page.screenshot({
+        path: `temp/verification/pasted-text-direct/queue-${theme}-${width}.png`,
+      });
     });
   }
 }
@@ -3272,7 +3294,12 @@ for (const theme of ["dark", "light"] as const) {
   });
 }
 
-async function pastePlainText(field: Locator, text: string) {
+async function pastePlainText(field: Locator, text: string, realClipboard = false) {
+  if (realClipboard) {
+    await field.evaluate((_, value) => navigator.clipboard.writeText(value), text);
+    await field.press("ControlOrMeta+v");
+    return;
+  }
   await field.evaluate((element, value) => {
     const clipboardData = new DataTransfer();
     clipboardData.setData("text/plain", value);
@@ -3282,7 +3309,7 @@ async function pastePlainText(field: Locator, text: string) {
   }, text);
 }
 
-test("a long plain paste stays in the draft when saving fails", async ({ page }) => {
+test("a long plain paste keeps the existing draft when saving fails", async ({ page }) => {
   await initializeChatLayout(page);
   await page.goto("/tests/browser/chat/composer-extras.html?chat-layout");
   await page.evaluate(() => {
@@ -3296,14 +3323,14 @@ test("a long plain paste stays in the draft when saving fails", async ({ page })
     };
   });
   const field = page.getByRole("textbox", { name: "Message", exact: true });
-  const text = "Keep this paste ".repeat(510);
-  await field.fill("");
+  const text = "Clipboard text ".repeat(600);
+  await field.fill("Existing draft");
   await pastePlainText(field, text);
   await expect(page.getByText(/Fixture cannot save the paste/)).toBeVisible();
   expect(
     await field.evaluate(
       (element) => (element as HTMLTextAreaElement).value ?? element.textContent,
     ),
-  ).toBe(text);
+  ).toBe("Existing draft");
   await expect(page.locator("[data-pasted-text-attachment]")).toHaveCount(0);
 });

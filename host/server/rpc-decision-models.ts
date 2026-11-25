@@ -13,14 +13,9 @@ import {
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 
-const LOCAL_ADDRESSES = ["127.0.0.1", "::1", "::ffff:127.0.0.1"];
-
-/** Keys stay on this computer: no browser origin and no remote address may send them. */
+/** Keys stay on this computer: only its own desktop credential, sent directly, may send them. */
 function assertLocalKeyCaller(request: OwnerRpcRequest): void {
-  if (
-    request.request.headers.origin ||
-    !LOCAL_ADDRESSES.includes(request.request.socket.remoteAddress ?? "")
-  )
+  if (!request.thisComputer)
     throw new Error("Decision model keys are available only on this computer.");
 }
 

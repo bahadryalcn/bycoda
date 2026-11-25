@@ -23,7 +23,7 @@ import {
   mergeAttachments,
   pickAttachments,
   retainAttachmentPickerSelection,
-  replacePastedText,
+  insertPastedTextReference,
   revokeAttachment,
 } from "../../sessions/public/attachments";
 import {
@@ -154,7 +154,6 @@ export function useQuickAttachments(
       /** Wait behind a pending read instead of dropping this one; for pastes that already hold their files. */
       queued = false,
       restorePaste?: (additions: Attachment[], attachments: Attachment[]) => boolean,
-      pasteStillPresent?: () => boolean,
     ): Promise<void> => {
       const queue = queueRef.current;
       if (
@@ -234,10 +233,6 @@ export function useQuickAttachments(
           return;
         }
         accepted.apply(() => {
-          if (pasteStillPresent && !pasteStillPresent()) {
-            stored.forEach(revokeAttachment);
-            return;
-          }
           const before = currentFiles();
           const additions = stored.filter(
             (file) =>
@@ -458,17 +453,16 @@ export function useQuickAttachments(
         : undefined;
     if (paste) {
       event.preventDefault();
-      paste.insert();
       const field = paste.field;
       void collect(
         (accepted) => readFiles([paste.file], accepted),
         false,
         true,
         (additions, attachments) => {
-          const range = paste.range(field.value);
-          if (!range) return true;
           const index = attachments.indexOf(additions[0]);
-          const edit = replacePastedText(
+          if (!field.isConnected || index < 0) return true;
+          const range = paste.range(field.value);
+          const edit = insertPastedTextReference(
             field.value,
             range,
             attachmentDraftTokens(attachments)[index],
@@ -479,7 +473,6 @@ export function useQuickAttachments(
           );
           return true;
         },
-        () => field.isConnected && !!paste.range(field.value),
       );
       return;
     }

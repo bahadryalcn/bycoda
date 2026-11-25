@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { DEVICE_PROOF_REFUSAL_HEADERS, type DeviceProofGate } from "../security/device-proof";
 import type { IncomingMessage, Server } from "node:http";
 import { connect, isIP, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
@@ -312,12 +313,19 @@ const ERROR_STATUS: Record<TunnelErrorCode, [number, string]> = {
   connect: [502, "Bad Gateway"],
 };
 
-function rejectTunnel(socket: Duplex, code: TunnelErrorCode) {
+function rejectTunnel(
+  socket: Duplex,
+  code: TunnelErrorCode,
+  headers: Readonly<Record<string, string>> = {},
+) {
   if (socket.destroyed) return;
   const [status, phrase] = ERROR_STATUS[code];
+  const extra = Object.entries(headers)
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join("");
   socket.on("error", () => socket.destroy());
   socket.end(
-    `HTTP/1.1 ${status} ${phrase}\r\n${TUNNEL_ERROR_HEADER}: ${code}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
+    `HTTP/1.1 ${status} ${phrase}\r\n${TUNNEL_ERROR_HEADER}: ${code}\r\n${extra}Connection: close\r\nContent-Length: 0\r\n\r\n`,
     () => socket.destroy(),
   );
 }
@@ -325,11 +333,12 @@ function rejectTunnel(socket: Duplex, code: TunnelErrorCode) {
 export type DevServerTunnelOptions = {
   server: Server;
   mobileIngressSecret?: string;
-  allowedHosts?: readonly string[] | (() => readonly string[]);
   /** Resolves the verified principal for a bearer token, or null when it is not paired. */
   authenticate: (
     token: string,
   ) => Promise<{ id: string; authorized: () => Promise<boolean> } | null>;
+  /** Device proof-of-possession for the upgrade request; checked once, after the credential. */
+  proof?: DeviceProofGate;
   /** `DevServerAccess.endpoint`: project ownership, live process identity, HTTP-only, never the Host port. */
   endpoint: (params: Record<string, unknown>) => Promise<{ connectAddress: string; port: number }>;
   limits?: Partial<{
@@ -529,7 +538,7 @@ export function attachDevServerTunnel(options: DevServerTunnelOptions) {
       !target ||
       request.method !== "GET" ||
       request.headers.origin !== undefined ||
-      !hostHeaderAllowed(request, options.server, options.allowedHosts) ||
+      !hostHeaderAllowed(request, options.server) ||
       request.headers.upgrade?.toLowerCase() !== "websocket" ||
       request.headers["sec-websocket-version"] !== "13" ||
       typeof key !== "string" ||
@@ -573,6 +582,11 @@ export function attachDevServerTunnel(options: DevServerTunnelOptions) {
         if (closing || socket.destroyed) return;
         if (!principal || !(await principal.authorized())) {
           rejectTunnel(socket, "unauthorized");
+          return;
+        }
+        const proof = await options.proof?.(request, token);
+        if (proof && !proof.ok) {
+          rejectTunnel(socket, "unauthorized", DEVICE_PROOF_REFUSAL_HEADERS);
           return;
         }
         if (

@@ -66,3 +66,42 @@ their exact-intent admission is unchanged. A short answer to a pending question,
 in a reconnect, continues the carried work request. This supersedes the earlier routing rule
 that opened a session only on an explicit request for one; native approvals for push, merge,
 deletion and commands keep their gates.
+
+2026-11-25, owner chat about approvals in Full access (translated from Turkish):
+
+> there should be no approval or anything like it in full access
+
+When the native standing consent is level "everything" with no critical exclusions
+(`assistant_consent_get`, read fresh; any missing, other-credential, loading or failed read counts
+as not Full access), voice asks for nothing it controls: a job, note or session delete that the
+owner's accepted words identify exactly runs without a confirm card or dialog. Any other level,
+or any exclusion, keeps today's cards and dialogs. Disambiguation (several jobs could be meant)
+and the explicit-speech requirement of stop-all are not approvals and stay. This supersedes, for
+the Full access state only, the earlier same-day line that deletion keeps its gates.
+
+2026-11-25, same owner chat, after being shown the four groups that still prompted under Full
+access and told that a push to main and a sent message cannot be undone (Turkish, then translated):
+
+> full access te onay filan olmaması gerekiyor
+>
+> benim kararlarım da hiç birinde sormasın.
+
+> there should be no approval or anything like it in full access
+>
+> my decision: it must not ask in any of them.
+
+Full access is one of two owner-set states. For the Room and voice: an active native standing
+consent on the current credential at level "everything". For a coding session: its Host runtime
+mode "full-access". Under it Git push and merge, direct social sends, saved SSH commands, Room
+Inbox comments, reviews and pull request changes, and Room Jira reads and board changes run
+without a dialog; so do a full-access coding session's Inbox writes and its task delete, transfer
+and note resolve (native asks the Host with `<action>.permission`). The owner's ticked exclusions
+keep their own dialog (pushMain for a push or merge to main
+and every Inbox pull request merge, sendMessages for social sends and Inbox comments and reviews);
+SSH commands, like `commands.run`, skip only with zero exclusions. Any other level, a missing or
+unreadable grant, or a supervised session keeps today's dialogs. Admission without a dialog is
+recorded (`approvedBy` on the management receipt and SSH status, a native log line for Room
+Inbox). This supersedes the 2026-11-10 line that Git push/merge and direct social sends always go
+through the native owner approval, and the Host rule that publication keeps its prompt in a Full
+access coding session. Credential entry, OS permissions, install/update, account and pairing
+changes and clarifying questions keep their own flows.

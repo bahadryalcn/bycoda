@@ -87,7 +87,7 @@ does not prove navigation failed. MCP returns frame bytes as image content rathe
 than duplicating them into metadata text. Request receipts are in-memory and do
 not claim restart durability; inspect browser/panel state after a Host restart.
 
-`browser.resize` changes the leased CSS viewport (240–2560 by 240–2160), invalidates
+`browser.resize` changes the leased CSS viewport (240–3840 by 240–2160), invalidates
 old annotations and requires a new frame. It is not physical-device emulation.
 Runtime coordinates are checked against the actual viewport. Native-size mode
 keeps a narrow viewport at its real width rather than stretching it to the panel.

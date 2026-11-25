@@ -8,9 +8,6 @@
     "src/app/shell/Sidebar.tsx": {
       "theme-palette-literal": 1
     },
-    "src/app/shell/SidebarAccountFooter.module.css": {
-      "shared-internal-selector": 1
-    },
     "src/app/shell/sessionList.css": {
       "shared-internal-selector": 2
     },

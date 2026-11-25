@@ -3,6 +3,7 @@ import { AsyncHostNotes } from "../host-notes-async";
 import { hostInbox } from "../notes/host-notes";
 import { ProviderInboxBridge } from "../providers/provider-inbox";
 import type { ServerBindings } from "./bindings";
+import { sessionFullAccessCoversInbox } from "./management";
 export function createConversationRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -13,6 +14,8 @@ export function createConversationRuntime(
     | "goals"
     | "social"
     | "conversationDesktop"
+    | "featureMeta"
+    | "assistant"
   >,
 ) {
   const hostNotes = new AsyncHostNotes();
@@ -48,6 +51,15 @@ export function createConversationRuntime(
         cwd,
         principal,
         authorized,
+        // Native skips its prompt only on this answer; the session mode is the Host's own record.
+        principal.kind === "session"
+          ? async () =>
+              (await dependencies.featureMeta(principal.sessionId)).session.runtimeMode ===
+                "full-access" &&
+              (await sessionFullAccessCoversInbox(operation, () =>
+                dependencies.assistant.profile(),
+              ))
+          : undefined,
       ),
   );
   return { hostNotes, providerInbox, conversationWorkspace };

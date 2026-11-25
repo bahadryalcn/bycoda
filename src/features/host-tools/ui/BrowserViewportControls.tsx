@@ -1,18 +1,27 @@
 import { useState } from "react";
+import {
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MIN,
+  BROWSER_VIEWPORT_PRESETS,
+  validBrowserViewportDimension,
+} from "../../../shared/lib/browserViewport";
 import { t } from "../../../shared/i18n/technical";
+import { browserViewportPresetName } from "../model/browserViewportPresetName";
 import { Button } from "../../../shared/ui/Button";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { RotateCcw } from "../../../shared/ui/icons";
 
 type Viewport = { width: number; height: number };
-const presets = [
-  { value: "1280x720", width: 1280, height: 720 },
-  { value: "768x1024", width: 768, height: 1024 },
-  { value: "390x844", width: 390, height: 844 },
-];
-const presetName = (value: string) =>
-  value === "1280x720" ? t("Desktop") : value === "768x1024" ? t("Tablet") : t("Phone");
+const presets = BROWSER_VIEWPORT_PRESETS.map((preset) => ({
+  ...preset,
+  value: `${preset.width}x${preset.height}`,
+}));
+const presetName = (value: string) => {
+  const preset = presets.find((item) => item.value === value);
+  return preset ? browserViewportPresetName(preset) : value;
+};
 
 /** Explicit page resizing; the owner keys this editor by Host dimensions to reset its draft. */
 export function BrowserViewportControls({
@@ -30,15 +39,12 @@ export function BrowserViewportControls({
   const [height, setHeight] = useState(String(viewport.height));
   const next = { width: Number(width), height: Number(height) };
   const valid =
-    Number.isInteger(next.width) &&
-    next.width >= 240 &&
-    next.width <= 2560 &&
-    Number.isInteger(next.height) &&
-    next.height >= 240 &&
-    next.height <= 2160;
+    validBrowserViewportDimension(next.width, BROWSER_VIEWPORT_MAX_WIDTH) &&
+    validBrowserViewportDimension(next.height, BROWSER_VIEWPORT_MAX_HEIGHT);
   const value = `${viewport.width}x${viewport.height}`;
   const changed = next.width !== viewport.width || next.height !== viewport.height;
-  const canRotate = viewport.height <= 2560 && viewport.width <= 2160;
+  const canRotate =
+    viewport.height <= BROWSER_VIEWPORT_MAX_WIDTH && viewport.width <= BROWSER_VIEWPORT_MAX_HEIGHT;
   // Enter and leaving a field apply the draft; presets and Rotate apply at once.
   const apply = () => {
     if (!disabled && valid && changed) onResize(next);
@@ -75,20 +81,20 @@ export function BrowserViewportControls({
           label={t("Width")}
           autoFocus
           type="number"
-          min={240}
-          max={2560}
+          min={BROWSER_VIEWPORT_MIN}
+          max={BROWSER_VIEWPORT_MAX_WIDTH}
           step={1}
           value={width}
           disabled={disabled}
-          error={width !== "" && !valid ? t("Width: 240–2560 px. Height: 240–2160 px.") : undefined}
+          error={width !== "" && !valid ? t("Width: 240–3840 px. Height: 240–2160 px.") : undefined}
           onChange={(event) => setWidth(event.target.value)}
           onBlur={apply}
         />
         <TextField
           label={t("Height")}
           type="number"
-          min={240}
-          max={2160}
+          min={BROWSER_VIEWPORT_MIN}
+          max={BROWSER_VIEWPORT_MAX_HEIGHT}
           step={1}
           value={height}
           disabled={disabled}

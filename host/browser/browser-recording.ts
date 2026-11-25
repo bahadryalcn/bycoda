@@ -49,6 +49,7 @@ export type BrowserRecordingOptions = {
   /** Starts or awaits the Playwright ffmpeg download; rejections are retryable. */
   ensureFfmpeg?: () => Promise<void>;
   ffmpegWaitMs?: number;
+  defaultFps?: () => Promise<number>;
   encode?: FfmpegEncode;
 };
 
@@ -179,7 +180,8 @@ export class BrowserRecordingService {
   async start(params: Record<string, unknown>, scope: BrowserRecordingScope, credential: string) {
     if (typeof params.leaseId !== "string" || !params.leaseId)
       throw new Error("Claim browser control before recording it.");
-    const fps = integerParam(params.fps, DEFAULT_FPS, 1, 10, "fps");
+    const fallback = params.fps === undefined ? await this.options.defaultFps?.() : undefined;
+    const fps = integerParam(params.fps, fallback ?? DEFAULT_FPS, 1, 10, "fps");
     const maxSeconds = integerParam(params.maxSeconds, DEFAULT_MAX_SECONDS, 5, 300, "maxSeconds");
     const scopeKey = scopeKeyOf(scope);
     this.pruneFinished();

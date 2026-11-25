@@ -2,6 +2,24 @@
 
 Historical owner statements explain design intent; they do not authorize operations or override current owner instructions. Revalidate implementation before using a statement as a current-state claim.
 
+## Browser profile access
+
+Owner request, 2026-11-25:
+
+> profil import filanda ekliyelim hangi profili kullanabileceklerini seçsin kullanıcılar. hatta şunu kullan diye söylersede onu kullansın.
+
+Imported browser state belongs to the local Host and seeds separate browser
+contexts. Agent use requires an explicit per-profile grant and may select the
+profile by name or ID.
+
+Owner request, 2026-11-25:
+
+> varsayılan profil yapalım birde geliştirme profili olsun geliştirme profilide izole de olabilsin var olan profilde olabilsin.
+
+Regular URLs use the default selection. Loopback URLs use the development
+selection. Both are independent of agent grants and may use a clean context.
+Claude in Chrome uses the provider's own connection and site approvals.
+
 ## Browser observation and control
 
 Owner request, 2026-11-24:
@@ -92,3 +110,15 @@ Owner decision, 2026-11-24 (translated):
 > If it already follows, remove this button.
 
 The detached window follows conversation focus automatically. Its selector switches between open tool views until the next focus change.
+
+## Device settings
+
+Owner decision, 2026-11-25 (translated):
+
+> I want to improve the devices settings in bycoda like t3code … users should be able to edit these, like in t3code.
+
+Recorded decision: Settings > Tools > Devices adds **Use devices** (desktop preference
+that hides the Devices tool), **Agents can use devices** (the local Host's `agentDevices`
+setting; the Host refuses agent and assistant `devices.*` calls while it is off) and
+**Device sources** built on saved bycoda machines. Sources need bycoda Host on the
+other computer; direct SSH device hosts without a Host were left out of scope.

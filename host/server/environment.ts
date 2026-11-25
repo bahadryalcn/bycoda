@@ -3,6 +3,7 @@ import {
   HOST_PROTOCOL_VERSION,
   providerSteerCapability,
 } from "../../src/features/connections/model/protocol";
+import { DEVICE_PROOF_CAPABILITY } from "../../src/integrations/device-proof";
 import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
@@ -23,7 +24,7 @@ export function createEnvironmentRuntime(
     | "engine"
     | "webControl"
     | "mobileLan"
-    | "mobileAccess"
+    | "mobileTailnet"
     | "tunnels"
     | "buildIdentity"
     | "providers"
@@ -40,11 +41,21 @@ export function createEnvironmentRuntime(
   }
   const mobileRoutes = createMobileRoutes({
     lan: () => dependencies.mobileLan.status(),
-    tailscale: () => dependencies.mobileAccess.status(),
-    tunnel: () => dependencies.tunnels.publicHostUrl(),
+    tailnet: () => dependencies.mobileTailnet.status(),
+    publicUrls: () => dependencies.tunnels.publicPhoneUrls(),
   });
+  async function callerCredential(principalId: string | undefined) {
+    const authority = principalId
+      ? await dependencies.engine.store.deviceAuthorityByHash(principalId)
+      : undefined;
+    return {
+      ...(authority?.kind ? { kind: authority.kind } : {}),
+      localDesktop: authority?.localDesktop === true,
+      proofBound: authority?.binding !== undefined,
+    };
+  }
   const environmentService = createEnvironmentService({
-    snapshot: async () => ({
+    snapshot: async ({ principalId }) => ({
       protocolVersion: HOST_PROTOCOL_VERSION,
       environmentId: dependencies.engine.store.environmentId,
       name: hostname(),
@@ -59,9 +70,17 @@ export function createEnvironmentRuntime(
       addresses: reachableAddresses(undefined, await defaultRouteAddress()),
       // Phones learn the other ways to this Host from it (route selection).
       mobileRoutes: await mobileRoutes(),
+      // Other computers may reach this Host through its public tunnel; phones never do.
+      ...(dependencies.tunnels.publicHostUrl()
+        ? { tunnelRoute: dependencies.tunnels.publicHostUrl() }
+        : {}),
+      // Each phone listener has its own WSS endpoint; a phone uses the one for its route.
       mobileTls: (await dependencies.mobileLan.status()).tls,
+      mobileTlsTailnet: (await dependencies.mobileTailnet.status()).tls,
       persistence: dependencies.engine.store.db.persistenceHealth(),
       gitRewindExecution: "host",
+      // Only the caller's own credential: the principal id is its hash, resolved per request.
+      credential: await callerCredential(principalId),
       methods: advertisedRpcMethods(),
       ...(dependencies.buildIdentity ? { buildIdentity: dependencies.buildIdentity } : {}),
       // Older clients validate this list against Codex and Claude only.
@@ -106,6 +125,7 @@ export function createEnvironmentRuntime(
         "transport.ws.health.v2",
         "transport.ws.streams.v2",
         "transport.ws.bulk.v2",
+        DEVICE_PROOF_CAPABILITY,
         WORKSPACE_CAPABILITIES.managed,
         WORKSPACE_CAPABILITIES.policy,
         "workspaces.delivery.v1",
@@ -325,6 +345,7 @@ export function createEnvironmentRuntime(
         "browser.shared",
         "browser.frames.binary.v1",
         "browser.shared.viewport.v1",
+        "browser.profiles.v1",
         "conversation.tools.management.v1",
         "runtime.logs",
         "conversation.tools",

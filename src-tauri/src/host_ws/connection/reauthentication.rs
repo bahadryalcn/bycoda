@@ -13,6 +13,16 @@ pub(super) const REAUTHENTICATION_RETRY_ATTEMPTS: u32 = 3;
 // worker can decide whether it is temporary for this lane.
 pub(super) fn upgrade_error(error: &Error) -> (&'static str, bool) {
     match error {
+        // A refused device proof is not a token that may be renewed: retrying signs the same way.
+        Error::Http(response)
+            if response.status().as_u16() == 401
+                && response
+                    .headers()
+                    .get("x-bycoda-auth-stage")
+                    .is_some_and(|stage| stage == "proof") =>
+        {
+            ("authentication", true)
+        }
         Error::Http(response) if response.status().as_u16() == 401 => ("unauthorized", true),
         _ => socket_error(error),
     }

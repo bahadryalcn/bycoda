@@ -144,7 +144,7 @@ it.each([
     "EADDRNOTAVAIL",
     "The selected mobile address is no longer available. Choose an active network and retry.",
   ],
-  ["UNKNOWN", "Mobile LAN access could not start. Check the selected network and retry."],
+  ["UNKNOWN", "Mobile access could not start. Check the selected network and retry."],
 ])("explains %s failures without changing saved state", async (code, reason) => {
   const f = await fixture(code, undefined, true);
   await f.access.start();

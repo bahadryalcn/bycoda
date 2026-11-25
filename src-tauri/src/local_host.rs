@@ -20,8 +20,9 @@ use crate::bundled_host::{
 };
 
 use crate::remote::{
-    local_host_pair, local_link, mark_local_host, probe_local_link_token, prune_stale_local_sync,
-    remote_machines, replace_local_pairing, Machine, RemoteConnections,
+    device_proof, local_host_pair, local_link, mark_local_host, probe_local_link_token,
+    prune_stale_local_sync, remote_machines, replace_local_pairing, Machine, PairingKey,
+    RemoteConnections,
 };
 
 pub(crate) fn host_data_dir() -> Option<PathBuf> {
@@ -188,6 +189,30 @@ pub(crate) fn local_device_name() -> String {
     "This computer (local sync)".to_string()
 }
 
+/// Pairs this desktop with the local Host through its launcher, bound to a fresh client key.
+/// The launcher prints the new credential and the Host's identity.
+fn pair_local(program: &str, base_args: &[String]) -> Option<(String, PairingKey)> {
+    let seed = device_proof::generate_seed().ok()?;
+    let proof_key = device_proof::public_x(&seed).ok()?;
+    let pair = run_launcher(
+        program,
+        base_args,
+        &[
+            "pair",
+            "--name",
+            &local_device_name(),
+            "--local-sync",
+            "--proof-key",
+            &proof_key,
+            "--json",
+        ],
+        Duration::from_secs(45),
+    )?;
+    let token = pair.get("token").and_then(Value::as_str)?.to_owned();
+    let environment_id = pair.get("environmentId").and_then(Value::as_str)?;
+    Some((token, PairingKey::new(seed, environment_id)))
+}
+
 /// One reconnect at a time, so a double click cannot issue two pairings.
 static REPAIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -204,24 +229,9 @@ pub(crate) fn repair_local_pairing(app: &AppHandle, machine_id: &str) -> Result<
     let (program, base_args) = host_data_dir()
         .and_then(|dir| launcher_command(&dir))
         .ok_or("The local Host is not installed on this computer")?;
-    let pair = run_launcher(
-        &program,
-        &base_args,
-        &[
-            "pair",
-            "--name",
-            &local_device_name(),
-            "--local-sync",
-            "--json",
-        ],
-        Duration::from_secs(45),
-    )
-    .ok_or("The local Host did not issue a new pairing")?;
-    let token = pair
-        .get("token")
-        .and_then(Value::as_str)
-        .ok_or("The local Host did not issue a new pairing")?;
-    replace_local_pairing(app, &state, machine_id, token)
+    let (token, key) =
+        pair_local(&program, &base_args).ok_or("The local Host did not issue a new pairing")?;
+    replace_local_pairing(app, &state, machine_id, &token, key)
 }
 
 /// Once-per-launch token check state: 0 unchecked, 1 check running, 2 done.
@@ -362,31 +372,11 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
         return Ok(Some(startup_token_check(&app, marked)));
     }
 
-    let Some(pair) = run_launcher(
-        &program,
-        &base_args,
-        &[
-            "pair",
-            "--name",
-            &local_device_name(),
-            "--local-sync",
-            "--json",
-        ],
-        Duration::from_secs(45),
-    ) else {
-        return Ok(None);
-    };
-    let Some(token) = pair.get("token").and_then(Value::as_str) else {
+    let Some((token, key)) = pair_local(&program, &base_args) else {
         return Ok(None);
     };
     let state: State<'_, RemoteConnections> = app.state();
-    let machine = local_host_pair(
-        app.clone(),
-        state,
-        local_device_name(),
-        url,
-        token.to_string(),
-    )?;
+    let machine = local_host_pair(app.clone(), state, local_device_name(), url, token, key)?;
     Ok(Some(machine))
 }
 

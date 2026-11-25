@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { agentToolAllowed } from "../delegation/tools";
 import { conversationLeaseOwner } from "../devices/lease-holder";
+import { assertAgentDevicesEnabled } from "../devices/device-agent-access";
 import { dirname } from "node:path";
 import { sessionConversationPage } from "../../src/features/agent-app/model/sessionConversation";
 import type { DeviceAction } from "../../src/features/devices/types";
@@ -141,6 +142,7 @@ export async function dispatchConversationTools(
       const action = String(request.params.action ?? "");
       const originalArgs = request.params.input as Record<string, unknown>;
       validateSessionConversationTool(action, originalArgs);
+      if (action.startsWith("devices.")) await assertAgentDevicesEnabled(dependencies.engine.store);
       const crewAllows = await crewToolGate(dependencies, boundPrincipal, action);
       const args = conversationListArguments(action, originalArgs);
       const scopedDeviceAuthorized = async () => {
@@ -689,6 +691,10 @@ export async function dispatchConversationTools(
               boundPrincipal,
               async () =>
                 !!(await dependencies.conversationAccess.principalForToken(request.token)),
+              // No owner exclusion covers task writes, so the session mode alone decides.
+              async () =>
+                (await dependencies.featureMeta(boundPrincipal.sessionId)).session.runtimeMode ===
+                "full-access",
             )) as { approved?: boolean };
             if (
               !approved.approved ||

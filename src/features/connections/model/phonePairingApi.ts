@@ -4,15 +4,20 @@ import {
   readPhonePairingCreated,
   readPhonePairingStatus,
 } from "./phonePairingContract";
+import { publicPhoneAccess } from "./publicPhoneAccess";
+import { externalTunnelApi, readTunnelOverview } from "./externalTunnelController";
 import type { PhonePairingApi } from "./phonePairingTypes";
 
 export const phonePairingApi: PhonePairingApi = {
   async access(machine, mode = "lan") {
+    if (mode === "public")
+      return publicPhoneAccess(
+        readTunnelOverview(await externalTunnelApi(machine).status(true), machine.environmentId),
+      );
     const status = readMobileAccessStatus(
       await remoteRequest(machine.id, "mobile.access.status", { mode }, true, true),
     );
-    if (mode === "lan" && status.mode !== "lan")
-      throw new Error("Unsupported method: local network phone access");
+    if (status.mode !== mode) throw new Error("Unsupported method: phone access listener");
     return status;
   },
   async enable(machine, mode = "lan", address) {
@@ -20,9 +25,9 @@ export const phonePairingApi: PhonePairingApi = {
       await remoteRequest(machine.id, "mobile.access.enable", { mode, address }, false, true),
     );
   },
-  async disable(machine) {
+  async disable(machine, mode = "lan") {
     return readMobileAccessStatus(
-      await remoteRequest(machine.id, "mobile.access.disable", { mode: "lan" }, false, true),
+      await remoteRequest(machine.id, "mobile.access.disable", { mode }, false, true),
     );
   },
   async create(machine, kind = "phone") {

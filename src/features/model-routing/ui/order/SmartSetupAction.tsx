@@ -154,6 +154,7 @@ export function SmartSetupAction({
           variant={variant}
           size="sm"
           disabled={running === "ai"}
+          disabledReason={t("Wait for the current operation to finish")}
           loading={running === "rules"}
           loadingLabel={t("Preparing draft…")}
           onClick={() => void run("rules")}
@@ -167,6 +168,11 @@ export function SmartSetupAction({
             size="sm"
             startIcon={<Sparkles className="icon-sm" />}
             disabled={running === "rules" || (!choice && automatic.isPending)}
+            disabledReason={
+              running === "rules"
+                ? t("Wait for the current operation to finish")
+                : t("Checking available planning models…")
+            }
             loading={running === "ai"}
             loadingLabel={planner ? t("Planning with {p0}", { p0: planner }) : t("Planning…")}
             onClick={() => void run("ai")}
@@ -180,6 +186,11 @@ export function SmartSetupAction({
             iconOnly
             label={t("Model and settings")}
             disabled={!!running || !pickerHarness}
+            disabledReason={
+              running
+                ? t("Wait for the current operation to finish")
+                : t("No planning model is available.")
+            }
             aria-haspopup="dialog"
             aria-expanded={pickerOpen}
             onClick={() => setPickerOpen(!pickerOpen)}

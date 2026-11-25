@@ -330,8 +330,9 @@ type Dependencies = Pick<
   | "nativeDevicesService"
   | "mobilePairing"
   | "mobileLan"
-  | "mobileAccess"
+  | "mobileTailnet"
   | "tunnels"
+  | "tunnelIngress"
   | "workspace"
   | "conversationPreviews"
   | "heldPolls"
@@ -574,6 +575,8 @@ const handlers: Record<
   "devServers.bridgeClose": handleDevelopmentRpc,
   "resources.read": handleResourcesRpc,
   "diagnostics.logs.read": handleDiagnosticsLogsRpc,
+  "browser.profiles.list": handleBrowserRpc,
+  "browser.profiles.update": handleBrowserRpc,
   "browser.setup": handleBrowserRpc,
   "browser.status": handleBrowserRpc,
   "browser.claim": handleBrowserRpc,
@@ -756,6 +759,8 @@ const handlers: Record<
   "tunnels.start": handleDevicesRpc,
   "tunnels.stop": handleDevicesRpc,
   "tunnels.credential": handleDevicesRpc,
+  "tunnels.phones": handleDevicesRpc,
+  "devices.bindProofKey": handleDevicesRpc,
   "devices.revokeSelf": handleDevicesRpc,
   "shell.profiles": handleProvidersRpc,
   "shell.setProfile": handleProvidersRpc,

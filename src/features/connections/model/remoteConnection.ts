@@ -2,6 +2,7 @@ import {
   connectionReason,
   localizeConnectionReason,
   PAIRING_REFUSED,
+  PROOF_REQUIRED,
   ROUTE_REJECTED,
   sanitizeConnectionError,
 } from "./connectionReason";
@@ -60,7 +61,10 @@ export { connectionReason, localizeConnectionReason, sanitizeConnectionError };
 
 /** The machine refused this computer's credential, as opposed to a changed Host identity. */
 export function isPairingRefused(state: RemoteConnectionState): boolean {
-  return state.status === "identity-mismatch" && state.error === PAIRING_REFUSED;
+  return (
+    state.status === "identity-mismatch" &&
+    (state.error === PAIRING_REFUSED || state.error === PROOF_REQUIRED)
+  );
 }
 
 /** Which status a failed request means. `connected` when the machine itself

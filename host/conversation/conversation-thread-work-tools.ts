@@ -126,7 +126,14 @@ export class ConversationThreadWorkTools {
     readonly pool: ModelPoolSource,
     /** Observation-only: lets the assistant report on work its thread started. */
     private readonly trackWork?: (item: ThreadWorkTrack) => Promise<void>,
+    /** The owner's assistant profile plan-approval setting; unreadable counts as not "never". */
+    private readonly planApproval?: () => Promise<"always" | "large" | "never">,
   ) {}
+
+  /** True only when the owner's assistant profile says goals need no plan approval. */
+  private async plansUnapproved() {
+    return (await this.planApproval?.().catch(() => undefined)) === "never";
+  }
 
   private async track(
     action: string,
@@ -433,7 +440,9 @@ export class ConversationThreadWorkTools {
       });
     }
     if (action.startsWith("goals.")) {
-      if (action === "goals.create")
+      if (action === "goals.create") {
+        // Same derivation as the assistant job runtime: only planApproval "never" drops both steps.
+        const unapproved = await this.plansUnapproved();
         return this.goals.create({
           ...exec,
           expectedAbsent: true,
@@ -445,12 +454,14 @@ export class ConversationThreadWorkTools {
           ...(input.isolate === undefined ? {} : { isolate: input.isolate }),
           autoMerge: false,
           continueUntilDone: false,
-          approvePlan: true,
-          manualStart: true,
+          approvePlan: !unapproved,
+          manualStart: !unapproved,
+          ...(unapproved ? { planApprovalPolicy: "never" as const } : {}),
           finalReview: true,
           verifyDefaults: { review: true },
           maxRunMinutes: 0,
         });
+      }
       const goal = current as Awaited<ReturnType<HostGoals["list"]>>[number];
       if (action === "goals.cancel") return this.goals.cancel(id);
       if (action === "goals.delete") {
@@ -458,7 +469,9 @@ export class ConversationThreadWorkTools {
           throw new Error("Cancel this goal before deletion.");
         return this.goals.delete(id);
       }
-      if (goal.autoMerge || goal.continueUntilDone || !goal.approvePlan || !goal.manualStart)
+      // Plan approval and manual start are required on a goal only while the profile asks for them.
+      const gated = !(await this.plansUnapproved()) && (!goal.approvePlan || !goal.manualStart);
+      if (goal.autoMerge || goal.continueUntilDone || gated)
         throw new Error("Use the owner UI for this goal's execution policy.");
       if (action === "goals.replan") return this.goals.replan(id, input.feedback, goal);
       return this.goals.update(

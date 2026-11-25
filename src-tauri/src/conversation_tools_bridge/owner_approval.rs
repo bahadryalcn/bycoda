@@ -81,6 +81,33 @@ fn mcp_call_approval_message(request: &Value) -> Result<String, String> {
     ))
 }
 
+/// Whether a Full access coding session admits this request without a prompt. The Host answers
+/// from its own session record and the owner's exclusions, never from tool input; any other
+/// reply, an older Host's included, keeps the prompt.
+fn session_full_access(
+    request: &Value,
+    issuer: &Arc<crate::remote::NativeServiceChannel>,
+    action: &str,
+) -> Result<bool, String> {
+    let admitted = issuer.project(
+        "conversation.desktop.authorize",
+        json!({"id": request["id"], "action": format!("{action}.permission")}),
+        |reply| Ok(session_full_access_reply(reply)),
+    )?;
+    if admitted {
+        log::info!("{action} admitted by the session's Full access mode");
+    }
+    Ok(admitted)
+}
+
+fn session_full_access_reply(reply: &Value) -> bool {
+    reply.as_object().is_some_and(|reply| {
+        reply.len() == 2
+            && reply.get("authorized") == Some(&Value::Bool(true))
+            && reply.get("fullAccess") == Some(&Value::Bool(true))
+    })
+}
+
 pub(super) fn call(
     app: &AppHandle,
     request: &Value,
@@ -193,7 +220,12 @@ pub(super) fn call(
         {
             return Err("Native assistant consent changed".into());
         }
-        return Ok(json!({ "approved": approved, "operationHash": operation_hash }));
+        // The Host receipt records who admitted the operation.
+        return Ok(if approved && standing == Some(true) {
+            json!({ "approved": true, "operationHash": operation_hash, "approvedBy": "standingConsent" })
+        } else {
+            json!({ "approved": approved, "operationHash": operation_hash })
+        });
     }
     if action == "mcp.call.authorize" {
         let message = mcp_call_approval_message(request)?;
@@ -307,17 +339,18 @@ pub(super) fn call(
     if action == "tasks.write.authorize" {
         let operation = &input["operation"];
         let message = task_approval_message(operation)?;
-        let approved = crate::control::owner_approval::ask_conversation(
-            app,
-            request,
-            crate::control::owner_approval::Prompt {
-                title: "bycoda — Task operation approval",
-                message: &(message),
-                confirm: "Approve this operation",
-                cancel: "Cancel",
-            },
-            || taken.check(),
-        )?;
+        let approved = session_full_access(request, issuer, action)?
+            || crate::control::owner_approval::ask_conversation(
+                app,
+                request,
+                crate::control::owner_approval::Prompt {
+                    title: "bycoda — Task operation approval",
+                    message: &(message),
+                    confirm: "Approve this operation",
+                    cancel: "Cancel",
+                },
+                || taken.check(),
+            )?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| "Clock unavailable")?
@@ -361,18 +394,19 @@ pub(super) fn call(
         let issue_permit = (input["operation"]["action"] == "jira-comment-images")
             .then(|| crate::jira::agent_comment::authorize(app, &input["operation"]))
             .transpose()?;
-        let approved = crate::control::owner_approval::ask_conversation_detailed(
-            app,
-            request,
-            crate::control::owner_approval::Prompt {
-                title: "bycoda — Inbox operation approval",
-                message: &(format!("{message}{thread_context}")),
-                confirm: "Approve this operation",
-                cancel: "Cancel",
-            },
-            details,
-            || taken.check(),
-        )?;
+        let approved = session_full_access(request, issuer, action)?
+            || crate::control::owner_approval::ask_conversation_detailed(
+                app,
+                request,
+                crate::control::owner_approval::Prompt {
+                    title: "bycoda — Inbox operation approval",
+                    message: &(format!("{message}{thread_context}")),
+                    confirm: "Approve this operation",
+                    cancel: "Cancel",
+                },
+                details,
+                || taken.check(),
+            )?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| "Clock unavailable")?
@@ -400,6 +434,24 @@ pub(super) fn call(
 #[cfg(test)]
 mod secret_tests {
     use super::*;
+
+    #[test]
+    fn only_an_exact_host_reply_skips_a_session_prompt() {
+        assert!(session_full_access_reply(
+            &json!({"authorized":true,"fullAccess":true})
+        ));
+        for reply in [
+            json!({"authorized":true}),
+            json!({"authorized":false}),
+            json!({"authorized":true,"fullAccess":false}),
+            json!({"authorized":true,"fullAccess":"true"}),
+            json!({"authorized":false,"fullAccess":true}),
+            json!({"authorized":true,"fullAccess":true,"extra":true}),
+            json!(true),
+        ] {
+            assert!(!session_full_access_reply(&reply), "{reply}");
+        }
+    }
 
     #[test]
     fn room_task_and_crew_controls_can_reach_exact_native_review() {

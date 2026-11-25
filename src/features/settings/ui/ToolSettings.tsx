@@ -1,3 +1,10 @@
+import {
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MIN,
+  BROWSER_VIEWPORT_PRESETS,
+  validBrowserViewportDimension,
+} from "../../../shared/lib/browserViewport";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { toolSettingsTabForAnchor, type ToolSettingsTab } from "../model/toolSettingsSections";
@@ -5,6 +12,7 @@ import {
   resetToolPreferences,
   toolPreferences,
   ToolPreferencesResetError,
+  browserViewportPresetName,
   validBrowserHome,
   validBrowserSearchTemplate,
 } from "../../host-tools/public/toolPreferences";
@@ -22,6 +30,13 @@ import {
   RevealedSetting,
   useSettingsPageReset,
 } from "../../../shared/ui/settings";
+
+import { BrowserProfileSettings } from "./BrowserProfileSettings";
+import { AgentDevicesRow, DeviceSourcesGroup } from "./DeviceSourcesSettings";
+import {
+  AGENT_DEVICE_VERSION,
+  DEVICE_HUB_VERSION,
+} from "../../../shared/model/host-contracts/native-devices";
 
 const ActiveToolSettingsTab = createContext<ToolSettingsTab | null>(null);
 const ToolSettingsResetVersion = createContext(0);
@@ -57,6 +72,7 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
           </Tab>
         </TabList>
         <TabPanel value="browser" keepMounted>
+          <BrowserProfileSettings />
           <BrowserSettingsPage />
         </TabPanel>
         <TabPanel value="devices" keepMounted>
@@ -195,10 +211,12 @@ function DraftPreference<T extends string | number>({
 function BooleanPreference({
   id,
   label,
+  description,
   preference,
 }: {
   id: string;
   label: string;
+  description?: string;
   preference: Preference<boolean>;
 }) {
   const { value, save, feedback } = useToolPreference(preference);
@@ -206,6 +224,8 @@ function BooleanPreference({
     <Row
       id={id}
       label={label}
+      description={description}
+      descriptionVisible={!!description}
       modified={value !== preference.defaultValue}
       onReset={() => save(preference.defaultValue)}
       feedback={feedback}
@@ -341,9 +361,10 @@ export function BrowserSettingsPage() {
         label={t("Default viewport")}
         preference={toolPreferences.browserViewport}
         options={[
-          { value: "desktop", label: t("Desktop (1280 × 720)") },
-          { value: "tablet", label: t("Tablet (768 × 1024)") },
-          { value: "phone", label: t("Phone (390 × 844)") },
+          ...BROWSER_VIEWPORT_PRESETS.map((preset) => ({
+            value: preset.id,
+            label: `${browserViewportPresetName(preset)} (${preset.width} × ${preset.height})`,
+          })),
           { value: "custom", label: t("Custom") },
         ]}
       />
@@ -355,13 +376,10 @@ export function BrowserSettingsPage() {
           preference={toolPreferences.browserViewportWidth}
           parse={Number}
           valid={(draft) =>
-            draft.trim() !== "" &&
-            Number.isInteger(Number(draft)) &&
-            Number(draft) >= 240 &&
-            Number(draft) <= 2560
+            validBrowserViewportDimension(Number(draft), BROWSER_VIEWPORT_MAX_WIDTH)
           }
-          invalidMessage={t("Enter a whole number from 240 to 2560.")}
-          bounds={{ min: 240, max: 2560 }}
+          invalidMessage={t("Viewport dimensions must fit the supported limits.")}
+          bounds={{ min: BROWSER_VIEWPORT_MIN, max: BROWSER_VIEWPORT_MAX_WIDTH }}
         />
         <DraftPreference
           id="browser-viewport-height"
@@ -370,13 +388,10 @@ export function BrowserSettingsPage() {
           preference={toolPreferences.browserViewportHeight}
           parse={Number}
           valid={(draft) =>
-            draft.trim() !== "" &&
-            Number.isInteger(Number(draft)) &&
-            Number(draft) >= 240 &&
-            Number(draft) <= 2160
+            validBrowserViewportDimension(Number(draft), BROWSER_VIEWPORT_MAX_HEIGHT)
           }
-          invalidMessage={t("Enter a whole number from 240 to 2160.")}
-          bounds={{ min: 240, max: 2160 }}
+          invalidMessage={t("Viewport dimensions must fit the supported limits.")}
+          bounds={{ min: BROWSER_VIEWPORT_MIN, max: BROWSER_VIEWPORT_MAX_HEIGHT }}
         />
       </div>
       <DraftPreference
@@ -432,26 +447,43 @@ export function BrowserSettingsPage() {
 export function DevicesSettingsPage() {
   useLocale();
   return (
-    <ToolSettingsGroup
-      tab="devices"
-      title={t("Devices")}
-      keys={["deviceAutoLive", "devicePreviewScale"]}
-    >
-      <BooleanPreference
-        id="device-auto-live"
-        label={t("Live view by default")}
-        preference={toolPreferences.deviceAutoLive}
-      />
-      <ChoicePreference
-        id="device-preview-scale"
-        label={t("Preview scale")}
-        preference={toolPreferences.devicePreviewScale}
-        options={([1, 1.5, 2, 3] as const).map((value) => ({
-          value,
-          label: formatNumber(value, { style: "percent" }),
-        }))}
-      />
-    </ToolSettingsGroup>
+    <>
+      <ToolSettingsGroup
+        tab="devices"
+        title={t("Devices")}
+        keys={["devicesEnabled", "deviceAutoLive", "devicePreviewScale", "deviceHiddenMachines"]}
+      >
+        <BooleanPreference
+          id="device-enabled"
+          label={t("Use devices")}
+          description={t("Show simulators and emulators in the Devices panel. Hub: v{p1}", {
+            p1: DEVICE_HUB_VERSION,
+          })}
+          preference={toolPreferences.devicesEnabled}
+        />
+        <AgentDevicesRow
+          description={t(
+            "Agents can open and drive devices through this computer's Host. agent-device: v{p1}",
+            { p1: AGENT_DEVICE_VERSION },
+          )}
+        />
+        <BooleanPreference
+          id="device-auto-live"
+          label={t("Live view by default")}
+          preference={toolPreferences.deviceAutoLive}
+        />
+        <ChoicePreference
+          id="device-preview-scale"
+          label={t("Preview scale")}
+          preference={toolPreferences.devicePreviewScale}
+          options={([1, 1.5, 2, 3] as const).map((value) => ({
+            value,
+            label: formatNumber(value, { style: "percent" }),
+          }))}
+        />
+      </ToolSettingsGroup>
+      <DeviceSourcesGroup />
+    </>
   );
 }
 

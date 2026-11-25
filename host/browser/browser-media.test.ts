@@ -27,7 +27,6 @@ it("admits scoped owner reads, sends binary JPEG, and retires a revoked viewer",
   const close = attachBrowserMedia({
     server: http,
     environmentId: "selected",
-    allowedHosts: () => [],
     authorized: async (value) => value === token && allowed,
     open,
   });

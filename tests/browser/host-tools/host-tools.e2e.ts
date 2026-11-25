@@ -202,6 +202,30 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/feature-controls/host-browser-chrome-${theme}-${width}.png`,
       });
     });
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`host browser viewport menu presets ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(`${fixture}?theme=${theme}`);
+      await selectTool(page, "Host browser");
+      await page.getByRole("button", { name: "Open website", exact: true }).click();
+      await expect(
+        page.getByRole("img", { name: "Shared host browser", exact: true }),
+      ).toBeVisible();
+      const trigger = page.getByRole("button", { name: "Browser viewport", exact: true });
+      await trigger.click();
+      await page.getByRole("button", { name: /^Preset:/ }).click();
+      const fourK = page.getByRole("option", { name: "4K (3840 × 2160)", exact: true });
+      await expect(fourK).toBeVisible();
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/browser-profiles/viewport-menu-${theme}-${width}.png`,
+      });
+      await fourK.click();
+      await expect(trigger).toContainText("3840 × 2160");
+    });
+  }
+
 test("tools share a compact responsive top bar", async ({ page }) => {
   for (const width of [390, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });

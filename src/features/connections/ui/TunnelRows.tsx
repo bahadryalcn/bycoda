@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { t } from "../../../shared/i18n";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -14,12 +14,9 @@ import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Copy, Globe, Server } from "../../../shared/ui/icons";
+import { openExternal } from "../../../platform/tauri/openExternal";
+import { Copy, ExternalLink, Globe, Server } from "../../../shared/ui/icons";
 import type { ExternalTunnel } from "../../../integrations/external-tunnels";
-import { phonePairingApi } from "../model/phonePairingApi";
-import { usePhonePairing } from "../model/usePhonePairing";
-import type { RemoteMachine } from "../model/protocol";
-import { PhonePairingDialog } from "./PhonePairingDialog";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { issueCopy, providerName, stateCopy } from "./tunnelCopy";
 import type { TunnelSession } from "./useTunnelSession";
@@ -33,55 +30,9 @@ const stateTone: Record<ExternalTunnel["state"], StatusTextTone> = {
   interrupted: "needs-you",
 };
 
-function TunnelPairing({
-  machine,
-  url,
-  onClose,
-}: {
-  machine: RemoteMachine;
-  url: string;
-  onClose: () => void;
-}) {
-  // Reuse the same short-lived, owner-issued pairing ticket and redemption checks.
-  const api = useRef({
-    ...phonePairingApi,
-    access: async () => ({ state: "ready" as const, endpoint: url }),
-  }).current;
-  const { state, coordinator } = usePhonePairing(api);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Opens the pairing session on the host and ticket service once for this row's dialog.
-  useEffect(() => {
-    // The owner already chose "Connect your phone" on the tunnel row: go straight to the QR.
-    // create() does nothing unless access is ready.
-    void coordinator.open(machine).then(() => coordinator.create());
-  }, [coordinator, machine]);
-  if (state.stage === "closed") return null;
-  return (
-    <PhonePairingDialog
-      fixedEndpoint
-      machines={[machine]}
-      state={state}
-      onSelect={() => {}}
-      onClose={onClose}
-      onRefresh={() => void coordinator.refresh()}
-      onEnable={() => {}}
-      onCreate={() => void coordinator.create()}
-      onRegenerate={() => void coordinator.regenerate()}
-    />
-  );
-}
-
-/** The public URL line of a connected tunnel, with copy, QR and phone pairing actions. */
-function TunnelShareActions({
-  tunnel,
-  machine,
-  publicUrl,
-}: {
-  tunnel: ExternalTunnel;
-  machine: RemoteMachine;
-  publicUrl: string;
-}) {
+/** The public URL line of a connected tunnel, with copy and QR actions. */
+function TunnelShareActions({ tunnel, publicUrl }: { tunnel: ExternalTunnel; publicUrl: string }) {
   const [qr, setQr] = useState(false);
-  const [pair, setPair] = useState(false);
   // The confirmation clears itself and resets when the URL changes.
   const copyFeedback = useCopyFeedback({ resetKeys: [publicUrl] });
   return (
@@ -99,11 +50,6 @@ function TunnelShareActions({
       <Button stableWidth type="button" className="shrink-0" onClick={() => setQr(true)}>
         {t("Show QR code")}
       </Button>
-      {tunnel.target === "host" ? (
-        <Button stableWidth type="button" className="shrink-0" onClick={() => setPair(true)}>
-          {t("Connect your phone")}
-        </Button>
-      ) : null}
       {copyFeedback.copied ? (
         <InlineMessage tone="success" className="external-tunnel-wide">
           {t("URL copied")}
@@ -129,28 +75,49 @@ function TunnelShareActions({
             {tunnel.target === "host" ? (
               <p>
                 {t(
-                  "This URL requires a paired device. Use Connect your phone to create a pairing code.",
+                  "This URL is for other computers. Phones can use a public tunnel only when public phone access is allowed in Devices.",
                 )}
               </p>
             ) : null}
           </div>
         </Modal>
       ) : null}
-      {pair ? (
-        <TunnelPairing machine={machine} url={publicUrl} onClose={() => setPair(false)} />
-      ) : null}
     </>
+  );
+}
+
+/** Opens the validated Tailscale admin page where Funnel is enabled. */
+function ApprovalAction({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="external-tunnel-actions">
+      <Button
+        stableWidth
+        type="button"
+        className="shrink-0"
+        onClick={() =>
+          void openExternal(url).then(
+            () => setFailed(false),
+            () => setFailed(true),
+          )
+        }
+      >
+        <ExternalLink className="icon-sm" aria-hidden />
+        {t("Open approval page")}
+      </Button>
+      {failed ? (
+        <InlineError>{t("The browser could not be opened. Try again.")}</InlineError>
+      ) : null}
+    </div>
   );
 }
 
 function TunnelRow({
   tunnel,
-  machine,
   session,
   active,
 }: {
   tunnel: ExternalTunnel;
-  machine: RemoteMachine;
   session: TunnelSession;
   active: boolean;
 }) {
@@ -188,7 +155,7 @@ function TunnelRow({
                 </Text>
               </OverflowTooltip>
               <InfoPopover label={t("Public URL")}>
-                {t("Public access has not been verified.")}
+                {t("Public internet address. Anyone can reach it; device credentials protect it.")}
               </InfoPopover>
             </div>
           ) : null}
@@ -199,13 +166,15 @@ function TunnelRow({
               <InlineMessage tone="warning">{issueCopy(tunnel.issue)}</InlineMessage>
             )
           ) : null}
+          {tunnel.issue === "approval-required" && tunnel.approvalUrl ? (
+            <ApprovalAction url={tunnel.approvalUrl} />
+          ) : null}
           {publicUrl || tunnel.canStop || canCheckAgain ? (
             <div className="external-tunnel-actions">
               {publicUrl ? (
                 <TunnelShareActions
                   key={`${tunnel.id}:${publicUrl}`}
                   tunnel={tunnel}
-                  machine={machine}
                   publicUrl={publicUrl}
                 />
               ) : null}
@@ -247,11 +216,9 @@ function TunnelRow({
 
 /** Every tunnel the machine reports, newest first, in one divided card. */
 export function TunnelRows({
-  machine,
   session,
   active = true,
 }: {
-  machine: RemoteMachine;
   session: TunnelSession;
   active?: boolean;
 }) {
@@ -262,7 +229,7 @@ export function TunnelRows({
       {[...tunnels].reverse().map((tunnel, index) => (
         <Fragment key={tunnel.id}>
           {index ? <Divider /> : null}
-          <TunnelRow tunnel={tunnel} machine={machine} session={session} active={active} />
+          <TunnelRow tunnel={tunnel} session={session} active={active} />
         </Fragment>
       ))}
     </Surface>

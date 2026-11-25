@@ -5,11 +5,17 @@ import { Code } from "../../../shared/ui/Code";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FileScript } from "../../../shared/ui/icons";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { Toast } from "../../../shared/ui/ToastRegion";
-import { dataTransfers, sharingNotices, type SharingKind } from "../model/transfers";
+import {
+  activitySharing,
+  dataTransfers,
+  sharingNotices,
+  type SharingKind,
+} from "../model/transfers";
 
 function sharingTitle(kind: SharingKind) {
   switch (kind) {
@@ -48,12 +54,15 @@ export function DataSharingNotices() {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Automatic review timers run only while the notice surface is mounted.
   useEffect(() => dataTransfers.present(), []);
   const [openedId, setOpenedId] = useState<number | null>(null);
+  const [failedSaveId, setFailedSaveId] = useState<number | null>(null);
   const openPending = pending && openedId === pending.id ? pending : null;
+  const canAlwaysSend = openPending?.kind === "activity";
   const openReceipt = showReceipts ? receipts.find((item) => item.id === openedId) : undefined;
   const details = openPending ?? openReceipt;
   const close = () => {
     openPending?.inspect(false);
     setOpenedId(null);
+    setFailedSaveId(null);
   };
   const open = (id: number) => {
     if (openPending && openPending.id !== id) openPending.inspect(false);
@@ -112,7 +121,7 @@ export function DataSharingNotices() {
                   {t("Do not send")}
                 </Button>
                 <Button
-                  variant="primary"
+                  variant={canAlwaysSend ? "secondary" : "primary"}
                   onClick={() => {
                     openPending.decide(true);
                     close();
@@ -120,11 +129,29 @@ export function DataSharingNotices() {
                 >
                   {t("Send once")}
                 </Button>
+                {canAlwaysSend && (
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      if (!activitySharing.save("auto")) {
+                        setFailedSaveId(openPending.id);
+                        return;
+                      }
+                      openPending.decide(true);
+                      close();
+                    }}
+                  >
+                    {t("Always send")}
+                  </Button>
+                )}
               </ModalActions>
             )
           }
         >
           <div className="grid gap-4">
+            {openPending && failedSaveId === openPending.id && (
+              <InlineError>{t("Could not save changes")}</InlineError>
+            )}
             {openPending?.automatic && (
               <Text as="p" size="caption" tone="secondary">
                 {t("Automatic sending pauses while you review this report.")}

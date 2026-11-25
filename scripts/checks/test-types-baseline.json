@@ -35,7 +35,6 @@
     "host/conversation/conversation-goal-tools.test.ts": 7,
     "host/conversation/conversation-image-tools.test.ts": 1,
     "host/conversation/conversation-management-runtime.test.ts": 1,
-    "host/conversation/conversation-management-tools.test.ts": 13,
     "host/conversation/conversation-runtime-read-tools.test.ts": 2,
     "host/conversation/conversation-steward-tools.test.ts": 1,
     "host/conversation/conversation-task-queue-tools.test.ts": 1,

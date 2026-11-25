@@ -17,7 +17,7 @@ vi.mock("../../../../shared/ui/Modal", async () => {
     ModalActions: ({ children }: any) => h("div", null, children),
   };
 });
-vi.mock("../../../voice/model/voiceSettings", () => ({ loadVoiceSettings: () => ({}) }));
+vi.mock("../../../voice/public/settings", () => ({ loadVoiceSettings: () => ({}) }));
 
 const { useLanguageChangeFlow } = await import("./useLanguageChangeFlow");
 

@@ -315,7 +315,7 @@ export function ModelOrderList({
           title={t("No models configured")}
           description={addChoice || !source.probed() ? "" : noProviderReason}
           showDescription={!addChoice}
-          className="p-0"
+          inset="none"
         />
       ) : (
         listControls

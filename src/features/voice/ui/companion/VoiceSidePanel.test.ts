@@ -43,7 +43,12 @@ it("paints the side panel with its own fill instead of a role the floating compa
       createElement(
         "section",
         { ref: panel, ...surfaceAttributes({ variant: "floating", frame: "pane" }) },
-        createElement(VoiceSidePanel, { panel, label: "Question", openKey: "a" }, "body"),
+        createElement(VoiceSidePanel, {
+          panel,
+          label: "Question",
+          openKey: "a",
+          children: "body",
+        }),
       ),
     );
   });
