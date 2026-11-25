@@ -8,6 +8,22 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { tourMascotPose, type TourMascotPose } from "../model/tourMascot";
+import wave from "../../../assets/onboarding/tour/wave.webp";
+import point from "../../../assets/onboarding/tour/point.webp";
+import think from "../../../assets/onboarding/tour/think.webp";
+import typing from "../../../assets/onboarding/tour/type.webp";
+import inspect from "../../../assets/onboarding/tour/inspect.webp";
+import cheer from "../../../assets/onboarding/tour/cheer.webp";
+
+const MASCOT: Record<TourMascotPose, string> = {
+  wave,
+  point,
+  think,
+  type: typing,
+  inspect,
+  cheer,
+};
 
 /**
  * The one tour card for every spotlight tour (first-run, "What's new" and the Guide's quick
@@ -28,6 +44,7 @@ export function UsageGuideTooltip({
   const card = useRef<HTMLElement>(null);
   // Joyride traps focus in the card and lands on the primary action when it opens. A Try it
   // button disappears with its step, so focus is put back on the main action for the next card.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves DOM focus to the new card's primary action after the step changes.
   useEffect(() => {
     const root = card.current;
     if (!root || root.contains(document.activeElement)) return;
@@ -70,10 +87,35 @@ export function UsageGuideTooltip({
         </Button>
       </Text>
       <ScrollArea gutter="stable" className="usage-guide-scroll" key={index}>
-        <Heading size="page" level={2} id="usage-guide-title" className="usage-guide-tour-title">
-          {step.title}
-        </Heading>
-        {step.content}
+        <div className="usage-guide-card-body">
+          <img
+            src={
+              MASCOT[
+                tourMascotPose(
+                  (step.data as { mascot?: TourMascotPose } | undefined)?.mascot,
+                  index,
+                  isLastStep,
+                )
+              ]
+            }
+            alt=""
+            width={64}
+            height={112}
+            draggable={false}
+            className="usage-guide-mascot"
+          />
+          <div className="usage-guide-card-text">
+            <Heading
+              size="page"
+              level={2}
+              id="usage-guide-title"
+              className="usage-guide-tour-title"
+            >
+              {step.title}
+            </Heading>
+            {step.content}
+          </div>
+        </div>
       </ScrollArea>
       <footer className="usage-guide-footer">
         {size > 1 && !isLastStep ? (

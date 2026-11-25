@@ -14924,5 +14924,6 @@
   "No public tunnel is ready. Allow phones over the public internet and start a public Host tunnel, then check again.": "没有就绪的公共隧道。请允许手机通过公共互联网连接，启动公共主机隧道，然后重新检查。",
   "Anyone on the internet can reach this address. Use it only away from your own networks.": "互联网上的任何人都可以访问此地址。仅在你自己的网络之外使用。",
   "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.": "公共互联网：任何人都可以访问此地址，手机仅受此一次性代码及其设备凭据保护。仅在你自己的网络之外使用。",
-  "Width: 240–3840 px. Height: 240–2160 px.": "宽度：240–3840 px。高度：240–2160 px。"
+  "Width: 240–3840 px. Height: 240–2160 px.": "宽度：240–3840 px。高度：240–2160 px。",
+  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "停止后，已导入的对话会保留。之后可在会话列表中通过“导入历史记录”导入其余对话。"
 }

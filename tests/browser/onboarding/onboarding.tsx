@@ -8,12 +8,12 @@ import OnboardingDialog from "../../../src/features/onboarding/ui/OnboardingDial
 import { OnboardingHost } from "../../../src/features/onboarding/ui/OnboardingHost";
 import UsageGuideDialog from "../../../src/features/onboarding/ui/UsageGuideDialog";
 import { WorkspaceFeatureGate } from "../../../src/features/settings/ui/WorkspaceFeatureGate";
-import { WORKSPACE_FEATURE_CHOICES } from "../../../src/features/settings/ui/WorkspaceFeatureSettings";
+import { workspaceFeatureChoices } from "../../../src/features/settings/ui/WorkspaceFeatureSettings";
 import {
   applyThemePreference,
   loadThemePreference,
 } from "../../../src/features/settings/model/appearance";
-import { setLanguagePreference, t } from "../../../src/shared/i18n";
+import { setLanguagePreference } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
 import { Sheet } from "../../../src/shared/ui/Sheet";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
@@ -242,9 +242,9 @@ function Fixture() {
     <main className="min-h-screen bg-background-base p-5 text-content">
       <button onClick={() => setOpen(true)}>Reopen setup</button>
       <nav aria-label="Fixture tools" className="flex gap-4">
-        {WORKSPACE_FEATURE_CHOICES.map(({ id, label }) => (
+        {workspaceFeatureChoices().map(({ id, label }) => (
           <WorkspaceFeatureGate key={id} id={id}>
-            <button>{t(label)}</button>
+            <button>{label}</button>
           </WorkspaceFeatureGate>
         ))}
       </nav>

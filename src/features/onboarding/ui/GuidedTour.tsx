@@ -69,6 +69,7 @@ export default function GuidedTour({
   const tryItTimer = useRef<number | null>(null);
   const latest = useRef({ steps, projectCwd, notesEnabled, onStepShown, onEnd, currentId });
   // Handlers and the async walk read the newest props and card without re-subscribing.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Mirrors the newest props into the ref the async tour walk reads.
   useLayoutEffect(() => {
     latest.current = { steps, projectCwd, notesEnabled, onStepShown, onEnd, currentId };
   });
@@ -118,6 +119,7 @@ export default function GuidedTour({
   const indexOfCurrent = () =>
     latest.current.steps.findIndex((step) => step.id === latest.current.currentId);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Runs the tour walk while mounted and cancels its timers and late steps on unmount.
   useEffect(() => {
     // Set on every mount: StrictMode replays this effect after the cleanup below marked the tour ended.
     ended.current = false;
@@ -174,7 +176,7 @@ export default function GuidedTour({
     target: step.targets.length > 0 ? () => findUsageGuideTarget(step.targets) : document.body,
     placement: step.targets.length > 0 ? "auto" : "center",
     title: step.title,
-    data: { compact: true },
+    data: { compact: true, mascot: step.mascot },
     content: (
       <Text
         as="div"

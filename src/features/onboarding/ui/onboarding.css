@@ -346,6 +346,19 @@
 .onboarding-scan > p {
   margin: 0;
 }
+.onboarding-import-progress {
+  display: grid;
+  gap: 8px;
+}
+.onboarding-import-progress p {
+  margin: 0;
+}
+.onboarding-import-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .onboarding-projects-frame {
   overflow: clip;
 }

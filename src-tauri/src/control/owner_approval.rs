@@ -34,16 +34,22 @@ pub(crate) fn ask_window_checked(
 pub(crate) fn ask_focused(app: &AppHandle, prompt: Prompt<'_>) -> bool {
     ask_focused_result(app, prompt).unwrap_or(false)
 }
+/// The application's own consent questions: the message is prose for the owner, not an exact
+/// operation to inspect, so the webview shows it as text instead of on the code ground.
 pub(crate) fn ask_focused_result(app: &AppHandle, prompt: Prompt<'_>) -> Result<bool, String> {
     let windows = crate::window::workspace_windows(app);
     let focused = windows.iter().find(|w| w.is_focused().unwrap_or(false));
     let window = focused.or_else(|| (windows.len() == 1).then(|| &windows[0]));
-    ask(
+    ask_as(
         app,
         window.ok_or("Approval source window unavailable")?,
         None,
+        ApprovalChannel::Approval,
         prompt,
+        json!({ "presentation": "text" }),
+        None,
         || Ok(()),
+        decision,
     )
 }
 

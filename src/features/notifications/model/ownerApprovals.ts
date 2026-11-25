@@ -22,6 +22,8 @@ export type OwnerApproval = {
   inbox?: InboxApprovalDetails;
   /** Readable view of the application operation `message` states; absent for other approvals. */
   management?: ManagementApprovalDetails;
+  /** `text`: the application's own consent question, read as prose rather than an exact operation. */
+  presentation?: "text";
   /** A paired phone may also answer this approval; false for secrets and desktop input. */
   remote: boolean;
 };
@@ -162,6 +164,9 @@ export function requestOwnerApproval(
     deadline: input.deadline,
     inbox,
     ...(management ? { management } : {}),
+    ...((input.details as { presentation?: unknown } | null | undefined)?.presentation === "text"
+      ? { presentation: "text" }
+      : {}),
     remote: isRemoteApproval({
       action,
       title: input.title as string,

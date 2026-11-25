@@ -110,7 +110,23 @@
 
 /* Compact card: first-run tour and "What's new" highlights. */
 .usage-guide-panel--compact {
-  inline-size: min(340px, calc(100vw - 32px));
+  inline-size: min(400px, calc(100vw - 32px));
+}
+/* The guide mascot stands at the card's start edge beside the step text. */
+.usage-guide-card-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+.usage-guide-mascot {
+  inline-size: 64px;
+  block-size: 112px;
+  image-rendering: pixelated;
+  user-select: none;
+}
+.usage-guide-card-text {
+  min-inline-size: 0;
 }
 .usage-guide-panel--compact .usage-guide-toolbar {
   padding-block: var(--space-1);

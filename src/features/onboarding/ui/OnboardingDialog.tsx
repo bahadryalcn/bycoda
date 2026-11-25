@@ -1,6 +1,6 @@
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
@@ -132,6 +132,7 @@ export default function OnboardingDialog({ onFinish, onImported, onOpenProject }
     setVisited((seen) => new Set([...seen, steps[next]]));
     setCurrentId(steps[next]);
   };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves DOM focus to the new step's heading after the step changes.
   useEffect(() => {
     if (previousStep.current === step) return;
     previousStep.current = step;
@@ -339,6 +340,7 @@ function Projects({
   const running = useRef(false);
   const folders = groupByFolder(candidates);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Scans native conversation history once while mounted and aborts a running import on unmount.
   useEffect(() => {
     let alive = true;
     Promise.all([discoverImportableSessions(), importedSessionKeys()])
@@ -587,20 +589,34 @@ function Projects({
             />
           ) : null}
           {importing ? (
-            <div>
-              <Progress
-                aria-valuetext={importStatus}
-                value={progress?.total ? progress.done : undefined}
-                max={progress?.total || 1}
-                compact
-              />
-              <Text as="p" size="inherit" tone="muted" leading="normal">
-                <LiveText text={importStatus} />
-              </Text>
-              <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
-                {t("Stop import")}
-              </Button>
-            </div>
+            <Surface variant="card" padding="md">
+              <div className="onboarding-import-progress">
+                <div className="onboarding-import-status">
+                  <Text as="p" size="inherit" tone="primary" weight="medium" leading="normal">
+                    <LiveText text={importStatus} />
+                  </Text>
+                  <Button
+                    onClick={() => abort.current?.abort()}
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                  >
+                    {t("Stop import")}
+                  </Button>
+                </div>
+                <Progress
+                  aria-valuetext={importStatus}
+                  value={progress?.total ? progress.done : undefined}
+                  max={progress?.total || 1}
+                  compact
+                />
+                <Text as="p" size="caption" tone="muted" leading="normal">
+                  {t(
+                    "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.",
+                  )}
+                </Text>
+              </div>
+            </Surface>
           ) : null}
           {summary ? (
             <div>
@@ -666,7 +682,7 @@ function Projects({
               ))}
             </div>
           ) : null}
-          {!empty && !loading ? (
+          {!empty && !loading && !importing ? (
             <div className="onboarding-actions">
               {chooseFolders}
               {onOpenRemote ? (

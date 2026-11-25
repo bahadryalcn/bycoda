@@ -1,5 +1,6 @@
 import { ownerPromptLabel } from "../model/ownerPromptLabels";
 import { Surface } from "../../../shared/ui/Surface";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { ApprovalActions, ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
@@ -51,7 +52,31 @@ function approvalTitle(request: OwnerApproval, t: (key: string) => string) {
   return label ? t(label) : request.title;
 }
 
+/** The application's own question: the first paragraph asks, the rest explains. */
+function ApprovalText({ message }: { message: string }) {
+  const [question, ...notes] = message.split(/\n{2,}/);
+  return (
+    <div className="grid gap-2">
+      <Text as="p" size="body" tone="primary" className="whitespace-pre-line break-words">
+        {question}
+      </Text>
+      {notes.map((note, index) => (
+        <Text
+          key={index}
+          as="p"
+          size="secondary"
+          tone="secondary"
+          className="whitespace-pre-line break-words"
+        >
+          {note}
+        </Text>
+      ))}
+    </div>
+  );
+}
+
 function managementSummary(request: OwnerApproval) {
+  if (request.presentation === "text") return <ApprovalText message={request.message} />;
   return request.management ? (
     <ManagementApprovalPreview details={request.management} message={request.message} />
   ) : undefined;
@@ -78,6 +103,7 @@ export function OwnerApprovalChat({
     ownerSecretInputsSnapshot,
     ownerSecretInputsSnapshot,
   );
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Registers this chat as its session's visible approval surface while mounted.
   useEffect(
     () => (visible && sessionId ? registerOwnerApprovalChat(sessionId) : undefined),
     [sessionId, visible],

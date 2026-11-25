@@ -14924,5 +14924,6 @@
   "No public tunnel is ready. Allow phones over the public internet and start a public Host tunnel, then check again.": "Aucun tunnel public n'est prêt. Autorisez les téléphones via internet public, démarrez un tunnel public de l'hôte, puis vérifiez à nouveau.",
   "Anyone on the internet can reach this address. Use it only away from your own networks.": "Toute personne sur internet peut atteindre cette adresse. Utilisez-la uniquement en dehors de vos propres réseaux.",
   "Public internet: anyone can reach this address, and the phone is protected only by this one-time code and its device credential. Use it only away from your own networks.": "Internet public : toute personne peut atteindre cette adresse, et le téléphone n'est protégé que par ce code à usage unique et son identifiant d'appareil. Utilisez-le uniquement en dehors de vos propres réseaux.",
-  "Width: 240–3840 px. Height: 240–2160 px.": "Largeur : 240–3840 px. Hauteur : 240–2160 px."
+  "Width: 240–3840 px. Height: 240–2160 px.": "Largeur : 240–3840 px. Hauteur : 240–2160 px.",
+  "Stopping keeps the conversations imported so far. Import the rest later with Import history in the session list.": "L’arrêt conserve les conversations déjà importées. Importez le reste plus tard avec « Historique des importations » dans la liste des sessions."
 }

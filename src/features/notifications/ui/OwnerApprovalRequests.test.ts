@@ -147,6 +147,37 @@ it("shows an Inbox review as its line comments in a dialog the owner can approve
   }
 });
 
+it("reads the application's own consent question as text, not as an exact operation", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  try {
+    await act(async () => root.render(createElement(OwnerApprovalInbox)));
+    await act(async () => {
+      void requestOwnerApproval({
+        id: "file-access",
+        input: {
+          title: "File access",
+          message: "Allow all files?\n\nYou can change this in Settings.",
+          confirmLabel: "Allow all files",
+          cancelLabel: "Selected folders only",
+          deadline: Date.now() + 60_000,
+          details: { presentation: "text" },
+        },
+      }).catch(() => undefined);
+    });
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const paragraphs = [...dialog.querySelectorAll("p")].map((node) => node.textContent);
+    expect(paragraphs).toContain("Allow all files?");
+    expect(paragraphs).toContain("You can change this in Settings.");
+    expect(dialog.querySelector("pre, code")).toBeNull();
+  } finally {
+    for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+    await act(async () => root.unmount());
+    element.remove();
+  }
+});
+
 it("approves an Inbox request from the chat directly, with one Details disclosure", async () => {
   const element = document.createElement("div");
   document.body.append(element);

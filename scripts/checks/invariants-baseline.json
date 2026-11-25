@@ -1237,9 +1237,6 @@
     "src/features/notifications/hooks/useSessionReminders.ts": {
       "bycoda/effect-names-its-sync": 3
     },
-    "src/features/notifications/ui/OwnerApprovalRequests.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
     "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -1249,9 +1246,6 @@
     "src/features/onboarding/ui/GuideHub.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/onboarding/ui/GuidedTour.tsx": {
-      "bycoda/effect-names-its-sync": 2
-    },
     "src/features/onboarding/ui/OnboardingAgents.tsx": {
       "bycoda/effect-names-its-sync": 1,
       "oxlint/no-restricted-imports": 1
@@ -1259,16 +1253,10 @@
     "src/features/onboarding/ui/OnboardingCrewPreview.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/onboarding/ui/OnboardingDialog.tsx": {
-      "bycoda/effect-names-its-sync": 2
-    },
     "src/features/onboarding/ui/TourOffer.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/onboarding/ui/UsageGuideDialog.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
-    "src/features/onboarding/ui/UsageGuideTooltip.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/onboarding/ui/tourRunner.ts": {
