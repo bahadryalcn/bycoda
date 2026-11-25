@@ -5,7 +5,7 @@
 <h1 align="center">bycoda</h1>
 
 <p align="center">
-  A desktop workspace for coding agents: sessions, files, terminals and Git in one window.
+  A desktop app that runs your coding agents, with their sessions, files, terminals and Git in one window.
 </p>
 
 <p align="center">
@@ -16,50 +16,51 @@
 </p>
 
 <p align="center">
-  <img src="public/brand/bycoda-themes.gif" alt="The new-session screen in six AI-generated themes" width="100%" />
+  <img src="public/brand/bycoda-themes.gif" alt="The new-session screen in six themes generated in the app" width="100%" />
 </p>
 
-<p align="center"><sub>Six themes generated from one-line prompts in Settings → Appearance: midnight ocean, warm kiln, Tokyo rain, deep-space nebula, paper and ink, pine forest.</sub></p>
+<p align="center"><sub>Six themes generated from short descriptions in Settings > Appearance, each with its own background picture.</sub></p>
 
 ## Overview
 
-bycoda runs the agent CLIs you already use (Codex, Claude Code, Gemini CLI, Cursor,
-OpenCode and others) and puts their sessions next to the project they work on. You
-read the conversation, open the files it touched, run commands and review the diff
-without switching tools. Authentication and model access come from your own
-provider accounts; bycoda does not proxy or resell AI access.
+bycoda runs the agent CLIs you already use (Claude Code, Codex, Gemini CLI, Grok, OpenCode and others) and keeps
+their sessions next to the project they work on. You read the conversation, open the files it touched, run
+commands and review the diff in the same window. Sign-in and model access come from your own provider accounts;
+bycoda does not proxy or resell AI access.
 
-It is built with Tauri (Rust) and React, with a Node Host process that owns
-sessions, projects and remote connections.
+The desktop app is built with Tauri (Rust) and React. A separate Node Host process owns sessions, projects and
+remote connections, so work keeps running when the window is closed.
 
 ## Features
 
-- **Sessions** — run several agents side by side, keep history per project, resume
-  later. Import existing local Claude Code and Codex conversations.
-- **Workspace** — file explorer, editor, document previews and terminals scoped to
-  the project.
-- **Source control** — Git changes, diffs, worktrees and review alongside each session.
-- **Tasks and automations** — track agent work through review; schedule recurring
-  runs.
-- **Remote projects** — connect to a Host on another machine and work with its
-  projects and sessions. See [remote access](docs/guides/remote-access.md).
-- **Appearance** — light and dark schemes, palettes, fonts, density and live
-  backgrounds. Describe a theme in words and a model of your choice proposes a
-  complete look.
-- **Localization** — multiple interface languages.
+- Run several agents side by side and keep each project's history. Existing local Claude Code and Codex
+  conversations can be imported.
+- Let a session hand work to subagents from other providers, and pick an advisor model that reviews the result.
+- Read the diff of every change, keep or undo it, and let the app draft the commit message.
+- Queue tasks on a board that runs them through review, and schedule automations for work that repeats.
+- Put a crew of specialist agents on one piece of work.
+- Hand GitHub or Jira issues from the Inbox to an agent.
+- Save SSH servers and work on them from the app.
+- Keep notes per project, talk to the voice assistant, and approve requests from your phone.
+- Work with projects on another machine through its Host. See [remote access](docs/guides/remote-access.md).
+- Change the light and dark schemes, palettes, fonts and density, or describe a theme and let a model of your
+  choice build it.
+- Use the interface in several languages.
 
-Feature availability and model options depend on the provider integration.
+What each provider supports, and which models it offers, depends on its integration.
 
 <table>
   <tr>
-    <td><a href="public/brand/bycoda-sessions.png"><img src="public/brand/bycoda-sessions.png" alt="Agent sessions in a split workspace" /></a></td>
-    <td><a href="public/brand/bycoda-tasks.png"><img src="public/brand/bycoda-tasks.png" alt="Tasks board with work ready for review" /></a></td>
+    <td><a href="public/brand/bycoda-session.png"><img src="public/brand/bycoda-session.png" alt="A session where the lead agent runs two subagents from different providers" /></a></td>
+    <td><a href="public/brand/bycoda-review.png"><img src="public/brand/bycoda-review.png" alt="The changes of a session with its diff open beside the conversation" /></a></td>
   </tr>
   <tr>
-    <td align="center"><sub>Sessions side by side</sub></td>
-    <td align="center"><sub>Tasks through review</sub></td>
+    <td align="center"><sub>One session, two subagents from two providers</sub></td>
+    <td align="center"><sub>The diff beside the conversation</sub></td>
   </tr>
 </table>
+
+<p align="center"><sub>The screenshots show a demo project.</sub></p>
 
 ## Quick start
 
@@ -77,9 +78,8 @@ pnpm install --frozen-lockfile
 pnpm run tauri dev
 ```
 
-On first launch, setup walks through **Connect → Agents → Projects**: choose this
-computer or a remote Host, check installed provider CLIs, then add a project folder
-or import existing conversations. Nothing is installed or imported without your
+On first launch, setup asks three things in order. Choose this computer or a remote Host, check the installed
+provider CLIs, then add a project folder or import existing conversations. Nothing is installed or imported without your
 choice. Details: [getting started](docs/guides/onboarding.md).
 
 For local packaging and installation on Windows or macOS, see
@@ -108,7 +108,7 @@ quotas and charges are governed by each provider's terms.
 - [Terms of use](docs/guides/terms-of-use.md)
 - [Third-party services and data controls](docs/guides/third-party-data.md)
 
-These are also available offline in **Settings → Policies** (English and Turkish).
+The app also shows them offline, in English and Turkish, under Settings > Policies.
 Contact: [info@bycoda.codes](mailto:info@bycoda.codes).
 
 ## Contributing
@@ -119,11 +119,9 @@ in [SECURITY.md](SECURITY.md).
 
 ## Credits
 
-bycoda began as a fork of an MIT-licensed open source project and is independently developed by
-[Bahadır Halil Yalçın](https://github.com/bahadryalcn). Original and imported
-contributions keep their authorship; see [CREDITS.md](CREDITS.md) and
-[NOTICE](NOTICE).
+bycoda is developed by [Bahadır Halil Yalçın](https://github.com/bahadryalcn). Third-party code, artwork and
+sounds keep their authors and licenses; see [CREDITS.md](CREDITS.md) and [NOTICE](NOTICE).
 
 ## License
 
-[MIT](LICENSE). The original copyright and license notice are preserved.
+[MIT](LICENSE).

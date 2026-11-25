@@ -88,7 +88,6 @@ export function DataSharingNotices() {
       {pending && (
         <Toast
           key={`pending-${pending.id}`}
-          placement="bottom-start"
           tone="info"
           title={pending.automatic ? t("Automatic sharing is ready") : t("Approve data sharing")}
           message={sharingTitle(pending.kind)}
@@ -103,11 +102,9 @@ export function DataSharingNotices() {
       {latestReceipt && (
         <Toast
           key={`receipt-${latestReceipt.id}`}
-          placement="bottom-start"
           tone="success"
           title={t("Data sent")}
           message={sharingTitle(latestReceipt.kind)}
-          durationMs={null}
           action={{ label: t("Details"), onClick: () => open(latestReceipt.id) }}
           onDismiss={() => dataTransfers.dismiss(latestReceipt.id)}
         />

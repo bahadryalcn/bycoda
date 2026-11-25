@@ -158,7 +158,7 @@ it("runs npm provider entry points directly with literal arguments and bundled N
 
 it("uses an unlimited, unelevated per-user task and preserves literal paths", () => {
   const options = {
-    directory: "C:\\Users\\Nick's $PC\\.bycoda-host",
+    directory: "C:\\Users\\bahadryalcn's $PC\\.bycoda-host",
     executable: "C:\\Runtime\\node.exe",
     entry: "C:\\Runtime\\host.mjs",
     port: 3774,
@@ -184,7 +184,7 @@ it("uses an unlimited, unelevated per-user task and preserves literal paths", ()
   expect(windowsUninstallPreflightScript()).toContain(
     "SetSecurityDescriptor('O:${sid}G:${sid}D:(A;;FA;;;${sid})(A;;FA;;;BA)(A;;FA;;;SY)', 0)",
   );
-  expect(psQuote("Nick's $PC")).toBe("'Nick''s $PC'");
+  expect(psQuote("bahadryalcn's $PC")).toBe("'bahadryalcn''s $PC'");
   expect(Buffer.from(powershellArgs("$x = '日本語'").at(-1)!, "base64").toString("utf16le")).toBe(
     "$x = '日本語'",
   );
@@ -225,7 +225,7 @@ ${script}
 it.skipIf(process.platform !== "win32")(
   "stages literal JSON configuration across successive runtime upgrades",
   async () => {
-    const directory = join(temporary(), "Nick's $PC 日本語 &");
+    const directory = join(temporary(), "bahadryalcn's $PC 日本語 &");
     mkdirSync(directory);
     for (const version of ["0.6.35", "0.6.36"]) {
       const runtime = join(directory, "runtime", version);
