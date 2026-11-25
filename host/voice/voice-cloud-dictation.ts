@@ -70,7 +70,7 @@ export async function transcribeCloudDictation(
   deps: CloudDictationDeps,
   /** One of the provider's allowed models; omitted uses its default. */
   requestedModel?: unknown,
-): Promise<{ text: string }> {
+): Promise<{ text: string; language?: string }> {
   if (!CLOUD_DICTATION_PROVIDERS.includes(provider as CloudDictationProvider))
     throw new Error("Invalid dictation provider.");
   const chosen = provider as CloudDictationProvider;
@@ -161,8 +161,14 @@ export async function transcribeCloudDictation(
     throw new Error(`${name} sign-in was rejected (${response.status}). ${SIGN_IN[chosen]}`);
   if (!response.ok)
     throw new Error(`${name} speech recognition is unavailable (${response.status}).`);
-  const result = (await response.json().catch(() => undefined)) as { text?: unknown } | undefined;
+  const result = (await response.json().catch(() => undefined)) as
+    | { text?: unknown; language?: unknown }
+    | undefined;
   if (typeof result?.text !== "string" || result.text.length > 16000)
     throw new Error(`${name} returned an invalid transcript.`);
-  return { text: result.text };
+  const detected =
+    typeof result.language === "string"
+      ? /^[a-z]{2}(?=$|[-_])/i.exec(result.language)?.[0].toLowerCase()
+      : undefined;
+  return { text: result.text, ...(detected && { language: detected }) };
 }

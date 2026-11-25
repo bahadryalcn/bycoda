@@ -11,6 +11,30 @@ const implementation =
 const persistentArtifact =
   /\b(?:bilesen\w*|ozellik\w*|feature\w*|widget\w*|reusable|kalici|kalicilastir\w*|dosya\w*|kod|tests?|script\w*|file\w*)\b/;
 const artifactChange = /\b(?:ekle\w*|yaz\w*|olustur\w*|add|create|build|code)\b/;
+// Spoken build requests: a creation verb in a request form plus a buildable object. Past
+// tenses are left out so "ne yaptın" or "did you build it" stays a question about state.
+const creationVerb =
+  /\b(?:yap(?:ar|alim|abilir\w*|in|iniz|sana|sin|mani|man)?|yaptir(?:ir|alim|abilir\w*|in|iniz|sana|sin|mani|man)?|hazirla(?:r|yalim|yabilir\w*|yin|yiniz|sana|sin|mani|man)?|kur(?:ar|alim|abilir\w*|un|unuz|sana|sun|mani|man)?|cikar(?:ir|alim|abilir\w*|in|iniz|sana|sin|mani|man)?|olustur(?:ur|alim|abilir\w*|un|unuz|sana|sun|mani|man)?|make|build|create|write|code|develop|set up|put together|spin up|whip up)\b/;
+const creationObject =
+  /\b(?:oyun\w*|games?|uygulama\w*|apps?|applications?|sayfa\w*|pages?|web ?site\w*|site\w*|arac(?:i|ini)?|tools?|script\w*|betik\w*|program\w*|bots?|eklenti\w*|extensions?|plugins?|servis\w*|services?|api|cli|prototip\w*|prototypes?|demo\w*|landing|bilesen\w*|components?|widget\w*|ozellik\w*|features?)\b/;
+const askedAboutPast =
+  /\b(?:did|have|has|had) (?:you|it|we|i|they)\b|\bwho (?:made|built|created|wrote)\b/;
+const viewChange =
+  /\b(?:tam ekran\w*|fullscreen|full screen|kucult\w*|buyut\w*|minimi[sz]e|maximi[sz]e|mini (?:mod\w*|mode|view|gorunum\w*)|sessiz\w*|mute|(?:dark|light) (?:mode|theme)|(?:karanlik|koyu|acik) (?:mod\w*|tema\w*))\b/;
+const declined =
+  /\b(?:hayir|vazgec\w*|iptal\w*|bosver|gerek yok|istemiyorum|durdur\w*|no|nope|cancel\w*|never ?mind|forget it|stop)\b/;
+
+function creationRequested(speech: string) {
+  return (
+    creationVerb.test(speech) &&
+    creationObject.test(speech) &&
+    !chartRequest.test(speech) &&
+    !desktopTarget.test(speech) &&
+    !viewChange.test(speech) &&
+    !askedAboutPast.test(speech)
+  );
+}
+
 const editSurface =
   /\b(?:update|change|modify|edit)\s+(?:the |this |that )?(?:page|screen|component|file|button|dashboard)\b/;
 const trackedHandoff =
@@ -76,6 +100,7 @@ function acceptedIntent(speech: string) {
     editSurface.test(speech) ||
     sessionRequested(speech) ||
     trackedHandoff.test(speech) ||
+    creationRequested(speech) ||
     (persistentArtifact.test(speech) && artifactChange.test(speech));
   // An explicit implementation request can include instructions to show a result afterward.
   if (explicitWork) return "work";
@@ -154,7 +179,49 @@ function sameSpokenContent(utterance: string, brief: unknown): boolean {
   return Boolean(spoken && spoken === words(brief));
 }
 
-/** Prevent a display request from becoming a job through another dispatch path. */
+const spokenText = (utterance: string) =>
+  normalizeVoiceSearch(utterance).replace(/"[^"]*"|“[^”]*”/g, "");
+
+// A short answer to a pending question or choice: a project name, "yeni proje oluştur",
+// "evet", "başlat" or an ordinal. It continues the request it answers.
+function answersPendingQuestion(speech: string) {
+  const words = speech.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+  return words > 0 && words <= 6 && !declined.test(speech);
+}
+
+function continuesWork(speech: string, intent: string, carried: string) {
+  return (
+    intent === "ambiguous" &&
+    Boolean(carried) &&
+    acceptedIntent(carried) === "work" &&
+    (!speech.trim() || amendWork.test(speech) || answersPendingQuestion(speech))
+  );
+}
+
+/**
+ * The owner utterance whose work intent later turns may continue. Call it with every accepted
+ * owner transcript and keep the result across reconnects: a new work request replaces the
+ * carried one, a short answer, amendment or empty speech keeps it, and anything else clears it.
+ */
+export function voiceCarriedWorkSpeech(utterance: string, carried = "") {
+  const speech = spokenText(utterance);
+  const intent = acceptedIntent(speech);
+  if (intent === "work") return utterance;
+  return continuesWork(speech, intent, spokenText(carried)) ? carried : "";
+}
+
+function sessionSubmitUnrequested(speech: string) {
+  return (
+    keepDraft.test(speech) ||
+    (!sendSessionWork.test(speech) && !implementation.test(speech) && !creationRequested(speech))
+  );
+}
+
+/**
+ * Prevent a display request from becoming a job through another dispatch path. `previous` is
+ * the carried work utterance from `voiceCarriedWorkSpeech`; the current utterance continues it
+ * when it is empty (after a reconnect), a short answer or an amendment.
+ */
 export function voiceWorkRefusal(
   utterance: string,
   tool: string,
@@ -164,7 +231,15 @@ export function voiceWorkRefusal(
   family?: unknown,
   ownerPressedView = false,
 ) {
-  const speech = normalizeVoiceSearch(utterance).replace(/"[^"]*"|“[^”]*”/g, "");
+  const speech = spokenText(utterance);
+  const carried = previous ? spokenText(previous) : "";
+  const intent = acceptedIntent(speech);
+  const continues = continuesWork(speech, intent, carried);
+  const sessionSpeech = sessionRequested(speech)
+    ? speech
+    : continues && sessionRequested(carried)
+      ? carried
+      : undefined;
   const args = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const usageView = args.view === "usage" || (args.view === "settings" && args.section === "usage");
   const openingUsage =
@@ -172,7 +247,6 @@ export function voiceWorkRefusal(
     ((family === "workspace" &&
       (action === "workspace.usage.open" || (action === "workspace.views.open" && usageView))) ||
       (family === "conversation" && action === "ui.workspace.open" && usageView));
-  const workspaceSession = sessionRequested(speech);
   // A current panel press can create a draft from the owner's edited fields.
   // Submitted work still follows the ordinary handoff admission below.
   if (
@@ -197,7 +271,7 @@ export function voiceWorkRefusal(
       next: "Follow the latest request. Use a Usage report only when the owner asks for usage data.",
     } as const;
   if (
-    workspaceSession &&
+    sessionSpeech &&
     (tool === "give_jobs" ||
       tool === "submit_work" ||
       (tool === "app_tool_call" &&
@@ -215,12 +289,12 @@ export function voiceWorkRefusal(
       next: "Resolve the visible project. Use the workspace family's create, open or submit tool for the exact normal session. For open, use surface project.",
     } as const;
   if (
-    workspaceSession &&
+    sessionSpeech &&
     tool === "app_tool_call" &&
     family === "workspace" &&
     (action === "workspace.sessions.submit" ||
       (action === "workspace.sessions.create" && args.submit === true)) &&
-    (keepDraft.test(speech) || (!sendSessionWork.test(speech) && !implementation.test(speech)))
+    sessionSubmitUnrequested(sessionSpeech)
   )
     return {
       accepted: false,
@@ -234,28 +308,23 @@ export function voiceWorkRefusal(
     tool === "give_jobs" ||
     (tool === "app_tool_call" && typeof action === "string" && workActions.has(action));
   if (!work) return undefined;
-  const intent = acceptedIntent(speech);
   if (intent === "work") return undefined;
-  if (
-    intent === "ambiguous" &&
-    amendWork.test(speech) &&
-    previous &&
-    acceptedIntent(normalizeVoiceSearch(previous)) === "work"
-  )
+  const tracked =
+    tool === "give_jobs" || (typeof action === "string" && startsTrackedWork.has(action));
+  // A continuation keeps the carried request's authority, never more: tracked work still needs
+  // an utterance that asked for it.
+  if (continues && (amendWork.test(speech) || !tracked || trackedHandoff.test(carried)))
     return undefined;
-  if (
-    intent === "ambiguous" &&
-    speech.trim() &&
-    tool !== "give_jobs" &&
-    !(typeof action === "string" && startsTrackedWork.has(action))
-  ) {
+  if (intent === "ambiguous" && speech.trim() && !tracked) {
     // Unrecognized phrasing can use existing typed operation admission. A free-text
     // handoff may carry the owner's words, but cannot expand them without review.
     const brief = handoffText(tool, action, input);
     if ((tool !== "submit_work" && brief === undefined) || sameSpokenContent(utterance, brief))
       return undefined;
   }
-  return { accepted: false, status: "refused", intent, ...refusalDetails[intent] };
+  const details =
+    intent === "ambiguous" && tool === "give_jobs" ? ambiguousJobDetails : refusalDetails[intent];
+  return { accepted: false, status: "refused", intent, ...details };
 }
 
 const refusalDetails = {
@@ -273,4 +342,10 @@ const refusalDetails = {
       "The latest accepted request does not identify a change or handoff. No work was submitted.",
     next: "Ask one short question to establish what the owner wants changed or whether they want to see information. Wait for the owner's answer before submitting any work.",
   },
+};
+
+const ambiguousJobDetails = {
+  error:
+    "The latest accepted request does not ask for tracked, followed-up, background or scheduled work. No job was saved.",
+  next: "For an ordinary build or fix, call app_tool_call with family workspace and workspace.sessions.create in the matching project, with the owner's own words as prompt and submit true. Use give_jobs only when the owner explicitly asks for tracked, followed-up, background or scheduled work. If it is unclear whether they want a change at all, ask one short question.",
 };

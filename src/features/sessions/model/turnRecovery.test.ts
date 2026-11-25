@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { markTurnInterrupted } from "./inFlight";
 import { claimAutoContinue, isAutoContinueDue, markAutoContinueDue } from "./autoContinue";
-import { newSession, type Block, type Session } from "./session";
-import {
-  classifyTurnRecovery,
-  shouldAutoContinue,
-  withFinishedTurn,
-  type TurnRecoveryInput,
-} from "./turnRecovery";
+import { classifyTurnRecovery, shouldAutoContinue, type TurnRecoveryInput } from "./turnRecovery";
 
 const base: TurnRecoveryInput = {
   wasInFlight: true,
@@ -78,45 +71,6 @@ describe("shouldAutoContinue", () => {
         shouldAutoContinue({ recovery: { state, certain: true }, enabled: true, queuedCount: 0 }),
       ).toBe(false);
     }
-  });
-});
-
-describe("withFinishedTurn", () => {
-  function chat(blocks: Block[]): Session {
-    return { ...newSession("claude", "/tmp/a"), providerSessionId: "p1", blocks };
-  }
-  const user: Block = { id: "u1", role: "user", text: "do it" };
-
-  it("drops the quit note and adds the reply that landed while closed", () => {
-    const interrupted = markTurnInterrupted({ ...chat([user]), busy: true });
-    const next = withFinishedTurn(interrupted, " All done. ");
-    expect(next.blocks.map((block) => block.role)).toEqual(["user", "assistant"]);
-    expect(next.blocks[1].text).toBe("All done.");
-  });
-
-  it("does not repeat a reply the chat already ends with", () => {
-    const reply: Block = { id: "a1", role: "assistant", text: "All done." };
-    const interrupted = markTurnInterrupted({ ...chat([user, reply]), busy: true });
-    const next = withFinishedTurn(interrupted, "All done.");
-    expect(next.blocks).toEqual([user, reply]);
-  });
-
-  it("does not repeat a reply that sits before later rows of the same turn", () => {
-    const reply: Block = { id: "a1", role: "assistant", text: "All done." };
-    const note: Block = { id: "s1", role: "system", text: "Background task finished" };
-    const session = chat([user, reply, note]);
-    expect(withFinishedTurn(session, "All done.")).toBe(session);
-  });
-
-  it("does not match an earlier turn's reply", () => {
-    const old: Block = { id: "a0", role: "assistant", text: "All done." };
-    const next = withFinishedTurn(chat([old, user]), "All done.");
-    expect(next.blocks.map((block) => block.role)).toEqual(["assistant", "user", "assistant"]);
-  });
-
-  it("returns the session untouched when there is nothing to change", () => {
-    const session = chat([user]);
-    expect(withFinishedTurn(session, undefined)).toBe(session);
   });
 });
 

@@ -1,8 +1,82 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, it, vi } from "vitest";
 import { VoiceModelsService } from "./voice-models";
+import { downloadGguf, ggufInstalled, ggufModels, ggufWorkerArgs } from "./voice-gguf";
+
+it("lists the pinned GGUF families without touching the network or changing the legacy selections", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  try {
+    const service = new VoiceModelsService(home);
+    const models = await service.list();
+    expect(models.slice(0, 2).map(({ id }) => id)).toEqual(["small", "turbo"]);
+    expect(new Set(ggufModels.map(({ id }) => id)).size).toBe(ggufModels.length);
+    expect(
+      ggufModels.every(
+        (model) =>
+          /^[a-z0-9_.-]+$/.test(model.folder) &&
+          /^[a-f0-9]{40}$/.test(model.revision) &&
+          /^[a-f0-9]{64}$/.test(model.sha256) &&
+          /^[\w.-]+\.gguf$/i.test(model.filename),
+      ),
+    ).toBe(true);
+    expect(models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Nemotron Streaming 3.5",
+          installed: false,
+          languages: expect.arrayContaining(["tr"]),
+        }),
+        expect.objectContaining({ label: "Qwen3-ASR 1.7B", installed: false, format: "gguf" }),
+        expect.objectContaining({
+          label: "Voxtral Mini 4B Realtime",
+          installed: false,
+          format: "gguf",
+        }),
+      ]),
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+it("publishes the exact pinned GGUF bytes and keeps the installed model on a bad retry", async () => {
+  const home = await mkdtemp(join(tmpdir(), "voice-models-"));
+  try {
+    const weights = "GGUF";
+    const [catalog] = ggufModels;
+    const model = {
+      ...catalog,
+      size: weights.length,
+      sha256: createHash("sha256").update(weights).digest("hex"),
+    };
+    const path = join(home, ".bycoda", "voice", "models", model.folder);
+    const runtime = fileURLToPath(ggufWorkerArgs(home, path, model)[3]);
+    await mkdir(dirname(runtime), { recursive: true });
+    await writeFile(runtime, "");
+    await mkdir(path, { recursive: true });
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(weights))
+      .mockResolvedValueOnce(new Response("FAKE"));
+    vi.stubGlobal("fetch", fetcher);
+    const signal = new AbortController().signal;
+    await downloadGguf(home, path, model, signal);
+    await expect(ggufInstalled(home, path, model)).resolves.toBe(true);
+    expect(fetcher).toHaveBeenCalledWith(expect.stringContaining(model.revision), { signal });
+    await expect(downloadGguf(home, path, model, signal)).rejects.toThrow("failed verification");
+    await expect(readFile(join(path, model.filename), "utf8")).resolves.toBe(weights);
+    await expect(readFile(join(path, `${model.filename}.partial`))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  } finally {
+    vi.unstubAllGlobals();
+    await rm(home, { recursive: true, force: true });
+  }
+});
 
 it("downloads, tests and deletes only fixed owned model folders", async () => {
   const home = await mkdtemp(join(tmpdir(), "voice-models-"));

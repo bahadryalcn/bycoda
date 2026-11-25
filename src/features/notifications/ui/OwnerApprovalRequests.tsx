@@ -2,10 +2,11 @@ import { ownerPromptLabel } from "../model/ownerPromptLabels";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
-import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
+import { ApprovalActions, ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InboxApprovalPreview } from "./InboxApprovalPreview";
+import { ManagementApprovalPreview, managementApprovalTitle } from "./ManagementApprovalPreview";
 import {
   hasOwnerApprovalChat,
   ownerApprovalsSnapshot,
@@ -44,6 +45,18 @@ function OwnerRequestCard({
   );
 }
 
+/** An application operation reads by what it does; every other approval keeps its native title. */
+function approvalTitle(request: OwnerApproval, t: (key: string) => string) {
+  const label = request.management ? managementApprovalTitle(request.management) : undefined;
+  return label ? t(label) : request.title;
+}
+
+function managementSummary(request: OwnerApproval) {
+  return request.management ? (
+    <ManagementApprovalPreview details={request.management} message={request.message} />
+  ) : undefined;
+}
+
 /** Native decisions stay transient; they are never copied into provider transcripts. */
 export function OwnerApprovalChat({
   sessionId,
@@ -79,8 +92,9 @@ export function OwnerApprovalChat({
           .map((request) => (
             <OwnerRequestCard as="div" key={request.id}>
               <ApprovalRequest
-                title={request.title}
+                title={approvalTitle(request, t)}
                 detail={request.message}
+                summary={managementSummary(request)}
                 allow={{
                   label: ownerPromptLabel(t, request.confirmLabel),
                   onClick: () => settleOwnerApproval(request.id, true),
@@ -178,26 +192,35 @@ function InboxApprovalDialog({
   onClose: () => void;
 }) {
   const t = useT();
+  const allow = {
+    label: ownerPromptLabel(t, request.confirmLabel),
+    onClick: () => settleOwnerApproval(request.id, true),
+  };
+  const deny = {
+    label: ownerPromptLabel(t, request.cancelLabel),
+    onClick: () => settleOwnerApproval(request.id, false),
+  };
   return (
     <Modal
-      size={request.inbox ? "lg" : "sm"}
+      size={request.inbox ? "lg" : request.management ? "md" : "sm"}
       fitViewport
-      title={request.title}
+      title={approvalTitle(request, t)}
       minimalHeader
       onClose={onClose}
+      footer={
+        <ModalActions>
+          <ApprovalActions allow={allow} deny={deny} />
+        </ModalActions>
+      }
     >
       <div className="me-(--modal-close-clearance)">
         <ApprovalRequest
-          title={request.title}
+          title={approvalTitle(request, t)}
           detail={request.message}
-          allow={{
-            label: ownerPromptLabel(t, request.confirmLabel),
-            onClick: () => settleOwnerApproval(request.id, true),
-          }}
-          deny={{
-            label: ownerPromptLabel(t, request.cancelLabel),
-            onClick: () => settleOwnerApproval(request.id, false),
-          }}
+          summary={managementSummary(request)}
+          actionsPlacement="none"
+          allow={allow}
+          deny={deny}
           details={
             request.inbox
               ? {

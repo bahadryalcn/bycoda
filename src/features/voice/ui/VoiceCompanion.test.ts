@@ -207,6 +207,15 @@ vi.mock("../model/realtimeVoice", () => ({
     finishTurn = mock.finishTurn;
   },
 }));
+// Each companion mount gets its own in-memory work ledger, so tests never share started work.
+vi.mock("../model/voiceWorkLedger", async (original) => {
+  const actual = await original<typeof import("../model/voiceWorkLedger")>();
+  return {
+    ...actual,
+    sharedVoiceWorkLedger: () =>
+      new actual.VoiceWorkLedger({ storage: { load: () => [], save: () => {} } }),
+  };
+});
 vi.mock("../model/voiceAssistant", () => ({ converseWithAssistant: mock.assistant }));
 vi.mock("../model/voicePreview", () => ({ previewVoice: mock.preview }));
 vi.mock("../model/voiceToolClient", () => ({
@@ -3422,7 +3431,7 @@ it.each(["local", "openai"] as const)(
   },
 );
 
-it("requires owner review of an unclassified request before creating a background job", async () => {
+it("refuses background jobs for an unclassified request and routes the model to a session", async () => {
   assistantHost.snapshot.profile.confirmJobs = false;
   const { onSubmit } = await setupGlobal();
   await acceptCloudSpeech("¿Podrías encargarte de este cambio?");
@@ -3438,20 +3447,17 @@ it("requires owner review of an unclassified request before creating a backgroun
       jobs: [{ title: "Build a chart", request: "Build a reusable chart", projectPath: "/a" }],
     });
   });
+  // No forced review form: the refusal itself tells the model to use a normal session.
+  await expect(pending).resolves.toMatchObject({
+    status: "refused",
+    intent: "ambiguous",
+    next: expect.stringContaining("workspace.sessions.create"),
+  });
+  expect(page.textContent).not.toContain("Review jobs before starting");
   expect(onSubmit).not.toHaveBeenCalled();
   expect(assistantHost.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(
     false,
   );
-  expect(page.textContent).toContain("Review jobs before starting");
-  await act(() => {
-    [...page.querySelectorAll("button")]
-      .find((button) => button.textContent === "Start jobs")!
-      .click();
-  });
-  await expect(pending).resolves.toMatchObject({ status: "accepted" });
-  expect(
-    assistantHost.request.mock.calls.filter(([input]) => input.op === "jobs.create"),
-  ).toHaveLength(1);
 });
 
 it("starts proposed jobs directly and tells the model which wait and why", async () => {
@@ -3624,7 +3630,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
   const { render } = await setup();
   await act(async () => {
     mock.realtime.captureTurn()();
-    mock.realtime.transcript("Secret project proposal");
+    mock.realtime.transcript("Create a job for the secret project proposal");
   });
   let receipt!: Promise<unknown>;
   await act(async () => {
@@ -3638,7 +3644,7 @@ it("masks retained proposal speech and mirrored drafts while a participant becom
     await render("a");
     expect(page.querySelector<HTMLInputElement>('input[value="Private proposal"]')).toBeNull();
     expect(page.textContent).not.toContain("Private proposal");
-    expect(page.textContent).not.toContain("Secret project proposal");
+    expect(page.textContent).not.toContain("secret project proposal");
     expect((overlay.host as any)?.state.jobReview).toBeNull();
     expect((overlay.host as any)?.state.transcript).toBe("");
   } finally {

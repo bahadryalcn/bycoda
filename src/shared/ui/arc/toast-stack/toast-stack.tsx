@@ -18,7 +18,7 @@ import {
 } from "motion/react";
 import { useStableCallback } from "../../../hooks/useStableCallback";
 import { observeResize } from "../../../lib/observeResize";
-import { NoticeGlyph, NoticeSlot } from "../../Notice";
+import { NoticeGlyph } from "../../Notice";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./toast-stack.module.css";
 
@@ -370,15 +370,9 @@ export function ToastStackCard({
           {children ? <div className={styles.body}>{children}</div> : null}
         </div>
         {action ? (
-          <NoticeSlot size="box" className={styles.actionSlot}>
-            {action}
-          </NoticeSlot>
+          <span className={`${styles.controlSlot} ${styles.actionSlot}`}>{action}</span>
         ) : null}
-        {close ? (
-          <NoticeSlot size="box" className={styles.close}>
-            {close}
-          </NoticeSlot>
-        ) : null}
+        {close ? <span className={`${styles.controlSlot} ${styles.close}`}>{close}</span> : null}
         {footer ? <div className={styles.footer}>{footer}</div> : null}
       </motion.div>
     </div>

@@ -44,6 +44,8 @@ describe("voice conversation resume", () => {
     const withRequest = voiceLostSpeechNotice(`  ${"x".repeat(400)}  `);
     expect(withRequest).toContain("last received request");
     expect(withRequest).not.toContain("x".repeat(301));
+    expect(alone).toContain("Work this voice assistant started");
+    expect(alone).toContain("never say work was not started unless that state confirms it");
   });
 });
 

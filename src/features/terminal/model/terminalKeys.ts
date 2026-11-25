@@ -1,4 +1,5 @@
 type TerminalKeyEvent = Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">;
+type TerminalLayoutKeyEvent = TerminalKeyEvent & Pick<KeyboardEvent, "keyCode">;
 
 export function terminalToolShortcut(
   event: TerminalKeyEvent,
@@ -8,6 +9,29 @@ export function terminalToolShortcut(
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") return "search";
   if (suggestionsAllowed && event.ctrlKey && !event.metaKey && event.key === " ") return "command";
   return null;
+}
+
+/** Layout text takes precedence over physical-key bindings while typing in a terminal. */
+export function isTerminalLayoutInput(
+  event: TerminalLayoutKeyEvent & Pick<KeyboardEvent, "getModifierState">,
+  isMac: boolean,
+): boolean {
+  if (isMac) return isMacOptionText(event);
+  return !event.metaKey && event.getModifierState("AltGraph") && isLayoutTextKey(event.key);
+}
+
+export function isMacOptionText(event: TerminalLayoutKeyEvent): boolean {
+  if (!event.altKey || event.ctrlKey || event.metaKey || !isLayoutTextKey(event.key)) return false;
+  // For these keys, xterm's legacy key code also gives the base character. Keep
+  // symbols whose base cannot be inferred, since punctuation varies by layout.
+  const { keyCode } = event;
+  const hasBaseCharacter =
+    keyCode === 32 || (keyCode >= 48 && keyCode <= 57) || (keyCode >= 65 && keyCode <= 90);
+  return !hasBaseCharacter || event.key.toUpperCase() !== String.fromCharCode(keyCode);
+}
+
+function isLayoutTextKey(key: string): boolean {
+  return key === "Dead" || /^.\p{M}*$/u.test(key);
 }
 
 /**

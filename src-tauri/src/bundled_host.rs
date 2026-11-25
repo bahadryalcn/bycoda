@@ -1115,7 +1115,9 @@ fn update_session_count(base: &Path) -> Option<u32> {
             (!activity.unknown).then_some(activity.sessions)
         }
         Err(LifecycleProbeError::Stopped) => Some(0),
-        Err(LifecycleProbeError::Unconfirmed) => None,
+        // A busy Host can miss the probe deadline; its database still names running work,
+        // as in the automatic update check.
+        Err(LifecycleProbeError::Unconfirmed) => host_activity(base).ok().map(|a| a.sessions),
     }
 }
 
@@ -1311,6 +1313,17 @@ mod tests {
             Err(LifecycleProbeError::Unconfirmed)
         );
         assert_eq!(update_session_count(&base), None);
+        // The update dialog said "could not be checked" while the Host was only slow.
+        let connection = rusqlite::Connection::open(base.join("host.db")).unwrap();
+        connection
+            .execute_batch(
+                "create table sessions (status text, shell_running integer);
+                 create table automation_runs (value text);
+                 insert into sessions values ('running', 0), ('idle', 1);",
+            )
+            .unwrap();
+        assert_eq!(update_session_count(&base), Some(1));
+        drop(connection);
         std::fs::remove_dir_all(base).unwrap();
     }
 

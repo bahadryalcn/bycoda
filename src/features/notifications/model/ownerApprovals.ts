@@ -2,6 +2,10 @@ import { boundedSet, createStore } from "../../../shared/lib/store";
 import { logOwnerRequest } from "./notificationLog";
 import { isRemoteApproval } from "./ownerApprovalRemote";
 import { parseInboxApprovalDetails, type InboxApprovalDetails } from "./inboxApprovalDetails";
+import {
+  parseManagementApprovalDetails,
+  type ManagementApprovalDetails,
+} from "./managementApprovalDetails";
 
 export type OwnerApproval = {
   id: string;
@@ -16,6 +20,8 @@ export type OwnerApproval = {
   deadline: number;
   /** Structured preview of the same operation `message` states; absent for other approvals. */
   inbox?: InboxApprovalDetails;
+  /** Readable view of the application operation `message` states; absent for other approvals. */
+  management?: ManagementApprovalDetails;
   /** A paired phone may also answer this approval; false for secrets and desktop input. */
   remote: boolean;
 };
@@ -140,6 +146,7 @@ export function requestOwnerApproval(
     throw new Error("Invalid application approval.");
   }
   const inbox = parseInboxApprovalDetails(input.details);
+  const management = parseManagementApprovalDetails(input.details);
   const action = typeof payload.action === "string" ? payload.action : undefined;
   const request: OwnerApproval = {
     id: payload.id,
@@ -154,6 +161,7 @@ export function requestOwnerApproval(
     cancelLabel: input.cancelLabel,
     deadline: input.deadline,
     inbox,
+    ...(management ? { management } : {}),
     remote: isRemoteApproval({
       action,
       title: input.title as string,

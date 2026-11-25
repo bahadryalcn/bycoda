@@ -1,5 +1,4 @@
-import type { Block, Session } from "./session";
-import { wasTurnInterrupted } from "./inFlight";
+import type { Session } from "./session";
 
 /**
  * What became of a turn that was mid-flight when Bycoda went away.
@@ -79,29 +78,4 @@ export function disarmAutoContinue(session: Session): Session {
   if (!last?.autoContinueArmed) return session;
   const { autoContinueArmed: _spent, ...note } = last;
   return { ...session, blocks: [...session.blocks.slice(0, -1), note] };
-}
-
-/**
- * The transcript of a turn that finished while the app was closed: the quit
- * note goes (the turn was not cut off after all) and the final reply is added
- * unless the turn already holds it (the steps rebuilt from the transcript
- * include it).
- */
-export function withFinishedTurn(session: Session, finalText: string | undefined): Session {
-  let blocks: Block[] = wasTurnInterrupted(session) ? session.blocks.slice(0, -1) : session.blocks;
-  const text = finalText?.trim();
-  if (text && !turnHasAssistantText(blocks, text)) {
-    blocks = [...blocks, { id: crypto.randomUUID(), role: "assistant", text }];
-  }
-  return blocks === session.blocks ? session : { ...session, blocks };
-}
-
-/** The turn (everything after the last user block) already holds this reply. */
-function turnHasAssistantText(blocks: Block[], text: string): boolean {
-  for (let index = blocks.length - 1; index >= 0; index -= 1) {
-    const block = blocks[index];
-    if (block.role === "assistant" && block.text.trim() === text) return true;
-    if (block.role === "user") return false;
-  }
-  return false;
 }

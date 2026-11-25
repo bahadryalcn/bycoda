@@ -94,6 +94,13 @@ export function DictationButton({
       void current.stop().catch(() => {});
       return;
     }
+    // The default local path can share the companion's existing recognizer.
+    const sharesCompanion =
+      settings.enabled &&
+      settings.mode === "local" &&
+      !settings.dictationLocalModelPath &&
+      settings.dictationLanguage === "auto" &&
+      settings.dictationSilenceFilter;
     const next = new Dictation(
       {
         text: (text, final) => latest.current.onText(text, final, next),
@@ -115,8 +122,12 @@ export function DictationButton({
       },
       dictationLanguage(settings, locale),
       {
-        ...voiceRuntimeSettings(settings),
+        ...voiceRuntimeSettings({ ...settings, natural: sharesCompanion && settings.natural }),
         idleUnloadMinutes: IDLE_UNLOAD_MINUTES,
+        ...(!sharesCompanion && {
+          dictationLanguage: settings.dictationLanguage,
+          dictationSilenceFilter: settings.dictationSilenceFilter,
+        }),
         ...(settings.dictationLocalModelPath
           ? { whisperPath: settings.dictationLocalModelPath, whisperExact: true }
           : {}),
@@ -130,7 +141,7 @@ export function DictationButton({
         dictionary: settings.dictationDictionary,
         projectId,
         removeFillers: settings.dictationRemoveFillers,
-        language: dictationLanguage(settings, locale),
+        language: settings.dictationLanguage === "auto" ? undefined : settings.dictationLanguage,
         correctionCue: settings.dictationCleanup.correctionCue,
         cleanup: settings.dictationCleanup,
         silenceFilter: settings.dictationSilenceFilter,

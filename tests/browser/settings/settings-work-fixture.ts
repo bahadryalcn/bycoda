@@ -14,6 +14,7 @@ const machine = {
   environmentId: "fixture-work",
 };
 const redesign = new URLSearchParams(location.search).get("workFixture") === "routing";
+const removedAccount = new URLSearchParams(location.search).has("removedRoutingAccount");
 const routingEntry = (
   id: string,
   harness: "claude" | "codex",
@@ -33,7 +34,12 @@ const routingState: ModelRoutingState = {
   version: 1,
   updatedAt: 1,
   entries: [
-    routingEntry("r-opus", "claude", "claude:opus", "account-work"),
+    routingEntry(
+      "r-opus",
+      "claude",
+      "claude:opus",
+      removedAccount ? "removed-fixture" : "account-work",
+    ),
     routingEntry("r-sol", "codex", "codex:gpt-6.1-sol"),
     routingEntry("r-sonnet", "claude", "claude:sonnet"),
     routingEntry("r-terra", "codex", "codex:gpt-6.1-terra"),

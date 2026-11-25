@@ -7,26 +7,35 @@
   color: var(--terminal-text);
 }
 .project-terminal-dock .terminal-header {
+  grid-area: toolbar;
   block-size: auto;
   padding-block: var(--space-1);
   background: var(--ui-workspace-panel);
 }
 .terminal-body {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template:
+    "sessions divider toolbar" auto
+    "sessions divider output" minmax(0, 1fr)
+    / auto auto minmax(0, 1fr);
   flex: 1;
   min-block-size: 0;
   min-inline-size: 0;
 }
 .terminal-sidebar {
+  grid-area: sessions;
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
+  min-block-size: 0;
   min-inline-size: 0;
   /* The list width is an explicit, user-resizable size, so its rows adapt to it rather
      than to the window (container query below). */
   container: terminal-list / inline-size;
   background: var(--ui-workspace-panel);
+}
+.terminal-sidebar-sash {
+  grid-area: divider;
 }
 .terminal-list {
   min-block-size: 0;
@@ -76,6 +85,7 @@
   }
 }
 .terminal-canvas {
+  grid-area: output;
   display: grid;
   grid-template-columns: repeat(var(--layout-terminal-columns, 1), minmax(0, 1fr));
   background: var(--terminal-canvas);

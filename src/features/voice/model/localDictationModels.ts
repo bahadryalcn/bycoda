@@ -2,16 +2,23 @@ import { hostToolRequest } from "../../connections/public/hostFeatureClient";
 import type { VoiceRuntimeConfig } from "./localVoiceClient";
 
 export type LocalDictationModel = {
-  id: "small" | "turbo";
+  id: string;
   label: string;
   path: string;
   installed: boolean;
+  sizeBytes?: number;
+  format?: "gguf" | "faster-whisper";
+  languages?: string[];
+  recommended?: boolean;
+  available?: boolean;
 };
 export type LocalModelJob = {
   state: "idle" | "working" | "ready" | "error";
   id?: LocalDictationModel["id"];
   action?: "download" | "test" | "delete";
   detail?: string;
+  bytesDone?: number;
+  bytesTotal?: number;
 };
 function request<T>(method: string, params: Record<string, unknown> = {}) {
   return hostToolRequest<T>("", "voice.local.setup.v1", method, params, { kind: "local" });

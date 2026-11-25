@@ -27,12 +27,48 @@ export const localDictationModels = {
     if (state === "error") throw new Error("Synthetic local model discovery failure");
     if (state === "loading") return new Promise(() => {});
     return [
-      { id: "small", label: "Whisper Small", path: "/fixture/whisper", installed: true },
+      {
+        id: "small",
+        label: "Whisper Small",
+        path: "/fixture/whisper",
+        installed: true,
+        sizeBytes: 484_000_000,
+      },
       {
         id: "turbo",
         label: "Whisper large-v3-turbo",
         path: "/fixture/whisper-turbo",
         installed: false,
+        sizeBytes: 1_620_000_000,
+      },
+      {
+        id: "nemotron",
+        label: "Nemotron Streaming 3.5",
+        path: "/fixture/nemotron",
+        installed: false,
+        sizeBytes: 751_094_240,
+        format: "gguf",
+        languages: ["en", "tr"],
+        recommended: true,
+      },
+      {
+        id: "qwen3",
+        label: "Qwen3-ASR 0.6B",
+        path: "/fixture/qwen3",
+        installed: false,
+        sizeBytes: 850_000_000,
+        format: "gguf",
+        languages: ["en", "tr", "zh"],
+      },
+      {
+        id: "parakeet",
+        label: "Parakeet Unified English 0.6B",
+        path: "/fixture/parakeet",
+        installed: false,
+        sizeBytes: 730_000_000,
+        format: "gguf",
+        languages: ["en"],
+        recommended: true,
       },
     ];
   },
@@ -63,6 +99,20 @@ export const fixtureDictation = {
 };
 
 export const localVoiceBackend = {
+  suggestDictationSettings: async (_id: string, language: string) => ({
+    text: JSON.stringify(
+      language === "tr"
+        ? {
+            instructions: "Noktalama işaretlerini düzelt, teknik terimleri koru.",
+            correctionCue: "Düzeltiyorum",
+          }
+        : {
+            instructions: "Fix punctuation and preserve technical terms.",
+            correctionCue: "Scratch that",
+          },
+    ),
+  }),
+  cancelDictationCleanup: async () => ({ cancelled: true }),
   inspect: async (config: unknown) => {
     fixtureDictation.inspected.push(config);
     return { ready: true, missing: [], python: "/fixture/python", whisperPath: "/fixture/whisper" };

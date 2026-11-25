@@ -166,6 +166,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
 
   /** Applies an edit; returns false (and shows the message) when it throws. */
   function edit(operation: (current: OrderDraft) => OrderDraft): boolean {
+    if (submitting.current) return false;
     try {
       change(operation(draft));
       return true;

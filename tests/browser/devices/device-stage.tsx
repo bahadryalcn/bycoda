@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
+import { DeviceBar } from "../../../src/features/devices/ui/DeviceBar";
 import { DeviceWaitingState } from "../../../src/features/devices/ui/DeviceStageStates";
 import "../../../src/styles/index.css";
 import "../../../src/features/devices/DevicePanel.css";
@@ -44,6 +45,19 @@ function Fixture() {
   const [selected, setSelected] = useState("");
   return (
     <main style={{ height: "100vh", display: "grid", placeItems: "center" }}>
+      {!loaded && (
+        <DeviceBar
+          devices={[]}
+          selected=""
+          disabled
+          loading
+          discoveryFailed={false}
+          refreshing
+          refreshDisabled
+          onSelect={() => {}}
+          onRefresh={() => {}}
+        />
+      )}
       <DeviceWaitingState
         devices={visible}
         device={single[0] ?? devices.find((item) => item.id === selected)}

@@ -2,8 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Code } from "../../../shared/ui/Code";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { Modal, ModalFooter } from "../../../shared/ui/Modal";
+import { FileScript } from "../../../shared/ui/icons";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { Toast } from "../../../shared/ui/ToastRegion";
@@ -92,65 +94,82 @@ export function DataSharingNotices() {
         <Modal
           key={`details-${details.id}`}
           title={sharingTitle(details.kind)}
+          description={sharingPurpose(details.kind)}
           onClose={close}
+          initialFocus="summary"
           size="md"
           fitViewport
+          footer={
+            openPending && (
+              <ModalActions>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    openPending.decide(false);
+                    close();
+                  }}
+                >
+                  {t("Do not send")}
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    openPending.decide(true);
+                    close();
+                  }}
+                >
+                  {t("Send once")}
+                </Button>
+              </ModalActions>
+            )
+          }
         >
-          <div className="grid gap-3">
-            <Text as="p">{sharingPurpose(details.kind)}</Text>
+          <div className="grid gap-4">
             {openPending?.automatic && (
-              <Text as="p" size="caption">
+              <Text as="p" size="caption" tone="secondary">
                 {t("Automatic sending pauses while you review this report.")}
               </Text>
             )}
-            <div className="grid gap-1">
-              <Text as="p" size="caption">
-                {t("Destination")}
-              </Text>
-              <Code className="break-all">{details.destination}</Code>
-              {details.linkedToAccount && (
-                <Text as="p" size="caption">
-                  {t("Linked to your Bycoda account")}
-                </Text>
-              )}
+            <DescriptionList>
+              <DescriptionItem term={t("Destination")}>
+                <Code size="caption">{details.destination}</Code>
+                {details.linkedToAccount && (
+                  <Text as="p" size="caption" tone="secondary">
+                    {t("Linked to your Bycoda account")}
+                  </Text>
+                )}
+              </DescriptionItem>
               {openReceipt && (
-                <Text as="p" size="caption">
+                <DescriptionItem term={t("Sent")}>
                   {format.formatDate(openReceipt.sentAt, {
                     dateStyle: "medium",
                     timeStyle: "short",
                   })}
-                </Text>
+                </DescriptionItem>
               )}
+            </DescriptionList>
+            <div className="grid gap-2">
+              {details.files.map((file) => (
+                <Disclosure
+                  key={file.name}
+                  summary={
+                    <span className="flex min-w-0 items-center gap-2">
+                      <FileScript className="icon-sm shrink-0" aria-hidden />
+                      <Code size="caption" className="min-w-0 wrap-anywhere">
+                        {file.name}
+                      </Code>
+                    </span>
+                  }
+                  variant="card"
+                  chevron="end"
+                >
+                  <OutputBlock frame="filled" scroll className="max-h-64" tabIndex={0}>
+                    {file.text}
+                  </OutputBlock>
+                </Disclosure>
+              ))}
             </div>
-            {details.files.map((file) => (
-              <Disclosure key={file.name} summary={file.name} variant="row">
-                <OutputBlock frame="filled" scroll className="max-h-64" tabIndex={0}>
-                  {file.text}
-                </OutputBlock>
-              </Disclosure>
-            ))}
           </div>
-          {openPending && (
-            <ModalFooter>
-              <Button
-                onClick={() => {
-                  openPending.decide(false);
-                  close();
-                }}
-              >
-                {t("Do not send")}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  openPending.decide(true);
-                  close();
-                }}
-              >
-                {t("Send once")}
-              </Button>
-            </ModalFooter>
-          )}
         </Modal>
       )}
     </>

@@ -1073,7 +1073,7 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Tab");
       await dial.focus();
       expect(await dial.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
-      await expect(dial).toHaveCSS("outline-width", "2px");
+      await expect(dial).toHaveCSS("outline-width", "1px");
       await expect(dial).toHaveCSS("outline-offset", "2px");
       const value = Number(await dial.getAttribute("aria-valuenow"));
       await dial.press("ArrowRight");

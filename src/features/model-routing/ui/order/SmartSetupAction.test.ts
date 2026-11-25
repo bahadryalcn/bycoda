@@ -13,20 +13,33 @@ import {
 } from "../../model/smartSetup";
 import { planSmartSetup } from "../../model/smartSetupAi";
 import { localSetupCatalog } from "../../model/smartSetupCatalog";
-import { toast } from "../../../../shared/ui/ToastRegion";
 import { EMPTY_MODEL_ROUTING } from "../../../../shared/model/host-contracts/model-routing";
+import type { ModelRoutingTarget } from "../../../../shared/model/host-contracts/model-routing";
 
-vi.mock("../../../sessions/public/modelSource", () => ({ useModelSource: () => ({}) }));
+vi.mock("../../../sessions/public/modelSource", () => ({
+  useModelSource: () => ({ available: () => true }),
+}));
 vi.mock("../../model/smartSetup", () => ({
   setupCandidates: vi.fn(),
   applySmartSetup: vi.fn(),
   rulePlan: vi.fn(),
 }));
-vi.mock("../../model/smartSetupAi", () => ({ planSmartSetup: vi.fn() }));
+vi.mock("../../model/smartSetupAi", () => ({
+  planSmartSetup: vi.fn(),
+  resolveSetupPlanner: vi.fn(async () => ({
+    harness: "codex",
+    model: "gpt",
+    providerAccountId: "work",
+    modelSettings: {},
+  })),
+  setupPlannerLabel: (target: ModelRoutingTarget) => target.model,
+}));
+vi.mock("../../../../integrations/harness/core/registry", () => ({
+  canRunHarnessTextPrompt: () => true,
+}));
 vi.mock("../../model/smartSetupCatalog", () => ({
   localSetupCatalog: vi.fn(async () => undefined),
 }));
-vi.mock("../../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: ReturnType<typeof createRoot>[] = [];
 afterEach(async () => {
@@ -52,7 +65,7 @@ const start = () =>
   );
 
 /** `run` applies each edit to a draft at once, like the draft editor does; otherwise they are collected. */
-async function mount(run = false) {
+async function mount(run = false, choice?: ModelRoutingTarget) {
   const edits: ((draft: OrderDraft) => OrderDraft)[] = [];
   const container = document.createElement("div");
   document.body.append(container);
@@ -65,9 +78,19 @@ async function mount(run = false) {
         QueryClientProvider,
         { client },
         createElement(SmartSetupAction, {
+          catalogChoices: [],
+          choice,
+          onChoice: () => {},
           onEdit: (operation) => {
             edits.push(operation);
-            if (run) operation(start());
+            if (run) {
+              try {
+                operation(start());
+              } catch {
+                return false;
+              }
+            }
+            return run;
           },
         }),
       ),
@@ -79,17 +102,17 @@ const primary = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Prepare setup draft" || button.textContent === "Planning…",
   )!;
-async function planWithAi(container: HTMLElement) {
-  const options = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (element) => element.textContent === "Setup options",
+const ai = (container: HTMLElement) =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Plan setup with AI",
   )!;
-  await act(async () => options.click());
-  const item = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (element) => element.textContent === "Plan setup with AI",
-  );
-  expect(item, "Plan setup with AI").toBeTruthy();
-  await act(async () => item!.click());
-  expect(options.getAttribute("aria-expanded")).toBe("false");
+async function planWithAi(container: HTMLElement) {
+  expect(ai(container)).toBeTruthy();
+  await vi.waitFor(async () => {
+    await act(async () => {});
+    expect(ai(container).disabled).toBe(false);
+  });
+  await act(async () => ai(container).click());
 }
 
 it("fills the draft with the researched rules at once, without asking a model", async () => {
@@ -105,8 +128,15 @@ it("fills the draft with the researched rules at once, without asking a model", 
   expect(setupCandidates).toHaveBeenCalledWith(expect.anything(), catalog);
   expect(rulePlan).toHaveBeenCalledWith([candidate], names);
   expect(edits).toHaveLength(1);
-  expect(applySmartSetup).toHaveBeenCalledWith(expect.anything(), [candidate], plan);
-  expect(toast.show).not.toHaveBeenCalled();
+  expect(applySmartSetup).toHaveBeenCalledWith(
+    expect.anything(),
+    [candidate],
+    plan,
+    expect.anything(),
+  );
+  expect(container.querySelector('[role="status"]')?.textContent).toContain(
+    "Rules prepared the draft.",
+  );
   expect(primary(container).getAttribute("aria-busy")).not.toBe("true");
 });
 
@@ -119,7 +149,7 @@ it("returns the applied draft from the edit it hands to the editor", async () =>
   await act(async () => primary(container).click());
   const base = start();
   expect(edits[0]!(base)).toBe(next);
-  expect(applySmartSetup).toHaveBeenCalledWith(base, [candidate], plan);
+  expect(applySmartSetup).toHaveBeenCalledWith(base, [candidate], plan, expect.anything());
 });
 
 it("surfaces a missing catalog and a thrown error through the draft editor on the rules path", async () => {
@@ -134,10 +164,10 @@ it("surfaces a missing catalog and a thrown error through the draft editor on th
   await act(async () => primary(container).click());
   expect(() => edits[1]!(start())).toThrow("Catalog failed");
   expect(applySmartSetup).not.toHaveBeenCalled();
-  expect(toast.show).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
-it("plans with localized names from the split menu, applies once and names the planner", async () => {
+it("plans with localized names from the direct action, applies once and names the planner", async () => {
   vi.mocked(setupCandidates).mockReturnValue([candidate]);
   vi.mocked(planSmartSetup).mockResolvedValue({ candidates: [candidate], plan, plannedBy: "Sol" });
   vi.mocked(applySmartSetup).mockReturnValue(start());
@@ -146,10 +176,39 @@ it("plans with localized names from the split menu, applies once and names the p
   expect(rulePlan).not.toHaveBeenCalled();
   expect(planSmartSetup).toHaveBeenCalledWith([candidate], names, {
     signal: expect.any(AbortSignal),
+    planner: { harness: "codex", model: "gpt", providerAccountId: "work", modelSettings: {} },
+    onPlanner: expect.any(Function),
   });
   expect(edits).toHaveLength(1);
-  expect(applySmartSetup).toHaveBeenCalledWith(expect.anything(), [candidate], plan);
-  expect(toast.show).not.toHaveBeenCalled();
+  expect(applySmartSetup).toHaveBeenCalledWith(
+    expect.anything(),
+    [candidate],
+    plan,
+    expect.anything(),
+  );
+  expect(container.querySelector('[role="status"]')?.textContent).toContain("Draft planned by Sol");
+});
+
+it("keeps the planner control icon-only and runs the selected account and settings", async () => {
+  const choice = {
+    harness: "codex",
+    model: "gpt-selected",
+    providerAccountId: "personal",
+    modelSettings: { reasoningEffort: "high", serviceTier: "fast" },
+  } as const;
+  vi.mocked(setupCandidates).mockReturnValue([candidate]);
+  vi.mocked(planSmartSetup).mockResolvedValue({ candidates: [candidate], plan, plannedBy: "GPT" });
+  const { container } = await mount(true, choice);
+  const picker = container.querySelector('button[aria-haspopup="dialog"]');
+  expect(picker?.getAttribute("aria-label")).toBe("Model and settings");
+  expect(picker?.textContent).not.toContain(choice.model);
+  expect(picker?.querySelector("img")).toBeTruthy();
+  await planWithAi(container);
+  expect(planSmartSetup).toHaveBeenCalledWith(
+    [candidate],
+    names,
+    expect.objectContaining({ planner: choice }),
+  );
 });
 
 it("warns when no model could plan and the rules were used instead", async () => {
@@ -162,15 +221,11 @@ it("warns when no model could plan and the rules were used instead", async () =>
     failure: { planner: "Sol", reason: "timeout" },
   });
   await planWithAi(container);
-  const warning = vi.mocked(toast.show).mock.calls[0]![0];
-  expect(warning).toMatchObject({ tone: "warning" });
-  expect(warning.message).toContain("Sol could not plan the setup (it timed out)");
+  expect(container.querySelector('[role="status"]')?.getAttribute("data-tone")).toBe("warning");
+  expect(container.textContent).toContain("Sol timed out. Rules prepared the draft.");
   vi.mocked(planSmartSetup).mockResolvedValue({ candidates: [candidate], plan });
   await planWithAi(container);
-  expect(vi.mocked(toast.show).mock.calls[1]![0]).toMatchObject({
-    tone: "warning",
-    message: expect.stringContaining("No model could plan the setup"),
-  });
+  expect(container.textContent).toContain("No planning model was available.");
 });
 
 it("surfaces a missing catalog through the draft editor on the AI path without planning", async () => {
@@ -179,22 +234,43 @@ it("surfaces a missing catalog through the draft editor on the AI path without p
   await planWithAi(container);
   expect(planSmartSetup).not.toHaveBeenCalled();
   expect(() => edits[0]!(start())).toThrow("No available provider models found");
-  expect(toast.show).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
 it("shows pending state while planning and drops the result after unmount", async () => {
   vi.mocked(setupCandidates).mockReturnValue([candidate]);
   let finish!: (value: { candidates: SetupCandidate[]; plan: typeof plan }) => void;
-  vi.mocked(planSmartSetup).mockReturnValue(new Promise((resolve) => (finish = resolve)));
+  vi.mocked(planSmartSetup).mockImplementation((_candidates, _names, options) => {
+    options.onPlanner?.("Sol · Codex · Work");
+    return new Promise((resolve) => (finish = resolve));
+  });
   const { edits, container, root } = await mount();
   await planWithAi(container);
-  expect(primary(container).getAttribute("aria-busy")).toBe("true");
-  expect(primary(container).getAttribute("aria-label")).toBe("Planning…");
+  expect(ai(container).getAttribute("aria-busy")).toBe("true");
+  expect(ai(container).getAttribute("aria-label")).toBe("Planning…");
+  expect(primary(container).disabled).toBe(true);
+  expect(container.textContent).toContain("Planning with Sol · Codex · Work");
   const signal = vi.mocked(planSmartSetup).mock.calls[0]![2].signal!;
   await act(() => root.unmount());
   roots.length = 0;
   expect(signal.aborted).toBe(true);
   await act(async () => finish({ candidates: [candidate], plan }));
   expect(edits).toHaveLength(0);
-  expect(toast.show).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="status"]')).toBeNull();
+});
+
+it("cancels planning without applying a late answer", async () => {
+  vi.mocked(setupCandidates).mockReturnValue([candidate]);
+  let finish!: (value: { candidates: SetupCandidate[]; plan: typeof plan }) => void;
+  vi.mocked(planSmartSetup).mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+  const { edits, container } = await mount(true);
+  await planWithAi(container);
+  const cancel = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Cancel",
+  );
+  await act(async () => cancel!.click());
+  expect(vi.mocked(planSmartSetup).mock.calls[0]![2].signal?.aborted).toBe(true);
+  await act(async () => finish({ candidates: [candidate], plan }));
+  expect(edits).toHaveLength(0);
+  expect(primary(container).disabled).toBe(false);
 });

@@ -38,6 +38,18 @@ import { setQuickAutomationModelPool } from "../assistant/work/assistant-quick-a
 import { recordAssistantCrewTaskOrigin } from "../assistant/work/assistant-owned-work";
 import { type HostDomainContext } from "../domains/context";
 import type { ServerBindings } from "./bindings";
+
+/** Publication and physical input keep the exact owner prompt even in a Full access session. */
+const FULL_ACCESS_REVIEWED_ACTIONS = new Set(["git.push", "social.send", "desktop.act"]);
+
+/**
+ * A Full access coding session can already commit, stage or edit files through its own shell,
+ * so a management operation it requests skips the native approval the same way its SSH and MCP
+ * writes do. The Host's current session mode decides; Room threads keep native standing consent.
+ */
+export const sessionFullAccessCovers = (action: string) =>
+  !FULL_ACCESS_REVIEWED_ACTIONS.has(action);
+
 export function createManagementRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -74,6 +86,14 @@ export function createManagementRuntime(
     principal: import("../execution/runtime-log-tools").RuntimeLogSubjectPrincipal,
     authorized: () => Promise<boolean>,
   ) => {
+    if (
+      principal.kind === "session" &&
+      sessionFullAccessCovers(operation.action) &&
+      (await dependencies.featureSession(principal.sessionId)).session.runtimeMode === "full-access"
+    ) {
+      if (!(await authorized())) throw new Error("Conversation authority revoked.");
+      return { approved: true, operationHash: operation.operationHash };
+    }
     const decision = (await dependencies.conversationDesktop.call(
       "management.write.authorize",
       { operation },

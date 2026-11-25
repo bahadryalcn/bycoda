@@ -26,6 +26,7 @@ import {
 import { t } from "../../../shared/i18n";
 import { voiceTranscriptionHint } from "./voiceFeatureLexicon";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   voiceRuntimeDeadline,
   voiceToolWaitsForOwner,
@@ -116,6 +117,74 @@ const SECRET_RENEW_MARGIN_MS = VOICE_SOCKET_STEP_MS;
 /** Queued upload that never drains for this long means the link is stalled. */
 const CONGESTION_LIMIT = 15_000;
 
+/** Connection metadata only. Never put provider messages, transcripts, tool arguments or
+ * any other text the owner may have spoken or typed into an event. */
+export type VoiceDiagnostic =
+  | {
+      kind: "close";
+      code: number;
+      ageMs: number;
+      intentional: boolean;
+      wasClean: boolean;
+      pendingCalls: number;
+      responding: boolean;
+    }
+  | { kind: "ready"; connectMs: number; seededItems: number }
+  | { kind: "provider-error"; code: string; type: string; recoverable: boolean }
+  | { kind: "tool-result-dropped"; name: string; elapsedMs: number }
+  | {
+      kind: "fail";
+      code: string;
+      ageMs: number;
+      pendingCalls: number;
+      socketState?: number;
+      lastProviderFrameAgoMs?: number;
+    }
+  | {
+      kind: "session-summary";
+      ageMs: number;
+      commits: number;
+      ackMedianMs: number;
+      ackMaxMs: number;
+      responses: number;
+      toolCalls: number;
+      toolResultsDropped: number;
+      firstAudioMedianMs?: number;
+    }
+  | {
+      kind: "input-deadline";
+      stage: "commit" | "transcript";
+      elapsedMs: number;
+      bufferedBytes: number;
+      previousBufferedBytes?: number;
+      uploadExtensions: number;
+      socketState?: number;
+      lastProviderFrameAgoMs?: number;
+    };
+
+/** Latency samples kept per session; older ones are dropped. */
+const MAX_LATENCY_SAMPLES = 200;
+/** Provider error code/type and tool names are short identifiers; cut anyway. */
+const MAX_DIAGNOSTIC_CODE = 80;
+
+function recordSample(samples: number[], value: number) {
+  samples.push(value);
+  if (samples.length > MAX_LATENCY_SAMPLES) samples.shift();
+}
+
+function medianOf(samples: readonly number[]) {
+  if (!samples.length) return 0;
+  const sorted = [...samples].sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return Math.round(
+    sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2,
+  );
+}
+
+function diagnosticCode(value: unknown) {
+  return typeof value === "string" ? truncateGraphemes(value, MAX_DIAGNOSTIC_CODE, "") : "";
+}
+
 type Callbacks = {
   state: (state: "speaking" | "replying" | "listening") => void;
   /** Assistant speech as text; `append` continues the current reply. */
@@ -154,20 +223,7 @@ type Callbacks = {
       | "playback_interrupted";
     durationMs: number;
   }) => void;
-  diagnostic?: (
-    event:
-      | { kind: "close"; code: number; ageMs: number; intentional: boolean }
-      | {
-          kind: "input-deadline";
-          stage: "commit" | "transcript";
-          elapsedMs: number;
-          bufferedBytes: number;
-          previousBufferedBytes?: number;
-          uploadExtensions: number;
-          socketState?: number;
-          lastProviderFrameAgoMs?: number;
-        },
-  ) => void;
+  diagnostic?: (event: VoiceDiagnostic) => void;
 };
 
 /** Cloud speech-to-speech (xAI Grok Voice or OpenAI Realtime) over one WebSocket,
@@ -242,6 +298,13 @@ export class RealtimeVoice {
   private updates: string[] = [];
   private calls = new Map<string, string>();
   private pendingCalls = 0;
+  private commits = 0;
+  private responseCount = 0;
+  private toolCalls = 0;
+  private toolResultsDropped = 0;
+  private ackLatencies: number[] = [];
+  private maxAckMs = 0;
+  private firstAudioLatencies: number[] = [];
   private continueAfterTools = false;
   private playing = false;
   private vad?: VoiceVad;
@@ -400,6 +463,8 @@ export class RealtimeVoice {
       summary?: string;
       /** Bounded unfinished-work text, seeded as data only. */
       openWork?: string;
+      /** The app's own record of work this assistant started (`VoiceWorkLedger.seed`), data only. */
+      voiceWork?: string;
       deviceId?: string;
       disclosureCurrent?: () => boolean;
       /** Mints a fresh credential when `secret` would expire before the socket finishes. */
@@ -650,11 +715,14 @@ export class RealtimeVoice {
           }
           clearTimeout(timer);
           const code = event?.code ?? 1006;
-          this.callbacks.diagnostic?.({
+          this.diagnose({
             kind: "close",
             code,
             ageMs: elapsedSince(this.startedAt),
             intentional: this.closed,
+            wasClean: event?.wasClean === true,
+            pendingCalls: this.pendingCalls,
+            responding: this.responding,
           });
           const message =
             code === 1008 ? "Voice connection permission denied." : "Voice connection closed.";
@@ -705,7 +773,18 @@ export class RealtimeVoice {
             }
             this.ready = true;
             clearTimeout(timer);
-            for (const item of voiceSeedItems(options.summary, options.openWork, recentTurns)) {
+            const seedItems = voiceSeedItems(
+              options.summary,
+              options.openWork,
+              recentTurns,
+              options.voiceWork,
+            );
+            this.diagnose({
+              kind: "ready",
+              connectMs: elapsedSince(this.startedAt),
+              seededItems: seedItems.length,
+            });
+            for (const item of seedItems) {
               if (!disclosureCurrent()) {
                 this.close();
                 return;
@@ -812,6 +891,7 @@ export class RealtimeVoice {
             this.responseTiming.delete(this.responseTiming.keys().next().value!);
           this.pendingAdmissionAt = undefined;
         }
+        this.responseCount++;
         this.responseTools.set(id, this.expectedResponse.tools && !this.expectedResponse.cancelled);
         if (this.expectedResponse.cancelled) this.suppressed.add(id);
         if (this.expectedResponse.cancelOnCreated) this.cancelResponse(id);
@@ -951,6 +1031,12 @@ export class RealtimeVoice {
         if (!benignCancel) {
           const message = errorMessage(event) ?? "The voice request failed.";
           const details = classifyVoiceFailure(message, code);
+          this.diagnose({
+            kind: "provider-error",
+            code: diagnosticCode(code),
+            type: diagnosticCode((event.error as { type?: unknown } | undefined)?.type),
+            recoverable: details.recoverable,
+          });
           if (
             !details.recoverable ||
             /session_expired|session.*limit|server_error|connection/i.test(code)
@@ -1003,6 +1089,7 @@ export class RealtimeVoice {
     )
       return;
     const candidate = this.candidates.shift()!;
+    this.commits++;
     this.pendingInput = {
       epoch: candidate.epoch,
       committedAt: performance.now(),
@@ -1019,6 +1106,9 @@ export class RealtimeVoice {
     if (!pending.itemId && id) pending.itemId = id;
     if (pending.acknowledged) return;
     pending.acknowledged = true;
+    const ackMs = elapsedSince(pending.committedAt);
+    recordSample(this.ackLatencies, ackMs);
+    this.maxAckMs = Math.max(this.maxAckMs, ackMs);
     clearTimeout(pending.timer);
     pending.timer = this.transcriptDeadline();
   }
@@ -1047,7 +1137,7 @@ export class RealtimeVoice {
         pending.timer = setTimeout(expire, TRANSCRIPT_TIMEOUT);
         return;
       }
-      this.callbacks.diagnostic?.({
+      this.diagnose({
         kind: "input-deadline",
         stage,
         elapsedMs: Math.round(elapsedSince(pending.committedAt)),
@@ -1236,6 +1326,8 @@ export class RealtimeVoice {
       /* Invalid arguments reach the handler as empty. */
     }
     this.pendingCalls++;
+    this.toolCalls++;
+    const toolStartedAt = monotonicNow();
     void voiceRuntimeDeadline(
       (wait) =>
         voiceToolWaitsForOwner(name, args)
@@ -1253,7 +1345,15 @@ export class RealtimeVoice {
       }))
       .then((output) => {
         this.pendingCalls--;
-        if (this.closed) return;
+        if (this.closed) {
+          this.toolResultsDropped++;
+          this.diagnose({
+            kind: "tool-result-dropped",
+            name: truncateGraphemes(name, MAX_DIAGNOSTIC_CODE, ""),
+            elapsedMs: elapsedSince(toolStartedAt),
+          });
+          return;
+        }
         let serialized: string;
         try {
           serialized = JSON.stringify(output ?? {});
@@ -1667,6 +1767,7 @@ export class RealtimeVoice {
     const timing = responseId && this.responseTiming.get(responseId);
     if (timing && !timing.scheduled) {
       timing.scheduled = true;
+      recordSample(this.firstAudioLatencies, Math.max(0, performance.now() - timing.admittedAt));
       this.callbacks.timing?.({
         stage: "first_scheduled_output",
         durationMs: Math.max(
@@ -1707,6 +1808,17 @@ export class RealtimeVoice {
   private fail(message: string, code?: string) {
     if (!this.closed) {
       const speechLost = this.hasLostSpeech();
+      this.diagnose({
+        kind: "fail",
+        code: diagnosticCode(code ?? ""),
+        ageMs: this.startedAt ? elapsedSince(this.startedAt) : 0,
+        pendingCalls: this.pendingCalls,
+        socketState: this.socket?.readyState,
+        lastProviderFrameAgoMs:
+          this.lastProviderFrameAt === undefined
+            ? undefined
+            : Math.round(elapsedSince(this.lastProviderFrameAt)),
+      });
       this.close();
       const failure = classifyVoiceFailure(message, code);
       this.callbacks.error(message, true, speechLost ? { ...failure, speechLost } : failure);
@@ -1734,9 +1846,31 @@ export class RealtimeVoice {
     )
       throw new Error("Voice generation closure is unconfirmed.");
   }
+  /** Observability only; a throwing listener must never alter the session. */
+  private diagnose(event: VoiceDiagnostic) {
+    try {
+      this.callbacks.diagnostic?.(event);
+    } catch {
+      /* Diagnostics never affect the connection. */
+    }
+  }
+
   close() {
     if (this.closed) return;
     this.settleElapsedPlayback();
+    this.diagnose({
+      kind: "session-summary",
+      ageMs: this.startedAt ? elapsedSince(this.startedAt) : 0,
+      commits: this.commits,
+      ackMedianMs: medianOf(this.ackLatencies),
+      ackMaxMs: Math.round(this.maxAckMs),
+      responses: this.responseCount,
+      toolCalls: this.toolCalls,
+      toolResultsDropped: this.toolResultsDropped,
+      firstAudioMedianMs: this.firstAudioLatencies.length
+        ? medianOf(this.firstAudioLatencies)
+        : undefined,
+    });
     this.closed = true;
     this.lifetime.abort();
     this.clearResponseTimer();

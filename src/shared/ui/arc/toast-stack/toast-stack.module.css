@@ -82,6 +82,16 @@
     overflow-wrap: break-word;
     user-select: text;
   }
+  .controlSlot {
+    display: flex;
+    flex: none;
+    align-items: center;
+  }
+  /* Short notices center the controls against the whole copy. Notices with a
+     body or footer keep their controls beside the opening text. */
+  .content:not(:has(.body, > .footer)) > .controlSlot {
+    align-self: center;
+  }
   /* A long action label ends in an ellipsis (its aria-label keeps the full text) instead of taking
      the row from the copy. */
   .actionSlot {
@@ -151,6 +161,7 @@
     .actionSlot {
       order: 1;
       flex-basis: 100%;
+      max-inline-size: 100%;
       padding-inline-start: calc(var(--ui-icon-md) + var(--ui-space-2, 0.5rem));
     }
   }

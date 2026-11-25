@@ -4,8 +4,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readdir } from "node:fs/promises";
 import { detectNvidiaGpu } from "./voice-gpu";
+import { ggufInstalled, ggufSupported, ownedGgufModel } from "./voice-gguf";
 
 export type VoiceRuntimeConfig = {
+  dictationLanguage?: string;
+  dictationSilenceFilter?: boolean;
   /** Minutes to keep the dictation recognizer loaded after its last lease. */
   idleUnloadMinutes?: number;
   /** Internal marker: honor an explicitly selected model without upgrading it. */
@@ -55,6 +58,19 @@ export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
   if (input.whisperExact !== undefined) {
     if (typeof input.whisperExact !== "boolean") throw new Error("Invalid voice model selection.");
     result.whisperExact = result.whisperModel ? true : input.whisperExact;
+  }
+  if (input.dictationLanguage !== undefined) {
+    if (
+      typeof input.dictationLanguage !== "string" ||
+      !/^(?:auto|[a-z]{2})$/.test(input.dictationLanguage)
+    )
+      throw new Error("Invalid dictation language.");
+    result.dictationLanguage = input.dictationLanguage;
+  }
+  if (input.dictationSilenceFilter !== undefined) {
+    if (typeof input.dictationSilenceFilter !== "boolean")
+      throw new Error("Invalid dictation silence filter.");
+    result.dictationSilenceFilter = input.dictationSilenceFilter;
   }
   if (input.idleUnloadMinutes !== undefined) {
     if (
@@ -231,6 +247,11 @@ export async function inspectVoiceRuntime(
   options: { cloudKey?: VoiceCloudKeyStatus; readinessOnly?: boolean } = {},
 ): Promise<VoiceRuntimeStatus> {
   const config = voiceRuntimeConfig(value);
+  const gguf = config.natural === false && ownedGgufModel(homedir(), config.whisperPath);
+  if (gguf) {
+    const ready = ggufSupported() && (await ggufInstalled(homedir(), gguf.path, gguf.model));
+    return { ready, missing: ready ? [] : ["GGUF transcription model"], whisperPath: gguf.path };
+  }
   if (config.whisperModel) {
     config.whisperPath = join(
       homedir(),

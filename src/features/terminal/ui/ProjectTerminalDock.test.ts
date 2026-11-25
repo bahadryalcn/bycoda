@@ -517,3 +517,72 @@ it("reorders terminals without dragging: Alt+Arrow and the Move up / Move down m
     vi.unstubAllGlobals();
   }
 });
+
+it("ends the owner's live resize when a dock drag is cancelled", async () => {
+  // A cancelled drag (Escape, window blur) that only repainted left the owner's grid
+  // in drag mode, so closing the terminal kept an empty dock row under the chat.
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const onSizePaint = vi.fn();
+  const onSizeCommit = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProjectTerminalDock, {
+          dock: {
+            projectPath: "/project",
+            side: "bottom",
+            size: 220,
+            open: true,
+            pane: {
+              id: "pane",
+              activeFileId: "one",
+              files: [{ id: "one", path: "Terminal 1", cwd: "/project", terminal: true }],
+            },
+          } as Dock,
+          focused: true,
+          onFocus: vi.fn(),
+          onHide: vi.fn(),
+          onSideChange: vi.fn(),
+          onSizePaint,
+          onSizeCommit,
+          onAddTerminal: vi.fn(),
+          onSelectTerminal: vi.fn(),
+          onCloseTerminal: vi.fn(),
+          onCloseTerminals: vi.fn(),
+          onReorderTerminals: vi.fn(),
+        }),
+      ),
+    );
+    const sash = host.querySelector<HTMLElement>(".terminal-dock-sash")!;
+    sash.setPointerCapture = vi.fn();
+    sash.releasePointerCapture = vi.fn();
+    sash.hasPointerCapture = () => true;
+    await act(async () => {
+      sash.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerId: 1,
+          isPrimary: true,
+          clientY: 500,
+          button: 0,
+        }),
+      );
+      sash.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientY: 400 }),
+      );
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(onSizePaint).toHaveBeenCalled();
+    await act(async () =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(onSizeCommit).toHaveBeenCalledWith(220);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});

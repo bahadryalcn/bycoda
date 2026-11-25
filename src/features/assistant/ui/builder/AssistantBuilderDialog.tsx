@@ -24,17 +24,20 @@ import { useAssistantInterview } from "./useAssistantInterview";
  */
 export function AssistantBuilderDialog({
   current,
+  initialAnswer = "",
   onApply,
   onClose,
 }: {
   /** The caller's draft provides context and the preview compares against it. */
   current: AssistantProfilePatch;
+  /** Text the answer box starts with; the owner still sends it. */
+  initialAnswer?: string;
   onApply: (patch: AssistantProfilePatch) => void;
   onClose: () => void;
 }) {
   const [choice, setChoice] = useState<TranslationChoice>(defaultTextActionChoice);
   /** The typed, unsent answer; kept across Back so it is never lost. */
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(initialAnswer);
   const interview = useAssistantInterview(choice, current);
   const available = canRunHarnessTextPrompt(choice.harness);
   const { proposal } = interview;

@@ -4,13 +4,14 @@ import { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder"
 import {
   MODEL_ROUTING_MAX_ENTRIES,
   type ModelRoutingEntry,
+  type ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
+import { Heading } from "../../../../shared/ui/Heading";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
-import { Heading } from "../../../../shared/ui/Heading";
 import { Text } from "../../../../shared/ui/Text";
 import { Group } from "../../../../shared/ui/settings";
 import { useModelSource } from "../../../sessions/public/modelSource";
@@ -63,6 +64,9 @@ export function ModelOrderList({
   onView,
   invalid,
   focusRequest,
+  setupRevision,
+  setupPlanner,
+  onSetupPlannerChange,
 }: {
   draft: OrderDraft;
   /** Unsaved edits hide the Next marks, which describe the saved order. */
@@ -77,6 +81,9 @@ export function ModelOrderList({
   onView: (view: OrderView) => void;
   invalid?: InvalidEntry;
   focusRequest?: FocusRequest;
+  setupRevision: number;
+  setupPlanner?: ModelRoutingTarget;
+  onSetupPlannerChange: (choice: ModelRoutingTarget | undefined) => void;
 }) {
   const t = useT();
   const sectionTitles: Record<EntryKind, string> = {
@@ -265,57 +272,55 @@ export function ModelOrderList({
       />
     </div>
   );
-  if (!entries.length)
-    return (
-      <div className="grid gap-3">
-        <EmptyState
-          context="list"
-          icon={null}
-          inset="none"
-          title={t("No models configured")}
-          description={addChoice || !source.probed() ? "" : noProviderReason}
-          showDescription={!addChoice}
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <SmartSetupAction variant="primary" onEdit={edit}>
-            {addChoice ? (
-              <Button size="sm" onClick={addEntry}>
-                {t("Add model")}
-              </Button>
-            ) : null}
-          </SmartSetupAction>
-        </div>
-      </div>
-    );
+  const empty = entries.length === 0;
   return (
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape from any control inside the list clears the bulk selection; the controls themselves stay the interactive elements.
     <div ref={root} className="@container/model-order flex flex-col gap-4" onKeyDown={onKeyDown}>
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="grid gap-3">
         <div className="grid min-w-0 gap-1">
           <Heading as="h2" size="page">
             {t("Model priority")}
           </Heading>
           <Text size="caption" tone="secondary">
-            {chatFallback
-              ? t("Jobs using this order: {p0}, plus chat fallback", { p0: jobs })
-              : t("Jobs using this order: {p0}", { p0: jobs })}
+            {empty
+              ? t("Set the order Bycoda tries models for background jobs.")
+              : chatFallback
+                ? t("Jobs using this order: {p0}, plus chat fallback", { p0: jobs })
+                : t("Jobs using this order: {p0}", { p0: jobs })}
           </Text>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SmartSetupAction onEdit={edit} />
+        <SmartSetupAction
+          key={setupRevision}
+          variant={empty ? "primary" : "secondary"}
+          onEdit={edit}
+          catalogChoices={addChoices}
+          choice={setupPlanner}
+          onChoice={onSetupPlannerChange}
+        >
           <Button
             size="sm"
-            variant="primary"
+            variant={empty ? "ghost" : "primary"}
             disabled={listFull || !addChoice}
             disabledReason={addBlockedReason}
             onClick={addEntry}
           >
             {t("Add model")}
           </Button>
-        </div>
+        </SmartSetupAction>
       </div>
-      {listControls}
-      {status.error ? (
+      {empty ? (
+        <EmptyState
+          context="list"
+          icon={null}
+          title={t("No models configured")}
+          description={addChoice || !source.probed() ? "" : noProviderReason}
+          showDescription={!addChoice}
+          className="p-0"
+        />
+      ) : (
+        listControls
+      )}
+      {!empty && status.error ? (
         <FailureState
           size="inline"
           title={t("Model limits could not be read.")}

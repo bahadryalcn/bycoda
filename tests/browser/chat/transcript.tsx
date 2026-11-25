@@ -15,7 +15,10 @@ import {
   saveTranscriptAnchor,
   saveTranscriptLayout,
 } from "../../../src/features/settings/model/appearance";
+import { installInputModality } from "../../../src/shared/ui/inputModality";
 import "../../../src/styles/index.css";
+
+installInputModality();
 import { lazy, Suspense } from "react";
 const CodeTerminalFixture = lazy(async () => ({
   default: (await import("./code-terminal-fixture")).CodeTerminalFixture,

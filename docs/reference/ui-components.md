@@ -155,7 +155,7 @@ Parts: ModalPanel, NativePopupHost, Portal
 | [ToastSlot](../../src/shared/ui/ToastRegion.tsx) | Put a feature's own card (reminder panel, approval request) in the shared top-center alert column. | Plain messages: Toast or useToast. Never position a notice with fixed and an offset. |  |
 | [WorkingIndicator](../../src/shared/ui/WorkingIndicator.tsx) | Compact "agent is working" signal beside a session, row or status line. | Generic loading or a pending button: Spinner. Measurable progress: Progress. Unknown pane load: SurfaceLoading. |  |
 
-Parts: NoticeButton, NoticeGlyph, NoticeLink, NoticeSlot, SettingsOperationFeedback, ToastCard, ToastCard
+Parts: ApprovalActions, NoticeButton, NoticeGlyph, NoticeLink, NoticeSlot, SettingsOperationFeedback, ToastCard, ToastCard
 
 ## Data
 

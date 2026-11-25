@@ -15,6 +15,23 @@ export type ActiveDictation = {
 const runs = new Map<symbol, ActiveDictation>();
 const listeners = new Set<() => void>();
 let snapshot: readonly ActiveDictation[] = [];
+let detectedLanguage = "";
+
+/** Keep the most recent confirmed speech language in this window, without storing its text. */
+export function reportDictationLanguage(language: string) {
+  const code = /^[a-z]{2}(?=$|[-_])/i.exec(language)?.[0].toLowerCase();
+  if (!code || code === detectedLanguage) return;
+  detectedLanguage = code;
+  for (const listener of listeners) listener();
+}
+
+export function useDetectedDictationLanguage() {
+  return useSyncExternalStore(
+    subscribe,
+    () => detectedLanguage,
+    () => "",
+  );
+}
 
 /** Reports or clears (`undefined`) one dictation run; same-window only. */
 export function reportDictation(owner: symbol, run: ActiveDictation | undefined) {

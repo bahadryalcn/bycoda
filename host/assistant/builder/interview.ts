@@ -117,6 +117,7 @@ export function interviewPrompt(params: Params, note?: string): string {
     "for a developer app by asking short questions, then proposing its profile settings.",
     `Write every question, option and the summary in the language of this locale: ${JSON.stringify(params.locale)}.`,
     "This is only the interview language, not a request to change the assistant's language. Preserve current.language unless an owner answer explicitly asks to change the assistant's language.",
+    'Write the persona and addressAs of a proposal in current.language when it is a language (not "auto"), because the assistant speaks that language; otherwise use the interview locale.',
     "Reply with ONLY one JSON object, no prose and no code fence. Either",
     '{"kind":"question","question":string (max 600 chars),"options":[up to 6 short quick answers, max 120 chars each]}',
     "or",

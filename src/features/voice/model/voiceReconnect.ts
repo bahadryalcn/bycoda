@@ -51,7 +51,7 @@ export function voiceLostSpeechNotice(lastRequest = "") {
   const known = request
     ? ` The owner's last received request was: "${truncateGraphemes(request, 300)}". It has no confirmed answer, and tools started for it may or may not have finished.`
     : "";
-  return `The voice connection dropped while the owner was speaking, and that speech was never received or transcribed.${known} Say the connection dropped and ask them once to repeat only the sentence that was lost. Do not guess it, and do not repeat any action until they answer.`;
+  return `The voice connection dropped while the owner was speaking, and that speech was never received or transcribed.${known} First read the seeded "Work this voice assistant started" block and assistant_status or workspace.sessions.list, and report what actually happened to earlier work; never say work was not started unless that state confirms it. Then say the connection dropped and ask them once to repeat only the sentence that was lost. Do not guess it, and do not repeat any action until they answer.`;
 }
 
 /** Only bounded transcript data crosses sessions, never tool calls or responses. */

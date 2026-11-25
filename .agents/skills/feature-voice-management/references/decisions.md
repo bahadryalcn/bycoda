@@ -51,3 +51,18 @@ The global Room reads and changes files only inside owner-added folders (reads u
 > I do not want an allowed-apps list; it should follow the permission. Full access allows everything, Auto asks. For example it wants to use Chrome: show "do you allow this?" on screen. If allowed, add it to the list directly and continue. Or full manual, approving one by one. Nobody will use it this way, because everyone wants autonomy.
 
 Computer use needs no prepared app list. A tool call naming an app the owner has not approved asks once in the native dialog; approval adds the app to the owner's approved apps and the call continues. Ask mode still asks before every action; Auto launches and acts on approved apps without a dialog and still asks for the clipboard and physical input; Full access covers every app and asks nothing. Only the owner removes approved apps or changes the mode.
+
+2026-11-25, owner chat after a spoken "Ufak bi Pac-Man oyunu yaptır Arif." became a planned Goal that produced nothing:
+
+> Yeni bir iş verdiğimde, nasıl çalışması gerektiğine, en efektif ve optimum şekilde nasıl çalışacağına kendi karar verebilmesi gerekiyor. Benim yeni bir session açıp “yaptır” dememe gerek kalmaması lazım.
+
+> ben basit günlük [işler veriyorum]
+
+Voice chooses the route itself. A build, create, make or fix request is work and goes by default
+to a normal coding session in the matching project, created with the request and submitted; the
+project-choice path handles a genuinely unknown project. Assistant jobs, tasks, goals and crews
+are used only on an explicit request for tracked, followed-up, background or scheduled work, and
+their exact-intent admission is unchanged. A short answer to a pending question, or speech lost
+in a reconnect, continues the carried work request. This supersedes the earlier routing rule
+that opened a session only on an explicit request for one; native approvals for push, merge,
+deletion and commands keep their gates.

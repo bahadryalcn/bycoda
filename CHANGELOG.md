@@ -37,6 +37,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sessions without a project open and list correctly.
 - The new task form no longer shows a "Merge automatically" option that had no effect.
 
+## [0.7.23]
+
+### Added
+
+- **Ctrl+B** (Command+B on macOS) cycles the workspace through three pane layouts; **Ctrl+Shift+B** still toggles the session sidebar.
+- On Windows and macOS, a loopback address in the Browser panel opens a direct local preview; **Shared host browser** keeps viewports, element selection and recording.
+- Voice calls can show presented views built from the app's own components (tables, charts, forms, copyable drafts and buttons that run tools), and the companion opens Settings, Inbox, Notes and other views by voice.
+- Right-click a conversation and choose **Link GitHub issue or PR** to link it to a GitHub item.
+- **Settings > Models > Background work > Prepare setup draft** fills providers, model order, groups and job bindings in one step; **By account** groups models under each account with its live quota.
+- MCP server details show the signed-in account when the server advertises a profile tool.
+- Commit message generation has its own account and model picker per checkout.
+
+### Improved
+
+- **Settings > Privacy** chooses **Do not send**, **Ask every time** or **Send every time** per sharing category; diagnostic reports ask for approval by default and show the redacted data before sending.
+- Live device view streams Android devices on Windows and macOS Hosts and iOS simulators on a Mac, keeping the last frame visible during short interruptions.
+- The model picker, workspace footer and Usage & limits share one account reading, and keep the last measured percentage visible when a refresh fails.
+- Usage shows token totals and recorded time as soon as local logs are read, before prices and quotas load.
+- File mentions rank project files faster, and a draft holds up to 20 attachments.
+- The update prompt compares the installed and available versions and offers **Remind me tomorrow**.
+- Saved remote connection tokens are encrypted with a key kept in the system credential store.
+
+### Fixed
+
+- Stop on a conversation run by this computer's Host stays pending until the Host confirms the turn ended.
+- Session reads and checkpoint status stay current after background changes.
+
 ## [0.7.22]
 
 ### Added

@@ -49,18 +49,27 @@ translate to English in the rows under **Clean up dictated text**. Failed cleanu
 recognized text, and cancelled dictation cannot insert a late result. This uses
 the existing isolated utility runner and its provider restrictions.
 
-Processing options include removing filler words and silence filtering. Filler
+**Generate suggestion** drafts cleanup instructions and a spoken correction phrase.
+Codex receives the configured language and model choice. In Automatic mode bycoda uses
+the latest detected dictation language in this window, with the interface language as
+the fallback. Review and apply the draft to save both fields. Generating a suggestion
+is available with cleanup switched off.
+
+**Dictation filters** contains filler removal and silence filtering. Filler
 removal drops hesitations such as "eee", "ııı", "um" and "hmm", including
 stretched forms, with their trailing comma or ellipsis. Filtering
 is on by default. Turning it off transcribes bounded audio chunks, including quiet
 audio, and does not provide live previews while recording.
 
-The local model list manages the supported Small and Turbo Whisper models owned
-by voice setup. Download, select, load-test or delete those copies; custom model
-paths are not deleted. Deletion requires a named confirmation and the model can be
-downloaded again. Starting and running operations show the model and action; cancellation
-stays requested until the Host reports a terminal state. Stop active voice/dictation before managing models. The
-load test checks whether the recognizer can open the model, not microphone accuracy.
+Under **Dictation recognition**, choose **This computer**; the local model list appears below it.
+Search or filter the Handy model catalog by language and installation status, or sort
+by size. It includes Whisper, Nemotron, Qwen, Parakeet, Canary and other GGUF model
+families. The existing Faster Whisper Small and Turbo models remain available.
+GGUF downloads verify the model before making it selectable. The first download on
+a supported Host also installs the pinned transcribe-cpp runtime through npm.
+Download, select, test or delete managed copies. Deletion requires confirmation.
+Running downloads display progress and can be cancelled. Stop active voice or dictation
+before managing models. A load test opens the selected model on the CPU.
 An idle local model is released from memory after five minutes.
 OpenRouter transcription choices come from its current catalog; discovery failures
 remain visible, and a removed model requires an explicit replacement.

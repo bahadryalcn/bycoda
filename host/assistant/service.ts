@@ -4674,7 +4674,19 @@ export class HostAssistant {
           input,
           projectIds,
         );
-        await this.tickInner(this.later); // The Chief's model turn may outlast this RPC.
+        // The receipt is persisted; dispatch (goal and planner creation) can take seconds, so it
+        // runs on the request queue after this RPC and the job reports `queued` until it does.
+        this.later(async () => {
+          try {
+            await this.tickInner(this.later);
+          } catch (error) {
+            this.report(error);
+            await this.recordJobProblem(
+              job.id,
+              `Starting the job failed: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim().slice(0, 900)}`,
+            ).catch(this.report);
+          }
+        });
         return { job: await this.require<AssistantJob>("jobs", job.id) };
       }
       case "jobs.control": {

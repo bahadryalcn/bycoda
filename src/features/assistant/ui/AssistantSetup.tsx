@@ -30,6 +30,8 @@ import {
 } from "../../../integrations/harness/core/availability";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { useLanguageChangeFlow } from "./settings/useLanguageChangeFlow";
+import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { applyAssistantWorkPreset, assistantWorkPreset } from "../model/assistantWorkPresets";
 import styles from "./AssistantSetup.module.css";
 
@@ -188,6 +190,18 @@ export function AssistantSetup({
   const index = draft ? Math.max(0, steps.indexOf(draft.step)) : 0;
   const step = steps[index];
   const patch = draft?.patch ?? {};
+  /** Typed answer the builder opens with (the language-change rewrite request). */
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const [builderRequest, setBuilderRequest] = useState("");
+  const languageFlow = useLanguageChangeFlow({
+    draft: patch,
+    lastSpoken: snapshot?.lastSpokenLanguage,
+    applyLanguage: (language) => update({ language }),
+    startBuilder: (request) => {
+      setBuilderRequest(request);
+      setBuilderOpen(true);
+    },
+  });
   const displayedDefaultWorker = modelSource.resolve("codex", "");
   const proposedWorker =
     !snapshot?.profile.setupComplete &&
@@ -461,7 +475,14 @@ export function AssistantSetup({
                 <AssistantProfileFields section="workmode" value={patch} onChange={update} />
               )}
               {step === "identity" && voice && (
-                <AssistantProfileFields section="language" value={patch} onChange={update} />
+                <AssistantProfileFields
+                  section="language"
+                  value={patch}
+                  languageReview={languageFlow.review}
+                  onChange={(change) => {
+                    if (!languageFlow.intercept(change)) update(change);
+                  }}
+                />
               )}
               {(step === "voice" || step === "speaker" || step === "microphone") && (
                 <VoiceSetupSteps
@@ -513,6 +534,19 @@ export function AssistantSetup({
           </>
         )}
       </div>
+      {languageFlow.dialog}
+      {builderOpen && (
+        <AssistantBuilderDialog
+          current={patch}
+          initialAnswer={builderRequest}
+          onClose={() => setBuilderOpen(false)}
+          onApply={(changes) => {
+            if (voice && draft && (changes.name ?? patch.name)?.trim()) {
+              setDraft({ ...draft, patch: { ...patch, ...changes }, step: "voice" });
+            } else update(changes);
+          }}
+        />
+      )}
     </Modal>
   );
 }

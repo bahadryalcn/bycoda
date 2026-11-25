@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { Session } from "../../sessions";
-import type { AdoptedEntry } from "./adoptedSessions";
+import { canCompareAdoptedHistory, type AdoptedEntry } from "./adoptedSessions";
 
 /** Open conversations whose newer host copy this window has yet to compare. */
 let syncing: ReadonlySet<string> = new Set();
@@ -23,6 +23,7 @@ export function adoptedSyncingIds(
     if (
       session &&
       !session.busy &&
+      canCompareAdoptedHistory(session) &&
       !session.adoptedSyncConflict &&
       entry.status !== "running" &&
       mirrored.get(entry.id) !== entry.revision

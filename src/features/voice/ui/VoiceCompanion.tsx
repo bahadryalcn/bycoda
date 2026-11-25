@@ -85,6 +85,24 @@ import { VoiceReconnectScheduler } from "../model/voiceReconnectScheduler";
 import { VoiceCompanionRecovery } from "./companion/VoiceCompanionRecovery";
 import { useVoiceHearing } from "./companion/useVoiceHearing";
 import { voiceStatusText } from "./companion/voiceStatusText";
+import { useVoiceWorkAnnouncements } from "./companion/useVoiceWorkAnnouncements";
+import { useVoiceWorkEntries } from "./companion/useVoiceWorkEntries";
+import { VoiceWorkList } from "./companion/VoiceWorkList";
+import {
+  VOICE_JOB_REVIEW_NO_ANSWER,
+  VOICE_JOB_REVIEW_TIMEOUT_MS,
+  voiceJobReviewClosedUpdate,
+  voiceJobReviewExpiry,
+} from "./companion/voiceJobReviewTimeout";
+import { voiceActionLabel } from "./VoiceToolActivityPanel";
+import { sharedVoiceWorkLedger, type VoiceWorkEntry } from "../model/voiceWorkLedger";
+import { recordVoiceWork, runVoiceWork, voiceWorkCall } from "../model/voiceWorkGuard";
+import { voiceAnnouncementsOpen } from "../model/voiceWorkAnnouncements";
+import {
+  logVoiceDiagnostic,
+  VoiceRecoveryLog,
+  voiceSeededWorkCount,
+} from "../model/voiceRecoveryLog";
 import { useVoiceReturnCall } from "./useVoiceReturnCall";
 import { useVoiceTalkEvent } from "./useVoiceTalkEvent";
 import { revealVoiceTalkWindow } from "../../../platform/tauri/voiceTalkEvent";
@@ -124,6 +142,7 @@ import type { useVoiceWorkspaceActions } from "../../../app/workspace/bridges/us
 import { voiceVisualState } from "../model/voiceVisualState";
 import { voiceWorkText } from "../model/voiceWork";
 import {
+  voiceCarriedWorkSpeech,
   voiceSessionNeedsProject,
   voiceSessionOpenSurface,
   voiceWorkRefusal,
@@ -392,6 +411,15 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const [transcript, setTranscript, transcriptTurn] = useVoiceTranscript();
   const [error, setError] = useState("");
   const ownerSpeech = useRef("");
+  /** Per target session ("" is Global): the accepted utterance whose work intent later turns
+   * continue. Kept across turn onset and reconnects (`voiceCarriedWorkSpeech`), cleared when the
+   * conversation closes. Bound to its target so speech for one session never admits work in another. */
+  const carriedWork = useRef(new Map<string, string>());
+  // First tool call of each voice connection: the duplicate guard only covers work started before it.
+  const workConnection = useRef({ epoch: -1, at: 0 });
+  // The app's own record of work voice started; it outlives provider sockets and is re-seeded.
+  const [ledger] = useState(sharedVoiceWorkLedger);
+  const [recoveryLog] = useState(() => new VoiceRecoveryLog());
   /** The owner's last request until a reply to it plays; a reconnect reports it as interrupted. */
   const unansweredTurn = useRef("");
   /** Captured speech died with its connection before any transcript; ask for it once. */
@@ -600,9 +628,36 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     environmentId: string;
     batch: VoiceJobBatch;
     resolve: (value: unknown) => void;
+    /** The tool call was already answered (owner spoke on, the review expired or voice reconnected). */
     released?: boolean;
     wait?: { waitForOwner(): void };
+    /** The owner utterance the jobs were proposed for, recorded with them in the work ledger. */
+    request: string;
+    timer?: ReturnType<typeof setTimeout>;
   } | null>(null);
+  /** A shown review that stays unanswered releases its tool call, like an unanswered question. */
+  function armJobReviewTimer(pending: NonNullable<typeof pendingJobs.current>) {
+    clearTimeout(pending.timer);
+    pending.timer = setTimeout(() => {
+      if (pendingJobs.current !== pending) return;
+      const expiry = voiceJobReviewExpiry(pending.review, pending.released === true);
+      if (expiry === "keep") return;
+      if (expiry === "release") {
+        pending.released = true;
+        pending.resolve({ status: "awaiting_review", reviewId: pending.review.id });
+        return;
+      }
+      pending.resolve(VOICE_JOB_REVIEW_NO_ANSWER);
+      pendingJobs.current = null;
+      setJobReview(null);
+      if (pending.released)
+        announce({
+          id: `review:${pending.review.id}:expired`,
+          data: voiceJobReviewClosedUpdate("expired"),
+          speech: t("The job review expired. No jobs were created."),
+        });
+    }, VOICE_JOB_REVIEW_TIMEOUT_MS);
+  }
   function changeJobReview(rows: VoiceJobDraft[]) {
     const pending = pendingJobs.current;
     if (!pending || pending.review.busy || pending.review.accepted.length || pending.review.error)
@@ -648,6 +703,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         )
         .map((job) => ({ id: job.id, title: job.title, status: job.status })),
     });
+    clearTimeout(pending.timer);
     pendingJobs.current = null;
     setJobReview(null);
   }
@@ -728,9 +784,23 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       );
       if (pendingJobs.current !== pending) return;
       pending.resolve(receipt);
+      clearTimeout(pending.timer);
       pendingJobs.current = null;
       setJobReview(null);
-      if (pending.released) client.current?.speak(voiceJobsAcceptedSpeech(jobs));
+      if (pending.released) {
+        // The tool call that proposed these jobs was already answered (possibly on a closed
+        // connection), so its ledger entry is gone: record the started jobs here and tell the
+        // live session, waiting through a reconnect if needed.
+        const id = ledger.start({
+          tool: "give_jobs",
+          args: { jobs: pending.review.jobs.map((row) => row.id) },
+          request: pending.request,
+        });
+        if (id) ledger.settle(id, receipt);
+        const spoken = voiceJobsAcceptedSpeech(jobs);
+        if (!client.current?.speak(spoken))
+          announce({ id: `review:${pending.review.id}:started`, data: spoken, speech: spoken });
+      }
     } catch (cause) {
       if (pendingJobs.current === pending) {
         pending.review = {
@@ -743,6 +813,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         pending.shown = true;
         setJobReview(pending.review);
         pending.wait?.waitForOwner();
+        armJobReviewTimer(pending);
       }
     }
   }
@@ -1227,15 +1298,19 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       narration.runtime !== runtime ||
       narration.threadId !== source.threadId ||
       narration.environmentId !== source.environmentId ||
-      status !== "live" ||
       !wanted ||
-      presence !== "active" ||
-      muted ||
-      speakerMuted ||
-      settings.holdAnnouncements ||
-      phase !== "listening"
+      !voiceAnnouncementsOpen({
+        status,
+        presence,
+        muted,
+        speakerMuted,
+        holdAnnouncements: settings.holdAnnouncements,
+        phase,
+      })
     )
       return;
+    // Only OpenAI confirms playback of out-of-band narration.
+    const receipts = realtime?.provider === "openai";
     const abort = new AbortController();
     narrationAbort.current = abort;
     const epoch = generation.current;
@@ -1270,7 +1345,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         if (!claimed.narrationClaimed || !event) return;
         let played = false;
         if (current()) {
-          if (runtime instanceof RealtimeVoice) {
+          if (runtime instanceof RealtimeVoice && !receipts) {
+            // No playback receipt exists for this provider: the model relays the claimed text
+            // through the status update path and the event settles as delivery-unknown, never
+            // as played history.
+            runtime.speak(event.text);
+          } else if (runtime instanceof RealtimeVoice) {
             const output = runtime.speakWithReceipt(event.text, event.eventId, abort.signal);
             narrationPlayback.current = output;
             const receipt = await output;
@@ -1327,7 +1407,34 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     speakerMuted,
     settings.holdAnnouncements,
     phase,
+    realtime?.provider,
   ]);
+  const announce = useVoiceWorkAnnouncements({
+    ledger,
+    sessions: props.sessions,
+    jobs: assistantSnapshot?.jobs,
+    open:
+      voiceAnnouncementsOpen({
+        status,
+        presence,
+        muted,
+        speakerMuted,
+        holdAnnouncements: settings.holdAnnouncements,
+        phase,
+        playback,
+      }) &&
+      !choice &&
+      !jobReview,
+    deliver: (update) => {
+      const runtime = client.current;
+      if (!runtime || !voiceDisclosureCurrent()) return false;
+      return runtime instanceof RealtimeVoice
+        ? runtime.speak(update.data)
+        : runtime.speak(update.speech, false);
+    },
+    // A submitted session turn already has its own "Agent turn ended" announcement.
+    skip: (entry) => entry.tool === "submit_work" || !voiceWorkVisible(entry),
+  });
   const sequence = useRef(0);
   const consumedSequence = useRef(0);
   const sideRequest = useRef<AbortController | null>(null);
@@ -1346,6 +1453,18 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     liveSessions.current.find((item) => item.id === id) ??
     latest.current.sessions.find((item) => item.id === id);
   const currentTarget = () => findSession(pinnedRef.current ?? latest.current.activeId);
+  const workTarget = () =>
+    (turnCaptured.current ? turnSessionId.current : currentTarget()?.id) ?? "";
+  const carriedWorkSpeech = () => carriedWork.current.get(workTarget()) ?? "";
+  function carryWork(text: string) {
+    const target = workTarget();
+    const carried = voiceCarriedWorkSpeech(text, carriedWork.current.get(target) ?? "");
+    carriedWork.current.delete(target);
+    if (carried) carriedWork.current.set(target, carried);
+    // Bounded: only the most recent targets can still be continued.
+    while (carriedWork.current.size > 12)
+      carriedWork.current.delete(carriedWork.current.keys().next().value as string);
+  }
   const canChangeCompanionView = useStableCallback(
     () => open && status === "live" && turnCaptured.current && voiceDisclosureCurrent(),
   );
@@ -1519,7 +1638,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         },
         origin.generation,
         current,
-        undefined,
         undefined,
         true,
       );
@@ -2074,7 +2192,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     transcriptStore.current?.finish();
     clearTimeout(stableTimer.current);
     reconnect.reset();
+    recoveryLog.reset();
     recentTurns.current = [];
+    carriedWork.current.clear();
     unansweredTurn.current = "";
     lostSpeech.current = false;
     generation.current++;
@@ -2163,6 +2283,22 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     },
     [reconnect],
   );
+  /**
+   * Ledger entries follow tool-activity visibility: hidden or locked projects never reach the
+   * model, the list or speech, and entries without a project appear only in Global scope.
+   */
+  function voiceWorkVisible(entry: VoiceWorkEntry) {
+    const current = currentTarget()?.cwd ?? latest.current.projectPath ?? "";
+    if (!entry.projectPath) return scopeRef.current;
+    const path = entry.projectPath;
+    return (
+      !isProjectLocked(path) &&
+      (latest.current.projects ?? [{ path: current }]).some(
+        (project) => pathKey(project.path) === pathKey(path),
+      ) &&
+      (scopeRef.current || pathKey(path) === pathKey(current))
+    );
+  }
   /** `append` continues a streamed reply after the sentences already shown and queued. */
   function voiceDisclosureCurrent() {
     return activeHistoryBinding.current?.current?.() ?? true;
@@ -2314,6 +2450,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     consumedSequence.current = binding.sequence;
     rememberTurn("user", text);
     ownerSpeech.current = text;
+    carryWork(text);
     let acceptedScope: VoiceHistoryScope | undefined;
     try {
       acceptedScope = (await turnHistory.current)?.scope;
@@ -2347,7 +2484,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           voiceHistoryMessageVisible(entry, acceptedScope!),
         )
       : [];
-    const previousSpeech = exchanges.filter((entry) => entry.role === "user").pop()?.text;
     let promptExchanges = exchanges.map(({ role, text }) => ({ role, text }));
     let verifiedContext: unknown;
     if (latest.current.workspace && !activeHistoryBinding.current?.remote) {
@@ -2493,7 +2629,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
               epoch,
               () => !controller.signal.aborted && binding.sequence === sequence.current,
               wait,
-              previousSpeech,
             );
           },
         });
@@ -2565,7 +2700,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           text,
           "submit_work",
           undefined,
-          previousSpeech,
+          carriedWorkSpeech(),
           decision.text ?? text,
         );
         if (refusal) {
@@ -2604,11 +2739,22 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         };
         let accepted: boolean;
         try {
-          ({ accepted } = await submitWork(
-            session,
-            brief,
-            epoch,
-            () => !controller.signal.aborted && binding.sequence === sequence.current,
+          // Each local turn is a new owner request, so only the ledger record applies here.
+          ({ accepted } = await recordVoiceWork(
+            ledger,
+            voiceWorkCall(
+              "submit_work",
+              { text: brief },
+              { sessionId: session.id, projectPath: session.cwd },
+            ),
+            carriedWorkSpeech() || text,
+            () =>
+              submitWork(
+                session,
+                brief,
+                epoch,
+                () => !controller.signal.aborted && binding.sequence === sequence.current,
+              ),
           ));
           recordReceipt({ accepted });
         } catch (cause) {
@@ -2750,52 +2896,70 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     epoch: number,
     active: () => boolean = () => true,
     wait?: { waitForOwner(): void },
-    previousSpeech?: string,
     ownerPressedView = false,
   ) {
     if (generation.current !== epoch || !active() || !voiceDisclosureCurrent())
       return { error: "The voice connection is no longer active." };
     const capturedRevision = turnRevision.current;
     const acceptedSpeech = ownerSpeech.current;
+    // The carried work utterance survives turn onset and reconnects, so a resumed session that
+    // continues the owner's request is not refused for lack of fresh speech.
+    const carried = carriedWorkSpeech();
     const refusal = voiceWorkRefusal(
       acceptedSpeech,
       name,
       args.action,
-      previousSpeech,
+      carried,
       name === "submit_work" ? args.text : args.input,
       args.family,
       ownerPressedView,
     );
-    const reviewAmbiguousJob =
-      name === "give_jobs" && refusal?.intent === "ambiguous" && Boolean(acceptedSpeech.trim());
-    if (refusal && !reviewAmbiguousJob) return refusal;
+    if (refusal) return refusal;
+    // Jobs waiting for review are not started work; a repeat proposal hears about the review.
+    if (name === "give_jobs" && pendingJobs.current)
+      return { status: "awaiting_review", reviewId: pendingJobs.current.review.id };
+    const projectPath = turnProjectPath.current || currentTarget()?.cwd || props.projectPath || "";
+    const call = voiceWorkCall(name, args, {
+      sessionId: turnCaptured.current ? turnSessionId.current : currentTarget()?.id,
+      projectPath,
+    });
+    const request = carried || acceptedSpeech;
+    if (workConnection.current.epoch !== epoch)
+      workConnection.current = { epoch, at: Date.now() };
+    const connectedAt = workConnection.current.at;
     return toolActivity.current!.run(
       {
         name: truncateGraphemes(typeof args.action === "string" ? args.action : name, 100),
         target:
           latest.current.sessions.find((session) => session.id === turnSessionId.current)?.title ||
           t("Global"),
-        projectPath: turnProjectPath.current || currentTarget()?.cwd || props.projectPath || "",
+        projectPath,
         requestId:
           typeof args.requestId === "string" && args.requestId.length <= 300
             ? args.requestId
             : undefined,
       },
-      (observing, waitForOwner) =>
-        performRealtimeTool(
-          name,
-          args,
-          epoch,
-          () => active() && observing() && turnRevision.current === capturedRevision,
-          {
-            waitForOwner: () => {
-              waitForOwner();
-              wait?.waitForOwner();
+      (observing, waitForOwner) => {
+        const perform = () =>
+          performRealtimeTool(
+            name,
+            args,
+            epoch,
+            () => active() && observing() && turnRevision.current === capturedRevision,
+            {
+              waitForOwner: () => {
+                waitForOwner();
+                wait?.waitForOwner();
+              },
+              ownerPressedView,
             },
-            reviewAmbiguousJob,
-            ownerPressedView,
-          },
-        ),
+          );
+        // The ledger settles from this promise, not from the provider socket. An owner press is a
+        // new authorization, so only model calls meet the duplicate guard.
+        return ownerPressedView
+          ? recordVoiceWork(ledger, call, request, perform)
+          : runVoiceWork(ledger, call, request, perform, connectedAt);
+      },
     );
   }
   async function performRealtimeTool(
@@ -2803,7 +2967,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     args: Record<string, unknown>,
     epoch: number,
     active: () => boolean = () => true,
-    wait?: { waitForOwner(): void; reviewAmbiguousJob: boolean; ownerPressedView: boolean },
+    wait?: { waitForOwner(): void; ownerPressedView: boolean },
   ) {
     const revision = turnRevision.current;
     const isActive = () => active() && turnRevision.current === revision;
@@ -2898,18 +3062,17 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         error: "",
         accepted: [],
       };
-      // A proposal without recognized work intent needs explicit owner review.
-      const showReview =
-        wait?.reviewAmbiguousJob ||
-        voiceJobsNeedReview(
-          jobs,
-          {
-            quickNotes: review.quickNotes === true,
-            quickAutomations: review.quickAutomations === true,
-          },
-          snapshotRef.current?.profile.confirmJobs,
-          assistantJobDraftReady,
-        );
+      // Review only when the profile asks for it or a draft is incomplete; an ambiguous
+      // proposal was already refused by admission.
+      const showReview = voiceJobsNeedReview(
+        jobs,
+        {
+          quickNotes: review.quickNotes === true,
+          quickAutomations: review.quickAutomations === true,
+        },
+        snapshotRef.current?.profile.confirmJobs,
+        assistantJobDraftReady,
+      );
       if (showReview) {
         setJobReview(review);
         wait?.waitForOwner();
@@ -2984,8 +3147,10 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
             },
           ),
           resolve,
+          request: carriedWorkSpeech() || ownerSpeech.current,
         };
-        if (!showReview) void startReviewedJobs(jobs);
+        if (showReview) armJobReviewTimer(pendingJobs.current);
+        else void startReviewedJobs(jobs);
       });
     }
     if (name === "present_choices") {
@@ -3112,14 +3277,13 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   function recoverRealtime(provider: RealtimeProvider, rotation = false, code?: string) {
     // The app log is the only record of why a live voice session dropped. Reason codes and
     // state flags only: provider messages and transcripts may contain private text.
-    console.warn("[voice] realtime recovering", {
+    const dropped = {
       provider,
       rotation,
       code: code ?? "unclassified",
-      at: Date.now(),
       speechLost: lostSpeech.current,
       unansweredTurn: !!unansweredTurn.current,
-    });
+    };
     // Rotation waits for an idle connection, so nothing from it remains to report.
     if (rotation) {
       unansweredTurn.current = "";
@@ -3128,9 +3292,17 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     invalidateFeatureHosts();
     const wasMuted = mutedRef.current;
     if (presenceRef.current !== "active") {
+      recoveryLog.recovering(dropped, false);
       stopTo("sleeping");
       setError("");
       return;
+    }
+    // The review's tool call dies with this connection. Answer it now; the review stays open and
+    // Start still creates the jobs, records them and tells the next session (startReviewedJobs).
+    const review = pendingJobs.current;
+    if (review && !review.released) {
+      review.released = true;
+      review.resolve({ status: "awaiting_review", reviewId: review.review.id });
     }
     stopCapture("reconnecting", true);
     setMuted(wasMuted);
@@ -3144,6 +3316,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       }
       void startRealtime(epoch, provider, true, wasMuted);
     };
+    recoveryLog.recovering(dropped);
     // Slow retries continue until Stop, sleep, a fatal error or the 30 minute cap.
     if (!reconnect.schedule(retry, rotation)) {
       stopCapture("idle");
@@ -3226,6 +3399,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         transcript: (text) => {
           if (generation.current === epoch) {
             ownerSpeech.current = text;
+            carryWork(text);
             unansweredTurn.current = text;
             lostSpeech.current = false;
             void spokenLanguage.current!.record(text).catch(() => {});
@@ -3252,9 +3426,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           if (generation.current === epoch) recoverRealtime(provider, true, "rotation");
         },
         diagnostic: (event) => {
-          // Connection metadata only: provider reasons may contain private text.
-          if (event.kind === "input-deadline") console.warn("[voice.connection]", provider, event);
-          else console.info("[voice.connection]", provider, event);
+          // Connection metadata only: provider reasons may contain private text. Every kind goes
+          // to the persisted app log; console.info lines never reach it.
+          logVoiceDiagnostic(provider, event);
         },
         timing: (event) => {
           // Bounded metadata only. This measures scheduled output, not audibility.
@@ -3431,9 +3605,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         return;
       }
       runtimeRegistrationPending = false;
+      // Local and synchronous: the record of started work never waits on a Host snapshot.
+      const voiceWork = ledger.seed(voiceWorkVisible);
       await voice.connect(secret, safeTurns, {
         renewSecret: () => realtimeSecret(provider),
         summary,
+        voiceWork,
         openWork: await soft(
           "open-work",
           assistantControls.current!.openWork(disclosureCurrent),
@@ -3449,6 +3626,14 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       if (generation.current === epoch) {
         if (restoreMuted) voice.mute(true);
         setStatus("live");
+        recoveryLog.live({
+          provider,
+          reconnecting,
+          seededWork: voiceSeededWorkCount(voiceWork),
+        });
+        // A review that outlived the old connection belongs to this session now.
+        if (reconnecting && pendingJobs.current)
+          voice.speak(voiceJobReviewClosedUpdate("reconnected"));
         // A dropped connection must not swallow the owner's request: ask instead of going silent.
         // The markers clear on a played reply or new speech, so an unheard notice survives a drop.
         if (reconnecting && (unansweredTurn.current || lostSpeech.current))
@@ -3459,7 +3644,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           );
         // A brief connection must not replenish an endless retry loop.
         stableTimer.current = setTimeout(() => {
-          if (generation.current === epoch) reconnect.reset();
+          if (generation.current !== epoch) return;
+          reconnect.reset();
+          recoveryLog.reset();
         }, 60_000);
       }
     } catch (cause) {
@@ -3488,6 +3675,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       return;
     clearTimeout(stableTimer.current);
     reconnect.reset();
+    recoveryLog.reset();
     unansweredTurn.current = "";
     lostSpeech.current = false;
     setMuted(false);
@@ -3703,14 +3891,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   // One shared sampler: the panel re-renders when hearing flips, not for each level value. The
   // detached window mirrors this text, so it keeps sampling while the main window is hidden.
   const hearingInput = useVoiceHearing(audioLevel, status === "live" && !muted, detached);
-  const statusText = voiceStatusText({
-    status,
-    muted,
-    playback,
-    phase,
-    hearingInput,
-    realtime: !!realtime,
-  });
   function toggleMute() {
     setLastAdmittedSpeechAt(null);
     client.current?.mute(!muted);
@@ -3854,6 +4034,46 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
             ),
       )
     : [];
+  const runningTool = [...visibleToolActivities]
+    .reverse()
+    .find((entry) => entry.state === "running");
+  // The overlay window mirrors this text, so it shows the same waiting and tool states.
+  const statusText = voiceStatusText({
+    status,
+    muted,
+    playback,
+    phase,
+    hearingInput,
+    realtime: !!realtime,
+    waitingOwner:
+      choice && bodyVisible ? "question" : jobReview && jobReviewVisible ? "review" : undefined,
+    tool: runningTool
+      ? { name: voiceActionLabel(runningTool.name), target: runningTool.target }
+      : undefined,
+  });
+  const workEntries = useVoiceWorkEntries(ledger);
+  const visibleWork = bodyVisible ? workEntries.filter(voiceWorkVisible) : [];
+  function openWorkSession(entry: VoiceWorkEntry) {
+    const workspace = latest.current.workspace;
+    const sessionId = entry.sessionIds.find((id) => findSession(id));
+    const projectPath = entry.projectPath ?? findSession(sessionId)?.cwd;
+    if (!workspace || !sessionId || !projectPath || !voiceWorkVisible(entry)) {
+      setError(t("That session is no longer available."));
+      return;
+    }
+    void workspace
+      .execute("workspace.sessions.open", {
+        sessionId,
+        projectPath,
+        requestId: crypto.randomUUID(),
+      })
+      .then((result) => {
+        if (result.status === "accepted" || result.status === "completed")
+          applyWorkspaceSurface("project");
+        else setError(t(result.error ?? "That session is no longer available."));
+      })
+      .catch((cause) => setError(voiceError(cause, "That session is no longer available.")));
+  }
   const currentResultTurn =
     fullScreen && status === "live" && bodyVisible ? voiceResultTurn : undefined;
   const acceptedWork =
@@ -4180,6 +4400,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         globalScope={globalScope}
         canDetach={canDetach && !fullScreen}
         toolActivities={visibleToolActivities}
+        voiceWork={
+          <VoiceWorkList
+            entries={visibleWork}
+            onOpenSession={props.workspace ? openWorkSession : undefined}
+          />
+        }
         chatTurns={chatTurns}
         error={shownError}
         onDismissError={() => setError("")}

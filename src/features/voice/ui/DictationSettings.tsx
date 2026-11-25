@@ -84,7 +84,9 @@ export function DictationSettings({
               onChange={(value) => change({ dictationEngine: value as DictationEngine })}
             />
           </Row>
-          {speechEnabled && !settings.enabled ? (
+          {speechEnabled &&
+          !settings.enabled &&
+          !/(?:^|[/\\])gguf-/i.test(settings.dictationLocalModelPath) ? (
             <VoiceSetupRow setup={setup} settings={settings} change={change} />
           ) : null}
           <DictationModelSettings settings={settings} change={change} />

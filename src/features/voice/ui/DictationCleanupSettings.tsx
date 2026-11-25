@@ -7,7 +7,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { RevealedSetting, Select, Toggle } from "../../../shared/ui/settings";
 import { useModelCatalog } from "../../sessions/public/modelHooks";
-import type { VoiceSettings } from "../model/voiceSettings";
+import { loadVoiceSettings, type VoiceSettings } from "../model/voiceSettings";
+import { DictationSettingsSuggestion } from "./DictationSettingsSuggestion";
 
 /** Rows under the cleanup switch; Settings opens "More options" for any of them. */
 export const CLEANUP_ROW_IDS = [
@@ -65,6 +66,16 @@ export function DictationCleanupSettings({
           onChange={(enabled) => update({ enabled })}
         />
       </Row>
+      <DictationSettingsSuggestion
+        settings={settings}
+        apply={(patch) => {
+          change({ dictationCleanup: { ...loadVoiceSettings().dictationCleanup, ...patch } });
+          const saved = loadVoiceSettings().dictationCleanup;
+          return (
+            saved.instructions === patch.instructions && saved.correctionCue === patch.correctionCue
+          );
+        }}
+      />
       {cleanup.enabled || cleanupRevealed ? (
         <>
           <Row id="dictation-cleanup-model" label={t("Cleanup model")}>

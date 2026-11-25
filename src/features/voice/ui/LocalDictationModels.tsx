@@ -1,12 +1,13 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useEffect, useRef, useState } from "react";
-import { t } from "../../../shared/i18n";
+import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SettingsFeedback } from "../../../shared/ui/settings";
+import { Select, SettingsFeedback } from "../../../shared/ui/settings";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import {
   localDictationModels,
@@ -15,12 +16,15 @@ import {
 } from "../model/localDictationModels";
 import { knownLocalModelMessage } from "../model/voiceEngineMessages";
 import { voiceRuntimeSettings, type VoiceSettings } from "../model/voiceSettings";
+import { DICTATION_LANGUAGES } from "../model/dictationModels";
+import { useDetectedDictationLanguage } from "../model/dictationActivity";
 
 const STATUS_POLL_MS = 1000;
 const MAX_STATUS_RETRIES = 5;
 const MAX_STATUS_RETRY_DELAY_MS = 16_000;
+const PAGE_SIZE = 8;
 
-/** Browse and manage the two local Whisper models owned by voice setup. */
+/** Browse and manage transcription models owned by the local Host. */
 export function LocalDictationModels({
   settings,
   change,
@@ -29,6 +33,14 @@ export function LocalDictationModels({
   change: (patch: Partial<VoiceSettings>) => void;
 }) {
   const [models, setModels] = useState<LocalDictationModel[]>([]);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [languageFilter, setLanguageFilter] = useState("");
+  const [sort, setSort] = useState("recommended");
+  const [limit, setLimit] = useState(PAGE_SIZE);
+  const { formatBytes } = useFormat();
+  const locale = useLocale();
+  const detected = useDetectedDictationLanguage();
   const [job, setJob] = useState<LocalModelJob>({ state: "idle" });
   const [actionNotice, setActionNotice] = useState("");
   /** Raw host text behind a failed model action, shown only in Details. */
@@ -116,6 +128,29 @@ export function LocalDictationModels({
   const busy = pending !== null || job.state === "working";
   const operation = pending ?? job;
   const activeModel = models.find((model) => model.id === operation.id);
+  const selectedModel = models.find((model) => model.path === settings.dictationLocalModelPath);
+  const preferred =
+    settings.dictationLanguage === "auto"
+      ? detected || locale.split("-")[0]
+      : settings.dictationLanguage;
+  const preferredLabel = DICTATION_LANGUAGES.find(([id]) => id === preferred)?.[1];
+  const supportsLanguage = (model: LocalDictationModel, language: string) =>
+    !language || !model.languages || model.languages.includes(language);
+  const rank = (model: LocalDictationModel) =>
+    Number(model.path === settings.dictationLocalModelPath) * 8 +
+    Number(supportsLanguage(model, preferred)) * 4 +
+    Number(model.installed) * 2 +
+    Number(Boolean(model.recommended));
+  const visibleModels = models
+    .filter(
+      (model) =>
+        (filter !== "installed" || model.installed) &&
+        supportsLanguage(model, languageFilter) &&
+        model.label.toLowerCase().includes(query.trim().toLowerCase()),
+    )
+    .sort((left, right) =>
+      sort === "size" ? (left.sizeBytes ?? 0) - (right.sizeBytes ?? 0) : rank(right) - rank(left),
+    );
   const operationLabel =
     operation.action === "download"
       ? t("Downloading…")
@@ -156,7 +191,7 @@ export function LocalDictationModels({
       {dialog}
       <Row
         id="dictation-local-models"
-        label={t("Local transcription models")}
+        label={selectedModel?.label ?? t("Dictation model")}
         feedback={
           actionNotice || job.state === "error" ? (
             <SettingsFeedback
@@ -201,7 +236,10 @@ export function LocalDictationModels({
           <LoadingText delay={false}>
             {t("{p0}: {p1}", {
               p0: activeModel?.label ?? operation.id ?? t("Local transcription models"),
-              p1: operationLabel,
+              p1:
+                job.state === "working" && job.bytesDone !== undefined && job.bytesTotal
+                  ? `${operationLabel} ${formatBytes(job.bytesDone)} / ${formatBytes(job.bytesTotal)}`
+                  : operationLabel,
             })}
           </LoadingText>
         ) : null}
@@ -222,31 +260,126 @@ export function LocalDictationModels({
       {!loading && !actionNotice && !models.length ? (
         <EmptyState size="inline" description={t("No local transcription models found.")} />
       ) : null}
-      {models.map((model) => (
+      {models.length > 0 ? (
+        <Row label={t("Find a local model")} stacked>
+          <div className="flex flex-wrap gap-2">
+            <SearchInput
+              containerClassName="min-w-0 flex-1 basis-48"
+              aria-label={t("Search models")}
+              placeholder={t("Search models")}
+              appearance="field"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setLimit(PAGE_SIZE);
+              }}
+            />
+            <Select
+              hideLabel
+              label={t("Model availability")}
+              value={filter}
+              options={[
+                { value: "all", label: t("All models") },
+                { value: "installed", label: t("Installed") },
+              ]}
+              onChange={(value) => {
+                setFilter(value);
+                setLimit(PAGE_SIZE);
+              }}
+            />
+            <Select
+              hideLabel
+              label={t("Model language")}
+              value={languageFilter}
+              options={[
+                { value: "", label: t("All languages") },
+                ...DICTATION_LANGUAGES.map(([value, label]) => ({ value, label })),
+              ]}
+              onChange={(value) => {
+                setLanguageFilter(value);
+                setLimit(PAGE_SIZE);
+              }}
+            />
+            <Select
+              hideLabel
+              label={t("Sort models")}
+              value={sort}
+              options={[
+                { value: "recommended", label: t("Recommended") },
+                { value: "size", label: t("Smallest first") },
+              ]}
+              onChange={(value) => {
+                setSort(value);
+                setLimit(PAGE_SIZE);
+              }}
+            />
+          </div>
+        </Row>
+      ) : null}
+      {models.length > 0 && visibleModels.length === 0 ? (
+        <EmptyState
+          size="inline"
+          context="list"
+          kind="filtered"
+          description={t("No matching models.")}
+          onReset={() => {
+            setQuery("");
+            setFilter("all");
+            setLanguageFilter("");
+            setLimit(PAGE_SIZE);
+          }}
+        />
+      ) : null}
+      {visibleModels.slice(0, limit).map((model) => (
         <Row
           key={model.id}
           id={`dictation-local-${model.id}`}
-          label={<ModelLabel model={`openai/whisper-${model.id}`} name={model.label} />}
-          description={
-            model.installed
-              ? settings.dictationLocalModelPath === model.path
-                ? t("Selected")
-                : t("Installed")
-              : t("Not installed")
+          label={
+            model.format === "gguf" ? (
+              model.label
+            ) : (
+              <ModelLabel model={`openai/whisper-${model.id}`} name={model.label} />
+            )
           }
+          descriptionVisible
+          description={[
+            model.available === false
+              ? t("Unavailable on this platform")
+              : model.installed
+                ? settings.dictationLocalModelPath === model.path
+                  ? t("Selected")
+                  : t("Installed")
+                : t("Not installed"),
+            model.sizeBytes ? formatBytes(model.sizeBytes) : "",
+            model.format === "faster-whisper"
+              ? "Faster Whisper"
+              : model.format === "gguf"
+                ? "GGUF"
+                : "",
+            preferredLabel && supportsLanguage(model, preferred) && model.languages
+              ? preferredLabel
+              : "",
+            model.recommended && supportsLanguage(model, preferred) ? t("Recommended") : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         >
           {model.installed ? (
             <>
               <Button
-                variant="ghost"
-                disabled={busy}
+                variant={settings.dictationLocalModelPath === model.path ? "ghost" : "secondary"}
+                disabled={
+                  busy ||
+                  model.available === false ||
+                  settings.dictationLocalModelPath === model.path
+                }
                 onClick={() => change({ dictationLocalModelPath: model.path })}
               >
-                {t("Select")}
+                {settings.dictationLocalModelPath === model.path ? t("Selected") : t("Select")}
               </Button>
               <Button
                 variant="ghost"
-                disabled={busy}
+                disabled={busy || model.available === false}
                 loading={active("test", model.id)}
                 loadingLabel={t("Testing…")}
                 onClick={() => void action("test", model)}
@@ -266,8 +399,8 @@ export function LocalDictationModels({
             </>
           ) : (
             <Button
-              variant="ghost"
-              disabled={busy}
+              variant="secondary"
+              disabled={busy || model.available === false}
               loading={active("download", model.id)}
               loadingLabel={t("Downloading…")}
               onClick={() => void action("download", model)}
@@ -277,6 +410,11 @@ export function LocalDictationModels({
           )}
         </Row>
       ))}
+      {visibleModels.length > limit ? (
+        <Row label={t("More transcription models")}>
+          <Button onClick={() => setLimit(limit + PAGE_SIZE)}>{t("Show more")}</Button>
+        </Row>
+      ) : null}
     </>
   );
 }

@@ -11,10 +11,29 @@ export type DictionaryDraft = {
 };
 let dictionary: DictionaryDraft | null = null;
 const phrases = new Map<string, { draft: string; baseline: string }>();
+type DictationSuggestion = {
+  language: string;
+  label: string;
+  instructions: string;
+  correctionCue: string;
+};
+let dictationSuggestion: DictationSuggestion | null = null;
 
 export function clearRetainedVoiceDrafts() {
   dictionary = null;
   phrases.clear();
+  dictationSuggestion = null;
+}
+
+export function useDictationSuggestion() {
+  const [value, setValue] = useState(() => dictationSuggestion);
+  return [
+    value,
+    (next: DictationSuggestion | null) => {
+      dictationSuggestion = next;
+      setValue(next);
+    },
+  ] as const;
 }
 
 export function useDictionaryDraft() {

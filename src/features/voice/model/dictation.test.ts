@@ -106,6 +106,21 @@ it("transcribes the unfinished phrase on stop, then releases the microphone and 
   expect(events.state).toHaveBeenLastCalledWith("idle");
 });
 
+it("uses the spoken language for filler removal when recognition omits language metadata", async () => {
+  const events = setup();
+  backend.transcribe.mockResolvedValueOnce({
+    text: "Hello um please open settings.",
+    language: "",
+  });
+  const dictation = new Dictation(events, "tr", undefined, undefined, "local", undefined, {
+    removeFillers: true,
+  });
+  await dictation.start();
+  speak();
+  await dictation.stop();
+  expect(events.text).toHaveBeenCalledWith("Hello please open settings.", true);
+});
+
 it("captures the selected input used by the microphone permission check", async () => {
   const events = setup();
   const dictation = new Dictation(events, "tr", { natural: false }, "selected-mic");

@@ -82,8 +82,17 @@ export function VoiceSidePanel({
         {children}
       </section>
     );
+  // The panel is a DOM child of the floating companion, so a floating variant would be stripped
+  // by the same-role nesting rule and render without fill. The opaque canvas is page-role, so it
+  // keeps its own fill while the frame and floating elevation detach it from the page behind.
   const appearance = surfaceAttributes(
-    { frame: "pane", edge: "all", radius: "panel", variant: "floating", elevation: "floating" },
+    {
+      frame: "pane",
+      edge: "all",
+      radius: "panel",
+      variant: "opaque-canvas",
+      elevation: "floating",
+    },
     styles.side,
   );
   return (

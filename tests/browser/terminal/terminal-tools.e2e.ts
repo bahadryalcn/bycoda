@@ -10,6 +10,8 @@ for (const theme of ["light", "dark"]) {
       await page.goto(`/tests/browser/terminal/terminal-tools.html?dock&theme=${theme}`);
       const dock = page.locator("[data-project-terminal-dock]");
       const header = dock.locator(".terminal-header");
+      const sidebar = dock.locator(".terminal-sidebar");
+      const canvas = dock.locator(".terminal-canvas");
       const root = page.locator("html");
       const search = header.getByRole("button", { name: "Find in terminal" });
       const close = header.getByRole("button", { name: "Close Terminals?", exact: true });
@@ -20,6 +22,12 @@ for (const theme of ["light", "dark"]) {
         dock.locator(".terminal-canvas").getByRole("button", { name: "Find in terminal" }),
       ).toHaveCount(0);
       await expect(header.getByRole("button", { name: "Terminal dock actions" })).toHaveCount(0);
+      const toolbarBounds = (await header.boundingBox())!;
+      const sidebarBounds = (await sidebar.boundingBox())!;
+      const canvasBounds = (await canvas.boundingBox())!;
+      expect(sidebarBounds.y).toBe(toolbarBounds.y);
+      expect(toolbarBounds.x).toBe(canvasBounds.x);
+      expect(toolbarBounds.x).toBeGreaterThan(sidebarBounds.x + sidebarBounds.width);
       await dock.screenshot({ path: info.outputPath("header.png") });
       await header.getByRole("button", { name: "Move Terminal" }).click();
       await expect(page.getByText("Dock Right", { exact: true })).toBeVisible();

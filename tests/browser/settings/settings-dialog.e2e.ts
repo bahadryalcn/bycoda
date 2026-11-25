@@ -68,7 +68,7 @@ for (const theme of ["light", "dark"] as const) {
       await dialog.getByRole("tab", { name: "Background work", exact: true }).click();
       const heading = dialog.getByRole("heading", { name: "Model priority" });
       const prepare = dialog.getByRole("button", { name: "Prepare setup draft" });
-      const options = dialog.getByRole("button", { name: "Setup options" });
+      const plan = dialog.getByRole("button", { name: "Plan setup with AI", exact: true });
       await expect(heading).toBeVisible();
       await expect(dialog.getByText("No models configured", { exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Save changes" })).toBeDisabled();
@@ -76,13 +76,56 @@ for (const theme of ["light", "dark"] as const) {
       const prepareBox = await prepare.boundingBox();
       expect(prepareBox?.x).toBe(headingBox?.x);
       await page.screenshot({ path: `${modelOrderEvidence}/empty-${theme}-${width}.png` });
-      await options.click();
-      const setup = page.getByRole("dialog", { name: "Setup options", exact: true });
-      await expect(setup.getByRole("button", { name: "Plan setup with AI" })).toBeFocused();
-      await page.keyboard.press("Escape");
-      await expect(setup).toHaveCount(0);
-      await expect(options).toBeFocused();
-      await expect(dialog).toBeVisible();
+      await prepare.focus();
+      await page.keyboard.press("Tab");
+      await expect(plan).toBeFocused();
+    });
+
+    test(`Models setup leaves removed accounts out of either draft: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      mkdirSync(modelOrderEvidence, { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?dialog=1&section=providers&workFixture=routing&providersFixture&removedRoutingAccount&theme=${theme}&lang=en`,
+      );
+      await page.getByTestId("open-settings").click();
+      const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+      await dialog.getByRole("tab", { name: "Background work", exact: true }).click();
+      await dialog.getByRole("tab", { name: "Models & order", exact: true }).click();
+      const removed = dialog.locator('[data-entry-id="r-opus"]');
+      await expect(removed.getByText("Removed account", { exact: true })).toBeVisible();
+      await dialog.getByRole("button", { name: "Prepare setup draft", exact: true }).click();
+      await expect(dialog.getByText("Rules prepared the draft.", { exact: true })).toBeVisible();
+      await expect(removed).toHaveCount(0);
+      await dialog.getByRole("button", { name: "Discard", exact: true }).click();
+      await expect(removed).toBeVisible();
+      await expect(dialog.getByText("Rules prepared the draft.", { exact: true })).toHaveCount(0);
+      await dialog.getByRole("button", { name: "Plan setup with AI", exact: true }).click();
+      await expect(
+        dialog.getByRole("status").filter({ hasText: "Rules prepared the draft." }),
+      ).toBeVisible();
+      await expect(removed).toHaveCount(0);
+      await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
+      await page.screenshot({ path: `${modelOrderEvidence}/draft-${theme}-${width}.png` });
+      const planner = dialog
+        .getByRole("group", { name: "Plan setup with AI", exact: true })
+        .locator('button[aria-haspopup="dialog"]');
+      await expect(planner).toHaveAccessibleName("Model and settings");
+      await expect(planner).toHaveText("");
+      await expect(planner.locator("svg")).toHaveCount(1);
+      await planner.click();
+      const picker = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await expect(picker.getByRole("button", { name: /^Automatic \(.+\)$/ })).toBeVisible();
+      await picker.getByRole("tab", { name: /Claude Code/ }).click();
+      const opus = picker.getByRole("option", { name: /Opus/ }).first();
+      await opus.click();
+      await expect(opus).toHaveAttribute("aria-selected", "true");
+      await expect(planner).toHaveText("");
+      await expect(picker.locator('[data-setting-id="effort"]')).toBeVisible();
+      await expect(picker.locator("[data-model-provider-settings]")).toHaveCount(0);
+      await page.screenshot({ path: `${modelOrderEvidence}/planner-${theme}-${width}.png` });
     });
 
     test(`Models routing review: ${theme} ${width}`, async ({ page }) => {

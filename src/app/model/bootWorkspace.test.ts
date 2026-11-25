@@ -200,6 +200,49 @@ it("does not overwrite a session edited while deferred boot IO is pending", asyn
   }
 });
 
+it("reports a deferred history timeout without overwriting a newly restored queue", async () => {
+  vi.useFakeTimers();
+  const sessions = savedWorkspace();
+  let release!: (session: (typeof sessions)[number]) => void;
+  const held = new Promise<(typeof sessions)[number]>((resolve) => {
+    release = resolve;
+  });
+  store.getSession.mockImplementation((id: string) =>
+    id === sessions[1].id
+      ? held
+      : Promise.resolve(sessions.find((session) => session.id === id) ?? null),
+  );
+  const lifecycle = await import("./appLifecycle");
+  const restored = (await lifecycle.loadResumedWorkspace())!;
+  const state = await import("../../features/sessions/model/sessionsStore");
+  state.resetSessionsStore(restored.sessions);
+  const detach = lifecycle.setQuitWorkspace(
+    state.getSessions,
+    () => restored.tabs,
+    () => restored.activeTabId,
+    () => restored.projectCwd,
+    () => [],
+    () => new Map(),
+    vi.fn(),
+  );
+  const queue = [{ id: "q", text: "Keep this follow-up", attachments: [] }];
+  state.setSessions((values) =>
+    values.map((session) =>
+      session.id === sessions[1].id ? { ...session, queuedMessages: queue } : session,
+    ),
+  );
+  try {
+    await vi.advanceTimersByTimeAsync(10_000);
+    const pending = state.getSessions().find((session) => session.id === sessions[1].id);
+    expect(pending?.queuedMessages).toBe(queue);
+    expect(pending?.historyLoadError).toContain("Earlier messages could not be loaded");
+  } finally {
+    release(sessions[1]);
+    detach();
+    vi.useRealTimers();
+  }
+});
+
 it("defers an interrupted inactive tab while keeping it blocked until recovery is durable", async () => {
   const sessions = savedWorkspace();
   let acknowledge!: () => void;

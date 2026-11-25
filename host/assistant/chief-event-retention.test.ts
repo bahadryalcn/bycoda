@@ -137,8 +137,9 @@ it("preserves admitted pending events and unknown intent/action bytes across clo
   const f = await fixture();
   await f.mode("chief");
   await f.create();
+  // jobs.create returns before dispatch; the Chief event is admitted on the queued tick.
+  await vi.waitFor(async () => expect((await f.events()).length).toBeGreaterThan(0));
   const pending = await f.events();
-  expect(pending.length).toBeGreaterThan(0);
   const repository = new AssistantRepository(f.store);
   const intent = {
     operationId: "unknown-operation",

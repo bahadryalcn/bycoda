@@ -18,6 +18,13 @@ vi.mock("../../../features/files/editor/editorFindBridge", () => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 const fullscreen = vi.hoisted(() => vi.fn(async () => true));
 vi.mock("../../../platform/tauri/fullscreen", () => ({ setNativeFullscreen: fullscreen }));
+const platform = vi.hoisted(() => ({ isMac: false }));
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  get IS_MAC() {
+    return platform.isMac;
+  },
+}));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -59,6 +66,7 @@ it("lets terminal find and command assistance receive their shortcuts before the
 });
 
 beforeEach(async () => {
+  platform.isMac = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   fullscreen.mockClear();
@@ -149,10 +157,42 @@ function pressInTerminal(init: KeyboardEventInit) {
   terminal.append(input);
   container.append(terminal);
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  // Happy DOM reports AltGraph whenever Alt is held. Model it independently.
+  const getModifierState = event.getModifierState.bind(event);
+  vi.spyOn(event, "getModifierState").mockImplementation((key) =>
+    key === "AltGraph" ? Boolean(init.modifierAltGraph) : getModifierState(key),
+  );
   input.dispatchEvent(event);
   terminal.remove();
   return event;
 }
+
+it.each([
+  { key: "@", code: "KeyQ" },
+  { key: "{", code: "Digit7", shiftKey: true },
+  { key: "€", code: "KeyE" },
+  { key: "Dead", code: "KeyU" },
+])(
+  "keeps macOS Option input $key ahead of a recorded workspace shortcut in the terminal",
+  (init) => {
+    platform.isMac = true;
+    saveKeybindingOverride("App: Go to File", {
+      shortcut: `Option+${init.shiftKey ? "Shift+" : ""}${init.code}`,
+    });
+    expect(pressInTerminal({ ...init, altKey: true }).defaultPrevented).toBe(false);
+    expect(deps.actions.current.onGoToFile).not.toHaveBeenCalled();
+    expect(press({ ...init, altKey: true }).defaultPrevented).toBe(true);
+  },
+);
+
+it("keeps AltGr text ahead of Ctrl+Alt workspace chords in the terminal", () => {
+  saveKeybindingOverride("App: Go to File", { shortcut: "Control+Option+KeyQ" });
+  const chord = { key: "@", code: "KeyQ", ctrlKey: true, altKey: true };
+  expect(pressInTerminal({ ...chord, modifierAltGraph: true }).defaultPrevented).toBe(false);
+  expect(deps.actions.current.onGoToFile).not.toHaveBeenCalled();
+  expect(pressInTerminal({ ...chord, key: "q" }).defaultPrevented).toBe(true);
+  expect(deps.actions.current.onGoToFile).toHaveBeenCalledOnce();
+});
 
 it.each(["w", "d", "t", "n", "b", "p", "o", "j", "k"])(
   "leaves plain Ctrl+%s to the focused terminal instead of the app chord",

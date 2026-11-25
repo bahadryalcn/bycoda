@@ -12,7 +12,7 @@ For a material change, update the relevant policy text and increase `revision`
 in `src/shared/lib/policy-updates.json` in the same change. Set the publication
 date, list the changed documents (`privacy`, `terms`) and summarize the change
 in English and Turkish. Keep the desktop policy, bundled mobile policy and
-website copy aligned. The desktop and mobile apps can display the bundled notice
+website copy aligned. Each client can display the bundled notice
 offline and check this file from the public `main` branch for newer revisions.
 The notice does not require a bycoda account or record acknowledgement on a server.
 

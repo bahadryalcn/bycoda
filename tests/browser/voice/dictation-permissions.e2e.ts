@@ -98,6 +98,69 @@ for (const theme of ["light", "dark"]) {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [800, 1280]) {
+    test(`dictation model browser and settings suggestions ${theme} ${width}`, async ({ page }) => {
+      const output = join(process.cwd(), "temp/verification/dictation-settings");
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 1000 });
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(
+        `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&surface=settings&engine=local${width === 800 ? "&detected-turkish" : ""}`,
+      );
+      if (width === 1280) {
+        await page.getByRole("button", { name: /^Dictation language:/ }).click({ timeout: 5000 });
+        await page.getByRole("option", { name: "Türkçe", exact: true }).click();
+      }
+      await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Transcription models", exact: true }).click();
+      const transcription = page.getByRole("region", { name: "Transcription", exact: true });
+      const search = transcription.getByRole("textbox", { name: "Search models" });
+      await search.fill("qwen");
+      await expect(transcription.getByText("Qwen3-ASR 0.6B", { exact: true })).toBeVisible();
+      await expect(transcription.getByText("Nemotron Streaming 3.5", { exact: true })).toHaveCount(
+        0,
+      );
+      await search.fill("");
+      await expect(
+        transcription.getByText("Nemotron Streaming 3.5", { exact: true }),
+      ).toBeVisible();
+      await transcription
+        .getByRole("button", { name: /^Model language:/ })
+        .click({ timeout: 5000 });
+      await page.getByRole("option", { name: "Türkçe", exact: true }).click();
+      await expect(
+        transcription.getByText("Parakeet Unified English 0.6B", { exact: true }),
+      ).toHaveCount(0);
+      await transcription.screenshot({
+        path: join(output, `${theme}-${width}-transcription.png`),
+        animations: "disabled",
+      });
+      await page.getByRole("switch", { name: "Clean up dictated text", exact: true }).uncheck();
+      const cleanup = page.getByRole("region", { name: "Text cleanup", exact: true });
+      await cleanup.getByRole("button", { name: "Generate suggestion", exact: true }).click();
+      await expect(
+        cleanup.getByRole("button", { name: "Apply suggestion", exact: true }),
+      ).toBeEnabled();
+      await cleanup.screenshot({
+        path: join(output, `${theme}-${width}-suggestion.png`),
+        animations: "disabled",
+      });
+      await cleanup.getByRole("button", { name: "Apply suggestion", exact: true }).click();
+      await expect(
+        cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }),
+      ).not.toBeChecked();
+      await cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }).check();
+      await cleanup.getByRole("button", { name: "Text cleanup options", exact: true }).click();
+      await expect(
+        cleanup.getByRole("textbox", { name: "Correction phrase", exact: true }),
+      ).toHaveValue("Düzeltiyorum");
+      expect(errors).toEqual([]);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
     test(`dictation stress local models and microphone ${theme} ${width}`, async ({ page }) => {
       const output = join(process.cwd(), "temp/verification/assistant-settings-simplify/dictation");
       await mkdir(output, { recursive: true });

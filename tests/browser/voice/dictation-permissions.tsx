@@ -7,6 +7,7 @@ import { VoiceCompanionView } from "../../../src/features/voice/ui/companion/Voi
 import voiceStyles from "../../../src/features/voice/ui/VoiceCompanion.module.css";
 import { VoiceSettings } from "../../../src/features/voice/ui/VoiceSettings";
 import { DictationButton } from "../../../src/features/voice/ui/DictationButton";
+import { reportDictationLanguage } from "../../../src/features/voice/model/dictationActivity";
 import { MicrophoneRecoveryAction } from "../../../src/features/voice/ui/MicrophoneRecoveryAction";
 import { VoiceCompanion } from "../../../src/features/voice/ui/VoiceCompanion";
 import { VoiceSetupSteps } from "../../../src/features/voice/ui/VoiceSetupSteps";
@@ -24,6 +25,7 @@ import { fixtureDictation } from "./dictation-permissions-mocks";
 import "../../../src/styles/index.css";
 
 const params = new URLSearchParams(location.search);
+if (params.has("detected-turkish")) reportDictationLanguage("tr-TR");
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 // The app shell fixes these roots; this standalone fixture uses ordinary document scrolling.
 for (const element of [document.documentElement, document.body, document.getElementById("root")!]) {

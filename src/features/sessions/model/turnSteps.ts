@@ -139,7 +139,6 @@ export function withTurnSteps(
   const converted = convert(session, steps);
   if (!converted) return session;
   const incoming = converted.blocks.filter(isRecorded);
-  if (incoming.length === 0) return session;
 
   const noted = wasTurnInterrupted(session);
   const blocks = noted ? session.blocks.slice(0, -1) : session.blocks;
@@ -153,6 +152,9 @@ export function withTurnSteps(
   if (promptAt < 0) return session;
   if (converted.prompt && !samePrompt(blocks[promptAt].text, converted.prompt)) {
     return session;
+  }
+  if (incoming.length === 0) {
+    return outcome === "finished" && noted && converted.prompt ? { ...session, blocks } : session;
   }
 
   const turn = blocks.slice(promptAt + 1);
@@ -174,6 +176,9 @@ export function withTurnSteps(
   });
   const hasRecorded = held.some((block) => block != null);
   if (hasRecorded && lastMatch < 0) return session;
+  // A bounded read without the prompt needs a matching local step before it can
+  // close the turn or put final output after the most recent user message.
+  if (outcome === "finished" && !converted.prompt && lastMatch < 0) return session;
 
   const appended: Block[] = incoming
     .slice(lastMatch + 1)

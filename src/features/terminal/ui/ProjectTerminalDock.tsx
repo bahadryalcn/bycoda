@@ -231,17 +231,14 @@ function ProjectTerminalDockComponent({
     const signed = dock.side === "bottom" || dock.side === "right" ? -delta : delta;
     paint(clampDockSize(dock.side, dragStart.current + signed, viewport()));
   };
+  // A cancelled drag restores the start size through a commit: a paint alone would leave
+  // the owner's grid in drag mode, so a later close kept an empty dock row.
   const endResize = (_delta: number, { cancelled }: SashEndInfo) => {
-    if (!cancelled) {
-      commit();
-      return;
+    if (cancelled) {
+      pending.current = dragStart.current;
+      onSizePaint(dragStart.current);
     }
-    if (frame.current != null) {
-      cancelAnimationFrame(frame.current);
-      frame.current = null;
-    }
-    pending.current = dragStart.current;
-    onSizePaint(dragStart.current);
+    commit();
   };
 
   const sash =
@@ -286,100 +283,100 @@ function ProjectTerminalDockComponent({
           commit();
         }}
       />
-      <PaneHeader
-        as="header"
-        className="terminal-header"
-        shrinkActions
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
-            <div className="flex items-center">
-              {onAddTerminal ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  label={t("New terminal")}
-                  shortcut="Mod+`"
-                  onClick={() => {
-                    onAddTerminal();
-                  }}
-                >
-                  <Plus className="icon-sm" strokeWidth={1.75} />
-                </Button>
-              ) : null}
-              {onAddTerminalWithProfile ? (
-                <div className="terminal-profile-trigger">
+      <div className="terminal-body" ref={bodyRef}>
+        <PaneHeader
+          as="header"
+          className="terminal-header"
+          shrinkActions
+          actions={
+            <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+              <div className="flex items-center">
+                {onAddTerminal ? (
                   <Button
-                    ref={profileButton}
                     variant="ghost"
                     size="sm"
                     iconOnly
-                    label={t("Launch profile…")}
-                    aria-expanded={!!profileMenu}
-                    aria-haspopup="menu"
-                    data-terminal-profile-trigger=""
+                    label={t("New terminal")}
+                    shortcut="Mod+`"
                     onClick={() => {
-                      setMoveMenu(null);
-                      setProfileMenu(profileMenu ? null : profileButton.current);
+                      onAddTerminal();
                     }}
                   >
-                    <Terminal className="icon-sm" />
+                    <Plus className="icon-sm" strokeWidth={1.75} />
+                  </Button>
+                ) : null}
+                {onAddTerminalWithProfile ? (
+                  <div className="terminal-profile-trigger">
+                    <Button
+                      ref={profileButton}
+                      variant="ghost"
+                      size="sm"
+                      iconOnly
+                      label={t("Launch profile…")}
+                      aria-expanded={!!profileMenu}
+                      aria-haspopup="menu"
+                      data-terminal-profile-trigger=""
+                      onClick={() => {
+                        setMoveMenu(null);
+                        setProfileMenu(profileMenu ? null : profileButton.current);
+                      }}
+                    >
+                      <Terminal className="icon-sm" />
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+              <div ref={setToolbarTarget} />
+              <div className="flex items-center">
+                <div ref={sideButton}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    label={t("Move terminal")}
+                    aria-expanded={!!moveMenu}
+                    aria-haspopup="menu"
+                    onClick={() => {
+                      setProfileMenu(null);
+                      setMoveMenu(moveMenu ? null : sideButton.current);
+                    }}
+                  >
+                    {sideIcon(dock.side)}
                   </Button>
                 </div>
-              ) : null}
-            </div>
-            <div ref={setToolbarTarget} />
-            <div className="flex items-center">
-              <div ref={sideButton}>
                 <Button
                   variant="ghost"
                   size="sm"
                   iconOnly
-                  label={t("Move terminal")}
-                  aria-expanded={!!moveMenu}
-                  aria-haspopup="menu"
-                  onClick={() => {
-                    setProfileMenu(null);
-                    setMoveMenu(moveMenu ? null : sideButton.current);
-                  }}
+                  label={t("Hide terminal")}
+                  shortcut="Mod+J"
+                  onClick={onHide}
                 >
-                  {sideIcon(dock.side)}
+                  {hideIcon(dock.side)}
                 </Button>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t("Hide terminal")}
-                shortcut="Mod+J"
-                onClick={onHide}
-              >
-                {hideIcon(dock.side)}
-              </Button>
-              <div ref={closeButton}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  label={t("Close terminal")}
-                  aria-expanded={!!closeMenu}
-                  aria-haspopup="menu"
-                  disabled={dock.pane.files.length === 0}
-                  disabledReason={t("No terminal is open.")}
-                  onClick={() => {
-                    setProfileMenu(null);
-                    setMoveMenu(null);
-                    setCloseMenu(closeMenu ? null : closeButton.current);
-                  }}
-                >
-                  <X className="icon-sm" strokeWidth={1.75} />
-                </Button>
+                <div ref={closeButton}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    label={t("Close terminal")}
+                    aria-expanded={!!closeMenu}
+                    aria-haspopup="menu"
+                    disabled={dock.pane.files.length === 0}
+                    disabledReason={t("No terminal is open.")}
+                    onClick={() => {
+                      setProfileMenu(null);
+                      setMoveMenu(null);
+                      setCloseMenu(closeMenu ? null : closeButton.current);
+                    }}
+                  >
+                    <X className="icon-sm" strokeWidth={1.75} />
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        }
-      />
-      <div className="terminal-body" ref={bodyRef}>
+          }
+        />
         <aside
           ref={attachSidebarPane}
           className="terminal-sidebar"

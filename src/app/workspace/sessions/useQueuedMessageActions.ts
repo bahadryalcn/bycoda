@@ -26,6 +26,7 @@ import { delegatedChildrenRunning } from "../../../features/sessions/model/deleg
 import { createQueuedUndoOrder } from "../../../features/sessions/model/queuedUndoOrder";
 import { repairStaleHandoff } from "../../../features/sessions/model/activeSubmits";
 import { isPreparingHandoff } from "../../../features/sessions/model/handoff";
+import { wasTurnInterrupted } from "../../../features/sessions/model/inFlight";
 import { applyQueuedEdit } from "../../../features/sessions/model/queuedMessageEdit";
 import {
   settleSharedSend,
@@ -107,6 +108,7 @@ export function autoSendMode(
   session: Session,
   sessions: readonly Session[],
 ): "dispatch" | "steer" | undefined {
+  if (session.historyLoading || wasTurnInterrupted(session)) return undefined;
   if (canDispatchQueuedHead(session))
     return delegatedChildrenRunning(sessions, session.id) ? undefined : "dispatch";
   const head = session.queuedMessages?.[0];
