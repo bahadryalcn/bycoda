@@ -105,3 +105,20 @@ Inbox). This supersedes the 2026-11-10 line that Git push/merge and direct socia
 through the native owner approval, and the Host rule that publication keeps its prompt in a Full
 access coding session. Credential entry, OS permissions, install/update, account and pairing
 changes and clarifying questions keep their own flows.
+
+2026-11-25, same owner chat, after being told what still asked under Full access (a session's
+Jira board change, the separate computer use permission mode, and credential, OS and install
+flows; translated from Turkish):
+
+> desktop.act can use the same setting; there is no need for two separate settings. In Jira, if
+> there is full access it does not need to ask, unless it is a delete. Credentials, OS and so on
+> stay as they are.
+
+Computer use has no permission control of its own. Its stored mode is ask or full (the "auto"
+mode is removed) and only the Assistant access settings write it: full when the standing
+permission is "everything" and `computerUse` is not an exception, ask otherwise. This supersedes
+the 2026-11-10 line that computer use gets its own owner-only mode with ask, auto and full. A
+full-access coding session's Jira board move or transition skips the desktop review through a
+one-use native permit bound to that exact change (`inbox.write.authorize`, issued only after the
+Host confirms the session mode); the board path has no delete, and anything that is not a move or
+a transition gets no permit. Credential entry, OS permissions and install/update are unchanged.

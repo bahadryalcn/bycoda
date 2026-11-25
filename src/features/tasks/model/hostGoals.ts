@@ -1,5 +1,12 @@
 import { errorText } from "../../../shared/lib/errors";
 import {
+  crewIncompatibility,
+  parseWorkExecutor,
+  parseWorkHelpers,
+  type WorkExecutor,
+  type WorkHelpers,
+} from "../../../shared/model/host-contracts/work-executor";
+import {
   ModelRoutingItemChoiceSchema,
   type ModelRoutingItemChoice,
 } from "../../../shared/model/host-contracts/model-routing";
@@ -7,7 +14,6 @@ import { isRemoteProvider } from "../../connections/public/protocol";
 import { type RemoteProvider } from "../../connections";
 import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
-import type { HostTask } from "./hostTasks";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
 import { readTaskInstructions } from "./taskInstructions";
 import type { TaskAcceptanceReport } from "./taskAcceptance";
@@ -71,7 +77,10 @@ export type HostGoalInput = {
   projectIds: string[];
   /** The project the planner runs in; one of `projectIds`. */
   leadProjectId: string;
-  crewDefinitionId?: string;
+  /** Who runs each planned task. Absent is one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor for the planner and each task. Absent follows Settings > Models. */
+  helpers?: WorkHelpers;
   harness: RemoteProvider;
   /** Local profile inherited by the planner and planned tasks. */
   providerAccountId?: string;
@@ -289,13 +298,18 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     throw new Error(`A goal can span at most ${MAX_GOAL_PROJECTS} projects.`);
   if (typeof v.leadProjectId !== "string" || !projectIds.includes(v.leadProjectId))
     throw new Error("The lead project must be one of the goal’s projects.");
-  if (
-    v.crewDefinitionId !== undefined &&
-    (typeof v.crewDefinitionId !== "string" ||
-      !ID.test(v.crewDefinitionId) ||
-      projectIds.length !== 1)
-  )
-    throw new Error("A crew epic must use one project and a valid crew.");
+  const executor = parseWorkExecutor(v.executor);
+  const helpers = parseWorkHelpers(v.helpers);
+  if (executor?.kind === "crew") {
+    if (projectIds.length !== 1)
+      throw new Error("A crew epic must use one project and a valid crew.");
+    const conflict = crewIncompatibility({
+      isolate: v.isolate as boolean | undefined,
+      workspace: v.workspaces && Object.keys(v.workspaces as object).length ? true : undefined,
+      modelChoice: v.modelChoice as { kind: string } | undefined,
+    });
+    if (conflict) throw new Error(`${conflict.field}: ${conflict.reason}`);
+  }
   if (!isRemoteProvider(v.harness)) throw new Error("Invalid goal agent");
   if (typeof v.model !== "string" || !v.model.trim() || v.model.length > 200)
     throw new Error("Invalid goal model");
@@ -367,7 +381,8 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     prompt: v.prompt,
     projectIds,
     leadProjectId: v.leadProjectId,
-    ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
+    ...(executor ? { executor } : {}),
+    ...(helpers ? { helpers } : {}),
     harness: v.harness,
     ...(v.providerAccountId === undefined
       ? {}
@@ -528,89 +543,4 @@ function findCycle(tasks: readonly GoalPlanTask[]): string[] | null {
     if (cycle) return cycle;
   }
   return null;
-}
-
-type ProgressTask = Pick<HostTask, "id" | "title" | "status" | "dependsOn">;
-
-/** Array consumers only need to index this goal, rather than the archive. */
-function indexGoalTasks<T extends { id: string }>(ids: readonly string[], all: readonly T[]) {
-  const wanted = new Set(ids);
-  const byId = new Map<string, T>();
-  for (const task of all) {
-    if (wanted.has(task.id) && !byId.has(task.id)) byId.set(task.id, task);
-  }
-  return byId;
-}
-
-/** How far a goal's tasks have got. */
-export function goalProgress(
-  goal: Pick<HostGoal, "taskIds">,
-  tasks: readonly Pick<HostTask, "id" | "status">[],
-): { done: number; total: number } {
-  const byId = indexGoalTasks(goal.taskIds, tasks);
-  const own = goal.taskIds.flatMap((id) => {
-    const task = byId.get(id);
-    return task ? [task] : [];
-  });
-  return {
-    done: own.filter((task) => task.status === "done").length,
-    total: own.length,
-  };
-}
-
-/** Where a goal that has tasks stands: done once every task is done; blocked
- * while some task is blocked and none can make progress, i.e. nothing runs,
- * waits in review, or waits in the queue on dependencies that can still
- * finish; running otherwise. */
-export function goalStateFromTasks(
-  goal: Pick<HostGoal, "taskIds">,
-  all: readonly ProgressTask[] | ReadonlyMap<string, ProgressTask>,
-): { status: "running" | "done" | "blocked"; error?: string } {
-  const byId: ReadonlyMap<string, ProgressTask> = Array.isArray(all)
-    ? indexGoalTasks(goal.taskIds, all)
-    : (all as ReadonlyMap<string, ProgressTask>);
-  let dependencies = byId;
-  const tasks = goal.taskIds.flatMap((id) => {
-    const task = byId.get(id);
-    return task ? [task] : [];
-  });
-  if (tasks.length === 0)
-    return {
-      status: "blocked",
-      error: "All of this goal’s tasks were deleted.",
-    };
-  if (tasks.every((task) => task.status === "done")) return { status: "done" };
-  const blocked = tasks.filter((task) => task.status === "blocked");
-  if (blocked.length === 0) return { status: "running" };
-  // A queued task is stuck when something it waits for, directly or not, is
-  // blocked.
-  const stuck = new Map<string, boolean>();
-  const isStuck = (task: ProgressTask, seen: Set<string>): boolean => {
-    if (task.status === "blocked") return true;
-    if (task.status !== "queued") return false;
-    const known = stuck.get(task.id);
-    if (known !== undefined) return known;
-    if (seen.has(task.id)) return true;
-    seen.add(task.id);
-    const result = (task.dependsOn ?? []).some((id) => {
-      // Cross-goal dependencies need the complete pass index. Array callers
-      // build it lazily once; host callers already supply that complete index.
-      if (!dependencies.has(id) && dependencies === byId && Array.isArray(all))
-        dependencies = new Map(all.map((entry) => [entry.id, entry]));
-      const dependency = dependencies.get(id);
-      return dependency ? isStuck(dependency, seen) : false;
-    });
-    stuck.set(task.id, result);
-    return result;
-  };
-  const moving = tasks.some(
-    (task) => task.status !== "done" && task.status !== "blocked" && !isStuck(task, new Set()),
-  );
-  if (moving) return { status: "running" };
-  return {
-    status: "blocked",
-    error: `${blocked.length} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} blocked: ${blocked
-      .map((task) => task.title)
-      .join(", ")}`,
-  };
 }

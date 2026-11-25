@@ -1,9 +1,10 @@
 import type { HostStore } from "../store";
 import type { HostTasks } from "../tasks/tasks";
-import type { CrewRun } from "../../src/features/crews/model/crew";
+import type { CrewDefinition, CrewRun } from "../../src/features/crews/model/crew";
 import { readCrewDefinitions, readCrewRun } from "./crew-scheduler-projection";
 import { crewCoordinatorLaunchPending, crewCoordinatorWorkWait } from "./coordinator-work";
 import { CrewRoutingWait, CrewWorkWait } from "./crew-routing";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 
 type TaskCrewRunner = NonNullable<HostTasks["crewRunner"]>;
 type CrewTask = Parameters<TaskCrewRunner["start"]>[0];
@@ -23,13 +24,27 @@ type CrewTaskRunnerPorts = {
   call(action: "crews.stop", input: { runId: string }, projectId: string): Promise<unknown>;
 };
 
+/** A crew that has a coordinator and room to assign work can take a task. */
+const crewCanRun = (definition: CrewDefinition) =>
+  definition.agents.some((agent) => agent.role === "coordinator") &&
+  definition.policy.maxParallel > 0 &&
+  definition.policy.maxAssignments > 0;
+
 /** Task-owned Crew worker lifecycle adapter; coordinator admission and execution metadata stay canonical. */
 export function createCrewTaskRunner(ports: CrewTaskRunnerPorts): TaskCrewRunner {
   return {
+    choices: async (projectId) =>
+      (await readCrewDefinitions(ports.store)).definitions
+        .filter((d) => (!d.projectId || d.projectId === projectId) && crewCanRun(d))
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          summary: d.agents.map((agent) => `${agent.name} (${agent.role})`).join(", "),
+        })),
     validate: async (task) => {
       if (
         !(await readCrewDefinitions(ports.store)).definitions.some(
-          (d) => d.id === task.crewDefinitionId && (!d.projectId || d.projectId === task.projectId),
+          (d) => d.id === workCrewId(task) && (!d.projectId || d.projectId === task.projectId),
         )
       )
         throw new Error("Choose a crew available to this task's project.");
@@ -37,7 +52,7 @@ export function createCrewTaskRunner(ports: CrewTaskRunnerPorts): TaskCrewRunner
     start: async (task) => {
       const run = await ports.startRun(
         task.projectId,
-        task.crewDefinitionId!,
+        workCrewId(task)!,
         `Task: ${task.title}\n\n${task.prompt}${task.verifyCommand ? `\n\nThe final assignment must pass this exact check command: ${task.verifyCommand}` : ""}`,
         task.crewExecutionId!,
         task.runtimeMode,

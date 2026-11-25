@@ -22,9 +22,14 @@ import {
   reviewRepairStop,
 } from "../../src/features/tasks/model/taskReviewNotes";
 import {
-  HOST_INTERRUPTED,
-  STOPPED_BY_USER,
+  buildTaskStop,
+  taskAwaitsRestart,
+  taskNeedsInput,
+} from "../../src/shared/model/host-contracts/task-stop";
+import { OWNER_STOP, inputStop } from "./stop-reasons";
+import {
   cancelSessionRun,
+  lastTurnStoppedByOwner,
   errorMessage,
   launchSessionRun,
   sessionRunState,
@@ -51,10 +56,10 @@ export async function settleVerification(
   }
   const outcome = await sessionRunState(context.store, task.reviewer, task.maxRunMinutes, now);
   if (outcome.state === "running") {
-    if (outcome.needsInput !== Boolean(task.needsInput))
+    if (outcome.needsInput !== taskNeedsInput(task))
       await context.write({
         ...task,
-        needsInput: outcome.needsInput || undefined,
+        stop: outcome.needsInput ? inputStop("review", now) : undefined,
         updatedAt: now,
       });
     return;
@@ -83,33 +88,36 @@ export async function settleVerification(
         latest.reviewer?.sessionId === task.reviewer!.sessionId &&
         latest.reviewer?.runId === task.reviewer!.runId &&
         latest.updatedAt === task.updatedAt &&
-        !latest.awaitingOwnerRestart &&
+        !taskAwaitsRestart(latest) &&
         !(latest.goalId && context.isAssistantDeletionHeld(latest.goalId))
       )
         await context.write({
           ...latest,
           reviewer: undefined,
-          needsInput: undefined,
+          stop: undefined,
           error: undefined,
           updatedAt: now,
         });
     }, "critical");
     return;
   }
-  if (outcome.error === HOST_INTERRUPTED && (await context.canResumeAfterHostStop(task.reviewer))) {
+  if (
+    outcome.cause === "host_interrupted" &&
+    (await context.canResumeAfterHostStop(task.reviewer))
+  ) {
     // Retain the read-only review and its inspected evidence. A host stop
     // is not a failed verdict and must not spend a correction attempt.
     const next = await context.write({
       ...task,
       reviewer: { ...task.reviewer, recoveryPending: true },
-      needsInput: undefined,
+      stop: undefined,
       updatedAt: now,
     });
     await context.resumeReviewer(next, now);
     return;
   }
   if (outcome.status === "cancelled") {
-    await context.block(task, STOPPED_BY_USER, now);
+    await context.block(task, OWNER_STOP, now);
     return;
   }
   const sessionId = task.reviewer.sessionId ?? "";
@@ -203,7 +211,7 @@ export async function settleVerification(
           review: { ...review, sessionId, verdict: "fail", note: reason },
         },
       },
-      reason,
+      { code: "working_copy_changed", phase: "review", message: reason },
       now,
     );
     return;
@@ -221,7 +229,7 @@ export async function settleVerification(
         await context.write({
           ...task,
           reviewer: undefined,
-          needsInput: undefined,
+          stop: undefined,
           ownerNotices: [
             ...(task.ownerNotices ?? []),
             ownerNotice(
@@ -250,7 +258,7 @@ export async function settleVerification(
             review: { verdict: "fail", note: reason, sessionId },
           },
         },
-        reason,
+        { code: "working_copy_changed", phase: "review", message: reason },
         now,
       );
       return;
@@ -335,7 +343,18 @@ export async function settleVerification(
       ? {
           ...task,
           verification,
-          repairStop,
+          // Carried to repairOrBlock only; storage drops a repair stop from a verifying task.
+          stop: repairStop
+            ? buildTaskStop(
+                {
+                  code: "repair_exhausted",
+                  phase: "repair",
+                  repair: repairStop.reason,
+                  message: repairStop.message,
+                },
+                now,
+              )
+            : undefined,
           reviewFailureCount: review.verdict === "fail" ? taskReviewFailureCount(task) + 1 : 0,
           attemptHistory,
           reviewNotes: addReviewNotes(
@@ -354,11 +373,11 @@ export async function settleVerification(
         }
       : { ...task, verification };
   if (review.verdict === "fail") {
-    await (
-      outcome.status === "succeeded" && review.note !== NO_VERDICT
-        ? context.repairOrBlock.bind(context)
-        : context.block.bind(context)
-    )(reviewed, `Review failed: ${review.note}`, now);
+    const failure = `Review failed: ${review.note}`;
+    if (outcome.status === "succeeded" && review.note !== NO_VERDICT)
+      await context.repairOrBlock(reviewed, failure, now);
+    else
+      await context.block(reviewed, { code: "run_failed", phase: "review", message: failure }, now);
     return;
   }
   const diffStat = await context.diffStat(task);
@@ -368,7 +387,7 @@ export async function settleVerification(
       ...latest,
       verification,
       reviewNotes: reviewed.reviewNotes,
-      repairStop: undefined,
+      stop: undefined,
       completedWithFindings: undefined,
       attemptHistory,
       diffStat,
@@ -391,9 +410,8 @@ export async function resumeReviewer(
     const sessionId = task.reviewer!.sessionId!;
     const session = await context.store.session(sessionId);
     const interrupted = task.reviewer!.recoveryPending;
-    const last = session.session.blocks.at(-1);
-    if (last?.role === "system" && last.text.trim() === STOPPED_BY_USER) {
-      await context.block(task, STOPPED_BY_USER, now);
+    if (lastTurnStoppedByOwner(session.session.blocks)) {
+      await context.block(task, OWNER_STOP, now);
       return;
     }
     if (
@@ -404,7 +422,12 @@ export async function resumeReviewer(
     ) {
       await context.block(
         task,
-        "The reviewer recovery no longer owns its recorded turn. Recheck the review to continue.",
+        {
+          code: "run_failed",
+          phase: "review",
+          message:
+            "The reviewer recovery no longer owns its recorded turn. Recheck the review to continue.",
+        },
         now,
       );
       return;
@@ -458,7 +481,7 @@ export async function resumeReviewer(
           latest?.status === "verifying" &&
           latest.reviewer?.sessionId === sessionId &&
           latest.workInvocationId === task.workInvocationId &&
-          !latest.awaitingOwnerRestart
+          !taskAwaitsRestart(latest)
         );
       },
     );
@@ -478,7 +501,15 @@ export async function resumeReviewer(
       updatedAt: now,
     });
   } catch (error) {
-    await context.block(task, `Could not resume the reviewer: ${errorMessage(error)}`, now);
+    await context.block(
+      task,
+      {
+        code: "run_failed",
+        phase: "review",
+        message: `Could not resume the reviewer: ${errorMessage(error)}`,
+      },
+      now,
+    );
   }
 }
 
@@ -505,7 +536,7 @@ export async function enterReview(context: TaskContext, task: HostTask): Promise
     ...task,
     status: "review",
     reviewFailureCount: 0,
-    needsInput: undefined,
+    stop: undefined,
     reviewer: undefined,
     retryFeedback: undefined,
     reviewOnly: undefined,

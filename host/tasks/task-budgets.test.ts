@@ -196,10 +196,10 @@ describe("durable task/goal family budgets", () => {
     );
     expect(result).toMatchObject({
       blocked: false,
-      usage: { agentMinutes: 0.5, historyComplete: true, tokens: 89 },
+      usage: { agentMinutes: 0.5, tokens: 89 },
     });
   });
-  it("reconciles a trusted completion checkpoint arriving after the first terminal read", async () => {
+  it("counts the last checkpoint of a settled run without a close record, then the close record", async () => {
     const s = await setup();
     await s.save("session", "run");
     await s.store.transaction(() =>
@@ -208,33 +208,49 @@ describe("durable task/goal family budgets", () => {
     await s.register();
     s.clock.now += 30_000;
     await s.finish("session", { durationMs: 3_600_000, metrics: reported });
+    // No close record yet: the last checkpoint (nothing observed) counts, nothing is unknown.
     expect(
-      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }))
+      await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }),
+    ).toMatchObject({ blocked: false, usage: { agentMinutes: 0 } });
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 0.4 }, { starting: true }))
         .blocked,
-    ).toBe(true);
+    ).toBe(false);
     await finishRunDuration(s.store, "session", "run", s.clock.now, s.clock.now);
     expect(
       await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }),
-    ).toMatchObject({ blocked: false, usage: { agentMinutes: 0.5, historyComplete: true } });
+    ).toMatchObject({ blocked: false, usage: { agentMinutes: 0.5 } });
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 0.4 }, { starting: true }))
+        .blocked,
+    ).toBe(true);
   });
-  it("excludes an unobserved gap, keeps confirmed time and marks history incomplete", async () => {
+  it("excludes a gap, keeps the time before and after it and never marks the run unknown", async () => {
     const s = await setup();
     await s.save("session", "run");
     await s.register();
     s.clock.now += 30_000;
     expect((await s.budgets.read({ taskId: "task" })).agentMinutes).toBe(0.5);
     s.clock.now += 3_600_000;
-    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-      agentMinutes: 0.5,
-      historyComplete: false,
-    });
+    expect((await s.budgets.read({ taskId: "task" })).agentMinutes).toBe(0.5);
     s.clock.now += 30_000;
-    expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-      agentMinutes: 1,
-      historyComplete: false,
-    });
+    expect((await s.budgets.read({ taskId: "task" })).agentMinutes).toBe(1);
+    const roomy = await s.budgets.evaluate(
+      { taskId: "task" },
+      { maxAgentMinutes: 600 },
+      { starting: true },
+    );
+    expect(roomy).toMatchObject({ blocked: false, warning: false, reasons: [] });
+    // Only verified time at or above the limit exhausts it.
+    const tight = await s.budgets.evaluate(
+      { taskId: "task" },
+      { maxAgentMinutes: 1 },
+      { starting: true },
+    );
+    expect(tight.blocked).toBe(true);
+    expect(tight.reasons.join(" ")).toContain("exhausted");
   });
-  it("preserves legacy wall-derived time without treating it as a proven active-time breach", async () => {
+  it("counts a legacy run recorded time as recorded", async () => {
     const s = await setup();
     await s.save("session", "run");
     await s.register();
@@ -243,21 +259,15 @@ describe("durable task/goal family budgets", () => {
         "UPDATE task_run_budget_ledger SET value=json_set(json_remove(value, '$.confirmedElapsedMs'), '$.elapsedMs', 3600000) WHERE session_id='session' AND run_id='run'",
       )
       .run();
-    const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 });
-    expect(result.usage).toMatchObject({ historyComplete: false, agentMinutes: 0 });
+    const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 600 });
+    expect(result.usage.agentMinutes).toBe(60);
     expect(result.blocked).toBe(false);
     expect(
-      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 }, { starting: true }))
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 60 }, { starting: true }))
         .blocked,
     ).toBe(true);
-    const row = await s.store.db
-      .prepare(
-        "SELECT value FROM task_run_budget_ledger WHERE session_id='session' AND run_id='run'",
-      )
-      .get();
-    expect(JSON.parse(String(row?.value))).toMatchObject({ legacyElapsedMs: 3600000 });
   });
-  it("does not treat a settled legacy transcript duration as confirmed budget use", async () => {
+  it("counts a settled legacy run recorded time", async () => {
     const s = await setup();
     await s.save("session", "run");
     await s.register();
@@ -267,15 +277,14 @@ describe("durable task/goal family budgets", () => {
       )
       .run();
     await s.finish("session", { durationMs: 3_600_000, metrics: reported, cost: 2 });
-    const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 });
+    const result = await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 600 });
     expect(result).toMatchObject({
       blocked: false,
-      usage: { agentMinutes: 0, historyComplete: false, tokens: 89, reportedCostUsd: 2 },
+      usage: { agentMinutes: 60, tokens: 89, reportedCostUsd: 2 },
     });
-    expect(
-      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 1 }, { starting: true }))
-        .blocked,
-    ).toBe(true);
+    expect((await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 60 })).blocked).toBe(
+      true,
+    );
   });
   it("accounts active time once, then settles without double counting or polling inflation", async () => {
     const s = await setup();
@@ -412,7 +421,6 @@ describe("durable task/goal family budgets", () => {
     await s.store.deleteSession("session");
     s.clock.now += 90000;
     expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-      historyComplete: false,
       agentMinutes: 0,
       tokens: 89,
       attempts: 1,
@@ -429,16 +437,15 @@ describe("durable task/goal family budgets", () => {
     await s.store.deleteSession("session");
     s.clock.now += 3600000;
     expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-      historyComplete: false,
       agentMinutes: 5000 / 60000,
       reportedTokens: 89,
       tokens: null,
       reportedCostUsd: null,
     });
-    expect((await s.budgets.read({ taskId: "parent" })).historyComplete).toBe(false);
-    expect((await s.budgets.read({ goalId: "goal" })).historyComplete).toBe(false);
+    expect((await s.budgets.read({ taskId: "parent" })).tokensComplete).toBe(false);
+    expect((await s.budgets.read({ goalId: "goal" })).tokensComplete).toBe(false);
     expect(
-      (await s.budgets.evaluate({ taskId: "parent" }, { maxAgentMinutes: 10 }, { starting: true }))
+      (await s.budgets.evaluate({ taskId: "parent" }, { maxAttempts: 10 }, { starting: true }))
         .blocked,
     ).toBe(true);
     expect(
@@ -466,7 +473,6 @@ describe("durable task/goal family budgets", () => {
       );
       s.clock.now += 3600000;
       expect(await s.budgets.read({ taskId: "task" })).toMatchObject({
-        historyComplete: false,
         agentMinutes: 4000 / 60000,
         tokens: 89,
       });
@@ -502,7 +508,6 @@ describe("durable task/goal family budgets", () => {
     });
     expect(await budgets.read({ taskId: "task" })).toMatchObject({
       attempts: 1,
-      historyComplete: false,
       agentMinutes: 0,
       tokens: null,
     });
@@ -511,7 +516,6 @@ describe("durable task/goal family budgets", () => {
     await stores.push(second);
     expect(await new HostTaskBudgets(second, () => 100000).read({ taskId: "task" })).toMatchObject({
       attempts: 1,
-      historyComplete: false,
       agentMinutes: 0,
       tokens: null,
     });
@@ -610,19 +614,21 @@ describe("durable task/goal family budgets", () => {
   });
   it("persists unknown historical coverage and never calls an empty legacy ledger zero total usage", async () => {
     const s = await setup();
-    expect((await s.budgets.read({ taskId: "fresh" })).historyComplete).toBe(true);
     await s.budgets.markUnknownHistory({ taskId: "legacy" });
     await s.budgets.markUnknownHistory({ goalId: "goal" });
     const restarted = new HostTaskBudgets(s.store, () => s.clock.now);
     expect(await restarted.read({ taskId: "legacy" })).toMatchObject({
-      historyComplete: false,
       tokens: null,
       tokensComplete: false,
       reportedCostUsd: null,
     });
     expect(
       await restarted.evaluate({ taskId: "legacy" }, { maxAgentMinutes: 10 }, { starting: true }),
-    ).toMatchObject({ blocked: true, warning: true });
+    ).toMatchObject({ blocked: false, warning: true });
+    expect(
+      (await restarted.evaluate({ taskId: "legacy" }, { maxAttempts: 20 }, { starting: true }))
+        .blocked,
+    ).toBe(true);
     expect(
       (await restarted.evaluate({ taskId: "legacy" }, undefined, { starting: true })).blocked,
     ).toBe(false);
@@ -630,12 +636,11 @@ describe("durable task/goal family budgets", () => {
     await s.register("session", "run", { taskId: "legacy" });
     await s.finish("session", { metrics: reported, durationMs: 1000, cost: 1 });
     expect(await restarted.read({ taskId: "legacy" })).toMatchObject({
-      historyComplete: false,
       reportedTokens: 89,
       tokens: null,
       agentMinutes: 0,
     });
-    expect((await restarted.read({ goalId: "goal" })).historyComplete).toBe(false);
+    expect((await restarted.read({ goalId: "goal" })).tokensComplete).toBe(false);
   });
 });
 
@@ -837,8 +842,8 @@ describe("bounded ledger lookups with sealed runs", () => {
     const usage = await s.budgets.readGoalUsage(["goal", "fresh", "legacy", "goal"]);
     expect(stable(usage.get("goal")!)).toEqual(stable(await s.budgets.read({ goalId: "goal" })));
     expect(usage.get("goal")).toMatchObject({ attempts: 2, runningRuns: 1, completedRuns: 1 });
-    expect(usage.get("fresh")).toMatchObject({ attempts: 0, historyComplete: true });
-    expect(usage.get("legacy")).toMatchObject({ attempts: 0, historyComplete: false });
+    expect(usage.get("fresh")).toMatchObject({ attempts: 0, tokensComplete: true });
+    expect(usage.get("legacy")).toMatchObject({ attempts: 0, tokensComplete: false });
     await s.budgets.syncGoalUsage();
     expect(stable((await s.budgets.readGoalUsage(["goal"])).get("goal")!)).toEqual(
       stable(usage.get("goal")!),

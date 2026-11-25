@@ -1,0 +1,12 @@
+# Who runs work, its model and helpers
+
+Contract for `executor`, `helpers` and `resolved` on tasks, goals and background automations.
+
+- `executor` is `agent` (absent means this), `crew` with `crewDefinitionId`, or `auto`. Read it with `workCrewId(task)` (it also follows an `auto` choice recorded in `resolved`); there is no top-level crew id.
+- `createWork` is the only creation path. New work defaults to `modelChoice: default` (Use settings). The Settings role follows the source (`workRole` in `host/tasks/work-resolution.ts`): `automation` for an automation, `crew.member` for a crew member, otherwise `task.worker`. A chat's own model is `fixed` plus that session's target, only when the owner asks (`useSessionModel`).
+- A crew works in the shared checkout, reviews itself and picks its own members' models. `crewIncompatibility` (shared, same text on client and Host) names the option that cannot be honored: isolation, working branch, separate review, merge, retries or a fixed model. The Host refuses with `<field>: <reason>`; the client never edits those options on its own.
+- `auto` (`host/tasks/executor-choice.ts`): eligible crews are the project's crews that fit the task's own options. None means one agent. Otherwise one `choice` question goes to the decision gate (`generic`, personal data on); no confident answer or an error means one agent. The choice and reason are recorded once and kept on retries. Temporary crew capacity is the existing crew wait, not a rejection.
+- `resolveHelpers` and `applyHelpers` (`host/model-routing/helpers.ts`) are the only helper policy for worker, reviewer and crew coordinator/members: task choice, then account, provider, global, then Automatic. A task may narrow, never widen, the settings' explicit model list or effort cap, whichever provider the target uses. The result replaces helper keys on the target, so fixed and order-following tasks agree. Crew policy `allowSubagents: false` means `helpers: off`.
+- `resolved` is written when the run starts (target, routing source, skipped entries with reasons, helpers, reason) and cleared when the task is edited. A running session never changes when settings change.
+- `tasks.helpers` (`host/delegation/task-helpers.ts`) reads delegation records bound to a task by `budgetScope.taskId`; with no `taskId` it lists failed helpers for the board card. A record holds no result or cost.
+- Forms use `src/features/tasks/ui/WorkExecutorFields.tsx` (Run with, Model, Helpers) for tasks, epics, crew assign-work and background automations.

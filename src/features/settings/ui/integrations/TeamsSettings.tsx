@@ -44,7 +44,10 @@ function TeamsAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
         info={t(
           "Sign in with the Microsoft work or school account whose chats you want to read and answer.",
         )}
-        persistence={{ mode: "explicit", state: saving ? "saving" : authHandle ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: saving ? "saving" : authHandle ? "dirty" : "idle",
+        }}
       >
         <div className="integration-fields">
           <TextField

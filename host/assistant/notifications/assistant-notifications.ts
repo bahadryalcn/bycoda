@@ -3,6 +3,7 @@ import type {
   AssistantNotification,
   AssistantProfile,
 } from "../../../src/shared/model/host-contracts/assistant";
+import { taskNeedsInput } from "../../../src/shared/model/host-contracts/task-stop";
 import { assistantPolicy } from "../../../src/shared/model/assistantPolicy";
 import type { StoreDatabase } from "../../store-db";
 import { assistantNotificationUrgent } from "../work/assistant-job-holds";
@@ -80,7 +81,7 @@ export async function readAssistantNotifications(
               id?: string;
               projectId?: string;
               status?: string;
-              needsInput?: boolean;
+              stop?: { nextAction: string };
               createdAt?: number;
             })
           : undefined;
@@ -91,7 +92,7 @@ export async function readAssistantNotifications(
           task.createdAt !== value.taskCreatedAt ||
           (value.kind === "task.done"
             ? task.status !== "done"
-            : task.needsInput !== true || task.status === "done")
+            : !taskNeedsInput(task) || task.status === "done")
         )
           return null;
         if (

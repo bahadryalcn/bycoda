@@ -14,7 +14,8 @@ import { X } from "../../../shared/ui/icons";
 import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import type { RemoteMachine } from "../../connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
-import { CrewTaskPicker } from "../../crews/public/CrewTaskPicker";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
+import { TaskRunWithRow, useRunWith } from "./TaskRunWith";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import type { RecentProject } from "../../projects/public/recents";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
@@ -85,7 +86,6 @@ export function GoalForm({
   const formId = useId();
   const [checkingCreation, setCheckingCreation] = useState(false);
   const [busyProjects, setBusyProjects] = useState<ReadonlySet<string>>(new Set());
-  const [crewValid, setCrewValid] = useState(false);
   const [concurrencyValid, setConcurrencyValid] = useState(true);
   const [workspaceChecks, setWorkspaceChecks] = useState<Record<string, WorkspaceChecks>>({});
   const { targetId, target, projectState, machineOptions, defaultAccountFor, projectChoices } =
@@ -112,7 +112,23 @@ export function GoalForm({
     machine != null &&
     target != null &&
     draft.cwds.every((cwd) => backgroundMachineFor(machines, cwd)?.id === targetId);
-  const selectedCrewValid = !draft.crewDefinitionId || (draft.cwds.length === 1 && crewValid);
+  const runWith = useRunWith(
+    draft.cwds.length === 1 ? draft.cwds[0] : "",
+    targetId,
+    draft.executor,
+  );
+  // The Host refuses these combinations and names the option; show it before sending.
+  const executorIssue =
+    draft.executor?.kind !== "crew"
+      ? undefined
+      : draft.cwds.length !== 1
+        ? t("A crew epic must use one project and a valid crew.")
+        : crewIncompatibility({
+            isolate: draft.isolate,
+            workspace: Object.keys(draft.workspaces ?? {}).length ? true : undefined,
+            modelChoice: draft.modelChoice,
+          })?.reason;
+  const selectedCrewValid = runWith.valid && !executorIssue;
   const valid =
     projectsValid &&
     workspacesValid &&
@@ -128,7 +144,8 @@ export function GoalForm({
     else if (!projectsValid) reason = taskClientErrors.machine();
     else if (workspaceBusy) reason = t("Creating the integration worktree…");
     else if (!workspacesValid) reason = t("Check the selected working copy.");
-    else if (!selectedCrewValid) reason = t("A crew epic must use one project and a valid crew.");
+    else if (!selectedCrewValid)
+      reason = executorIssue ?? t("A crew epic must use one project and a valid crew.");
     else if (!concurrencyValid) reason = t("Enter a valid task limit.");
     else reason = taskClientErrors.agent();
   }
@@ -192,7 +209,6 @@ export function GoalForm({
                 options: machineOptions,
                 onChange: (machineId) => {
                   setWorkspaceChecks({});
-                  setCrewValid(false);
                   onChange({
                     ...draft,
                     machineId,
@@ -200,7 +216,7 @@ export function GoalForm({
                     cwds: [],
                     leadCwd: "",
                     workspaces: undefined,
-                    crewDefinitionId: undefined,
+                    executor: undefined,
                     providerAccountId: defaultAccountFor(draft.harness, machineId),
                   });
                 },
@@ -284,7 +300,6 @@ export function GoalForm({
                       keywords: path,
                     }))}
                     onChange={(cwd) => {
-                      setCrewValid(false);
                       onChange(toggleGoalProject(draft, cwd));
                     }}
                   />
@@ -361,7 +376,6 @@ export function GoalForm({
                       disabled={workspaceBusy}
                       disabledReason={t("Creating the integration worktree…")}
                       onClick={() => {
-                        setCrewValid(false);
                         setWorkspaceChecks((current) => {
                           const remaining = { ...current };
                           delete remaining[scope];
@@ -409,7 +423,9 @@ export function GoalForm({
                   : undefined,
                 draft.finalReview !== true && t("Final review off"),
                 draft.budget && t("Run budget"),
-                draft.crewDefinitionId && t("Crew"),
+                draft.executor?.kind === "auto"
+                  ? t("Auto")
+                  : draft.executor?.kind === "crew" && (runWith.crew?.name ?? t("Crew")),
               ]}
             >
               <Surface
@@ -460,18 +476,13 @@ export function GoalForm({
                   budget={draft.budget}
                   onChange={(budget) => update("budget", budget)}
                 />
-                {projects.length === 1 || draft.crewDefinitionId ? (
-                  <CrewTaskPicker
-                    key={JSON.stringify([targetId, draft.cwds, draft.crewDefinitionId])}
-                    cwd={draft.cwds[0] ?? ""}
-                    machineId={targetId}
-                    value={draft.crewDefinitionId}
+                {projects.length === 1 || draft.executor ? (
+                  <TaskRunWithRow
+                    runWith={runWith}
+                    executor={draft.executor}
                     disabled={fieldsLocked || workspaceBusy}
-                    onChange={(id) => {
-                      setCrewValid(false);
-                      update("crewDefinitionId", id);
-                    }}
-                    onValidityChange={setCrewValid}
+                    issue={executorIssue}
+                    onChange={(executor) => update("executor", executor)}
                   />
                 ) : null}
                 <MachineConcurrency

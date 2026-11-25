@@ -3,7 +3,7 @@ import { compareSessionSummaries } from "../../features/sessions/model/compareSe
 import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
 import type { ProjectLinks } from "../../features/projects/model/projectRepositories";
 import { isRemoteProjectPath, sameProjectPath } from "../../features/projects/model/recents";
-import { isUserConversation } from "../../shared/model/host-contracts/delegation";
+import { isListedConversation } from "../../shared/model/host-contracts/delegation";
 import { pathKey } from "../../shared/lib/paths";
 import type { SessionListRow } from "./sessionListWindow";
 import { remoteSessionSummary } from "./sidebarSessionCollections";
@@ -44,6 +44,7 @@ export function copySessions(
   copies: readonly string[],
   remoteRows: readonly RemoteRailSession[],
   localRows: readonly SessionSummary[],
+  showBackground = false,
 ): CopySessions {
   const sessions: SessionSummary[] = [];
   const stale = new Set<string>();
@@ -59,7 +60,7 @@ export function copySessions(
       for (const row of localRows) {
         if (
           sameProjectPath(row.cwd, copy) &&
-          isUserConversation(row) &&
+          isListedConversation(row, showBackground) &&
           !row.orchestrationLeadId &&
           !row.draft
         )
@@ -68,7 +69,11 @@ export function copySessions(
       continue;
     }
     for (const { project, session, fresh } of remoteRows) {
-      if (!sameProjectPath(project, copy) || session.draft || !isUserConversation(session))
+      if (
+        !sameProjectPath(project, copy) ||
+        session.draft ||
+        !isListedConversation(session, showBackground)
+      )
         continue;
       if (!fresh) stale.add(pathKey(copy));
       add(remoteSessionSummary(session, copy));

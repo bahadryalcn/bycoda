@@ -24,7 +24,6 @@ afterEach(async () => {
 });
 
 const usage = (patch: Partial<TaskRunBudgetUsage> = {}): TaskRunBudgetUsage => ({
-  historyComplete: true,
   agentMinutes: 2,
   attempts: 3,
   completedRuns: 3,

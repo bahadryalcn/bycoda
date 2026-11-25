@@ -4,6 +4,17 @@ import {
   type ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
 import { NO_VERDICT } from "./taskRules";
+import type { TaskStop, TaskWait } from "../../../shared/model/host-contracts/task-stop";
+import {
+  crewIncompatibility,
+  parseWorkExecutor,
+  parseWorkHelpers,
+  type WorkExecutor,
+  type WorkHelpers,
+  type WorkResolved,
+} from "../../../shared/model/host-contracts/work-executor";
+export { workCrewId } from "../../../shared/model/host-contracts/work-executor";
+
 import type { TaskAcceptanceReport } from "./taskAcceptance";
 import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
 import {
@@ -114,13 +125,34 @@ export type TaskReviewNote = {
 export const TASK_SOURCES = ["manual", "goal", "steward", "automation"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
+/** Where a request for work entered the app; stored on the task by `createWork`. */
+export const WORK_ORIGIN_KINDS = [
+  "board",
+  "session",
+  "crew",
+  "room",
+  "voice",
+  "automation",
+  "steward",
+  "goal",
+  "mobile",
+] as const;
+export type WorkOrigin = {
+  kind: (typeof WORK_ORIGIN_KINDS)[number];
+  sessionId?: string;
+  messageId?: string;
+  automationRunId?: string;
+};
+
 export type HostTaskInput = {
   budget?: TaskRunBudget;
   preflightRequirements?: TaskPreflightRequirement[];
   workflowId?: string;
   workflowVersion?: number;
-  /** Reusable team selected to execute this task. Its workers are separate tasks. */
-  crewDefinitionId?: string;
+  /** Who runs the task. A crew's workers are separate tasks. Absent counts as one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor for this task. Absent follows Settings > Models. */
+  helpers?: WorkHelpers;
   /** Host-owned Crew assignment and its independently selected reviewer. */
   crewRunId?: string;
   crewScopes?: string[];
@@ -168,6 +200,10 @@ export type HostTaskInput = {
   goalId?: string;
   /** Where the task came from. Absent counts as manual or planned by a goal. */
   source?: TaskSource;
+  /** The owner's words, unchanged; `prompt` adds any short context after them. */
+  request?: string;
+  /** The entry point and message that asked for this task. */
+  origin?: WorkOrigin;
   /** The steward that proposed this task. */
   stewardId?: string;
   automationId?: string;
@@ -194,12 +230,15 @@ export interface TaskDeliveryArtifactsPreview {
 export type TaskDeliveryReview = BranchDeliveryPlan & { artifacts?: TaskDeliveryArtifactsPreview };
 
 export type HostTask = HostTaskInput & {
-  /** Runtime admission hold; the owner configuration parser never accepts it. */
-  modelRoutingWait?: { reason: string; retryAt?: number };
+  /** How the executor, model and helpers were chosen at start; Host-written. */
+  resolved?: WorkResolved;
+  /** Why the task stopped; Host-written, and the owner configuration parser never accepts it. */
+  stop?: TaskStop;
+  /** Why a queued task has not started; Host-written. */
+  wait?: TaskWait;
   /** The exact crew coordinator Work occurrence is waiting or has unknown dispatch. */
   /** Host-resolved reviewer routing target. */
   reviewerTarget?: ModelRoutingTarget;
-  crewWorkWait?: { reason: string; unstarted: boolean };
   /** Owner-only invocation identity; scheduler retries retain the same occurrence. */
   workInvocationId?: string;
   /** First execution freezes the inherited runtime across repairs and recovery. */
@@ -237,7 +276,6 @@ export type HostTask = HostTaskInput & {
     recordedAt: number;
   };
   budgetUsage?: TaskRunBudgetUsage;
-  budgetStop?: string;
   preflight?: TaskPreflightReport;
   /** Durable, host-owned identity of this task's current crew execution. */
   crewExecutionId?: string;
@@ -299,8 +337,6 @@ export type HostTask = HostTaskInput & {
 
   /** Failed reviews since the owner last changed the task instructions. */
   reviewFailureCount?: number;
-  /** Saving instructions does not silently restart blocked work. */
-  awaitingOwnerRestart?: boolean;
   /** One independent recovery worker per owner instruction revision. */
   blockedTakeover?: {
     at: number;
@@ -311,10 +347,6 @@ export type HostTask = HostTaskInput & {
   repairNote?: string;
   /** The failed check plus working-copy contents, used to stop unchanged retries. */
   checkFailureFingerprint?: string;
-  repairStop?: {
-    reason: "external" | "no_progress" | "limit";
-    message: string;
-  };
   /** Non-blocking items the owner should see once the task finishes (remaining
    * findings, unavailable external checks, auto-continued limits). The task
    * keeps running instead of stopping for them. */
@@ -410,8 +442,6 @@ export type HostTask = HostTaskInput & {
   cleanupError?: string;
   cleanupRetryAfter?: number;
   cleanupArchives?: string[];
-  /** The running session is waiting on an approval or a question. */
-  needsInput?: boolean;
   createdAt: number;
   updatedAt: number;
   startedAt?: number;
@@ -478,18 +508,22 @@ export function parseHostTask(input: unknown): HostTaskInput {
     (!Number.isSafeInteger(v.workflowVersion) || Number(v.workflowVersion) < 1)
   )
     throw new Error("Invalid task workflow version.");
-  if (
-    v.crewDefinitionId !== undefined &&
-    (typeof v.crewDefinitionId !== "string" || !ID.test(v.crewDefinitionId))
-  )
-    throw new Error("Invalid task crew");
-  if (v.crewDefinitionId && v.crewRunId)
+  const executor = parseWorkExecutor(v.executor);
+  const helpers = parseWorkHelpers(v.helpers);
+  if (executor?.kind === "crew" && v.crewRunId)
     throw new Error("A crew assignment cannot start another team task.");
-  if (
-    v.crewDefinitionId &&
-    (v.isolate === true || v.workspace || v.autoMerge === true || v.continueUntilDone === true)
-  )
-    throw new Error("Crew tasks use the selected shared project and crew-managed review.");
+  if (executor?.kind === "crew") {
+    // The Host names the field to change; nothing is dropped silently.
+    const conflict = crewIncompatibility({
+      isolate: v.isolate as boolean | undefined,
+      workspace: v.workspace,
+      review: v.review as boolean | undefined,
+      autoMerge: v.autoMerge as boolean | undefined,
+      continueUntilDone: v.continueUntilDone as boolean | undefined,
+      modelChoice: v.modelChoice as { kind: string } | undefined,
+    });
+    if (conflict) throw new Error(`${conflict.field}: ${conflict.reason}`);
+  }
   if (v.crewRunId !== undefined && (typeof v.crewRunId !== "string" || !ID.test(v.crewRunId)))
     throw new Error("Invalid crew run");
   let reviewerConfig: HostTaskInput["reviewerConfig"];
@@ -582,7 +616,8 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(Number.isSafeInteger(v.workflowVersion) && Number(v.workflowVersion) > 0
       ? { workflowVersion: Number(v.workflowVersion) }
       : {}),
-    ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
+    ...(executor ? { executor } : {}),
+    ...(helpers ? { helpers } : {}),
     ...(typeof v.crewRunId === "string" ? { crewRunId: v.crewRunId } : {}),
     ...(v.crewScopes === undefined ? {} : { crewScopes: parseCrewScopes(v.crewScopes) }),
     ...(reviewerConfig || v.reviewerConfig === null ? { reviewerConfig } : {}),
@@ -602,7 +637,7 @@ export function parseHostTask(input: unknown): HostTaskInput {
     maxRunMinutes: Number(limit),
     inheritMaxRunMinutes:
       v.maxRunMinutes === undefined || v.inheritMaxRunMinutes === true ? true : undefined,
-    ...(v.crewDefinitionId
+    ...(executor?.kind === "crew"
       ? { isolate: false }
       : v.isolate === undefined
         ? {}
@@ -610,15 +645,36 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(workspace ? { workspace } : {}),
     ...(v.position !== undefined ? { position: Number(v.position) } : {}),
     ...(check.trim() ? { verifyCommand: check.trim() } : {}),
-    review: v.crewDefinitionId ? false : v.review !== false,
+    review: executor?.kind === "crew" ? false : v.review !== false,
     ...(v.autoMerge === true ? { autoMerge: true } : {}),
     ...(v.continueUntilDone === true ? { continueUntilDone: true } : {}),
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),
     ...(typeof v.source === "string" ? { source: v.source as TaskSource } : {}),
+    ...(typeof v.request === "string" ? { request: v.request } : {}),
+    ...(v.origin === undefined ? {} : { origin: parseWorkOrigin(v.origin) }),
     ...(typeof v.stewardId === "string" ? { stewardId: v.stewardId } : {}),
     ...(typeof v.automationId === "string" ? { automationId: v.automationId } : {}),
     ...(typeof v.automationRunId === "string" ? { automationRunId: v.automationRunId } : {}),
     ...(Array.isArray(v.dependsOn) ? { dependsOn: [...new Set(v.dependsOn as string[])] } : {}),
+  };
+}
+
+function parseWorkOrigin(value: unknown): WorkOrigin {
+  const v = value as Record<string, unknown> | null;
+  if (!v || typeof v !== "object" || !WORK_ORIGIN_KINDS.some((kind) => kind === v.kind))
+    throw new Error("Invalid task origin");
+  const text = (key: string) => {
+    const field = v[key];
+    if (field === undefined) return {};
+    if (typeof field !== "string" || !field || field.length > 200)
+      throw new Error("Invalid task origin");
+    return { [key]: field };
+  };
+  return {
+    kind: v.kind as WorkOrigin["kind"],
+    ...text("sessionId"),
+    ...text("messageId"),
+    ...text("automationRunId"),
   };
 }
 

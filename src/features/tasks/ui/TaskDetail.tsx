@@ -23,13 +23,18 @@ import {
   taskDisplayStatus,
 } from "./TaskStatusLine";
 import { TaskStatusReason } from "./TaskStatusReason";
+import { taskResolvedLine } from "../model/taskResolvedLine";
+import { RelatedTaskList } from "./RelatedTaskList";
+import { TaskHelperList } from "./TaskHelperList";
+import { useTaskHelpers } from "../model/taskHelpers";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { taskStateText } from "../model/taskTextLabels";
 import { runtimeModeLabel } from "../model/runtimeModeLabel";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Fragment, type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { Pencil, Sparkles, X } from "../../../shared/ui/icons";
+import { Bot, Clock, Pencil, Sparkles, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { TaskReviewNotes } from "./TaskReviewNotes";
 import { TaskAcceptanceEvidence } from "./TaskAcceptanceEvidence";
@@ -75,6 +80,10 @@ export function TaskDetail({
   onClose,
   onSaveDetails,
   planning,
+  assignments = [],
+  onOpenTask,
+  onOpenAutomation,
+  onOpenCrewRun,
   ...actions
 }: {
   task: BoardTask;
@@ -86,14 +95,23 @@ export function TaskDetail({
   /** Resolves true once the new title and description are saved. */
   onSaveDetails: (title: string, prompt: string) => Promise<boolean>;
   planning?: ReactNode;
+  /** The assignments of this task's crew run; each opens its own detail. */
+  assignments?: readonly BoardTask[];
+  onOpenTask?: (task: BoardTask) => void;
+  /** Opens the automation that started this task; absent when it has none or cannot be opened. */
+  onOpenAutomation?: () => void;
+  /** Opens the crew run this task belongs to; absent when it has none. */
+  onOpenCrewRun?: () => void;
 } & TaskActionHandlers) {
   useLocale();
+  const helpers = useTaskHelpers(task);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [prompt, setPrompt] = useState(task.prompt);
   const [saving, setSaving] = useState(false);
   const model = resolveModel(task.harness, task.model);
   const status = taskDisplayStatus(task);
+  const resolvedLine = taskResolvedLine(task.resolved);
   const editable = canEditTask(task.status);
   const canSave =
     title.trim().length > 0 && (task.status === "todo" || prompt.trim().length > 0) && !saving;
@@ -320,7 +338,39 @@ export function TaskDetail({
               isOpeningSession={actions.isOpeningSession}
             />
           ) : null}
-          <TaskBudgetUsage usage={task.budgetUsage} stop={task.budgetStop} budget={task.budget} />
+          {assignments.length > 0 && onOpenTask ? (
+            <section className="task-detail-section">
+              <SectionLabel as="h3">{t("Assignments")}</SectionLabel>
+              <RelatedTaskList label={t("Assignments")} tasks={assignments} onOpen={onOpenTask} />
+            </section>
+          ) : null}
+          {helpers.length > 0 ? (
+            <section className="task-detail-section">
+              <SectionLabel as="h3">{t("Helpers")}</SectionLabel>
+              <TaskHelperList helpers={helpers} />
+            </section>
+          ) : null}
+          {onOpenAutomation || onOpenCrewRun ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {onOpenAutomation ? (
+                <Button variant="ghost" size="xs" type="button" onClick={onOpenAutomation}>
+                  <Clock className="icon-xs" />
+                  {t("Open automation")}
+                </Button>
+              ) : null}
+              {onOpenCrewRun ? (
+                <Button variant="ghost" size="xs" type="button" onClick={onOpenCrewRun}>
+                  <Bot className="icon-xs" />
+                  {t("Open crew run")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+          <TaskBudgetUsage
+            usage={task.budgetUsage}
+            stop={task.stop?.code === "budget_exhausted" ? task.stop.message : undefined}
+            budget={task.budget}
+          />
           {actions.onSaveEvaluation ? (
             <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
           ) : null}
@@ -343,6 +393,13 @@ export function TaskDetail({
               <DetailRow label={t("Delivery")}>{taskStateText(workspace.delivery)}</DetailRow>
               {task.continueUntilDone ? (
                 <DetailRow label={t("Execution")}>{t("Keep fixing until done")}</DetailRow>
+              ) : null}
+              {resolvedLine ? (
+                <DetailRow label={t("Run with")}>
+                  <Tooltip label={resolvedLine.why}>
+                    <span>{resolvedLine.text}</span>
+                  </Tooltip>
+                </DetailRow>
               ) : null}
               <DetailRow label={t("Access")}>{runtimeModeLabel(task.runtimeMode)}</DetailRow>
               <DetailRow label={t("Time limit")}>

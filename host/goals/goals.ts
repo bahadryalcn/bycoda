@@ -1,3 +1,4 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import { retireReviewedPlanner } from "./planner-retirement";
 import type { HostEngine } from "../engine";
 import { resolveGoalRunModel } from "./model-routing";
@@ -9,11 +10,11 @@ import { flatMapAsync, mapAsync, someAsync } from "../async-collections";
 import { deferredAssistantTurn } from "../assistant/core/assistant-turn-policy";
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { goalStateFromTasks } from "../../src/shared/model/workProjection";
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
 import {
   GOAL_CANCELLED,
-  goalStateFromTasks,
   goalPlanNeedsApproval,
   goalPlanReviews,
   parseGoalPlan,
@@ -1053,7 +1054,8 @@ export class HostGoals {
           title: task.title,
           prompt: task.prompt,
           projectId,
-          ...(goal.crewDefinitionId ? { crewDefinitionId: goal.crewDefinitionId } : {}),
+          ...(goal.executor ? { executor: goal.executor } : {}),
+          ...(goal.helpers ? { helpers: goal.helpers } : {}),
           harness: goal.harness,
           modelChoice: routingRun(goal).modelChoice,
           providerAccountId: goal.providerAccountId,
@@ -1592,7 +1594,7 @@ export class HostGoals {
           ((goal.finalReviewTarget ?? goal).providerAccountId ?? "default") &&
         session.session.model === (goal.finalReviewTarget ?? goal).model &&
         session.session.runtimeMode === goal.runtimeMode &&
-        JSON.stringify(session.session.modelSettings) ===
+        JSON.stringify(withoutBackgroundOwner(session.session.modelSettings)) ===
           JSON.stringify((goal.finalReviewTarget ?? goal).modelSettings)
       );
     } catch {

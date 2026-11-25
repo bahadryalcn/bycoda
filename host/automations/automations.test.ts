@@ -409,6 +409,29 @@ describe("host automations", () => {
     expect(f.turns).toHaveLength(0);
     await legacy.close();
   });
+  it("fails a pending occurrence that already has a session instead of rerunning it as a task", async () => {
+    const f = await setup();
+    await f.automations.save(f.input());
+    const run = {
+      id: "predates-tasks",
+      automationId: "nightly",
+      createdAt: f.clock.now,
+      trigger: "manual",
+      scheduledFor: f.clock.now,
+      status: "pending",
+      sessionId: "old-session",
+      workPending: true,
+    };
+    await f.store.db
+      .prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+      .run(run.id, "nightly", run.createdAt, JSON.stringify(run));
+    await f.automations.tick();
+    expect((await f.automations.runs("nightly"))[0]).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("cannot be resumed"),
+    });
+    expect(f.turns).toHaveLength(0);
+  });
   it("preserves an automation's dirty source and refuses finished delivery", async () => {
     const f = await setup();
     await f.automations.save(f.input());
@@ -442,6 +465,32 @@ describe("host automations", () => {
     expect(readFileSync(join(workspace.path, "unexpected.txt"), "utf8")).toBe("retained source");
     expect(f.workspaces.finish).not.toHaveBeenCalled();
     expect(f.workspaces.stop).toHaveBeenCalled();
+  });
+  it("passes its executor, helpers and Use settings choice to each occurrence's task", async () => {
+    const f = await setup();
+    await f.automations.save(
+      f.input({
+        isolate: false,
+        modelChoice: { kind: "default" },
+        executor: { kind: "auto" },
+        helpers: { mode: "off" },
+      }),
+    );
+    const run = await f.runAndSchedule("nightly");
+    const task = (await f.tasks.get(run.taskId!))!;
+    expect(task).toMatchObject({
+      executor: { kind: "auto" },
+      helpers: { mode: "off" },
+      modelChoice: { kind: "default" },
+      source: "automation",
+      review: false,
+    });
+    // Resolved when the task started, under the automation role, with Off winning over Settings.
+    expect(task.resolved).toMatchObject({
+      executor: { kind: "agent" },
+      role: "automation",
+      helpers: { mode: "off", subagents: "off", source: "task" },
+    });
   });
   it("accepts only one concurrent edit of the same configuration", async () => {
     const f = await setup();
@@ -1153,7 +1202,8 @@ it("resolves automation routing before creating its session and freezes target a
     () =>
       expect(f.turns[0]?.input).toMatchObject({
         model: "claude:routed",
-        modelSettings: execution.modelSettings,
+        // Helper keys come from Settings (here none, so Automatic), never from the routed target.
+        modelSettings: { effort: "high", crossSubagents: "auto" },
       }),
     { timeout: 20000 },
   );

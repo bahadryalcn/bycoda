@@ -7,9 +7,9 @@ import {
 } from "./transfers";
 
 const details: SharingDetails = {
-  kind: "activity",
-  destination: "https://account.test/v1/activity/days",
-  files: [jsonSharingFile("activity-days.json", { days: [] })],
+  kind: "diagnostics",
+  destination: "https://account.test/v1/diagnostics/reports",
+  files: [jsonSharingFile("diagnostics.json", { errors: [] })],
   linkedToAccount: true,
 };
 

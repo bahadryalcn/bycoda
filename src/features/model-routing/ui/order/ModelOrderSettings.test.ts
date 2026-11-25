@@ -122,10 +122,9 @@ afterEach(async () => {
 });
 
 it.each([
-  { dailyAgentMinutes: 120, usedMinutes: 75, limitReached: false, usageUncertain: false },
-  { dailyAgentMinutes: 120, usedMinutes: 125, limitReached: true, usageUncertain: false },
-  { dailyAgentMinutes: 120, usedMinutes: 75, limitReached: false, usageUncertain: true },
-  { dailyAgentMinutes: 0, usedMinutes: 75, limitReached: false, usageUncertain: true },
+  { dailyAgentMinutes: 120, usedMinutes: 75, limitReached: false },
+  { dailyAgentMinutes: 120, usedMinutes: 125, limitReached: true },
+  { dailyAgentMinutes: 0, usedMinutes: 75, limitReached: false },
 ])("shows acknowledged machine usage independently of draft limits: %j", async (usage) => {
   const limits = { machineId: "host", machineName: "Workstation", maxRunningTasks: 2, ...usage };
   const draft = orderDraft(
@@ -138,18 +137,12 @@ it.each([
   expect(container.textContent).toContain("Used today");
   expect(container.textContent).toContain(usage.usedMinutes === 125 ? "2h 5m" : "1h 15m");
   expect(!!container.querySelector('[aria-label="Limit reached"]')).toBe(usage.limitReached);
-  expect(container.textContent?.includes("Today's agent time is incomplete.")).toBe(
-    usage.usageUncertain,
-  );
   const meter = container.querySelector('[role="meter"]');
-  if (usage.dailyAgentMinutes > 0 && !usage.usageUncertain) {
+  if (usage.dailyAgentMinutes > 0) {
     expect(meter?.getAttribute("aria-valuemax")).toBe("120");
     expect(meter?.getAttribute("aria-valuenow")).toBe(String(Math.min(120, usage.usedMinutes)));
   } else expect(meter).toBeNull();
   expect(container.textContent?.includes(" of 2h 0m")).toBe(usage.dailyAgentMinutes > 0);
-  expect(container.textContent?.includes("New work waits until tomorrow")).toBe(
-    usage.dailyAgentMinutes > 0 && usage.usageUncertain,
-  );
 });
 
 it("uses the locale's complete agent-time fraction when usage is stale", async () => {
@@ -187,7 +180,6 @@ it("shows one cap scope at a time and keeps saved provider caps available", asyn
     dailyAgentMinutes: 0,
     usedMinutes: 0,
     limitReached: false,
-    usageUncertain: false,
   };
   const draft = orderDraft(
     {

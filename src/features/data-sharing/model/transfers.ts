@@ -12,8 +12,9 @@ export type SharingDetails = {
 type Transfer = SharingDetails & {
   id: number;
   automatic: boolean;
+  allowToday?: () => boolean;
   inspect(open: boolean): void;
-  decide(send: boolean): void;
+  decide(send: boolean, source?: "user"): void;
   start(): void;
   reschedule(): void;
 };
@@ -30,7 +31,33 @@ export function sharingMode(kind: SharingKind, fallback: SharingMode) {
   });
 }
 
-export const activitySharing = sharingMode("activity", "ask");
+const activityPreference = createStoredSetting<string>({
+  key: "bycoda.data-sharing.activity",
+  event: "bycoda:data-sharing:activity",
+  storageEvents: true,
+  fallback: "ask",
+  parse: (value) => value,
+  serialize: (value) => value,
+});
+
+const activityGrant = (accountId: string) => JSON.stringify([new Date().toDateString(), accountId]);
+const activityReviewDeferred = (accountId: string) => `deferred:${activityGrant(accountId)}`;
+
+export const activitySharing = {
+  load(): SharingMode {
+    const value = activityPreference.load();
+    return value === "auto" || value === "off" ? value : "ask";
+  },
+  save: (mode: SharingMode) => activityPreference.save(mode),
+  subscribe: activityPreference.subscribe,
+};
+
+const activityReceiptDay = createStoredSetting<string>({
+  key: "bycoda.data-sharing.activity.receipt-day",
+  fallback: "",
+  parse: (value) => value,
+  serialize: (value) => value,
+});
 export const sharingNotices = createStoredSetting({
   key: "bycoda.data-sharing.notices",
   event: "bycoda:data-sharing:notices",
@@ -47,6 +74,7 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
   let accountGeneration = 0;
   let presenters = 0;
   let sequence = 0;
+  let lastActivityReceiptDay = "";
   const listeners = new Set<() => void>();
   const notify = () => listeners.forEach((listener) => listener());
   return {
@@ -86,64 +114,104 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
       permission: () => SharingMode,
       send: () => Promise<unknown>,
       signal?: AbortSignal,
+      activityAccountId?: string,
     ): Promise<boolean> {
       const mode = permission();
       if (mode === "off" || signal?.aborted) return false;
       const id = ++sequence;
       const generation = accountGeneration;
-      const approved = await new Promise<boolean>((resolve) => {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        let active = false;
-        let inspecting = false;
-        const cancel = () => transfer.decide(false);
-        const visible = () => presenters > 0 && !globalThis.document?.hidden;
-        const schedule = () => {
-          clearTimeout(timer);
-          if (active && transfer.automatic && !inspecting && visible()) {
-            timer = setTimeout(() => {
-              if (visible()) transfer.decide(permission() === "auto");
-            }, delayMs);
-          }
-        };
-        const transfer: Transfer = {
-          ...details,
-          id,
-          automatic: mode === "auto",
-          reschedule: schedule,
-          start() {
-            active = true;
-            if (transfer.automatic) {
-              globalThis.document?.addEventListener("visibilitychange", schedule);
-              schedule();
-            }
-          },
-          inspect(open) {
-            inspecting = open;
-            schedule();
-          },
-          decide(yes) {
-            if (!pending.includes(transfer)) return;
+      const isActivity = details.kind === "activity";
+      const reviewDeferred = (current: SharingMode) =>
+        isActivity &&
+        current === "ask" &&
+        !!activityAccountId &&
+        activityPreference.load() === activityReviewDeferred(activityAccountId);
+      if (reviewDeferred(mode)) return false;
+      const maySyncActivity = (current: SharingMode) =>
+        isActivity &&
+        (current === "auto" ||
+          (current === "ask" &&
+            !!activityAccountId &&
+            activityPreference.load() === activityGrant(activityAccountId)));
+      const review = () =>
+        new Promise<boolean>((resolve) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          let unsubscribe: (() => void) | undefined;
+          let active = false;
+          let inspecting = false;
+          const cancel = () => transfer.decide(false);
+          const visible = () => presenters > 0 && !globalThis.document?.hidden;
+          const schedule = () => {
             clearTimeout(timer);
-            globalThis.document?.removeEventListener("visibilitychange", schedule);
-            active = false;
-            signal?.removeEventListener("abort", cancel);
-            const wasFirst = pending[0] === transfer;
-            pending = pending.filter((item) => item !== transfer);
-            if (wasFirst) pending[0]?.start();
-            notify();
-            resolve(yes);
-          },
-        };
-        pending = [...pending, transfer];
-        signal?.addEventListener("abort", cancel, { once: true });
-        if (pending[0] === transfer) transfer.start();
-        notify();
-      });
+            if (active && transfer.automatic && !inspecting && visible()) {
+              timer = setTimeout(() => {
+                if (visible()) transfer.decide(permission() === "auto");
+              }, delayMs);
+            }
+          };
+          const transfer: Transfer = {
+            ...details,
+            id,
+            automatic: mode === "auto",
+            allowToday:
+              isActivity && activityAccountId
+                ? () => activityPreference.save(activityGrant(activityAccountId))
+                : undefined,
+            reschedule: schedule,
+            start() {
+              active = true;
+              if (transfer.automatic) {
+                globalThis.document?.addEventListener("visibilitychange", schedule);
+                schedule();
+              }
+            },
+            inspect(open) {
+              inspecting = open;
+              schedule();
+            },
+            decide(yes, source) {
+              if (!pending.includes(transfer)) return;
+              clearTimeout(timer);
+              globalThis.document?.removeEventListener("visibilitychange", schedule);
+              active = false;
+              unsubscribe?.();
+              if (source === "user" && isActivity && activityAccountId && permission() === "ask") {
+                activityPreference.save(activityReviewDeferred(activityAccountId));
+              }
+              signal?.removeEventListener("abort", cancel);
+              const wasFirst = pending[0] === transfer;
+              pending = pending.filter((item) => item !== transfer);
+              if (wasFirst) pending[0]?.start();
+              notify();
+              resolve(yes);
+            },
+          };
+          pending = [...pending, transfer];
+          if (isActivity) {
+            unsubscribe = activitySharing.subscribe(() => {
+              const current = permission();
+              if (current === "off" || reviewDeferred(current)) transfer.decide(false);
+              else if (maySyncActivity(current)) transfer.decide(true);
+            });
+          }
+          signal?.addEventListener("abort", cancel, { once: true });
+          if (pending[0] === transfer) transfer.start();
+          notify();
+        });
+      const approved = maySyncActivity(mode) || (await review());
       const sameAccount = () => !details.linkedToAccount || generation === accountGeneration;
       if (!approved || signal?.aborted || permission() === "off" || !sameAccount()) return false;
       await send();
       if (receiptsEnabled() && sameAccount() && !signal?.aborted) {
-        receipts = [...receipts.slice(-4), { ...details, id, sentAt: Date.now() }];
+        const sentAt = new Date();
+        if (isActivity) {
+          const day = sentAt.toDateString();
+          if (lastActivityReceiptDay === day || activityReceiptDay.load() === day) return true;
+          lastActivityReceiptDay = day;
+          activityReceiptDay.save(day);
+          receipts = receipts.filter((receipt) => receipt.kind !== "activity");
+        }
+        receipts = [...receipts.slice(-4), { ...details, id, sentAt: sentAt.getTime() }];
         notify();
       }
       return true;

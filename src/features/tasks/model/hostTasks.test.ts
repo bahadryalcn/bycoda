@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildTaskStop } from "../../../../src/shared/model/host-contracts/task-stop";
 import { parseHostTask, taskRequiresInstructions, type HostTask } from "./hostTasks";
 
 const input = {
@@ -95,7 +96,10 @@ describe("continuous task execution contract", () => {
         status: "blocked",
         createdAt: 0,
         updatedAt: 0,
-        repairStop: { reason, message: "Concrete next action" },
+        stop: buildTaskStop(
+          { code: "repair_exhausted", repair: reason, message: "Concrete next action" },
+          0,
+        ),
         blockedTakeover: { at: 0, blocker: "Retained blocker" },
       };
       expect(taskRequiresInstructions(task)).toBe(true);

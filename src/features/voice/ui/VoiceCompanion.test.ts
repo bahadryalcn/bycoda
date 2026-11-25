@@ -3363,7 +3363,7 @@ it.each(["local", "openai"] as const)(
       return mock.realtime.tool;
     };
     for (const utterance of [
-      "ByCode'da provider bazlı aylık token ve, model kullanımımı bir grafiğe döker misin?",
+      "Bycoda'da provider bazlı aylık token ve, model kullanımımı bir grafiğe döker misin?",
       "Baykoda'da provider bazlı aylık token ve model kullanımını bir grafiğe döker misin?",
       "Hayır, iş açma, sadece göster.",
       "Bycoda uygulamasında aylık token kullanımımı göster.",

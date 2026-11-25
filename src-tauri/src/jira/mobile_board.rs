@@ -361,7 +361,7 @@ pub async fn jira_mobile_issue_transitions(
     .await
     .map_err(|e| e.to_string())?
 }
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, PartialEq)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Mutation {
     Transition {
@@ -450,6 +450,88 @@ fn approvals() -> &'static Mutex<HashMap<String, Approval>> {
     static APPROVALS: OnceLock<Mutex<HashMap<String, Approval>>> = OnceLock::new();
     APPROVALS.get_or_init(|| Mutex::new(HashMap::new()))
 }
+/// One exact board change a Full access coding session may make without the desktop review.
+struct SessionPermit {
+    cwd: String,
+    snapshot_id: String,
+    mutation: Mutation,
+    deadline: u64,
+}
+const SESSION_PERMIT_MS: u64 = 5 * 60_000;
+fn session_permits() -> &'static Mutex<HashMap<String, SessionPermit>> {
+    static PERMITS: OnceLock<Mutex<HashMap<String, SessionPermit>>> = OnceLock::new();
+    PERMITS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+/// The board change a session's Inbox operation names, in the shape the webview submits it.
+fn session_mutation(operation: &Value) -> Result<Mutation, String> {
+    let mutation = match operation["action"].as_str() {
+        Some("jira-board-transition") => json!({
+            "action": "transition",
+            "key": operation["key"],
+            "transitionId": operation["transitionId"],
+        }),
+        Some("jira-board-move") => json!({
+            "action": "move",
+            "key": operation["key"],
+            "target": operation["target"],
+            "sprintId": operation["sprintId"],
+            "beforeKey": operation["beforeKey"],
+            "afterKey": operation["afterKey"],
+        }),
+        _ => return Err("Invalid Jira board change".into()),
+    };
+    serde_json::from_value(mutation).map_err(|_| "Invalid Jira board change".into())
+}
+fn insert_session_permit(
+    store: &mut HashMap<String, SessionPermit>,
+    operation: &Value,
+    at: u64,
+) -> Result<String, String> {
+    let text = |key: &str| {
+        operation[key]
+            .as_str()
+            .filter(|value| !value.is_empty() && value.len() <= 4096)
+            .map(str::to_owned)
+            .ok_or("Invalid Jira board change")
+    };
+    let permit = SessionPermit {
+        cwd: text("cwd")?,
+        snapshot_id: text("snapshotId")?,
+        mutation: session_mutation(operation)?,
+        deadline: at + SESSION_PERMIT_MS,
+    };
+    store.retain(|_, value| value.deadline > at);
+    if store.len() >= 32 {
+        return Err("Too many pending Jira session permits".into());
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    store.insert(id.clone(), permit);
+    Ok(id)
+}
+/// A permit is consumed by its first use, whether or not it matches.
+fn take_session_permit(
+    store: &mut HashMap<String, SessionPermit>,
+    id: &str,
+    cwd: &str,
+    snapshot_id: &str,
+    mutation: &Mutation,
+    at: u64,
+) -> bool {
+    store.remove(id).is_some_and(|permit| {
+        permit.deadline > at
+            && permit.cwd == cwd
+            && permit.snapshot_id == snapshot_id
+            && permit.mutation == *mutation
+    })
+}
+/// Called only by the native approval bridge after the Host confirmed the session's Full access
+/// mode. The webview hands the permit back to `jira_mobile_board_prepare`.
+pub(crate) fn issue_session_permit(operation: &Value) -> Result<String, String> {
+    let mut store = session_permits()
+        .lock()
+        .map_err(|_| "Jira session permits unavailable")?;
+    insert_session_permit(&mut store, operation, now()?)
+}
 fn mutation_queue() -> &'static Mutex<()> {
     static QUEUE: Mutex<()> = Mutex::new(());
     &QUEUE
@@ -500,7 +582,21 @@ pub async fn jira_mobile_board_prepare(
     snapshot_id: String,
     mutation: Mutation,
     deadline: u64,
+    permit: Option<String>,
 ) -> Result<Value, String> {
+    // Only a native permit for this exact change replaces the review; anything else asks.
+    let permitted = match permit {
+        Some(permit) => {
+            let mut store = session_permits()
+                .lock()
+                .map_err(|_| "Jira session permits unavailable")?;
+            take_session_permit(&mut store, &permit, &cwd, &snapshot_id, &mutation, now()?)
+        }
+        None => false,
+    };
+    if permitted {
+        log::info!("Jira board change admitted by a session Full access permit");
+    }
     jira_board_prepare_reviewed(
         app,
         window,
@@ -509,13 +605,13 @@ pub async fn jira_mobile_board_prepare(
         snapshot_id,
         mutation,
         deadline,
-        true,
+        !permitted,
     )
     .await
 }
 
-/// `ask` is false only for a Room whose native standing consent already admits the change;
-/// the webview command always asks.
+/// `ask` is false only for a Room whose native standing consent already admits the change, or
+/// for a webview call that returns a native Full access session permit for this exact change.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn jira_board_prepare_reviewed(
     app: AppHandle,
@@ -681,6 +777,71 @@ pub fn jira_mobile_board_discard_approval(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_session_permit_admits_only_its_exact_change_once() {
+        let operation = json!({"action":"jira-board-transition","cwd":"/project","snapshotId":"snapshot","key":"ABC-1","transitionId":"31"});
+        let change = || Mutation::Transition {
+            key: "ABC-1".into(),
+            transition_id: "31".into(),
+        };
+        let mut store = HashMap::new();
+        let take = |store: &mut HashMap<String, SessionPermit>, id: &str| {
+            take_session_permit(store, id, "/project", "snapshot", &change(), 10)
+        };
+        let id = insert_session_permit(&mut store, &operation, 1).unwrap();
+        assert!(take(&mut store, &id));
+        assert!(!take(&mut store, &id), "a permit is single use");
+        assert!(!take(&mut store, "unknown"));
+        for (cwd, snapshot, mutation, at) in [
+            ("/other", "snapshot", change(), 10),
+            ("/project", "other", change(), 10),
+            (
+                "/project",
+                "snapshot",
+                Mutation::Transition {
+                    key: "ABC-2".into(),
+                    transition_id: "31".into(),
+                },
+                10,
+            ),
+            ("/project", "snapshot", change(), 1 + SESSION_PERMIT_MS),
+        ] {
+            let id = insert_session_permit(&mut store, &operation, 1).unwrap();
+            assert!(!take_session_permit(
+                &mut store, &id, cwd, snapshot, &mutation, at
+            ));
+            assert!(store.is_empty(), "a mismatch still consumes the permit");
+        }
+    }
+    #[test]
+    fn a_session_permit_names_a_board_move_or_transition_only() {
+        let mut store = HashMap::new();
+        let moved = json!({"action":"jira-board-move","cwd":"/project","snapshotId":"snapshot","key":"ABC-1","target":"sprint","sprintId":7});
+        let id = insert_session_permit(&mut store, &moved, 1).unwrap();
+        let expected = Mutation::Move {
+            key: "ABC-1".into(),
+            target: "sprint".into(),
+            sprint_id: Some(7),
+            before_key: None,
+            after_key: None,
+        };
+        assert!(take_session_permit(
+            &mut store, &id, "/project", "snapshot", &expected, 2
+        ));
+        for operation in [
+            json!({"action":"jira-issue-delete","cwd":"/project","snapshotId":"snapshot","key":"ABC-1"}),
+            json!({"action":"comment","cwd":"/project","snapshotId":"snapshot","key":"ABC-1"}),
+            json!({"action":"jira-board-transition","cwd":"/project","snapshotId":"snapshot","key":"ABC-1"}),
+            json!({"action":"jira-board-transition","snapshotId":"snapshot","key":"ABC-1","transitionId":"31"}),
+            json!({"action":"jira-board-transition","cwd":"/project","key":"ABC-1","transitionId":"31"}),
+        ] {
+            assert!(
+                insert_session_permit(&mut store, &operation, 1).is_err(),
+                "{operation}"
+            );
+        }
+        assert!(store.is_empty());
+    }
     fn approval() -> Approval {
         Approval {
             window: "main".into(),

@@ -3,7 +3,6 @@ import type { TaskRunBudgetUsage } from "../../src/features/tasks/model/taskBudg
 import { budgetUsageChanged } from "./scheduler";
 
 const usage = (overrides: Partial<TaskRunBudgetUsage> = {}): TaskRunBudgetUsage => ({
-  historyComplete: true,
   agentMinutes: 1,
   attempts: 1,
   completedRuns: 0,

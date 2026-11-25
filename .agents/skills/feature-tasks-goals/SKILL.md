@@ -13,7 +13,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 
 - `src/features/tasks/ui/TasksView.tsx`
 - `src/features/tasks/model/taskClient.ts`
-- `host/tasks/service.ts` (`host/tasks/tasks.ts` preserves the public entry)
+- `host/tasks/service.ts` (`tasks.ts` is the public entry); create: `host/tasks/work-request.ts`
 
 ## Workflow
 
@@ -25,18 +25,19 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 ## Preserve
 
 - Preserve multi-machine board scope, query/event cursors, ordering, bulk-action populations and honest disconnected state.
-- Board, daily-summary and background-notifier reads share one request per machine (`sharedMachineListReads` for goals and automations, the task read cache for tasks). A write drops that machine's shared read; only the notifier may accept a recent automation answer, and its poll has a deadline that retires late results.
+- Executor, helpers, `resolved`, the Use settings default and `createWork` as the only creation path: [work executor](references/work-executor.md).
+- Board, daily-summary and notifier reads share one request per machine and drop it on a write ([board reads](references/surfaces.md#board-reads)).
 - `tasks.reorder` places the listed ids into the slots they already hold in the Host's full status queue, so tasks a client cannot see keep their place; with `expectedUpdatedAt` (`tasks.reorder-guard`) a changed listed task rejects the whole move.
 - Scope initial reads and retries to the selected project Host; optional collections and unrelated Host failures must not make a successfully read empty task list unavailable. Publish project and sprint data incrementally; coalesce slow polling and retain stale limits with explicit read errors.
 - New-task creation keeps a stable receipt identity separate from edit mode. Reconcile an uncertain save before resending; optional metadata must not invalidate an accepted save. Start acknowledges persisted queue admission, not completion of the global scheduler pass.
 - Keep custom provider/model/reasoning values, drafts, budgets/concurrency and manual-start policy. Omitted reviewer configuration differs from explicit null.
 - Implementation completion, review PASS, acceptance, delivery/merge, installation and release are separate states with separate authority. Retain attempt history, artifact/handoff manifests, findings/rechecks, goal plan approval and sprint/steward recovery/reporting/daily-limit semantics.
-- Count confirmed monotonic run intervals by exact run identity and local calendar day. Preserve unknown intervals across recovery; limited new work must wait rather than treating unknown usage as zero or exhausted. Transcript durations do not prove active time; retain token and cost completeness independently.
+- Count observed monotonic run intervals by exact run identity and local calendar day. A gap (sleep, stall, restart) adds nothing and never blocks; only verified time at or above a limit exhausts it. Transcript durations do not prove active time; retain token and cost completeness independently.
 - Bound task history with a transactional sequence floor. A cursor below it reports a gap; reseed only the affected source scope and retain the report's incomplete-history boundary.
 - Owner UI approval binds reviewed identities; overlapping delivery must refuse without destroying unrelated dirty target work or source/recovery records.
 - Reviewed tool edits and execution admission recheck configuration inside the canonical writer. Create-only requests atomically reject an existing ID, including IDs outside the caller's visible project; never turn creation into upsert.
 - Autonomy contract: reviewed tasks from any source auto-correct within the repair limits. When correction is exhausted or only external checks remain, the task finishes through the PASS path with `completedWithFindings` and `ownerNotices`, keeps the FAIL verdict and always needs owner delivery approval. Transient runtime failures retry once; unattended clarifying questions are skipped at most twice and recorded as notices. Only owner stops, budgets, dependency cycles, permission/credential gates, preparation failures and repeated runtime failures block.
-- The reviewer FAILs only in-scope defects, regressions, failed checks and hard-constraint violations; out-of-scope edge cases are suggestions. `taskStatusLine` is the single owner-facing status/reason source for card, list and detail; notices show only after completion.
+- The reviewer FAILs only in-scope defects, regressions, failed checks and hard-constraint violations; out-of-scope edge cases are suggestions. Notices show only after completion. Why a task stopped or waits is a structured code, never `error` text: [stop and wait reasons](references/stop-reasons.md).
 - Worker cleanup remains bound to original process/operation identity. Optional title/catalog work or permission revocation cannot certify physical retirement.
 
 ## Verification and references

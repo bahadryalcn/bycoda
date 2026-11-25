@@ -3,7 +3,6 @@ import { formatNumber, t, useLocale } from "../../../../../shared/i18n";
 import {
   FILE_REF_KINDS,
   FILE_REF_TONES,
-  type FileRefKind,
   type FileRefTone,
 } from "../../../../../shared/lib/fileReferenceKind";
 import { Row, Segmented, Select } from "../../../../../shared/ui/settings";

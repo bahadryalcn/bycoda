@@ -41,7 +41,7 @@ describe("phone voice call over the native socket", () => {
         context(),
       ),
     ).resolves.toEqual({ lease: "lease-a" });
-    expect(localVoice.start).toHaveBeenCalledWith({ natural: false }, true);
+    expect(localVoice.start).toHaveBeenCalledWith({ natural: false }, true, { joinLoaded: true });
     await expect(
       operations["voice.local.transcribe"]({ lease: "lease-a", audio: "AAAA" }, context()),
     ).resolves.toEqual({ text: "hello" });

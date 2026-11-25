@@ -3,7 +3,13 @@ import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { ApprovalToasts } from "../../../src/features/sessions/ui/ApprovalToasts";
+import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
+import { ComposerNoticeStack } from "../../../src/features/sessions/ui/ComposerNoticeStack";
 import { requestOwnerApproval } from "../../../src/features/notifications/model/ownerApprovals";
+import {
+  OwnerApprovalChat,
+  OwnerApprovalInbox,
+} from "../../../src/features/notifications/ui/OwnerApprovalRequests";
 import { NOTIFICATION_HISTORY_KEY } from "../../../src/features/notifications/model/notificationHistory";
 import { rememberNotificationProjects } from "../../../src/features/notifications/model/notificationProjects";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
@@ -12,6 +18,9 @@ import { createApprovalOccurrenceId } from "../../../src/shared/model/approvalOc
 import { Toast, ToastRegion } from "../../../src/shared/ui/ToastRegion";
 import { logToastAnnouncement } from "../../../src/features/notifications/model/notificationLog";
 import { Text } from "../../../src/shared/ui/Text";
+import { Button } from "../../../src/shared/ui/Button";
+import { Surface } from "../../../src/shared/ui/Surface";
+import "../../../src/features/sessions/ui/BycodaSession.css";
 import "../../../src/styles/index.css";
 
 // Synthetic requests only; native actions cannot reach the owner's host.
@@ -87,7 +96,7 @@ if (!params.has("toasts") && !localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
   );
 }
 // A live owner approval: the pending card lists its title and time left, never its message.
-if (!params.has("empty") && !params.has("toasts")) {
+if (!params.has("empty") && !params.has("toasts") && !params.has("owner")) {
   requestOwnerApproval({
     id: "fixture-owner",
     sessionId: "fixture-0",
@@ -99,6 +108,108 @@ if (!params.has("empty") && !params.has("toasts")) {
       deadline: Date.now() + 200_000,
     },
   }).catch(() => undefined);
+}
+function OwnerApprovalScenario() {
+  const [inChat, setInChat] = useState(true);
+  const [batchResult, setBatchResult] = useState("");
+  const [result, setResult] = useState("");
+  const request = () => {
+    setResult("Pending");
+    const body = [
+      "The onboarding form now checks free-text fields before saving.",
+      ...Array.from(
+        { length: 24 },
+        (_, index) => `${index + 1}. Verify the field in the merchant portal.`,
+      ),
+      "End of comment",
+    ].join("\n\n");
+    requestOwnerApproval({
+      id: "fixture-jira",
+      sessionId: "fixture-chat",
+      input: {
+        title: "bycoda — Inbox operation approval",
+        message: `Exact request for PFDEV-1123\n\n${body}`,
+        confirmLabel: "Approve this operation",
+        cancelLabel: "Cancel",
+        deadline: Date.now() + 60_000,
+        details: {
+          kind: "inbox",
+          action: "comment",
+          project: cwd,
+          provider: "jira",
+          target: "PFDEV-1123",
+          body,
+        },
+      },
+    }).then(
+      (approved) => setResult(approved ? "Approved" : "Cancelled"),
+      () => setResult("Expired"),
+    );
+  };
+  const requestSeveral = () => {
+    setBatchResult("Pending");
+    const commands = ["git status", "pnpm install", "rm -rf dist", "git push origin main"];
+    void Promise.allSettled(
+      commands.map((command, index) =>
+        requestOwnerApproval({
+          id: `fixture-batch-${Date.now()}-${index}`,
+          sessionId: "fixture-chat",
+          input: {
+            title: "bycoda — Command approval",
+            message: `Run in ${cwd}
+Command: ${command}`,
+            confirmLabel: "Approve",
+            cancelLabel: "Cancel",
+            deadline: Date.now() + 60_000,
+          },
+        }),
+      ),
+    ).then((answers) =>
+      setBatchResult(
+        answers
+          .map((answer) => (answer.status === "fulfilled" && answer.value ? "A" : "D"))
+          .join(""),
+      ),
+    );
+  };
+  return (
+    <main data-session-body className="chat-pane-background flex h-dvh min-h-0 flex-col gap-2 p-4">
+      <div className="flex gap-2">
+        <Button onClick={() => setInChat((value) => !value)}>
+          {inChat ? "Open settings" : "Open chat"}
+        </Button>
+        <Button onClick={request}>Request approval</Button>
+        <Button onClick={requestSeveral}>Request several approvals</Button>
+        <output>{result}</output>
+        <output aria-label="Batch result">{batchResult}</output>
+      </div>
+      <div className="@container flex min-h-0 flex-1 flex-col">
+        <OwnerApprovalChat sessionId="fixture-chat" visible={inChat}>
+          <div className="min-h-0 flex-1">{inChat ? "Conversation" : "Settings"}</div>
+        </OwnerApprovalChat>
+      </div>
+      {inChat ? (
+        <div data-session-composer className="mx-auto w-full max-w-4xl shrink-0 px-3">
+          <ComposerNoticeStack>
+            <ActivityDock
+              sessionId="fixture-chat"
+              harness="claude"
+              blocks={[]}
+              pendingOwnerApproval={result === "Pending" || batchResult === "Pending"}
+              pendingQuestion={false}
+              busy={false}
+              atEnd
+              onOpenAgent={() => {}}
+            />
+          </ComposerNoticeStack>
+          <Surface variant="card" padding="md">
+            <Text as="p">Message</Text>
+          </Surface>
+        </div>
+      ) : null}
+      <OwnerApprovalInbox onOpenSession={() => setInChat(true)} />
+    </main>
+  );
 }
 function Fixture() {
   const [pending, setPending] = useState(
@@ -177,4 +288,6 @@ function ToastScenario() {
 // The app resolves durable session owners at boot before any approval can bind;
 // the fixture mounts the toasts directly, so it hydrates the same store first.
 await flushHostSessionBindings();
-createRoot(document.getElementById("root")!).render(<Fixture />);
+createRoot(document.getElementById("root")!).render(
+  params.has("owner") ? <OwnerApprovalScenario /> : <Fixture />,
+);

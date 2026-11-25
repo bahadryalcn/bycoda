@@ -30,16 +30,49 @@ Local project options can appear while other sources are still loading. Sprint d
 
 ## Creating a task
 
-**New task** needs a description. The title is optional: an empty title is taken from the description's first line. The chips under the description choose the machine (when more than one is connected), project, model, access and working copy, as in a conversation. **Start** saves the task and queues it; **Add to To do** saves it without starting. **More options** holds the time limit, check command, subagents, run budget, required resources, crew and reviewer. **Template** applies a saved setup to the draft at once and can save the current one. **New epic** is in the menu beside **New task**.
+**New task** needs a description. The title is optional: an empty title is taken from the description's first line. The chips under the description choose the machine (when more than one is connected), project, model, access and working copy, as in a conversation. **Start** saves the task and queues it; **Add to To do** saves it without starting. **More options** holds the time limit, check command, subagents, run budget, required resources, **Run with** (Agent, a saved crew or Auto, where the Host picks a fitting crew or one agent when the task starts) and reviewer. **Template** applies a saved setup to the draft at once and can save the current one. **New epic** is in the menu beside **New task**.
+
+## Creating tasks
+
+`/task <request>` in a chat creates a to-do task from your words exactly as typed;
+no model rewrites them. The first line becomes the title, the task uses the chat's
+agent and settings, and a notice in the transcript confirms it. If creation fails, the
+draft stays in the composer. Agents, voice and Room, automations and stewards create
+tasks through the same Host path, so a request delivered twice makes one task. The task
+keeps your original request and the chat it came from.
 
 ## Model selection
 
 Tasks, epics and stewards choose **Default**, **Any model** or **Fixed** for each model
-role from the model chip. Default follows the matching role in **Settings > Models > Background work**. Any model uses
+role from the model chip. Default follows the role that matches where the work came from in
+**Settings > Models > Background work** (board, chat, voice and Room use the task worker role;
+an automation uses the automation role). A background automation chooses **Run with**, **Model**
+and **Helpers** in its own rows. In a chat, **Use this session's model** is a fixed choice with
+that session's model. Any model uses
 **Any model, in order** or a named group (an ordered subset); Fixed keeps the selected model. **Manage models** opens
 the shared model order and limits. Workers, reviewers and planners resolve when their
 run starts; changing settings never switches an existing session. If every model
-is skipped, pending work waits for eligibility. See [Models](models.md).
+is skipped, pending work waits for eligibility. When a run starts the Host records how it chose
+the executor, model, the entries skipped (with their reasons, such as a quota below its limit)
+and the helper policy; the task keeps that record and a running session never changes when
+settings change later. A fixed model is never replaced by another one. See [Models](models.md).
+
+## Who runs it and helpers
+
+**Agent** runs one agent. **Crew** runs a saved crew, which works in the project's shared folder and
+reviews its own work and picks its own members' models. If the task also asks for isolation, a
+working branch, a separate review, automatic merge, retries until done or a fixed model, the
+Host refuses and names that option, and the form shows the reason beside the choice; nothing is
+dropped silently. **Auto** keeps those options: the Host lists the project's crews that fit them
+and, if any, asks the configured decision model once to choose between them and a single agent.
+No fitting crew, no confident answer or an error means one agent, and the reason is recorded.
+**Helpers** are subagents and the advisor: **Use settings** follows the task, account, provider
+then global layers of Settings > Models, **Off** runs the task alone and **Use** lets the task
+choose helper models and an effort cap. A task may narrow, but never widen, the model list or the
+effort cap the settings allow, whichever model it runs on. The worker, its reviewer and a crew's
+coordinator and members follow the same helper policy.
+
+A finished task offers **Repeat this**, which saves its request and run choices as a recipe under Automations.
 
 ## Understanding progress
 
@@ -48,6 +81,8 @@ is skipped, pending work waits for eligibility. See [Models](models.md).
 - **Verifying** means configured checks or review are running. Review findings remain attached to the attempt.
 - **Completed with open findings** preserves unresolved findings for owner review. It does not mean checks passed, delivery was approved, or a release occurred.
 - **Blocked** requires attention to the stated reason. Owner stops, permissions, credentials, budgets, unsafe preparation and repeated runtime failures remain real stops. These gates are not bypassed to make a board look successful.
+
+Every stop and wait carries a reason code, and the card, notifications, the daily summary, Host notes and the assistant all show the same title, reason and next step. A blocked task shows why it stopped (stopped by you, host interrupted, budget reached, failed run, correction exhausted, preparation failed, permission needed, instructions needed, dependency cycle or stopped, crew unavailable, working copy changed, cleanup failed, restored, or could not be scheduled) and what you can do about it. A queued task shows why it has not started: waiting for model quota, a provider usage limit, the daily limit, crew capacity, an unfinished dependency or an assistant hold. When the dependency is itself blocked, the waiting card names that reason; when you stopped the dependency, the waiting task stops with "Dependency stopped" instead of waiting forever. A task saved before reasons were recorded shows "Reason not recorded".
 
 Automatic correction is bounded. Repeating an unchanged failed check stops another identical repair cycle. A reviewer that omitted its final result may receive bounded follow-up requests in the same review session; the worker is not restarted just to obtain a verdict. External checks and exhausted correction retain their findings and owner approval requirements.
 
@@ -60,6 +95,14 @@ An epic is a planned outcome split into tasks for owner approval. Existing saved
 Epic progress and budget totals reflect the Host scheduler's latest recorded state and can take a scheduler tick to catch up with task changes.
 
 Open **Goal** beside the current work above the message input to see the provider's goal status, objective, reported token usage and elapsed time. **Pause** pauses an active goal. **Resume goal** continues a paused, blocked or limited goal. **Clear goal** removes it. These actions preserve the input draft and follow the conversation's messaging permissions. Wait for the current turn to finish before changing the goal. Current work and subagents can still be running while a goal is blocked. The panel shows when Codex has provided no reason for that state.
+
+## One row per piece of work
+
+The task list shows each independent piece of work once. The tasks an epic planned open from the epic card (**Details > Tasks**), and a crew's assignments open from the crew task's detail (**Assignments**); both show the work, model, status and reported cost, and each opens its own detail. Searching still finds them, and choosing an epic in the epic filter lists its tasks. An assignment whose crew task is not on the board stays a row. A task an automation created is the one record of that occurrence; the automation's history links to it. The task detail's **Run with** line says whether one agent or a crew ran it and which helpers were allowed, and its tooltip gives the reason the Host chose that.
+
+The task detail lists the **Helpers** (subagents and advisors) its worker and reviewer started, with their model and the state the Host recorded; a helper has no result or cost of its own to show. When a helper failed, the task's card carries a small warning icon whose tooltip gives the helper's error. A task an automation started has **Open automation**, and a crew task has **Open crew run**, which open that automation or that run on the Crews page. The crew link appears for tasks this computer ran.
+
+The same phase (pending, running, needs you, review, done, stopped, cancelled) and the same reason come from one place for tasks, epics, Room jobs, automation occurrences and the assistant's tracked work, so the card, the Room and a spoken or written status answer agree. Chat, dictation, reminders and a single question to a crew member are separate and never enter the list.
 
 ## Retry safely
 
@@ -80,8 +123,8 @@ leaves the task waiting with its reason; it does not silently skip consultation.
 Capacity waits and advice taking more than one minute retain the same queued
 consultation across scheduler ticks. The repair allowance is consumed only after
 nonempty successful advice.
-Under **More options**, **Allow subagents** enables Automatic delegation; disabling it
-keeps subagents off for that task, including after changing its model.
+Under **More options**, turning **Allow subagents** off sets the task's helpers to Off: no
+subagents for that task whichever model it runs on, including a model chosen by the model order.
 
 Eligible blocked tasks offer **Finish with findings** in card actions and task
 details. This retains the failed review and notices, and grants no delivery approval.
@@ -92,7 +135,7 @@ If creating a task loses its reply, keep the draft and retry it. The draft retai
 
 A failed limits refresh means usage is unknown or last known, not zero. Existing Host budget enforcement remains active. Read the task's reason before retrying a blocked operation, and use the recorded task for recovery rather than creating duplicates.
 
-Daily agent time uses confirmed run intervals and the Host's local calendar day. If an interval cannot be measured, usage is marked incomplete and new limited work waits; this does not mean the limit was reached. Running work can still finish. Sprint reports mark history as incomplete when older task events are no longer available, and refresh the affected source from its current snapshot.
+Daily agent time and task runtime count only the time a run was actually observed working, per Host local calendar day. If the computer sleeps or the Host stalls, that time is not counted and the run simply continues afterwards: 10 minutes of work, an hour of sleep and 5 more minutes is 15 minutes. A gap never blocks a task or asks for your decision; only counted time reaching a limit does. Running work can still finish. Sprint reports mark history as incomplete when older task events are no longer available, and refresh the affected source from its current snapshot.
 
 Completion, review, delivery, installation and release are separate. Automatic delivery requires a current PASS review, no unresolved findings, a retained workspace plan and Native permission for its original Assistant Room/project. Denied, excluded and uncertain delivery retains the branch and owner-review fallback. A passing review alone never grants permission.
 

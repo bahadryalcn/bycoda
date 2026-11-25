@@ -72,10 +72,9 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
   };
   // A message the alert already shows above is not repeated as a fact.
   const unseen = (message: string | undefined) => (message === status.detail ? undefined : message);
-  fact("error", t("Reason"), unseen(task.error));
+  fact("stop", t("Reason"), unseen(task.stop?.message));
+  fact("error", t("Failure"), task.stop ? undefined : unseen(task.error));
   fact("merge", t("Delivery"), unseen(task.mergeError));
-  fact("stop", t("Automatic correction"), unseen(task.repairStop?.message));
-  fact("budget", t("Run budget"), task.budgetStop);
   fact("blocker", t("Blocker"), task.blockedTakeover?.blocker);
   fact("note", t("Latest finding"), task.repairNote);
   fact("feedback", t("Feedback for the next run"), task.retryFeedback);

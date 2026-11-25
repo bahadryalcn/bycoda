@@ -520,7 +520,7 @@ for (const theme of ["light", "dark"])
 
       await settings.getByRole("button", { name: "Add server", exact: true }).click();
       const add = page.getByRole("dialog", { name: "Add MCP server" });
-      await expect(add.getByText("Save on Office PC")).toBeVisible();
+      await expect(add.getByText("Office PC", { exact: true })).toBeVisible();
       await expect(add.getByRole("textbox", { name: "Server URL" })).toBeVisible();
       await page.screenshot({ path: `${path}-add.png` });
       await add.getByRole("button", { name: "Cancel", exact: true }).click();

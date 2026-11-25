@@ -128,8 +128,12 @@ export function withTemplate(
 }
 
 /** The stored name: the owner's, else the first meaningful instruction line. */
-export function automationName(draft: Pick<AutomationDraft, "name" | "prompt">): string {
+export function automationName(
+  draft: Pick<AutomationDraft, "name" | "prompt"> & Partial<Pick<AutomationDraft, "workRecipe">>,
+): string {
   const explicit = draft.name.trim();
   if (explicit) return explicit;
-  return truncateGraphemes(resolveTaskTitle("", draft.prompt), DERIVED_NAME_LIMIT, "").trim();
+  // A recipe has no single prompt; its first step names it.
+  const source = draft.workRecipe ? (draft.workRecipe.steps[0]?.title ?? "") : draft.prompt;
+  return truncateGraphemes(resolveTaskTitle("", source), DERIVED_NAME_LIMIT, "").trim();
 }

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
 import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
 import type { BoardTask } from "../model/taskClient";
+import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 
 /** The board's own key for a card: `machineId:taskId`. */
 export const taskCardKey = (task: Pick<BoardTask, "machineId" | "id">): string =>
@@ -70,7 +71,7 @@ export function canReorderInColumn(task: BoardTask, column: TaskColumn): boolean
 export function canDropOnColumn(task: BoardTask, column: TaskColumn): boolean {
   return (
     canReorderInColumn(task, column) ||
-    canMoveTask(task.status, column, task.crewRunId ?? task.crewDefinitionId)
+    canMoveTask(task.status, column, task.crewRunId ?? workCrewId(task))
   );
 }
 
@@ -82,7 +83,7 @@ export function taskDraggable(task: BoardTask, acting: string | null): boolean {
     (task.status === "todo" ||
       task.status === "queued" ||
       TASK_COLUMNS.some((column) =>
-        canMoveTask(task.status, column, task.crewRunId ?? task.crewDefinitionId),
+        canMoveTask(task.status, column, task.crewRunId ?? workCrewId(task)),
       ))
   );
 }

@@ -15,10 +15,6 @@ describe("desktop permission gate table", () => {
     ["ask", "act", true, true, true],
     ["ask", "launch", false, true, false],
     ["ask", "clipboard", false, true, true],
-    ["auto", "act", false, false, false],
-    ["auto", "act", true, true, true],
-    ["auto", "launch", false, false, false],
-    ["auto", "clipboard", false, true, true],
     ["full", "act", false, false, false],
     ["full", "act", true, false, false],
     ["full", "launch", false, false, false],
@@ -52,14 +48,17 @@ describe("desktop configuration normalization", () => {
       allowAllApps: false,
       version: 3,
     });
-    const bogus = normalizeDesktopConfiguration({ permissionMode: "bogus" as never });
-    expect(bogus.permissionMode).toBe("ask");
+    // "auto" was a mode until the Assistant access settings became the only permission.
+    for (const stored of ["bogus", "auto"])
+      expect(
+        normalizeDesktopConfiguration({ permissionMode: stored as never }).permissionMode,
+      ).toBe("ask");
   });
   it("covers every app in full access and only approved apps otherwise", () => {
     const base = normalizeDesktopConfiguration({ allowedApps: ["Editor"] });
-    const auto = normalizeDesktopConfiguration({ permissionMode: "auto", allowAllApps: true });
-    expect(auto.allowAllApps).toBe(false);
-    expect(isDesktopAppAllowed(auto, "Anything")).toBe(false);
+    const asking = normalizeDesktopConfiguration({ permissionMode: "ask", allowAllApps: true });
+    expect(asking.allowAllApps).toBe(false);
+    expect(isDesktopAppAllowed(asking, "Anything")).toBe(false);
     const full = normalizeDesktopConfiguration({ permissionMode: "full", allowAllApps: false });
     expect(isDesktopAppAllowed(full, "Anything")).toBe(true);
     for (const name of ["", " ", "-option", "a\nb", "x".repeat(201)])

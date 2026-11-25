@@ -17,6 +17,14 @@ const task = {
   sessionId: "worker",
   runId: "run",
   error: "Review failed: Defect remains",
+  stop: {
+    code: "run_failed",
+    phase: "review",
+    message: "Review failed: Defect remains",
+    actor: "provider",
+    nextAction: "retry",
+    at: 1,
+  },
   verification: { review: { verdict: "fail", note: "Defect remains" } },
 } as HostTask;
 

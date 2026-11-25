@@ -5,7 +5,8 @@ import { pathKey } from "../../shared/lib/paths";
 import type { HostSessionSummary } from "../../features/connections/model/protocol";
 import { parseRemotePath, remotePath } from "../../features/connections/model/remoteProjects";
 import {
-  isUserConversation,
+  isListedConversation,
+  sessionBackgroundOwner,
   sessionDelegationParent,
 } from "../../shared/model/host-contracts/delegation";
 
@@ -14,10 +15,12 @@ export function projectSessionCollection(
   remoteSessions: readonly HostSessionSummary[],
   sessions: SessionSummary[],
   cwd: string,
+  showBackground = false,
 ): SessionSummary[] {
+  const listed = (session: unknown) => isListedConversation(session, showBackground);
   return remote
-    ? remoteSessions.filter(isUserConversation).map((session) => remoteSessionSummary(session, cwd))
-    : sessions.filter(isUserConversation);
+    ? remoteSessions.filter(listed).map((session) => remoteSessionSummary(session, cwd))
+    : sessions.filter(listed);
 }
 
 export function remoteSessionSummary(session: HostSessionSummary, cwd: string): SessionSummary {
@@ -26,6 +29,7 @@ export function remoteSessionSummary(session: HostSessionSummary, cwd: string): 
   return {
     id: session.id,
     delegationParent: sessionDelegationParent(session) ?? null,
+    backgroundOwner: sessionBackgroundOwner(session),
     cwd,
     harness: session.harness,
     providerHistory: session.providerHistory,
@@ -53,8 +57,12 @@ export function remoteSessionSummary(session: HostSessionSummary, cwd: string): 
 }
 
 /** Open conversations that saved folders may surface; delegated children stay in their parent. */
-export function folderCandidates(remote: boolean, open: readonly SessionSummary[]) {
-  return remote ? [] : open.filter(isUserConversation);
+export function folderCandidates(
+  remote: boolean,
+  open: readonly SessionSummary[],
+  showBackground = false,
+) {
+  return remote ? [] : open.filter((session) => isListedConversation(session, showBackground));
 }
 
 export function freshRemoteProjects(rows: readonly Pick<RemoteRailSession, "project" | "fresh">[]) {

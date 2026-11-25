@@ -68,7 +68,7 @@ function setup() {
             projectId: "project",
             focus: `token=${"private".repeat(40)}`,
             enabled: true,
-            run: { sessionId: "run" },
+            lastRunStatus: "running",
           },
           { id: "foreign-steward", projectId: "other", focus: "foreign private focus" },
         ],

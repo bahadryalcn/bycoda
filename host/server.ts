@@ -357,6 +357,8 @@ export async function createHostServer(
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
   const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
   const liveStream = createLiveStreamRuntime(dependencies, () => socialRuntime.current.social.live);
+  // The `auto` executor asks the same decision gate Social uses; without a source it runs one agent.
+  dependencies.tasks.executorDecisions = decisionRuntime.decisionModels;
   const developmentRuntime = createDevelopmentRuntime(dependencies);
   const sessionsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSessionsRuntime>>>();
   await bootPhase("runtime-sessions", () =>

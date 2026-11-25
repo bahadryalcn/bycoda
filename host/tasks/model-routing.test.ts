@@ -1,5 +1,5 @@
 import type { TaskContext } from "./context";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,22 +17,27 @@ import { ConversationStewardTools } from "../conversation/conversation-steward-t
 import type { HostProvider } from "../providers/providers";
 import type { SendTurnInput } from "../../src/integrations/harness/core/types";
 import { routingRun } from "./model-routing";
+import { createWork } from "./work-request";
 
-const routing = vi.hoisted(() => ({ resolve: vi.fn() }));
+const routing = vi.hoisted(() => ({ resolve: vi.fn(), get: vi.fn() }));
 vi.mock("../model-routing/runtime", () => ({ hostModelRoutingService: () => routing }));
 
 const cleanups: (() => Promise<void>)[] = [];
 let state: ModelRoutingDraft;
 let eligible = true;
+/** Remaining quota per entry id; an entry not listed follows `eligible`. */
+let left: Record<string, number> = {};
 beforeEach(() => {
   state = structuredClone(EMPTY_MODEL_ROUTING);
   eligible = true;
+  left = {};
+  routing.get.mockReset().mockImplementation(async () => structuredClone(state));
   routing.resolve.mockReset().mockImplementation(async (input: ModelRoutingResolveInput) =>
     selectModelRouting(state, input, {
       available: () => true,
       signedIn: () => true,
       accountKind: () => undefined,
-      quota: () => ({ leftPercent: eligible ? 100 : 0, resetsAt: 2000 }),
+      quota: (entry) => ({ leftPercent: left[entry.id] ?? (eligible ? 100 : 0), resetsAt: 2000 }),
     }),
   );
 });
@@ -53,7 +58,7 @@ function order() {
       minRemainingPercent: 10,
     },
   ];
-  state.delegation.global = { crossSubagents: "true" };
+  state.delegation.global = { crossSubagents: "auto" };
 }
 
 async function fixture() {
@@ -135,7 +140,7 @@ it("resolves and persists worker target before creating its session, then freeze
       expect(await f.tasks.get("item")).toMatchObject({
         model: "claude:routed",
         providerAccountId: "work",
-        modelSettings: { crossSubagents: "true" },
+        modelSettings: { crossSubagents: "auto" },
       });
     return original(command);
   });
@@ -221,7 +226,7 @@ it.each([
   expect(reviewed.reviewer?.sessionId).toBeTruthy();
   expect(routingRun(reviewed).reviewerTarget).toMatchObject({
     model: expected,
-    modelSettings: { crossSubagents: "true" },
+    modelSettings: { crossSubagents: "auto" },
   });
   expect((await f.store.session(reviewed.reviewer!.sessionId!)).session.model).toBe(expected);
   expect(reviewed.model).toBe("claude:stored");
@@ -310,23 +315,21 @@ it("keeps explicit goal planner fixed and layers delegation", async () => {
   });
   expect(routingRun(goal).plannerTarget).toMatchObject({
     model: "claude:explicit",
-    modelSettings: { crossSubagents: "true" },
+    modelSettings: { crossSubagents: "auto" },
   });
 });
 
-it("routes steward account and copies choice and account into proposals", async () => {
+it("copies a steward's choice and account into proposals", async () => {
   order();
   const f = await fixture();
   await f.stewards.save({
     ...f.input(),
+    providerAccountId: "work",
     scheduleKind: "daily",
     time: "09:00",
     modelChoice: { kind: "default" },
   });
-  await f.stewards.runNow("item");
   const steward = (await f.stewards.list())[0];
-  expect(steward).toMatchObject({ model: "claude:routed", providerAccountId: "work" });
-  expect((await f.store.session(steward.run!.sessionId!)).session.providerAccountId).toBe("work");
   const internal = f.stewards as unknown as {
     propose(steward: unknown, reply: string): Promise<number>;
   };
@@ -341,7 +344,7 @@ it("routes steward account and copies choice and account into proposals", async 
   });
 });
 
-it("holds goal planning and steward runs until routing becomes eligible", async () => {
+it("holds goal planning until routing becomes eligible", async () => {
   order();
   eligible = false;
   const f = await fixture();
@@ -356,21 +359,11 @@ it("holds goal planning and steward runs until routing becomes eligible", async 
     error: expect.stringContaining("no eligible entry"),
   });
   expect(goal.plannerSessionId).toBeUndefined();
-  await f.stewards.save({
-    ...f.input({ id: "steward" }),
-    scheduleKind: "daily",
-    time: "09:00",
-    modelChoice: { kind: "default" },
-  });
-  await f.stewards.runNow("steward");
-  expect((await f.stewards.list())[0]).toMatchObject({ lastRunStatus: "skipped", nextRunAt: 2000 });
   expect(await f.store.sessions()).toHaveLength(0);
   eligible = true;
   f.setNow(2000);
   await f.tick();
-  await f.stewards.tick();
   expect((await f.goals.list())[0].plannerSessionId).toBeTruthy();
-  expect((await f.stewards.list())[0].run?.sessionId).toBeTruthy();
 });
 
 it("preserves caller account when conversation tool creates a fixed steward", async () => {
@@ -389,9 +382,266 @@ it("preserves caller account when conversation tool creates a fixed steward", as
   );
   const steward = (await f.stewards.list())[0];
   expect(steward).toMatchObject({ providerAccountId: "personal", model: "claude:stored" });
-  await f.stewards.runNow(steward.id);
-  const started = (await f.stewards.list())[0];
-  expect((await f.store.session(started.run!.sessionId!)).session.providerAccountId).toBe(
-    "personal",
-  );
+});
+
+const ENTRIES = [
+  {
+    id: "first",
+    harness: "claude" as const,
+    providerAccountId: "work",
+    model: "claude:first",
+    modelSettings: { effort: "high" },
+    unknownLimit: "use" as const,
+    minRemainingPercent: 10,
+  },
+  {
+    id: "second",
+    harness: "claude" as const,
+    providerAccountId: "personal",
+    model: "claude:second",
+    modelSettings: { effort: "low" },
+    unknownLimit: "use" as const,
+    minRemainingPercent: 10,
+  },
+];
+
+describe("who runs the work and with which helpers", () => {
+  it("gives a fixed and an order-following task the same helper choice", async () => {
+    state.entries = structuredClone(ENTRIES);
+    state.delegation.global = { crossSubagents: "auto" };
+    const f = await fixture();
+    await f.tasks.save(
+      f.input({ id: "fixed", modelChoice: { kind: "fixed" }, helpers: { mode: "off" } }),
+    );
+    await f.tasks.save(
+      f.input({ id: "ordered", modelChoice: { kind: "default" }, helpers: { mode: "off" } }),
+    );
+    await f.tick();
+    await f.tick();
+    const fixed = (await f.tasks.get("fixed"))!;
+    const ordered = (await f.tasks.get("ordered"))!;
+    expect(fixed.model).toBe("claude:stored");
+    expect(ordered.model).toBe("claude:first");
+    // The order-following task must not lose its own "off" to the resolved target's settings.
+    expect(fixed.modelSettings.crossSubagents).toBe("[]");
+    expect(ordered.modelSettings.crossSubagents).toBe("[]");
+    expect(fixed.resolved?.helpers).toMatchObject({
+      mode: "off",
+      subagents: "off",
+      source: "task",
+    });
+    expect(ordered.resolved?.helpers).toEqual(fixed.resolved?.helpers);
+    expect((await f.store.session(ordered.sessionId!)).session.modelSettings.crossSubagents).toBe(
+      "[]",
+    );
+  });
+
+  it("records how the model was chosen, including the entry skipped for quota", async () => {
+    state.entries = structuredClone(ENTRIES);
+    left = { first: 3, second: 80 };
+    const f = await fixture();
+    await f.tasks.save(f.input({ modelChoice: { kind: "default" } }));
+    await f.tick();
+    const task = (await f.tasks.get("item"))!;
+    expect(task.model).toBe("claude:second");
+    expect(task.resolved).toMatchObject({
+      executor: { kind: "agent" },
+      role: "task.worker",
+      routingSource: { kind: "order", entryId: "second" },
+      skipped: [{ entryId: "first", reason: "belowLimit" }],
+      target: { harness: "claude", model: "claude:second", providerAccountId: "personal" },
+      helpers: { mode: "settings", subagents: "auto", source: "default" },
+    });
+    expect(task.resolved!.target!.modelSettings).toEqual({ effort: "low" });
+  });
+
+  it("does not change a running session when Settings change afterwards", async () => {
+    state.entries = structuredClone(ENTRIES);
+    state.delegation.global = { crossSubagents: "auto", crossSubagentMaxEffort: "high" };
+    const f = await fixture();
+    await f.tasks.save(f.input({ modelChoice: { kind: "default" } }));
+    await f.tick();
+    const before = (await f.tasks.get("item"))!;
+    state.delegation.global = { crossSubagents: "[]" };
+    state.entries[0].model = "claude:renamed";
+    await f.tick();
+    const after = (await f.tasks.get("item"))!;
+    expect(after.resolved).toEqual(before.resolved);
+    expect(after.modelSettings).toEqual(before.modelSettings);
+    expect((await f.store.session(after.sessionId!)).session.modelSettings).toMatchObject({
+      crossSubagents: "auto",
+      crossSubagentMaxEffort: "high",
+    });
+  });
+
+  it("applies the task's list and effort cap inside Settings' limits", async () => {
+    const allowed = { harness: "codex", model: "gpt-6.1" };
+    state.entries = structuredClone(ENTRIES);
+    state.delegation.accounts["claude\nwork"] = {
+      crossSubagents: JSON.stringify([allowed]),
+      crossSubagentMaxEffort: "medium",
+    };
+    const f = await fixture();
+    await f.tasks.save(
+      f.input({
+        modelChoice: { kind: "default" },
+        helpers: {
+          mode: "use",
+          models: [allowed, { harness: "claude", model: "claude:other" }],
+          maxEffort: "high",
+        },
+      }),
+    );
+    await f.tick();
+    const task = (await f.tasks.get("item"))!;
+    expect(JSON.parse(task.modelSettings.crossSubagents)).toEqual([allowed]);
+    expect(task.modelSettings.crossSubagentMaxEffort).toBe("medium");
+    expect(task.resolved?.helpers.limited).toMatch(/outside the allowed list/);
+  });
+
+  it("keeps a fixed model even when routing would pick another and never falls back", async () => {
+    state.entries = structuredClone(ENTRIES);
+    const f = await fixture();
+    await f.tasks.save(f.input({ modelChoice: { kind: "fixed" } }));
+    await f.tick();
+    const task = (await f.tasks.get("item"))!;
+    expect(task.model).toBe("claude:stored");
+    expect(task.resolved?.routingSource).toEqual({ kind: "fixed" });
+    expect(task.resolved?.skipped).toEqual([]);
+  });
+
+  it.each([
+    { source: { kind: "session", sessionId: "s" } },
+    { source: { kind: "voice" } },
+    { source: { kind: "room", sessionId: "t" } },
+    { source: { kind: "board" } },
+  ] as const)("resolves equivalent $source.kind work the same way", async ({ source }) => {
+    state.entries = structuredClone(ENTRIES);
+    const f = await fixture();
+    await createWork(
+      { store: f.store, tasks: f.tasks },
+      {
+        id: "item",
+        projectId: f.project.id,
+        request: "Inspect routing",
+        title: "Routing work",
+        source,
+        execution: {
+          harness: "claude",
+          model: "claude:stored",
+          modelSettings: {},
+          runtimeMode: "auto",
+        },
+        options: { status: "queued", isolate: false },
+      },
+      { requestId: "item" },
+    );
+    await f.tick();
+    const { at: _at, ...resolved } = (await f.tasks.get("item"))!.resolved!;
+    expect(resolved).toEqual({
+      executor: { kind: "agent" },
+      helpers: { mode: "settings", source: "default", subagents: "auto" },
+      role: "task.worker",
+      routingSource: { entryId: "first", kind: "order" },
+      skipped: [],
+      target: {
+        harness: "claude",
+        model: "claude:first",
+        modelSettings: { effort: "high" },
+        providerAccountId: "work",
+      },
+    });
+  });
+
+  it("settles auto to a crew when the decision gate is confident and records why", async () => {
+    state.entries = structuredClone(ENTRIES);
+    const f = await fixture();
+    const start = vi.fn(async () => ({
+      sessionId: "coordinator",
+      harness: "claude" as const,
+      model: "claude:coordinator",
+      modelSettings: {},
+    }));
+    f.tasks.crewRunner = {
+      validate: async () => {},
+      choices: async () => [{ id: "web", name: "Web crew", summary: "Lead (coordinator)" }],
+      start,
+      state: async () => ({ status: "active" as const }),
+      stop: async () => {},
+    };
+    f.tasks.executorDecisions = {
+      decide: async () => ({
+        answers: { executor: { value: "web", confidence: 0.9, sourceId: "s", model: "m" } },
+        sourceChain: [],
+        durationMs: 1,
+      }),
+    };
+    await f.tasks.save(f.input({ executor: { kind: "auto" }, modelChoice: { kind: "default" } }));
+    await f.tick();
+    expect(start).toHaveBeenCalledOnce();
+    const task = (await f.tasks.get("item"))!;
+    expect(task.executor).toEqual({ kind: "auto" });
+    expect(task.resolved).toMatchObject({
+      executor: { kind: "crew", crewDefinitionId: "web" },
+      routingSource: { kind: "crew" },
+      helpers: { mode: "settings", subagents: "auto" },
+      reason: expect.stringContaining("Chose crew Web crew"),
+    });
+    expect(task.crewExecutionId).toBeTruthy();
+    // No worker session: the crew chose its own members' models.
+    expect(await f.store.sessions()).toHaveLength(0);
+  });
+
+  it("runs one agent when auto finds no crew that fits", async () => {
+    state.entries = structuredClone(ENTRIES);
+    const f = await fixture();
+    f.tasks.crewRunner = {
+      validate: async () => {},
+      choices: async () => [],
+      start: vi.fn(),
+      state: async () => ({ status: "active" as const }),
+      stop: async () => {},
+    };
+    await f.tasks.save(f.input({ executor: { kind: "auto" }, modelChoice: { kind: "default" } }));
+    await f.tick();
+    const task = (await f.tasks.get("item"))!;
+    expect(task.status).toBe("running");
+    expect(task.resolved).toMatchObject({
+      executor: { kind: "agent" },
+      reason: "No crew is available in this project.",
+      routingSource: { kind: "order", entryId: "first" },
+    });
+    expect(f.tasks.crewRunner.start).not.toHaveBeenCalled();
+  });
+
+  it("uses the automation role for work an automation created", async () => {
+    state.entries = structuredClone(ENTRIES);
+    state.roles.automation = {
+      kind: "fixed",
+      target: { harness: "claude", model: "claude:automation", modelSettings: {} },
+    };
+    const f = await fixture();
+    await createWork(
+      { store: f.store, tasks: f.tasks },
+      {
+        id: "item",
+        projectId: f.project.id,
+        request: "Nightly check",
+        title: "Nightly",
+        source: { kind: "automation", automationRunId: "run" },
+        execution: {
+          harness: "claude",
+          model: "claude:stored",
+          modelSettings: {},
+          runtimeMode: "auto",
+        },
+        options: { status: "queued", isolate: false, source: "automation" },
+      },
+      { requestId: "run" },
+    );
+    await f.tick();
+    const task = (await f.tasks.get("item"))!;
+    expect(task.model).toBe("claude:automation");
+    expect(task.resolved).toMatchObject({ role: "automation", routingSource: { kind: "fixed" } });
+  });
 });

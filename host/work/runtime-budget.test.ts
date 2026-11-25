@@ -80,16 +80,11 @@ it("charges exact receipts once and sums worker, reviewer, repair and advisor", 
   }
   expect(await readTaskRuntimeBudget(s.budgets, task)).toMatchObject({
     allowanceMinutes: 2,
-    confirmedMinutes: 2,
     usedMinutes: 2,
     exceeded: true,
     blocked: true,
   });
   expect((await s.budgets.read({ taskId: task.id })).attempts).toBe(4);
-  expect(await readTaskRuntimeBudget(s.budgets, task, true)).toMatchObject({
-    exceeded: true,
-    blocked: true,
-  });
 });
 
 it("retains earlier turns when a worker resumes the same session", async () => {
@@ -101,42 +96,37 @@ it("retains earlier turns when a worker resumes the same session", async () => {
   s.clock.now += 30_000;
   await s.finish(resumed);
   expect(await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 1 })).toMatchObject({
-    confirmedMinutes: 1,
+    usedMinutes: 1,
     exceeded: true,
     allowanceMinutes: 1,
   });
 });
 
-it("retains confirmed progress across a lost process sample without charging the gap", async () => {
+it("continues from the checkpoint after a lost process sample without charging the gap", async () => {
   const s = await setup();
   const receipt = await s.start("session", "run");
   s.clock.now += 30_000;
   await s.budgets.read({ taskId: "task" });
   forgetRunSamples(s.store, receipt.sessionId, receipt.runId);
   s.clock.now += 3_600_000;
-  const task = { id: "task", maxRunMinutes: 1 };
-  expect(await readTaskRuntimeBudget(s.budgets, task)).toMatchObject({
-    confirmedMinutes: 0.5,
-    usedMinutes: null,
-    historyComplete: false,
+  expect(await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 1 })).toMatchObject({
+    usedMinutes: 0.5,
     blocked: false,
     exceeded: false,
   });
-  expect(await readTaskRuntimeBudget(s.budgets, task, true)).toMatchObject({
+  s.clock.now += 30_000;
+  expect(await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 1 })).toMatchObject({
+    usedMinutes: 1,
     blocked: true,
-    exceeded: false,
+    exceeded: true,
   });
 });
 
 it("keeps explicit zero unlimited even when historical intervals are unknown", async () => {
   const s = await setup();
   await s.budgets.markUnknownHistory({ taskId: "task" });
-  expect(
-    await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 0 }, true),
-  ).toMatchObject({
+  expect(await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 0 })).toMatchObject({
     allowanceMinutes: 0,
-    usedMinutes: null,
-    historyComplete: false,
     exceeded: false,
     blocked: false,
   });
@@ -166,4 +156,76 @@ it("stops exact advisor and worker receipts without cancelling a replacement tur
     { sessionId: "worker", runId: "worker-run" },
   ]);
   expect(command.mock.calls.every(([input]) => input.type === "cancel")).toBe(true);
+});
+
+const MINUTE = 60_000;
+/** A run observed every minute, so every interval is verified. */
+async function verifiedRun(s: Awaited<ReturnType<typeof setup>>, id: string, minutes: number) {
+  const receipt = await s.start(id, id);
+  for (let minute = 0; minute < minutes; minute++) {
+    s.clock.now += MINUTE;
+    await s.budgets.read({ taskId: "task" });
+  }
+  await s.finish(receipt);
+}
+
+const gapCases = {
+  "the Host restarted during a run": async (s: Awaited<ReturnType<typeof setup>>) => {
+    const receipt = await s.start("restarted", "restarted");
+    s.clock.now += MINUTE;
+    await s.budgets.read({ taskId: "task" });
+    forgetRunSamples(s.store, receipt.sessionId, receipt.runId);
+    s.clock.now += 5 * MINUTE;
+    await s.finish(receipt);
+    return 61;
+  },
+  "two samples are 91 seconds apart": async (s: Awaited<ReturnType<typeof setup>>) => {
+    const receipt = await s.start("gap", "gap");
+    s.clock.now += 91_000;
+    await s.budgets.read({ taskId: "task" });
+    await s.finish(receipt);
+    return 60;
+  },
+  "the run settled without a close record": async (s: Awaited<ReturnType<typeof setup>>) => {
+    const receipt = await s.start("unclosed", "unclosed");
+    s.clock.now += 5 * MINUTE;
+    const session = await s.store.session(receipt.sessionId);
+    await s.store.save(
+      { ...session, status: "idle", revision: session.revision + 1, updatedAt: s.clock.now },
+      {},
+    );
+    return 60;
+  },
+};
+
+for (const [name, gapRun] of Object.entries(gapCases))
+  it(`counts only accrued time and still starts a 600 minute task after ${name}`, async () => {
+    const s = await setup();
+    await verifiedRun(s, "verified", 60);
+    const expected = await gapRun(s);
+    const budget = await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 600 });
+    expect(budget).toMatchObject({ usedMinutes: expected, blocked: false, exceeded: false });
+    expect(
+      await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 600 }, { starting: true }),
+    ).toMatchObject({ blocked: false, warning: false });
+  });
+
+it("exhausts only when verified time reaches the limit, whatever gaps came before", async () => {
+  const s = await setup();
+  await verifiedRun(s, "verified", 60);
+  const receipt = await s.start("lost", "lost");
+  forgetRunSamples(s.store, receipt.sessionId, receipt.runId);
+  s.clock.now += 20 * MINUTE;
+  await s.finish(receipt);
+  expect(await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 70 })).toMatchObject({
+    usedMinutes: 60,
+    blocked: false,
+  });
+  expect(await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 60 })).toMatchObject({
+    blocked: true,
+    exceeded: true,
+  });
+  expect(
+    await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 60 }, { starting: true }),
+  ).toMatchObject({ blocked: true });
 });

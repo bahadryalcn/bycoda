@@ -113,9 +113,12 @@ the pointer keeps the keyboard target unchanged; arrow keys move that target and
 keep it visible. Enter opens it, and checkboxes select folders independently.
 
 Application operation approvals mark their conversation as needing approval in
-session lists and as waiting for input beside the composer. The exact operation
-stays in its approval card with Approve and Cancel actions. Waiting ends when the
-last pending approval is answered, expires or is revoked.
+session lists and as waiting for input beside the composer. Inbox cards show
+the operation and its target. Open **Details** to read the preview in place or
+choose **Review** to open the approval in a dialog. **Exact request text** shows
+the full request. If you are on another page, the dialog opens there with
+**Cancel** and **Approve** in its footer. Waiting ends when the last pending
+approval is answered, expires or is revoked.
 
 Title-bar project and conversation actions stay icon-only on hover and focus.
 Their tooltips show command names and configured shortcuts, with project details where available.

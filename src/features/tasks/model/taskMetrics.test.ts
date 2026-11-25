@@ -7,7 +7,6 @@ import {
 } from "./taskMetrics";
 import type { TaskRunBudgetUsage } from "./taskBudget";
 const usage = (patch: Partial<TaskRunBudgetUsage> = {}): TaskRunBudgetUsage => ({
-  historyComplete: true,
   agentMinutes: 4,
   attempts: 3,
   completedRuns: 3,
@@ -139,19 +138,6 @@ describe("accepted-work metrics", () => {
     });
   });
 
-  it("keeps incomplete historic agent totals out of accepted-work averages", () => {
-    const groups = taskMetricsComparisons([
-      task({ budgetUsage: usage({ historyComplete: false }) }),
-    ]);
-    expect(groups[0]).toMatchObject({
-      agentMinutes: null,
-      observedAgentMinutes: 4,
-      tokens: null,
-      reportedTokens: 100,
-      reportedCostUsd: null,
-      attempts: null,
-    });
-  });
   it("deduplicates repeated views without hiding distinct host/project results", () => {
     const one = task();
     expect(

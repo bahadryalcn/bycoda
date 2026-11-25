@@ -3,7 +3,8 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HostNotes, hostInbox } from "./host-notes";
+import { HostNotes } from "./host-notes";
+import { hostInbox } from "./host-inbox";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { HostSessionSummary } from "../../src/features/connections/model/protocol";
 

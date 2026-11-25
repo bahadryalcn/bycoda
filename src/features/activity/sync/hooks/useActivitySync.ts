@@ -48,6 +48,7 @@ export function useActivitySync(
             return getApi().uploadActivityDays({ body }, { signal: lifetime.signal });
           },
           lifetime.signal,
+          userId,
         );
       },
       onError: onApiError,

@@ -3,6 +3,7 @@ import type { HostStore } from "../store";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { crewScopesOverlap } from "../../src/features/crews/model/crew";
 import { readCrewRun } from "./crew-scheduler-projection";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 
 /** Direct checkout writers honor active Crew leases; isolated tasks remain independent. */
 export async function crewTaskCanStart(
@@ -10,7 +11,7 @@ export async function crewTaskCanStart(
   tasks: Pick<HostTasks, "list">,
   task: HostTask,
 ): Promise<boolean> {
-  if (task.crewDefinitionId) return true;
+  if (workCrewId(task)) return true;
   if (!task.crewRunId)
     return (
       task.isolate !== false ||
@@ -18,7 +19,7 @@ export async function crewTaskCanStart(
         (other) =>
           other.id !== task.id &&
           !!other.crewRunId &&
-          !other.crewDefinitionId &&
+          !workCrewId(other) &&
           other.isolate === false &&
           (other.status === "running" || other.status === "verifying") &&
           crewScopesOverlap(["."], other.crewScopes ?? ["."]),
@@ -31,7 +32,7 @@ export async function crewTaskCanStart(
     !tasksInProject.some(
       (other) =>
         other.id !== task.id &&
-        !other.crewDefinitionId &&
+        !workCrewId(other) &&
         other.isolate === false &&
         (other.status === "running" || other.status === "verifying") &&
         crewScopesOverlap(task.crewScopes ?? ["."], other.crewScopes ?? ["."]),

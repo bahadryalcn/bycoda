@@ -199,6 +199,9 @@ export function SessionFiltersMenu({
         toggle(check("managed", managedName, filters.assistantManaged), () =>
           onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
         ),
+        toggle(check("background", t("Show background sessions"), filters.showBackground), () =>
+          onChange({ ...filters, showBackground: !filters.showBackground }),
+        ),
       ],
     },
     {

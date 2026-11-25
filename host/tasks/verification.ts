@@ -1,11 +1,15 @@
 import { MAX_REPAIR_ATTEMPTS } from "./constants";
+import { resolveRunModel, reviewerModelInput } from "./model-routing";
+import { applyHelpers } from "../model-routing/helpers";
 import {
-  resolveRunModel,
-  reviewerModelInput,
-  routingRun,
-  routingWait,
-  routingWaitDue,
-} from "./model-routing";
+  inputStop,
+  modelQuotaWait,
+  runLimitStop,
+  runOutcomeStop,
+  sameWait,
+  taskWaitDue,
+} from "./stop-reasons";
+import { buildTaskStop, taskNeedsInput } from "../../src/shared/model/host-contracts/task-stop";
 import { deferredAssistantTurn } from "../assistant/core/assistant-turn-policy";
 import {
   readAssistantRecovery,
@@ -25,8 +29,6 @@ import {
 import { readTaskInstructions } from "../../src/features/tasks/model/taskInstructions";
 import { withHostGitMutation } from "../git/git-mutations";
 import {
-  HOST_INTERRUPTED,
-  STOPPED_BY_USER,
   cancelSessionRun,
   errorMessage,
   launchSessionRun,
@@ -70,7 +72,7 @@ export async function acceptCrewTask(context: TaskContext, id: string): Promise<
           review: { ...latest.verification!.review!, verdict: "fail", note: reason },
         },
       },
-      reason,
+      { code: "working_copy_changed", phase: "review", message: reason },
       context.now(),
     );
     throw new Error(reason);
@@ -107,14 +109,12 @@ export async function recheckReview(context: TaskContext, id: string): Promise<H
       workInvocationId: randomUUID(),
       conflictRecovery: undefined,
       conflictParent: undefined,
-      crewWorkWait: undefined,
+      wait: undefined,
       repairAdvisor: undefined,
       status: "verifying",
       reviewOnly: true,
-      awaitingOwnerRestart: undefined,
-      repairStop: undefined,
       error: undefined,
-      needsInput: undefined,
+      stop: undefined,
       reviewer: undefined,
       verification: undefined,
       completedAt: undefined,
@@ -145,7 +145,8 @@ export async function recoverGoalReview(
     taskRequiresInstructions(task) ||
     review?.verdict !== "fail" ||
     review.note === NO_VERDICT ||
-    task.error !== `Review failed: ${review.note}`
+    task.stop?.code !== "run_failed" ||
+    task.stop.phase !== "review"
   )
     return task;
   try {
@@ -159,7 +160,7 @@ export async function recoverGoalReview(
       verdict.note !== review.note
     )
       return task;
-    return await context.repairOrBlock(task, task.error, context.now());
+    return await context.repairOrBlock(task, task.stop.message, context.now());
   } catch {
     return task;
   }
@@ -175,7 +176,7 @@ export async function settleCrew(context: TaskContext, task: HostTask, now: numb
           ...task,
           status: "verifying",
           updatedAt: now,
-          needsInput: undefined,
+          stop: undefined,
           error: undefined,
           verification: undefined,
         }),
@@ -184,19 +185,31 @@ export async function settleCrew(context: TaskContext, task: HostTask, now: numb
       await context.crewRunner.stop(task);
       const latest = await context.find(task.id);
       if (latest?.status === "running" && latest.crewExecutionId === task.crewExecutionId)
-        await context.block(latest, "The crew task exceeded its time limit.", now);
+        await context.block(
+          latest,
+          {
+            code: "budget_exhausted",
+            phase: "crew",
+            message: "The crew task exceeded its time limit.",
+          },
+          now,
+        );
     } else {
       const needsInput = run.status === "paused" || !!run.error;
-      if (Boolean(task.needsInput) !== needsInput || task.error !== run.error)
+      if (taskNeedsInput(task) !== needsInput || task.error !== run.error)
         await context.write({
           ...task,
-          needsInput: needsInput || undefined,
+          stop: needsInput ? inputStop("crew", now) : undefined,
           error: run.error,
           updatedAt: now,
         });
     }
   } catch (error) {
-    await context.block(task, errorMessage(error), now);
+    await context.block(
+      task,
+      { code: "run_failed", phase: "crew", message: errorMessage(error) },
+      now,
+    );
   }
 }
 
@@ -238,7 +251,7 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
           }
         : undefined;
     if (
-      outcome.needsInput !== Boolean(task.needsInput) ||
+      outcome.needsInput !== taskNeedsInput(task) ||
       JSON.stringify(task.runStall) !== JSON.stringify(runStall)
     )
       await context.store.transaction(async () => {
@@ -246,7 +259,7 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
         if (!fresh) return;
         await context.write({
           ...fresh,
-          needsInput: outcome.needsInput || undefined,
+          stop: outcome.needsInput ? inputStop("worker", now) : undefined,
           runStall,
           updatedAt: now,
         });
@@ -254,7 +267,11 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
   } else if (outcome.state === "overLimit") {
     // The reason is saved first: the turn settles asynchronously, and a
     // later tick blocks the task with it.
-    await context.write({ ...task, error: outcome.error });
+    await context.write({
+      ...task,
+      error: outcome.error,
+      stop: runLimitStop("worker", outcome.error, now),
+    });
     await cancelSessionRun(context.engine, task);
   } else if (outcome.status === "succeeded") {
     await context.limits.recordRun(task, now);
@@ -267,7 +284,7 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
       await context.write({
         ...task,
         status: "verifying",
-        needsInput: undefined,
+        stop: undefined,
         verification: undefined,
         updatedAt: now,
       }),
@@ -282,7 +299,11 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
         if (recovery && recovery.state !== "running") {
           await context.block(
             fresh,
-            "Inspect the automatic recovery before restarting its deferred worker.",
+            {
+              code: "run_failed",
+              phase: "worker",
+              message: "Inspect the automatic recovery before restarting its deferred worker.",
+            },
             now,
           );
           return;
@@ -310,7 +331,7 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
           runId: undefined,
           startedAt: undefined,
           error: undefined,
-          needsInput: undefined,
+          stop: undefined,
           updatedAt: now,
         });
       });
@@ -333,28 +354,24 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
       const message =
         "The task's one automatic worker recovery did not finish successfully. Owner review is required.";
       await context.assistantRecoveryFailed?.(task, message);
-      await context.block(task, message, now);
+      await context.block(task, { code: "run_failed", phase: "worker", message }, now);
       return;
     }
-    if (outcome.error === HOST_INTERRUPTED && (await context.canResumeAfterHostStop(task))) {
+    if (outcome.cause === "host_interrupted" && (await context.canResumeAfterHostStop(task))) {
       await context.requeueInterrupted(task, now);
       return;
     }
     if (
       outcome.status === "failed" &&
       !task.crewRunId &&
-      isTransientRunFailure(task, outcome.error) &&
+      isTransientRunFailure(task, outcome) &&
       runtimeRetryCount(task) < MAX_RUNTIME_RETRIES &&
       (task.repairAttempts ?? 0) < MAX_REPAIR_ATTEMPTS
     ) {
       await context.retryTransientFailure(task, outcome.error!, now);
       return;
     }
-    await context.block(
-      task,
-      outcome.status === "cancelled" ? STOPPED_BY_USER : (outcome.error ?? "The run failed."),
-      now,
-    );
+    await context.block(task, runOutcomeStop(task, outcome, "worker"), now);
   }
 }
 
@@ -376,7 +393,7 @@ export async function sharedCheckoutWriterActive(
 
 export async function verify(context: TaskContext, task: HostTask): Promise<void> {
   if (context.closing) return;
-  if (!routingWaitDue(task, context.now())) return;
+  if (!taskWaitDue(task, context.now())) return;
   if (!(await context.goalExecutionAllowed(task.goalId))) return;
   if (await sharedCheckoutWriterActive(context, task)) return;
   const { id } = task;
@@ -451,19 +468,20 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
         await physicalOwner.unknown(result.terminationFailed);
         const latest = await context.find(id);
         if (latest)
-          await context.write({
-            ...latest,
-            status: "blocked",
-            error: result.terminationFailed,
-            verification: {
-              command: {
-                exitCode: null,
-                output: result.output.slice(-VERIFY_OUTPUT_LIMIT),
-                timedOut: result.timedOut,
+          await context.block(
+            {
+              ...latest,
+              verification: {
+                command: {
+                  exitCode: null,
+                  output: result.output.slice(-VERIFY_OUTPUT_LIMIT),
+                  timedOut: result.timedOut,
+                },
               },
             },
-            updatedAt: context.now(),
-          });
+            { code: "cleanup_failed", phase: "check", message: result.terminationFailed },
+            context.now(),
+          );
         return;
       }
       await physicalOwner.complete();
@@ -492,34 +510,41 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
             )
             .digest("hex");
         const latest = await current();
-        if (latest)
-          await (
-            result.timedOut || result.exitCode === null
-              ? context.block.bind(context)
-              : context.repairOrBlock.bind(context)
-          )(
-            {
-              ...latest,
-              verification,
-              checkFailureFingerprint,
-              ...(checkFailureFingerprint &&
-              checkFailureFingerprint === latest.checkFailureFingerprint
-                ? {
-                    repairStop: {
-                      reason: "no_progress" as const,
+        if (latest) {
+          const failure = result.timedOut
+            ? "The check command timed out."
+            : result.exitCode === null
+              ? "The check command could not run."
+              : `The check command failed (exit code ${result.exitCode}).`;
+          const failed = {
+            ...latest,
+            verification,
+            checkFailureFingerprint,
+            // Carried to repairOrBlock only; storage drops a repair stop from a verifying task.
+            ...(checkFailureFingerprint &&
+            checkFailureFingerprint === latest.checkFailureFingerprint
+              ? {
+                  stop: buildTaskStop(
+                    {
+                      code: "repair_exhausted",
+                      phase: "repair",
+                      repair: "no_progress",
                       message:
                         "The check failed again with unchanged output and working-copy contents. Inspect the retained work and choose a different correction.",
                     },
-                  }
-                : {}),
-            },
-            result.timedOut
-              ? "The check command timed out."
-              : result.exitCode === null
-                ? "The check command could not run."
-                : `The check command failed (exit code ${result.exitCode}).`,
-            context.now(),
-          );
+                    context.now(),
+                  ),
+                }
+              : {}),
+          };
+          if (result.timedOut || result.exitCode === null)
+            await context.block(
+              failed,
+              { code: "run_failed", phase: "check", message: failure },
+              context.now(),
+            );
+          else await context.repairOrBlock(failed, failure, context.now());
+        }
         return;
       }
     }
@@ -548,7 +573,11 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
     if (task.crewRunId && !crewReviewFingerprint) {
       await context.block(
         latest,
-        "Cannot snapshot this crew assignment for independent review.",
+        {
+          code: "preparation_failed",
+          phase: "review",
+          message: "Cannot snapshot this crew assignment for independent review.",
+        },
         now,
       );
       return;
@@ -558,7 +587,7 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
       await context.budgetBlock(latest, finalReviewBudget, context.now());
       return;
     }
-    if (latest.reviewer?.sessionId || !routingWaitDue(latest, now)) return;
+    if (latest.reviewer?.sessionId || !taskWaitDue(latest, now)) return;
     const routingExpected = await context.taskValue(id);
     const persistRouting = (row: HostTask) =>
       context.transaction(async () =>
@@ -576,17 +605,16 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
     );
     if (!(await current()) || !(await context.unchangedTask(id, routingExpected))) return;
     if (!resolution.ok && resolution.reason === "noEligibleEntry") {
-      const wait = routingWait(resolution);
-      const waiting = { ...latest, modelRoutingWait: wait, error: wait.reason, updatedAt: now };
-      if (JSON.stringify(routingRun(latest).modelRoutingWait) !== JSON.stringify(wait))
-        await persistRouting(waiting);
+      const wait = modelQuotaWait(resolution);
+      const waiting = { ...latest, wait, error: wait.message, updatedAt: now };
+      if (!sameWait(latest.wait, wait)) await persistRouting(waiting);
       return;
     }
     const reviewerTarget = resolution.ok ? resolution.target : reviewInput.target;
     const pendingReview = {
       ...latest,
       reviewerTarget,
-      modelRoutingWait: undefined,
+      wait: undefined,
       error: undefined,
     };
     const routedReview = await persistRouting(pendingReview);
@@ -611,6 +639,9 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
         author: { kind: "task", id: task.id, name: task.title, reason: "review" },
         ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
         ...reviewerTarget,
+        // The reviewer follows the same helper policy as the worker.
+        modelSettings: (await applyHelpers(context.store, reviewerTarget, task.helpers))
+          .modelSettings,
         prompt: `${task.reviewerConfig?.instructions ?? ""}\n${reviewPrompt({ ...task, verification })}`,
       },
       async () => !controller.signal.aborted && (await context.goalExecutionAllowed(task.goalId)),
@@ -630,7 +661,15 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
       },
     };
     if (started.error !== undefined)
-      await context.block(reviewing, `Could not start the reviewer: ${started.error}`, now);
+      await context.block(
+        reviewing,
+        {
+          code: "run_failed",
+          phase: "review",
+          message: `Could not start the reviewer: ${started.error}`,
+        },
+        now,
+      );
     else await context.write({ ...reviewing, updatedAt: now });
   };
   // Authorize enrollment now, then keep accepted background verification system-owned.
@@ -646,7 +685,12 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
               error.message,
               context.now(),
             );
-          else await context.block(latest, errorMessage(error), context.now());
+          else
+            await context.block(
+              latest,
+              { code: "run_failed", message: errorMessage(error) },
+              context.now(),
+            );
         }
       })
       .catch((error) => console.error("Could not verify a task:", errorMessage(error)))

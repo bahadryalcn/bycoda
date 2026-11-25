@@ -1,26 +1,19 @@
 import { useEffect, useEffectEvent, useId, useState } from "react";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
-import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
-import {
-  AUTOMATIC_SUBAGENTS,
-  CROSS_SUBAGENTS_KEY,
-} from "../../../shared/model/host-contracts/delegation";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
 import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { RemoteMachine } from "../../connections/public/protocol";
-import { useProjectCrews } from "../../crews/model/crewClient";
 import { useModelRouting } from "../../model-routing/public/choice";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
@@ -54,9 +47,11 @@ import {
   useWorkspaceChecks,
 } from "./TaskWorkspacePicker";
 import { useTaskTargetMachine } from "./useTaskTargetMachine";
+import { TaskRunWithRow, useRunWith } from "./TaskRunWith";
 import "./task-form.css";
 
 type SubmitMode = "todo" | "queued" | "save";
+
 
 export function TaskForm({
   draft: inputDraft,
@@ -117,18 +112,13 @@ export function TaskForm({
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const isEdit = Boolean(draft.id);
-  const hasCrew = Boolean(draft.crewDefinitionId);
-  const crewQuery = useProjectCrews(draft.cwd, Boolean(targetId && draft.cwd));
-  const centralCrewError = useConnectionErrorShownCentrally(crewQuery.error);
-  const crews =
-    crewQuery.data?.machine.id === targetId && crewQuery.data.taskExecutionSupported
-      ? crewQuery.data.definitions
-      : [];
-  const crew = crews.find((entry) => entry.id === draft.crewDefinitionId);
-  const crewValid = !hasCrew || Boolean(crew);
-  const crewLoading = hasCrew && !crewQuery.data && !crewQuery.error && crewQuery.isFetching;
+  const hasCrew = draft.executor?.kind === "crew";
+  const runWith = useRunWith(draft.cwd, targetId, draft.executor);
+  const { crew, valid: crewValid, loading: crewLoading } = runWith;
   // A preselected crew that fails to resolve brings the picker back so the draft can recover.
   const showCrewRows = !crewPreselected || (!crewValid && !crewLoading);
+  // The Host refuses these combinations and says which option to change; show it before sending.
+  const executorIssue = hasCrew ? crewIncompatibility(draft)?.reason : undefined;
   const { preparation, requirementsError } = useTaskPreparation(machines, draft, target, saving);
   const workspaceValid = isWorkspaceValid(
     draft.workspace,
@@ -149,7 +139,7 @@ export function TaskForm({
     draft.model.length > 0 &&
     machine != null &&
     !workspaceBusy &&
-    (hasCrew ? crewValid : workspaceValid) &&
+    (hasCrew ? crewValid && !executorIssue : workspaceValid) &&
     !requirementsError;
   const canStart = ready && hasDescription;
   const canTodo = ready && !todoUnsupported;
@@ -161,6 +151,8 @@ export function TaskForm({
       reason = taskClientErrors.machine();
     } else if (workspaceBusy) {
       reason = t("Creating the integration worktree…");
+    } else if (executorIssue) {
+      reason = executorIssue;
     } else if (!hasCrew && !workspaceValid) {
       reason = t("Check the selected working copy.");
     } else if (!optionsOpen && requirementsError) {
@@ -192,12 +184,16 @@ export function TaskForm({
   const optionSummary = [
     limit === 0 ? t("No time limit") : limitLabel,
     draft.verifyCommand.trim(),
-    !hasCrew && draft.modelSettings[CROSS_SUBAGENTS_KEY] === "[]" ? t("Subagents off") : undefined,
+    !hasCrew && draft.helpers?.mode === "off" ? t("Subagents off") : undefined,
     draft.budget ? t("Run budget") : undefined,
     requirementCount
       ? t("Resources ({p0})", { p0: format.formatNumber(requirementCount) })
       : undefined,
-    showCrewRows ? (crew?.name ?? (hasCrew ? t("Crew") : undefined)) : undefined,
+    showCrewRows
+      ? draft.executor?.kind === "auto"
+        ? t("Auto")
+        : (crew?.name ?? (hasCrew ? t("Crew") : undefined))
+      : undefined,
     !hasCrew && draft.review && draft.reviewerConfig ? t("Reviewer profile") : undefined,
   ]
     .filter(Boolean)
@@ -268,7 +264,7 @@ export function TaskForm({
                         machineId,
                         modelChoice: undefined,
                         providerAccountId: defaultAccountFor(draft.harness, machineId),
-                        crewDefinitionId: undefined,
+                        executor: undefined,
                         workspace: undefined,
                         cwd: firstProjectOn(recents, machineId),
                       }),
@@ -291,7 +287,7 @@ export function TaskForm({
                         cwd,
                         modelChoice: undefined,
                         workspace: undefined,
-                        crewDefinitionId: undefined,
+                        executor: undefined,
                       }),
               }}
               model={
@@ -441,13 +437,8 @@ export function TaskForm({
                   {!hasCrew ? (
                     <TaskFormSwitch
                       label={t("Allow subagents")}
-                      checked={draft.modelSettings[CROSS_SUBAGENTS_KEY] !== "[]"}
-                      onChange={(value) =>
-                        update("modelSettings", {
-                          ...draft.modelSettings,
-                          [CROSS_SUBAGENTS_KEY]: value ? AUTOMATIC_SUBAGENTS : "[]",
-                        })
-                      }
+                      checked={draft.helpers?.mode !== "off"}
+                      onChange={(value) => update("helpers", value ? undefined : { mode: "off" })}
                     />
                   ) : null}
                   <TaskBudgetControls
@@ -460,31 +451,16 @@ export function TaskForm({
                     onChange={(value) => update("preflightRequirements", value)}
                     preparation={preparation}
                   />
-                  {hasCrew || crews.length ? (
-                    <div>
-                      {showCrewRows ? (
-                        <TaskFormRow label={t("Run with a crew")}>
-                          <SearchableSelect
-                            label={t("Crew")}
-                            hideLabel
-                            variant="pill"
-                            value={draft.crewDefinitionId ?? ""}
-                            disabled={draft.workspaceLocked || workspaceBusy}
-                            options={[
-                              { value: "", label: t("Agent") },
-                              ...crews.map((entry) => ({
-                                value: entry.id,
-                                label: entry.name,
-                                description: entry.projectId
-                                  ? t("This project")
-                                  : t("All projects on this host"),
-                              })),
-                            ]}
-                            onChange={(id) => update("crewDefinitionId", id || undefined)}
-                          />
-                        </TaskFormRow>
-                      ) : null}
-                      {hasCrew && showCrewRows ? (
+                  {runWith.offered ? (
+                    <TaskRunWithRow
+                      runWith={runWith}
+                      executor={draft.executor}
+                      disabled={draft.workspaceLocked || workspaceBusy}
+                      issue={executorIssue}
+                      choiceHidden={!showCrewRows}
+                      onChange={(executor) => update("executor", executor)}
+                    >
+                      {hasCrew ? (
                         <TaskFormRow label={t("Access")}>
                           <AccessPicker
                             value={draft.runtimeMode}
@@ -492,25 +468,7 @@ export function TaskForm({
                           />
                         </TaskFormRow>
                       ) : null}
-                      {crewLoading ? <LoadingText>{t("Loading crews…")}</LoadingText> : null}
-                      {crewQuery.error && !centralCrewError ? (
-                        <InlineError
-                          details={crewQuery.error.message}
-                          retry={{
-                            onRetry: () => {
-                              void crewQuery.refetch().catch(() => {});
-                            },
-                            pending: crewQuery.isFetching,
-                          }}
-                        >
-                          {t("Could not load the crews for this project.")}
-                        </InlineError>
-                      ) : !crewValid && !crewLoading && !crewQuery.error ? (
-                        <InlineMessage tone="warning">
-                          {t("Connect an updated host and choose an available crew.")}
-                        </InlineMessage>
-                      ) : null}
-                    </div>
+                    </TaskRunWithRow>
                   ) : null}
                 </Surface>
                 {!hasCrew && draft.review ? (
@@ -623,7 +581,7 @@ function useTaskPreparation(
     draft.modelSettings,
     draft.isolate,
     draft.workspace,
-    draft.crewDefinitionId,
+    draft.executor,
     draft.preflightRequirements,
     revision,
   ]);

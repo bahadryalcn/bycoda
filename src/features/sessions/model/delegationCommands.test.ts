@@ -22,13 +22,14 @@ describe("consumeDelegationCommand", () => {
     expect(consumeDelegationCommand("/subagents go")?.prompt).not.toContain("up to");
   });
 
-  it("turns /task into a task-creation request instead of doing the work", () => {
-    const command = consumeDelegationCommand("/TASK add dark mode to settings");
-    expect(command?.name).toBe("task");
-    expect(command?.prompt).toContain("tasks.create");
-    expect(command?.prompt).toContain("Create one bycoda task");
-    expect(command?.prompt).toContain("Do not implement it in this turn.");
-    expect(command?.prompt.endsWith("Work:\nadd dark mode to settings")).toBe(true);
+  it("hands /task the owner's words unchanged and gives the model no prompt to rewrite them", () => {
+    expect(consumeDelegationCommand("/TASK Fix the login button label.\nIt says Sing in.")).toEqual(
+      {
+        name: "task",
+        request: "Fix the login button label.\nIt says Sing in.",
+        prompt: "",
+      },
+    );
   });
 
   it("reports an empty request so the caller can keep the draft", () => {

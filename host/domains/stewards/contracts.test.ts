@@ -33,16 +33,6 @@ const stored = {
   lastSessionId: "session",
   lastProposed: 0,
   declined: ["normalized title"],
-  run: {
-    startedAt: 0,
-    workspaceId: "workspace",
-    activityId: "activity",
-    sessionId: "session",
-    runId: "turn",
-    worktreeCwd: "/checkout",
-    branch: "steward/branch",
-    error: "Stopping",
-  },
   createdAt: 0,
   updatedAt: 1,
 };
@@ -58,10 +48,6 @@ it("inventories every declared Steward input, persisted row and run field withou
     for (const field of declaration![1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm)) keys.add(field[1]);
   }
   expect(Object.keys(dto.HostStewardSchema.shape).sort()).toEqual([...keys].sort());
-  const run = source.match(/export type StewardRun = \{([\s\S]*?)^\};/m)!;
-  expect(Object.keys(dto.StewardRunSchema.shape).sort()).toEqual(
-    [...run[1].matchAll(/^  ([a-zA-Z_]\w*)\??:/gm)].map((field) => field[1]).sort(),
-  );
 });
 
 it("roundtrips complete mobile row/CAS spreads, desktop input and all actual run statuses", () => {
@@ -108,8 +94,7 @@ it("keeps owner defaults separate from wire parsing and rejects unknown candidat
   });
   for (const invalid of [
     { ...stored, candidate: { id: "unrecognized" } },
-    { ...stored, run: { ...stored.run, candidateId: "unrecognized" } },
-    { ...stored, run: null },
+    { ...stored, run: { startedAt: 0 } },
     { ...stored, lastRunStatus: "pending" },
     { ...stored, lastProposed: null },
     { ...stored, modelSettings: { option: 1 } },
@@ -123,7 +108,7 @@ it("keeps owner defaults separate from wire parsing and rejects unknown candidat
     { ...input, expectedConfiguration: { ...stored, future: true } },
     { ...input, modelSettings: null },
     { ...input, focus: null },
-    { ...input, run: { ...stored.run, unknown: true } },
+    { ...input, run: { startedAt: 0 } },
   ])
     expect(dto.StewardSavePayloadSchema.safeParse(invalid).success).toBe(false);
   expect(dto.StewardsIdParamsSchema.safeParse({ stewardId: 1 }).success).toBe(false);

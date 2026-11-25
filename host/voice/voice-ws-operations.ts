@@ -34,7 +34,11 @@ export function voiceSocketOperations(dependencies: {
         throw new Error("A voice model action is running.");
       if (dependencies.voiceSetup.status().state === "installing")
         throw new Error("Voice setup is still running.");
-      return localVoice.start(params.config, params.recognitionOnly === true);
+      // The phone cannot disconnect the computer's own voice, so it joins a runtime already
+      // loaded with other settings instead of being refused.
+      return localVoice.start(params.config, params.recognitionOnly === true, {
+        joinLoaded: true,
+      });
     },
     "voice.local.transcribe": (params) =>
       localVoice.transcribe(params.lease, params.audio, params.language, params.endpoint),

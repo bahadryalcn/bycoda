@@ -48,7 +48,8 @@ type Failure = {
 
 type CommandOptions = {
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  /** Overrides merged over the Host environment (or the whole environment with `replaceEnv`). */
+  env?: Readonly<Record<string, string | undefined>>;
   timeout: number;
   maxBuffer?: number;
   encoding?: BufferEncoding | "buffer";

@@ -5,3 +5,5 @@ export type { BackgroundSessionTarget } from "./model/backgroundSession";
 export type * as taskCreationApi from "./public/taskCreation";
 export type * as taskTitleApi from "./public/taskTitle";
 export type * as backgroundSessionApi from "./public/backgroundSession";
+export type * as workExecutorApi from "./public/workExecutor";
+export type * as hostTasksApi from "./public/hostTasks";

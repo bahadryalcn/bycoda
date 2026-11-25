@@ -361,6 +361,35 @@ test("the Date.now ban covers Host scheduler, budget and watchdog modules by nam
   );
 });
 
+test("task-state-from-stop-code rejects classifying a task by its error text", (t) => {
+  const root = fixtureRoot(t);
+  write(
+    root,
+    "host/tasks/demo.ts",
+    [
+      'export const a = (task: { error?: string }) => task.error === "Stopped by you.";',
+      "export const b = (task: { error?: string }) => task.error?.startsWith('Review failed');",
+      "export const c = (task: { error?: string }) => /interrupted/i.test(task.error);",
+      "export const d = (task: { error?: string }, run: { error?: string }) => task.error !== run.error;",
+      "export const e = (task: { error?: string }) => task.error !== undefined && Boolean(task.error);",
+      "",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "host/other/demo.ts",
+    'export const f = (task: { error?: string }) => task.error === "x";\n',
+  );
+  assert.deepEqual(
+    scanRule(root, "bycoda/task-state-from-stop-code").map(({ file, line }) => [file, line]),
+    [
+      ["host/tasks/demo.ts", 1],
+      ["host/tasks/demo.ts", 2],
+      ["host/tasks/demo.ts", 3],
+    ],
+  );
+});
+
 const performanceRules = (root) =>
   scanAll(root)
     .filter(({ rule }) => /^bycoda\/(compiler|effect|shared-resize)/.test(rule))

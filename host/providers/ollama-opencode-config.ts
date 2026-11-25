@@ -127,7 +127,7 @@ export function withOllamaModels(config: Json, models: readonly string[], baseUR
 }
 
 /**
- * Writes the Ollama block. The previous bytes go to `<file>.monocode.bak` first, so the owner
+ * Writes the Ollama block. The previous bytes go to `<file>.bycoda.bak` first, so the owner
  * can restore the file by hand; JSONC, invalid and unreadable files are refused unchanged.
  */
 export async function saveOllamaModelsToOpencode(
@@ -144,6 +144,6 @@ export async function saveOllamaModelsToOpencode(
   if (created && models.length === 0) return;
   const base = created ? { $schema: "https://opencode.ai/config.json" } : current.config;
   const next = withOllamaModels(base, models, baseURL);
-  if (!created && current.raw) await writeFileAtomic(`${path}.monocode.bak`, current.raw);
+  if (!created && current.raw) await writeFileAtomic(`${path}.bycoda.bak`, current.raw);
   await writeFileAtomic(path, `${JSON.stringify(next, null, 2)}\n`);
 }

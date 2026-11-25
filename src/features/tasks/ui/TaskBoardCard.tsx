@@ -14,7 +14,7 @@ import type { BoardTask } from "../model/taskClient";
 import { t, useLocale } from "../../../shared/i18n";
 import { memo, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { Bot, GripVertical } from "../../../shared/ui/icons";
+import { Bot, GripVertical, TriangleAlert } from "../../../shared/ui/icons";
 import { QUIET_TASK_STATUS } from "../model/taskStatusLine";
 import { TaskStatusText, taskDisplayStatus } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
@@ -30,6 +30,7 @@ export const TaskCard = memo(function TaskCard({
   task,
   timeLabel,
   project,
+  helperFailure,
   selected,
   onOpen,
   actionsFor,
@@ -42,6 +43,8 @@ export const TaskCard = memo(function TaskCard({
   timeLabel: string;
   project: string;
   goal?: string;
+  /** Why a helper of this task failed, when one did. */
+  helperFailure?: string;
   planning?: string;
   waitingForText: string;
   selected: boolean;
@@ -59,6 +62,7 @@ export const TaskCard = memo(function TaskCard({
       task={task}
       timeLabel={timeLabel}
       project={project}
+      helperFailure={helperFailure}
       selected={selected}
       onOpen={() => onOpen(task.machineId + ":" + task.id)}
       {...actionsFor(task)}
@@ -70,6 +74,7 @@ function TaskCardBody({
   task,
   timeLabel,
   project,
+  helperFailure,
   selected,
   onOpen,
   ...actions
@@ -77,6 +82,7 @@ function TaskCardBody({
   task: BoardTask;
   timeLabel: string;
   project: string;
+  helperFailure?: string;
   /** Its detail panel is open. */
   selected: boolean;
   onOpen: () => void;
@@ -88,7 +94,7 @@ function TaskCardBody({
   // Exceptional state leads the card; execution metadata stays in the detail panel.
   const status = taskDisplayStatus(task);
   const hasFailureDetails = Boolean(
-    task.error || task.mergeError || task.budgetStop || task.repairStop || task.verification,
+    task.error || task.mergeError || task.stop || task.verification,
   );
   // The column already names plain states; the line names everything else.
   const showStatus =
@@ -179,6 +185,18 @@ function TaskCardBody({
           {project}
         </Text>
         {statusBadges}
+        {helperFailure !== undefined ? (
+          <Tooltip label={helperFailure || t("A helper failed")} asChild>
+            <span
+              data-task-helper-failed
+              role="img"
+              aria-label={t("A helper failed")}
+              className="inline-flex shrink-0"
+            >
+              <TriangleAlert className="icon-xs" tone="danger" strokeWidth={1.75} />
+            </span>
+          </Tooltip>
+        ) : null}
         {unread ? (
           <Badge
             variant="count"
@@ -222,13 +240,11 @@ function TaskCardBody({
             >
               <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
-              {task.budgetStop ? <InlineError details={task.budgetStop} /> : null}
-              {task.repairStop?.message ? (
-                <Text as="p" tone="secondary" size="secondary">
-                  {task.repairStop.message}
-                </Text>
+              {task.stop ? (
+                <InlineError details={task.stop.message} />
+              ) : task.error ? (
+                <InlineError details={task.error} />
               ) : null}
-              {task.error ? <InlineError details={task.error} /> : null}
               {task.mergeError ? <InlineError details={task.mergeError} /> : null}
               {task.verification ? <VerificationSummary verification={task.verification} /> : null}
             </Text>

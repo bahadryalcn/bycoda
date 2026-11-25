@@ -17,19 +17,16 @@ import {
   isTaskStatus,
   type HostTask,
 } from "../../src/features/tasks/model/hostTasks";
-import {
-  STOPPED_BY_USER,
-  cancelSessionRun,
-  errorMessage,
-  sessionRunState,
-} from "../sessions/sessionRuns";
+import { cancelSessionRun, errorMessage, sessionRunState } from "../sessions/sessionRuns";
 import { hasShellPhysicalOwner } from "../execution/shell-ownership";
 import type { TaskContext } from "./context";
+import { OWNER_STOP, restartHold } from "./stop-reasons";
 import {
   conflictStopGeneration,
   fenceConflictChildren,
   releaseConflictStop,
 } from "./conflict-recovery";
+import { workCrewId } from "../../src/shared/model/host-contracts/work-executor";
 export function taskMessage<T>(
   context: TaskContext,
   task: HostTask,
@@ -57,7 +54,7 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
     await context.ready;
 
     const input = parseHostTask(raw);
-    if (input.crewDefinitionId) {
+    if (workCrewId(input)) {
       if (!context.crewRunner) throw new Error("Update this host to run tasks with a crew.");
       await context.crewRunner.validate(input);
     }
@@ -83,7 +80,7 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
     if ((raw as { expectedAbsent?: unknown }).expectedAbsent === true && previous)
       throw new Error("Task ID already exists. Choose a new ID.");
     assertExpectedConfiguration(raw, previous, parseHostTask);
-    if (input.crewDefinitionId && previous && (previous.crewRunId || hasUnmergedBranch(previous)))
+    if (workCrewId(input) && previous && (previous.crewRunId || hasUnmergedBranch(previous)))
       throw new Error(
         "Create a separate crew task; this task already belongs to a crew or has retained branch work.",
       );
@@ -111,7 +108,10 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
       verifyCommand: _verifyCommand,
       autoMerge: _autoMerge,
       continueUntilDone: _continueUntilDone,
-      crewDefinitionId: _crewDefinitionId,
+      executor: _executor,
+      helpers: _helpers,
+      // An edit starts a fresh choice of executor, model and helpers.
+      resolved: _resolved,
       workspace: _workspace,
       ...kept
     } = previous;
@@ -121,31 +121,33 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
       ...(input.inheritMaxRunMinutes && previous.runtimeLimitResolvedAt !== undefined
         ? { maxRunMinutes: previous.maxRunMinutes }
         : {}),
-      modelRoutingWait: undefined,
+      wait: undefined,
       projectId: previous.projectId,
       // Work already on a branch stays there.
       ...(hasUnmergedBranch(previous) ? { isolate: true } : {}),
       ...(previous.sessionId || previous.branch ? { workspace: previous.workspace } : {}),
+      // An external check still needs the owner's resource after a setting changes.
       ...(previous.status === "blocked" &&
-      Boolean(input.continueUntilDone) !== Boolean(previous.continueUntilDone)
-        ? { awaitingOwnerRestart: true }
+      Boolean(input.continueUntilDone) !== Boolean(previous.continueUntilDone) &&
+      !(previous.stop?.code === "repair_exhausted" && previous.stop.repair === "external")
+        ? { stop: restartHold(now) }
         : {}),
       ...(input.continueUntilDone &&
       !previous.continueUntilDone &&
-      previous.repairStop?.reason === "limit"
-        ? { repairStop: undefined, needsInput: undefined, awaitingOwnerRestart: true }
+      previous.stop?.repair === "limit"
+        ? { stop: restartHold(now) }
         : {}),
       ...(input.prompt.trim().replace(/\s+/g, " ") !== previous.prompt.trim().replace(/\s+/g, " ")
         ? {
             reviewFailureCount: 0,
             blockedTakeover: undefined,
-            awaitingOwnerRestart: true,
+            // An edited prompt is no longer the owner's original request.
+            request: undefined,
+            stop: restartHold(now),
             // Zero records owner input; undefined lets legacy goal recovery run.
             repairAttempts: 0,
-            repairStop: undefined,
             repairNote: undefined,
             checkFailureFingerprint: undefined,
-            needsInput: undefined,
           }
         : {}),
       updatedAt: now,
@@ -155,7 +157,6 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
       updated.workInvocationId = randomUUID();
       updated.conflictRecovery = undefined;
       updated.conflictParent = undefined;
-      updated.crewWorkWait = undefined;
       updated.repairAdvisor = undefined;
       fenceConflictChildren(previous.id);
       const fence = conflictStopGeneration(previous.id);
@@ -218,7 +219,7 @@ export async function move(
     throw new Error(
       "Finish the recorded artifact delivery before restarting or completing this task.",
     );
-  if ((task.crewRunId || task.crewDefinitionId) && to === "done")
+  if ((task.crewRunId || workCrewId(task)) && to === "done")
     throw new Error(
       "Accept this assignment through its crew coordinator after independent review.",
     );
@@ -260,7 +261,7 @@ export async function move(
         workInvocationId: invocation,
         conflictRecovery: undefined,
         conflictParent: undefined,
-        crewWorkWait: undefined,
+        wait: undefined,
         repairAdvisor: undefined,
       },
       now,
@@ -304,17 +305,16 @@ export async function move(
       sessionId: _sessionId,
       runId: _runId,
       error: _error,
-      needsInput: _needsInput,
+      stop: _stop,
+      wait: _wait,
       startedAt: _startedAt,
       completedAt: _completedAt,
       verification: _verification,
       reviewOnly: _reviewOnly,
-      awaitingOwnerRestart: _awaitingOwnerRestart,
       reviewer: _reviewer,
       crewExecutionId: _crewExecutionId,
       conflictRecovery: _conflictRecovery,
       conflictParent: _conflictParent,
-      crewWorkWait: _crewWorkWait,
       repairAdvisor: _repairAdvisor,
       diffStat: _diffStat,
       mergeError: _mergeError,
@@ -337,7 +337,6 @@ export async function move(
           repairAttempts: completedWithFindings ? 0 : task.repairAttempts,
           ...(completedWithFindings ? { reviewFailureCount: 0 } : {}),
           repairNote: task.repairNote,
-          repairStop: task.repairStop,
           status: to,
           updatedAt: now,
         },
@@ -367,7 +366,6 @@ export async function move(
       retryFeedback: _retryFeedback,
       repairAttempts: _repairAttempts,
       repairNote: _repairNote,
-      repairStop: _repairStop,
       attemptHistory: _attemptHistory,
       mergeRepair: _mergeRepair,
       cleanupError: _cleanupError,
@@ -391,7 +389,7 @@ export async function move(
     const ownedController = guardedController;
     const blockStopped = async () => {
       if (expectedGeneration === undefined)
-        return context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+        return context.block({ ...task, deliveryRequested: undefined }, OWNER_STOP, now);
       return context.transaction(async () => {
         const latest = await context.find(id);
         const currentGeneration = Number(
@@ -409,10 +407,10 @@ export async function move(
           latest.status !== task.status
         )
           return latest ?? task;
-        return context.block({ ...latest, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+        return context.block({ ...latest, deliveryRequested: undefined }, OWNER_STOP, now);
       });
     };
-    if (task.crewDefinitionId && context.crewRunner) {
+    if (workCrewId(task) && context.crewRunner) {
       await context.store.db.checkAuthorization();
       await context.crewRunner.stop(task);
       return await blockStopped();
@@ -564,7 +562,11 @@ export async function startTask(
           if (current?.status === "queued" && currentGeneration === generation)
             await context.block(
               current,
-              `Task scheduling failed: ${errorMessage(error)}`,
+              {
+                code: "scheduling_failed",
+                phase: "scheduling",
+                message: `Task scheduling failed: ${errorMessage(error)}`,
+              },
               context.now(),
             );
         });
@@ -742,7 +744,7 @@ export async function validateTransfer(
     task.worktreeCwd ||
     task.goalId ||
     task.stewardId ||
-    task.crewDefinitionId ||
+    workCrewId(task) ||
     task.crewRunId ||
     task.workspace ||
     task.deliveryCwd ||
@@ -892,7 +894,11 @@ export async function cancel(
       (task.autoMerge || task.deliveryRequested || context.automaticDeliveryControllers.has(id)))
   ) {
     if (!expectedChild)
-      await context.block({ ...task, deliveryRequested: undefined }, reason, context.now());
+      await context.block(
+        { ...task, deliveryRequested: undefined },
+        { code: "owner_stopped", message: reason },
+        context.now(),
+      );
     else
       await context.transaction(async () => {
         const current = await context.find(id);
@@ -914,7 +920,11 @@ export async function cancel(
           return;
         fenceConflictChildren(id);
         context.automaticDeliveryControllers.get(id)?.abort();
-        await context.block({ ...current, deliveryRequested: undefined }, reason, context.now());
+        await context.block(
+          { ...current, deliveryRequested: undefined },
+          { code: "owner_stopped", message: reason },
+          context.now(),
+        );
       });
   }
 }

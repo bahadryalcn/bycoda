@@ -7,11 +7,13 @@ work. A sustained interruption shows Retry. A denied read appears immediately.
 
 ## Giving work to a Crew
 
-In a task form, open **More options** and choose a crew under **Run with a crew**
-(**Agent** is the default). **New work** on a crew opens the same task form titled
-with that crew; the crew and Access rows are not repeated there. Dismissed drafts
-retain their text and creation identity. Every new run belongs to board work and
-uses the Host task scheduler's admission and limits.
+In a task form, open **More options** and choose **Run with**: **Agent** (the default), a saved
+crew or **Auto**, where the Host picks a fitting crew or one agent when the task starts. A crew
+works in the project's shared folder and reviews its own work, so isolation, a working branch, a
+separate review and a fixed model are refused with a named reason instead of being dropped.
+**New work** on a crew opens the same task form titled with that crew; the crew and Access rows
+are not repeated there. Dismissed drafts retain their text and creation identity. Every new run
+belongs to board work and uses the Host task scheduler's admission and limits.
 
 Select a run in **Crews > Work** to chat with its lead inline. This is the existing
 coordinator conversation, with the normal transcript, composer and permission gates.
@@ -434,7 +436,8 @@ All roles have normal host session tools under their existing permissions. Agent
 use `tools.list` to discover actions, `crews.schema` and `crews.inspect` to inspect
 contracts/models, and `crews.save` to save project definitions. `crews.start`
 attaches a compatible conversation by default; `newConversation: true` launches
-a separate coordinator. `tasks.create` with `crewDefinitionId` and
+a separate coordinator. Either way the run's board task is created through the same
+Host work-creation path as `tasks.create`, keyed by the run ID. `tasks.create` with `crewDefinitionId` and
 `status: "queued"` schedules a board task, inheriting caller permissions and using
 the task ID as its idempotency key. A fixed coordinator must match an attached
 conversation. Starting a new coordinator avoids that attachment constraint.

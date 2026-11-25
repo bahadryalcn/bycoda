@@ -91,9 +91,18 @@ import {
   type TaskSection,
 } from "./TaskToolbar";
 import { TaskDeliveryDialog, TaskMetricsDialog } from "./TasksViewDialogs";
+import { useHelperFailures } from "../model/taskHelpers";
+import {
+  taskAutomationTarget,
+  taskCrewRunTarget,
+  type AutomationOpenTarget,
+} from "../model/taskLinks";
+import { openCrewsPageAt } from "../../crews/public/crewsPage";
+import { RepeatRecipeDialog } from "../../automations/public/RepeatRecipeDialog";
 import { TasksViewDraftDialog } from "./TasksViewDraftDialog";
 import { TasksViewEmpty } from "./TasksViewEmpty";
 import { useFilteredTasks, type TaskCountFilter } from "./TasksViewFilter";
+import { crewAssignments } from "../model/taskRelatedWork";
 import { useBoardIndexes, useTaskContexts } from "./TasksViewIndexes";
 import { useTaskMutations } from "./TasksViewMutations";
 import { TasksViewRecovery } from "./TasksViewRecovery";
@@ -110,6 +119,8 @@ import { StewardsSection, useTaskStewards } from "./TaskStewards";
 import { TaskCountChips, useTaskCountsRequest } from "./TaskSummaryPanel";
 
 type Props = {
+  /** Reveals the automation that started a task; the workspace owns the Automations view. */
+  onOpenAutomation?: (target: AutomationOpenTarget) => void;
   taskReveal?: import("../model/taskReveal").TaskRevealTarget & { token: number };
   goalReveal?: { machineId: string; goalId: string; token: number };
   besideRail?: boolean;
@@ -132,6 +143,7 @@ export function TasksView({
   onOpenBackgroundSession,
   goalReveal,
   taskReveal,
+  onOpenAutomation,
 }: Props) {
   "use memo";
   const t = useT();
@@ -166,6 +178,7 @@ export function TasksView({
         onOpenBackgroundSession={onOpenBackgroundSession}
         goalReveal={goalReveal}
         taskReveal={taskReveal}
+        onOpenAutomation={onOpenAutomation}
       />
     </Text>
   );
@@ -177,7 +190,11 @@ function TasksContent({
   onOpenBackgroundSession,
   goalReveal,
   taskReveal,
-}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal" | "taskReveal">) {
+  onOpenAutomation,
+}: Pick<
+  Props,
+  "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal" | "taskReveal" | "onOpenAutomation"
+>) {
   useLocale();
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
@@ -275,6 +292,7 @@ function TasksContent({
   const discoveredProjects = board.projects;
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [deliveryTask, setDeliveryTask] = useState<BoardTask | null>(null);
+  const [repeatTask, setRepeatTask] = useState<BoardTask | null>(null);
   const [workspaceReview, setWorkspaceReview] = useState<{
     workspace: ManagedWorkspace;
     cwd: string;
@@ -629,13 +647,20 @@ function TasksContent({
   };
 
   const boardIndexes = useBoardIndexes(storedTasks, tasks);
+  const helperFailures = useHelperFailures(storedTasks);
   const taskContexts = useTaskContexts(
     storedTasks,
     boardIndexes.machineTasks,
     groupLabels,
     goalTitles,
+    helperFailures,
   );
   const taskContext = (task: BoardTask) => taskContexts.get(task.machineId + ":" + task.id)!;
+  // The detail lists helpers itself; the card flag is the board's.
+  const detailContext = (task: BoardTask) => {
+    const { helperFailure: _, ...context } = taskContext(task);
+    return context;
+  };
   const actionsFor = (task: BoardTask) => {
     const sessions = taskSessionIds(task);
     const peers =
@@ -689,6 +714,7 @@ function TasksContent({
       },
       onPauseMerge: () => void actOnTask(task, () => retargetTask(task, undefined, false)),
       onEdit: () => onEdit(task),
+      onRepeat: task.status === "done" && !task.stale ? () => setRepeatTask(task) : undefined,
       onDelete: () => onDelete(task),
       onDecline: () =>
         void act(
@@ -711,8 +737,9 @@ function TasksContent({
   };
   const cardActions = useStableCallback(actionsFor);
   const openCard = useStableCallback((key: string) => setSelectedKey(key));
+  // A task opened from its epic or crew task is not a row of the filtered list.
   const selected = selectedKey
-    ? tasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
+    ? storedTasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
     : undefined;
   // A task that is gone from the board takes its panel with it.
   if (selectedKey && !loading && !selected) setSelectedKey(null);
@@ -1089,6 +1116,9 @@ function TasksContent({
           }}
         />
       ) : null}
+      {repeatTask ? (
+        <RepeatRecipeDialog task={repeatTask} onClose={() => setRepeatTask(null)} />
+      ) : null}
       {deliveryTask ? (
         <TaskDeliveryDialog
           task={deliveryTask}
@@ -1130,6 +1160,7 @@ function TasksContent({
           filter={goalFilter}
           tasks={storedTasks}
           acting={acting}
+          onOpenTask={(task) => openCard(`${task.machineId}:${task.id}`)}
           revealKey={
             goalReveal
               ? `${goalReveal.machineId}:${goalReveal.goalId}:${goalReveal.token}`
@@ -1214,11 +1245,23 @@ function TasksContent({
               key={`${selected.machineId}:${selected.id}`}
               task={selected}
               now={now}
-              {...taskContext(selected)}
+              {...detailContext(selected)}
+              onOpenAutomation={
+                onOpenAutomation && taskAutomationTarget(selected, machines)
+                  ? () => onOpenAutomation(taskAutomationTarget(selected, machines)!)
+                  : undefined
+              }
+              onOpenCrewRun={
+                taskCrewRunTarget(selected, machines)
+                  ? () => openCrewsPageAt(taskCrewRunTarget(selected, machines)!)
+                  : undefined
+              }
               {...actionsFor(selected)}
               onClose={() => setSelectedKey(null)}
               onSaveDetails={(title, prompt) => onSaveDetails(selected, title, prompt)}
               planning={<SprintPlanningControls board={accessibleSprintBoard} tasks={[selected]} />}
+              assignments={crewAssignments(selected, storedTasks)}
+              onOpenTask={(task) => openCard(`${task.machineId}:${task.id}`)}
             />
           ) : null}
         </div>

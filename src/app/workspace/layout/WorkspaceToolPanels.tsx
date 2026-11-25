@@ -661,6 +661,10 @@ function WorkspaceToolPanelsComponent({
             recents={visibleRecents}
             onClose={onLeaveAutomations}
             onOpenBackgroundSession={onOpenBackgroundSession}
+            onOpenAutomation={(target) => {
+              setAutomationReveal({ ...target, token: Date.now() });
+              onSelectTool("automations");
+            }}
           />
         </NavigationBoundary>
       </ToolPanel>

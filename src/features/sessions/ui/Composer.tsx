@@ -793,7 +793,6 @@ export const Composer = memo(function Composer({
   useEffect(() => () => inputResize.cancel(), [inputResize]);
   const boxRef = useRef<HTMLDivElement>(null);
   const subagentList = onOpenSubagent && subagents?.length ? subagents : undefined;
-  const hasSubagents = !!subagentList;
   const composerRoot = useRef<HTMLDivElement>(null);
   const composerControls = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
@@ -1240,6 +1239,7 @@ export const Composer = memo(function Composer({
     !mayHaveComposerMarkdown(draft) &&
     !/[/@$]/.test(draft) &&
     !((attachments.length || citations.length) && draft.includes("["));
+  const showClearText = draft.length > 0 && !shell && !disabled && !parentClosed;
   useLayoutEffect(() => {
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
@@ -4063,144 +4063,162 @@ export const Composer = memo(function Composer({
             />
           ) : null}
 
-          <div className="relative">
-            {subagentList && onOpenSubagent ? (
-              <div className="absolute top-1.5 right-1.5 z-1 flex">
-                <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
-              </div>
-            ) : null}
-            {!plainDraft && !inlineActive ? (
-              <div
-                ref={highlightRef}
-                aria-hidden
+          <div className="flex items-start">
+            <div className="relative min-w-0 flex-1">
+              {!plainDraft && !inlineActive ? (
+                <div
+                  ref={highlightRef}
+                  aria-hidden
+                  style={{ textIndent: modeIndent }}
+                  className={`composer-highlight pointer-events-none absolute inset-0 max-h-(--composer-draft-max-height) overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                    shell ? "py-4" : "py-3"
+                  }`}
+                >
+                  <WorkItemMentionCwd value={cwd}>
+                    <ComposerHighlight
+                      text={draft}
+                      mode={leadingMode}
+                      names={skillNames}
+                      skillParts={skillTextParts}
+                      skillGroups={skillGroups}
+                      skillDetails={skillDetails}
+                      mentions={mentionIndex.labels}
+                      mcpTags={selectedMcp}
+                      attachments={attachments}
+                      citations={citations.length}
+                      citationSources={citations}
+                      field={ref}
+                      onOpenFile={onOpenFile}
+                    />
+                  </WorkItemMentionCwd>
+                </div>
+              ) : null}
+              <ComposerInlineEditor
+                field={ref}
+                text={draft}
+                attachmentProjectRoot={executionCwd}
+                references={{
+                  names: skillNames,
+                  skillParts: skillTextParts,
+                  skillGroups,
+                  skillDetails,
+                  mentions: mentionIndex.labels,
+                  mcpTags: selectedMcp,
+                  attachments,
+                  citations: citations.length,
+                  citationSources: citations,
+                  modeEnd: leadingMode?.end ?? 0,
+                  onOpenFile,
+                }}
+                label={inputAriaLabel ?? t("Message")}
+                placeholder={composerPlaceholder}
+                readOnly={parentClosed}
+                disabled={disabled}
+                spellCheck={spelling}
+                onInlineAttachments={setInlineAttachments}
+                onRemoveAttachment={removeAttachment}
+                citationCommentDrafts={citationCommentDrafts}
+                onChangeCitations={changeCitations}
+              />
+              {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
+              <textarea
+                ref={ref}
+                hidden={inlineActive}
+                aria-hidden={inlineActive || undefined}
+                readOnly={parentClosed}
+                data-ui-focus="group"
+                data-composer-empty={navigationEmpty ? "true" : undefined}
+                data-composer-plain={plainDraft ? "true" : undefined}
                 style={{ textIndent: modeIndent }}
-                className={`composer-highlight pointer-events-none absolute inset-0 max-h-(--composer-draft-max-height) overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
+                rows={reading ? 1 : 2}
+                // A group chip hides its source slug, which the spellchecker would still underline.
+                spellCheck={spelling && !hasGroupToken}
+                autoCorrect={spelling ? "on" : "off"}
+                defaultValue={mountDraft}
+                placeholder={composerPlaceholder}
+                aria-label={inputAriaLabel ?? t("Message")}
+                disabled={disabled}
+                className={`composer-field relative max-h-(--composer-draft-max-height) w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                   shell ? "py-4" : "py-3"
-                } ${hasSubagents ? "pe-16" : ""}`}
-              >
-                <WorkItemMentionCwd value={cwd}>
-                  <ComposerHighlight
-                    text={draft}
-                    mode={leadingMode}
-                    names={skillNames}
-                    skillParts={skillTextParts}
-                    skillGroups={skillGroups}
-                    skillDetails={skillDetails}
-                    mentions={mentionIndex.labels}
-                    mcpTags={selectedMcp}
-                    attachments={attachments}
-                    citations={citations.length}
-                    citationSources={citations}
-                    field={ref}
-                    onOpenFile={onOpenFile}
-                  />
-                </WorkItemMentionCwd>
+                }`}
+                onFocus={onFocus}
+                onKeyDown={onKeyDown}
+                onCopy={(event) => copyAttachmentSelection(event, false)}
+                onCut={(event) => copyAttachmentSelection(event, true)}
+                onPaste={onPaste}
+                onScroll={(e) => syncHighlightScroll(e.currentTarget)}
+                onClick={(e) => syncTokensFromTextarea(e.currentTarget)}
+                onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget, true)}
+                onSelect={(e) => syncTokensFromTextarea(e.currentTarget, true)}
+                onInput={(e) => {
+                  if (!parentChanged.canMutate()) {
+                    parentChanged();
+                    return;
+                  }
+                  const el = e.currentTarget;
+                  const history = currentTranslationHistory();
+                  if (history && el.value !== history.original && el.value !== history.translated)
+                    translationHistoryRef.current = null;
+                  // A user edit that took a token out of the text takes its
+                  // attachment with it; the rest renumber like a chip removal.
+                  const before = userEditBeforeRef.current;
+                  userEditBeforeRef.current = null;
+                  const { inputType } = e.nativeEvent as InputEvent;
+                  const undo = inputType === "historyUndo";
+                  const cut =
+                    (undo || inputType === "historyRedo") &&
+                    findAttachmentCut(undo, before ?? draftTextRef.current, el.value);
+                  if (cut) {
+                    const version = undo ? cut.before : cut.after;
+                    restoreCutAttachments(version.attachments, cut.borrowed);
+                    el.setSelectionRange(version.start, version.end);
+                  } else if (before !== null && !applyingAttachmentCut.current) {
+                    const files = attachmentsRef.current;
+                    for (const index of attachmentsDroppedByEdit(before, el.value, files)) {
+                      removeAttachment(files[index].id);
+                    }
+                  }
+                  if (enterBtwFromPrefix(el)) return;
+                  inputResize.schedule(el);
+                  draftRevisionRef.current += 1;
+                  setDraft(el.value);
+                  setSelectedMcp((current) => {
+                    const retained = current.filter(
+                      (tag) => taggedMcpServers(el.value, [tag]).length > 0,
+                    );
+                    return retained.length === current.length ? current : retained;
+                  });
+                  setPasteError(null);
+                  if (sessionFolderSelected && !consumeSessionFolderCommand(el.value).matched) {
+                    setSessionFolderSelected(false);
+                  }
+                  syncHasText(el.value);
+                  syncTokensFromTextarea(el);
+                }}
+              />
+            </div>
+            {showClearText || subagentList ? (
+              <div className="me-2 mt-1.5 flex shrink-0 items-center gap-1">
+                {showClearText ? (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => {
+                      const field = ref.current;
+                      if (!field?.value || !canMutateDraft() || composingRef.current) return;
+                      field.focus();
+                      userEditBeforeRef.current = null;
+                      applyUndoableTextareaEdit(field, "", 0, applyingAttachmentCut);
+                    }}
+                  >
+                    {t("Clear text")}
+                  </Button>
+                ) : null}
+                {subagentList && onOpenSubagent ? (
+                  <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
+                ) : null}
               </div>
             ) : null}
-            <ComposerInlineEditor
-              field={ref}
-              text={draft}
-              attachmentProjectRoot={executionCwd}
-              references={{
-                names: skillNames,
-                skillParts: skillTextParts,
-                skillGroups,
-                skillDetails,
-                mentions: mentionIndex.labels,
-                mcpTags: selectedMcp,
-                attachments,
-                citations: citations.length,
-                citationSources: citations,
-                modeEnd: leadingMode?.end ?? 0,
-                onOpenFile,
-              }}
-              label={inputAriaLabel ?? t("Message")}
-              placeholder={composerPlaceholder}
-              readOnly={parentClosed}
-              disabled={disabled}
-              spellCheck={spelling}
-              hasSubagents={hasSubagents}
-              onInlineAttachments={setInlineAttachments}
-              onRemoveAttachment={removeAttachment}
-              citationCommentDrafts={citationCommentDrafts}
-              onChangeCitations={changeCitations}
-            />
-            {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
-            <textarea
-              ref={ref}
-              hidden={inlineActive}
-              aria-hidden={inlineActive || undefined}
-              readOnly={parentClosed}
-              data-ui-focus="group"
-              data-composer-empty={navigationEmpty ? "true" : undefined}
-              data-composer-plain={plainDraft ? "true" : undefined}
-              style={{ textIndent: modeIndent }}
-              rows={reading ? 1 : 2}
-              // A group chip hides its source slug, which the spellchecker would still underline.
-              spellCheck={spelling && !hasGroupToken}
-              autoCorrect={spelling ? "on" : "off"}
-              defaultValue={mountDraft}
-              placeholder={composerPlaceholder}
-              aria-label={inputAriaLabel ?? t("Message")}
-              disabled={disabled}
-              className={`composer-field relative max-h-(--composer-draft-max-height) w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
-                shell ? "py-4" : "py-3"
-              } ${hasSubagents ? "pe-16" : ""}`}
-              onFocus={onFocus}
-              onKeyDown={onKeyDown}
-              onCopy={(event) => copyAttachmentSelection(event, false)}
-              onCut={(event) => copyAttachmentSelection(event, true)}
-              onPaste={onPaste}
-              onScroll={(e) => syncHighlightScroll(e.currentTarget)}
-              onClick={(e) => syncTokensFromTextarea(e.currentTarget)}
-              onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget, true)}
-              onSelect={(e) => syncTokensFromTextarea(e.currentTarget, true)}
-              onInput={(e) => {
-                if (!parentChanged.canMutate()) {
-                  parentChanged();
-                  return;
-                }
-                const el = e.currentTarget;
-                const history = currentTranslationHistory();
-                if (history && el.value !== history.original && el.value !== history.translated)
-                  translationHistoryRef.current = null;
-                // A user edit that took a token out of the text takes its
-                // attachment with it; the rest renumber like a chip removal.
-                const before = userEditBeforeRef.current;
-                userEditBeforeRef.current = null;
-                const { inputType } = e.nativeEvent as InputEvent;
-                const undo = inputType === "historyUndo";
-                const cut =
-                  (undo || inputType === "historyRedo") &&
-                  findAttachmentCut(undo, before ?? draftTextRef.current, el.value);
-                if (cut) {
-                  const version = undo ? cut.before : cut.after;
-                  restoreCutAttachments(version.attachments, cut.borrowed);
-                  el.setSelectionRange(version.start, version.end);
-                } else if (before !== null && !applyingAttachmentCut.current) {
-                  const files = attachmentsRef.current;
-                  for (const index of attachmentsDroppedByEdit(before, el.value, files)) {
-                    removeAttachment(files[index].id);
-                  }
-                }
-                if (enterBtwFromPrefix(el)) return;
-                inputResize.schedule(el);
-                draftRevisionRef.current += 1;
-                setDraft(el.value);
-                setSelectedMcp((current) => {
-                  const retained = current.filter(
-                    (tag) => taggedMcpServers(el.value, [tag]).length > 0,
-                  );
-                  return retained.length === current.length ? current : retained;
-                });
-                setPasteError(null);
-                if (sessionFolderSelected && !consumeSessionFolderCommand(el.value).matched) {
-                  setSessionFolderSelected(false);
-                }
-                syncHasText(el.value);
-                syncTokensFromTextarea(el);
-              }}
-            />
           </div>
 
           <div

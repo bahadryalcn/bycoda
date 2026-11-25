@@ -448,10 +448,6 @@ describe("settings pages", () => {
         JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
       );
       await render("chat");
-      const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Advanced conversation settings",
-      );
-      await act(async () => advanced?.click());
       const control = () => container.querySelector(selector);
       const before = control()?.getAttribute("aria-checked");
       expect(before, key).toBe("true");

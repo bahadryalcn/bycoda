@@ -75,6 +75,19 @@ export function effectiveConsent(
   return { level: "ask", exclusions: DEFAULT_CRITICAL_EXCLUSIONS };
 }
 
+/**
+ * Computer use has no permission setting of its own: it asks nothing exactly when the standing
+ * permission covers everything and Computer use is not one of its exceptions.
+ */
+export function computerPermissionMode(
+  profile: Pick<AssistantProfilePatch, "permissionLevel" | "criticalExclusions">,
+): ComputerAccess["permissionMode"] {
+  return profile.permissionLevel === "everything" &&
+    !(profile.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).includes("computerUse")
+    ? "full"
+    : "ask";
+}
+
 /** A label describes every current draft and the native grant, never just the job permission. */
 export function assistantAccessMode(
   profile: AssistantProfilePatch,

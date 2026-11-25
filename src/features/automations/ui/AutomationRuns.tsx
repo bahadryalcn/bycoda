@@ -1,3 +1,4 @@
+import { RecipeRunSteps } from "./RecipeRunSteps";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -33,6 +34,7 @@ export function AutomationRuns({
   onRefresh,
   onOpenTask,
   onOpenSession,
+  onDecide,
 }: {
   runs: readonly AutomationRun[];
   loading: boolean;
@@ -41,6 +43,8 @@ export function AutomationRuns({
   onRefresh: () => void;
   onOpenTask?: (taskId: string) => void | Promise<void>;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  /** Answers a recipe occurrence's decision step. */
+  onDecide?: (runId: string, approve: boolean) => Promise<void>;
 }) {
   useLocale();
   return (
@@ -69,6 +73,7 @@ export function AutomationRuns({
                 draft={draft}
                 onOpenSession={onOpenSession}
                 onOpenTask={onOpenTask}
+                onDecide={onDecide}
               />
             ))}
           </ul>
@@ -92,11 +97,13 @@ function RunRow({
   run,
   draft,
   onOpenSession,
+  onDecide,
 }: {
   run: AutomationRun;
   onOpenTask?: (taskId: string) => void | Promise<void>;
   draft: AutomationDraft;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  onDecide?: (runId: string, approve: boolean) => Promise<void>;
 }) {
   useLocale();
   const trigger = runTriggerMeta(run, draft);
@@ -107,7 +114,9 @@ function RunRow({
         type="button"
         disabled={!sessionId && !(run.taskId && onOpenTask)}
         disabledReason={
-          sessionId || (run.taskId && onOpenTask) ? undefined : t("This run has no session yet")
+          sessionId || (run.taskId && onOpenTask) || run.recipe
+            ? undefined
+            : t("This run has no session yet")
         }
         onClick={() => {
           if (run.taskId && onOpenTask) {
@@ -141,10 +150,18 @@ function RunRow({
           {formatAutomationRunDuration(run)}
         </Text>
       </Button>
-      {run.error && (run.status === "failed" || run.status === "skipped") ? (
+      {run.error && !run.recipe && (run.status === "failed" || run.status === "skipped") ? (
         <InlineError inset="row" details={run.error}>
           {t("Automation run failed or was skipped.")}
         </InlineError>
+      ) : null}
+      {run.recipe ? (
+        <RecipeRunSteps
+          instance={run.recipe}
+          running={run.status === "running"}
+          onOpenTask={onOpenTask}
+          onDecide={onDecide ? (approve) => onDecide(run.id, approve) : undefined}
+        />
       ) : null}
     </li>
   );

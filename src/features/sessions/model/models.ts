@@ -829,6 +829,7 @@ export function loadLastModelSettings(): Record<string, string> {
       "advisor",
       "subagentModel",
       delegation.DELEGATION_PARENT_KEY,
+      delegation.BACKGROUND_OWNER_KEY,
     ])
       delete settings[key];
     return settings;
@@ -843,7 +844,11 @@ export function saveLastModelSettings(
   mode: "overwrite" | "fill" = "overwrite",
 ) {
   const prev = loadLastModelSettings();
-  const { [delegation.DELEGATION_PARENT_KEY]: _parent, ...incoming } = parseStringRecord(settings);
+  const {
+    [delegation.DELEGATION_PARENT_KEY]: _parent,
+    [delegation.BACKGROUND_OWNER_KEY]: _owner,
+    ...incoming
+  } = parseStringRecord(settings);
   for (const key of [...delegation.CROSS_DELEGATION_KEYS, "advisor", "subagentModel"])
     delete incoming[key];
   const next = mode === "fill" ? { ...incoming, ...prev } : { ...prev, ...incoming };

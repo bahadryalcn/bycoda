@@ -185,7 +185,7 @@ export class ConversationProjectTools {
             nextRunAt: steward.nextRunAt,
             lastRunAt: steward.lastRunAt,
             lastRunStatus: steward.lastRunStatus,
-            running: !!steward.run,
+            running: steward.lastRunStatus === "running",
             lastProposed: steward.lastProposed,
             createdAt: steward.createdAt,
             updatedAt: steward.updatedAt,

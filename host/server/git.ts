@@ -21,6 +21,7 @@ import {
   resolveHostWorktreeAsync,
 } from "../git/git-worktrees";
 import { HostTasks } from "../tasks/tasks";
+import { taskHelpers } from "../delegation/task-helpers";
 import {
   createHostPath,
   hostFileDiff,
@@ -53,6 +54,7 @@ export function createGitRuntime(
     | "devServers"
     | "sprints"
     | "gitWatches"
+    | "conversationDelegation"
   >,
 ) {
   const fileService = createFileService({
@@ -144,6 +146,8 @@ export function createGitRuntime(
   const tasksService = createHostTasksService({
     project: (id) => dependencies.engine.store.project(id),
     tasks: dependencies.tasks,
+    helpers: async (taskId, failedOnly) =>
+      taskHelpers(await dependencies.conversationDelegation.store.list(), { taskId, failedOnly }),
     withAuthorization: (authorized, work) =>
       dependencies.engine.store.db.withAuthorization(authorized, work),
     retarget: (id, target, autoMerge, context) => {

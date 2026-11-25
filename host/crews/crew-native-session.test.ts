@@ -415,7 +415,7 @@ it("validates task Crew definitions inside SQL admission without reading native 
   await f.store.db.scope(() =>
     runner.validate({
       projectId: f.project.id,
-      crewDefinitionId: f.saved.id,
+      executor: { kind: "crew", crewDefinitionId: f.saved.id },
     } as Parameters<typeof runner.validate>[0]),
   );
   expect(f.session).not.toHaveBeenCalled();

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import { SafeCounterSchema } from "./schemas";
+import { WorkExecutorSchema, WorkHelpersSchema } from "./work-executor";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 
 // Structural wire inventory only. HostGoals retains semantic validation,
@@ -12,7 +13,6 @@ export const GoalBudgetSchema = z.strictObject({
   warningPercent: z.number().optional(),
 });
 export const GoalBudgetUsageSchema = z.strictObject({
-  historyComplete: z.boolean(),
   agentMinutes: z.number(),
   attempts: SafeCounterSchema,
   completedRuns: SafeCounterSchema,
@@ -40,7 +40,8 @@ export const HostGoalInputSchema = z.strictObject({
   prompt: z.string(),
   projectIds: z.array(z.string()),
   leadProjectId: z.string(),
-  crewDefinitionId: z.string().min(1).optional(),
+  executor: WorkExecutorSchema.optional(),
+  helpers: WorkHelpersSchema.optional(),
   modelChoice: ModelRoutingItemChoiceSchema.optional(),
   harness: SessionProviderSchema,
   providerAccountId: z.string().optional(),

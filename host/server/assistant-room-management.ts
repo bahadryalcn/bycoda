@@ -60,7 +60,7 @@ import {
   isLiveStreamConversationTool,
   requestLiveStreamStreamApproval,
 } from "../live-stream/tools";
-import { hostInbox } from "../notes/host-notes";
+import { hostInbox } from "../notes/host-inbox";
 import { prepareVoiceToolDispatch } from "../voice/voice-tools";
 import type { createAssistantRoomRuntime } from "./assistant-room";
 import type { ServerBindings } from "./bindings";

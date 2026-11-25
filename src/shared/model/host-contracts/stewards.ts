@@ -17,16 +17,6 @@ export const StewardRunStatusSchema = z.enum([
   "skipped",
   "cancelled",
 ]);
-export const StewardRunSchema = z.strictObject({
-  workspaceId: z.string().optional(),
-  activityId: z.string().optional(),
-  sessionId: z.string().optional(),
-  runId: z.string().optional(),
-  startedAt: SafeCounterSchema,
-  worktreeCwd: z.string().optional(),
-  branch: z.string().optional(),
-  error: z.string().optional(),
-});
 export const HostStewardInputSchema = z.strictObject({
   ...AutomationScheduleSchema.shape,
   minute: AutomationScheduleSchema.shape.minute.optional(),
@@ -48,9 +38,6 @@ export const HostStewardInputSchema = z.strictObject({
   isolate: z.boolean().optional(),
 });
 export const StewardConfigurationSchema = HostStewardInputSchema.extend({
-  modelRoutingWait: z
-    .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
-    .optional(),
   deliveryApprovalRequired: z.boolean().optional(),
   nextRunAt: SafeCounterSchema.optional(),
   lastRunAt: SafeCounterSchema.optional(),
@@ -59,7 +46,6 @@ export const StewardConfigurationSchema = HostStewardInputSchema.extend({
   lastSessionId: z.string().optional(),
   lastProposed: SafeCounterSchema.optional(),
   declined: z.array(z.string()).optional(),
-  run: StewardRunSchema.optional(),
   createdAt: SafeCounterSchema.optional(),
   updatedAt: SafeCounterSchema.optional(),
 });
@@ -99,5 +85,4 @@ export const StewardsDeclineResultSchema = z.strictObject({
 });
 
 export type HostSteward = z.infer<typeof HostStewardSchema>;
-export type StewardRun = z.infer<typeof StewardRunSchema>;
 export type StewardSavePayload = z.infer<typeof StewardSavePayloadSchema>;

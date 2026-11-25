@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
 import { HostTasks } from "../../tasks/tasks";
-import { HostStewards, type StewardWorkspaceServices } from "../../stewards/stewards";
+import { HostStewards } from "../../stewards/stewards";
 import * as dto from "../../../src/shared/model/host-contracts/stewards";
 import { createHostStewardsService } from "./service";
 
@@ -14,7 +14,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.restoreAllMocks();
 });
-async function fixture(workspaces?: StewardWorkspaceServices) {
+async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "bycoda-steward-domain-"));
   cleanups.push(async () => {
     expect(dirname(resolve(root))).toBe(resolve(tmpdir()));
@@ -47,7 +47,7 @@ async function fixture(workspaces?: StewardWorkspaceServices) {
   });
   const tasks = new HostTasks(store, engine);
   cleanups.push(() => tasks.close());
-  const stewards = new HostStewards(store, engine, tasks, undefined, workspaces);
+  const stewards = new HostStewards(store, engine, tasks);
   cleanups.push(() => stewards.close());
   await stewards.ready;
   const project = await store.addProject(root, "Fixture");
@@ -119,16 +119,7 @@ it("shares owner defaults, full saved configuration/CAS, five results and pure l
   await expect(
     f.service.save({ steward: { ...saved, expectedConfiguration: saved } }, f.context),
   ).rejects.toThrow("Configuration changed");
-  const running = {
-    ...updated,
-    nextRunAt: 0,
-    lastRunStatus: "running",
-    run: {
-      startedAt: 1,
-      sessionId: "not-a-live-session",
-      runId: "retained-turn",
-    },
-  };
+  const running = { ...updated, nextRunAt: 0, lastRunStatus: "running" };
   await f.store.db
     .prepare("UPDATE stewards SET value=? WHERE id=?")
     .run(JSON.stringify(running), saved.id);
@@ -260,136 +251,6 @@ it("rechecks the concrete write after a wait inside an already-owned save scope"
   expect(await f.stewards.list()).toEqual([]);
 });
 
-it("retains confirmed create identity and honest failed preparation when revoked before send, then permits system cleanup", async () => {
-  const f = await fixture();
-  await f.service.save({ steward: f.input }, f.context);
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const original = f.engine.updateSession.bind(f.engine);
-  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
-    const result = await original(...args);
-    entered.resolve();
-    await release.promise;
-    return result;
-  });
-  const pending = f.service.runNow({ stewardId: f.input.id }, f.context),
-    denied = expect(pending).rejects.toThrow("revoked");
-  await entered.promise;
-  f.context.authorized.mockResolvedValue(false);
-  release.resolve();
-  await denied;
-  const [failed] = await f.stewards.list();
-  dto.HostStewardSchema.parse(failed);
-  expect(failed).toMatchObject({
-    lastRunStatus: "failed",
-    run: { error: expect.stringContaining("revoked") },
-  });
-  expect(failed.run?.sessionId).toBeTruthy();
-  expect(failed.run?.runId).toBeUndefined();
-  expect(f.provider.send).not.toHaveBeenCalled();
-  expect(f.provider.cancel).not.toHaveBeenCalled();
-  await f.store.db.outsideScope(() => f.stewards.tick());
-  expect((await f.stewards.list())[0]).toMatchObject({
-    lastRunStatus: "failed",
-    lastSessionId: failed.run!.sessionId,
-  });
-  expect((await f.stewards.list())[0].run).toBeUndefined();
-});
-
-it("keeps actual accepted send IDs and concurrent config without Stop after creator revocation", async () => {
-  const f = await fixture();
-  const saved = await f.service.save({ steward: f.input }, f.context);
-  const original = f.engine.command.bind(f.engine);
-  let receipt: { sessionId: string; runId?: string } | undefined;
-  vi.spyOn(f.engine, "command").mockImplementation(async (command) => {
-    const result = await original(command);
-    if ((command as { type?: string }).type === "send") {
-      receipt = { sessionId: result.sessionId, runId: result.runId };
-      await f.store.db.outsideScope(() =>
-        f.stewards.save({
-          ...saved,
-          focus: "Concurrent edit",
-          expectedConfiguration: saved,
-        }),
-      );
-      f.context.authorized.mockResolvedValue(false);
-    }
-    return result;
-  });
-  await expect(f.service.runNow({ stewardId: saved.id }, f.context)).rejects.toThrow("revoked");
-  await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), {
-    timeout: 5000,
-  });
-  const [current] = await f.stewards.list();
-  dto.HostStewardSchema.parse(current);
-  expect(current).toMatchObject({
-    focus: "Concurrent edit",
-    lastRunStatus: "running",
-    run: receipt,
-  });
-  expect(current.run?.runId).toBeTruthy();
-  expect(f.provider.cancel).not.toHaveBeenCalled();
-  expect(f.provider.stop).not.toHaveBeenCalled();
-  await f.store.db.outsideScope(() => f.stewards.tick());
-  expect((await f.stewards.list())[0].run?.runId).toBe(receipt!.runId);
-});
-
-it("does not resurrect a Steward deleted during denied preparation", async () => {
-  const f = await fixture();
-  await f.service.save({ steward: f.input }, f.context);
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const original = f.engine.updateSession.bind(f.engine);
-  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
-    const result = await original(...args);
-    entered.resolve();
-    await release.promise;
-    return result;
-  });
-  const pending = f.service.runNow({ stewardId: f.input.id }, f.context),
-    denied = expect(pending).rejects.toThrow();
-  await entered.promise;
-  await f.stewards.delete(f.input.id);
-  f.context.authorized.mockResolvedValue(false);
-  release.resolve();
-  await denied;
-  expect(await f.stewards.list()).toEqual([]);
-  expect(f.provider.send).not.toHaveBeenCalled();
-});
-
-it("checks authority after policy wait before any managed workspace effect", async () => {
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const prepare = vi.fn(),
-    start = vi.fn();
-  const workspaces = {
-    environmentId: "fixture",
-    registry: { prepare },
-    activity: { start },
-    policy: {
-      resolve: async () => {
-        entered.resolve();
-        await release.promise;
-        return { policy: { defaultMode: "worktree" } };
-      },
-    },
-  } as unknown as StewardWorkspaceServices;
-  const f = await fixture(workspaces);
-  await f.service.save({ steward: { ...f.input, isolate: undefined } }, f.context);
-  const pending = f.service.runNow({ stewardId: f.input.id }, f.context),
-    denied = expect(pending).rejects.toThrow("revoked");
-  await entered.promise;
-  f.context.authorized.mockResolvedValue(false);
-  release.resolve();
-  await denied;
-  expect(prepare).not.toHaveBeenCalled();
-  expect(start).not.toHaveBeenCalled();
-  expect((await f.stewards.list())[0]).toMatchObject({
-    lastRunStatus: "failed",
-    run: { error: expect.stringContaining("revoked") },
-  });
-});
-
 it("does not disclose a captured list after its query waiter is cancelled", async () => {
   const f = await fixture();
   await f.service.save({ steward: f.input }, f.context);
@@ -410,118 +271,4 @@ it("does not disclose a captured list after its query waiter is cancelled", asyn
   release.resolve();
   await cancelled;
   expect(f.provider.send).not.toHaveBeenCalled();
-});
-
-it("keeps a real accepted run after the response waiter disappears without rebinding its grant lifetime", async () => {
-  const f = await fixture();
-  await f.service.save({ steward: f.input }, f.context);
-  const controller = new AbortController(),
-    original = f.engine.command.bind(f.engine);
-  vi.spyOn(f.engine, "command").mockImplementation(async (command) => {
-    const result = await original(command);
-    if ((command as { type?: string }).type === "send") controller.abort();
-    return result;
-  });
-  const current = dto.HostStewardSchema.parse(
-    await f.service.runNow({ stewardId: f.input.id }, { ...f.context, signal: controller.signal }),
-  );
-  expect(controller.signal.aborted).toBe(true);
-  expect(current.lastRunStatus).toBe("running");
-  expect(current.run?.runId).toBeTruthy();
-  await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), {
-    timeout: 5000,
-  });
-  expect(f.provider.cancel).not.toHaveBeenCalled();
-  expect(f.provider.stop).not.toHaveBeenCalled();
-});
-
-it("retains only confirmed workspace/activity for system compensation after before-send revocation", async () => {
-  let f: Awaited<ReturnType<typeof fixture>>;
-  let workspace: Record<string, unknown>;
-  const start = vi.fn(async (request) => {
-    f.context.authorized.mockResolvedValue(false);
-    return { id: "owned-activity", ...request };
-  });
-  const stop = vi.fn(async () => {}),
-    close = vi.fn(async () => ({ ...workspace, revision: 2 })),
-    apply = vi.fn(async () => {});
-  const workspaces = {
-    environmentId: "fixture",
-    registry: {
-      prepare: vi.fn(async (request) => ({
-        workspace: (workspace = {
-          id: "owned-workspace",
-          projectId: request.projectId,
-          owner: request.owner,
-          directoryState: "present",
-          path: f.root,
-          branchRef: "steward/owned",
-          revision: 1,
-        }),
-      })),
-      get: vi.fn(async () => workspace),
-      close,
-    },
-    activity: { start, stop },
-    removal: {
-      plan: vi.fn(async () => ({ blockers: [], dirty: false, token: "plan" })),
-      apply,
-    },
-  } as unknown as StewardWorkspaceServices;
-  f = await fixture(workspaces);
-  await f.service.save({ steward: { ...f.input, isolate: true } }, f.context);
-  await expect(f.service.runNow({ stewardId: f.input.id }, f.context)).rejects.toThrow("revoked");
-  expect((await f.stewards.list())[0]).toMatchObject({
-    lastRunStatus: "failed",
-    run: { workspaceId: "owned-workspace", activityId: "owned-activity" },
-  });
-  expect(f.provider.send).not.toHaveBeenCalled();
-  expect(stop).not.toHaveBeenCalled();
-  expect(apply).not.toHaveBeenCalled();
-  await f.store.db.outsideScope(() => f.stewards.tick());
-  expect(stop).toHaveBeenCalledExactlyOnceWith("owned-activity");
-  expect(close).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "owned-workspace" }));
-  expect(apply).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "owned-workspace" }), {
-    kind: "retentionScheduler",
-  });
-  expect((await f.stewards.list())[0].run).toBeUndefined();
-});
-
-it("does not release an activity or workspace when cleanup resolves an unrelated workspace", async () => {
-  const stop = vi.fn(),
-    close = vi.fn(),
-    apply = vi.fn();
-  const workspaces = {
-    environmentId: "fixture",
-    registry: {
-      get: vi.fn(async () => ({
-        id: "foreign",
-        projectId: "foreign-project",
-        owner: { kind: "stewardRun", id: "foreign-owner" },
-      })),
-      close,
-    },
-    activity: { stop },
-    removal: { apply },
-  } as unknown as StewardWorkspaceServices;
-  const f = await fixture(workspaces);
-  const saved = await f.service.save({ steward: f.input }, f.context);
-  await f.store.db.prepare("UPDATE stewards SET value=? WHERE id=?").run(
-    JSON.stringify({
-      ...saved,
-      run: {
-        startedAt: 1,
-        workspaceId: "owned",
-        activityId: "retained-activity",
-        error: "Denied preparation",
-      },
-    }),
-    saved.id,
-  );
-  vi.spyOn(console, "error").mockImplementation(() => {});
-  await f.stewards.tick();
-  expect(stop).not.toHaveBeenCalled();
-  expect(close).not.toHaveBeenCalled();
-  expect(apply).not.toHaveBeenCalled();
-  expect((await f.stewards.list())[0].run?.activityId).toBe("retained-activity");
 });

@@ -207,12 +207,14 @@ export function AddServerModal({
     <Modal
       title={editing ? editing.name : t("Add MCP server")}
       description={
-        [
-          machineName ? t("Save on {p0}", { p0: machineName }) : null,
-          scope === "user" ? null : t("Selected project: {p0}", { p0: cwd }),
-        ]
-          .filter(Boolean)
-          .join(" · ") || undefined
+        editing
+          ? ["bycoda Hub", scopeLabel(editing.scope), machineName ?? t("This computer")].join(" · ")
+          : [
+              machineName ? t("Save on {p0}", { p0: machineName }) : null,
+              scope === "user" ? null : t("Selected project: {p0}", { p0: cwd }),
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
       }
       onClose={() => {
         if (!adding.current) onClose();
@@ -245,50 +247,56 @@ export function AddServerModal({
         }}
         className="space-y-4"
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <McpPicker
-            disabled={busy || added || !!editing || !providerAvailable}
-            label={t("Provider")}
-            value={provider}
-            options={[
-              ...(manageServer ? [{ value: "hub" as const, label: "bycoda Hub" }] : []),
-              ...(providerAvailable && !editing
-                ? PROVIDERS.map((option) => ({
-                    value: option,
-                    label: MCP_PROVIDER_LABELS[option],
-                    icon: <ProviderIcon provider={option} />,
-                  }))
-                : []),
-            ]}
-            onChange={(next) => {
-              setProvider(next);
-              setScope(scopesFor(next)[0]);
-              if (next === "claude_desktop") setFormat("json");
-            }}
-          />
-          <McpPicker
-            disabled={busy || added || !!editing}
-            label={t("Scope")}
-            description={provider === "hub" ? undefined : scopeDescription(scope)}
-            value={scope}
-            options={scopesFor(provider).map((option) => ({
-              value: option,
-              label: scopeLabel(option),
-            }))}
-            onChange={setScope}
-          />
-        </div>
-        {nameInJson === null ? (
-          <TextField
-            label={t("Name")}
-            value={name}
-            disabled={busy || added || !!editing}
-            required={format === "url" || provider === "hub"}
-            pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("my-server")}
-          />
-        ) : null}
+        {/* Provider, scope and name identify the saved server and stay fixed while editing; the
+            description names them instead of showing locked controls. */}
+        {editing ? null : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <McpPicker
+                disabled={busy || added || !providerAvailable}
+                label={t("Provider")}
+                value={provider}
+                options={[
+                  ...(manageServer ? [{ value: "hub" as const, label: "bycoda Hub" }] : []),
+                  ...(providerAvailable
+                    ? PROVIDERS.map((option) => ({
+                        value: option,
+                        label: MCP_PROVIDER_LABELS[option],
+                        icon: <ProviderIcon provider={option} />,
+                      }))
+                    : []),
+                ]}
+                onChange={(next) => {
+                  setProvider(next);
+                  setScope(scopesFor(next)[0]);
+                  if (next === "claude_desktop") setFormat("json");
+                }}
+              />
+              <McpPicker
+                disabled={busy || added}
+                label={t("Scope")}
+                description={provider === "hub" ? undefined : scopeDescription(scope)}
+                value={scope}
+                options={scopesFor(provider).map((option) => ({
+                  value: option,
+                  label: scopeLabel(option),
+                }))}
+                onChange={setScope}
+              />
+            </div>
+            {nameInJson === null ? (
+              <TextField
+                label={t("Name")}
+                value={name}
+                disabled={busy || added}
+                required={format === "url" || provider === "hub"}
+                pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t("my-server")}
+              />
+            ) : null}
+          </>
+        )}
 
         <McpPicker
           label={t("Setup method")}

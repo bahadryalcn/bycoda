@@ -107,9 +107,7 @@ function TaskAgentTime({
   const [open, setOpen] = useState(false);
   const current = limits.filter((entry) => !entry.stale);
   const minutes = current.reduce((sum, entry) => sum + entry.usedMinutes, 0);
-  const partial = Boolean(
-    missingUsage.length || limits.some((entry) => entry.stale || entry.usageUncertain),
-  );
+  const partial = Boolean(missingUsage.length || limits.some((entry) => entry.stale));
   const amount = current.length
     ? partial
       ? t("{p0} (incomplete)", { p0: formatAgentMinutes(minutes) })
@@ -150,11 +148,7 @@ function TaskAgentTime({
                   {entry.machineName}
                 </Text>
                 <Text as="span" tone="secondary" size="caption">
-                  {entry.stale
-                    ? t("Unavailable")
-                    : entry.usageUncertain
-                      ? t("{p0} (incomplete)", { p0: formatAgentMinutes(entry.usedMinutes) })
-                      : formatAgentMinutes(entry.usedMinutes)}
+                  {entry.stale ? t("Unavailable") : formatAgentMinutes(entry.usedMinutes)}
                 </Text>
               </li>
             ))}

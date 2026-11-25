@@ -215,14 +215,11 @@ describe("desktop conversation tool authority", () => {
     ).toBe(true);
   });
   it("asks for each launch of an approved app only in ask mode, even when the owner is away", async () => {
-    for (const mode of ["ask", "auto"] as const) {
-      const f = fixture();
-      f.setMode(mode);
-      f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
-      await f.call("desktop.launch", { requestId: "away", app: "Editor" }, thread);
-      expect(f.approved).toHaveBeenCalledTimes(mode === "ask" ? 1 : 0);
-      expect(f.request).toHaveBeenCalledOnce();
-    }
+    const f = fixture();
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
+    await f.call("desktop.launch", { requestId: "away", app: "Editor" }, thread);
+    expect(f.approved).toHaveBeenCalledOnce();
+    expect(f.request).toHaveBeenCalledOnce();
     const full = fixture();
     full.setMode("full");
     full.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
@@ -230,26 +227,22 @@ describe("desktop conversation tool authority", () => {
     expect(full.approved).not.toHaveBeenCalled();
     expect(await full.request.mock.calls[0][2]!()).toBe(true);
   });
-  it.each(["ask", "auto"] as const)(
-    "asks once for a new app in %s mode, remembers it and continues",
-    async (mode) => {
-      const f = fixture();
-      f.setMode(mode);
-      f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
-      await f.call("desktop.windows.list", { app: "Chrome" }, thread);
-      expect(f.approved).toHaveBeenCalledOnce();
-      expect(f.approved.mock.calls[0][0]).toMatchObject({
-        operation: { kind: "app", app: "Chrome" },
-        operationHash: "8f81a60c784c9df5cffff8f4a63f5cb216ad79c2065cfcfe383b3fc95d9d1655",
-        principal: thread,
-      });
-      expect(f.allowApp).toHaveBeenCalledExactlyOnceWith("Chrome");
-      expect(f.request).toHaveBeenCalledOnce();
-      await f.call("desktop.windows.list", { app: "Chrome" }, thread);
-      expect(f.approved).toHaveBeenCalledOnce();
-      expect(f.request).toHaveBeenCalledTimes(2);
-    },
-  );
+  it("asks once for a new app in ask mode, remembers it and continues", async () => {
+    const f = fixture();
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
+    await f.call("desktop.windows.list", { app: "Chrome" }, thread);
+    expect(f.approved).toHaveBeenCalledOnce();
+    expect(f.approved.mock.calls[0][0]).toMatchObject({
+      operation: { kind: "app", app: "Chrome" },
+      operationHash: "8f81a60c784c9df5cffff8f4a63f5cb216ad79c2065cfcfe383b3fc95d9d1655",
+      principal: thread,
+    });
+    expect(f.allowApp).toHaveBeenCalledExactlyOnceWith("Chrome");
+    expect(f.request).toHaveBeenCalledOnce();
+    await f.call("desktop.windows.list", { app: "Chrome" }, thread);
+    expect(f.approved).toHaveBeenCalledOnce();
+    expect(f.request).toHaveBeenCalledTimes(2);
+  });
   it("lets one new-app approval cover that launch, and shares one dialog between parallel calls", async () => {
     const f = fixture();
     await f.call("desktop.launch", { requestId: "new", app: "Chrome" }, thread);
@@ -257,7 +250,6 @@ describe("desktop conversation tool authority", () => {
     expect(f.approved.mock.calls[0][0].operation).toEqual({ kind: "app", app: "Chrome" });
     expect(await f.request.mock.calls[0][2]!()).toBe(true);
     const parallel = fixture();
-    parallel.setMode("auto");
     await Promise.all([
       parallel.call("desktop.windows.list", { app: "Mail" }, thread),
       parallel.call("desktop.windows.list", { app: "Mail" }, thread),
@@ -608,8 +600,8 @@ describe("desktop conversation tool authority", () => {
     expect(f.approved.mock.calls[0][0].principal).toEqual(thread);
     expect(f.request).toHaveBeenCalledTimes(2);
   });
-  it("asks for away headless thread input in ask mode but not in auto or full", async () => {
-    for (const mode of ["ask", "auto", "full"] as const) {
+  it("asks for away headless thread input in ask mode but not in full access", async () => {
+    for (const mode of ["ask", "full"] as const) {
       const f = fixture();
       f.setMode(mode);
       await f.observe(thread);
@@ -704,7 +696,7 @@ describe("desktop conversation tool authority", () => {
   it("re-reads the mode before dispatch so a lowered mode refuses unapproved input", async () => {
     const f = fixture();
     await f.observe(thread);
-    f.permission.mockResolvedValueOnce({ mode: "auto" });
+    f.permission.mockResolvedValueOnce({ mode: "full" });
     await expect(f.call("desktop.act", act, thread)).rejects.toThrow(
       "permission or owner presence",
     );
@@ -724,9 +716,8 @@ describe("desktop conversation tool authority", () => {
     const locked = f.call("desktop.clipboard", { requestId: "d", action: "get" }, thread);
     await expect(locked).rejects.toThrow("locked or unknown");
   });
-  it("auto mode asks for headed input and clipboard and needs presence for them", async () => {
+  it("ask mode asks for headed input and clipboard and needs presence for them", async () => {
     const f = fixture();
-    f.setMode("auto");
     await f.observe(thread);
     await f.call("desktop.act", { ...act, headed: true }, thread);
     expect(f.approved).toHaveBeenCalledOnce();
@@ -742,26 +733,20 @@ describe("desktop conversation tool authority", () => {
       { ...base, action: "focus-window", headed: true },
     ];
     const scroll = { ...base, action: "scroll", direction: "down", amount: 4 };
-    it.each(physical)(
-      "$action asks in ask and auto mode and needs the owner present",
-      async (input) => {
-        for (const mode of ["ask", "auto"] as const) {
-          const f = fixture();
-          f.setMode(mode);
-          await f.observe(thread);
-          f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
-          await expect(f.call("desktop.act", input, thread)).rejects.toThrow("owner to be present");
-          expect(f.approved).not.toHaveBeenCalled();
-          f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: true });
-          await f.call("desktop.act", input, thread);
-          expect(f.approved).toHaveBeenCalledOnce();
-          expect(f.approved.mock.calls[0][0].operation).toMatchObject({
-            action: input.action,
-            ...(input.action === "drag" ? { toRef: "@snapshot-one:2" } : {}),
-          });
-        }
-      },
-    );
+    it.each(physical)("$action asks in ask mode and needs the owner present", async (input) => {
+      const f = fixture();
+      await f.observe(thread);
+      f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
+      await expect(f.call("desktop.act", input, thread)).rejects.toThrow("owner to be present");
+      expect(f.approved).not.toHaveBeenCalled();
+      f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: true });
+      await f.call("desktop.act", input, thread);
+      expect(f.approved).toHaveBeenCalledOnce();
+      expect(f.approved.mock.calls[0][0].operation).toMatchObject({
+        action: input.action,
+        ...(input.action === "drag" ? { toRef: "@snapshot-one:2" } : {}),
+      });
+    });
     it.each(physical)(
       "$action runs in full access without a dialog or presence, never locked",
       async (input) => {
@@ -787,14 +772,12 @@ describe("desktop conversation tool authority", () => {
         amount: 4,
         headed: false,
       });
-      for (const mode of ["auto", "full"] as const) {
-        const f = fixture();
-        f.setMode(mode);
-        await f.observe(thread);
-        f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
-        await f.call("desktop.act", scroll, thread);
-        expect(f.approved).not.toHaveBeenCalled();
-      }
+      const f = fixture();
+      f.setMode("full");
+      await f.observe(thread);
+      f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
+      await f.call("desktop.act", scroll, thread);
+      expect(f.approved).not.toHaveBeenCalled();
     });
     it("refuses Alt+F4 and Win+L but lets Ctrl+Win+Left through the shortcut denylist", async () => {
       const f = fixture();

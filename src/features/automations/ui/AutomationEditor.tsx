@@ -26,8 +26,13 @@ import {
   withTemplate,
 } from "../model/automationDraftRules";
 import type { AutomationDraft, AutomationRun } from "../model/automations";
-import { backgroundMachineFor } from "../model/hostAutomationClient";
-import { AutomationModelChoice } from "./AutomationModelChoice";
+import { backgroundMachineFor, decideHostAutomationRun } from "../model/hostAutomationClient";
+import { AutomationFixedModel, AutomationModelChoice } from "./AutomationModelChoice";
+import { RecipeStepsEditor, recipeStepsValid } from "./RecipeStepsEditor";
+import { newRecipeStepId } from "../model/automationRecipe";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { WorkExecutorFields } from "../../tasks/public/workExecutor";
+import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
 import { AutomationMoreOptions } from "./AutomationMoreOptions";
 import { AutomationRuns } from "./AutomationRuns";
 import { AutomationTemplateMenu } from "./AutomationTemplateMenu";
@@ -147,7 +152,11 @@ export function AutomationEditor({
     draft.workspaceMode === "existing" ? "current" : (draft.workspaceMode ?? "automatic");
   const worktreeLabel = WORKTREE_OPTIONS.find((option) => option.value === worktree)?.label;
 
-  const hasInstructions = draft.prompt.trim().length > 0;
+  const hasInstructions = draft.workRecipe
+    ? recipeStepsValid(draft.workRecipe.steps)
+    : draft.prompt.trim().length > 0;
+  // Steps run as Host tasks, so only a background automation without a template or event offers them.
+  const stepsOffered = background && !draft.hostTemplate && !draft.hostTrigger;
   const hasProject =
     looksLikeProject(draft.cwd) || (background && !draft.cwd && !!draft.hostMachineId);
   const hasName = automationName(draft).length > 0;
@@ -197,17 +206,61 @@ export function AutomationEditor({
             onChange={(event) => update("name", event.target.value)}
             placeholder={t("Name (optional)")}
           />
-          <SkillPromptField
-            value={draft.prompt}
-            harness={draft.harness}
-            cwd={draft.cwd}
-            onChange={(prompt) => update("prompt", prompt)}
-            surface="raised"
-            minRows={5}
-            label={t("Instructions")}
-            placeholder={t("Tell the agent what to do when this automation runs…")}
-            frameProps={{ "data-automation-prompt": "" }}
-          />
+          {stepsOffered ? (
+            <SegmentedControl
+              label={t("Instructions")}
+              value={draft.workRecipe ? "steps" : "prompt"}
+              options={[
+                { value: "prompt", label: t("One prompt"), disabled: saving },
+                { value: "steps", label: t("Steps"), disabled: saving },
+              ]}
+              onValueChange={(next) =>
+                update(
+                  "workRecipe",
+                  next === "steps"
+                    ? (draft.workRecipe ?? {
+                        version: 1,
+                        steps: [
+                          {
+                            id: newRecipeStepId(),
+                            kind: "task",
+                            title: draft.name.trim() || t("Step 1"),
+                            request: draft.prompt,
+                          },
+                        ],
+                      })
+                    : undefined,
+                )
+              }
+            />
+          ) : null}
+          {draft.workRecipe ? (
+            <RecipeStepsEditor
+              steps={draft.workRecipe.steps}
+              disabled={saving}
+              defaults={{
+                machine: routingHost.machineId ? { id: routingHost.machineId } : undefined,
+                routingSupported: routingHost.supported,
+                cwd: draft.cwd,
+                harness: draft.harness,
+                modelSettings: draft.modelSettings,
+                modelChoice: draft.modelChoice,
+              }}
+              onChange={(steps) => update("workRecipe", { version: draft.workRecipe!.version, steps })}
+            />
+          ) : (
+            <SkillPromptField
+              value={draft.prompt}
+              harness={draft.harness}
+              cwd={draft.cwd}
+              onChange={(prompt) => update("prompt", prompt)}
+              surface="raised"
+              minRows={5}
+              label={t("Instructions")}
+              placeholder={t("Tell the agent what to do when this automation runs…")}
+              frameProps={{ "data-automation-prompt": "" }}
+            />
+          )}
           <TargetChips
             disabled={saving}
             machine={{
@@ -262,7 +315,10 @@ export function AutomationEditor({
                     ),
             }}
             model={
-              <AutomationModelChoice draft={draft} onChange={onChange} routingHost={routingHost} />
+              // A background automation chooses its model in the Run with fields below.
+              background ? null : (
+                <AutomationModelChoice draft={draft} onChange={onChange} routingHost={routingHost} />
+              )
             }
             access={
               draft.harness !== "fx" ? (
@@ -302,6 +358,32 @@ export function AutomationEditor({
               ) : null
             }
           />
+          {background ? (
+            <WorkExecutorFields
+              routingRole="automation"
+              machine={routingHost.machineId ? { id: routingHost.machineId } : undefined}
+              routingSupported={routingHost.supported}
+              cwd={draft.cwd}
+              harness={draft.harness}
+              modelSettings={draft.modelSettings}
+              executor={draft.workExecutor}
+              onExecutorChange={(workExecutor) => update("workExecutor", workExecutor)}
+              executorIssue={
+                draft.workExecutor?.kind === "crew"
+                  ? crewIncompatibility({
+                      isolate: draft.workspaceMode === "worktree",
+                      modelChoice: draft.modelChoice,
+                    })?.reason
+                  : undefined
+              }
+              modelChoice={draft.modelChoice}
+              onModelChoiceChange={(modelChoice) => update("modelChoice", modelChoice)}
+              fixedModel={<AutomationFixedModel draft={draft} onChange={onChange} />}
+              helpers={draft.workHelpers}
+              onHelpersChange={(workHelpers) => update("workHelpers", workHelpers)}
+              disabled={saving}
+            />
+          ) : null}
           <AutomationTriggerField draft={draft} machine={machine} onChange={onChange} />
           <AutomationMoreOptions
             draft={draft}
@@ -319,6 +401,14 @@ export function AutomationEditor({
               error={historyError}
               draft={draft}
               onRefresh={onRefreshHistory}
+              onDecide={
+                draft.id && draft.hostMachineId
+                  ? async (runId, approve) => {
+                      await decideHostAutomationRun(draft.hostMachineId!, draft.id!, runId, approve);
+                      onRefreshHistory();
+                    }
+                  : undefined
+              }
               onOpenTask={onOpenTask}
               onOpenSession={onOpenSession}
             />

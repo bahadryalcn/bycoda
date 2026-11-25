@@ -20,6 +20,8 @@ export * from "./git";
 export * from "./notes";
 export * from "./projects";
 export * from "./tasks";
+export * from "./task-stop";
+export * from "./work-executor";
 export * from "./goals";
 export * from "./aliases";
 export * from "./dev-servers";

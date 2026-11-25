@@ -45,6 +45,14 @@ export function planShareFingerprint(observations: readonly PlanShareObservation
 }
 
 /**
+ * Whether two plan share query keys differ only in their trailing quota fingerprint, so the
+ * earlier estimate may stay on screen while the refreshed one loads.
+ */
+export function samePlanShareScope(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return JSON.stringify(a.slice(0, -1)) === JSON.stringify(b.slice(0, -1));
+}
+
+/**
  * Estimated plan share per job for one quota window. Estimates only; `supported` is false (and
  * nothing is fetched) when the Host lacks `usage.planShare.v1`.
  */
@@ -61,18 +69,22 @@ export function usePlanShare(options: {
   const history = useRateLimitHistory();
   const observations = planShareObservations(history, window, accounts);
   const enabled = supported && !!machineId;
+  const queryKey = [
+    HOST_USAGE_PLAN_SHARE_METHOD,
+    machineId,
+    window,
+    accounts,
+    sessionIds,
+    taskIds,
+    limit,
+    planShareFingerprint(observations),
+  ];
   const query = useQuery({
-    queryKey: [
-      HOST_USAGE_PLAN_SHARE_METHOD,
-      machineId,
-      window,
-      accounts,
-      sessionIds,
-      taskIds,
-      limit,
-      planShareFingerprint(observations),
-    ],
+    queryKey,
     enabled,
+    // A newer quota reading changes the key; keep the last estimate instead of a fresh spinner.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery && samePlanShareScope(previousQuery.queryKey, queryKey) ? previous : undefined,
     queryFn: async (): Promise<PlanShareResult> => {
       const params: Omit<PlanShareParams, "limit"> & { limit: number } = {
         window,

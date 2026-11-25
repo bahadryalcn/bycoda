@@ -73,6 +73,7 @@ export function DelegationLayerRows({
   inherited,
   override,
   disabled,
+  keys = ORDER,
   onSet,
 }: {
   /** Provider whose catalog and accounts fill the model lists. */
@@ -83,20 +84,22 @@ export function DelegationLayerRows({
   inherited: Record<string, string>;
   override: boolean;
   disabled: boolean;
+  /** The keys this layer offers, in display order; defaults to every delegation key. */
+  keys?: readonly string[];
   /** Set a key; `undefined` or an empty value clears it (an override's Off stays stored). */
   onSet: (key: string, value: string | undefined) => void;
 }) {
   const t = useT();
   const settings = useDelegationSettings(harness, values);
   const byId = new Map(settings.map((setting) => [setting.id, setting]));
-  const shown = ORDER.filter(
+  const shown = ORDER.filter((key) => keys.includes(key)).filter(
     (key) =>
       byId.has(key) &&
       MODEL_ROUTING_DELEGATION_KEYS.includes(key as never) &&
       (!override || values[key] !== undefined),
   );
   const addable = override
-    ? ORDER.flatMap((key) => {
+    ? ORDER.filter((key) => keys.includes(key)).flatMap((key) => {
         const setting = byId.get(key);
         return setting && values[key] === undefined && seed(setting, inherited) !== undefined
           ? [{ key, label: delegationText(t, setting.label), value: seed(setting, inherited)! }]

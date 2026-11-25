@@ -1,4 +1,5 @@
 import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import type { WorkExecutor, WorkHelpers } from "../../../shared/model/host-contracts/work-executor";
 import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { remoteRequest as sendHostRequest } from "../../connections/public/connections";
 import { subscribeRemoteMachineChannel } from "../../connections/public/remoteMachineChannel";
@@ -48,6 +49,7 @@ import {
   type HostTaskWireInput,
   type TaskColumn,
   type TaskStatus,
+  type WorkOrigin,
 } from "./hostTasks";
 
 /** A host task as this desktop shows it: on its machine, in its project. */
@@ -75,7 +77,14 @@ export type TaskDraft = {
   workflowId?: string;
   workflowVersion?: number;
   reviewerConfig?: HostTaskInput["reviewerConfig"];
-  crewDefinitionId?: string;
+  /** Who runs the task. Absent is one agent. */
+  executor?: WorkExecutor;
+  /** Subagents and advisor. Absent follows Settings > Models. */
+  helpers?: WorkHelpers;
+  /** The owner's words behind `prompt`, kept while the prompt still starts with them. */
+  request?: string;
+  /** The entry point that created this task. A create only. */
+  origin?: WorkOrigin;
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
@@ -224,7 +233,8 @@ export function draftFromTask(task: BoardTask): TaskDraft {
       ? { workflowId: task.workflowId, workflowVersion: task.workflowVersion }
       : {}),
     ...(task.reviewerConfig ? { reviewerConfig: task.reviewerConfig } : {}),
-    ...(task.crewDefinitionId ? { crewDefinitionId: task.crewDefinitionId } : {}),
+    ...(task.executor ? { executor: task.executor } : {}),
+    ...(task.helpers ? { helpers: task.helpers } : {}),
     id: task.id,
     machineId: task.machineId,
     status: task.status,
@@ -301,7 +311,12 @@ export function hostTaskFromDraft(
       : clearsReviewerProfile(draft)
         ? { reviewerConfig: null }
         : {}),
-    ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
+    ...(draft.executor && draft.executor.kind !== "agent" ? { executor: draft.executor } : {}),
+    ...(draft.helpers && draft.helpers.mode !== "settings" ? { helpers: draft.helpers } : {}),
+    ...(draft.request !== undefined && draft.prompt.startsWith(draft.request)
+      ? { request: draft.request }
+      : {}),
+    ...(draft.origin ? { origin: draft.origin } : {}),
     title: draft.id ? draft.title.trim() : resolveTaskTitle(draft.title, draft.prompt),
     prompt: draft.prompt,
     projectId,
@@ -314,12 +329,13 @@ export function hostTaskFromDraft(
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
     ...(draft.maxRunMinutes === undefined ? {} : { maxRunMinutes: draft.maxRunMinutes }),
-    isolate: draft.crewDefinitionId ? false : draft.isolate,
-    ...(!draft.crewDefinitionId && draft.workspace ? { workspace: draft.workspace } : {}),
+    // Sent as the owner set them; the Host names any option a crew cannot honor.
+    isolate: draft.isolate,
+    ...(draft.workspace ? { workspace: draft.workspace } : {}),
     ...(draft.verifyCommand.trim() ? { verifyCommand: draft.verifyCommand.trim() } : {}),
-    review: draft.crewDefinitionId ? false : draft.review,
-    ...(!draft.crewDefinitionId && draft.continueUntilDone ? { continueUntilDone: true } : {}),
-    ...(!draft.crewDefinitionId && draft.autoMerge && draft.isolate ? { autoMerge: true } : {}),
+    review: draft.review,
+    ...(draft.continueUntilDone ? { continueUntilDone: true } : {}),
+    ...(draft.autoMerge && draft.isolate ? { autoMerge: true } : {}),
   };
 }
 
@@ -543,11 +559,15 @@ export async function saveTask(
 ): Promise<BoardTask> {
   const machine = taskMachineFor(machines, draft.cwd, draft.machineId);
   await requireTaskAccount(machine, draft.providerAccountId);
-  if (draft.crewDefinitionId && !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS))
+  if (
+    draft.executor &&
+    draft.executor.kind !== "agent" &&
+    !(await machineCapabilities(machine)).includes(HOST_CREW_TASKS)
+  )
     throw new Error(taskClientErrors.crewHost());
-  await requireTaskContinuation(machine, !draft.crewDefinitionId && draft.continueUntilDone);
+  await requireTaskContinuation(machine, draft.continueUntilDone);
   await requireTaskHarnessCapabilities(machine, draft);
-  await requireTaskWorkspaces(machine, !draft.crewDefinitionId && Boolean(draft.workspace));
+  await requireTaskWorkspaces(machine, Boolean(draft.workspace));
   if (status === "todo" && !draft.id) {
     // An older host would queue the item and start it.
     const advertised = await machineCapabilities(machine);

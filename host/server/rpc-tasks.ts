@@ -64,6 +64,14 @@ export async function handleTasksRpc(
       );
       break;
 
+    case "automations.decide":
+      request.result = await dependencies.automationsService.decide(
+        request.params,
+        request.domainContext,
+        { legacy: true },
+      );
+      break;
+
     // These cross-project planning routes belong only to paired owner
     // dispatch. Project-scoped conversation tools have their own allowlist.
     case "sprints.list":
@@ -283,6 +291,14 @@ export async function handleTasksRpc(
 
     case "tasks.preflight":
       request.result = await dependencies.tasksService.preflight(
+        request.params,
+        request.domainContext,
+        { legacy: true },
+      );
+      break;
+
+    case "tasks.helpers":
+      request.result = await dependencies.tasksService.helpers(
         request.params,
         request.domainContext,
         { legacy: true },

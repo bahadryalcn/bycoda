@@ -1165,12 +1165,12 @@ it("stores the owner-only permission mode, defaults old configs to ask and cover
     allowedApps: ["Notepad"],
     allowPhysicalInput: false,
   };
-  const auto = await f.request({
+  const asking = await f.request({
     op: "configure",
     expectedVersion: 1,
-    configuration: { ...base, permissionMode: "auto", allowAllApps: true },
+    configuration: { ...base, permissionMode: "ask", allowAllApps: true },
   });
-  expect(auto.configuration).toMatchObject({ permissionMode: "auto", allowAllApps: false });
+  expect(asking.configuration).toMatchObject({ permissionMode: "ask", allowAllApps: false });
   const full = await f.request({
     op: "configure",
     expectedVersion: 2,

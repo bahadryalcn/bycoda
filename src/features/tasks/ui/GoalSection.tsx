@@ -15,12 +15,14 @@ export function GoalList({
   filter,
   tasks,
   acting,
+  onOpenTask,
   revealKey,
 }: {
   goals: TaskGoalsController;
   filter: string;
   tasks: BoardTask[];
   acting: string | null;
+  onOpenTask: (task: BoardTask) => void;
   revealKey?: string;
 }) {
   const section = useRef<HTMLElement>(null);
@@ -47,6 +49,7 @@ export function GoalList({
                 <GoalCard
                   goal={goal}
                   tasks={tasks.filter((task) => task.machineId === goal.machineId)}
+                  onOpenTask={onOpenTask}
                   busy={acting != null}
                   pending={acting === `goal:${key}`}
                   onApprove={() => goals.actOn(goal, () => approveGoal(goal)).catch(goals.report)}

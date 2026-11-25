@@ -26,6 +26,7 @@ import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import { columnLabel } from "../model/taskColumnLabel";
 import type { PlanningRecovery, useTaskBoardOperations } from "./useTaskBoardOperations";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 
 /** The board's task mutations: move, reorder, save, delete and edit, each writing the
  * host's answer back through `put` so a later poll cannot roll it back. */
@@ -100,7 +101,7 @@ export function useTaskMutations({
   const onTaskDrop = async (task: BoardTask, column: TaskColumn, before?: BoardTask) => {
     if (acting || task.stale) return;
     if (taskColumn(task.status) !== column) {
-      if (!canMoveTask(task.status, column, task.crewRunId ?? task.crewDefinitionId)) return;
+      if (!canMoveTask(task.status, column, task.crewRunId ?? workCrewId(task))) return;
       if (
         (column === "blocked" ||
           (column === "done" && hasUnmergedBranch(task)) ||

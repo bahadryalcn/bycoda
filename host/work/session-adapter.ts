@@ -15,6 +15,7 @@ import {
   type SessionRunEngine,
   type SessionRunSpec,
 } from "../sessions/sessionRuns";
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import { HostWork } from "./service";
 import { HostTaskBudgets, type BudgetRunRegistration } from "../tasks/task-budgets";
 import { readModelRouting } from "../model-routing/storage";
@@ -313,7 +314,7 @@ export class SessionWorkAdapter {
       session.providerAccountId !== spec.providerAccountId ||
       (spec.workspaceId !== undefined && session.workspaceId !== spec.workspaceId) ||
       (spec.worktreeCwd !== undefined && session.worktreeCwd !== spec.worktreeCwd) ||
-      !isDeepStrictEqual(session.modelSettings, spec.modelSettings)
+      !isDeepStrictEqual(withoutBackgroundOwner(session.modelSettings), spec.modelSettings)
     )
       throw new Error("Work prepared session changed or is active.");
     return receipt.sessionId;

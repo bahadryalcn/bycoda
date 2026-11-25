@@ -87,7 +87,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationPresent ?? policy.notificationPresent)}
           options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
+            onChange({
+              notificationPresent: next as AssistantProfilePatch["notificationPresent"],
+            })
           }
         />
         <ProfileSelect
@@ -95,7 +97,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationAway ?? policy.notificationAway)}
           options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
+            onChange({
+              notificationAway: next as AssistantProfilePatch["notificationAway"],
+            })
           }
         />
         <ProfileSwitch
@@ -208,7 +212,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationPresent ?? policy.notificationPresent)}
           options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
+            onChange({
+              notificationPresent: next as AssistantProfilePatch["notificationPresent"],
+            })
           }
         />
         <ProfileSelect
@@ -216,7 +222,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationAway ?? policy.notificationAway)}
           options={notificationOptions()}
           onValueChange={(next) =>
-            onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
+            onChange({
+              notificationAway: next as AssistantProfilePatch["notificationAway"],
+            })
           }
         />
         <div className={styles.switchCell}>
@@ -287,7 +295,10 @@ function AssistantReminderFields({
         min={0}
         max={10}
         unit={t("reminders")}
-        presets={[0, 1, 2, 3, 5, 10].map((value) => ({ value, label: String(value) }))}
+        presets={[0, 1, 2, 3, 5, 10].map((value) => ({
+          value,
+          label: String(value),
+        }))}
         onChange={(urgentNotificationRepeats) => onChange({ urgentNotificationRepeats })}
       />
       <AssistantPresetNumber

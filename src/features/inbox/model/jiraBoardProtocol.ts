@@ -15,6 +15,7 @@ export type RemoteJiraOperation =
       snapshotId: string;
       key: string;
       transitionId: string;
+      permit?: string;
     }
   | {
       action: "jira-board-move";
@@ -25,6 +26,11 @@ export type RemoteJiraOperation =
       sprintId?: number;
       beforeKey?: string;
       afterKey?: string;
+      /**
+       * One-use native permit for a Full access coding session. Only the Host attaches it, after
+       * parsing: `parseRemoteJiraOperation` rejects it as an input field.
+       */
+      permit?: string;
     };
 export const jiraBoardActions = [
   "jira-boards",

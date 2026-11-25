@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const AGENT_DESKTOP_UPSTREAM_REF = "9eb9b296192fcb70bda25e918cd6dd66abfa3d0d";
 export const AGENT_DESKTOP_PROTOCOL = "2.5";
-export const DESKTOP_PERMISSION_MODES = ["ask", "auto", "full"] as const;
+export const DESKTOP_PERMISSION_MODES = ["ask", "full"] as const;
 /** Native helper behind the desktop tools; the owner picks one in Computer use settings. */
 export const DESKTOP_DRIVERS = ["agent-desktop", "cua-driver"] as const;
 export type DesktopDriver = (typeof DESKTOP_DRIVERS)[number];
@@ -120,7 +120,10 @@ function requestSchema(bounded: boolean) {
 export const DesktopControlRequestSchema = requestSchema(false);
 export const DesktopControlRequestValidationSchema = requestSchema(true);
 export type DesktopControlRequest = z.infer<typeof DesktopControlRequestValidationSchema>;
-/** Owner-only: ask every time, auto (ask only for launch, clipboard, physical input) or full access. */
+/**
+ * Owner-only: ask every time or full access. It has no control of its own: the Assistant
+ * access settings write it together with the standing permission.
+ */
 export type DesktopPermissionMode = (typeof DESKTOP_PERMISSION_MODES)[number];
 export type DesktopControlConfiguration = {
   enabled: boolean;

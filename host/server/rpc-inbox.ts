@@ -4,7 +4,7 @@ import {
 } from "../../src/features/inbox/model/remoteInbox";
 import { TimeoutError, withTimeout } from "../../src/shared/lib/withTimeout";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
-import { hostInbox } from "../notes/host-notes";
+import { hostInbox } from "../notes/host-inbox";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 export async function handleInboxRpc(

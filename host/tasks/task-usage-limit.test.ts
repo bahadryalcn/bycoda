@@ -140,7 +140,7 @@ describe("a task stopped by a provider usage limit", () => {
     expect((await s.store.session(sessionId)).session.usageLimit?.resumeAtReset).toBeFalsy();
     expect(await s.task()).toMatchObject({
       status: "blocked",
-      needsInput: true,
+      stop: { code: "repair_exhausted", nextAction: "provide_input" },
       sessionId: started.sessionId,
     });
   });

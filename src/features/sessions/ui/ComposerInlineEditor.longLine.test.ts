@@ -32,7 +32,6 @@ function Draft({ initial }: { initial: string }) {
       readOnly: false,
       disabled: false,
       spellCheck: false,
-      hasSubagents: false,
       citationCommentDrafts: { current: new Map<string, string>() },
       onInlineAttachments(ids: ReadonlySet<string> | null) {
         ready(ids);

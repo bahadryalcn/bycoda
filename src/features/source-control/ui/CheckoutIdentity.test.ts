@@ -36,9 +36,9 @@ it("draws exactly one leading icon: branch for worktrees, repository for reposit
 
 it("orders title and muted detail, with no text marker and an agent icon for agent worktrees", () => {
   const markup = renderToStaticMarkup(
-    createElement(CheckoutIdentity, { title: "main", detail: "monocode" }),
+    createElement(CheckoutIdentity, { title: "main", detail: "sample-project" }),
   );
-  expect(markup.indexOf("main")).toBeLessThan(markup.indexOf("monocode"));
+  expect(markup.indexOf("main")).toBeLessThan(markup.indexOf("sample-project"));
   expect(markup).not.toContain("This session");
   const agent = renderToStaticMarkup(
     createElement(CheckoutIdentity, { title: "by/x", agent: true }),

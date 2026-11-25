@@ -1,18 +1,18 @@
 import type { HostStore } from "../store";
 import {
+  checkpointRunElapsed,
   confirmedRunElapsed,
-  confirmedRunProgress,
-  finishedRunProgress,
+  finishedRunElapsed,
 } from "../execution/run-duration";
 import { sessionBudgetTokens } from "../../src/features/usage/model/usageBudgets";
 import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 import type { Block } from "../../src/features/sessions/model/session";
-import type {
-  BudgetRunRole,
-  TaskBudgetScope,
-  TaskRunBudget,
-  TaskRunBudgetEvaluation,
-  TaskRunBudgetUsage,
+import {
+  type BudgetRunRole,
+  type TaskBudgetScope,
+  type TaskRunBudget,
+  type TaskRunBudgetEvaluation,
+  type TaskRunBudgetUsage,
 } from "../../src/features/tasks/model/taskBudget";
 
 export type BudgetRunRegistration = {
@@ -42,8 +42,6 @@ type LedgerRun = BudgetRunRegistration & {
   blockId?: string;
   elapsedMs: number;
   confirmedElapsedMs?: number;
-  legacyElapsedMs?: number;
-  durationUncertain?: boolean;
   awaitingFinishCheckpoint?: boolean;
   settledAt?: number;
   /** Session revision last observed after settlement; unchanged means nothing to re-read. */
@@ -94,7 +92,6 @@ type Rollup = {
   unknownTokenRuns: number;
   cost: number;
   unknownCosts: number;
-  uncertain: number;
 };
 const emptyRollup = (): Rollup => ({
   attempts: 0,
@@ -104,8 +101,8 @@ const emptyRollup = (): Rollup => ({
   unknownTokenRuns: 0,
   cost: 0,
   unknownCosts: 0,
-  uncertain: 0,
 });
+
 type RollupScope = readonly ["task" | "goal", string];
 const scopesOf = (run: LedgerRun): RollupScope[] => [
   ...(run.taskId ? [["task", run.taskId] as const] : []),
@@ -345,7 +342,7 @@ export class HostTaskBudgets {
   private async rollup(kind: "task" | "goal", id: string): Promise<Rollup> {
     const row = await this.store.db
       .prepare(
-        "SELECT attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs,uncertain FROM task_run_budget_rollup WHERE scope=? AND id=?",
+        "SELECT attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs FROM task_run_budget_rollup WHERE scope=? AND id=?",
       )
       .get(kind, id);
     return row ? this.rollupOf(row) : emptyRollup();
@@ -360,19 +357,19 @@ export class HostTaskBudgets {
       unknownTokenRuns: Number(row.unknown_token_runs),
       cost: Number(row.cost),
       unknownCosts: Number(row.unknown_costs),
-      uncertain: Number(row.uncertain),
     };
   }
 
   /** Counts one sealed run into the given scopes. Call only in the transaction that seals it. */
   private async addToRollups(run: LedgerRun, scopes: readonly RollupScope[] = scopesOf(run)) {
     const add = this.store.db.prepare(
+      // The `uncertain` column is kept for existing databases and always written 0.
       `INSERT INTO task_run_budget_rollup (scope,id,attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs,uncertain)
-       VALUES (?,?,1,?,?,?,?,?,?,?)
+       VALUES (?,?,1,?,?,?,?,?,?,0)
        ON CONFLICT(scope,id) DO UPDATE SET attempts=attempts+1,elapsed_ms=elapsed_ms+excluded.elapsed_ms,
          confirmed_ms=confirmed_ms+excluded.confirmed_ms,tokens=tokens+excluded.tokens,
          unknown_token_runs=unknown_token_runs+excluded.unknown_token_runs,cost=cost+excluded.cost,
-         unknown_costs=unknown_costs+excluded.unknown_costs,uncertain=uncertain+excluded.uncertain`,
+         unknown_costs=unknown_costs+excluded.unknown_costs`,
     );
     for (const [kind, id] of scopes)
       await add.run(
@@ -384,7 +381,6 @@ export class HostTaskBudgets {
         run.tokens === null ? 1 : 0,
         run.costUsd ?? 0,
         run.costUsd === null ? 1 : 0,
-        run.durationUncertain ? 1 : 0,
       );
   }
 
@@ -464,10 +460,8 @@ export class HostTaskBudgets {
       const previousTokens = run.tokens;
       const previousCost = run.costUsd;
       if (run.confirmedElapsedMs === undefined) {
-        run.legacyElapsedMs = run.elapsedMs;
-        run.elapsedMs = 0;
-        run.confirmedElapsedMs = 0;
-        run.durationUncertain = true;
+        // A legacy run without checkpoints counts what was recorded.
+        run.confirmedElapsedMs = run.elapsedMs;
       }
       try {
         const session = await this.store.session(run.sessionId);
@@ -479,36 +473,29 @@ export class HostTaskBudgets {
         const running = session.status === "running" && session.runId === run.runId;
         if (run.settledAt === undefined && !running) {
           run.settledAt = now;
-          // Only the owned lifecycle checkpoint proves the final interval.
-          const finished = await finishedRunProgress(this.store, run.sessionId, run.runId);
-          if (finished) {
-            run.confirmedElapsedMs = finished.elapsed;
-            run.elapsedMs = finished.elapsed;
-            run.durationUncertain ||= finished.uncertain;
-          } else {
-            run.durationUncertain = true;
-            run.awaitingFinishCheckpoint = true;
-          }
+          // The owned lifecycle close record is final; without it the last checkpoint counts
+          // and a later close record replaces it.
+          const finished = await finishedRunElapsed(this.store, run.sessionId, run.runId);
+          const elapsed =
+            finished ?? (await checkpointRunElapsed(this.store, run.sessionId, run.runId));
+          run.confirmedElapsedMs = run.elapsedMs = Math.max(run.elapsedMs, elapsed);
+          if (finished === null) run.awaitingFinishCheckpoint = true;
         } else if (run.settledAt !== undefined && run.awaitingFinishCheckpoint) {
-          const finished = await finishedRunProgress(this.store, run.sessionId, run.runId);
-          if (finished) {
-            run.confirmedElapsedMs = finished.elapsed;
-            run.elapsedMs = finished.elapsed;
-            run.durationUncertain = finished.uncertain || run.legacyElapsedMs !== undefined;
+          const finished = await finishedRunElapsed(this.store, run.sessionId, run.runId);
+          if (finished !== null) {
+            run.confirmedElapsedMs = run.elapsedMs = Math.max(run.elapsedMs, finished);
             delete run.awaitingFinishCheckpoint;
           }
         }
         if (run.settledAt === undefined) {
-          const progress = await confirmedRunProgress(
+          const elapsed = await confirmedRunElapsed(
             this.store,
             run.sessionId,
             run.runId,
             now,
             this.monotonic(),
           );
-          run.confirmedElapsedMs = progress.elapsed;
-          run.durationUncertain ||= progress.uncertain;
-          run.elapsedMs = run.confirmedElapsedMs;
+          run.confirmedElapsedMs = run.elapsedMs = Math.max(run.elapsedMs, elapsed);
         }
         if (block) {
           const tokens = sessionBudgetTokens({ ...session.session, blocks: [block] }, "all", now);
@@ -606,7 +593,6 @@ export class HostTaskBudgets {
     return {
       usage: this.summarize(open, historyKnown, base),
       historyKnown,
-      confirmedMs: open.reduce((sum, run) => sum + (run.confirmedElapsedMs ?? 0), base.confirmedMs),
     };
   }
 
@@ -662,7 +648,7 @@ export class HostTaskBudgets {
       const sealed = await this.store.db
         .prepare(
           `SELECT rollup.id AS goal_id, rollup.attempts, rollup.elapsed_ms, rollup.confirmed_ms, rollup.tokens,
-           rollup.unknown_token_runs, rollup.cost, rollup.unknown_costs, rollup.uncertain
+           rollup.unknown_token_runs, rollup.cost, rollup.unknown_costs
          FROM json_each(?) ids JOIN task_run_budget_rollup rollup ON rollup.scope='goal' AND rollup.id=ids.value`,
         )
         .all(ids);
@@ -695,8 +681,7 @@ export class HostTaskBudgets {
     knownHistory: boolean,
     base: Rollup = emptyRollup(),
   ): TaskRunBudgetUsage {
-    const historyComplete =
-      knownHistory && base.uncertain === 0 && rows.every((run) => !run.durationUncertain);
+    const now = this.now();
     let elapsedMs = base.elapsedMs,
       reportedTokens = base.tokens,
       knownCost = base.cost,
@@ -717,7 +702,6 @@ export class HostTaskBudgets {
       runningRuns === 0 &&
       Number.isSafeInteger(reportedTokens);
     return {
-      historyComplete,
       agentMinutes: elapsedMs / 60_000,
       attempts: base.attempts + rows.length,
       completedRuns: base.attempts + rows.length - runningRuns,
@@ -728,7 +712,7 @@ export class HostTaskBudgets {
       unknownTokenRuns,
       reportedCostUsd: unknownCosts || !knownHistory ? null : knownCost,
       estimatedCostUsd: null,
-      measuredAt: this.now(),
+      measuredAt: now,
     };
   }
 
@@ -740,23 +724,25 @@ export class HostTaskBudgets {
     await this.ready;
 
     return await this.store.db.scope(async () => {
-      const { usage, historyKnown, confirmedMs } = await this.measure(scope);
+      const { usage, historyKnown } = await this.measure(scope);
       const reasons: string[] = [];
       let warning = false;
       const threshold = (budget?.warningPercent ?? 80) / 100;
-      if (budget && (!historyKnown || (budget.maxAgentMinutes && !usage.historyComplete))) {
+      const total = budget?.maxAgentMinutes;
+      // Runtime is the observed time; a gap adds nothing. Only time >= the limit exhausts.
+      if (budget && !historyKnown) {
         warning = true;
-        if (options.starting)
+        if (options.starting && !total)
           reasons.push(
             "Historical usage is incomplete. Start a new task or goal, or remove total run limits to continue; earlier work is retained.",
           );
       }
-      if (budget?.maxAgentMinutes) {
-        if (confirmedMs / 60_000 >= budget.maxAgentMinutes)
+      if (total) {
+        if (usage.agentMinutes >= total)
           reasons.push(
             "The total agent-time budget is exhausted. Increase the budget to continue; completed work is retained.",
           );
-        warning ||= usage.agentMinutes >= budget.maxAgentMinutes * threshold;
+        warning ||= usage.agentMinutes >= total * threshold;
       }
       if (budget?.maxAttempts) {
         if (options.starting && usage.attempts >= budget.maxAttempts)

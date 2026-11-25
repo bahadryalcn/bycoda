@@ -89,6 +89,7 @@ export const lint = {
       files: ["src/**", "host/**", "packages/**"],
       rules: {
         "bycoda/safe-timestamp-render": "error",
+        "bycoda/task-state-from-stop-code": "error",
         "bycoda/shared-formatters-only": "error",
         "bycoda/whole-sentence-translation": "error",
         "bycoda/utf8-child-locale": "error",
@@ -309,6 +310,7 @@ export const lint = {
       ],
       rules: {
         "bycoda/safe-timestamp-render": "off",
+        "bycoda/task-state-from-stop-code": "off",
         "bycoda/shared-formatters-only": "off",
         "bycoda/whole-sentence-translation": "off",
         "bycoda/utf8-child-locale": "off",

@@ -103,7 +103,7 @@ it("reviews again, at most twice, when the working copy changes during an accept
   const a = fixture();
   f.acceptance = true;
   const write = vi.fn(async (task: HostTask) => task);
-  const block = vi.fn(async (task: HostTask, _reason: string) => task);
+  const block = vi.fn(async (task: HostTask, _reason: { code: string; message: string }) => task);
   const task = {
     ...a.task,
     updatedAt: 1,
@@ -121,7 +121,10 @@ it("reviews again, at most twice, when the working copy changes during an accept
   const exhausted = { ...context, find: async () => spent } as unknown as TaskContext;
   await settleVerification(exhausted, spent, 3);
   expect(write).toHaveBeenCalledTimes(1);
-  expect(block.mock.calls[0][1]).toContain("working copy changed during acceptance review");
+  expect(block.mock.calls[0][1]).toMatchObject({
+    code: "working_copy_changed",
+    message: expect.stringContaining("working copy changed during acceptance review"),
+  });
 });
 
 it("holds an acceptance review while another worker writes in the same shared checkout", async () => {

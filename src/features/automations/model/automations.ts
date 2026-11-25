@@ -2,6 +2,8 @@ import type {
   ModelRoutingItemChoice,
   ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
+import type { WorkExecutor, WorkHelpers } from "../../../shared/model/host-contracts/work-executor";
+import type { Recipe, RecipeInstance } from "./automationRecipe";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -80,6 +82,12 @@ export type Automation = {
   harness: HarnessId;
   providerAccountId?: string;
   modelChoice?: ModelRoutingItemChoice;
+  /** Who runs each background occurrence; absent is one agent. */
+  workExecutor?: WorkExecutor;
+  /** Subagents and advisor; absent follows Settings > Models. */
+  workHelpers?: WorkHelpers;
+  /** Ordered steps each background occurrence runs instead of one prompt. */
+  workRecipe?: Recipe;
   model: string;
   modelSettings?: Record<string, string>;
   cwd: string;
@@ -143,6 +151,8 @@ export type AutomationRunTrigger = "scheduled" | "manual" | "event";
 
 export type AutomationRun = {
   taskId?: string;
+  /** A recipe occurrence: its version, step results and why it stopped. */
+  recipe?: RecipeInstance;
   execution?: ModelRoutingTarget;
   maxRunMinutes?: number;
   workspaceId?: string;
@@ -209,6 +219,9 @@ export type AutomationDraft = {
   harness: HarnessId;
   providerAccountId?: string;
   modelChoice?: ModelRoutingItemChoice;
+  workExecutor?: WorkExecutor;
+  workHelpers?: WorkHelpers;
+  workRecipe?: Recipe;
   model: string;
   modelSettings: Record<string, string>;
   cwd: string;
@@ -451,6 +464,9 @@ export function draftFromAutomation(automation: Automation): AutomationDraft {
     harness: automation.harness,
     providerAccountId: automation.providerAccountId,
     modelChoice: automation.modelChoice,
+    workExecutor: automation.workExecutor,
+    workHelpers: automation.workHelpers,
+    workRecipe: automation.workRecipe,
     model: automation.model,
     modelSettings: automation.modelSettings ?? {},
     cwd: automation.cwd,

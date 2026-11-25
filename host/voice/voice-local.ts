@@ -84,6 +84,10 @@ const MAX_OUTSTANDING_REQUESTS = 2;
 /** How long a ready installation probe is trusted; startup failure discards it sooner. */
 export const VOICE_PROBE_REUSE_MS = 10 * 60_000;
 
+/** A phone asked for spoken replies while the computer's voice runs dictation without a voice. */
+export const VOICE_IN_USE_WITHOUT_SPEECH =
+  "Voice is in use on this computer without spoken replies. End voice on the computer, then try again.";
+
 function busyError() {
   return new Error("Speech recognition is busy. Please speak again after transcription.");
 }
@@ -138,8 +142,17 @@ export class LocalVoiceService {
     );
   }
 
-  /** `recognitionOnly` (dictation) shares the recognizer without loading natural speech. */
-  async start(value?: unknown, recognitionOnly = false): Promise<LocalVoiceInfo> {
+  /**
+   * `recognitionOnly` (dictation) shares the recognizer without loading natural speech.
+   * `joinLoaded` (the paired phone) joins a runtime another client already loaded with other
+   * settings instead of being refused: the phone cannot disconnect the computer's own voice.
+   * Desktop windows omit it so their changed settings are applied, not silently ignored.
+   */
+  async start(
+    value?: unknown,
+    recognitionOnly = false,
+    options: { joinLoaded?: boolean } = {},
+  ): Promise<LocalVoiceInfo> {
     const startedAt = monotonicNow();
     const phases: StartPhases = {};
     const trace = currentRequestTrace();
@@ -148,7 +161,12 @@ export class LocalVoiceService {
     let outcome = "failed";
     this.starting++;
     try {
-      const info = await this.startRuntime(value, recognitionOnly, phases);
+      const info = await this.startRuntime(
+        value,
+        recognitionOnly,
+        options.joinLoaded === true,
+        phases,
+      );
       outcome = "ready";
       return info;
     } finally {
@@ -180,6 +198,7 @@ export class LocalVoiceService {
   private async startRuntime(
     value: unknown,
     recognitionOnly: boolean,
+    joinLoaded: boolean,
     phases: StartPhases,
   ): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
@@ -191,10 +210,17 @@ export class LocalVoiceService {
       // A recognizer kept warm for other settings has no users; reload it.
       if (this.runtimeKey !== key && !this.leases.size) this.close();
     }
+    /** Whether this start uses a runtime loaded for other settings. */
+    let joined = false;
+    const join = (refusal: string) => {
+      if (!joinLoaded) throw new Error(refusal);
+      // Any loaded recognizer can transcribe; a reply voice exists only if the owner enabled it.
+      if (!recognitionOnly && config.natural && !this.runtime.natural)
+        throw new Error(VOICE_IN_USE_WITHOUT_SPEECH);
+      joined = true;
+    };
     if (this.loading && this.runtimeKey !== key)
-      throw new Error(
-        "Voice settings changed. Disconnect voice in other windows before reconnecting.",
-      );
+      join("Voice settings changed. Disconnect voice in other windows before reconnecting.");
     if (!this.loading) {
       if (value !== undefined) {
         const found = await this.inspectInstallation(key, config, phases);
@@ -204,18 +230,23 @@ export class LocalVoiceService {
           );
         // A concurrent start may have finished probing while this one was waiting.
         if (this.loading && this.runtimeKey !== key)
-          throw new Error("Another voice configuration is connected.");
-        if (!this.loading)
+          join("Another voice configuration is connected.");
+        if (!this.loading) {
           this.runtime = {
             ...config,
             python: found.python,
             whisperPath: found.whisperPath,
             ttsPath: found.ttsPath,
           };
-      } else if (!this.loading) this.runtime = config;
-      this.runtimeKey = key;
+          this.runtimeKey = key;
+        }
+      } else if (!this.loading) {
+        this.runtime = config;
+        this.runtimeKey = key;
+      }
     }
-    if (recognitionOnly) this.runtime.idleUnloadMinutes = idleUnloadMinutes;
+    // A joined runtime keeps its owner's idle timeout.
+    if (recognitionOnly && !joined) this.runtime.idleUnloadMinutes = idleUnloadMinutes;
     const info = await this.loadModels(recognitionOnly, phases);
     const lease = randomUUID();
     this.leases.set(lease, monotonicNow());

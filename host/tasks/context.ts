@@ -49,6 +49,7 @@ export interface TaskContext {
   beforeStart: HostTasks["beforeStart"];
   crewCanStart: HostTasks["crewCanStart"];
   crewRunner: HostTasks["crewRunner"];
+  executorDecisions: HostTasks["executorDecisions"];
   limits: HostTasks["limits"];
   budgets: HostTasks["budgets"];
   externalRunSources: HostTasks["externalRunSources"];

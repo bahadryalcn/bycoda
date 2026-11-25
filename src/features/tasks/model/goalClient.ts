@@ -1,4 +1,5 @@
 import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import type { WorkExecutor, WorkHelpers } from "../../../shared/model/host-contracts/work-executor";
 import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { classifyCommandFailure, remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
@@ -76,7 +77,8 @@ export type GoalDraft = {
     };
     busy?: boolean;
   };
-  crewDefinitionId?: string;
+  executor?: WorkExecutor;
+  helpers?: WorkHelpers;
   finalReview?: boolean;
   budget?: TaskRunBudget;
   isolate?: boolean;
@@ -193,7 +195,8 @@ export function hostGoalFromDraft(
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
-    ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
+    ...(draft.executor && draft.executor.kind !== "agent" ? { executor: draft.executor } : {}),
+    ...(draft.helpers && draft.helpers.mode !== "settings" ? { helpers: draft.helpers } : {}),
     maxRunMinutes: draft.maxRunMinutes,
     ...(typeof draft.isolate === "boolean" ? { isolate: draft.isolate } : {}),
     ...(draft.workspaces

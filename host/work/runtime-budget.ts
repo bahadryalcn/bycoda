@@ -4,39 +4,33 @@ import { cancelSessionRun, type SessionRunEngine } from "../sessions/sessionRuns
 
 export type WorkRuntimeBudget = {
   allowanceMinutes: number;
-  confirmedMinutes: number;
-  /** Null retains unknown intervals rather than presenting a lower bound as total. */
-  usedMinutes: number | null;
-  historyComplete: boolean;
+  usedMinutes: number;
   exceeded: boolean;
   blocked: boolean;
   reason?: string;
 };
 
-/** Frozen task allowance covers every exact run in the existing ledger.
+/** Frozen task allowance covers every exact run in the existing ledger. Time is the observed
+ * run time; a gap such as sleep adds nothing and never blocks. Only used >= allowance exhausts.
  * No wall-clock subtraction, separate total, timer or retry allowance. */
 export async function readTaskRuntimeBudget(
   budgets: Pick<HostTaskBudgets, "read">,
   task: { id: string; maxRunMinutes: number },
-  starting = false,
 ): Promise<WorkRuntimeBudget> {
   const usage = await budgets.read({ taskId: task.id });
   const allowanceMinutes = task.maxRunMinutes;
   const exceeded = allowanceMinutes > 0 && usage.agentMinutes >= allowanceMinutes;
-  const unknown = allowanceMinutes > 0 && !usage.historyComplete;
-  const reason = exceeded
-    ? "The cumulative task runtime allowance is exhausted. Completed work and partial findings are retained; owner action is required."
-    : starting && unknown
-      ? "Earlier task runtime includes an unknown interval. Owner action is required before another run; completed work is retained."
-      : undefined;
   return {
     allowanceMinutes,
-    confirmedMinutes: usage.agentMinutes,
-    usedMinutes: usage.historyComplete ? usage.agentMinutes : null,
-    historyComplete: usage.historyComplete,
+    usedMinutes: usage.agentMinutes,
     exceeded,
-    blocked: reason !== undefined,
-    ...(reason ? { reason } : {}),
+    blocked: exceeded,
+    ...(exceeded
+      ? {
+          reason:
+            "The cumulative task runtime allowance is exhausted. Completed work and partial findings are retained; owner action is required.",
+        }
+      : {}),
   };
 }
 

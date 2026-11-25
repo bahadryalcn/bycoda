@@ -49,6 +49,7 @@ export function TaskBoardColumns({
     project: string;
     goal?: string;
     waitingFor: string[];
+    helperFailure?: string;
   };
   planningLabel: (task: BoardTask) => string;
   actionsFor: ComponentProps<typeof TaskCard>["actionsFor"];

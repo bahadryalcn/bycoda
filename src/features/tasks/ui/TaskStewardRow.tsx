@@ -36,7 +36,7 @@ export function StewardRow({
   const pending = acting === `steward:${steward.machineId}:${steward.id}`;
   const project = stewardProjectName(steward);
   const name = projectDisplayName(steward.cwd);
-  const status = steward.run ? "running" : steward.lastRunStatus;
+  const status = steward.lastRunStatus;
   const lastRunError =
     status === "failed" || status === "skipped" ? steward.lastRunError : undefined;
   const machine =
@@ -59,7 +59,7 @@ export function StewardRow({
         <Text size="caption" tone="secondary" wrap="anywhere">
           {name !== project ? `${project} · ` : null}
           {automationScheduleLabel(steward)} · {machine}
-          {steward.enabled && !steward.run ? ` · ${nextRunPreview(steward.nextRunAt)}` : ""}
+          {steward.enabled && status !== "running" ? ` · ${nextRunPreview(steward.nextRunAt)}` : ""}
         </Text>
         {status ? (
           <div className="task-ops-run">
@@ -99,8 +99,8 @@ export function StewardRow({
           onCheckedChange={() => onToggle(steward)}
         />
         <InlineTextAction
-          disabled={busy || Boolean(steward.run)}
-          disabledReason={steward.run ? t("A run is already in progress.") : undefined}
+          disabled={busy || status === "running"}
+          disabledReason={status === "running" ? t("A run is already in progress.") : undefined}
           onClick={() => onRunNow(steward)}
         >
           {t("Run now")}

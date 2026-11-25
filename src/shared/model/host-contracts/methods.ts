@@ -795,6 +795,11 @@ export const HOST_RPC_METHODS = Object.freeze({
     automationsDto.AutomationsIdParamsSchema,
     automationsDto.HostAutomationRunSchema,
   ),
+  "automations.decide": workflowOperation(
+    "transport.ws.automations.v2",
+    automationsDto.AutomationsDecideParamsSchema,
+    automationsDto.HostAutomationRunSchema,
+  ),
   "devServers.list": devServerOperation(
     devDto.DevServersListParamsSchema,
     devDto.DevServersListResultSchema,
@@ -923,6 +928,11 @@ export const HOST_RPC_METHODS = Object.freeze({
   "tasks.notes.resolve": taskOperation(
     tasksDto.TasksNotesResolveParamsSchema,
     tasksDto.HostTaskSchema,
+  ),
+  "tasks.helpers": taskOperation(
+    tasksDto.TasksHelpersParamsSchema,
+    tasksDto.TasksHelpersResultSchema,
+    true,
   ),
   "tasks.delete": taskOperation(tasksDto.TasksDeleteParamsSchema, tasksDto.TasksDeleteResultSchema),
   "tasks.preflight": taskOperation(

@@ -17,6 +17,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { type ReactNode, useState } from "react";
 import {
   Check,
+  CheckList,
   ChevronDown,
   ChevronUp,
   GitBranch,
@@ -34,6 +35,7 @@ import {
 import { isStewardProposal } from "../model/stewardClient";
 import "./task-board.css";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 
 export type TaskActionHandlers = {
   pending?: boolean;
@@ -65,6 +67,8 @@ export type TaskActionHandlers = {
   onOpenReview: (sessionId: string) => void;
   onRecheckReview: () => void;
   onFinishWithFindings?: () => void;
+  /** Turns a finished task into a recipe; absent where the machine or task cannot. */
+  onRepeat?: () => void;
 };
 
 type TaskAction = {
@@ -113,12 +117,12 @@ function useTaskActionPlan(
     openingReviewSession,
     onRecheckReview,
     onFinishWithFindings,
+    onRepeat,
   }: TaskActionHandlers,
 ): TaskActionPlan {
   const [reviewPending, setReviewPending] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const can = (to: TaskStatus) =>
-    canMoveTask(task.status, to, task.crewRunId ?? task.crewDefinitionId);
+  const can = (to: TaskStatus) => canMoveTask(task.status, to, task.crewRunId ?? workCrewId(task));
   const actions: TaskAction[] = [];
   if (task.branch || taskWorkspaceState(task).workspaceId)
     actions.push({
@@ -262,6 +266,14 @@ function useTaskActionPlan(
       label: t("Move later"),
       icon: <ChevronDown className="icon-xs" />,
       run: onLater,
+      disabled: busy,
+    });
+  if (onRepeat && task.status === "done")
+    actions.push({
+      id: "repeat",
+      label: t("Repeat this"),
+      icon: <CheckList className="icon-xs" />,
+      run: onRepeat,
       disabled: busy,
     });
   if (can("todo"))

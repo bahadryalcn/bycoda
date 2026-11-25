@@ -174,3 +174,23 @@ describe("timeFilterStart", () => {
     expect(timeFilterStart("today", now)).toBe(new Date("2026-08-25T00:00:00").getTime());
   });
 });
+
+it("remembers the background sessions option, off by default", () => {
+  expect(DEFAULT_SESSION_SIDEBAR_FILTERS.showBackground).toBe(false);
+  expect(
+    hasActiveSessionFilters({ ...DEFAULT_SESSION_SIDEBAR_FILTERS, showBackground: true }),
+  ).toBe(true);
+  const data = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => data.set(key, value),
+  });
+  try {
+    saveSessionSidebarFilters({ ...DEFAULT_SESSION_SIDEBAR_FILTERS, showBackground: true });
+    expect(loadSessionSidebarFilters().showBackground).toBe(true);
+    data.set("bycoda.sessionSidebarFilters", JSON.stringify({ showBackground: "yes" }));
+    expect(loadSessionSidebarFilters().showBackground).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

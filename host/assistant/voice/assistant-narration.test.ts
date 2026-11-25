@@ -205,7 +205,7 @@ it("uses Host receipts and canonical activity through restart", async () => {
         projectId: "project",
         createdAt: time,
         status: "running",
-        needsInput: true,
+        stop: { code: "input_required", nextAction: "provide_input" },
       }),
     );
     await store.db

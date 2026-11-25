@@ -4,7 +4,9 @@ The session composer and its docked question form let the chat background show t
 fill. Reduced transparency and forced colors use a solid fill.
 
 Markdown formatting appears in the chat composer as you type, including drafts with inline
-attachments and links. Move the caret onto a Markdown marker to see and edit it. Long drafts grow
+attachments and links. Move the caret onto a Markdown marker to see and edit it. **Clear text**
+empties the text field and keeps attached files and quotes. Use the editor's Undo shortcut to
+restore the text. Long drafts grow
 up to 224 px before scrolling inside the writing area. Sent messages
 display Markdown. Click a long message to read it in the chat, or use **Expand** to open it in a
 dialog with the same formatting. **Copy message** and **Save as note** use the original Markdown.

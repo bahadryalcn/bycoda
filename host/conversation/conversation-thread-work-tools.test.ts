@@ -30,6 +30,7 @@ function fixture(source = pool) {
   let records: Array<Record<string, unknown>> = [];
   const store = {
     project: vi.fn(async () => ({ id: "p", cwd: "/repo" })),
+    transaction: async (work: () => unknown) => work(),
     db: {
       prepare: (sql: string) => ({
         get: async (key: string) => (receipts.has(key) ? { value: receipts.get(key) } : undefined),
@@ -45,6 +46,7 @@ function fixture(source = pool) {
   } as unknown as HostStore;
   const tasks = {
     list: vi.fn(async () => records),
+    get: vi.fn(async (id: string) => records.find((item) => item.id === id)),
     save: vi.fn(async (input) => {
       const task = { ...input, updatedAt: 2 };
       records.push(task);

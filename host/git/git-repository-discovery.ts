@@ -98,7 +98,7 @@ export type OffThreadCommand = {
   file: string;
   args: string[];
   cwd?: string;
-  env?: NodeJS.ProcessEnv;
+  env?: Readonly<Record<string, string | undefined>>;
 };
 type DiscoveryFailure = {
   phase: "spawn" | "exit" | "timeout" | "output-limit" | "parse";

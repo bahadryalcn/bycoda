@@ -1,5 +1,5 @@
 import { markTurnInterrupted, type ResumedWorkspace } from "../../sessions/model/inFlight";
-import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
+import { isListedConversation } from "../../../shared/model/host-contracts/delegation";
 import { withoutInternalWorkspaceSessions } from "./delegatedWorkspace";
 import { findTabForProject, workspaceTabCwd } from "./workspaceTabGroups";
 import {
@@ -293,7 +293,7 @@ export function hydrateWorkspaceSnapshot(
     const stub = stubs.get(id);
     const base = record ?? (stub ? sessionFromStub(stub) : null);
     if (!base || base.inboxAsk) return null;
-    if (!isUserConversation(base)) {
+    if (!isListedConversation(base)) {
       excludedIds.add(id);
       return null;
     }

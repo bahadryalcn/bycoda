@@ -1,4 +1,6 @@
 import { createCrewTaskRunner } from "./crew-task-runner";
+import { taskNeedsInput } from "../../src/shared/model/host-contracts/task-stop";
+import { taskStopSummary } from "../../src/shared/model/taskStopSummary";
 import { crewTaskCanStart, crewTaskAdmitted } from "./crew-task-admission";
 import { reserveCrewRun } from "./crew-run-reservation";
 import {
@@ -28,6 +30,8 @@ import { crewHistoryQuery } from "./crew-history-query";
 import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { candidateObservations } from "./crew-observations";
 import * as membership from "./crew-membership";
+import { workCrewId, type WorkHelpers } from "../../src/shared/model/host-contracts/work-executor";
+import { applyHelpers } from "../model-routing/helpers";
 import { updateLibraryGroup } from "./crew-groups";
 import { CrewsAgentGroupUpdateParamsSchema } from "../../src/shared/model/host-contracts/crews";
 import {
@@ -549,7 +553,7 @@ export class HostCrews {
         throw new Error("Stop this crew's running work before deleting it");
       if (
         (await this.tasks.list()).some(
-          (task) => task.crewDefinitionId === definitionId && task.status !== "done",
+          (task) => workCrewId(task) === definitionId && task.status !== "done",
         )
       )
         throw new Error("Tasks still use this crew. Finish or change them before deleting it");
@@ -800,6 +804,11 @@ export class HostCrews {
       if (review) review.bookkeeping = previous;
     }
   }
+  /** Whether the crew's sessions may use subagents: its policy, then the task that started it. */
+  private async crewHelpers(run: CrewRun): Promise<WorkHelpers | undefined> {
+    if (!run.definition.policy.allowSubagents) return { mode: "off" };
+    return run.sourceTaskId ? (await this.tasks.get(run.sourceTaskId))?.helpers : undefined;
+  }
   private async launchCoordinatorOwned(run: CrewRun) {
     if (!run.launch) throw new Error("No retained coordinator launch");
     if (run.routingWait && !run.coordinatorSessionId) {
@@ -863,6 +872,10 @@ export class HostCrews {
       {
         projectId: run.projectId,
         ...launch.candidate,
+        // The coordinator follows the same helper policy as every other session.
+        modelSettings: (
+          await applyHelpers(this.store, launch.candidate, await this.crewHelpers(run))
+        ).modelSettings,
         work: {
           kind: "crew.coordinator",
           id: run.id,
@@ -931,7 +944,7 @@ export class HostCrews {
     return current ?? { ...run, status: "paused" as const };
   }
   private instructions(run: CrewRun) {
-    return `You coordinate bycoda Crew ${run.definition.name}, runId=${run.id}. Use Conversation Tools crews.schema and crews.inspect for contracts/models/tools; crews.get, crews.assign, crews.request and crews.accept to manage work. For additional owner-requested work, inspect tasks and goals through the existing Conversation Tools before creating a task or epic. Select a crew through tasks.create crewDefinitionId when appropriate. Respect the current session permissions and owner approval gates; a plan is not approval to start, merge or publish. Runtime approvals require an explicit owner grant and crews.respond. Direct owner messages in member sessions are directives to reconcile. Delegate implementation and ALL technical review. Host tasks automatically launch an independent reviewer. Do not review or claim worker completion is acceptance. Use crew member IDs from crews.get. Members request expertise through crews.request; resolve each request explicitly. Respect policy, owner instructions and shared dirty work. No commit, merge, push or publication is authorized by crew acceptance. For multiple component tasks, delegate a final integration assignment with integration=true and dependsOn containing ALL other task IDs before crews.finish. Declare project-relative files in each assignment; overlapping scopes are serialized. For generated assets, read images.status: it lists image models with access, formats and limits. Pass required ["image-generation"]; Antigravity members use Nano Banana (raster only), and Codex members also write SVG or animated GIF as code. Native subagents: ${run.definition.policy.allowSubagents ? "allowed within project rules; report their usage" : "disabled for this run"}.\n${run.definition.agents.find((a) => a.role === "coordinator")!.instructions}`;
+    return `You coordinate bycoda Crew ${run.definition.name}, runId=${run.id}. Use Conversation Tools crews.schema and crews.inspect for contracts/models/tools; crews.get, crews.assign, crews.request and crews.accept to manage work. For additional owner-requested work, inspect tasks and goals through the existing Conversation Tools before creating a task or epic. Select a crew through tasks.create with executor crew and crewDefinitionId when appropriate. Respect the current session permissions and owner approval gates; a plan is not approval to start, merge or publish. Runtime approvals require an explicit owner grant and crews.respond. Direct owner messages in member sessions are directives to reconcile. Delegate implementation and ALL technical review. Host tasks automatically launch an independent reviewer. Do not review or claim worker completion is acceptance. Use crew member IDs from crews.get. Members request expertise through crews.request; resolve each request explicitly. Respect policy, owner instructions and shared dirty work. No commit, merge, push or publication is authorized by crew acceptance. For multiple component tasks, delegate a final integration assignment with integration=true and dependsOn containing ALL other task IDs before crews.finish. Declare project-relative files in each assignment; overlapping scopes are serialized. For generated assets, read images.status: it lists image models with access, formats and limits. Pass required ["image-generation"]; Antigravity members use Nano Banana (raster only), and Codex members also write SVG or animated GIF as code. Native subagents: ${run.definition.policy.allowSubagents ? "allowed within project rules; report their usage" : "disabled for this run"}.\n${run.definition.agents.find((a) => a.role === "coordinator")!.instructions}`;
   }
   private async assignmentCandidates(
     projectId: string,
@@ -1073,6 +1086,7 @@ export class HostCrews {
         ...selected,
         requestFingerprint: signature,
       };
+      const helpers = await this.crewHelpers(run);
       await this.store.transaction(async () => {
         const wait = run.messages.find((entry) => entry.id === waitId);
         if (wait) wait.resolvedAt = this.now();
@@ -1087,12 +1101,13 @@ export class HostCrews {
             request: prompt,
             instructions: agent.instructions,
             tools: ask.CREW_TOOL_INSTRUCTIONS,
-            scope: `Crew runId=${run.id}. Your exclusive write scopes: ${files.join(", ")}. Read outside them as needed, but request expanded scope before editing other files. For missing resources use crews.request; inspect crews.get for member/task IDs. ${run.definition.policy.allowSubagents ? "Report native subagent usage and follow project limits." : "Do not spawn subagents."} Preserve other sessions' work. Do not stage, commit, merge or push.`,
+            scope: `Crew runId=${run.id}. Your exclusive write scopes: ${files.join(", ")}. Read outside them as needed, but request expanded scope before editing other files. For missing resources use crews.request; inspect crews.get for member/task IDs. ${run.definition.policy.allowSubagents ? "Report native subagent usage and follow project limits." : "Do not spawn subagents."}`,
           }),
           harness: selected.candidate.harness,
           providerAccountId: selected.candidate.providerAccountId,
           model: selected.candidate.model,
           modelSettings: withCrewTools(selected.candidate.modelSettings, agent),
+          ...(helpers ? { helpers } : {}),
           reviewerConfig: {
             harness: reviewChoice.candidate.harness,
             providerAccountId: reviewChoice.candidate.providerAccountId,
@@ -1791,12 +1806,12 @@ export class HostCrews {
         };
         // Only this run's tasks, through the run index; a task write elsewhere costs this run nothing.
         for (const task of (await this.tasks.listCrewRun(run.id, run.projectId)).filter(
-          (t) => t.status === "review" || t.status === "blocked" || t.needsInput,
+          (t) => t.status === "review" || t.status === "blocked" || taskNeedsInput(t),
         )) {
           const signature = `${task.status}:${task.updatedAt}`;
           if (run.notifications[`task:${task.id}`] !== signature) {
             includeNotice(
-              `Task ${task.id}: ${task.title}: ${task.status}. ${(task.error ?? "").slice(0, 12000)} Use crews.get to inspect evidence before acceptance.`,
+              `Task ${task.id}: ${task.title}: ${task.status}. ${taskStopSummary(task)?.title ?? ""} ${(task.error ?? "").slice(0, 12000)} Use crews.get to inspect evidence before acceptance.`,
               `task:${task.id}`,
               signature,
             );

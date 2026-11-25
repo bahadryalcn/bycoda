@@ -259,7 +259,9 @@ it("reviews exact source, stops actual current work and atomically deletes only 
   expect(restored.status).toBe("paused");
   expect(restored.awaitingOwnerRestart).toBe(true);
   expect(
-    (await f.tasks.list()).every((task) => task.status === "blocked" && task.awaitingOwnerRestart),
+    (await f.tasks.list()).every(
+      (task) => task.status === "blocked" && task.stop?.nextAction === "restart",
+    ),
   ).toBe(true);
   const goal = (await f.goals.list())[0];
   expect(goal.status).toBe("cancelled");
@@ -516,7 +518,7 @@ it("keeps interrupted Stop unknown, then releases only the deletion hold without
   expect(kept.summary).toContain("retirement is still unknown");
   expect(f.tasks.isAssistantDeletionHeld(f.goalId)).toBe(false);
   expect((await f.store.session(f.sessionId!)).status).toBe("interrupted");
-  expect((await f.tasks.list()).every((task) => task.awaitingOwnerRestart)).toBe(true);
+  expect((await f.tasks.list()).every((task) => task.stop?.nextAction === "restart")).toBe(true);
   await f.tasks.tick();
   expect(f.provider.send).toHaveBeenCalledTimes(sends);
   expect(f.provider.cancel).toHaveBeenCalledTimes(cancels);
@@ -673,6 +675,6 @@ it("rejects stale asynchronous metadata callbacks after deletion and quiescent r
   await f.rpc({ op: "trash.restore", id: `jobs:${f.job.id}` });
   await expect(oldGoals.write(goal)).rejects.toThrow("owner restart");
   await expect(oldTasks.write(task)).rejects.toThrow("stale callbacks");
-  expect((await f.tasks.get(task.id))?.awaitingOwnerRestart).toBe(true);
+  expect((await f.tasks.get(task.id))?.stop?.nextAction).toBe("restart");
   expect((await f.goals.list())[0].awaitingOwnerRestart).toBe(true);
 });

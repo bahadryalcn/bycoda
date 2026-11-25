@@ -29,7 +29,12 @@ const COLUMN_TONES: Partial<Record<TaskColumn, BadgeTone>> = {
   blocked: "danger",
 };
 
-type TaskContext = { project: string; goal?: string; waitingFor: string[] };
+type TaskContext = {
+  project: string;
+  goal?: string;
+  waitingFor: string[];
+  helperFailure?: string;
+};
 
 /** One status lane. It renders a window of its cards (`COLUMN_WINDOW`, then "Load more"),
  * resolves each card's context once, and subscribes only to whether it is the drop target. */
@@ -160,6 +165,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
               timeLabel={taskTimeLabel(task, now)}
               project={context.project}
               goal={context.goal}
+              helperFailure={context.helperFailure}
               planning={planningLabel(task)}
               waitingForText={context.waitingFor.length ? JSON.stringify(context.waitingFor) : ""}
               actionsFor={actionsFor}

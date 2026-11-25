@@ -1,4 +1,7 @@
-import { sessionDelegationParent } from "../../../shared/model/host-contracts/delegation";
+import {
+  sessionBackgroundOwner,
+  sessionDelegationParent,
+} from "../../../shared/model/host-contracts/delegation";
 import { RUNTIME_MODES, type RuntimeMode, type Session } from "../model/session";
 import type { SessionSummary } from "./sessionStore";
 
@@ -12,5 +15,9 @@ export function asRuntimeMode(value: string): RuntimeMode {
  * otherwise pass as a user conversation in recent and project lists.
  */
 export function withSessionDelegation(summary: SessionSummary, saved: Session): SessionSummary {
-  return { ...summary, delegationParent: sessionDelegationParent(saved) ?? null };
+  return {
+    ...summary,
+    delegationParent: sessionDelegationParent(saved) ?? null,
+    backgroundOwner: sessionBackgroundOwner(saved),
+  };
 }

@@ -84,6 +84,8 @@ fall. Suppress one line only, always with a reason.
   - Every `new ResizeObserver` adds its own observer and callback; a list of measuring rows then runs one per row on each layout. Use `observeResize(element, listener)` from src/shared/lib/observeResize.ts, which shares one observer per window and returns the unsubscribe function for the effect cleanup. If this caller needs observer options the helper lacks, keep it with `// oxlint-disable-next-line bycoda/shared-resize-observer -- <which option and why>` on the line above.
 - `bycoda/suppression-has-reason` (`src/**, host/**, packages/**`)
   - A suppression comment needs a reason so the next reader can tell a justified exception from a silenced defect. Append ` -- <why this line is safe>` in the same comment, for example `// oxlint-disable-next-line no-restricted-imports -- scratch file, not read at startup`.
+- `bycoda/task-state-from-stop-code` (`host/tasks/**, src/features/tasks/**, src/shared/model/**`)
+  - A task's `error` is free text for the owner to read, never for the code to branch on. Read `task.stop?.code` / `task.wait?.code` (src/shared/model/host-contracts/task-stop.ts) and show `taskStopSummary(task)`; a run's cause is `outcome.cause`.
 - `bycoda/toast-needs-tone` (`src/**/*.ts, src/**/*.tsx`)
   - Toast has no tone, so it falls back to "info" and a failure shows as a neutral notice. Pass tone="danger", "warning", "success" or "info" explicitly (src/shared/ui/ToastRegion.tsx).
 - `bycoda/transcript-ink-roles` (`src/features/sessions/ui/**/*.tsx`)

@@ -51,7 +51,11 @@ async function revealWindow(): Promise<void> {
  * from the dialog itself) and opens it only after the menu that started the action has closed, so a
  * WebView overlay is no longer lost to a native macOS menu. Mount it once.
  */
-export function AppConfirmHost() {
+export function AppConfirmHost({
+  onOpenSession,
+}: {
+  onOpenSession?: (sessionId: string) => unknown;
+}) {
   const { confirm, dialog } = useConfirm();
   const openedAt = useRef(0);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to native approval and session stores while the confirmation host is mounted.
@@ -101,7 +105,7 @@ export function AppConfirmHost() {
   return (
     <div className="contents" onKeyDownCapture={guard} onKeyUpCapture={guard}>
       {dialog}
-      <OwnerApprovalInbox />
+      <OwnerApprovalInbox onOpenSession={onOpenSession} />
     </div>
   );
 }

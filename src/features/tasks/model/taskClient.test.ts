@@ -1,22 +1,51 @@
 import { describe, expect, it } from "vitest";
 
-it("serializes reusable crews as parent tasks without branch or continuation settings", () => {
+it("sends crew work as the owner set it and the Host names what a crew cannot honor", () => {
+  const executor = { kind: "crew" as const, crewDefinitionId: "crew" };
   const draft = {
     ...newTaskDraft("G:/app", "codex", "codex:test"),
     title: "Crew task",
-    crewDefinitionId: "crew",
-    isolate: true,
-    autoMerge: true,
-    review: true,
+    executor,
+    isolate: false,
+    review: false,
+    continueUntilDone: false,
   };
   const input = hostTaskFromDraft(draft, "parent", "project");
-  expect(input).toMatchObject({ crewDefinitionId: "crew", isolate: false, review: false });
-  expect(input.autoMerge).toBeUndefined();
-  expect(input.continueUntilDone).toBeUndefined();
-  expect(parseHostTask(input)).toMatchObject({ crewDefinitionId: "crew" });
+  expect(input).toMatchObject({ executor, isolate: false, review: false });
+  expect(parseHostTask(input)).toMatchObject({ executor });
   expect(() => parseHostTask({ ...input, crewRunId: "run" })).toThrow();
-  expect(() => parseHostTask({ ...input, isolate: true })).toThrow();
+  // Nothing is dropped on the way: the client forwards the options and the Host refuses them.
+  const options = hostTaskFromDraft(
+    { ...draft, isolate: true, review: true, continueUntilDone: true },
+    "parent",
+    "project",
+  );
+  expect(options).toMatchObject({ isolate: true, review: true, continueUntilDone: true });
+  expect(() => parseHostTask(options)).toThrow(/^isolate: /);
+  expect(() => parseHostTask({ ...input, review: true })).toThrow(/^review: /);
+  expect(() => parseHostTask({ ...input, continueUntilDone: true })).toThrow(
+    /^continueUntilDone: /,
+  );
+  expect(() => parseHostTask({ ...input, modelChoice: { kind: "fixed" } })).toThrow(/^model: /);
+  // Auto and a single agent accept the same options; the Host decides at start.
+  expect(parseHostTask({ ...options, executor: { kind: "auto" } })).toMatchObject({
+    executor: { kind: "auto" },
+    isolate: true,
+    review: true,
+  });
 });
+
+it("sends helpers only when the task departs from Settings", () => {
+  const base = { ...newTaskDraft("G:/app", "codex", "codex:test"), title: "Task" };
+  expect(hostTaskFromDraft(base, "t", "p").helpers).toBeUndefined();
+  expect(hostTaskFromDraft({ ...base, helpers: { mode: "settings" } }, "t", "p").helpers).toBe(
+    undefined,
+  );
+  const off = hostTaskFromDraft({ ...base, helpers: { mode: "off" } }, "t", "p");
+  expect(parseHostTask(off).helpers).toEqual({ mode: "off" });
+  expect(() => parseHostTask({ ...off, helpers: { mode: "sometimes" } })).toThrow();
+});
+import { buildTaskStop } from "../../../../src/shared/model/host-contracts/task-stop";
 import { LOCAL_SYNC_MACHINE_NAME } from "../../connections/model/localSync";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import {
@@ -70,7 +99,7 @@ const stored: HostTask = {
   maxRunMinutes: 60,
   status: "running",
   sessionId: "session-1",
-  needsInput: true,
+  stop: buildTaskStop({ code: "input_required", message: "Answer needed." }, 1),
   createdAt: 1,
   updatedAt: 2,
   startedAt: 2,
@@ -326,7 +355,7 @@ describe("host task rules", () => {
   });
 
   it("validates a task and reports what is wrong", () => {
-    const { status, sessionId, needsInput, createdAt, updatedAt, startedAt, ...input } = stored;
+    const { status, sessionId, stop, createdAt, updatedAt, startedAt, ...input } = stored;
     expect(parseHostTask({ ...input, title: "  Ship  " })).toEqual({
       ...input,
       title: "Ship",

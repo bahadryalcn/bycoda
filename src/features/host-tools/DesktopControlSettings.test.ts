@@ -102,11 +102,15 @@ it("lists approved apps outside full access and saves the mode with the version"
   root = createRoot(container);
   mock.request.mockReset().mockResolvedValue({
     ...state,
-    configuration: { ...config, permissionMode: "auto", allowedApps: ["Chrome"], version: 3 },
+    configuration: { ...config, permissionMode: "ask", allowedApps: ["Chrome"], version: 3 },
   });
   await render();
   expect(container.textContent).toContain("Approved apps");
   expect(container.textContent).toContain("Chrome");
+  // The mode is shown, not chosen here: the Assistant access settings own it.
+  expect(container.textContent).toContain("Ask every time");
+  expect(container.textContent).toContain("Follows the assistant's permission");
+  expect(container.querySelector('[aria-label="Permission"]')).toBeNull();
   await act(() => root.unmount());
   root = createRoot(container);
   mock.request.mockReset().mockResolvedValue({
@@ -248,7 +252,9 @@ it("reports unsaved options and pending saves to its parent", async () => {
 });
 
 it("applies unified full access to the draft and persists physical input with the owner save", async () => {
-  const accessRef = { current: null as null | ((mode: "ask" | "full") => void) };
+  const accessRef = {
+    current: null as null | ((mode: "ask" | "full", preset?: boolean) => void),
+  };
   const saveRef = { current: null as null | (() => Promise<void>) };
   const report = vi.fn();
   await act(async () =>
@@ -257,7 +263,12 @@ it("applies unified full access to the draft and persists physical input with th
     ),
   );
   expect(mock.request.mock.calls.map(([input]) => input.op)).toEqual(["status"]);
-  await act(async () => accessRef.current!("full"));
+  // A changed standing permission only moves the mode: it never turns computer use on.
+  await act(async () => accessRef.current!("ask"));
+  expect(report).toHaveBeenLastCalledWith(
+    expect.objectContaining({ access: expect.objectContaining({ enabled: config.enabled }) }),
+  );
+  await act(async () => accessRef.current!("full", true));
   expect(mock.request.mock.calls.map(([input]) => input.op)).toEqual(["status"]);
   expect(report).toHaveBeenLastCalledWith({
     dirty: true,

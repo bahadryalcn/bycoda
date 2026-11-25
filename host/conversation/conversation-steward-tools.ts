@@ -3,7 +3,7 @@ import type { HostStewards } from "../stewards/stewards";
 import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
 import type { Session } from "../../src/features/sessions/model/session";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
-import type { StewardRun } from "../../src/features/tasks/model/hostStewards";
+import type { HostAutomationRun } from "../../src/features/automations/model/hostAutomations";
 import type { HostTasks } from "../tasks/tasks";
 
 const text = { type: "string", minLength: 1, maxLength: 300 };
@@ -37,27 +37,20 @@ export const STEWARD_CONVERSATION_TOOLS = {
   "stewards.pause": object(target, ["stewardId", "expectedUpdatedAt"]),
   "stewards.resume": object(target, ["stewardId", "expectedUpdatedAt"]),
   "stewards.runNow": object(target, ["stewardId", "expectedUpdatedAt"]),
-  "stewards.stopRun": object({ ...target, runId: text }, [
-    "stewardId",
-    "expectedUpdatedAt",
-    "runId",
-  ]),
+  "stewards.stopRun": object(target, ["stewardId", "expectedUpdatedAt"]),
 } as const;
 export type StewardConversationTool = keyof typeof STEWARD_CONVERSATION_TOOLS;
 export const isStewardConversationTool = (action: string): action is StewardConversationTool =>
   Object.hasOwn(STEWARD_CONVERSATION_TOOLS, action);
 export const describeStewardConversationTool = (action: string) =>
   isStewardConversationTool(action)
-    ? "Manage this project's scheduled steward with revision checks. Creation inherits this session's provider/model/permission mode and never auto-starts or auto-merges proposed tasks. Updates only schedule/focus/proposal limits. A steward agent cannot manage its own steward. Pause stops future schedules; stopRun requests cancellation of the exact active turn; poll stewards.get for settlement. Delete requires a settled run and preserves proposals. Decline requires both steward and proposal revisions, deletes only that steward's unstarted to-do proposal in this project and remembers its title; it cannot discard branches or active work. Broader execution configurations cannot be resumed or run by an agent."
+    ? "Manage this project's scheduled steward with revision checks. Creation inherits this session's provider/model/permission mode and never auto-starts or auto-merges proposed tasks. Updates only schedule/focus/proposal limits. A steward agent cannot manage its own steward. Pause stops future schedules; stopRun requests cancellation of the active run; poll stewards.get for settlement. Delete requires a settled run and preserves proposals. Decline requires both steward and proposal revisions, deletes only that steward's unstarted to-do proposal in this project and remembers its title; it cannot discard branches or active work. Broader execution configurations cannot be resumed or run by an agent."
     : undefined;
-const runReceipt = (run: StewardRun | undefined) =>
-  run
-    ? {
-        sessionId: run.sessionId,
-        runId: run.runId,
-        startedAt: run.startedAt,
-      }
-    : undefined;
+const runReceipt = (run: HostAutomationRun) => ({
+  runId: run.id,
+  sessionId: run.sessionId,
+  startedAt: run.startedAt,
+});
 
 /** Reuses the host scheduler; no generic settings writes or review evidence edits. */
 export class ConversationStewardTools {
@@ -91,10 +84,7 @@ export class ConversationStewardTools {
         throw new Error("Steward not found in this project scope.");
       if (existing.updatedAt !== input.expectedUpdatedAt)
         throw new Error("Steward changed. Read it before updating.");
-      if (
-        existing.run?.sessionId === principal.sessionId ||
-        existing.lastSessionId === principal.sessionId
-      )
+      if (existing.lastSessionId === principal.sessionId)
         throw new Error("A steward agent cannot manage its own steward.");
       return existing;
     };
@@ -126,7 +116,7 @@ export class ConversationStewardTools {
       });
     const existing = await current();
     if (action === "stewards.delete") {
-      if (existing.run)
+      if (existing.lastRunStatus === "running")
         throw new Error("Stop the steward run and wait for settlement before deleting it.");
       await this.stewards.delete(id);
       return { stewardId: id, deleted: true };
@@ -160,15 +150,12 @@ export class ConversationStewardTools {
     )
       throw new Error("This steward's execution settings require owner management.");
     if (action === "stewards.runNow") {
-      if (existing.run)
-        return { requested: false, reason: "already-running", run: runReceipt(existing.run) };
       const result = await this.stewards.runNow(id);
       if (!(await authorized()))
         throw new Error("Session authority revoked. Read steward state before retrying.");
       return {
-        requested: !!result.run,
+        requested: true,
         stewardId: id,
-        run: runReceipt(result.run),
         lastRunStatus: result.lastRunStatus,
         ...(result.lastRunError
           ? { lastRunError: scrubRuntimeLogText(result.lastRunError, 2000) }
@@ -176,7 +163,7 @@ export class ConversationStewardTools {
       };
     }
     if (action === "stewards.stopRun") {
-      const result = await this.stewards.stopRun(id, String(input.runId));
+      const result = await this.stewards.stopRun(id);
       return { requested: result.requested, run: runReceipt(result.run) };
     }
     return await this.store.transaction(async () => {

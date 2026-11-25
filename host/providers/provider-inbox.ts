@@ -34,8 +34,8 @@ type JobRow = {
 /** A job as delivered to the desktop; `requestedBy` is the remote device's name. */
 type DeliveredInboxJob = DesktopInboxJob & { requestedBy?: string };
 function operationSignature(operation: RemoteInboxOperation): string {
-  const payload =
-    operation.action === "jira-comment-images" ? { ...operation, permit: undefined } : operation;
+  // A native permit is minted per attempt and never identifies the request.
+  const payload = "permit" in operation ? { ...operation, permit: undefined } : operation;
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 /** Durable receipts with short dispatch leases. Credentials never enter this table.

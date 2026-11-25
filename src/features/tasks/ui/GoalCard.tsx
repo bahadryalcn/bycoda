@@ -15,9 +15,12 @@ import { MessageSquare, Pencil, Square, Trash2 } from "../../../shared/ui/icons"
 import { Progress } from "../../../shared/ui/Progress";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { type BoardGoal } from "../model/goalClient";
-import { goalProgress } from "../model/hostGoals";
+import { goalProgress, projectGoal } from "../../../shared/model/workProjection";
+import { summaryText } from "../../../shared/model/taskStopSummary";
 import type { BoardTask } from "../model/taskClient";
 import { TaskBudgetUsage } from "./TaskBudgetControls";
+import { RelatedTaskList } from "./RelatedTaskList";
+import { epicTasks } from "../model/taskRelatedWork";
 import { GoalStatusBadge } from "./GoalStatusBadge";
 import { GoalFinalReview } from "./GoalFinalReview";
 import { GoalApprovalBar, GoalPlanSteps } from "./GoalPlanSteps";
@@ -43,6 +46,7 @@ export function GoalCard({
   onRecheckFinal,
   onOpenFinal,
   onSessions,
+  onOpenTask,
 }: {
   goal: BoardGoal;
   /** The tasks on the goal's machine. */
@@ -59,16 +63,22 @@ export function GoalCard({
   onRecheckFinal?: () => void;
   onOpenFinal?: () => void;
   onSessions: () => void;
+  onOpenTask: (task: BoardTask) => void;
 }) {
   useLocale();
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
   // The owner's own choice; until then the epic opens when it needs the owner.
   const [chosenOpen, setChosenOpen] = useState<boolean | null>(null);
   const progress = goalProgress(goal, tasks);
-  const reason = goal.planError ?? goal.error;
+  const planned = epicTasks(goal, tasks);
+  // A blocked epic says what stopped its blocked task, as the task card does.
+  const stop = goal.planError ? undefined : projectGoal(goal, planned).stop;
+  const reason =
+    stop && stop.code !== "unrecorded" ? summaryText(stop) : (goal.planError ?? goal.error);
   const finished = goal.status === "done" || goal.status === "cancelled";
   const hasDetails =
     !finished ||
+    planned.length > 0 ||
     Boolean(
       goal.budgetUsage ||
       goal.budgetStop ||
@@ -263,6 +273,7 @@ export function GoalCard({
             onOpenFinal={onOpenFinal}
           />
           <TaskBudgetUsage usage={goal.budgetUsage} stop={goal.budgetStop} budget={goal.budget} />
+          <RelatedTaskList label={t("Tasks")} tasks={planned} onOpen={onOpenTask} />
           <GoalPlanSteps goal={goal} />
           <GoalApprovalBar
             goal={goal}

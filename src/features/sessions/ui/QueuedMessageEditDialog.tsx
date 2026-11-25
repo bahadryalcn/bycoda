@@ -863,7 +863,6 @@ function QueueEditContent({
               readOnly={parentClosed}
               disabled={false}
               spellCheck={false}
-              hasSubagents={false}
               onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={remove}
               citationCommentDrafts={citationCommentDrafts}

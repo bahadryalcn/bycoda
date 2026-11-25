@@ -25,6 +25,7 @@ import menuUsesDropdown from "./rules/menu-uses-dropdown.mjs";
 import toastNeedsTone from "./rules/toast-needs-tone.mjs";
 import noRawErrorText from "./rules/no-raw-error-text.mjs";
 import translationSlotNames from "./rules/translation-slot-names.mjs";
+import taskStateFromStopCode from "./rules/task-state-from-stop-code.mjs";
 import utf8ChildLocale from "./rules/utf8-child-locale.mjs";
 import wholeSentenceTranslation from "./rules/whole-sentence-translation.mjs";
 
@@ -50,6 +51,7 @@ export const rules = {
   "literal-translation-key": literalTranslationKey,
   "no-raw-error-text": noRawErrorText,
   "translation-slot-names": translationSlotNames,
+  "task-state-from-stop-code": taskStateFromStopCode,
   "utf8-child-locale": utf8ChildLocale,
   "whole-sentence-translation": wholeSentenceTranslation,
 };

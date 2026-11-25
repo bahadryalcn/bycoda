@@ -59,6 +59,7 @@ import settingsStyles from "./AssistantSettings.module.css";
 import {
   assistantAccessMode,
   assistantAccessPatch,
+  computerPermissionMode,
   DEFAULT_CRITICAL_EXCLUSIONS,
   effectiveConsent,
   nativeConsentFromGrant,
@@ -196,7 +197,7 @@ export function AssistantSettings({
     dirty: false,
     pending: false,
   });
-  const computerAccess = useRef<((mode: "ask" | "full") => void) | null>(null);
+  const computerAccess = useRef<((mode: "ask" | "full", preset?: boolean) => void) | null>(null);
   const foldersAccess = useRef<((runWithoutAsking: boolean) => void) | null>(null);
   const defaultWorker = useDefaultWorkerExecution();
   const access = assistantAccessMode(
@@ -298,7 +299,7 @@ export function AssistantSettings({
       ...assistantAccessPatch({ ...current, execution }, next),
     }));
     setCustomAccessOpen(false);
-    computerAccess.current(next);
+    computerAccess.current(next, true);
     foldersAccess.current(next === "full");
     // The preset also replaces the native grant on Save: full grants everything, ask drops it.
     consentChanged.current = true;
@@ -615,6 +616,8 @@ export function AssistantSettings({
                         setConsentDirty(true);
                         setSavedNotice(false);
                         setDraft((current) => ({ ...current, ...patch }));
+                        // Computer use follows this permission; it has no setting of its own.
+                        computerAccess.current?.(computerPermissionMode({ ...draft, ...patch }));
                       }}
                     />
                     <Row

@@ -200,8 +200,10 @@ Global voice can discover displayed project names and historical session
 metadata, then use exact project/session identities for navigation and lifecycle
 actions. Partial or duplicate project names need clarification. Desktop operations
 can use a real assistant conversation without opening a coding session, while
-retaining the owner's per-app approval and computer use permission mode
-(Ask every time, Auto or Full access, managed in **Settings > Access**). A tool's
+retaining the owner's per-app approval and the computer use permission. That
+permission has no setting of its own: it is Full access when the assistant's
+permission in **Settings > Access** covers everything and **Computer use** is not
+one of its exceptions, and Ask every time otherwise. A tool's
 authentic response can be usable even when its contents cannot be attributed to a
 project; that content does not become a saved personal rule or trusted memory.
 
@@ -321,7 +323,9 @@ the original request and note identity for inspection rather than creating a
 second note.
 
 Choose **Scheduled automation** for recurring work. Review the project, schedule,
-model choice and run limits before saving. **Default** follows the automation
+model choice and run limits before saving. A background automation also sets **Run with**
+(Agent, Crew or Auto) and **Helpers**; each occurrence resolves them again when it starts, while
+a fixed model is never replaced by another. **Use settings** follows the automation
 role, **Any model** uses the shared order or a group, and **Fixed** uses the chosen model.
 **Manage in Models** opens shared priority and limits. The model resolves when
 each run starts; running sessions keep their model. Creation saves the schedule without
@@ -334,6 +338,17 @@ missed occurrence. It runs only within its configured grace period; the schedule
 then advances to a future occurrence instead of replaying every missed run.
 One-time runs keep their exact scheduled time. Repeated **Run** clicks for the same
 automation share one pending launch; other automations remain independent.
+
+A background automation can run **Steps** instead of one prompt: a recipe. Choose **Repeat this**
+on a finished task to start one from its request, project, who ran it, model and helpers, then
+add task steps and **decisions**. Steps run in order; each task step is an ordinary task that
+follows the recipe's **Run with**, model and helpers unless the step sets its own. A decision
+step pauses the run until you **Approve** or **Decline**; declining stops that run with its
+reason. Editing a recipe starts a new version, and a run in progress finishes on the version it
+started with. Each step's result is saved, so a step that finished is never repeated after a Host
+restart, and a step whose outcome cannot be read is not repeated either: the run stops and names
+the step. A recipe runs by hand or on a schedule; open a run in Automations to see its steps and
+open their tasks.
 
 Plan approval can be required always, only for big jobs, or never. Big jobs have
 four or more planned tasks or span multiple projects. The selected policy is
@@ -411,6 +426,8 @@ Work you start by voice or in the Room (goals, standalone tasks and crew runs) i
 tracked once it is created. The assistant only watches it: you still get a notice
 when it is done, fails, needs you or stalls, and no new authority over it is
 granted. Up to 200 items are tracked; finished ones are forgotten after seven days.
+A status question, by voice or in writing, reads the same phase and reason the task
+card shows, so the answer matches what you see.
 
 Use a job's pause, resume or stop action to control that job. **Stop everything**
 interrupts the supervisor and requests that its linked jobs stop. Errors remain
