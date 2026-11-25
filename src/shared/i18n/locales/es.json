@@ -14936,5 +14936,12 @@
   "Data and config": "Datos y configuración",
   "Archives": "Archivos comprimidos",
   "Other files": "Otros archivos",
-  "Turn on colored file references first": "Activa primero las referencias de archivos con color"
+  "Turn on colored file references first": "Activa primero las referencias de archivos con color",
+  "Searching the web": "Buscando en la web",
+  "Searched the web": "Búsqueda web realizada",
+  "Searched 1 site": "1 sitio consultado",
+  "Searched {p0} sites": "{p0} sitios consultados",
+  "Show sources for {p0}": "Mostrar fuentes de {p0}",
+  "Hide sources for {p0}": "Ocultar fuentes de {p0}",
+  "{p0} more sources": "{p0} fuentes más"
 }

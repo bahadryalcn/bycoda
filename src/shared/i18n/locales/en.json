@@ -14936,5 +14936,12 @@
   "Data and config": "Data and config",
   "Archives": "Archives",
   "Other files": "Other files",
-  "Turn on colored file references first": "Turn on colored file references first"
+  "Turn on colored file references first": "Turn on colored file references first",
+  "Searching the web": "Searching the web",
+  "Searched the web": "Searched the web",
+  "Searched 1 site": "Searched 1 site",
+  "Searched {p0} sites": "Searched {p0} sites",
+  "Show sources for {p0}": "Show sources for {p0}",
+  "Hide sources for {p0}": "Hide sources for {p0}",
+  "{p0} more sources": "{p0} more sources"
 }

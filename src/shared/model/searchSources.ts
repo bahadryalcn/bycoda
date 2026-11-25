@@ -44,6 +44,51 @@ export function normalizeSearchSources(raw: unknown): SearchSource[] {
   return out;
 }
 
+/** A tool or server tool that searches the web (Claude `WebSearch` / `web_search`, Codex `webSearch`). */
+export function isWebSearchName(name: string | undefined): boolean {
+  return /web[\s_-]?search/i.test(name ?? "");
+}
+
+/** Index just past the JSON array that opens at `start`, or -1 when it never closes. */
+function arrayEnd(text: string, start: number): number {
+  let depth = 0;
+  let quoted = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (quoted) {
+      if (char === "\\") index++;
+      else if (char === '"') quoted = false;
+    } else if (char === '"') quoted = true;
+    else if (char === "[" || char === "{") depth++;
+    else if (char === "]" || char === "}") {
+      depth--;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Sources from a web search that reports them as text: Claude Code's own `WebSearch` tool
+ * answers with one `Links: [{"title","url"}, ...]` JSON array per query it ran.
+ */
+export function searchSourcesFromText(text: string | undefined): SearchSource[] {
+  if (!text?.includes("Links:")) return [];
+  const rows: unknown[] = [];
+  for (const match of text.matchAll(/Links:\s*\[/g)) {
+    const start = match.index + match[0].length - 1;
+    const end = arrayEnd(text, start);
+    if (end < 0) continue;
+    try {
+      const parsed: unknown = JSON.parse(text.slice(start, end));
+      if (Array.isArray(parsed)) rows.push(...parsed);
+    } catch {
+      // A malformed list is skipped; the raw result stays readable in the row's output.
+    }
+  }
+  return normalizeSearchSources(rows);
+}
+
 export function sameSearchSources(a?: SearchSource[], b?: SearchSource[]): boolean {
   if (a === b) return true;
   if (!a || !b || a.length !== b.length) return false;

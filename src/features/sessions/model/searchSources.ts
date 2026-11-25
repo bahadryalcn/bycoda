@@ -1,4 +1,4 @@
-import type { SearchSource } from "../../../shared/model/searchSources";
+import { isWebSearchName, type SearchSource } from "../../../shared/model/searchSources";
 import type { Block, ToolPreview } from "./session";
 
 export * from "../../../shared/model/searchSources";
@@ -17,4 +17,11 @@ export function collectSearchSources(blocks: Iterable<Block>): SearchSource[] {
     }
   }
   return out;
+}
+
+/** A web search row: its pages came back, or the tool that ran it searches the web. */
+export function isWebSearchBlock(block: Block): boolean {
+  const preview = block.tool?.preview;
+  if (preview?.kind !== "search") return false;
+  return !!preview.sources?.length || isWebSearchName(preview.title);
 }

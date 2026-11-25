@@ -555,6 +555,18 @@ describe("activityPhaseTitle", () => {
     expect(title([read("r1", "a.ts"), read("r2", "b.ts")])).toBe("Read 2 files");
     expect(title([read("r1", "src/index.css")])).toBe("Read index.css");
     expect(title([search("s1"), search("s2")])).toBe("Searched the project");
+    const web = (id: string): Block => ({
+      ...search(id, "release notes"),
+      tool: {
+        kind: "search",
+        title: "WebSearch",
+        status: "completed",
+        preview: { kind: "search", title: "WebSearch", query: "release notes" },
+      },
+    });
+    expect(title([web("w1"), web("w2")])).toBe("Searched the web");
+    expect(title([web("w1")], true)).toBe("Searching the web");
+    expect(title([web("w1"), search("s1")])).toBe("Searched the project");
     expect(title([search("s1"), read("r1")])).toBe("Explored the project");
     expect(title([edit("e1", "a.ts"), edit("e2", "b.ts")])).toBe("Edited 2 files");
     expect(title([shell("a"), shell("b")])).toBe("Ran 2 commands");

@@ -864,7 +864,7 @@ function mapToolItem(
         }),
         kind: "search",
         status,
-        preview: { kind: "search", query },
+        preview: { kind: "search", title: "webSearch", query },
       };
     }
     return {
@@ -878,7 +878,7 @@ function mapToolItem(
       }),
       kind: "search",
       status,
-      preview: { kind: "search", query },
+      preview: { kind: "search", title: "webSearch", query },
     };
   }
 

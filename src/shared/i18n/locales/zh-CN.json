@@ -14936,5 +14936,12 @@
   "Data and config": "数据和配置",
   "Archives": "压缩包",
   "Other files": "其他文件",
-  "Turn on colored file references first": "请先开启彩色文件引用"
+  "Turn on colored file references first": "请先开启彩色文件引用",
+  "Searching the web": "正在搜索网络",
+  "Searched the web": "已搜索网络",
+  "Searched 1 site": "已搜索 1 个网站",
+  "Searched {p0} sites": "已搜索 {p0} 个网站",
+  "Show sources for {p0}": "显示 {p0} 的来源",
+  "Hide sources for {p0}": "隐藏 {p0} 的来源",
+  "{p0} more sources": "另外 {p0} 个来源"
 }

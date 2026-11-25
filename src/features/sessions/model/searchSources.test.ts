@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { Block } from "./session";
 import {
   collectSearchSources,
+  isWebSearchBlock,
+  isWebSearchName,
   linkSearchCitations,
   normalizeSearchSources,
+  searchSourcesFromText,
   type SearchSource,
 } from "./searchSources";
+import { previewFromTool } from "../../../integrations/harness/providers/claude/claudeProtocol";
 import { boundedToolPreview } from "./toolInspection";
 
 const a: SearchSource = { title: "Alpha", url: "https://www.alpha.dev/a", domain: "alpha.dev" };
@@ -88,5 +92,55 @@ describe("linkSearchCitations", () => {
 
   it("does nothing without sources", () => {
     expect(linkSearchCitations("see [1]", [])).toBe("see [1]");
+  });
+});
+
+describe("searchSourcesFromText", () => {
+  const result = [
+    'Web search results for query: "release notes"',
+    "",
+    'Links: [{"title":"Alpha [beta] \\"notes\\"","url":"https://www.alpha.dev/a"},{"title":"Beta","url":"https://beta.io/b?x=1"}]',
+    "",
+    'Links: [{"title":"Again","url":"https://www.alpha.dev/a"},{"title":"Bad","url":"javascript:alert(1)"}]',
+    "Summary text that mentions Links: [not json",
+  ].join("\n");
+
+  it("reads every Links array of a Claude Code WebSearch result, validated and deduped", () => {
+    expect(searchSourcesFromText(result)).toEqual([{ ...a, title: 'Alpha [beta] "notes"' }, b]);
+  });
+
+  it("returns nothing for text without a list", () => {
+    expect(searchSourcesFromText(undefined)).toEqual([]);
+    expect(searchSourcesFromText("No results found.")).toEqual([]);
+    expect(searchSourcesFromText("Links: [{broken")).toEqual([]);
+  });
+
+  it("carries the pages into a WebSearch preview but not into a file search", () => {
+    expect(previewFromTool("WebSearch", { query: "release notes" }, result)).toMatchObject({
+      kind: "search",
+      query: "release notes",
+      sources: [{ domain: "alpha.dev" }, { domain: "beta.io" }],
+    });
+    expect(previewFromTool("Grep", { pattern: "Links" }, result)?.sources).toBeUndefined();
+  });
+});
+
+describe("isWebSearchBlock", () => {
+  const block = (preview: NonNullable<Block["tool"]>["preview"]): Block => ({
+    id: "s",
+    role: "tool",
+    text: "Find",
+    tool: { kind: "search", title: "Find", status: "completed", preview },
+  });
+
+  it("knows a web search by its pages or by the tool that ran it", () => {
+    expect(isWebSearchName("WebSearch")).toBe(true);
+    expect(isWebSearchName("web_search")).toBe(true);
+    expect(isWebSearchName("webSearch")).toBe(true);
+    expect(isWebSearchName("Grep")).toBe(false);
+    expect(isWebSearchBlock(block({ kind: "search", query: "x", sources: [a] }))).toBe(true);
+    expect(isWebSearchBlock(block({ kind: "search", title: "webSearch", query: "x" }))).toBe(true);
+    expect(isWebSearchBlock(block({ kind: "search", title: "Grep", query: "x" }))).toBe(false);
+    expect(isWebSearchBlock(block({ kind: "read", path: "a.ts" }))).toBe(false);
   });
 });

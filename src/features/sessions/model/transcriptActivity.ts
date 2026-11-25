@@ -18,6 +18,7 @@ import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { bycodaWorkSummary } from "./bycodaToolCall";
 import { streamingBlockUpdate } from "./stableBlocks";
+import { isWebSearchBlock } from "./searchSources";
 const groupedSources = new WeakMap<Block[][], { blocks: Block[]; managed: boolean }>();
 const groupedPositions = new WeakMap<Block[][], Map<string, number>>();
 function rememberGrouping(turns: Block[][], blocks: Block[], managed: boolean): void {
@@ -902,6 +903,7 @@ type PhaseTally = {
   reads: Set<string>;
   edits: Set<string>;
   searches: number;
+  webSearches: number;
   runs: number;
   /** Commands the agent left running when it yielded, and how many still are. */
   background: number;
@@ -918,6 +920,7 @@ function tallySteps(steps: Block[]): PhaseTally {
     reads: new Set(),
     edits: new Set(),
     searches: 0,
+    webSearches: 0,
     runs: 0,
     background: 0,
     backgroundLive: 0,
@@ -955,7 +958,8 @@ function tallySteps(steps: Block[]): PhaseTally {
         } else tally.runs += 1;
         break;
       case "research":
-        if (/^Find\b/i.test(label) || isSearchTool(kind, title, preview)) {
+        if (isWebSearchBlock(block)) tally.webSearches += 1;
+        else if (/^Find\b/i.test(label) || isSearchTool(kind, title, preview)) {
           tally.searches += 1;
         } else tally.reads.add(target);
         break;
@@ -978,7 +982,11 @@ function workSummary(kind: ActivityWorkKind, tally: PhaseTally, live: boolean): 
     case "edit":
       return `${live ? "Editing" : "Edited"} ${fileLabel(tally.edits)}`;
     case "research":
-      if (tally.reads.size > 0 && tally.searches === 0) {
+      // Only web searches: the agent looked outside the project.
+      if (tally.webSearches > 0 && tally.searches === 0 && tally.reads.size === 0) {
+        return live ? "Searching the web" : "Searched the web";
+      }
+      if (tally.reads.size > 0 && tally.searches === 0 && tally.webSearches === 0) {
         return `${live ? "Reading" : "Read"} ${fileLabel(tally.reads)}`;
       }
       if (tally.reads.size === 0) {

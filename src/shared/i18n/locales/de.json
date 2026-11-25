@@ -14936,5 +14936,12 @@
   "Data and config": "Daten und Konfiguration",
   "Archives": "Archive",
   "Other files": "Weitere Dateien",
-  "Turn on colored file references first": "Zuerst farbige Dateiverweise aktivieren"
+  "Turn on colored file references first": "Zuerst farbige Dateiverweise aktivieren",
+  "Searching the web": "Web wird durchsucht",
+  "Searched the web": "Web durchsucht",
+  "Searched 1 site": "1 Website durchsucht",
+  "Searched {p0} sites": "{p0} Websites durchsucht",
+  "Show sources for {p0}": "Quellen für {p0} anzeigen",
+  "Hide sources for {p0}": "Quellen für {p0} ausblenden",
+  "{p0} more sources": "{p0} weitere Quellen"
 }

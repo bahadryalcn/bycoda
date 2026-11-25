@@ -34,7 +34,8 @@ import { FilePreview } from "../../files/public/FilePreview";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
-import { SearchSourceChips } from "./SearchSourceChips";
+import { WebSearchRow } from "./WebSearchRow";
+import { isWebSearchBlock } from "../model/searchSources";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentRow, SubagentStack } from "./SubagentCards";
 import { SessionErrorNotice } from "./SessionErrorNotice";
@@ -955,6 +956,10 @@ function ActivityToolRow({
   if (appCall) {
     return <BycodaCallRow block={block} call={appCall} live={live} onApproval={onApproval} />;
   }
+  // A web search reads as its own pill and source cards; a failed or waiting one stays a plain row.
+  if (isWebSearchBlock(block) && !pending && state !== "rejected") {
+    return <WebSearchRow block={block} working={live && state === "pending"} />;
+  }
   const summary = (
     <ToolCallSummary
       label={label}
@@ -1031,9 +1036,6 @@ function ActivityToolRow({
         />
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
-      {block.tool?.preview?.kind === "search" ? (
-        <SearchSourceChips sources={block.tool.preview.sources} inset={!bare} />
-      ) : null}
       {errorDetail && !errorOpen ? (
         <p
           className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "ps-5"}`}

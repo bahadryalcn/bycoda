@@ -10,6 +10,7 @@ import type {
   ToolPreviewLine,
 } from "../../../features/sessions/model/session";
 import { displayPath } from "../../../shared/lib/paths";
+import { isWebSearchName, searchSourcesFromText } from "../../../shared/model/searchSources";
 import type { HarnessFileChange } from "./types";
 import {
   formatShellIntent,
@@ -69,10 +70,14 @@ export function extractToolPreview(
     kind === "search" ||
     (query && kind !== "write" && rawKind !== "read" && !/^read\b/i.test(title ?? ""))
   ) {
+    // A web search that answers in text (Claude Code's WebSearch) carries its pages in that text.
+    const sources =
+      typeof content === "string" && isWebSearchName(title) ? searchSourcesFromText(content) : [];
     return {
       kind: "search",
       title,
       query,
+      ...(sources.length ? { sources } : {}),
     };
   }
 

@@ -14936,5 +14936,12 @@
   "Data and config": "データと設定",
   "Archives": "アーカイブ",
   "Other files": "その他のファイル",
-  "Turn on colored file references first": "先にカラーのファイル参照を有効にしてください"
+  "Turn on colored file references first": "先にカラーのファイル参照を有効にしてください",
+  "Searching the web": "ウェブを検索中",
+  "Searched the web": "ウェブを検索しました",
+  "Searched 1 site": "1 件のサイトを検索",
+  "Searched {p0} sites": "{p0} 件のサイトを検索",
+  "Show sources for {p0}": "{p0} の情報源を表示",
+  "Hide sources for {p0}": "{p0} の情報源を隠す",
+  "{p0} more sources": "ほか {p0} 件の情報源"
 }

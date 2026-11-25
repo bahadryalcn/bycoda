@@ -14936,5 +14936,12 @@
   "Data and config": "Veri ve yapılandırma",
   "Archives": "Arşivler",
   "Other files": "Diğer dosyalar",
-  "Turn on colored file references first": "Önce renkli dosya referanslarını açın"
+  "Turn on colored file references first": "Önce renkli dosya referanslarını açın",
+  "Searching the web": "Web'de aranıyor",
+  "Searched the web": "Web'de arandı",
+  "Searched 1 site": "1 site tarandı",
+  "Searched {p0} sites": "{p0} site tarandı",
+  "Show sources for {p0}": "{p0} kaynaklarını göster",
+  "Hide sources for {p0}": "{p0} kaynaklarını gizle",
+  "{p0} more sources": "{p0} kaynak daha"
 }
