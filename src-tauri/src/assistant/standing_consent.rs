@@ -196,7 +196,10 @@ pub(crate) fn decision(
     if classify(&grant, request) == Some(false) {
         return Ok(Some(false));
     }
-    if request["input"]["requireOwnerApproval"] == true {
+    if request["input"]["requireOwnerApproval"] == true
+        || request["input"]["operation"]["action"] == "liveStream.obsStream"
+        || request["input"]["operation"]["action"] == "liveStream.goLive"
+    {
         return Ok(None);
     }
     Ok(classify(&grant, request))

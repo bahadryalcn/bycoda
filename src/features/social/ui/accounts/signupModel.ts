@@ -21,6 +21,8 @@ const HOST_SIGNUP_PLATFORMS: readonly SocialPlatform[] = [
   "youtube",
   "reddit",
   "x",
+  // Snapchat signup stays owner-assisted.
+  "snapchat",
 ];
 
 /** Signup is offered for browser accounts of a platform with a signup route the Host can drive. */
@@ -45,6 +47,8 @@ export const SIGNUP_FIELD_ORDER: readonly SocialRegistrationField[] = [
   "username",
   "birthdate",
   "category",
+  "phone",
+  "bio",
 ];
 
 export function registrationFieldLabel(field: SocialRegistrationField): string {
@@ -63,6 +67,10 @@ export function registrationFieldLabel(field: SocialRegistrationField): string {
       return t("Birth date");
     case "category":
       return t("Category");
+    case "phone":
+      return t("Phone number");
+    case "bio":
+      return t("About");
   }
 }
 
@@ -77,6 +85,7 @@ export function registrationFieldProblem(
     return t("Enter a valid email address.");
   if (field === "username" && !/^[A-Za-z0-9._-]{2,64}$/.test(text))
     return t("Use 2 to 64 letters, digits, dots, dashes or underscores, without @.");
+  if (field === "phone" && !/^\+?[0-9]{7,15}$/.test(text)) return t("Enter a valid phone number.");
   return undefined;
 }
 
@@ -167,6 +176,10 @@ export function signupStepLabel(step: NonNullable<SocialBrowserWorkflow["registr
       return blockerLabel(step);
     case "admin_setup":
       return t("Administrator setup");
+    case "rate_limit":
+      return t("Reddit reached its email sign-up limit. Try again later.");
+    case "network_blocked":
+      return t("Reddit blocked browser access for network security. Try again later.");
     case "unknown":
       return t("Unrecognized step");
   }
@@ -179,6 +192,11 @@ export function signupProblem(workflow: SocialBrowserWorkflow): string | undefin
     return t("The signup was interrupted. Start again to reopen the window.");
   if (workflow.status === "failed") return workflow.error || t("The signup could not continue.");
   const registration = workflow.registration;
+  if (
+    workflow.status === "awaiting_owner" &&
+    (registration?.step === "rate_limit" || registration?.step === "network_blocked")
+  )
+    return registration.message ? t(registration.message) : signupStepLabel(registration.step);
   if (registration?.status === "unsupported")
     return t("This signup step is not recognized. Finish it in the platform window.");
   if (registration?.status === "changed")

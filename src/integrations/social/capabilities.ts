@@ -6,6 +6,7 @@ import {
   NOT_YET,
   NOT_YET_OPERATIONS,
   SOCIAL_DOCUMENTS,
+  X_CAPABILITY_OPERATIONS,
   type CapabilityOperation,
   type CapabilityRequirement,
   type OperationRequirements,
@@ -22,6 +23,7 @@ import { tiktokCapabilities } from "./capabilities/tiktok";
 import { whatsappCapabilities } from "./capabilities/whatsapp";
 import { X_BROWSER_SCOPES, xCapabilities } from "./capabilities/x";
 import { youtubeCapabilities } from "./capabilities/youtube";
+import { YOUTUBE_CAPABILITIES } from "./capabilities/youtube-operations";
 
 export { SOCIAL_DOCUMENTS, X_BROWSER_OPERATIONS, X_BROWSER_SCOPES };
 export type { CapabilityOperation, CapabilityRequirement, OperationRequirements, SocialCapability };
@@ -60,6 +62,14 @@ const X_BROWSER_NO_RECIPE =
 const isNotYet = (operation: CapabilityOperation): boolean =>
   (NOT_YET_OPERATIONS as readonly string[]).includes(operation);
 
+function capabilityOperations(platform: SocialPlatform) {
+  if (platform === "x") return [...CAPABILITY_OPERATIONS, ...X_CAPABILITY_OPERATIONS];
+  // YouTube management shares comment.moderate with the Facebook Page operations; list it once.
+  if (platform === "youtube")
+    return [...new Set<CapabilityOperation>([...CAPABILITY_OPERATIONS, ...YOUTUBE_CAPABILITIES])];
+  return CAPABILITY_OPERATIONS;
+}
+
 /** Selecting polling requests both read products. Existing grants may enable either channel independently. */
 export function platformRequirements(
   platform: SocialPlatform,
@@ -92,16 +102,20 @@ function browserCapabilities(account: SocialAccount, now: number): SocialCapabil
   const notes = PLATFORM_TABLES[account.platform](account.accountType).browser;
   const source = SOCIAL_DOCUMENTS[account.platform];
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
-  return CAPABILITY_OPERATIONS.map((operation): SocialCapability => {
+  return capabilityOperations(account.platform).map((operation): SocialCapability => {
     const row = { operation, scopes: [] as string[], source };
-    if (isNotYet(operation) && !supported.includes(operation))
+    if (
+      isNotYet(operation) &&
+      !supported.includes(operation) &&
+      !(account.platform === "youtube" && notes[operation])
+    )
       return {
         ...row,
         status: "unsupported",
         reason: NOT_YET[operation as keyof typeof NOT_YET].reason,
         reasonCode: "unsupported.not_yet",
       };
-    if (!supported.includes(operation))
+    if (!supported.includes(operation) && !(account.platform === "youtube" && notes[operation]))
       return {
         ...row,
         status: "unsupported",
@@ -139,8 +153,13 @@ function apiCapabilities(account: SocialAccount, now: number): SocialCapability[
     account.accountType,
   );
   const expired = account.expiresAt !== undefined && account.expiresAt <= now;
-  return CAPABILITY_OPERATIONS.map((operation): SocialCapability => {
-    const requirement: CapabilityRequirement = requirements[operation];
+  return capabilityOperations(account.platform).map((operation): SocialCapability => {
+    const requirement: CapabilityRequirement = requirements[operation] ?? {
+      scopes: [],
+      unsupported: true,
+      reason: "This operation requires a verified YouTube browser connection.",
+      reasonCode: "youtube.browser_required",
+    };
     let status: SocialCapability["status"] = "available";
     let reason = requirement.reason;
     let reasonCode = "api.ready";
@@ -192,6 +211,12 @@ function apiCapabilities(account: SocialAccount, now: number): SocialCapability[
       reason =
         "Search exists in approved X API products, but external discovery is not implemented by this adapter. Local contacts.search is available.";
       reasonCode = "unsupported.platform";
+    }
+    // X API billing is a separate owner grant, including for previously connected accounts.
+    if (account.platform === "x" && !account.xApiProduct && status !== "unsupported") {
+      status = "pending";
+      reason = "The owner must enable a paid X API product before making API requests.";
+      reasonCode = "x.api.paid_product";
     }
     if (["instagram", "facebook"].includes(account.platform) && operation === "webhook") {
       status = "pending";

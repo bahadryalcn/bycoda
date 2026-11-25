@@ -1,5 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { surfaceCaptureRules, surfaceSequences } from "./social-surface-data";
+import { InstagramSurface } from "./instagram-surface";
+import { snapchatFixtureAccounts, snapchatFixtureResult } from "./snapchat-data";
 import { createRoot } from "react-dom/client";
 import {
   LOCAL_MODEL_SOURCE,
@@ -27,6 +29,7 @@ import type {
 import {
   accountCapabilities,
   X_BROWSER_SCOPES,
+  platformRequirements,
 } from "../../../src/integrations/social/capabilities";
 import { browserScopes } from "../../../src/integrations/social/browserCapabilities";
 import { contentSupport } from "../../../src/integrations/social/platformAdapters";
@@ -48,6 +51,7 @@ import type { SocialList } from "../../../src/features/social/model/audience";
 import "../../../src/styles/index.css";
 import type { SocialProgram } from "../../../src/features/social/model/socialProgram";
 const programFixture = new URLSearchParams(location.search).has("programs");
+const snapchatUiFixture = new URLSearchParams(location.search).has("snapchat-ui");
 const telegramChannelFixture = new URLSearchParams(location.search).has("telegram-channel");
 const programRecords: SocialProgram[] = [];
 const browserWorkflows: import("../../../src/features/social/model/socialBrowser").SocialBrowserWorkflow[] =
@@ -57,9 +61,84 @@ function fixtureRegistrationProgress(
   platform: string,
   profile: SocialRegistrationProfile,
 ): SocialRegistrationProgress {
-  const fields: ("email" | "birthdate")[] =
-    platform === "tiktok" ? ["email", "birthdate"] : ["email"];
+  const fields: SocialRegistrationProgress["requiredFields"] =
+    platform === "snapchat" && snapchatUiFixture
+      ? ["givenName", "familyName", "phone", "birthdate"]
+      : platform === "tiktok"
+        ? ["email", "birthdate"]
+        : ["email"];
   const missing = fields.filter((field) => !profile[field]);
+  const query = new URLSearchParams(location.search);
+  if (platform === "x" && query.has("signup-x-welcome"))
+    return {
+      status: "awaiting_owner",
+      step: "profile",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message: "Finish the welcome steps in X, then close the window to continue to sign-in.",
+    };
+  if (platform === "youtube" && query.has("signup-google-expired"))
+    return {
+      status: "awaiting_owner",
+      step: "method",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message:
+        "The Google signup session expired. Select Try again in the Google window, then continue here.",
+    };
+  if (
+    (platform === "youtube" && query.has("signup-google-device")) ||
+    (platform === "instagram" && query.has("signup-instagram-phone"))
+  )
+    return {
+      status: "awaiting_owner",
+      step: "verification",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message:
+        platform === "youtube"
+          ? "Scan the QR code with your phone and finish verification in the Google window."
+          : "Enter a mobile number and confirm the SMS or WhatsApp code in Instagram.",
+    };
+  if (query.has("signup-provider-warning") && (platform === "x" || platform === "tiktok"))
+    return {
+      status: "awaiting_owner",
+      step: platform === "x" ? "terms" : "rate_limit",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message:
+        platform === "x"
+          ? "X could not continue signup. Check the message in the X window, then select Continue here."
+          : "TikTok reached its sign-up attempt limit. Try again later.",
+    };
+  if (platform === "reddit" && query.has("signup-network-block"))
+    return {
+      status: "awaiting_owner",
+      step: "network_blocked",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message: "Reddit blocked browser access for network security. Try again later.",
+    };
+  if (platform === "reddit" && !missing.length && query.has("signup-limit"))
+    return {
+      status: "awaiting_owner",
+      step: "rate_limit",
+      blockers: [],
+      requiredFields: [],
+      filledFields: [],
+      canAdvance: false,
+      message: "Reddit reached its email sign-up limit. Try again later.",
+    };
   return {
     status: missing.length ? "needs_fields" : "awaiting_owner",
     step: missing.length ? "profile" : "verification",
@@ -88,6 +167,7 @@ const snapshot: SocialSnapshot = {
       platformId: "",
       name: "Demo account",
       accountType: "member",
+      xApiProduct: "pay-per-use",
       scopes: [],
       connected: false,
       accessApproved: false,
@@ -111,12 +191,154 @@ const snapshot: SocialSnapshot = {
 };
 // Capabilities come from the shared capability map, so every entry carries its reason code.
 snapshot.capabilities = { x: accountCapabilities(snapshot.accounts[0]) };
+if (new URLSearchParams(location.search).has("x-paid-fixture")) {
+  const x = snapshot.accounts[0];
+  Object.assign(x, {
+    xApiProduct: "enterprise",
+    connection: "oauth",
+    connected: true,
+    accessApproved: true,
+    platformId: "12345",
+    scopes: ["tweet.read", "tweet.write", "users.read", "media.write"],
+    grants: { demo: ["read", "draft", "publish"] },
+  });
+  snapshot.capabilities = { x: accountCapabilities(x) };
+}
+if (new URLSearchParams(location.search).has("x-browser-delete")) {
+  const x = snapshot.accounts[0];
+  Object.assign(x, {
+    xApiProduct: undefined,
+    connection: "browser",
+    connected: true,
+    accessApproved: true,
+    platformId: "12345",
+  });
+  snapshot.sendingEnabled = true;
+  snapshot.capabilities = { x: accountCapabilities(x) };
+}
+const deleteParams = new URLSearchParams(location.search);
+let redditConnectionChecks = 0;
+const deleteFixture = deleteParams.has("telegram-delete")
+  ? "telegram"
+  : deleteParams.has("reddit-delete")
+    ? "reddit"
+    : undefined;
+let deleteStatus: "review" | "deleted" | undefined;
+if (deleteFixture) {
+  const telegram = deleteFixture === "telegram";
+  const publicationAccount = {
+    ...snapshot.accounts[0]!,
+    id: `fixture-${deleteFixture}`,
+    name: telegram ? "Fixture Telegram" : "Fixture Reddit",
+    platform: deleteFixture,
+    accountType: telegram ? ("channel" as const) : ("member" as const),
+    platformId: telegram ? "-1001234567890" : "web:reddit:t2_fixture",
+    connection: telegram ? ("token" as const) : ("browser" as const),
+    ...(telegram ? { telegramBotId: "123", scopes: ["channel.publish"] } : {}),
+    connected: true,
+    accessApproved: true,
+    grants: { demo: ["read", "draft", "publish"] },
+  };
+  snapshot.accounts = [publicationAccount];
+  snapshot.capabilities = { [publicationAccount.id]: accountCapabilities(publicationAccount) };
+}
+let youtubeStudioVideoDeleted = false;
+if (new URLSearchParams(location.search).has("youtube-management")) {
+  const scopes = [
+    ...new Set(
+      Object.values(platformRequirements("youtube", "channel")).flatMap(
+        (item) => item?.scopes ?? [],
+      ),
+    ),
+  ];
+  for (const browser of [false, true]) {
+    const account = {
+      ...snapshot.accounts[0]!,
+      id: browser ? "youtube-browser" : "youtube-api",
+      platform: "youtube" as const,
+      platformId: (browser ? "web:youtube:" : "") + "UC" + "a".repeat(22),
+      accountType: "channel" as const,
+      connection: browser ? ("browser" as const) : ("oauth" as const),
+      name: browser ? "Studio fixture" : "YouTube fixture",
+      scopes: browser ? [] : scopes,
+      connected: true,
+      accessApproved: true,
+    };
+    snapshot.accounts.push(account);
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+  }
+}
+// Facebook Page controls, using synthetic Graph responses.
+const facebookFixture = new URLSearchParams(location.search).has("facebook-page");
+const facebookProfileFixture = new URLSearchParams(location.search).has(
+  "facebook-profile-controls",
+);
+const facebookMemberFixture = new URLSearchParams(location.search).has("facebook-member");
+if (facebookFixture) {
+  const account = {
+    ...snapshot.accounts[0],
+    id: "fixture-facebook",
+    platform: "facebook",
+    platformId: "123",
+    accountType: facebookMemberFixture ? "member" : "page",
+    connection:
+      facebookMemberFixture || new URLSearchParams(location.search).has("facebook-browser")
+        ? "browser"
+        : "oauth",
+    name: facebookMemberFixture ? "Fixture Facebook Profile" : "Fixture Facebook Page",
+    connected: true,
+    accessApproved: true,
+    scopes: [
+      "pages_read_engagement",
+      "pages_manage_posts",
+      "pages_show_list",
+      "pages_read_user_content",
+      "pages_manage_metadata",
+      "business_management",
+      "pages_manage_engagement",
+      "pages_messaging",
+      "read_insights",
+      "publish_video",
+    ],
+    grants: { demo: ["read", "draft", "publish", "comment", "reply", "message"] },
+  } satisfies SocialSnapshot["accounts"][number];
+  snapshot.accounts = [account];
+  snapshot.capabilities = { [account.id]: accountCapabilities(account) };
+  snapshot.sendingEnabled = true;
+  const commentAt = Date.now() - 60_000;
+  snapshot.threads = [
+    {
+      id: "facebook-comment",
+      accountId: account.id,
+      platformThreadId: "789_456",
+      platformPostId: "123_789",
+      contactId: "facebook-viewer",
+      kind: "comment",
+      lastInboundAt: commentAt,
+      replyAllowed: true,
+      events: [
+        {
+          id: "comment-1",
+          direction: "inbound",
+          text: "When is the next workshop?",
+          at: commentAt,
+          platformId: "789_456",
+        },
+      ],
+    },
+  ];
+}
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let heldAction: string | undefined;
 let releaseAction: ((reject: boolean) => void) | undefined;
 let configured = false;
 let oauthStatus = "idle";
 let browserWrites = false;
+if (facebookProfileFixture) browserWrites = true;
+if (deleteFixture === "reddit" && new URLSearchParams(location.search).has("reddit-campaign")) {
+  browserWrites = true;
+  snapshot.sendingEnabled = true;
+}
 const browserFlows: Record<string, { status: "waiting" | "connected"; expiresAt?: number }> = {};
 const mediaUploads = new Map<
   string,
@@ -131,7 +353,8 @@ let xProfileFixture = {
 const pageProfileFixtures = new Map<string, typeof xProfileFixture>();
 const finalRegistrationReviews = new Map<string, SocialRegistrationReview>();
 const telegramChannelReviews = new Map<string, SocialTelegramChannelReview>();
-if (new URLSearchParams(location.search).has("signup-create")) browserWrites = true;
+if (snapchatUiFixture || new URLSearchParams(location.search).has("signup-create"))
+  browserWrites = true;
 if (telegramChannelFixture) {
   browserWrites = true;
   configured = true;
@@ -258,6 +481,55 @@ if (new URLSearchParams(location.search).has("linkedin-profile")) {
     });
   });
 }
+if (new URLSearchParams(location.search).has("linkedin-support")) {
+  browserWrites = true;
+  const base = snapshot.accounts[0]!;
+  snapshot.accounts = [
+    {
+      ...base,
+      id: "linkedin-api-fixture",
+      platform: "linkedin",
+      name: "Fixture LinkedIn API",
+      platformId: "urn:li:person:fixture",
+      accountType: "member",
+      connection: "oauth",
+      scopes: ["w_member_social", "r_member_postAnalytics"],
+      connected: true,
+      accessApproved: true,
+    },
+    {
+      ...base,
+      id: "linkedin-browser-fixture",
+      platform: "linkedin",
+      name: "Fixture LinkedIn Browser",
+      platformId: "web:linkedin:in:fixture-owner",
+      accountType: "member",
+      connection: "browser",
+      scopes: browserScopes("linkedin"),
+      connected: true,
+      accessApproved: true,
+    },
+  ];
+  for (const account of snapshot.accounts)
+    snapshot.capabilities[account.id] = accountCapabilities(account);
+}
+if (new URLSearchParams(location.search).has("linkedin-live-comments")) {
+  snapshot.accounts = [
+    {
+      ...snapshot.accounts[0]!,
+      id: "linkedin-live-page",
+      platform: "linkedin",
+      accountType: "organization",
+      connection: "oauth",
+      name: "Fixture LinkedIn Live Page",
+      platformId: "urn:li:organization:42",
+      connected: true,
+      accessApproved: true,
+      scopes: ["r_events", "r_organization_social_feed", "w_organization_social_feed"],
+    },
+  ];
+  snapshot.capabilities["linkedin-live-page"] = accountCapabilities(snapshot.accounts[0]!);
+}
 if (new URLSearchParams(location.search).has("browser-monitor")) {
   snapshot.accounts[0].connected = true;
   snapshot.accounts[0].connection = "browser";
@@ -266,19 +538,41 @@ if (new URLSearchParams(location.search).has("browser-monitor")) {
   snapshot.accounts[0].scopes = [...X_BROWSER_SCOPES];
   snapshot.capabilities.x = accountCapabilities(snapshot.accounts[0]);
 }
-if (new URLSearchParams(location.search).has("tiktok")) {
+const fixtureTikTokBrowser = new URLSearchParams(location.search).has("tiktok-browser");
+const fixtureTikTokProfile = {
+  name: "Demo TikTok",
+  username: "demo.creator",
+  bio: "Kısa videolar ve ürün hikâyeleri.",
+  website: "https://example.com",
+  followers: 12400,
+  following: 120,
+  likes: 32800,
+  posts: 83,
+};
+let fixtureTikTokReviews: {
+  id: string;
+  change: Record<string, unknown>;
+  at: number;
+  state: "pending" | "done";
+}[] = [];
+if (fixtureTikTokBrowser || new URLSearchParams(location.search).has("tiktok")) {
   snapshot.accounts.push({
     id: "tiktok",
     platform: "tiktok",
-    platformId: "creator",
+    platformId: fixtureTikTokBrowser ? "web:tiktok:demo.creator" : "creator",
     name: "Demo TikTok",
     accountType: "member",
-    scopes: ["user.info.basic", "video.publish"],
+    connection: fixtureTikTokBrowser ? "browser" : undefined,
+    scopes: fixtureTikTokBrowser ? browserScopes("tiktok") : ["user.info.basic", "video.publish"],
     connected: true,
     accessApproved: true,
     paused: false,
     executorId: "fixture",
-    grants: { demo: ["read", "draft", "publish"] },
+    grants: {
+      demo: fixtureTikTokBrowser
+        ? ["read", "draft", "publish", "message", "reply", "comment"]
+        : ["read", "draft", "publish"],
+    },
     createdAt: 1,
   });
   snapshot.capabilities.tiktok = accountCapabilities(
@@ -520,6 +814,9 @@ const shellReads: Record<string, (input: Record<string, unknown>) => unknown> = 
   "inbox.replyOptions": () => ({ canReply: false, reason: "Fixture" }),
   "autonomy.get": (input) => ({
     ...DEFAULT_AUTONOMY,
+    ...(facebookProfileFixture && input.accountId === "fixture-facebook"
+      ? { levels: { ...DEFAULT_AUTONOMY.levels, publish: "approve" } }
+      : {}),
     accountId: input.accountId,
     updatedAt: 1,
     updatedBy: "owner",
@@ -1441,6 +1738,15 @@ Object.assign(window, {
         }
         if (args.method === "social.browser.status") {
           const id = (args.params as { accountId: string }).accountId;
+          if (
+            id === "fixture-reddit" &&
+            deleteParams.has("reddit-browser-network-block") &&
+            redditConnectionChecks++ === 0
+          )
+            return {
+              status: "failed",
+              error: "Reddit blocked browser access for network security. Try again later.",
+            };
           return structuredClone(
             browserFlows[id] ?? {
               status: snapshot.accounts.some(
@@ -1494,6 +1800,14 @@ Object.assign(window, {
             confirm: string;
             patch: Record<string, string>;
           };
+          if (facebookProfileFixture && input.accountId === "fixture-facebook") {
+            if (input.confirm !== "UPDATE_FACEBOOK_PROFILE")
+              throw new Error("Exact Facebook confirmation required.");
+            const upload = input.patch.avatarUploadId ?? input.patch.bannerUploadId;
+            if (upload && !mediaUploads.has(upload))
+              throw new Error("Owner image upload is required.");
+            return { ...xProfileFixture, ...input.patch };
+          }
           const pageProfile = pageProfileFixtures.get(input.accountId);
           if (pageProfile) {
             const platform = snapshot.accounts.find(
@@ -1575,6 +1889,9 @@ Object.assign(window, {
           };
         if (args.method === "social.browser.workflow.status") {
           const { accountId } = args.params as { accountId: string };
+          for (const workflow of browserWorkflows)
+            if (workflow.accountId === accountId && workflow.status === "queued")
+              workflow.status = "awaiting_owner";
           return {
             available: true,
             reason: "Fixture only",
@@ -1710,7 +2027,11 @@ Object.assign(window, {
               accountId: account.id,
               platform: account.platform,
               intent: input.intent,
-              status: "awaiting_owner",
+              status:
+                input.intent === "inbox" &&
+                new URLSearchParams(location.search).has(`${account.platform}-chat`)
+                  ? "queued"
+                  : "awaiting_owner",
               outcome: "unverified",
               createdAt: Date.now(),
               updatedAt: Date.now(),
@@ -1748,9 +2069,16 @@ Object.assign(window, {
           return structuredClone(workflow);
         }
         if (args.method === "social.browser.workflow.cancel") {
-          const { accountId } = args.params as { accountId: string };
+          const { accountId, workflowId } = args.params as {
+            accountId: string;
+            workflowId?: string;
+          };
           for (const workflow of browserWorkflows)
-            if (workflow.accountId === accountId && workflow.status === "awaiting_owner")
+            if (
+              workflow.accountId === accountId &&
+              (!workflowId || workflow.id === workflowId) &&
+              ["queued", "awaiting_owner"].includes(workflow.status)
+            )
               workflow.status = "cancelled";
           return null;
         }
@@ -1783,13 +2111,411 @@ Object.assign(window, {
             expiresAt: Date.now() + 100000,
           };
         }
+        if (args.method === "social.browser.linkedin.manage") {
+          const operation = (args.params as { operation?: string } | undefined)?.operation;
+          if (operation === "member.read")
+            return { section: "headline", value: "Fixture product studio" };
+          if (operation === "network.list")
+            return {
+              complete: false,
+              people: [
+                {
+                  platformId: "web:linkedin:in:fixture-ada",
+                  url: "https://www.linkedin.com/in/fixture-ada/",
+                  name: "Ada Fixture",
+                },
+              ],
+            };
+        }
         if (args.method === "social.request") {
           const params = args.params as { action: string; input?: Record<string, unknown> };
+          if (params.action === "x.apply") {
+            const { accountId, kind, postId, confirm, intentId } = params.input ?? {};
+            if (
+              !new URLSearchParams(location.search).has("x-browser-delete") ||
+              accountId !== "x" ||
+              kind !== "deletePost" ||
+              postId !== "123456789" ||
+              confirm !== "APPLY_X_ACTION" ||
+              typeof intentId !== "string"
+            )
+              throw new Error("The fixture expected an exact reviewed X post deletion.");
+            return { status: "applied", result: { postId } };
+          }
+          if (params.action === "youtube.videos.list")
+            return {
+              items:
+                params.input?.accountId === "youtube-browser"
+                  ? youtubeStudioVideoDeleted
+                    ? []
+                    : [{ id: "shortDemo01", title: "Studio test Short" }]
+                  : [
+                      {
+                        id: "shortDemo01",
+                        title: "Summer release",
+                        privacy: "public",
+                        description: "Release notes and demo.",
+                      },
+                    ],
+            };
+          if (params.action === "youtube.video.update") return { status: "done" };
+          if (params.action === "youtube.video.delete")
+            if (params.input?.accountId === "youtube-browser") {
+              if (
+                params.input.videoId !== "shortDemo01" ||
+                params.input.confirm !== true ||
+                youtubeStudioVideoDeleted
+              )
+                throw new Error("Fixture requires one confirmed Studio video deletion.");
+              youtubeStudioVideoDeleted = true;
+              return { status: "done", result: { id: "shortDemo01", deleted: true } };
+            } else throw new Error("Fixture YouTube deletion denied.");
+          if (params.action === "youtube.channel.read")
+            return {
+              name: "Fixture channel",
+              handle: "@fixture",
+              description: "Independent videos and live shows.",
+            };
+          if (params.action === "youtube.analytics.report" && params.input?.kind === "earnings")
+            return {
+              status: "needs_scope",
+              reasonCode: "youtube_monetary_scope_required",
+              requiredScopes: ["https://www.googleapis.com/auth/yt-analytics-monetary.readonly"],
+            };
+          if (params.action === "youtube.analytics.report")
+            return {
+              status: "ok",
+              rows: [{ views: 41820, estimatedMinutesWatched: 5228, subscribersGained: 164 }],
+            };
+          if (params.action === "youtube.quota.status")
+            return { day: "2026-11-18", units: 53, searchCalls: 1, uploadCalls: 0 };
+          if (params.action === "youtube.subscriptions.list")
+            return {
+              items: [
+                {
+                  id: "subscription-1",
+                  channelId: "UC" + "b".repeat(22),
+                  title: "Fixture subscriber",
+                },
+              ],
+            };
+          if (params.action === "youtube.broadcasts.list")
+            return {
+              broadcasts: [
+                {
+                  id: "liveDemo001",
+                  title: "Friday livestream",
+                  status: "ready",
+                  privacyStatus: "unlisted",
+                },
+              ],
+            };
+          if (params.action === "youtube.comments.list") return { comments: [] };
+          if (params.action === "youtube.community.list")
+            return {
+              items: [
+                {
+                  id: "UgFixturePost001",
+                  text: "Fixture Community release",
+                  status: params.input?.status ?? "published",
+                  url: "https://www.youtube.com/post/UgFixturePost001",
+                },
+              ],
+            };
+          if (
+            params.action === "youtube.community.publish" ||
+            params.action === "youtube.community.edit"
+          )
+            return { status: "done" };
+          if (params.action === "youtube.community.delete")
+            return { status: "done", result: { id: params.input?.postId, deleted: true } };
+          if (params.action === "youtube.operations.list")
+            return {
+              items: [
+                {
+                  id: "fixture-review",
+                  accountId: "youtube-api",
+                  action: "youtube.video.update",
+                  input: {
+                    accountId: "youtube-api",
+                    videoId: "shortDemo01",
+                    patch: { title: "Summer release" },
+                  },
+                  status: "awaiting_approval",
+                },
+              ],
+            };
+          if (params.action === "youtube.monetization.status") return { status: "needs_human" };
+          if (params.action === "x.lists")
+            return params.input?.listId
+              ? { items: [{ id: "1002", username: "studiofan", name: "Studio Fan" }] }
+              : {
+                  items: [
+                    { id: "2001", name: "Studio friends", private: false, memberCount: 12 },
+                    { id: "2002", name: "Press", private: true, memberCount: 4 },
+                  ],
+                };
+          if (params.action === "linkedin.analytics")
+            return { source: "api", metrics: { impressions: 1247, reactions: 46, comments: 12 } };
+          if (params.action === "linkedin.live.status")
+            return { state: "missing", studioUrl: "https://www.linkedin.com/video/golive/manage/" };
+          if (params.action === "linkedin.live.comments.read")
+            return {
+              eventId: params.input?.eventId,
+              postId: "urn:li:ugcPost:123",
+              comments: [
+                {
+                  id: "urn:li:comment:(urn:li:activity:123,456)",
+                  actor: "urn:li:person:demo",
+                  text: "Bir ürün demosu olacak mı?",
+                },
+              ],
+            };
+          if (deleteFixture && params.action === `${deleteFixture}.posts.published`)
+            return {
+              posts: [
+                {
+                  jobId: `${deleteFixture}-qa`,
+                  postId: deleteFixture === "telegram" ? "-1001234567890:7" : "t3_qa123",
+                  title: "Test yayını",
+                  ...(deleteFixture === "reddit"
+                    ? { subreddit: deleteParams.has("profile-target") ? "u_bycoda" : "bycodatest" }
+                    : {}),
+                  url:
+                    deleteFixture === "telegram"
+                      ? "https://t.me/c/1234567890/7"
+                      : "https://www.reddit.com/comments/qa123/",
+                  deletion: deleteStatus,
+                },
+              ],
+            };
+          if (deleteFixture && params.action === `${deleteFixture}.post.delete`) {
+            deleteStatus = deleteParams.has("delete-review") ? "review" : "deleted";
+            return { status: deleteStatus };
+          }
+          if (facebookFixture) {
+            if (facebookProfileFixture && params.action === "facebook.page.uploadPhoto") {
+              const { kind, uploadId, confirm } = params.input ?? {};
+              if (
+                (kind !== "avatar" && kind !== "cover") ||
+                !mediaUploads.has(String(uploadId)) ||
+                confirm !== "UPLOAD_FACEBOOK_PAGE_PHOTO"
+              )
+                throw new Error("Expected owner upload and Facebook confirmation.");
+              return {
+                status: "updated",
+                updated: [kind === "avatar" ? "avatarPhotoId" : "coverPhotoId"],
+              };
+            }
+            if (facebookProfileFixture && params.action === "facebook.management.approve") {
+              if (params.input?.forChat !== true) throw new Error("Expected chat approval.");
+              return { ...(params.input.reviewed as Record<string, unknown>), status: "approved" };
+            }
+            if (params.action === "facebook.management.list")
+              return {
+                requests: [
+                  {
+                    id: "request-1",
+                    accountId: "fixture-facebook",
+                    pageId: "123",
+                    projectId: "demo",
+                    operation: "facebook.page.update",
+                    details: { patch: { about: "More studio workshops" } },
+                    status: "pending",
+                    createdAt: 1763452800000,
+                  },
+                  ...(facebookProfileFixture
+                    ? [
+                        {
+                          id: "request-2",
+                          accountId: "fixture-facebook",
+                          pageId: "123",
+                          projectId: "demo",
+                          operation: "facebook.post.edit",
+                          details: { postId: "123_456", text: "Edited studio schedule" },
+                          status: "pending",
+                          createdAt: 1763452800000,
+                        },
+                      ]
+                    : []),
+                ],
+              };
+            if (params.action === "inbox.unified")
+              return {
+                items: [
+                  {
+                    threadId: "facebook-comment",
+                    accountId: "fixture-facebook",
+                    platform: "facebook",
+                    kind: "comment",
+                    title: "Fixture viewer",
+                    preview: "When is the next workshop?",
+                    at: snapshot.threads[0].lastInboundAt,
+                    status: "unread",
+                    tags: [],
+                  },
+                ],
+                unreadable: [],
+              };
+            if (params.action === "inbox.replyOptions") return { canReply: true };
+            if (params.action === "thread.read")
+              return structuredClone(
+                snapshot.threads.find((thread) => thread.id === params.input?.id),
+              );
+            if (params.action === "facebook.page.read")
+              return {
+                id: "123",
+                name: "Fixture Facebook Page",
+                username: "fixturepage",
+                category: "Creator",
+                about: "Photography and workshops",
+                description: "Local studio and creator workshops.",
+                website: "https://example.test/",
+                phone: "+90 555 010 0101",
+                followersCount: 1270,
+                fanCount: 932,
+              };
+            if (params.action === "facebook.post.delete" && facebookFixture)
+              return { deleted: true };
+            if (
+              params.action === "facebook.posts.list" ||
+              params.action === "facebook.mentions.list"
+            )
+              return {
+                posts: [{ id: "123_789", text: "Fixture studio announcement", at: 1763452800000 }],
+              };
+            if (params.action === "facebook.insights.read")
+              return {
+                metrics: [{ name: "page_media_view", values: [{ value: 240 }], available: true }],
+              };
+            if (params.action === "facebook.earnings.read")
+              return {
+                metrics: [
+                  { name: "monetization_approximate_earnings", values: [], available: false },
+                ],
+              };
+            if (params.action === "facebook.live.list")
+              return {
+                broadcasts: [
+                  {
+                    id: "101",
+                    title: "Fixture live workshop",
+                    phase: "unpublished",
+                    encoderReady: true,
+                  },
+                ],
+              };
+            if (params.action === "facebook.live.comments")
+              return {
+                comments: [
+                  {
+                    id: "101_456",
+                    text: "When does it begin?",
+                    authorName: "Fixture viewer",
+                    canReply: true,
+                  },
+                ],
+              };
+          }
           if (params.action === heldAction)
             await new Promise<void>((resolve, reject) => {
               releaseAction = (fail) =>
                 fail ? reject(new Error("Fixture request rejected.")) : resolve();
             });
+          // TikTok account fixture. No provider or real credentials are used.
+          if (fixtureTikTokBrowser && params.input?.accountId === "tiktok") {
+            const input = params.input;
+            switch (params.action) {
+              case "tiktok.profile.read":
+                return fixtureTikTokProfile;
+              case "tiktok.profile.update":
+                if (input.confirm !== true) throw new Error("Expected profile confirmation.");
+                Object.assign(fixtureTikTokProfile, input.patch);
+                return fixtureTikTokProfile;
+              case "tiktok.privacy.read":
+                return {
+                  privateAccount: false,
+                  comments: "everyone",
+                  duet: "friends",
+                  stitch: "followers",
+                };
+              case "tiktok.analytics.read":
+                return {
+                  source: "studio",
+                  period: "Son 28 gün",
+                  metrics: [
+                    { key: "postViews", displayValue: "128.450" },
+                    { key: "profileViews", displayValue: "1.240" },
+                  ],
+                };
+              case "tiktok.earnings.read":
+                return {
+                  source: "studio",
+                  status: "available",
+                  period: "Kasım 2026",
+                  metrics: [
+                    { key: "estimatedRewards", displayValue: "₺ 450,50" },
+                    { key: "diamonds", displayValue: "120" },
+                  ],
+                };
+              case "tiktok.audience.list":
+                return {
+                  people: [
+                    {
+                      platformId: "web:tiktok:demo.fan",
+                      username: "demo.fan",
+                      name: "Demo takipçi",
+                    },
+                  ],
+                };
+              case "tiktok.comments.list":
+              case "tiktok.mentions.list":
+              case "tiktok.messages.list":
+                return {
+                  events: [
+                    {
+                      eventId: "tiktok-fixture-event",
+                      threadId: "185001",
+                      postId: "746001",
+                      contactId: "web:tiktok:demo.fan",
+                      contactName: "Demo takipçi",
+                      text: "Yeni video ne zaman geliyor?",
+                      kind: "comment",
+                      at: 1786978800000,
+                    },
+                  ],
+                  coverage: [{ status: "partial" }],
+                };
+              case "tiktok.comments.sync":
+              case "tiktok.messages.sync":
+                return { ingested: 1 };
+              case "tiktok.changes.request": {
+                const { accountId: _, ...change } = input;
+                const row = {
+                  id: `review-${fixtureTikTokReviews.length + 1}`,
+                  change,
+                  at: 1786978800000,
+                  state: "pending" as const,
+                };
+                fixtureTikTokReviews.push(row);
+                return row;
+              }
+              case "tiktok.changes.list":
+                return fixtureTikTokReviews;
+              case "tiktok.changes.apply":
+                if (input.confirm !== true) throw new Error("Expected exact approval.");
+                fixtureTikTokReviews = fixtureTikTokReviews.map((row) =>
+                  row.id === input.reviewId ? { ...row, state: "done" } : row,
+                );
+                return { followed: true };
+              case "tiktok.live.setup":
+                return { credentialSaved: true, eligible: true };
+              case "tiktok.business.status":
+                return { approved: false, connected: false };
+            }
+          }
+          if (snapchatUiFixture && params.action.startsWith("snapchat."))
+            return snapchatFixtureResult(params.action, params.input);
           if (params.action === "programs.media-preview") {
             const uploadId = String(params.input?.uploadId ?? "");
             const upload = mediaUploads.get(uploadId);
@@ -2246,7 +2972,10 @@ Object.assign(window, {
               };
               for (const variant of campaign.variants) {
                 const account = snapshot.accounts.find((item) => item.id === variant.accountId)!;
-                const issue = contentSupport(account, { kind: "publish", payload: variant });
+                const issue =
+                  account.platform === "reddit"
+                    ? undefined
+                    : contentSupport(account, { kind: "publish", payload: variant });
                 if (issue) throw new Error(issue);
                 if (
                   (account.connection === "browser" || variant.facebook?.target === "reel") &&
@@ -2449,10 +3178,17 @@ Object.assign(window, {
 });
 document.body.style.cssText =
   "height:100vh;margin:0;background:var(--color-background-base);color:var(--color-content)";
+if (new URLSearchParams(location.search).has("instagram-surface")) {
+  document.documentElement.style.overflowY = "auto";
+  document.body.style.height = "auto";
+  document.body.style.overflow = "visible";
+}
 function SocialFixture() {
   const [shown, setShown] = useState(true);
   Object.assign(window, { socialFixtureShow: setShown });
   if (new URLSearchParams(location.search).has("x-media")) return <XMediaFixture />;
+  const instagramSurface = new URLSearchParams(location.search).get("instagram-surface");
+  if (instagramSurface) return <InstagramSurface surface={instagramSurface} />;
   return (
     <div className="flex h-screen min-w-0 flex-col">
       <ToolPanel active={shown}>
@@ -2497,6 +3233,12 @@ const fixtureModelSource: ModelSource = {
 if (new URLSearchParams(location.search).has("extra-seeded")) {
   (window as unknown as { socialFixtureSeed: () => void }).socialFixtureSeed();
 }
+if (snapchatUiFixture) {
+  snapshot.accounts = snapchatFixtureAccounts;
+  snapshot.capabilities = Object.fromEntries(
+    snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+  );
+}
 if (new URLSearchParams(location.search).has("inbox-surfaces")) {
   snapshot.threads[0].events.push({
     id: "surface-reply",
@@ -2528,6 +3270,71 @@ if (new URLSearchParams(location.search).has("calendar-seeded")) {
       actorId: "fixture",
     },
   ];
+}
+if (new URLSearchParams(location.search).has("composer-multi")) {
+  // Visual evidence: X, Instagram, YouTube, Facebook and TikTok selected together.
+  const base = snapshot.accounts[0]!;
+  Object.assign(base, {
+    xApiProduct: "enterprise",
+    connection: "oauth",
+    connected: true,
+    accessApproved: true,
+    platformId: "12345",
+    scopes: ["tweet.read", "tweet.write", "users.read", "media.write"],
+    grants: { demo: ["read", "draft", "publish"] },
+  });
+  const youtubeScopes = [
+    ...new Set(
+      Object.values(platformRequirements("youtube", "channel")).flatMap(
+        (item) => item?.scopes ?? [],
+      ),
+    ),
+  ];
+  const others = [
+    [
+      "instagram",
+      "Studio Instagram",
+      "member",
+      ["instagram_business_basic", "instagram_business_content_publish"],
+    ],
+    ["youtube", "Studio YouTube", "channel", youtubeScopes],
+    [
+      "facebook",
+      "Studio Facebook Page",
+      "page",
+      ["pages_manage_posts", "pages_read_engagement", "pages_show_list"],
+    ],
+    ["tiktok", "Studio TikTok", "member", ["user.info.basic", "video.publish"]],
+  ] as const;
+  for (const [platform, name, accountType, scopes] of others)
+    snapshot.accounts.push({
+      ...base,
+      id: `multi-${platform}`,
+      platform,
+      platformId: `${platform}-1`,
+      name,
+      accountType,
+      xApiProduct: undefined,
+      connection: "oauth",
+      scopes: [...scopes],
+    } as SocialSnapshot["accounts"][number]);
+  snapshot.capabilities = Object.fromEntries(
+    snapshot.accounts.map((account) => [account.id, accountCapabilities(account)]),
+  );
+  // Fixture only: every selected platform can publish, so the composer shows all five at once.
+  for (const account of snapshot.accounts)
+    snapshot.capabilities[account.id] = [
+      ...snapshot.capabilities[account.id].filter((item) => item.operation !== "publish"),
+      {
+        operation: "publish",
+        status: "available",
+        reason: "Fixture publishing.",
+        reasonCode: "api.ready",
+        scopes: [],
+        source: "fixture",
+      },
+    ];
+  snapshot.sendingEnabled = true;
 }
 // ?activity-rich: a filled ActivityHistory (jobs in every state plus AI actions); opt-in only.
 if (new URLSearchParams(location.search).has("activity-rich")) {

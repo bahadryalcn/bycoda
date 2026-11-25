@@ -11,12 +11,18 @@ describe("LinkedIn capability map", () => {
     expect(org.media.unsupported).toBeFalsy();
     expect(org["audience.collect"].unsupported).toBeFalsy();
     expect(member.publish.unsupported).toBeFalsy();
-    expect(member.media.unsupported).toBe(true);
+    expect(member.media.unsupported).toBeFalsy();
+    expect(member.analytics.scopes).toEqual([
+      "r_member_postAnalytics",
+      "r_member_profileAnalytics",
+    ]);
+    expect(org.analytics.scopes).toEqual(["rw_organization_admin"]);
+    expect(member.delete.unsupported).toBeFalsy();
     expect(member["audience.collect"].unsupported).toBe(true);
   });
 
   it("leaves operations neither API nor browser implements as not supported", () => {
-    for (const operation of ["search", "webhook", "analytics", "delete", "profile.read"] as const) {
+    for (const operation of ["search", "webhook", "profile.read"] as const) {
       expect(org[operation].unsupported).toBe(true);
       expect(member[operation].unsupported).toBe(true);
     }

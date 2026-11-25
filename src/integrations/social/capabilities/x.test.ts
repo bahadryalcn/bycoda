@@ -10,7 +10,8 @@ const account = (overrides: Partial<SocialAccount> = {}): SocialAccount =>
     platformId: "42",
     name: "@owner",
     accountType: "member",
-    connection: "token",
+    connection: "oauth",
+    xApiProduct: "pay-per-use",
     scopes: [],
     connected: true,
     accessApproved: true,
@@ -37,6 +38,17 @@ const ALL_API_SCOPES = [
 ];
 
 describe("X API operations", () => {
+  it("holds existing X accounts without explicit billing opt-in", () => {
+    const caps = accountCapabilities(account({ xApiProduct: undefined, scopes: ALL_API_SCOPES }));
+    expect(row(caps, "publish")).toMatchObject({
+      status: "pending",
+      reasonCode: "x.api.paid_product",
+    });
+    expect(row(caps, "x.spaces")).toMatchObject({
+      status: "pending",
+      reasonCode: "x.api.paid_product",
+    });
+  });
   it("reports them available with an API reason when every scope is granted", () => {
     const caps = accountCapabilities(account({ scopes: ALL_API_SCOPES }));
     for (const operation of OPENED) {
@@ -75,12 +87,13 @@ describe("X API operations", () => {
 
   it("keeps the browser connection unsupported for them, with no API wording", () => {
     const caps = accountCapabilities(account({ connection: "browser", scopes: ["dm.read"] }));
-    for (const operation of OPENED) {
+    for (const operation of OPENED.filter((operation) => operation !== "delete")) {
       expect(row(caps, operation), operation).toMatchObject({
         status: "unsupported",
         reasonCode: "unsupported.not_yet",
       });
     }
+    expect(row(caps, "delete")).toMatchObject({ status: "available", reasonCode: "browser.ready" });
     expect(JSON.stringify(caps.filter((item) => item.status !== "unsupported"))).not.toMatch(
       /X API|OAuth/,
     );

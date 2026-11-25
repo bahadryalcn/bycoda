@@ -14,6 +14,8 @@ import {
   text,
 } from "./common";
 import { metaExtendedOperations } from "./meta-extended";
+import { sendInstagramMessage } from "./instagram-messaging";
+import { sendFacebookPrivateReply } from "./facebook-engagement";
 
 /**
  * Meta's standard 24-hour messaging window. The host records `replyUntil` on the thread; when it is
@@ -39,10 +41,44 @@ export function createMetaAdapter(
   return {
     ownedPostPages: true,
     async send(account, job, token, media, checkpoint, beforeSubmit) {
+      // Facebook private replies are tied to the comment and its verified author.
+      if (job.payload.facebookPrivateReply) {
+        if (
+          platform !== "facebook" ||
+          job.kind !== "reply" ||
+          !job.payload.postId ||
+          !job.payload.recipientId
+        )
+          throw new SocialPlatformError("rejected");
+        return sendFacebookPrivateReply(
+          http,
+          graphVersion,
+          account.platformId,
+          token,
+          job.payload.postId,
+          job.payload.recipientId,
+          text(job),
+          Date.now,
+          beforeSubmit,
+        );
+      }
       if (platform !== "facebook" && job.payload.facebook)
         throw new SocialPlatformError("unsupported");
       if (platform === "facebook" && job.payload.facebook)
         return reels.send(account, job, token, media, checkpoint, beforeSubmit);
+      // Instagram Direct uses its own comment recipient and attachment shapes.
+      if (
+        platform === "instagram" &&
+        (job.payload.instagramPrivateReply || (job.kind === "reply" && job.payload.media.length))
+      )
+        return sendInstagramMessage(
+          http,
+          `${origin}/${graphVersion}`,
+          account,
+          job,
+          token,
+          beforeSubmit,
+        );
       if (
         job.kind === "message" ||
         (job.kind === "reply" && job.payload.recipientId && !job.payload.postId)

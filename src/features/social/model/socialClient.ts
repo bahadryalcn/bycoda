@@ -1,7 +1,15 @@
 import { t } from "../../../shared/i18n";
+import { YOUTUBE_MAX_VIDEO_BYTES } from "../../../integrations/social/youtube-upload";
+import {
+  INSTAGRAM_DIRECT_MEDIA_LIMITS,
+  type InstagramDirectMediaKind,
+} from "../../../integrations/social/adapters/instagram-direct-media";
 import { bytesToBase64 } from "../../../shared/lib/base64";
 import { remoteRequest } from "../../connections/model/connections";
-import { isTransientTransportError } from "../../connections/public/remoteFailure";
+import {
+  classifyRemoteError,
+  isTransientTransportError,
+} from "../../connections/public/remoteFailure";
 import type {
   SocialBrowserIntent,
   SocialBrowserState,
@@ -75,6 +83,11 @@ const NO_REQUEST_ID_ACTIONS = new Set<string>([
   "programs.media-preview",
   "programs.preview-schedule",
   ...SOCIAL_READ_ACTIONS,
+  // X.
+  "x.handoff",
+  "x.insights",
+  "x.spaces",
+  "x.lists",
 ]);
 
 /** Waits before re-sending a video chunk after a dropped link; one entry per retry. */
@@ -91,8 +104,213 @@ export function socialClient(machineId: string) {
       input,
       ...(NO_REQUEST_ID_ACTIONS.has(action) ? {} : { requestId }),
     });
+  const uploadChunks = async (
+    file: File,
+    instagram?: { threadId: string; kind: InstagramDirectMediaKind },
+    progress?: (percent: number) => void,
+    youtubeAccountId?: string,
+  ) => {
+    const upload = (params: Record<string, unknown>) =>
+      remoteRequest<{ uploadId: string; offset?: number }>(machineId, "social.media.upload", {
+        ...params,
+        ...(instagram
+          ? {
+              instagramAttachmentThreadId: instagram.threadId,
+              instagramAttachmentKind: instagram.kind,
+            }
+          : {}),
+      });
+    const { uploadId } = await upload({
+      mode: "begin",
+      size: file.size,
+      ...(youtubeAccountId ? { youtubeAccountId } : {}),
+    }).catch((error: unknown) => {
+      if (youtubeAccountId) {
+        // YouTube staging can reject a connection that changed after file selection.
+        const { message } = classifyRemoteError(error);
+        if (message === "Large videos require a YouTube API connection.")
+          throw new Error(t("Large videos require a YouTube API connection."));
+        if (message === "MP4 or WebM videos for YouTube can be at most 256 GiB.")
+          throw new Error(t("MP4 or WebM videos for YouTube can be at most 256 GiB."));
+      }
+      throw error;
+    });
+    // Sends one chunk. After a dropped link the Host may or may not have committed it, so
+    // resume from the Host's own offset: re-send at the same offset, or accept a lost ack.
+    const sendChunk = async (offset: number, base64: string, end: number): Promise<number> => {
+      let verify = false;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          if (verify) {
+            const { offset: committed } = await upload({ mode: "status", uploadId });
+            if (committed === end) return committed;
+            if (committed !== offset) return -1;
+          }
+          return (await upload({ mode: "chunk", uploadId, offset, base64 })).offset ?? -1;
+        } catch (error) {
+          const delay = UPLOAD_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isTransientTransportError(error)) throw error;
+          verify = true;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    };
+    try {
+      for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
+        const bytes = new Uint8Array(await file.slice(offset, offset + 1024 * 1024).arrayBuffer());
+        const acknowledged = await sendChunk(offset, bytesToBase64(bytes), offset + bytes.length);
+        if (acknowledged !== offset + bytes.length)
+          throw new Error(
+            instagram
+              ? t("Instagram attachment upload order could not be verified.")
+              : t("Video upload order could not be verified."),
+          );
+        progress?.(Math.round(((offset + bytes.length) / file.size) * 100));
+      }
+      return await upload({ mode: "finish", uploadId });
+    } catch (error) {
+      await upload({ mode: "cancel", uploadId }).catch(() => {});
+      throw error;
+    }
+  };
   return {
+    // The Host's owner-only vault endpoint returns status without the key.
+    saveXLiveKey: (accountId: string, key: string, server?: string) =>
+      remoteRequest<{ stored: true }>(machineId, "social.x.liveKey.store", {
+        accountId,
+        key,
+        ...(server ? { server } : {}),
+      }),
     request,
+    browserInstagramLive: (
+      accountId: string,
+      action: import("./instagramLive").InstagramLiveAction,
+      confirm?: string,
+    ) =>
+      remoteRequest<import("./instagramLive").InstagramLiveState>(
+        machineId,
+        "social.browser.instagram.live",
+        { accountId, action, ...(confirm ? { confirm } : {}) },
+      ),
+    // Instagram owner-only browser operations.
+    browserInstagramEarnings: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").InstagramEarnings>(
+        machineId,
+        "social.browser.instagram.earnings",
+        { accountId },
+      ),
+    browserInstagramHighlights: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").InstagramHighlights>(
+        machineId,
+        "social.browser.instagram.highlights",
+        { accountId },
+      ),
+    browserInstagramHighlightChange: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramHighlightChange,
+    ) =>
+      remoteRequest<{ changed: boolean }>(machineId, "social.browser.instagram.highlight-change", {
+        accountId,
+        ...input,
+      }),
+    browserInstagramRecipient: (accountId: string, handle: string) =>
+      remoteRequest<import("./socialBrowser").InstagramRecipient>(
+        machineId,
+        "social.browser.instagram.recipient",
+        { accountId, handle },
+      ),
+    browserInstagramPost: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramPostChange,
+    ) =>
+      remoteRequest<import("./socialBrowser").InstagramPostChangeResult>(
+        machineId,
+        "social.browser.instagram.post",
+        { accountId, ...input },
+      ),
+    browserInstagramFollowers: (accountId: string, handle: string) =>
+      remoteRequest<import("./socialBrowser").InstagramFollowerSample>(
+        machineId,
+        "social.browser.instagram.followers",
+        { accountId, handle },
+      ),
+    browserInstagramFollow: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramFollowChange,
+    ) =>
+      remoteRequest<import("./socialBrowser").InstagramFollowResult>(
+        machineId,
+        "social.browser.instagram.follow",
+        { accountId, ...input },
+      ),
+    browserInstagramMentions: (accountId: string) =>
+      remoteRequest<import("./socialBrowser").InstagramBrowserMentions>(
+        machineId,
+        "social.browser.instagram.mentions",
+        { accountId },
+      ),
+    browserInstagramLikeComment: (
+      accountId: string,
+      input: import("./socialBrowser").InstagramCommentLike,
+    ) =>
+      remoteRequest<{ liked: true; changed: boolean }>(
+        machineId,
+        "social.browser.instagram.comment-like",
+        { accountId, ...input },
+      ),
+    // Snapchat
+    snapchatProfileRead: (accountId: string) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        "snapchat.profile.read",
+        { accountId },
+      ),
+    snapchatProfileCreate: (
+      accountId: string,
+      patch: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+    ) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        "snapchat.profile.create",
+        { accountId, patch, confirm: "CREATE_SNAPCHAT_PROFILE" },
+      ),
+    snapchatProfileUpdate: (
+      accountId: string,
+      patch: import("../../../integrations/social/snapchat-profile").SnapchatProfilePatch,
+    ) =>
+      remoteRequest<import("../../../integrations/social/snapchat-profile").SnapchatProfileState>(
+        machineId,
+        "social.browser.profile.update",
+        { accountId, patch, confirm: "UPDATE_SNAPCHAT_PROFILE" },
+      ),
+    snapchatMonetization: (accountId: string) =>
+      request<import("../../../integrations/social/snapchat-profile").SnapchatMonetizationStatus>(
+        "snapchat.monetization.get",
+        { accountId },
+      ),
+    snapchatStoryDelete: (accountId: string, storyId: string) =>
+      request<{ id: string; target: "story" }>("snapchat.content.delete", {
+        accountId,
+        target: "story",
+        id: storyId,
+        confirmId: storyId,
+      }),
+    linkedInBrowserManage: <T>(accountId: string, input: Record<string, unknown>) =>
+      remoteRequest<T>(machineId, "social.browser.linkedin.manage", { ...input, accountId }),
+    linkedInArticlePrepare: (
+      accountId: string,
+      draft: { title: string; body: string },
+      requestId: string,
+    ) =>
+      remoteRequest<{ state: "draft"; url: string }>(machineId, "social.browser.linkedin.manage", {
+        accountId,
+        operation: "article.prepare",
+        draft,
+        requestId,
+        confirm: "CONFIRM_LINKEDIN_BROWSER_WRITE",
+      }),
+    linkedInProfileAnalytics: (accountId: string) =>
+      remoteRequest<
+        import("../../../integrations/social/adapters/linkedin-analytics").LinkedInAnalyticsResult
+      >(machineId, "social.browser.linkedin.analytics.profile", { accountId }),
     browserProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,
@@ -102,7 +320,10 @@ export function socialClient(machineId: string) {
     browserProfileUpdate: (
       accountId: string,
       platform: "x" | "linkedin" | "facebook" | "instagram",
-      patch: import("./socialBrowser").XProfilePatch,
+      patch:
+        | (import("./socialBrowser").XProfilePatch & { username?: string })
+        | import("./socialBrowser").InstagramProfilePatch
+        | import("./socialBrowser").FacebookBrowserProfilePatch,
     ) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,
@@ -120,6 +341,24 @@ export function socialClient(machineId: string) {
                   : "UPDATE_X_PROFILE",
         },
       ),
+    // Owner-only Facebook transport. Encoder credentials are read on demand.
+    facebookEncoder: (accountId: string, liveId: string) =>
+      remoteRequest<{ server: string; streamKey: string }>(
+        machineId,
+        "social.facebook.live.encoder",
+        {
+          accountId,
+          liveId,
+        },
+      ),
+    facebookMonetization: (accountId: string) =>
+      remoteRequest<{
+        programs: {
+          program: "stars" | "in_stream_ads" | "bonuses" | "content_monetization";
+          status?: string;
+          earnings?: string;
+        }[];
+      }>(machineId, "social.browser.facebook.monetization", { accountId }),
     xProfileRead: (accountId: string) =>
       remoteRequest<import("./socialBrowser").XProfileState>(
         machineId,
@@ -342,11 +581,17 @@ export function socialClient(machineId: string) {
         "social.oauth.availability",
         {},
       ),
-    oauthBegin: (accountId: string, resourceId?: string, operations?: SocialOperation[]) =>
+    oauthBegin: (
+      accountId: string,
+      resourceId?: string,
+      operations?: SocialOperation[],
+      linkedinLiveComments?: true,
+    ) =>
       remoteRequest<{ url: string; expiresAt: number }>(machineId, "social.oauth.begin", {
         accountId,
         resourceId,
         operations,
+        ...(linkedinLiveComments ? { linkedinLiveComments } : {}),
       }),
     oauthStatus: (accountId: string) =>
       remoteRequest<{
@@ -423,8 +668,11 @@ export function socialClient(machineId: string) {
       }),
     browserWorkflowStatus: (accountId: string) =>
       remoteRequest<SocialBrowserState>(machineId, "social.browser.workflow.status", { accountId }),
-    browserWorkflowCancel: (accountId: string) =>
-      remoteRequest<void>(machineId, "social.browser.workflow.cancel", { accountId }),
+    browserWorkflowCancel: (accountId: string, workflowId?: string) =>
+      remoteRequest<void>(machineId, "social.browser.workflow.cancel", {
+        accountId,
+        ...(workflowId !== undefined ? { workflowId } : {}),
+      }),
     browserBegin: (accountId: string, resourceId?: string) =>
       remoteRequest<{ status: string; expiresAt: number }>(machineId, "social.browser.begin", {
         accountId,
@@ -459,12 +707,13 @@ export function socialClient(machineId: string) {
           ...(resourceId ? { resourceId } : {}),
         },
       ),
-    browserStatus: (accountId: string) =>
+    browserStatus: (accountId: string, loginFlow = false) =>
       remoteRequest<{ status: string; error?: string; source?: "existing-chrome" | "dedicated" }>(
         machineId,
         "social.browser.status",
         {
           accountId,
+          ...(loginFlow ? { loginFlow: true } : {}),
         },
       ),
     browserCancelLogin: (accountId: string) =>
@@ -503,51 +752,31 @@ export function socialClient(machineId: string) {
         base64: bytesToBase64(bytes),
       });
     },
-    uploadVideo: async (file: File, progress?: (percent: number) => void) => {
-      if (file.size < 12 || file.size > 64 * 1024 * 1024)
-        throw new Error(t("MP4/WebM videos can be at most 64 MiB."));
-      const upload = (params: Record<string, unknown>) =>
-        remoteRequest<{ uploadId: string; offset?: number }>(
-          machineId,
-          "social.media.upload",
-          params,
+    uploadVideo: async (
+      file: File,
+      progress?: (percent: number) => void,
+      youtubeAccountId?: string,
+    ) => {
+      if (
+        file.size < 12 ||
+        file.size > (youtubeAccountId ? YOUTUBE_MAX_VIDEO_BYTES : 64 * 1024 * 1024)
+      )
+        throw new Error(
+          youtubeAccountId
+            ? t("MP4 or WebM videos for YouTube can be at most 256 GiB.")
+            : t("MP4/WebM videos can be at most 64 MiB."),
         );
-      const { uploadId } = await upload({ mode: "begin", size: file.size });
-      // Sends one chunk. After a dropped link the Host may or may not have committed it, so
-      // resume from the Host's own offset: re-send at the same offset, or accept a lost ack.
-      const sendChunk = async (offset: number, base64: string, end: number): Promise<number> => {
-        let verify = false;
-        for (let attempt = 0; ; attempt++) {
-          try {
-            if (verify) {
-              const { offset: committed } = await upload({ mode: "status", uploadId });
-              if (committed === end) return committed;
-              if (committed !== offset) return -1;
-            }
-            return (await upload({ mode: "chunk", uploadId, offset, base64 })).offset ?? -1;
-          } catch (error) {
-            const delay = UPLOAD_RETRY_DELAYS_MS[attempt];
-            if (delay === undefined || !isTransientTransportError(error)) throw error;
-            verify = true;
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-        }
-      };
-      try {
-        for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
-          const bytes = new Uint8Array(
-            await file.slice(offset, offset + 1024 * 1024).arrayBuffer(),
-          );
-          const acknowledged = await sendChunk(offset, bytesToBase64(bytes), offset + bytes.length);
-          if (acknowledged !== offset + bytes.length)
-            throw new Error(t("Video upload order could not be verified."));
-          progress?.(Math.round(((offset + bytes.length) / file.size) * 100));
-        }
-        return await upload({ mode: "finish", uploadId });
-      } catch (error) {
-        await upload({ mode: "cancel", uploadId }).catch(() => {});
-        throw error;
-      }
+      return uploadChunks(file, undefined, progress, youtubeAccountId);
+    },
+    // Instagram Direct uses the same owner-scoped upload transport.
+    uploadInstagramAttachment: async (
+      threadId: string,
+      kind: InstagramDirectMediaKind,
+      file: File,
+    ) => {
+      if (file.size < 12 || file.size > INSTAGRAM_DIRECT_MEDIA_LIMITS[kind])
+        throw new Error(t("Instagram attachment exceeds the supported size."));
+      return uploadChunks(file, { threadId, kind });
     },
   };
 }

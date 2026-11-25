@@ -25,6 +25,11 @@ import {
 } from "../../src/features/connections/model/protocol";
 import type { SocialAccount, SocialCampaign } from "../../src/features/social/model/social";
 import { SOCIAL_TOOLS } from "../../src/features/social/model/socialTools";
+import {
+  YOUTUBE_READ_TOOLS,
+  YOUTUBE_REQUEST_TOOLS,
+  YOUTUBE_WRITE_TOOLS,
+} from "../../src/features/social/model/youtubeManagement";
 import { SOCIAL_ACTION_MODULES } from "./core/social-action-modules";
 import { SOCIAL_LEGACY_ACTIONS, socialActionRegistry } from "./core/social-actions";
 describe("Social tool receipt transport", () => {
@@ -230,6 +235,7 @@ async function fixture(platform: "x" | "youtube" = "x") {
   } as const;
   const account = (await social.call(owner, "accounts.create", {
     platform,
+    ...(platform === "x" ? { connection: "oauth", xApiProduct: "pay-per-use" } : {}),
     name: "Shared account",
     accountType: platform === "youtube" ? "channel" : "member",
     projectIds: [project.id],
@@ -406,6 +412,7 @@ describe("Real local CLI and MCP transport", () => {
       const tools = responses.find((value) => value.id === 2).result.tools;
       // Explicit lists: the read set must match SOCIAL_READ_TOOLS (owner-reviewed classification).
       const reads = [
+        ...YOUTUBE_READ_TOOLS,
         "policy.get",
         "accounts.list",
         "capabilities.get",
@@ -436,8 +443,47 @@ describe("Real local CLI and MCP transport", () => {
         "ai.report",
         "browser.needsHuman.list",
         "browser.recipeSuggestions.list",
+        // Instagram
+        "instagram.insights",
+        "instagram.earnings.read",
+        "instagram.mentions",
+        // X.
+        "x.handoff",
+        "x.insights",
+        "x.lists",
+        "x.spaces",
+        // TikTok account operations.
+        "tiktok.profile.read",
+        "tiktok.analytics.read",
+        "tiktok.earnings.read",
+        "tiktok.audience.list",
+        "tiktok.mentions.list",
+        // Snapchat
+        "snapchat.profile.read",
+        "snapchat.friends.list",
+        "snapchat.content.list",
+        "snapchat.analytics.get",
+        "snapchat.earnings.get",
+        "snapchat.monetization.get",
+        // LinkedIn.
+        "linkedin.analytics",
+        "linkedin.accounts.setupStatus",
+        "linkedin.live.status",
+        "linkedin.creator.handoff",
+        // Facebook Page reads
+        "facebook.page.read",
+        "facebook.mentions.list",
+        "facebook.insights.read",
+        "facebook.earnings.read",
+        "facebook.posts.list",
+        "facebook.live.list",
+        "facebook.live.comments",
       ];
       const writes = [
+        ...YOUTUBE_WRITE_TOOLS,
+        ...YOUTUBE_REQUEST_TOOLS,
+        "instagram.comments.request",
+        "instagram.management.request",
         "accounts.request",
         "campaigns.create",
         "campaigns.schedule",
@@ -474,6 +520,21 @@ describe("Real local CLI and MCP transport", () => {
         "inbox.setStatus",
         "ai.actions.undo",
         "ai.stop",
+        // TikTok account operations.
+        "tiktok.changes.request",
+        // Snapchat
+        "snapchat.signup.request",
+        "snapchat.chat.draft",
+        "snapchat.profile.create.request",
+        "snapchat.profile.update.request",
+        "snapchat.content.delete.request",
+        // LinkedIn.
+        "linkedin.management.prepare",
+        // Facebook preparations
+        "facebook.privateReplyDraft",
+        "facebook.live.replyDraft",
+        "facebook.management.request",
+        "facebook.management.execute",
       ];
       const method = (action: string) => `social_${action.replaceAll(/[.-]/g, "_")}`;
       // Draft inspection/editing is a concurrent additive capability. Keep the

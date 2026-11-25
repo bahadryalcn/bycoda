@@ -62,7 +62,11 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
           </Badge>
         </span>
       }
-      feedback={error ? <InlineError>{error}</InlineError> : null}
+      feedback={
+        error ? (
+          <InlineError details={error}>{t("Sending could not be changed. Try again.")}</InlineError>
+        ) : null
+      }
     >
       {!snapshot.sendingEnabled ? (
         <Row label={t("Approved sends")}>

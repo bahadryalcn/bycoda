@@ -1,26 +1,81 @@
 import type { SocialAccount, SocialJob } from "./adapter";
 import { browserContentIssue } from "./browserCapabilities";
 import { facebookReelContentIssue } from "./facebookReels";
+import { facebookPublishingIssue } from "./adapters/facebook-publishing";
 import { messagingContentIssue } from "./adapters/messaging-shared";
-import { linkedInMultiImageIssue } from "./linkedinMedia";
+import { instagramStoryAccountIssue } from "./adapters/instagram-publish";
+import { instagramMessageContentIssue } from "./adapters/instagram-messaging";
+import { linkedInCommentaryIssue, linkedInMultiImageIssue } from "./linkedinMedia";
+import { linkedInFormatIssue, linkedInVideoIssue } from "./adapters/linkedin-formats";
 import { metaPublishingIssue } from "./metaMedia";
 import { snapchatContentIssue } from "./snapchat";
 import { telegramChannelContentIssue } from "./telegramChannel";
 import { tiktokContentIssue } from "./tiktok";
+import { hasXPostExtras, xPostExtrasIssue } from "./x-publish";
 import { xMediaIssue } from "./xMedia";
+import { redditPayload, validateSubmission } from "./adapters/reddit-rules";
+import { SocialPlatformError } from "./adapter";
 
 export function contentSupport(
   account: SocialAccount,
   job: Pick<SocialJob, "payload" | "kind">,
 ): string | undefined {
+  if (account.platform === "reddit" && job.kind === "publish") {
+    try {
+      validateSubmission(job, redditPayload(job));
+    } catch (error) {
+      if (!(error instanceof SocialPlatformError)) throw error;
+      return "Set one Reddit destination and a title, and use text or an HTTPS link without attachments.";
+    }
+  }
+  if (job.payload.instagram !== undefined) {
+    if (
+      account.platform !== "instagram" ||
+      account.connection === "browser" ||
+      job.kind !== "publish"
+    )
+      return "Instagram publishing options require an Instagram API publication.";
+    const storyIssue = instagramStoryAccountIssue(
+      job.payload.instagram,
+      account.instagramAccountType,
+    );
+    if (storyIssue) return storyIssue;
+  }
   if (job.payload.facebook && (account.platform !== "facebook" || account.connection === "browser"))
-    return "The Facebook Reel destination requires a Facebook Page API connection.";
+    return "Facebook publishing options require a Facebook Page API connection.";
+  // LinkedIn publishing formats.
+  if (
+    job.payload.linkedinFormat &&
+    (account.platform !== "linkedin" || account.connection !== "oauth")
+  )
+    return "LinkedIn polls and article links require a LinkedIn API connection.";
+  if (account.platform === "linkedin" && account.connection === "oauth" && job.kind === "publish") {
+    const issue =
+      linkedInCommentaryIssue(job) ?? linkedInFormatIssue(job) ?? linkedInVideoIssue(job);
+    if (issue) return issue;
+    const [first] = job.payload.media;
+    if (!first) return undefined;
+    if (job.payload.media.length > 1) return linkedInMultiImageIssue(account, job);
+    if (!first.uploadId || first.url) return "LinkedIn publishing requires host-uploaded media.";
+    if (first.kind === "document" && !first.title?.trim())
+      return "Give the LinkedIn document a title.";
+    return undefined;
+  }
+  if (
+    job.payload.media.some((item) => item.kind === "audio") &&
+    !(account.platform === "instagram" && account.connection !== "browser" && job.kind === "reply")
+  )
+    return "Audio attachments require an Instagram API conversation.";
   if (account.connection === "browser" && account.platform !== "x")
     return browserContentIssue(account, job);
   if (account.platform === "telegram" && account.accountType === "channel")
     return telegramChannelContentIssue(account, job);
   if (account.platform === "facebook" && job.payload.facebook)
-    return facebookReelContentIssue(account, job);
+    return job.payload.facebook.target === "reel"
+      ? facebookReelContentIssue(account, job)
+      : facebookPublishingIssue(account, job);
+  if (account.platform === "instagram" && job.kind !== "publish" && job.payload.media.length)
+    return instagramMessageContentIssue(job);
   if (job.payload.media.some((item) => item.kind === "document"))
     return "PDF document publishing requires a LinkedIn browser connection.";
   if (account.platform === "tiktok") return tiktokContentIssue(job);
@@ -28,6 +83,16 @@ export function contentSupport(
   if (account.platform === "whatsapp" || account.platform === "telegram")
     return messagingContentIssue(account, job);
   if (account.platform === "x") {
+    // A format cannot fall through to plain browser posting or a lower API product.
+    if (job.payload.x !== undefined) {
+      const issue = xPostExtrasIssue(job.payload.x, job.payload.media.length);
+      if (issue) return issue;
+      if (hasXPostExtras(job.payload.x)) {
+        if (account.connection === "browser") return "Open X to publish these options manually.";
+        if (job.payload.x.quotePostId && account.xApiProduct !== "enterprise")
+          return "X quote posts require Enterprise API access.";
+      }
+    }
     const message =
       job.kind === "message" ||
       (job.kind === "reply" && !!job.payload.recipientId && !job.payload.postId);
@@ -37,8 +102,6 @@ export function contentSupport(
   }
   if (job.kind !== "publish" && job.payload.media.length)
     return "Reply/message media attachments are not supported yet.";
-  if (account.platform === "linkedin" && job.payload.media.length > 1)
-    return linkedInMultiImageIssue(account, job);
   if (job.kind === "publish" && ["instagram", "facebook"].includes(account.platform))
     return metaPublishingIssue(account.platform as "instagram" | "facebook", job);
   if (account.platform === "youtube" && job.kind === "publish") {
@@ -49,7 +112,7 @@ export function contentSupport(
       !job.payload.media[0].uploadId ||
       job.payload.media[0].url
     )
-      return "YouTube requires one host-uploaded MP4/WebM video up to 64 MiB. Text-only Community posts are not supported.";
+      return "YouTube video publishing requires one host-uploaded MP4 or WebM video. Create Community posts from YouTube management.";
     if (
       !options?.title?.trim() ||
       options.title.length > 100 ||
@@ -67,13 +130,5 @@ export function contentSupport(
   }
   if (job.payload.media.some((item) => item.kind === "video"))
     return "Video upload/processing is not implemented; use an image or text.";
-  if (
-    account.platform === "linkedin" &&
-    job.payload.media.length &&
-    (account.accountType !== "organization" ||
-      job.payload.media.length !== 1 ||
-      !job.payload.media[0].uploadId)
-  )
-    return "LinkedIn image publishing requires an organization, one uploaded image and image-readiness permission. Member write-only tokens cannot verify Images API readiness.";
   return undefined;
 }

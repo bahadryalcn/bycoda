@@ -25,6 +25,37 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 
+/** A provider-owned thread reference, persisted on the normal Inbox conversation. */
+export function parseTelegramDiscussionThread(threadId: unknown) {
+  if (typeof threadId !== "string") return;
+  const match =
+    /^tg-discussion:(-[1-9]\d{0,15}):([1-9]\d{0,15}):(-[1-9]\d{0,15}):([1-9]\d{0,15})$/.exec(
+      threadId,
+    );
+  if (!match || !match.slice(1).every((part) => Number.isSafeInteger(Number(part)))) return;
+  const [, channelId, postId, chatId, rootId] = match;
+  if (channelId === chatId) return;
+  return { channelId, postId: Number(postId), chatId, rootId: Number(rootId) };
+}
+
+/** Match Telegram's automatic copy of a particular channel post in its linked supergroup. */
+export function telegramDiscussionThread(message: unknown): string | undefined {
+  const root = record(message);
+  const chat = record(root?.chat);
+  const origin = record(root?.forward_origin);
+  const channel = record(origin?.chat);
+  if (
+    root?.is_automatic_forward !== true ||
+    chat?.type !== "supergroup" ||
+    origin?.type !== "channel" ||
+    channel?.type !== "channel" ||
+    ![chat.id, root.message_id, channel.id, origin.message_id].every(Number.isSafeInteger)
+  )
+    return;
+  const thread = `tg-discussion:${channel.id}:${origin.message_id}:${chat.id}:${root.message_id}`;
+  return parseTelegramDiscussionThread(thread) ? thread : undefined;
+}
+
 /** Chat display name: group or channel title, then the person's first name, then username. */
 export function telegramChatName(chat: Record<string, unknown>): string | undefined {
   return [chat.title, chat.first_name, chat.username].find(
@@ -40,8 +71,7 @@ export type TelegramUpdate = {
 };
 
 /**
- * Parses one webhook update. Only text `message` updates from non-bot senders are returned; channel
- * posts, edits, callbacks and malformed payloads yield undefined without throwing.
+ * Parses text from non-bot senders and automatic copies of channel posts in discussion groups.
  */
 export function parseTelegramUpdate(raw: unknown): TelegramUpdate | undefined {
   const update = record(raw);
@@ -53,11 +83,6 @@ export function parseTelegramUpdate(raw: unknown): TelegramUpdate | undefined {
     !Number.isSafeInteger(update.update_id) ||
     !message ||
     !chat ||
-    from?.is_bot === true ||
-    chat.type === "channel" ||
-    typeof message.text !== "string" ||
-    !message.text.trim() ||
-    message.text.length > TEXT_LIMIT ||
     !Number.isSafeInteger(message.message_id) ||
     (message.message_id as number) <= 0 ||
     !Number.isSafeInteger(message.date) ||
@@ -69,14 +94,23 @@ export function parseTelegramUpdate(raw: unknown): TelegramUpdate | undefined {
   if (!CHAT.test(chatId)) return undefined;
   const name = telegramChatName(chat);
   const username = typeof chat.username === "string" ? chat.username : undefined;
+  const discussion = telegramDiscussionThread(message);
+  if (message.is_automatic_forward === true && !discussion) return;
+  const text = discussion ? (message.text ?? message.caption ?? "") : message.text;
+  if (
+    typeof text !== "string" ||
+    text.length > TEXT_LIMIT ||
+    (!discussion && (from?.is_bot === true || chat.type === "channel" || !text.trim()))
+  )
+    return;
   return {
     event: {
       eventId: `${chatId}:${message.message_id as number}`,
-      threadId: chatId,
+      threadId: discussion ?? chatId,
       contactId: chatId,
       contactName: (name ?? chatId).slice(0, 200),
       kind: "message",
-      text: message.text,
+      text,
       at: (message.date as number) * 1000,
     },
     privateChat: chat.type === "private",

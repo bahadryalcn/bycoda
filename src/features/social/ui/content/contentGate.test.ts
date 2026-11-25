@@ -44,6 +44,20 @@ describe("publish gate", () => {
     });
     expect(publishGate({ ...base, problems: [] })).toEqual({ disabled: false });
   });
+
+  it("links a publish permission problem to the account settings", () => {
+    const text = "QA: Grant publishing permission for this project in Accounts first.";
+    expect(
+      publishGate({ ...base, problems: [{ text, accountId: "qa", fix: "accounts" }] }),
+    ).toEqual({
+      disabled: true,
+      disabledReason: text,
+      fix: "accounts",
+    });
+    expect(draftGate({ ...base, hasAccounts: true, hasContent: true })).toEqual({
+      disabled: false,
+    });
+  });
 });
 
 describe("draft gate", () => {

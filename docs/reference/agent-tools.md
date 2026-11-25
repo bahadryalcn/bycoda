@@ -124,6 +124,41 @@ global send stop. Owner-only operations are never tools. These include people
 deletion and export, audience import, autonomy changes, program activation and
 browser workflow methods.
 
+## Live streaming
+
+Use the `liveStream` family in scoped Conversation Tools. MCP names follow the
+standard mapping, for example `conversation_liveStream_status`. These tools act
+on the Host serving the conversation and respect its current grant and crew
+tool profile. Assistant Room writes require its Host-wide permission level.
+External MCP credentials do not expose the family.
+
+- `liveStream.status` and `liveStream.report` read connection, OBS state and
+  session totals. Tool output excludes avatar URLs.
+- `liveStream.start`, `liveStream.demo` and `liveStream.stop` manage the live
+  reader. Read the status before switching channels and check it after the
+  change. Stop ends viewer intake and cancels retries. Read the report after
+  stopping.
+- `liveStream.obsSetup` enables authenticated control of installed OBS.
+  `liveStream.obsStream` with `action: "start"` requires
+  exact Native owner approval. With `action: "stop"` it ends the OBS broadcast.
+  Confirm the stream state in status before retrying or reporting success.
+  The Euler API key and OBS stream credentials are set in the owner UI.
+- `liveStream.liveAccounts` lists the ready Social destinations visible to the
+  conversation's project. Pass one to six of its `accountId` values as
+  `accountIds` to `liveStream.goLive` to go live on all of them at once. The
+  optional `scene` names an existing OBS scene and defaults to the scene OBS
+  shows. Starting requires exact native owner approval listing every account and
+  the scene, the project's Social account grant for each, and current Social
+  policy.
+- Read `liveStream.liveStatus` after starting or stopping. Report any owner
+  step, and never automatically retry an uncertain start. `liveStream.endLive`
+  stops OBS and ends the platform broadcast where supported. Tool responses
+  include status and account identity only. Keep the ingest URL and key in
+  Host custody. Assistant Room needs a Social-granted project to use these
+  four tools.
+
+See the [Live streaming guide](../guides/live-stream.md) for the end-to-end workflow.
+
 ## Optional desktop control
 
 `desktop.status` reports readiness and the app names the owner already approved.

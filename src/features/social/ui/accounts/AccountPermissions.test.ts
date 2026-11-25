@@ -2,14 +2,17 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { HostProject } from "../../../connections/model/protocol";
 import type { SocialAccount, SocialPermission } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { socialQueryScope } from "../../model/socialQuery";
 import { AccountPermissions } from "./AccountPermissions";
 
-let element: HTMLDivElement, root: Root;
+let element: HTMLDivElement, root: Root, cache: QueryClient;
 
 beforeEach(() => {
+  cache = new QueryClient();
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -17,6 +20,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
+  cache.clear();
   element.remove();
 });
 
@@ -41,18 +45,23 @@ function render(
     projects?: HostProject[];
     disabled?: boolean;
     onChanged?: () => void;
+    client?: SocialClient;
   } = {},
 ) {
   const onChanged = props.onChanged ?? vi.fn();
   act(() =>
     root.render(
-      createElement(AccountPermissions, {
-        client: { request } as unknown as SocialClient,
-        account: props.account ?? account(),
-        projects: props.projects ?? projects,
-        disabled: props.disabled ?? false,
-        onChanged,
-      }),
+      createElement(
+        QueryClientProvider,
+        { client: cache },
+        createElement(AccountPermissions, {
+          client: props.client ?? ({ request } as unknown as SocialClient),
+          account: props.account ?? account(),
+          projects: props.projects ?? projects,
+          disabled: props.disabled ?? false,
+          onChanged,
+        }),
+      ),
     ),
   );
   return onChanged;
@@ -147,6 +156,23 @@ it("keeps reading apart from sending when a project is granted access", async ()
     permissions: ["read"],
   });
   expect(onChanged).toHaveBeenCalledTimes(1);
+});
+
+it("invalidates the changed project's content after saving access", async () => {
+  const request = vi.fn(async () => ({}));
+  const client = { request } as unknown as SocialClient;
+  const scope = [...socialQueryScope(client), "content", "snapshot"];
+  const changed = [...scope, "p1"];
+  const unrelated = [...scope, "p2"];
+  cache.setQueryData(changed, {});
+  cache.setQueryData(unrelated, {});
+  render(request, { client });
+
+  act(() => checkbox(PROJECT, "Publish").click());
+  await submit(PROJECT);
+
+  expect(cache.getQueryState(changed)?.isInvalidated).toBe(true);
+  expect(cache.getQueryState(unrelated)?.isInvalidated).toBe(false);
 });
 
 it("adds and removes single project permissions without touching the others", async () => {

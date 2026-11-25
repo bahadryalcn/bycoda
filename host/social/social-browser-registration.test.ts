@@ -34,9 +34,17 @@ const tiktokEmail = `<main>
   <input type="text" placeholder="Enter 6-digit code">
   <button type="button" disabled>Send code</button><button type="submit" disabled>Next</button>
   <input type="checkbox" name="newsletter">
-  <div role="combobox" aria-label="Month. Double-tap for more options" aria-controls="" aria-expanded="false">Month</div>
-  <div role="combobox" aria-label="Day. Double-tap for more options" aria-controls="" aria-expanded="false">Day</div>
-  <div role="combobox" aria-label="Year. Double-tap for more options" aria-controls="" aria-expanded="false">Year</div>
+  ${["Month", "Day", "Year"]
+    .map(
+      (part) => `
+    <div role="combobox" aria-label="${part}. Double-tap for more options" aria-controls="" aria-expanded="false">
+      <div data-fixture-date-label>${part}</div>
+      <div id="${part}-options-list-container" role="listbox" hidden>
+        <div id="${part}-options-item-0" role="option">First option</div>
+      </div>
+    </div>`,
+    )
+    .join("")}
 </main>`;
 const facebookPage = `<main>
   <h1>Bir Sayfa Oluştur</h1>
@@ -112,19 +120,18 @@ function fixture(url: string, html: string) {
       element.parentElement!.remove();
       return;
     }
-    if (element.getAttribute("role") === "combobox") {
-      const part = element.getAttribute("aria-label")!.split(".")[0];
-      const id = `${part}-options-list-container`,
-        previous = window.document.getElementById(id);
-      if (previous) {
-        previous.remove();
-        element.setAttribute("aria-expanded", "false");
-        element.setAttribute("aria-controls", "");
+    if (element.hasAttribute("data-fixture-date-label")) {
+      const owner = element.parentElement!;
+      const part = owner.getAttribute("aria-label")!.split(".")[0];
+      const id = `${part}-options-list-container`;
+      const list = window.document.getElementById(id)!;
+      if (!list.hasAttribute("hidden")) {
+        list.setAttribute("hidden", "");
+        owner.setAttribute("aria-expanded", "false");
+        owner.setAttribute("aria-controls", "");
         return;
       }
-      const list = window.document.createElement("div");
-      list.id = id;
-      list.setAttribute("role", "listbox");
+      list.replaceChildren();
       const values =
         part === "Month"
           ? [
@@ -154,16 +161,16 @@ function fixture(url: string, html: string) {
         option.textContent = value;
         list.append(option);
       }
-      element.setAttribute("aria-expanded", "true");
-      element.setAttribute("aria-controls", id);
-      window.document.body.append(list);
+      owner.setAttribute("aria-expanded", "true");
+      owner.setAttribute("aria-controls", id);
+      list.removeAttribute("hidden");
     } else if (element.getAttribute("role") === "option") {
-      const list = element.parentElement!,
-        owner = window.document.querySelector(`[aria-controls="${list.id}"]`)!;
-      owner.textContent = element.textContent;
+      const list = element.parentElement!;
+      const owner = window.document.querySelector(`[aria-controls="${list.id}"]`)!;
+      owner.querySelector("[data-fixture-date-label]")!.textContent = element.textContent;
       owner.setAttribute("aria-expanded", "false");
       owner.setAttribute("aria-controls", "");
-      list.remove();
+      list.setAttribute("hidden", "");
     } else throw new Error("A registration submit or unexpected control was clicked.");
   });
   const fill = vi.fn(async (selector: string, value: string) => {
@@ -272,6 +279,74 @@ describe("registration profile input", () => {
 });
 
 describe("specific observed registration contracts", () => {
+  const snapchatForm = `<form>
+    <input name="firstName" type="text"><input name="lastName" type="text">
+    <input name="username" type="text"><input name="phoneNumber" type="tel">
+    <input name="birthday" type="date"><input name="password" type="password">
+    <button type="submit">Sign Up &amp; Accept</button>
+  </form>`;
+
+  it("prepares email only on the exact Snapchat form and preserves an owner value", async () => {
+    const url = "https://accounts.snapchat.com/accounts/signup";
+    const html = snapchatForm.replace(
+      '<input name="phoneNumber" type="tel">',
+      '<input name="email" type="email">',
+    );
+    const f = fixture(url, html);
+    await expect(
+      advanceSocialRegistration(f.page, "snapchat", { email: "owner@example.test" }),
+    ).resolves.toMatchObject({ filledFields: ["email"], canAdvance: false });
+    await expect(
+      advanceSocialRegistration(f.page, "snapchat", { email: "other@example.test" }),
+    ).resolves.toMatchObject({ status: "changed" });
+    expect(f.page.fill).toHaveBeenCalledOnce();
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    snapchatForm.replace("<form>", '<form action="https://example.test/collect">'),
+    snapchatForm.replace(
+      'type="submit"',
+      'type="submit" formaction="https://example.test/collect"',
+    ),
+    snapchatForm + '<form><input type="password" autocomplete="current-password"></form>',
+  ])("won't prepare data for an unrelated form or login overlay", async (html) => {
+    const f = fixture("https://accounts.snapchat.com/accounts/signup", html);
+    await advanceSocialRegistration(f.page, "snapchat", { givenName: "Ada" });
+    expect(f.page.fill).not.toHaveBeenCalled();
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it("prepares the Snapchat signup form without accepting the agreement or touching secrets", async () => {
+    const f = fixture("https://accounts.snapchat.com/v2/signup", snapchatForm);
+    const state = await advanceSocialRegistration(f.page, "snapchat", {
+      givenName: "Ada",
+      familyName: "Lovelace",
+      username: "ada.snap",
+      phone: "+15550100000",
+      birthdate: "1999-03-12",
+    });
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      blockers: ["password", "terms"],
+      filledFields: ["givenName", "familyName", "username", "phone", "birthdate"],
+      canAdvance: false,
+    });
+    expect(f.fill).toHaveBeenCalledTimes(5);
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["<input name='verificationCode' autocomplete='one-time-code'>", "verification"],
+    ["<iframe src='https://example.test/captcha'></iframe>", "challenge"],
+  ])("waits for the owner on a protected Snapchat screen", async (prompt, step) => {
+    const f = fixture("https://accounts.snapchat.com/v2/signup", snapchatForm + prompt);
+    const state = await advanceSocialRegistration(f.page, "snapchat", { givenName: "Ada" });
+    expect(state).toMatchObject({ status: "awaiting_owner", step, canAdvance: false });
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
   it("prepares the observed LinkedIn Page name and public username without choosing organization details or accepting authority", async () => {
     const f = fixture("https://www.linkedin.com/company/setup/new/", linkedinPage);
     const state = await advanceSocialRegistration(f.page, "linkedin", {
@@ -577,6 +652,32 @@ describe("specific observed registration contracts", () => {
     ).toBe(false);
     expect(JSON.stringify(state)).not.toContain("bycoda@example.com");
   });
+  it.each([true, false])(
+    "reports the TikTok attempt limit only for a visible status (%s)",
+    async (visible) => {
+      const markup = tiktokEmail
+        .replace("<main>", "<form>")
+        .replace("</main>", "</form>")
+        .replace(
+          '<input type="text" placeholder="Enter 6-digit code">',
+          `<input type="text" placeholder="Enter 6-digit code"><span role="status" ${visible ? "" : "hidden"}>Maximum number of attempts reached. Try again later.</span>`,
+        );
+      const f = fixture("https://www.tiktok.com/signup/phone-or-email/email", markup);
+      const state = await advanceSocialRegistration(f.page, "tiktok", {});
+      expect(state.step).toBe(visible ? "rate_limit" : "profile");
+      if (visible) {
+        expect(state).toMatchObject({
+          status: "awaiting_owner",
+          message: "TikTok reached its sign-up attempt limit. Try again later.",
+          canAdvance: false,
+          filledFields: [],
+        });
+      }
+      expect(f.fill).not.toHaveBeenCalled();
+      expect(f.click).not.toHaveBeenCalled();
+    },
+  );
+
   it("selects the exact owner birthdate by visible option text, never by an inferred year index", async () => {
     const f = fixture("https://www.tiktok.com/signup/phone-or-email/email", tiktokEmail);
     for (const secret of f.window.document.querySelectorAll(
@@ -598,7 +699,9 @@ describe("specific observed registration contracts", () => {
     expect(state.status).toBe("awaiting_owner");
     expect(state.blockers).toEqual(["password", "verification"]);
     expect(
-      [...f.window.document.querySelectorAll('[role="combobox"]')].map((el) => el.textContent),
+      [...f.window.document.querySelectorAll("[data-fixture-date-label]")].map(
+        (el) => el.textContent,
+      ),
     ).toEqual(["August", "17", "1993"]);
     expect(f.fill).toHaveBeenCalledTimes(1);
     expect(f.click.mock.calls).toHaveLength(6);
@@ -615,13 +718,33 @@ describe("specific observed registration contracts", () => {
   });
   it("does not replace a previously selected different birth month", async () => {
     const f = fixture("https://www.tiktok.com/signup/phone-or-email/email", tiktokEmail);
-    f.window.document.querySelector('[role="combobox"]')!.textContent = "February";
+    f.window.document.querySelector("[data-fixture-date-label]")!.textContent = "February";
     const state = await advanceSocialRegistration(f.page, "tiktok", {
       email: "owner@example.com",
       birthdate: "1993-08-17",
     });
     expect(state).toMatchObject({ status: "changed", step: "birthdate", filledFields: ["email"] });
     expect(f.click).not.toHaveBeenCalled();
+  });
+  it("preserves a birth month picked by the owner while authorization is checked", async () => {
+    const f = fixture("https://www.tiktok.com/signup/phone-or-email/email", tiktokEmail);
+    const beforeAction = async () => {
+      const label = f.window.document.querySelector(
+        '[data-bycoda-registration-date-trigger="Month"]',
+      );
+      if (label) label.textContent = "February";
+    };
+    const state = await advanceSocialRegistration(
+      f.page,
+      "tiktok",
+      { email: "owner@example.com", birthdate: "1993-08-17" },
+      { beforeAction },
+    );
+    expect(state).toMatchObject({ status: "changed", step: "birthdate" });
+    expect(f.click).not.toHaveBeenCalled();
+    expect(f.window.document.querySelector("[data-fixture-date-label]")?.textContent).toBe(
+      "February",
+    );
   });
   it("reports an unavailable year instead of choosing a different age", async () => {
     const f = fixture("https://www.tiktok.com/signup/phone-or-email/email", tiktokEmail);
@@ -632,10 +755,11 @@ describe("specific observed registration contracts", () => {
     });
     expect(state).toMatchObject({ status: "changed", step: "birthdate" });
     expect(
-      f.window.document.querySelector('[aria-label="Year. Double-tap for more options"]')!
-        .textContent,
+      f.window.document.querySelector(
+        '[aria-label="Year. Double-tap for more options"] [data-fixture-date-label]',
+      )!.textContent,
     ).toBe("Year");
-    expect(f.window.document.querySelector('[role="listbox"]')).toBeNull();
+    expect(f.window.document.querySelector('[role="listbox"]:not([hidden])')).toBeNull();
   });
   it.each(["facebook", "youtube", "linkedin"] as const)(
     "does not create a company as a %s personal member",
@@ -793,6 +917,45 @@ describe("specific observed registration contracts", () => {
     ).toBe(" Yazılım  Kaldır");
     expect(f.click.mock.calls).toHaveLength(1);
     expect(JSON.stringify(state)).not.toMatch(/Bycoda|Yazılım|biography/);
+  });
+  it("prepares an optional Page biography without accepting the terms", async () => {
+    const f = fixture(
+      "https://www.facebook.com/pages/creation/",
+      facebookPage.replace("Owner biography draft", ""),
+    );
+    const state = await advanceSocialRegistration(f.page, "facebook", {
+      accountKind: "brand",
+      displayName: "Bycoda",
+      category: "Yazılım",
+      bio: "Page biography",
+    });
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      step: "terms",
+      filledFields: ["displayName", "category", "bio"],
+      canAdvance: false,
+    });
+    expect(f.window.document.querySelector("textarea")!.value).toBe("Page biography");
+    expect(f.click).toHaveBeenCalledTimes(1);
+  });
+  it("does not overwrite a biography already entered by the owner", async () => {
+    const f = fixture("https://www.facebook.com/pages/creation/", facebookPage);
+    const state = await advanceSocialRegistration(f.page, "facebook", {
+      accountKind: "brand",
+      displayName: "Bycoda",
+      category: "Yazılım",
+      bio: "Different biography",
+    });
+    expect(state).toMatchObject({ status: "changed", filledFields: ["displayName", "category"] });
+    expect(f.window.document.querySelector("textarea")!.value).toBe("Owner biography draft");
+  });
+  it("keeps personal signup on Facebook and hands the password back to the owner", async () => {
+    const f = fixture("https://www.facebook.com/r.php", '<input type="password">');
+    const state = await advanceSocialRegistration(f.page, "facebook", { accountKind: "person" });
+    expect(state).toMatchObject({ status: "awaiting_owner", step: "password", canAdvance: false });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+    expect(f.window.document.querySelector("input")!.value).toBe("");
   });
   it("opens the known Facebook Page setup route without creating a person and prepares its fields", async () => {
     const f = fixture(
@@ -1212,6 +1375,103 @@ describe("Reddit owner-assisted registration contracts", () => {
     expect(state.blockers).toContain("verification");
     expect(f.fill).not.toHaveBeenCalled();
   });
+  it("reports Reddit's visible email sign-up limit without filling or clicking", async () => {
+    const f = reddit("<h1>Sign Up</h1>", { email: emailInput });
+    const toaster = f.window.document.createElement("toaster-lite");
+    const toast = toaster.attachShadow({ mode: "open" });
+    toast.innerHTML =
+      '<div role="status">Email sign-up limit reached. Try again later. (Error: fixture)</div>';
+    f.window.document.body.append(toaster);
+
+    const blocked = {
+      status: "awaiting_owner",
+      step: "rate_limit",
+      canAdvance: false,
+      requiredFields: [],
+      message: "Reddit reached its email sign-up limit. Try again later.",
+    };
+    await expect(inspectSocialRegistration(f.page, "reddit", {})).resolves.toMatchObject(blocked);
+    await expect(
+      advanceSocialRegistration(f.page, "reddit", { email: "bycoda@example.com" }),
+    ).resolves.toMatchObject(blocked);
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+
+    toast.querySelector("div")!.setAttribute("hidden", "");
+    await expect(inspectSocialRegistration(f.page, "reddit", {})).resolves.toMatchObject({
+      status: "needs_fields",
+      requiredFields: ["email"],
+    });
+  });
+
+  it("reports Reddit's HTTP 429 after the signup toast is gone", async () => {
+    const f = reddit("<h1>Sign Up</h1>", { email: emailInput });
+    const endpoint = "https://www.reddit.com/svc/shreddit/account/register_email_verify_initialize";
+    const getEntriesByType = vi.fn(() => [
+      { name: endpoint, initiatorType: "fetch", responseStatus: 429 },
+    ]);
+    Object.defineProperty(f.window, "performance", { value: { getEntriesByType } });
+
+    await expect(inspectSocialRegistration(f.page, "reddit", {})).resolves.toMatchObject({
+      status: "awaiting_owner",
+      step: "rate_limit",
+      canAdvance: false,
+      requiredFields: [],
+    });
+    await expect(
+      advanceSocialRegistration(f.page, "reddit", { email: "bycoda@example.com" }),
+    ).resolves.toMatchObject({ step: "rate_limit", filledFields: [] });
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
+  it("uses only the latest same-origin Reddit email signup response", async () => {
+    const f = reddit("<h1>Sign Up</h1>", { email: emailInput });
+    const path = "/svc/shreddit/account/register_email_verify_initialize";
+    const getEntriesByType = vi.fn(() => [
+      { name: `https://www.reddit.com${path}`, initiatorType: "fetch", responseStatus: 429 },
+      {
+        name: `https://www.reddit.com${path}?fixture=1`,
+        initiatorType: "fetch",
+        responseStatus: 200,
+      },
+      { name: `https://example.invalid${path}`, initiatorType: "fetch", responseStatus: 429 },
+      { name: `https://www.reddit.com${path}/other`, initiatorType: "fetch", responseStatus: 429 },
+    ]);
+    Object.defineProperty(f.window, "performance", { value: { getEntriesByType } });
+
+    await expect(inspectSocialRegistration(f.page, "reddit", {})).resolves.toMatchObject({
+      status: "needs_fields",
+      requiredFields: ["email"],
+    });
+  });
+  it("stops on Reddit's network block page without filling or clicking", async () => {
+    const notice = `<div>You've been blocked by network security.</div>
+      <a href="https://support.reddithelp.com/">File a ticket</a>`;
+    const f = reddit(notice);
+    const denied = {
+      status: "awaiting_owner",
+      step: "network_blocked",
+      canAdvance: false,
+      requiredFields: [],
+      message: "Reddit blocked browser access for network security. Try again later.",
+    };
+    await expect(inspectSocialRegistration(f.page, "reddit", {})).resolves.toMatchObject(denied);
+    await expect(
+      advanceSocialRegistration(f.page, "reddit", { email: "bycoda@example.com" }),
+    ).resolves.toMatchObject(denied);
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+
+    const lookalike = fixture("https://example.com/register/", notice);
+    await expect(inspectSocialRegistration(lookalike.page, "reddit", {})).resolves.toMatchObject({
+      step: "unknown",
+    });
+    const quoted = reddit("<p>You've been blocked by network security.</p>", { email: emailInput });
+    await expect(inspectSocialRegistration(quoted.page, "reddit", {})).resolves.toMatchObject({
+      status: "needs_fields",
+    });
+  });
   it("does not guess at an unknown Reddit layout or another path", async () => {
     const f = reddit("<h1>Sign Up</h1>");
     expect(
@@ -1247,6 +1507,50 @@ describe("X owner-assisted registration contracts", () => {
   };
   const value = (f: ReturnType<typeof fixture>, selector: string) =>
     f.window.document.querySelector<HTMLInputElement>(selector)!.value;
+
+  const currentBirthdate =
+    "https://x.com/i/jf/onboarding/web?mode=signup#/s/signup_dob/fixture-step";
+  const birthdateForm = `<form><p>When's your birthday?</p>
+    <select id="jf-date-date_of_birth-month" name="date_of_birth-month">${options(12)}</select>
+    <select id="jf-date-date_of_birth-day" name="date_of_birth-day">${options(31)}</select>
+    <select id="jf-date-date_of_birth-year" name="date_of_birth-year">${options(1, '<option value="1990">1990</option>')}</select>
+    <button type="submit">Continue</button></form>`;
+
+  it("recognizes the current X age confirmation after email verification", async () => {
+    const f = fixture(currentBirthdate, birthdateForm);
+    expect(await inspectSocialRegistration(f.page, "x", {})).toMatchObject({
+      status: "needs_fields",
+      step: "birthdate",
+      requiredFields: ["birthdate"],
+    });
+    expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject({
+      status: "awaiting_owner",
+      step: "birthdate",
+      filledFields: ["birthdate"],
+      canAdvance: false,
+    });
+    expect(
+      ["month", "day", "year"].map((part) => value(f, `#jf-date-date_of_birth-${part}`)),
+    ).toEqual(["4", "7", "1990"]);
+    expect(f.click).not.toHaveBeenCalled();
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+
+  it("does not fill the current X age fields on a different step or over an existing choice", async () => {
+    const other = fixture(currentBirthdate.replace("signup_dob", "verify_code"), birthdateForm);
+    expect((await advanceSocialRegistration(other.page, "x", owner)).status).toBe("unsupported");
+    expect(value(other, "#jf-date-date_of_birth-month")).toBe("");
+
+    const f = fixture(currentBirthdate, birthdateForm);
+    f.window.document.querySelector<HTMLSelectElement>("#jf-date-date_of_birth-month")!.value = "9";
+    expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject({
+      status: "changed",
+      step: "birthdate",
+    });
+    expect(value(f, "#jf-date-date_of_birth-month")).toBe("9");
+    expect(value(f, "#jf-date-date_of_birth-day")).toBe("");
+    expect(f.click).not.toHaveBeenCalled();
+  });
 
   it("asks for the three non-secret fields before touching the form", async () => {
     const f = fixture(url, profileForm);
@@ -1296,6 +1600,110 @@ describe("X owner-assisted registration contracts", () => {
     });
     expect(choice.click).not.toHaveBeenCalled();
   });
+  it("recognizes the current X sign-up entry without filling or submitting the account form", async () => {
+    const f = fixture(
+      "https://x.com/i/jf/onboarding/web?mode=signup",
+      '<form><input name="username_or_email" autocomplete="username webauthn"><input type="password" name="password" style="opacity:0"><button type="submit">Continue</button></form>',
+    );
+    const expected = { status: "awaiting_owner", step: "method", canAdvance: false };
+    expect(await inspectSocialRegistration(f.page, "x", owner)).toMatchObject(expected);
+    expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject(expected);
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["in the form", "<p>Something went wrong. Please try again.</p>", "", true],
+    ["hidden", "<p hidden>Something went wrong. Please try again.</p>", "", false],
+    ["outside the form", "", "<p>Something went wrong. Please try again.</p>", false],
+  ])(
+    "reports the current X signup error only when visible in the signup form: %s",
+    async (_location, inForm, afterForm, failed) => {
+      const f = fixture(
+        "https://x.com/i/jf/onboarding/web?mode=signup",
+        `<form><input name="username_or_email" autocomplete="username webauthn"><input type="password" name="password" style="opacity:0"><button type="submit">Continue</button>${inForm}</form>${afterForm}`,
+      );
+      expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject({
+        status: "awaiting_owner",
+        step: "method",
+        blockers: [],
+        canAdvance: false,
+        message: failed
+          ? "X could not continue signup. Check the message in the X window, then select Continue here."
+          : "Choose a sign-up method in X, then select Continue here.",
+      });
+      expect(f.fill).not.toHaveBeenCalled();
+      expect(f.click).not.toHaveBeenCalled();
+    },
+  );
+  it("still reports a visible password in the shared onboarding form", async () => {
+    const f = fixture(
+      "https://x.com/i/jf/onboarding/web?mode=signup",
+      '<form><input name="username_or_email"><input type="password" name="password"></form>',
+    );
+    expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject({
+      status: "awaiting_owner",
+      step: "password",
+      blockers: ["password"],
+    });
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it.each([true, false])(
+    "recognizes the X final preferences and visible provider error (%s)",
+    async (rejected) => {
+      const f = fixture(
+        "https://x.com/i/jf/onboarding/web?mode=signup#/s/signup_preferences/test",
+        `<div role="dialog"><form><button type="button" role="switch" aria-checked="false" aria-labelledby="discover">Toggle</button>
+        <p id="discover">Let people find your account by your email</p>
+        <button type="submit">Continue</button>
+        <p ${rejected ? "" : "hidden"}>Something went wrong. Please try again.</p>
+      </form></div>`,
+      );
+      const state = await advanceSocialRegistration(f.page, "x", owner);
+      expect(state).toMatchObject({ status: "awaiting_owner", step: "terms", canAdvance: false });
+      expect(state.message.includes("X could not continue signup")).toBe(rejected);
+      expect(f.fill).not.toHaveBeenCalled();
+      expect(f.click).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["post_signup", "post_signup/"])(
+    "recognizes the X welcome screen at %s and leaves the form to the owner",
+    async (route) => {
+      const f = fixture(
+        `https://x.com/i/jf/onboarding/web/${route}`,
+        '<form><button type="button"><p>Skip</p></button><p>Pick your interests</p><p>Select 3 topics to continue</p><button type="submit" disabled>Continue</button></form>',
+      );
+      const expected = {
+        status: "awaiting_owner",
+        step: "profile",
+        blockers: [],
+        canAdvance: false,
+        message: "Finish the welcome steps in X, then close the window to continue to sign-in.",
+      };
+      expect(await inspectSocialRegistration(f.page, "x", owner)).toMatchObject(expected);
+      expect(await advanceSocialRegistration(f.page, "x", owner)).toMatchObject(expected);
+      expect(f.fill).not.toHaveBeenCalled();
+      expect(f.click).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["https://x.com/home", "", ""],
+    ["https://example.com/i/jf/onboarding/web/post_signup", "", ""],
+    ["https://x.com/i/jf/onboarding/web/post_signup", "hidden", ""],
+    ["https://x.com/i/jf/onboarding/web/post_signup", "", '<input autocomplete="one-time-code">'],
+  ])("does not report X welcome progress for %s (%s, %s)", async (route, hidden, extra) => {
+    const f = fixture(
+      route,
+      `<form><button type="button">Skip</button><p ${hidden}>Pick your interests</p><button type="submit">Continue</button>${extra}</form>`,
+    );
+    expect((await advanceSocialRegistration(f.page, "x", owner)).message).not.toContain(
+      "Finish the welcome steps in X",
+    );
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
   it.each([
     [
       "Arkose challenge iframe",
@@ -1334,6 +1742,108 @@ describe("X owner-assisted registration contracts", () => {
     expect((await inspectSocialRegistration(other.page, "x", {})).status).toBe("unsupported");
     const foreign = fixture("https://example.com/i/flow/signup", profileForm);
     expect((await inspectSocialRegistration(foreign.page, "x", {})).status).toBe("unsupported");
+  });
+});
+
+describe("Instagram's Meta Account signup", () => {
+  it("guides the owner through the restricted Instagram profile's phone verification", async () => {
+    const f = fixture(
+      "https://www.instagram.com/accounts/suspended/",
+      '<h1>Enter your mobile number</h1><input type="tel" autocomplete="tel"><div role="button">Send code</div>',
+    );
+    expect(await advanceSocialRegistration(f.page, "instagram", {})).toMatchObject({
+      status: "awaiting_owner",
+      step: "verification",
+      canAdvance: false,
+      filledFields: [],
+      message: "Enter a mobile number and confirm the SMS or WhatsApp code in Instagram.",
+    });
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  const url = "https://www.instagram.com/accounts/emailsignup/";
+  const owner = { email: "qa@example.com", displayName: "Bycoda", username: "bycoda.qa" };
+  const form = (labels: readonly [string, string, string, string, string]) => `
+    <label>${labels[0]}<input id="contact" type="text" autocomplete="off"></label>
+    <label>${labels[1]}<input id="password" type="password" autocomplete="off"></label>
+    <label>${labels[2]}<input id="display" type="text" autocomplete="off"></label>
+    <label>${labels[3]}<input id="username" type="search" aria-label="${labels[3]}" autocomplete="off"></label>
+    <div role="button">${labels[4]}</div>`;
+  const en = ["Mobile number or email", "Password", "Full name", "Username", "Submit"] as const;
+  const tr = [
+    "Cep telefonu numarası veya e-posta",
+    "Şifre",
+    "Tam adı",
+    "Kullanıcı adı",
+    "Gönder",
+  ] as const;
+
+  it.each([en, tr].map((labels) => ({ labels })))(
+    "requests and fills only verified profile fields ($labels.4)",
+    async ({ labels }) => {
+      const f = fixture(url, form(labels));
+      expect(await inspectSocialRegistration(f.page, "instagram")).toMatchObject({
+        status: "needs_fields",
+        requiredFields: ["email", "displayName", "username"],
+      });
+      expect(await advanceSocialRegistration(f.page, "instagram", owner)).toMatchObject({
+        status: "awaiting_owner",
+        blockers: ["password", "terms"],
+        filledFields: ["email", "displayName", "username"],
+        canAdvance: false,
+      });
+      expect(f.window.document.querySelector<HTMLInputElement>("#contact")!.value).toBe(
+        owner.email,
+      );
+      expect(f.window.document.querySelector<HTMLInputElement>("#display")!.value).toBe(
+        owner.displayName,
+      );
+      expect(f.window.document.querySelector<HTMLInputElement>("#username")!.value).toBe(
+        owner.username,
+      );
+      expect(f.window.document.querySelector<HTMLInputElement>("#password")!.value).toBe("");
+      expect(f.click).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the owner's existing contact value", async () => {
+    const f = fixture(url, form(en));
+    const contact = f.window.document.querySelector<HTMLInputElement>("#contact")!;
+    contact.value = "+905551234567";
+    expect(await advanceSocialRegistration(f.page, "instagram", owner)).toMatchObject({
+      status: "changed",
+    });
+    expect(contact.value).toBe("+905551234567");
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { extra: '<label>Mobile number or email<input type="text"></label>', blocker: "password" },
+    { extra: '<input autocomplete="one-time-code">', blocker: "password" },
+    {
+      extra: '<iframe src="https://challenges.cloudflare.com/turnstile/captcha"></iframe>',
+      blocker: "challenge",
+    },
+  ])("leaves ambiguous or blocked forms untouched ($blocker)", async ({ extra, blocker }) => {
+    const f = fixture(url, form(en) + extra);
+    const state = await advanceSocialRegistration(f.page, "instagram", owner);
+    expect(state).toMatchObject({ status: "awaiting_owner" });
+    expect(state.blockers).toContain(blocker);
+    expect(f.fill).not.toHaveBeenCalled();
+    expect(f.click).not.toHaveBeenCalled();
+  });
+
+  it("rechecks authorization and a late verification prompt before filling", async () => {
+    const f = fixture(url, form(en));
+    const beforeAction = vi.fn(async () => {
+      f.window.document.body.insertAdjacentHTML(
+        "beforeend",
+        '<input autocomplete="one-time-code">',
+      );
+    });
+    const state = await advanceSocialRegistration(f.page, "instagram", owner, { beforeAction });
+    expect(state.blockers).toContain("verification");
+    expect(f.fill).not.toHaveBeenCalled();
   });
 });
 
@@ -1399,7 +1909,7 @@ describe("Google account creation for a YouTube signup", () => {
     const state = await advanceSocialRegistration(f.page, "youtube", { accountKind: "brand" });
     expect(state).toMatchObject({
       status: "needs_fields",
-      requiredFields: ["givenName", "familyName"],
+      requiredFields: ["givenName"],
       blockers: [],
       canAdvance: false,
     });
@@ -1417,6 +1927,20 @@ describe("Google account creation for a YouTube signup", () => {
     });
     expect(f.window.document.querySelector<HTMLInputElement>("#firstName")!.value).toBe("Fixture");
     expect(f.window.document.querySelector<HTMLInputElement>("#lastName")!.value).toBe("Owner");
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it("opens YouTube's Google signup with a first name and leaves last name empty", async () => {
+    const f = googleFixture("/v3/signin/identifier", signin);
+    const state = await advanceSocialRegistration(f.page, "youtube", {
+      accountKind: "brand",
+      givenName: "Bycoda",
+    });
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      requiredFields: [],
+      filledFields: ["givenName"],
+    });
+    expect(f.window.document.querySelector<HTMLInputElement>("#lastName")!.value).toBe("");
     expect(f.click).not.toHaveBeenCalled();
   });
   it("fills day, year and the month option, leaves gender and Next to the owner", async () => {
@@ -1488,4 +2012,40 @@ describe("Google account creation for a YouTube signup", () => {
     });
     expect(f.fill).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      "/lifecycle/steps/signup/verifyemail",
+      '<input type="tel" id="code" name="code"><button>Next</button>',
+      "verification",
+      undefined,
+    ],
+    [
+      "/lifecycle/steps/signup/crossflowverification/initial",
+      '<img src="data:image/png;base64,fixture" alt="Image of QR code to scan with the camera on your mobile device.">',
+      "verification",
+      "Scan the QR code with your phone and finish verification in the Google window.",
+    ],
+    [
+      "/info/sessionexpired",
+      "<h1>You’re not signed in</h1><button>Try again</button>",
+      "method",
+      "The Google signup session expired. Select Try again in the Google window, then continue here.",
+    ],
+  ] as const)(
+    "reports the Google provider step %s without acting on it",
+    async (path, html, step, message) => {
+      const f = googleFixture(path, html);
+      const state = await advanceSocialRegistration(f.page, "youtube", owner);
+      expect(state).toMatchObject({
+        status: "awaiting_owner",
+        step,
+        canAdvance: false,
+        filledFields: [],
+      });
+      if (message) expect(state.message).toBe(message);
+      expect(f.fill).not.toHaveBeenCalled();
+      expect(f.click).not.toHaveBeenCalled();
+    },
+  );
 });

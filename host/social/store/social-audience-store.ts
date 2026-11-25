@@ -23,7 +23,12 @@ import type {
 } from "../../../src/features/social/model/outreach";
 import type { AiAction, AutonomyPolicy } from "../../../src/features/social/model/autonomy";
 import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
+import type { SocialBrowserWorkflow } from "../../../src/features/social/model/socialBrowser";
+import type { InstagramModerationRequest } from "../../../src/features/social/model/instagramModeration";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
+import { readInstagramMentions } from "../inbox/instagram-mentions";
+import type { YouTubeOperation } from "../../../src/features/social/model/youtubeManagement";
+import type { LinkedInManagementReview } from "../../../src/integrations/social/adapters/linkedin-manage";
 import { utcDay } from "../../../src/shared/lib/time/timestamps";
 
 /** Generic `social_records` kinds. Person and list have dedicated typed methods below. */
@@ -35,7 +40,10 @@ export type AudienceRecordKind =
   | "email-account"
   | "autonomy"
   | "inbox-status"
-  | "account-request";
+  | "account-request"
+  | "youtube-operation"
+  | "linkedin-management-review"
+  | "instagram-moderation";
 
 export type AudienceRecordValue = {
   person: SocialPerson;
@@ -46,6 +54,15 @@ export type AudienceRecordValue = {
   autonomy: AutonomyPolicy;
   "inbox-status": InboxStatusRecord;
   "account-request": SocialAccountRequest;
+  "youtube-operation": YouTubeOperation & {
+    actorId: string;
+    projectId?: string;
+    channelId: string;
+    fingerprint: string;
+    submittedAt?: number;
+  };
+  "linkedin-management-review": LinkedInManagementReview;
+  "instagram-moderation": InstagramModerationRequest;
 };
 
 export type Page<T> = { items: T[]; next?: string };
@@ -67,6 +84,8 @@ export const SYSTEM_COMMENTERS_RULE_ID = "system-commenters-capture";
 /** Idempotent DDL. social.ts also creates social_records and social_settings; repeating them is safe. */
 const AUDIENCE_DDL = `
   CREATE TABLE IF NOT EXISTS social_records (kind TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));
+  CREATE INDEX IF NOT EXISTS social_youtube_operations_account ON social_records(json_extract(value,'$.accountId'), id) WHERE kind='youtube-operation';
+  CREATE INDEX IF NOT EXISTS social_youtube_operations_outcome ON social_records(json_extract(value,'$.fingerprint'), json_extract(value,'$.status')) WHERE kind='youtube-operation';
   CREATE TABLE IF NOT EXISTS social_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS social_person_handles (account_id TEXT NOT NULL, platform_id TEXT NOT NULL, person_id TEXT NOT NULL, PRIMARY KEY(account_id, platform_id));
   CREATE INDEX IF NOT EXISTS social_person_handles_person ON social_person_handles(person_id);
@@ -127,6 +146,10 @@ function parse<T>(row: StoreRow): T {
 export class SocialAudienceStore {
   constructor(private readonly store: HostStore) {}
 
+  get environmentId(): string {
+    return this.store.environmentId;
+  }
+
   async initialize(): Promise<void> {
     await this.store.ready;
     await this.store.db.scope(() => this.store.db.exec(AUDIENCE_DDL));
@@ -165,6 +188,16 @@ export class SocialAudienceStore {
     return row ? parse<AudienceRecordValue[K]>(row) : undefined;
   }
 
+  /** Stored signup progress only. Reading it never opens or inspects a browser. */
+  async latestBrowserSignup(accountId: string): Promise<SocialBrowserWorkflow | undefined> {
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='browser-workflow' AND json_extract(value,'$.accountId')=? AND json_extract(value,'$.intent')='signup' ORDER BY json_extract(value,'$.createdAt') DESC,rowid DESC LIMIT 1",
+      )
+      .get(accountId);
+    return row ? parse<SocialBrowserWorkflow>(row) : undefined;
+  }
+
   async putRecord<K extends AudienceRecordKind>(
     kind: K,
     id: string,
@@ -185,6 +218,26 @@ export class SocialAudienceStore {
     return Number(result.changes) > 0;
   }
 
+  async listYouTubeOperations(accountId: string, cursor = "") {
+    const rows = await this.store.db
+      .prepare(
+        "SELECT id,value FROM social_records WHERE kind='youtube-operation' AND json_extract(value,'$.accountId')=? AND id>? ORDER BY id LIMIT ?",
+      )
+      .all(accountId, cursor, DEFAULT_PAGE + 1);
+    return pageOf(rows, DEFAULT_PAGE, (row) =>
+      parse<AudienceRecordValue["youtube-operation"]>(row),
+    );
+  }
+
+  async unresolvedYouTubeOperation(fingerprint: string) {
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='youtube-operation' AND json_extract(value,'$.fingerprint')=? AND json_extract(value,'$.status') IN ('submitted','unknown') LIMIT 1",
+      )
+      .get(fingerprint);
+    return row ? parse<AudienceRecordValue["youtube-operation"]>(row) : undefined;
+  }
+
   /** Keyset page ordered by id. The cursor is the last id of the previous page. */
   async listRecords<K extends AudienceRecordKind>(
     kind: K,
@@ -195,6 +248,37 @@ export class SocialAudienceStore {
       .prepare("SELECT id, value FROM social_records WHERE kind=? AND id>? ORDER BY id LIMIT ?")
       .all(kind, input.cursor ?? "", limit + 1);
     return pageOf(rows, limit, (row) => parse<AudienceRecordValue[K]>(row));
+  }
+
+  /** Account-specific Instagram mention notifications, paged by delivery order. */
+  async instagramMentions(accountId: string, cursor?: string) {
+    return readInstagramMentions(this.store, accountId, cursor);
+  }
+
+  async instagramModerationRequests(threadId: string, before?: string) {
+    const prefix = `${encodeURIComponent(threadId)}/`;
+    if (before !== undefined && !before.startsWith(prefix))
+      throw new Error("Invalid Instagram moderation cursor.");
+    const rows = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='instagram-moderation' AND id>=? AND id<? " +
+          "AND json_extract(value,'$.status') IN ('pending','attempting','uncertain') ORDER BY id DESC LIMIT 26",
+      )
+      .all(prefix, before ?? `${prefix}\uffff`);
+    const requests = rows.slice(0, 25).map((row) => parse<InstagramModerationRequest>(row));
+    return { requests, ...(rows.length > 25 ? { next: requests.at(-1)?.id } : {}) };
+  }
+
+  async activeInstagramModeration(threadId: string, commentId: string, action: string) {
+    const prefix = `${encodeURIComponent(threadId)}/`;
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM social_records WHERE kind='instagram-moderation' AND id>=? AND id<? " +
+          "AND json_extract(value,'$.commentId')=? AND json_extract(value,'$.action')=? " +
+          "AND json_extract(value,'$.status') IN ('pending','attempting','uncertain') LIMIT 1",
+      )
+      .get(prefix, `${prefix}\uffff`, commentId, action);
+    return row ? parse<InstagramModerationRequest>(row) : undefined;
   }
 
   // People and handles.

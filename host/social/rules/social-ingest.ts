@@ -9,9 +9,11 @@ import type {
   SocialThread,
 } from "../../../src/features/social/model/social";
 import type { SocialInbound } from "../../../src/integrations/social/adapter";
+import { parseTelegramDiscussionThread } from "../../../src/integrations/social/telegram-webhook";
 import type { SocialPrincipal } from "../social";
 import { socialGenerationPrompt } from "../social-generation";
 import type { SocialServiceInternals } from "../core/social-internals";
+import type { SocialIngestOptions } from "../core/social-service-api";
 import { finite, hash, sanitizeSocialError, str, UNASSIGNED_REVIEW } from "../core/social-helpers";
 import { linkInboundToPeople } from "../audience/audience-ingest";
 import { onInbound } from "../outreach/outreach-ingest";
@@ -26,10 +28,15 @@ export async function ingestEvents(
   s: SocialServiceInternals,
   accountId: string,
   events: SocialInbound[],
+  options?: SocialIngestOptions,
 ): Promise<number> {
   const account = await s.get<SocialAccount>("account", accountId);
   let count = 0;
   for (const event of events) {
+    const discussion =
+      account.platform === "telegram" &&
+      account.accountType === "bot" &&
+      parseTelegramDiscussionThread(event.threadId);
     const eventId = str(event.eventId, "event", 300);
     const key = `${accountId}:${event.kind}:${str(event.threadId, "thread", 300)}`;
     const saved = await s.transaction(async (): Promise<SocialContact | undefined> => {
@@ -90,6 +97,7 @@ export async function ingestEvents(
       };
       if (event.postId) thread.platformPostId = event.postId;
       if (event.replyAllowed !== undefined) thread.replyAllowed = event.replyAllowed;
+      if (event.instagramSource) thread.instagramSource = event.instagramSource;
       if (thread.contactId !== contact.id) {
         thread.reviewReason = "Conversation contains multiple recipients. Manual review required.";
         delete thread.projectId;
@@ -119,13 +127,15 @@ export async function ingestEvents(
       contact.history = contact.history.slice(-1000);
       await s.put("contact", contact.id, contact);
       await s.put("thread", thread.id, thread);
-      if (event.optedOut || OPT_OUT.test(event.text)) await s.optOut(contact);
+      if (!discussion && (event.optedOut || OPT_OUT.test(event.text))) await s.optOut(contact);
       return contact;
     });
     if (saved) {
       count++;
-      await runInboundHooks(s, account, event, saved);
-      await applyInboundRules(s, key, event);
+      // An automatic forward is a reviewable channel post, not a customer's incoming message.
+      if (discussion) continue;
+      await runInboundHooks(s, account, event, saved, options);
+      if (!options?.draftOnly) await applyInboundRules(s, key, event);
     }
   }
   return count;
@@ -137,6 +147,7 @@ async function runInboundHooks(
   account: SocialAccount,
   event: SocialInbound,
   contact: SocialContact,
+  options?: SocialIngestOptions,
 ): Promise<void> {
   const ctx = { store: s.audience, now: s.now(), decisions: s.decisionModels };
   await Promise.all([
@@ -146,12 +157,13 @@ async function runInboundHooks(
         sanitizeSocialError(error),
       ),
     ),
-    onInbound(ctx, account, [event], [contact]).catch((error) =>
-      console.error(
-        "Social outreach inbound hook failed; inbound event kept:",
-        sanitizeSocialError(error),
+    !options?.draftOnly &&
+      onInbound(ctx, account, [event], [contact]).catch((error) =>
+        console.error(
+          "Social outreach inbound hook failed; inbound event kept:",
+          sanitizeSocialError(error),
+        ),
       ),
-    ),
   ]);
 }
 

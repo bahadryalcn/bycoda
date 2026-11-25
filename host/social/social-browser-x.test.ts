@@ -115,6 +115,9 @@ function depsFor(directory: string, session?: BrowserSession): XBrowserDeps {
   } as XBrowserDeps;
 }
 
+const readCurrentPage: XBrowserDeps["until"] = async <T>(page: BrowserPage, expression: string) =>
+  (await page.evaluate<T>(expression)) || undefined;
+
 describe("X browser identity and challenge pages", () => {
   it("marks a captcha page NEEDS_HUMAN and never interacts with it", async () => {
     const page = pageAt("https://x.com/account/access", fixture("captcha-challenge.html"));
@@ -197,6 +200,201 @@ describe("X screen summary", () => {
 });
 
 describe("X browser publishing gates", () => {
+  it.each(["ready", "missing", "wrong route", "wrong account", "existing draft"] as const)(
+    "uses only the exact home composer after an empty X post dialog (%s)",
+    async (state) => {
+      const directory = await scratch();
+      const dialog = pageAt(
+        "https://x.com/compose/post",
+        '<a data-testid="AppTabBar_Profile_Link" href="/owner">Profile</a><div role="dialog" aria-modal="true" aria-labelledby="modal-header"></div>',
+        LOGGED_IN,
+      );
+      const home = pageAt(
+        state === "wrong route" ? "https://x.com/owner/status/123" : "https://x.com/home",
+        state === "missing"
+          ? '<div data-testid="tweetTextarea_0" contenteditable="true"></div>'
+          : `<div data-testid="primaryColumn"><div data-testid="tweetTextarea_0" contenteditable="true">${state === "existing draft" ? "Owner draft" : ""}</div><button data-testid="tweetButtonInline">Post</button></div>`,
+        state === "wrong account"
+          ? [
+              { name: "auth_token", value: "other-session" },
+              { name: "twid", value: "u%3D43" },
+            ]
+          : LOGGED_IN,
+      );
+      const page = {
+        ...dialog,
+        watchResponse: vi.fn(() => ({
+          body: async () => fixture("create-tweet-ok.json"),
+          stop: vi.fn(),
+        })),
+      };
+      page.goto.mockImplementation(async (url?: string) => {
+        if (url === "https://x.com/home") {
+          page.evaluate.mockImplementation(home.evaluate);
+          page.cookies.mockImplementation(home.cookies);
+        }
+      });
+      const deps = depsFor(directory, {
+        page,
+        closed: new Promise<void>(() => undefined),
+        close: vi.fn(async () => undefined),
+      } as unknown as BrowserSession);
+      deps.until = readCurrentPage;
+      const send = publishX(deps, account(), job(), async () => new Uint8Array());
+      if (state === "ready") {
+        await expect(send).resolves.toEqual({
+          platformId: "1900000000000000001",
+          url: "https://x.com/i/status/1900000000000000001",
+        });
+        expect(page.insertText).toHaveBeenCalledExactlyOnceWith("hello");
+        expect(page.click).toHaveBeenLastCalledWith(
+          '[data-testid="primaryColumn"] [data-testid="tweetButtonInline"]',
+        );
+        expect(deps.limiter.record).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(send).rejects.toBeDefined();
+        expect(page.insertText).not.toHaveBeenCalled();
+        expect(page.click).not.toHaveBeenCalled();
+        expect(deps.limiter.record).not.toHaveBeenCalled();
+      }
+      expect(page.goto.mock.calls).toEqual([
+        ["https://x.com/compose/post"],
+        ["https://x.com/home"],
+      ]);
+    },
+  );
+
+  const replyControls =
+    '<div data-testid="tweetTextarea_0" contenteditable="true"></div><button data-testid="tweetButtonInline">Reply</button>';
+
+  async function replyAt(url: string, returnedParent?: string, returnedPost = "777") {
+    const page = pageAt(url, replyControls, LOGGED_IN);
+    const stop = vi.fn();
+    page.watchResponse.mockReturnValue({
+      body: async () =>
+        JSON.stringify({
+          data: {
+            create_tweet: {
+              tweet_results: {
+                result: {
+                  rest_id: returnedPost,
+                  legacy: { in_reply_to_status_id_str: returnedParent },
+                },
+              },
+            },
+          },
+        }),
+      stop,
+    });
+    const session = { page, close: vi.fn(async () => undefined) } as unknown as BrowserSession;
+    const deps = depsFor(await scratch(), session);
+    deps.until = readCurrentPage;
+    const send = (beforeSubmit = vi.fn<() => Promise<void>>()) =>
+      publishX(
+        deps,
+        account(),
+        job({ postId: "123" }, "comment"),
+        async () => new Uint8Array(),
+        beforeSubmit,
+      );
+    return { page, deps, send, stop };
+  }
+
+  it("accepts the canonical X permalink and confirms the same reply parent", async () => {
+    const f = await replyAt("https://x.com/author/status/123", "123");
+    await expect(f.send()).resolves.toEqual({
+      platformId: "777",
+      url: "https://x.com/i/status/777",
+    });
+    expect(f.page.click).toHaveBeenCalledWith('[data-testid="tweetButtonInline"]');
+    expect(f.stop).toHaveBeenCalled();
+  });
+
+  it.each([
+    "https://x.com/other/status/456",
+    "https://x.com/home",
+    "https://x.com/author/status/123/photo/1",
+    "https://example.test/author/status/123",
+  ])("leaves the composer untouched outside the exact X reply target: %s", async (url) => {
+    const f = await replyAt(url, "123");
+    const submit = vi.fn<() => Promise<void>>();
+    await expect(f.send(submit)).rejects.toMatchObject({ code: "denied" });
+    expect(f.page.click).not.toHaveBeenCalled();
+    expect(f.page.insertText).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("never clicks Reply if the target changes during approval", async () => {
+    const f = await replyAt("https://x.com/author/status/123", "123");
+    await expect(
+      f.send(
+        vi.fn(async () => {
+          await f.page.evaluate('history.replaceState(null, "", "/other/status/456")');
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(f.page.click).toHaveBeenCalledExactlyOnceWith('[data-testid="tweetTextarea_0"]');
+    expect(f.page.watchResponse).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["456", "777"],
+    [undefined, "777"],
+    ["123", "123"],
+  ])(
+    "keeps an unconfirmed reply outcome under review for parent %s and id %s",
+    async (parent, id) => {
+      const f = await replyAt("https://x.com/author/status/123", parent, id);
+      await expect(f.send()).rejects.toMatchObject({ code: "unknown" });
+      expect(f.page.click).toHaveBeenCalledWith('[data-testid="tweetButtonInline"]');
+      expect(f.stop).toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["publish", {}, "/compose/post"],
+    ["reply", { postId: "123" }, "/i/status/123"],
+    ["message", { recipientId: "77" }, "/messages/compose"],
+  ] as const)(
+    "asks to reconnect when the %s composer redirects to current X sign-in",
+    async (kind, payload, redirect) => {
+      const page = pageAt(
+        `https://x.com/i/jf/onboarding/web?redirect_after_login=${encodeURIComponent(redirect)}&mode=login`,
+        '<form><input name="username_or_email"></form>',
+        LOGGED_IN,
+      );
+      const session = { page, close: vi.fn(async () => undefined) } as unknown as BrowserSession;
+      const deps = depsFor(await scratch(), session);
+      deps.until = readCurrentPage;
+      const submit = vi.fn();
+      await expect(
+        publishX(deps, account(), job(payload, kind), async () => new Uint8Array(), submit),
+      ).rejects.toMatchObject({ code: "expired" });
+      expect(page.click).not.toHaveBeenCalled();
+      expect(page.insertText).not.toHaveBeenCalled();
+      expect(deps.limiter.record).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports verification on current X sign-in before telling the owner to reconnect", async () => {
+    const page = pageAt(
+      "https://x.com/i/jf/onboarding/web?mode=login",
+      '<form><input autocomplete="one-time-code"></form>',
+      LOGGED_IN,
+    );
+    const session = { page, close: vi.fn(async () => undefined) } as unknown as BrowserSession;
+    const deps = depsFor(await scratch(), session);
+    deps.until = readCurrentPage;
+    await expect(
+      publishX(deps, account(), job(), async () => new Uint8Array()),
+    ).rejects.toMatchObject({
+      code: "needs_human",
+      detail: { url: "https://x.com/i/jf/onboarding/web" },
+    });
+    expect(page.click).not.toHaveBeenCalled();
+  });
+
   it("refuses over-length text before pacing, upload or browser launch", async () => {
     const directory = await scratch();
     const session = {

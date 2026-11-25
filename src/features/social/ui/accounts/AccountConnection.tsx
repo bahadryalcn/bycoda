@@ -8,7 +8,7 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { Heading } from "../../../../shared/ui/Heading";
-
+import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { openExternal } from "../../../../platform/tauri/openExternal";
@@ -17,8 +17,11 @@ import { operationText } from "../common/capabilityText";
 import type { Capability, SocialAccount, SocialOperation } from "../../model/social";
 import { TOKEN_PLATFORMS } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { usePollingRefresh } from "../../hooks/usePollingRefresh";
+import type { HostProject } from "../../../connections/public/protocol";
 import { TelegramChannelConnect } from "./platform/TelegramChannelConnect";
 import { XProfileEditor } from "./platform/XProfileEditor";
+import { InstagramAccountTools } from "./platform/InstagramAccountTools";
 import { useAccountWrite } from "./useAccountWrite";
 import { ChromeSessionConnect } from "./ChromeSessionConnect";
 import "./accounts.css";
@@ -27,10 +30,12 @@ export type AccountConnectionProps = {
   client: SocialClient;
   account: SocialAccount;
   capabilities: Capability[];
+  projects?: readonly HostProject[];
   /** This account's executor is the computer the owner is looking at. */
   onThisComputer: boolean;
   disabled: boolean;
   onChanged(): void;
+  onBrowserStatusChange?(status: string): void;
 };
 
 type BrowserState = { status: string; error?: string; source?: "existing-chrome" | "dedicated" };
@@ -62,14 +67,28 @@ export function AccountConnection({
   client,
   account,
   capabilities,
+  projects = [],
   onThisComputer,
   disabled,
   onChanged,
+  onBrowserStatusChange,
 }: AccountConnectionProps) {
-  const [resourceId, setResourceId] = useState("");
+  const [resourceId, setResourceId] = useState(
+    account.platform === "linkedin" && account.connection === "oauth"
+      ? (/^urn:li:organization:(\d+)$/.exec(account.platformId)?.[1] ?? "")
+      : "",
+  );
   const [browser, setBrowser] = useState<BrowserState>();
+  const [browserPollFailed, setBrowserPollFailed] = useState(false);
   const [oauth, setOAuth] = useState<OAuthState>();
-  const [operations, setOperations] = useState<SocialOperation[]>(["publish"]);
+  const [linkedinLiveComments, setLinkedinLiveComments] = useState(false);
+  const [operations, setOperations] = useState<SocialOperation[]>(() =>
+    account.platform === "linkedin" &&
+    account.accountType === "member" &&
+    account.scopes.includes("r_member_postAnalytics")
+      ? ["publish", "analytics"]
+      : ["publish"],
+  );
   const operationOptions = capabilities.length
     ? capabilities.filter((item) => item.status !== "unsupported").map((item) => item.operation)
     : ["publish" as const];
@@ -80,38 +99,62 @@ export function AccountConnection({
     t("The connection could not be started. Try again."),
   );
   const usesBrowser = account.connection === "browser";
+  const xBillingDisabled = account.platform === "x" && !account.xApiProduct;
   const isTelegram = account.platform === "telegram";
   const isToken = TOKEN_PLATFORMS.includes(account.platform) && !usesBrowser;
   const isOrganization = account.accountType === "organization";
   const needsPageTarget = account.platform === "linkedin" && isOrganization && !account.platformId;
   const locked = disabled || is("connect:browser") || is("connect:oauth");
-  // The browser, OAuth and token flows are mutually exclusive, so only one connect action shows.
-  // A connected account re-signs in as a secondary action; the first connection is the primary.
   const connectVariant = account.connected ? "secondary" : "primary";
+  const browserPending = browser?.status === "waiting" || browser?.status === "checking";
+
+  const updateBrowser = (result: BrowserState) => {
+    setBrowserPollFailed(false);
+    setBrowser(result);
+    onBrowserStatusChange?.(result.status);
+    if (result.status === "connected") onChanged();
+  };
+  const refreshBrowser = usePollingRefresh({
+    active: usesBrowser && browserPending && !disabled && !is("cancel:browser"),
+    scope: client,
+    intervalMs: 2_000,
+    load: async (isCurrent) => {
+      try {
+        const result = await client.browserStatus(account.id, true);
+        if (isCurrent()) updateBrowser(result);
+      } catch (error) {
+        if (isCurrent()) setBrowserPollFailed(true);
+        throw error;
+      }
+    },
+  });
 
   const startBrowser = () =>
     write("connect:browser", async () => {
-      const result = await client.browserBegin(account.id, resourceId || undefined);
-      setBrowser(result);
-      if (result.status === "connected") onChanged();
+      updateBrowser(await client.browserBegin(account.id, resourceId || undefined));
     });
   const checkBrowser = () =>
     write("check:browser", async () => {
-      const result = await client.browserStatus(account.id);
-      setBrowser(result);
-      if (result.status === "connected") onChanged();
+      if (browserPending) await refreshBrowser();
+      else updateBrowser(await client.browserStatus(account.id));
     });
   const cancelBrowser = () =>
     write("cancel:browser", async () => {
-      setBrowser(await client.browserCancelLogin(account.id));
+      updateBrowser(await client.browserCancelLogin(account.id));
     });
   const startOAuth = () =>
     write("connect:oauth", async () => {
-      if (!requestedOperations.length || (isOrganization && !/^\d+$/.test(resourceId))) return;
+      if (
+        xBillingDisabled ||
+        !requestedOperations.length ||
+        (isOrganization && !/^\d+$/.test(resourceId))
+      )
+        return;
       const begin = await client.oauthBegin(
         account.id,
         isOrganization ? resourceId : undefined,
         requestedOperations,
+        ...(linkedinLiveComments ? [true as const] : []),
       );
       setOAuth({ status: "waiting", candidates: [] });
       await openExternal(begin.url);
@@ -140,7 +183,7 @@ export function AccountConnection({
     >
       <div className="social-card-head">
         <Heading size="item">{t("Connection")}</Heading>
-        {account.connected ? (
+        {account.connected && browser?.status !== "failed" ? (
           <InfoPopover className="shrink-0">
             {onThisComputer
               ? t("This account is connected on the selected computer.")
@@ -148,7 +191,6 @@ export function AccountConnection({
           </InfoPopover>
         ) : null}
       </div>
-      <CapabilityList capabilities={capabilities} grouped />
       {usesBrowser ? (
         <div className="social-field-row">
           {account.platform === "linkedin" && isOrganization ? (
@@ -163,7 +205,12 @@ export function AccountConnection({
             variant={connectVariant}
             size="sm"
             loading={is("connect:browser")}
-            disabled={locked || (needsPageTarget && !resourceId.trim())}
+            disabled={
+              locked ||
+              is("check:browser") ||
+              browserPending ||
+              (needsPageTarget && !resourceId.trim())
+            }
             onClick={() => void startBrowser().catch(() => undefined)}
           >
             {account.connected ? t("Sign in again in the browser") : t("Sign in in the browser")}
@@ -172,19 +219,19 @@ export function AccountConnection({
             variant="secondary"
             size="sm"
             loading={is("check:browser")}
-            disabled={disabled || is("check:browser")}
+            disabled={locked || is("check:browser") || is("cancel:browser")}
             onClick={() => void checkBrowser().catch(() => undefined)}
           >
             {t("Check connection")}
           </Button>
-          {browser?.status === "waiting" ? (
-            <Text as="span" size="caption" tone="muted" className="social-muted">
+          {browser?.status === "waiting" && browser.source !== "existing-chrome" ? (
+            <InlineMessage tone="info" live="off">
               {t(
                 "Close the dedicated sign-in window after signing in so the connection can be verified.",
               )}
-            </Text>
+            </InlineMessage>
           ) : null}
-          {browser?.status === "waiting" || browser?.status === "checking" ? (
+          {browserPending ? (
             <Button
               variant="ghost"
               size="sm"
@@ -195,10 +242,13 @@ export function AccountConnection({
               {t("Stop")}
             </Button>
           ) : null}
-          {browser ? (
-            <Text as="span" tone="muted" leading="snug" className="social-muted">
-              {browserStatusText(browser.status)}
-            </Text>
+          {browser && (browser.status !== "failed" || !browser.error) ? (
+            <LiveText
+              text={browserStatusText(browser.status)}
+              tone="muted"
+              leading="snug"
+              className="social-muted"
+            />
           ) : null}
         </div>
       ) : null}
@@ -207,36 +257,18 @@ export function AccountConnection({
           client={client}
           accountId={account.id}
           resourceId={resourceId || undefined}
-          disabled={locked || !onThisComputer || (needsPageTarget && !resourceId.trim())}
-          onChanged={onChanged}
+          disabled={
+            locked || browserPending || !onThisComputer || (needsPageTarget && !resourceId.trim())
+          }
+          onChanged={() => {
+            setBrowser(undefined);
+            onBrowserStatusChange?.("connected");
+            onChanged();
+          }}
         />
       ) : null}
       {!usesBrowser && !isToken && !isTelegram ? (
         <>
-          <Disclosure summary={t("Permissions")} variant="row" size="sm">
-            <FieldGroup legend={t("What this account can do")} hideLegend layout="row">
-              {operationOptions.map((operation) => (
-                <Checkbox
-                  key={operation}
-                  label={operationText(operation)}
-                  checked={operations.includes(operation)}
-                  disabled={locked}
-                  onChange={(event) =>
-                    setOperations((current) =>
-                      event.target.checked
-                        ? [...current, operation]
-                        : current.filter((item) => item !== operation),
-                    )
-                  }
-                />
-              ))}
-            </FieldGroup>
-          </Disclosure>
-          {!requestedOperations.length ? (
-            <InlineMessage tone="warning" live="off">
-              {t("Choose at least one permission.")}
-            </InlineMessage>
-          ) : null}
           <div className="social-field-row">
             {isOrganization ? (
               <TextField
@@ -253,6 +285,7 @@ export function AccountConnection({
               loading={is("connect:oauth")}
               disabled={
                 locked ||
+                xBillingDisabled ||
                 !requestedOperations.length ||
                 (isOrganization && !/^\d+$/.test(resourceId))
               }
@@ -275,6 +308,40 @@ export function AccountConnection({
               </Text>
             ) : null}
           </div>
+          <Disclosure summary={t("Permissions")} variant="row" size="sm">
+            <FieldGroup legend={t("What this account can do")} hideLegend layout="row">
+              {operationOptions.map((operation) => (
+                <Checkbox
+                  size="secondary"
+                  key={operation}
+                  label={operationText(operation)}
+                  checked={operations.includes(operation)}
+                  disabled={locked}
+                  onChange={(event) =>
+                    setOperations((current) =>
+                      event.target.checked
+                        ? [...current, operation]
+                        : current.filter((item) => item !== operation),
+                    )
+                  }
+                />
+              ))}
+              {account.platform === "linkedin" && isOrganization ? (
+                <Checkbox
+                  size="secondary"
+                  label={t("LinkedIn Live comments")}
+                  checked={linkedinLiveComments}
+                  disabled={locked}
+                  onChange={(event) => setLinkedinLiveComments(event.target.checked)}
+                />
+              ) : null}
+            </FieldGroup>
+          </Disclosure>
+          {!requestedOperations.length ? (
+            <InlineMessage tone="warning" live="off">
+              {t("Choose at least one permission.")}
+            </InlineMessage>
+          ) : null}
         </>
       ) : null}
       {oauth?.candidates.length ? (
@@ -316,13 +383,36 @@ export function AccountConnection({
           onRefresh={onChanged}
         />
       ) : null}
+      {browser?.error ? (
+        <InlineError details={browser.error}>
+          {t("Sign-in failed. Start sign-in again.")}
+        </InlineError>
+      ) : oauth?.error ? (
+        <InlineError details={oauth.error}>
+          {t("The connection could not be started. Try again.")}
+        </InlineError>
+      ) : null}
+      {browserPollFailed && !disabled ? (
+        <InlineError>{t("Could not reach this computer.")}</InlineError>
+      ) : null}
+      {error ? (
+        <InlineError details={error}>
+          {t("The connection could not be started. Try again.")}
+        </InlineError>
+      ) : null}
+      <CapabilityList capabilities={capabilities} grouped />
       {account.platform === "x" && account.connected ? (
         <XProfileEditor client={client} accountId={account.id} />
       ) : null}
-      {browser?.error || oauth?.error ? (
-        <InlineError>{browser?.error ?? oauth?.error}</InlineError>
+      {account.platform === "instagram" ? (
+        <InstagramAccountTools
+          client={client}
+          account={account}
+          capabilities={capabilities}
+          projects={projects}
+          disabled={disabled}
+        />
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
     </section>
   );
 }

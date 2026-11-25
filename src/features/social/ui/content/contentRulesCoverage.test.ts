@@ -92,9 +92,11 @@ describe("what a draft needs before it can be saved", () => {
 });
 
 describe("character limits", () => {
-  it("counts an emoji as one character for ordinary accounts", () => {
-    expect(draftProblems(input({ text: "😀".repeat(5) }, [x], limit(5)))).toEqual([]);
-    expect(texts(draftProblems(input({ text: "😀".repeat(6) }, [x], limit(5))))[0]).toContain("5");
+  it("counts each X emoji as two units of post weight", () => {
+    expect(draftProblems(input({ text: "😀".repeat(5) }, [x], limit(10)))).toEqual([]);
+    expect(texts(draftProblems(input({ text: "😀".repeat(6) }, [x], limit(10))))[0]).toContain(
+      "10",
+    );
   });
 
   it("counts a Telegram channel bot post in UTF-16 units against the media caption cap", () => {
@@ -119,9 +121,11 @@ describe("character limits", () => {
 
   it("counts UTM tags that will be added to the link", () => {
     const base = { text: "a".repeat(10), link: "https://e.co" };
-    expect(draftProblems(input(base, [x], limit(30)))).toEqual([]);
+    const linkedin = account({ id: "l1", platform: "linkedin" });
+    expect(draftProblems(input(base, [linkedin], limit(30)))).toEqual([]);
     const tagged = { ...base, utm: { source: "bycoda", medium: "", campaign: "" } };
-    expect(draftProblems(input(tagged, [x], limit(30)))).toHaveLength(1);
+    expect(draftProblems(input(tagged, [linkedin], limit(30)))).toHaveLength(1);
+    expect(draftProblems(input(tagged, [x], limit(34)))).toEqual([]);
   });
 
   it("reports every account that is over its own limit, each with its account id", () => {

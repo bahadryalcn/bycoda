@@ -90,6 +90,13 @@ export async function sendWithFallback(
   try {
     return await send(primary, account);
   } catch (error) {
+    // Instagram API failures never authorize a second send through the browser.
+    if (account.platform === "instagram") throw error;
+    // Snapchat Public Profile publishing has an official API for every queued format.
+    if (account.platform === "snapchat") throw error;
+    if (job.payload.facebookPrivateReply) throw error;
+    // YouTube video uploads have an official API. A resumable session stays on that API.
+    if (account.platform === "youtube" && job.kind === "publish") throw error;
     // The adapter failed before submit, so the dispatch marker set by the caller is not a submit.
     const notSubmitted = { ...job, dispatchedAt: undefined };
     const browserSupports =

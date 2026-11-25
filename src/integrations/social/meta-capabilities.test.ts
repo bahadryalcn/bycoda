@@ -90,15 +90,34 @@ describe("Meta capability map", () => {
     expect(row(caps, "search")).toMatchObject({ status: "unsupported" });
   });
 
-  it("never opens the Meta API-only operations on a browser connection", () => {
+  it("keeps Meta API-only operations unavailable and exposes Facebook Page browser deletion", () => {
     for (const platform of ["facebook", "instagram"] as const) {
       const caps = accountCapabilities(account(platform, [], "browser"));
-      for (const operation of ["delete", "analytics", "audience.collect"]) {
+      for (const operation of ["analytics", "audience.collect"]) {
         expect(row(caps, operation), `${platform}.${operation}`).toMatchObject({
           status: "unsupported",
           reasonCode: "unsupported.not_yet",
         });
       }
+      expect(row(caps, "delete")?.status).toBe(
+        platform === "facebook" ? "available" : "unsupported",
+      );
     }
   });
+  it.each(["member", "page"] as const)(
+    "reports the verified Facebook %s browser profile operations",
+    (accountType) => {
+      const connected = { ...account("facebook", [], "browser"), accountType };
+      const operations = ["profile.read", "profile.update"];
+      for (const operation of operations) {
+        expect(row(accountCapabilities(connected), operation)).toMatchObject({
+          status: "available",
+          reasonCode: "browser.ready",
+        });
+        expect(
+          row(accountCapabilities({ ...connected, connected: false }), operation),
+        ).toMatchObject({ status: "pending", reasonCode: "browser.reconnect" });
+      }
+    },
+  );
 });

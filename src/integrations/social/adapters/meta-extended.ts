@@ -2,6 +2,8 @@ import type { SocialAdapter, SocialHttp } from "../adapter";
 import { SocialPlatformError } from "../adapter";
 import type { CollectedPerson } from "../audience-types";
 import { at, graphNext, id, requireId } from "./common";
+import { readInstagramMediaSummary } from "./instagram-insights";
+import { readFacebookPostInsights } from "./facebook-insights";
 
 type Platform = "instagram" | "facebook";
 export type MetaExtendedOperations = Pick<
@@ -12,13 +14,6 @@ export type CommentAction = "hide" | "unhide" | "delete";
 
 const after = (cursor?: string) => (cursor ? `&after=${encodeURIComponent(cursor)}` : "");
 const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
-
-/** One insight metric from a Graph insights response; unknown metric names give undefined. */
-function metric(value: Record<string, any>, name: string): number | undefined {
-  const row = (value.data ?? []).find((item: { name?: string }) => item.name === name);
-  const number = Number(row?.values?.[0]?.value ?? row?.total_value?.value);
-  return Number.isFinite(number) ? number : undefined;
-}
 
 function origin(platform: Platform): string {
   return platform === "instagram" ? "https://graph.instagram.com" : "https://graph.facebook.com";
@@ -72,35 +67,15 @@ export function metaExtendedOperations(
         { views?: number; likes?: number; comments?: number; shares?: number }
       > = {};
       for (const postId of postIds) {
-        const post = id(postId);
+        id(postId);
         if (platform === "facebook") {
-          const { value } = await http.request(
-            endpoint(
-              `${post}?fields=likes.summary(true).limit(0),comments.summary(true).limit(0),shares`,
-            ),
-            token,
+          result[postId] = await readFacebookPostInsights(
+            (path) => http.request(endpoint(path), token),
+            postId,
           );
-          const { value: insights } = await http.request(
-            endpoint(`${post}/insights?metric=post_impressions_unique`),
-            token,
-          );
-          result[postId] = {
-            views: metric(insights, "post_impressions_unique"),
-            likes: Number(value.likes?.summary?.total_count) || undefined,
-            comments: Number(value.comments?.summary?.total_count) || undefined,
-            shares: Number(value.shares?.count) || undefined,
-          };
         } else {
-          const { value } = await http.request(
-            endpoint(`${post}/insights?metric=views,likes,comments,shares`),
-            token,
-          );
-          result[postId] = {
-            views: metric(value, "views"),
-            likes: metric(value, "likes"),
-            comments: metric(value, "comments"),
-            shares: metric(value, "shares"),
-          };
+          // Instagram Login returns a partial result when a media metric is unavailable.
+          result[postId] = await readInstagramMediaSummary(http, graphVersion, token, postId);
         }
       }
       return result;
@@ -195,8 +170,13 @@ export async function metaCommentAction(
     return;
   }
   if (platform === "facebook") {
-    await http.json(url(comment), token, { is_hidden: action === "hide" });
+    const { value } = await http.json(url(comment), token, { is_hidden: action === "hide" });
+    if (value.success !== true) throw new SocialPlatformError("unknown");
     return;
   }
-  await http.request(url(`${comment}?hide=${action === "hide"}`), token, { method: "POST" });
+  // Instagram Login documents an explicit success boolean for hide and unhide.
+  const { value } = await http.request(url(`${comment}?hide=${action === "hide"}`), token, {
+    method: "POST",
+  });
+  if (value.success !== true) throw new SocialPlatformError("unknown");
 }

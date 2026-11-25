@@ -9,7 +9,7 @@ Use for Social product workflows and their Host operations. Distinguish platform
 
 ## Source starts
 
-Full paths are repository-root relative; adjacent abbreviated names share the preceding directory. Follow current imports and callers; this map is not a completeness claim.
+Paths are repository-root relative. Follow current imports and callers; this map is not complete.
 
 - `src/features/social/ui/SocialView.tsx` mounts the shell; `ui/shell/` holds the frame and screen map; `ui/command|content|audience|inbox|accounts/` hold the five screens; `ui/browser/` holds NEEDS_HUMAN and live view; `ui/common/` shared pieces.
 - `src/features/social/model/`: `socialTools.ts` (AI-callable actions), `autonomy.ts` (levels and defaults), `audience.ts`, `outreach.ts`, `socialActions.ts` (RPC names). Hooks, `ui/socialBulk.ts` and draft/program models hold workflow state.
@@ -19,9 +19,12 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 - `host/social/browser*` and `browser-layers/`: sessions, recipes, layered driver, NEEDS_HUMAN, live view. `host/social/social-programs.ts` and `social-program-*.ts`: campaign programs.
 - `host/decision-models/`: decision gateway for the browser decision layer and AI tools (own skill: `feature-decision-models`).
 - Contracts: `docs/integrations/social.md`, `social-programs.md`, `decision-models.md`.
+- Platform actions: `host/social/{youtube,tiktok,linkedin,facebook-live}/`, `core/facebook-page-actions.ts`, adapters in `src/integrations/social/adapters/`. Live, Business and stream credentials stay in per-account Host vault entries; keep owner mutations and credential setup off session tools.
+- YouTube upload session URLs stay in the Host vault.
 
 ## Preserve
 
+- X API operations need owner billing opt-in; keep X actions and stream-key custody in X modules ([X integration](../../../docs/integrations/social.md#x)).
 - The full invariant list is in [Social contracts](references/contracts.md). Keep these summaries true when editing.
 
 - Autonomy: levels `suggest` (default), `approve`, `autonomous`, per account and action. Only the owner sets `autonomous`; an AI principal at `autonomous` still obeys limits, hours, suppression and both stops.
@@ -43,10 +46,10 @@ Full paths are repository-root relative; adjacent abbreviated names share the pr
 
 ## Focused checks
 
-Listing a command here is not a passing result.
+Listing a command is not a result.
 
 - `pnpm exec vitest run src/features/social/ui/SocialView.test.ts src/features/social/model`
-- `pnpm exec vitest run src/features/social/ui/shell src/features/social/ui/command src/features/social/ui/content src/features/social/ui/audience src/features/social/ui/inbox src/features/social/ui/accounts`
+- `pnpm exec vitest run src/features/social/ui`
 - `pnpm exec vitest run src/integrations/social`
 - `pnpm exec vitest run --config host/vitest.config.ts host/social`
 
@@ -54,7 +57,9 @@ Inspect populated, empty and long content, account switches during requests, rec
 
 ## References
 
+- Snapchat: `src/integrations/social/snapchat.ts`, `host/social/accounts/snapchat-actions.ts`, `host/social/social-browser-snapchat-*.ts`.
 - [Social contracts](references/contracts.md) for the full preserve list: autonomy, grants, credentials, indexed queries and polling cursors.
+- [Instagram and Meta coverage](../../../docs/integrations/social.md#instagram-facebook-and-meta) for permissions, formats and reviewed Inbox actions.
 - [Decisions](references/decisions.md) for owner decisions that set autonomy, consent, driver and browser rules.
 - [Social integration](../../../docs/integrations/social.md) for screens, account modes, platforms, audience, outreach, email, suppression, autonomy and browser layers.
 - [AI programs](../../../docs/integrations/social-programs.md) when changing campaigns, models, schedules or program dispatch.

@@ -69,6 +69,10 @@ import { TASK_CONFIGURATION_FIELDS, TASK_READ_TOOLS } from "./conversation-task-
 import { CONVERSATION_READ_ACTIONS } from "./conversation-read-actions";
 import { LOG_WAIT_TOOL_DESCRIPTION, LOG_WAIT_TOOL_SCHEMA } from "../execution/runtime-log-wait";
 import { AGENT_TOOL_SCHEMAS, describeAgentTool } from "../delegation/tools";
+import {
+  LIVE_STREAM_CONVERSATION_TOOLS,
+  describeLiveStreamConversationTool,
+} from "../live-stream/tools";
 import { GOAL_WRITE_TOOLS, describeGoalWriteTool } from "./conversation-goal-tools";
 import { SECRET_TOOLS, describeSecretTool } from "../secrets/secret-schemas";
 import {
@@ -155,6 +159,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
 });
 export const CONVERSATION_TOOLS = {
   ...AGENT_TOOL_SCHEMAS,
+  ...LIVE_STREAM_CONVERSATION_TOOLS,
   "browser.operation.status": ROOM_BROWSER_STATUS_SCHEMA,
   ...ROOM_TERMINAL_SCHEMAS,
   ...ROOM_SOCIAL_SCHEMAS,
@@ -822,6 +827,7 @@ function conversationToolDescription(action: string) {
     describeImageConversationTool(action) ??
     describeRuntimeReadConversationTool(action) ??
     describeStewardConversationTool(action) ??
+    describeLiveStreamConversationTool(action) ??
     describeBrowserAnnotationTool(action) ??
     describeTaskQueueTool(action) ??
     describeGoalWriteTool(action) ??

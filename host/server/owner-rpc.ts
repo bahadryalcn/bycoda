@@ -39,6 +39,7 @@ import { handlePullRequestsRpc } from "./rpc-pull-requests";
 import { handleUsageRpc } from "./rpc-usage";
 import { handleActivityOwnerRpc, handleSessionLifecycleRpc } from "./rpc-account-platform";
 import { handleDecisionModelsRpc } from "./rpc-decision-models";
+import { handleLiveStreamRpc } from "./rpc-live-stream";
 import { handleSecretsOwnerRpc, handleSecretInputRpc } from "./rpc-secrets";
 import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
@@ -355,6 +356,7 @@ type Dependencies = Pick<
   | "gitService"
   | "fileService"
   | "decisionModels"
+  | "liveStream"
   | "conversationSecrets"
   | "accountPlatform"
 >;
@@ -641,6 +643,19 @@ const handlers: Record<
   "sessions.taskLink.unlink": handleSessionLifecycleRpc,
   "sessions.taskLink.listForTask": handleSessionLifecycleRpc,
   "decisionModels.sources.list": handleDecisionModelsRpc,
+  "liveStream.status": handleLiveStreamRpc,
+  "liveStream.start": handleLiveStreamRpc,
+  "liveStream.stop": handleLiveStreamRpc,
+  "liveStream.demo": handleLiveStreamRpc,
+  "liveStream.report": handleLiveStreamRpc,
+  "liveStream.obsSetup": handleLiveStreamRpc,
+  "liveStream.obsStream": handleLiveStreamRpc,
+  "liveStream.obsCredentials": handleLiveStreamRpc,
+  "liveStream.eulerKey": handleLiveStreamRpc,
+  "liveStream.live.accounts": handleLiveStreamRpc,
+  "liveStream.live.status": handleLiveStreamRpc,
+  "liveStream.live.start": handleLiveStreamRpc,
+  "liveStream.live.stop": handleLiveStreamRpc,
   "decisionModels.sources.add": handleDecisionModelsRpc,
   "decisionModels.sources.update": handleDecisionModelsRpc,
   "decisionModels.sources.remove": handleDecisionModelsRpc,

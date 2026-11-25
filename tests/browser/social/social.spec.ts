@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
+import { spotlightId, storyId } from "./snapchat-data";
 
 type FixtureCall = { command: string; args: { params?: { action?: string; input?: unknown } } };
 
@@ -23,6 +24,1027 @@ async function openSocial(page: Page) {
 }
 
 const sections = (page: Page) => page.getByRole("tablist", { name: "Social bölümleri" });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`Reddit campaign keeps target and title ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?reddit-delete&reddit-campaign");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByRole("checkbox", { name: /Fixture Reddit/ }).check();
+      await editor.getByRole("textbox", { name: "Paylaşım" }).fill("Campaign body");
+      await editor
+        .getByRole("textbox", { name: "Topluluk veya profil", exact: true })
+        .fill("u/bycoda");
+      const save = editor.getByRole("button", { name: "Taslağı kaydet" });
+      const publish = editor.getByRole("button", { name: "Yayınla", exact: true });
+      await expect(save).toBeEnabled();
+      await expect(publish).toBeDisabled();
+      await editor.getByRole("textbox", { name: "Başlık", exact: true }).fill("Release notes");
+      const preview = editor.getByRole("article").filter({ hasText: "Release notes" });
+      await expect(preview.getByText("u/bycoda", { exact: true })).toBeVisible();
+      await expect(save).toBeEnabled();
+      await expect(publish).toBeEnabled();
+      await editor.getByRole("textbox", { name: "Başlık", exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/reddit-campaign-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await save.click();
+      await expect(editor).toBeHidden();
+      expect(await requests(page, "campaigns.create")).toEqual([
+        expect.objectContaining({
+          variants: [
+            expect.objectContaining({
+              accountId: "fixture-reddit",
+              reddit: { subreddits: ["u_bycoda"], title: "Release notes", kind: "self" },
+            }),
+          ],
+        }),
+      ]);
+      await page.getByRole("radio", { name: "Liste", exact: true }).check();
+      await page.getByRole("button", { name: /Campaign body.*Fixture Reddit/ }).click();
+      const reopened = page.getByRole("dialog");
+      await expect(reopened.getByRole("textbox", { name: "Başlık", exact: true })).toHaveValue(
+        "Release notes",
+      );
+      await expect(
+        reopened.getByRole("textbox", { name: "Topluluk veya profil", exact: true }),
+      ).toHaveValue("u/bycoda");
+    });
+  }
+
+test("social YouTube management confirms video edits and shows provider failures", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/social/social.html?youtube-management");
+  await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+  await page.getByRole("button", { name: /YouTube fixture/ }).click();
+  await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+  await page.getByRole("tab", { name: "Videolar ve oynatma listeleri", exact: true }).click();
+  await page.getByRole("button", { name: /^Summer release/ }).click();
+  await page.getByRole("textbox", { name: "Başlık", exact: true }).fill("Renamed in fixture");
+  await page.getByRole("button", { name: "Videoyu düzenle", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Videoyu düzenle" });
+  await expect(edit.getByText("Renamed in fixture")).toBeVisible();
+  expect(await requests(page, "youtube.video.update")).toEqual([]);
+  await edit.getByRole("button", { name: "Videoyu düzenle" }).click();
+  await expect
+    .poll(() => requests(page, "youtube.video.update"))
+    .toEqual([
+      {
+        accountId: "youtube-api",
+        videoId: "shortDemo01",
+        patch: { title: "Renamed in fixture" },
+      },
+    ]);
+  await expect(edit).toBeHidden();
+  await page.getByRole("radio", { name: "Videoyu sil", exact: true }).click();
+  await page.getByRole("button", { name: "Videoyu sil", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Videoyu sil" })
+    .getByRole("button", { name: "Videoyu sil" })
+    .click();
+  await expect(page.getByText("Fixture YouTube deletion denied.")).toBeVisible();
+  expect(await requests(page, "youtube.video.delete")).toEqual([
+    {
+      accountId: "youtube-api",
+      videoId: "shortDemo01",
+      confirm: true,
+    },
+  ]);
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`social YouTube Community management ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?youtube-management");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const capture = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-youtube/community-${surface}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const action = async (name: string) => {
+        await page.getByRole("radio", { name, exact: true }).click();
+      };
+      const studio = "youtube-browser";
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+      await page.getByRole("button", { name: /Studio fixture/ }).click();
+      await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await page.getByRole("tab", { name: "Topluluk gönderileri", exact: true }).click();
+      await page.getByRole("button", { name: /^Biçim:/ }).click();
+      await page.getByRole("option", { name: "Metin", exact: true }).click();
+      await page.getByRole("textbox", { name: "Gönderi metni" }).fill("Fixture Community release");
+      await page.getByRole("button", { name: "Yayın zamanı", exact: true }).click();
+      const calendar = page.getByRole("dialog", { name: "Yayın zamanı" });
+      const date = calendar.getByRole("textbox", { name: "Tarih ve saat" });
+      await date.fill("2026-12-01 12:30");
+      await date.press("Enter");
+      await calendar.getByRole("button", { name: "Uygula" }).click();
+      const scheduleName = "Topluluk gönderisini planla";
+      await capture("schedule");
+      await page.getByRole("button", { name: scheduleName, exact: true }).click();
+      const confirmation = page.getByRole("dialog", { name: scheduleName });
+      expect(await requests(page, "youtube.community.publish")).toEqual([]);
+      await confirmation.getByRole("button", { name: scheduleName }).click();
+      const publishAt = await page.evaluate(() => new Date("2026-12-01T12:30:00").toISOString());
+      await expect
+        .poll(() => requests(page, "youtube.community.publish"))
+        .toEqual([
+          { accountId: studio, kind: "text", text: "Fixture Community release", publishAt },
+        ]);
+      await expect(confirmation).toBeHidden();
+      await page.getByRole("button", { name: /^Durum:/ }).click();
+      await page.getByRole("option", { name: "Planlandı", exact: true }).click();
+      await page.getByRole("button", { name: "Yükle", exact: true }).click();
+      await page.getByRole("button", { name: /^Fixture Community release/ }).click();
+      const editName = "Topluluk gönderisini düzenle";
+      const editor = page.getByRole("textbox", { name: "Gönderi metni" });
+      await expect(editor).toHaveValue("Fixture Community release");
+      await editor.fill("Edited Community release");
+      await capture("edit");
+      await page.getByRole("button", { name: editName, exact: true }).click();
+      await page
+        .getByRole("dialog", { name: editName })
+        .getByRole("button", { name: editName })
+        .click();
+      await expect
+        .poll(() => requests(page, "youtube.community.edit"))
+        .toEqual([
+          {
+            accountId: studio,
+            postId: "UgFixturePost001",
+            status: "scheduled",
+            editedText: "Edited Community release",
+          },
+        ]);
+      const deleteName = "Topluluk gönderisini sil";
+      await action(deleteName);
+      await page.getByRole("button", { name: deleteName, exact: true }).click();
+      const deletion = page.getByRole("dialog", { name: deleteName });
+      await expect(deletion).toBeVisible();
+      expect(await requests(page, "youtube.community.delete")).toEqual([]);
+      await capture("delete");
+      await deletion.getByRole("button", { name: deleteName }).click();
+      await expect
+        .poll(() => requests(page, "youtube.community.delete"))
+        .toEqual([
+          { accountId: studio, postId: "UgFixturePost001", status: "scheduled", confirm: true },
+        ]);
+    });
+
+    test(`social YouTube management ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?youtube-management");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const capture = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-youtube/${surface}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const chooseSection = (name: string) => page.getByRole("tab", { name, exact: true }).click();
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByRole("checkbox", { name: /YouTube fixture/ }).check();
+      await editor.getByRole("button", { name: /^Biçim:/ }).click();
+      await page.getByRole("option", { name: "Kısa", exact: true }).click();
+      await capture("shorts");
+      await editor.getByRole("button", { name: "Kapat" }).click();
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+      await page.getByRole("button", { name: /YouTube fixture/ }).click();
+      await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await chooseSection("Videolar ve oynatma listeleri");
+      await expect(page.getByText("Summer release")).toBeVisible();
+      await capture("videos");
+      await chooseSection("Kanal profili");
+      await expect(page.getByText("@fixture")).toBeVisible();
+      await capture("profile");
+      await chooseSection("Canlı yayınlar");
+      await expect(page.getByText("Friday livestream")).toBeVisible();
+      await capture("live");
+      await chooseSection("Analiz");
+      await expect(page.getByText("Data API kota birimleri")).toBeVisible();
+      await capture("analytics");
+      await chooseSection("Yorumlar");
+      await expect(page.getByText(/Gösterilecek yorum yok/)).toBeVisible();
+      await capture("comments");
+      await chooseSection("Abonelikler");
+      await expect(page.getByText("Fixture subscriber")).toBeVisible();
+      await capture("subscriptions");
+      await chooseSection("İncele");
+      await expect(page.getByRole("button", { name: "İncele", exact: true })).toBeVisible();
+      await capture("review");
+      await page.getByRole("dialog").getByRole("button", { name: "Kapat" }).click();
+      await page.getByRole("button", { name: /Studio fixture/ }).click();
+      await page.locator("summary").filter({ hasText: "YouTube yönetimi" }).click();
+      await chooseSection("Videolar");
+      await page.getByRole("button", { name: "Yükle", exact: true }).click();
+      await page.getByRole("button", { name: /^Studio test Short/ }).click();
+      await page.getByRole("button", { name: "Videoyu sil", exact: true }).click();
+      const studioDelete = page.getByRole("dialog", { name: "Videoyu sil" });
+      await expect(studioDelete.getByText("shortDemo01")).toBeVisible();
+      await expect(studioDelete.getByText("Studio test Short", { exact: true })).toBeVisible();
+      await expect(studioDelete.getByText("Bu işlem geri alınamaz.")).toBeVisible();
+      expect(await requests(page, "youtube.video.delete")).toEqual([]);
+      await capture("studio-delete-confirm");
+      await studioDelete.getByRole("button", { name: "Videoyu sil", exact: true }).click();
+      await expect
+        .poll(() => requests(page, "youtube.video.delete"))
+        .toEqual([{ accountId: "youtube-browser", videoId: "shortDemo01", confirm: true }]);
+      await expect(page.getByText("Studio test Short")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Videoyu sil", exact: true })).toBeDisabled();
+      await capture("studio-delete-complete");
+      await chooseSection("Topluluk gönderileri");
+      await capture("community");
+      await chooseSection("Analiz");
+      await page.getByRole("button", { name: "Yükle", exact: true }).click();
+      await expect(page.getByText(/YouTube işlem yapmanı bekliyor/)).toBeVisible();
+      await capture("needs-human");
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`Instagram deletion review ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        "/tests/browser/social/social.html?instagram-surface=browser&instagram-delete-review",
+      );
+      const frame = page.locator("[data-instagram-surface]");
+      const openTools = async () => {
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
+      };
+      const tab = (name: RegExp) => frame.getByRole("tab", { name }).click();
+      const input = frame.getByRole("textbox", {
+        name: /^(Instagram post URL|Instagram gönderi bağlantısı)$/i,
+      });
+      const deleteName = /^(Delete Instagram post|Instagram gönderisini sil)$/i;
+      const remove = frame.getByRole("button", { name: deleteName });
+      await openTools();
+      await tab(/^(Content|İçerik)$/);
+      await tab(/^(Posts|Gönderiler)$/);
+      await input.fill("https://www.instagram.com/p/FixtureDelete/");
+      await expect(remove).toBeEnabled();
+      await remove.click();
+      await page.getByRole("dialog").getByRole("button", { name: deleteName }).click();
+      await expect(frame.getByText(/^(Needs review|İnceleme gerekli)$/)).toBeVisible();
+      await expect(remove).toBeDisabled();
+      await expect(frame.getByRole("button", { name: /^(Open post|Gönderiyi aç)$/ })).toBeVisible();
+      const capture = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-instagram-followup/delete-${surface}-${theme}-${width}.png`,
+          fullPage: true,
+          animations: "disabled",
+        });
+      await capture("post");
+      await page.reload();
+      await openTools();
+      await tab(/^(Requests|İstekler)$/);
+      await expect(
+        frame.getByText(
+          /This change may already be on Instagram|Bu değişiklik Instagram'da zaten olabilir/,
+        ),
+      ).toBeVisible();
+      await expect(
+        frame.getByRole("button", { name: /Review and apply|İncele ve uygula/ }),
+      ).toHaveCount(0);
+      await expect(frame.getByRole("button", { name: /^(Open post|Gönderiyi aç)$/ })).toBeVisible();
+      await capture("request");
+      await tab(/^(Content|İçerik)$/);
+      await tab(/^(Posts|Gönderiler)$/);
+      await input.fill("https://www.instagram.com/reel/FixtureDelete/");
+      await expect(frame.getByText(/^(Needs review|İnceleme gerekli)$/)).toBeVisible();
+      await expect(remove).toBeDisabled();
+    });
+
+    test(`Instagram surfaces ${theme} ${width}`, async ({ page }) => {
+      for (const surface of ["publishing", "story", "inbox", "browser", "insights"]) {
+        await page.setViewportSize({
+          width,
+          height: surface === "browser" ? 2200 : surface === "inbox" ? 1100 : 900,
+        });
+        await page.goto(`/tests/browser/social/social.html?instagram-surface=${surface}`);
+        const frame = page.locator("[data-instagram-surface]");
+        await expect(frame).toBeVisible();
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        if (surface === "browser" || surface === "insights") {
+          await frame.getByText(/^(Instagram tools|Instagram araçları)$/i).click();
+          const tool = (name: RegExp) => frame.getByRole("tab", { name }).click();
+          if (surface === "browser") {
+            await tool(/^(Account|Hesap)$/);
+            await tool(/^(Profile|Profil)$/);
+            await frame
+              .getByRole("button", { name: /^(Read Instagram profile|Instagram profilini oku)$/i })
+              .click();
+            await tool(/^(Live|Canlı)$/);
+            await frame
+              .getByRole("button", {
+                name: /^(Open Instagram Live Producer|Instagram Canlı Yayın Yapımcısı’nı aç)$/i,
+              })
+              .click();
+            await tool(/^(Account|Hesap)$/);
+            await tool(/^(Earnings|Kazançlar)$/);
+            await frame
+              .getByRole("button", {
+                name: /^(Read Instagram earnings|Instagram kazançlarını oku)$/i,
+              })
+              .click();
+            await expect(frame.getByText(/€321\.40/)).toBeVisible();
+            await tool(/^(Content|İçerik)$/);
+            await tool(/^(Highlights|Öne çıkanlar)$/);
+            await frame
+              .getByRole("button", {
+                name: /^(Read Instagram Highlights|Instagram Öne Çıkanlar’ı oku)$/i,
+              })
+              .click();
+            await frame.getByRole("button", { name: "Studio Stories", exact: true }).click();
+            await expect(
+              frame.getByRole("textbox", { name: /^(Highlight name|Öne Çıkanlar öğesinin adı)$/i }),
+            ).toHaveValue("Studio Stories");
+          } else {
+            await tool(/^(Insights|İstatistikler)$/);
+            await frame
+              .getByRole("button", {
+                name: /^(Read Instagram insights|Instagram istatistiklerini oku)$/i,
+              })
+              .click();
+          }
+        } else if (surface === "inbox") {
+          await frame.getByText(/^(Instagram comment actions|Instagram yorum işlemleri)$/i).click();
+          await expect(
+            frame.getByText(/Send privately on Instagram|Instagram’da özel yanıt gönder/),
+          ).toBeVisible();
+          await frame
+            .getByRole("button", {
+              name: /^(Review Instagram moderation requests|Instagram moderasyon isteklerini incele)$/i,
+            })
+            .click();
+          await expect(
+            frame.getByText("When is the next live stream?", { exact: true }),
+          ).toBeVisible();
+          await frame
+            .getByRole("button", { name: /^(Instagram attachment|Instagram eki):/i })
+            .click();
+          await page.getByRole("option", { name: /^(Audio|Ses)$/i }).click();
+          await expect(frame.getByText(/^(Local file|Yerel dosya)$/i)).toBeVisible();
+        }
+        await page.screenshot({
+          path: `temp/verification/social-instagram-followup/${surface}-${theme}-${width}.png`,
+          fullPage: true,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+
+async function openSnapchatFixture(page: Page, theme = "light", width = 1280) {
+  await page.setViewportSize({ width, height: 1000 });
+  await page.goto("/tests/browser/social/social.html?snapchat-ui");
+  await page.evaluate(
+    (light) => document.documentElement.classList.toggle("theme-light", light),
+    theme === "light",
+  );
+  await expect(page.getByRole("tab", { name: "Command", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`Snapchat routed panels ${theme} ${width}`, async ({ page }) => {
+      await openSnapchatFixture(page, theme, width);
+      const shot = (surface: string) =>
+        page.screenshot({
+          path: `temp/verification/social-snapchat/${surface}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      await page.getByText("Snapchat insights", { exact: true }).click();
+      await page.getByText("Insights", { exact: true }).click();
+      await page.getByRole("button", { name: "Read insights" }).click();
+      await expect(page.getByText("SUBSCRIBERS · 2,345")).toBeVisible();
+      await expect(page.getByText("Some Snapchat results are unavailable.")).toBeVisible();
+      await page.getByText("Creator earnings", { exact: true }).click();
+      await page.getByRole("button", { name: "Read earnings" }).click();
+      const earnings = page.getByText(/12\.345.*SPOTLIGHT/);
+      await earnings.scrollIntoViewIfNeeded();
+      await expect(earnings).toBeInViewport();
+      await expect(page.getByText(/Data through .*UTC/)).toBeVisible();
+      await shot("command");
+
+      await page.getByRole("tab", { name: "Content", exact: true }).click();
+      await page.getByText("Snapchat publications", { exact: true }).click();
+      await page.getByRole("button", { name: "Read publications" }).click();
+      await expect(page.getByText("Fixture launch clip")).toBeVisible();
+      await page.getByText("Fixture launch clip").click();
+      await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeEnabled();
+      await shot("content");
+
+      await page.getByRole("tab", { name: "Accounts & Settings" }).click();
+      await page.getByRole("button", { name: /Fixture Snapchat Browser/ }).click();
+      const account = page.getByRole("dialog", { name: "Fixture Snapchat Browser" });
+      await account.getByText("Snapchat Public Profile", { exact: true }).click();
+      await account.getByRole("button", { name: "Read profile", exact: true }).click();
+      await expect(account.getByLabel("Profile name", { exact: true })).toHaveValue(
+        "Fixture Studio",
+      );
+      await account.getByRole("button", { name: "Snapchat monetization status" }).click();
+      await expect(account.getByText("Daily rewards · Eligible")).toBeVisible();
+      await account
+        .getByRole("button", { name: "Save changes", exact: true })
+        .scrollIntoViewIfNeeded();
+      await shot("account-profile");
+      await account.getByText("Delete Public Story", { exact: true }).click();
+      await account.getByLabel("Public Story ID").fill(storyId);
+      await account.getByRole("button", { name: "Delete", exact: true }).click();
+      const storyConfirm = page.getByRole("dialog", { name: "Delete this Snapchat publication?" });
+      const confirmStory = storyConfirm.getByRole("button", { name: "Delete", exact: true });
+      await expect(confirmStory).toBeDisabled();
+      await storyConfirm.getByRole("textbox").fill(storyId);
+      await shot("account-story-confirmation");
+      await confirmStory.click();
+      await expect(account.getByText("Public Story deleted.")).toBeVisible();
+      await account.getByText("Snapchat Public Profile", { exact: true }).click();
+      await account.getByText("Snapchat reviews", { exact: true }).click();
+      await account.getByRole("button", { name: "Refresh" }).click();
+      await account.getByText("Save changes?", { exact: true }).click();
+      await expect(account.getByText(/New behind-the-scenes series/)).toBeVisible();
+      await shot("account-reviews");
+
+      await page.keyboard.press("Escape");
+      await page.getByRole("tab", { name: "Inbox", exact: true }).click();
+      await page.getByText("New Snapchat chat", { exact: true }).click();
+      await page.getByRole("button", { name: "Read Snapchat friends" }).click();
+      await page.getByRole("button", { name: /^Snapchat friends:/ }).click();
+      await page.getByRole("option", { name: "@fixture.friend", exact: true }).click();
+      await expect(page.getByLabel("Friend’s Snapchat username")).toHaveValue("fixture.friend");
+      await page.getByLabel("Message", { exact: true }).fill("Fixture message draft");
+      await shot("inbox-new-chat");
+
+      await page.getByRole("tab", { name: "Content", exact: true }).click();
+      await page.getByRole("button", { name: "New post", exact: true }).click();
+      const composer = page.getByRole("dialog", { name: "New post" });
+      await composer.getByRole("checkbox", { name: /Fixture Snapchat API/ }).click();
+      for (const [format, field, file] of [
+        ["Spotlight", "Spotlight locale", "spotlight"],
+        ["Public Story", "Story expiry", "public-story"],
+        ["Saved Story", "Saved Story source IDs", "saved-story"],
+      ]) {
+        await composer.getByRole("button", { name: /^Snapchat publishing format:/ }).click();
+        await page.getByRole("option", { name: format, exact: true }).click();
+        const optionsField =
+          field === "Story expiry"
+            ? composer.getByRole("button", { name: /^Story expiry:/ })
+            : composer.getByLabel(field, { exact: true });
+        await optionsField.scrollIntoViewIfNeeded();
+        await shot(`composer-${file}`);
+      }
+      await page.keyboard.press("Escape");
+
+      await page.getByRole("tab", { name: "Accounts & Settings" }).click();
+      await page.getByRole("button", { name: "Connect account", exact: true }).click();
+      await page.getByRole("button", { name: /^Platform:/ }).click();
+      await page.getByRole("option", { name: "Snapchat", exact: true }).click();
+      await page.getByRole("button", { name: /^How to connect:/ }).click();
+      await page.getByRole("option", { name: "Browser sign-in", exact: true }).click();
+      await page.getByRole("button", { name: /Create a new Snapchat account instead/ }).click();
+      const signup = page.getByRole("dialog", { name: "Create a Snapchat account" });
+      await signup.getByLabel("Name", { exact: true }).fill("Fixture Snapchat signup");
+      await shot("signup-start");
+      await signup.getByRole("button", { name: "Open sign-up window" }).click();
+      await expect(signup.getByLabel("Phone number")).toBeVisible();
+      await expect(signup.locator('input[type="password"]')).toHaveCount(0);
+      expect(await requests(page, "accounts.create")).toEqual([
+        expect.objectContaining({
+          platform: "snapchat",
+          accountType: "member",
+          connection: "browser",
+        }),
+      ]);
+      await shot("signup-fields");
+    });
+
+test("Snapchat routed loading, project permission, empty, denied and exact deletion", async ({
+  page,
+}) => {
+  await openSnapchatFixture(page);
+  await page.getByText("Snapchat insights", { exact: true }).click();
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("option", { name: "Fixture Snapchat Read Only" }).click();
+  await page.getByText("Creator earnings", { exact: true }).click();
+  await page.getByRole("button", { name: "Read earnings" }).click();
+  await expect(page.getByText(/Fixture creator access denied/)).toBeVisible();
+  await expect(page.getByText("No Snapchat earnings found.")).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Content", exact: true }).click();
+  await page.getByText("Snapchat publications", { exact: true }).click();
+  await page.evaluate(() =>
+    (window as unknown as { socialFixtureHold(action: string): void }).socialFixtureHold(
+      "snapchat.content.list",
+    ),
+  );
+  const read = page.getByRole("button", { name: "Read publications" });
+  await read.click();
+  await expect(read).toHaveAttribute("aria-busy", "true");
+  await expect.poll(() => requests(page, "snapchat.content.list")).toHaveLength(1);
+  await page.evaluate(() =>
+    (window as unknown as { socialFixtureRelease(): void }).socialFixtureRelease(),
+  );
+  await expect(page.getByText("Fixture launch clip")).toBeVisible();
+  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  await expect(page.getByText("Fixture studio tour")).toBeVisible();
+  await page.getByText("Fixture launch clip").click();
+  const remove = page.getByRole("button", { name: "Delete", exact: true });
+  await remove.click();
+  const confirmation = page.getByRole("dialog", { name: "Delete this Snapchat publication?" });
+  const confirm = confirmation.getByRole("button", { name: "Delete", exact: true });
+  await expect(confirm).toBeDisabled();
+  await confirmation.getByRole("textbox").fill(spotlightId);
+  await confirm.click();
+  await expect(page.getByText("Fixture launch clip")).toHaveCount(0);
+  expect(await requests(page, "snapchat.content.delete")).toEqual([
+    { accountId: "snapchat-api", target: "spotlight", id: spotlightId, confirmId: spotlightId },
+  ]);
+
+  await page.getByRole("button", { name: /^Account:/ }).click();
+  await page.getByRole("option", { name: "Fixture Snapchat Read Only" }).click();
+  await page.getByRole("button", { name: "Read publications" }).click();
+  await page.getByText("Fixture launch clip").click();
+  await expect(remove).toBeDisabled();
+  await page.getByRole("button", { name: /^Format:/ }).click();
+  await page.getByRole("option", { name: "Public Stories" }).click();
+  await page.getByRole("button", { name: "Read publications" }).click();
+  await expect(page.getByText("No Snapchat publications found.")).toBeVisible();
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`LinkedIn Live comments panel ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?linkedin-live-comments");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture LinkedIn Live Page/ }).click();
+      await page.getByText("LinkedIn Live", { exact: true }).click();
+      const comments = page.getByRole("group", { name: "LinkedIn Live yorumları" });
+      await comments.getByLabel("LinkedIn etkinlik kimliği").fill("7246559654799892480");
+      await comments.getByRole("button", { name: "Yorumları yükle" }).click();
+      await expect(page.getByText("Bir ürün demosu olacak mı?")).toBeVisible();
+      await page.getByRole("button", { name: "Yanıtla", exact: true }).click();
+      await page
+        .getByRole("textbox", { name: "Yanıtla", exact: true })
+        .fill("Evet, yayın sonunda.");
+      await page.getByRole("button", { name: "Değişikliği incele" }).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-linkedin/live-comments-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      expect(await requests(page, "linkedin.management.submit")).toEqual([]);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`LinkedIn desktop surfaces ${theme} ${width}`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?linkedin-support");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const shot = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/social-linkedin/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture LinkedIn API/ }).click();
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Analiz$/ })
+        .click();
+      await page.getByRole("button", { name: "Yenile", exact: true }).click();
+      await expect(page.getByText(/Gösterimler/)).toBeVisible();
+      await page.getByText("LinkedIn gönderilerini yönet", { exact: true }).click();
+      await page.getByText("Mevcut bir incelemeyi aç", { exact: true }).click();
+      await expect(page.getByLabel("LinkedIn inceleme kimliği")).toBeVisible();
+      await shot("api-account");
+      await page.getByText("LinkedIn Live", { exact: true }).click();
+      await expect(page.getByText("Live Studio’yu aç", { exact: true })).toBeVisible();
+      await page
+        .getByRole("button", { name: "Yayın bilgilerini kaydet", exact: true })
+        .scrollIntoViewIfNeeded();
+      await shot("live-credentials");
+      await page.getByRole("dialog").getByRole("button", { name: "Kapat", exact: true }).click();
+      await page.getByRole("button", { name: /Fixture LinkedIn Browser/ }).click();
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Profil$/ })
+        .click();
+      await page.getByRole("button", { name: "Okuma", exact: true }).click();
+      await expect(page.getByRole("textbox", { name: "Profil başlığı" })).toHaveValue(
+        "Fixture product studio",
+      );
+      await shot("browser-profile");
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Bağlantılar$/ })
+        .click();
+      await page.getByRole("button", { name: "Yenile", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Ada Fixture" })).toBeVisible();
+      await shot("network");
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Makaleler ve bültenler$/ })
+        .click();
+      await page
+        .getByRole("button", { name: "Taslak hazırla", exact: true })
+        .scrollIntoViewIfNeeded();
+      await shot("creator");
+      await page.getByRole("dialog").getByRole("button", { name: "Kapat", exact: true }).click();
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      const linkedin = editor.getByRole("checkbox", { name: /Fixture LinkedIn API/ });
+      if (!(await linkedin.isChecked())) await linkedin.check();
+      await editor.getByRole("button", { name: /^Gönderi biçimi/ }).click();
+      await page.getByText("Anket", { exact: true }).click();
+      await editor.getByLabel("Anket sorusu").fill("Hangi özelliği önce çıkaralım?");
+      await editor.getByLabel("1. seçenek").fill("Analizler");
+      await editor.getByLabel("2. seçenek").fill("Yayın");
+      await expect(editor.getByRole("button", { name: "Taslağı kaydet" })).toBeEnabled();
+      await editor.getByRole("button", { name: /^Anket süresi/ }).scrollIntoViewIfNeeded();
+      await shot("poll-composer");
+      expect(errors).toEqual([]);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    for (const [name, platform, postId] of [
+      ["Reddit", "reddit", "t3_qa123"],
+      ["Telegram", "telegram", "-1001234567890:7"],
+    ] as const)
+      test(`${name} published post deletion ${theme} ${width}`, async ({ page }) => {
+        const review = theme === "dark" && width === 800;
+        const profileTarget = platform === "reddit" && width === 800;
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(
+          `/tests/browser/social/social.html?${platform}-delete${review ? "&delete-review" : ""}${profileTarget ? "&profile-target" : ""}`,
+        );
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+        await page.getByRole("button", { name: new RegExp(`Fixture ${name}`) }).click();
+        const detail = page.getByRole("dialog", { name: `Fixture ${name}` });
+        await detail
+          .locator("summary")
+          .filter({ hasText: /^Gönderiler$/ })
+          .click();
+        await detail.getByRole("button", { name: "Gönderilerimi yükle" }).click();
+        const remove = detail.getByRole("button", { name: "Gönderiyi sil", exact: true });
+        await expect(remove).toBeDisabled();
+        await detail.getByRole("button", { name: /Gönderi seçin/ }).click();
+        const title =
+          platform === "reddit"
+            ? `${profileTarget ? "u/bycoda" : "r/bycodatest"} · Test yayını`
+            : "Test yayını";
+        await page.getByRole("option", { name: title, exact: true }).click();
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${platform}-delete-form-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        await remove.click();
+        const confirmation = page.getByRole("dialog", { name: "Gönderiyi sil" });
+        await expect(confirmation.getByText(postId, { exact: true })).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${platform}-delete-confirm-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        await confirmation.getByRole("button", { name: "İptal", exact: true }).click();
+        expect(await requests(page, `${platform}.post.delete`)).toEqual([]);
+        await remove.click();
+        await confirmation.getByRole("button", { name: "Sil", exact: true }).click();
+        await expect(
+          detail.getByText(review ? "İnceleme gerekli" : "Silindi", { exact: true }),
+        ).toBeVisible();
+        await expect(detail.getByRole("button", { name: "Gönderiyi aç" })).toHaveCount(
+          review ? 1 : 0,
+        );
+        await expect(remove).toBeDisabled();
+        expect(await requests(page, `${platform}.post.delete`)).toEqual([
+          {
+            accountId: `fixture-${platform}`,
+            jobId: `${platform}-qa`,
+            postId,
+            confirm: `DELETE_${platform.toUpperCase()}_POST`,
+          },
+        ]);
+      });
+    test(`Facebook browser post deletion ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?facebook-page&facebook-browser");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Facebook Page/ }).click();
+      const detail = page.getByRole("dialog", { name: "Fixture Facebook Page" });
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Gönderiler$/ })
+        .click();
+      const link = detail.getByRole("textbox", { name: "Bağlantı", exact: true });
+      const remove = detail.getByRole("button", { name: "Gönderiyi sil", exact: true });
+      const postId = "https://www.facebook.com/permalink.php?story_fbid=789&id=123";
+      await expect(remove).toBeDisabled();
+      await link.fill(postId);
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/facebook-delete-form-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await remove.click();
+      const confirmation = page.getByRole("dialog", { name: "Gönderiyi sil" });
+      await expect(confirmation.getByText(postId, { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/facebook-delete-confirm-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await confirmation.getByRole("button", { name: "İptal", exact: true }).click();
+      await expect(link).toHaveValue(postId);
+      expect(await requests(page, "facebook.post.delete")).toEqual([]);
+      await remove.click();
+      await confirmation.getByRole("button", { name: "Sil", exact: true }).click();
+      await expect(detail.getByText("Silindi", { exact: true })).toBeVisible();
+      expect(await requests(page, "facebook.post.delete")).toEqual([
+        { accountId: "fixture-facebook", postId, confirm: "DELETE_FACEBOOK_POST" },
+      ]);
+    });
+    test(`Facebook Page controls ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?facebook-page");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Facebook Page/ }).click();
+      const detail = page.getByRole("dialog", { name: "Fixture Facebook Page" });
+      const capture = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/social-facebook/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const profile = detail.locator("summary").filter({ hasText: "Profili düzenle" });
+      await profile.click();
+      await detail.getByRole("button", { name: "Profili oku", exact: true }).click();
+      await expect(detail.getByText(/@fixturepage/)).toBeVisible();
+      await capture("profile");
+      await detail
+        .getByRole("button", { name: "Profili kaydet", exact: true })
+        .scrollIntoViewIfNeeded();
+      await capture("profile-settings");
+      await profile.click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Gönderiler$/ })
+        .click();
+      await detail.getByRole("button", { name: "Gönderileri yükle" }).click();
+      await detail.getByRole("button", { name: "Sayfa istatistikleri" }).click();
+      await expect(detail.getByText("Fixture studio announcement")).toBeVisible();
+      await expect(detail.getByText(/240/)).toBeVisible();
+      await capture("posts");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Gönderiler$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Canlı video$/ })
+        .click();
+      await detail.getByRole("button", { name: "Canlı videoyu yükle" }).click();
+      await detail.getByRole("button", { name: "Canlı yayın yorumları" }).click();
+      await expect(detail.getByText(/When does it begin/)).toBeVisible();
+      await capture("live");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Canlı video$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Para kazanma$/ })
+        .click();
+      await detail.getByRole("button", { name: "Tahmini kazançları oku" }).click();
+      await expect(
+        detail.getByText("Facebook gelir elde etme verisi döndürmedi.", { exact: true }),
+      ).toBeVisible();
+      await capture("monetization");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Para kazanma$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Bahsetmeler$/ })
+        .click();
+      await detail.getByRole("button", { name: "Bahsetmeleri yükle" }).click();
+      await expect(
+        detail
+          .getByRole("region", { name: "Bahsetmeler" })
+          .getByText("Fixture studio announcement"),
+      ).toBeVisible();
+      await capture("mentions");
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Bahsetmeler$/ })
+        .click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Facebook talepleri$/ })
+        .click();
+      const proposals = detail.getByRole("region", { name: "Facebook talepleri" });
+      await proposals.getByRole("button", { name: "Yenile" }).click();
+      await expect(proposals.getByText(/More studio workshops/)).toBeVisible();
+      await capture("requests");
+      await page.keyboard.press("Escape");
+      await expect(detail).toBeHidden();
+
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByRole("checkbox", { name: /Fixture Facebook Page/ }).check();
+      await expect(editor.getByLabel("Facebook yayın zamanı")).toBeVisible();
+      await capture("composer");
+      const destination = editor.getByRole("combobox", { name: "Facebook hedefi" });
+      await destination.selectOption("video");
+      await capture("composer-video");
+      await destination.selectOption("story");
+      await expect(editor.getByLabel("Facebook yayın zamanı")).toHaveCount(0);
+      await capture("composer-story");
+      await page.keyboard.press("Escape");
+      await sections(page).getByRole("tab", { name: "Gelen kutusu", exact: true }).click();
+      await page.getByRole("button", { name: /Fixture viewer/ }).click();
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Yorum moderasyonu$/ })
+        .click();
+      await expect(page.getByRole("button", { name: "Özel yanıt gönder" })).toBeVisible();
+      await capture("moderation");
+
+      await page.goto(
+        "/tests/browser/social/social.html?facebook-page&facebook-browser&signup-create",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Facebook Page/ }).click();
+      await detail
+        .locator("summary")
+        .filter({ hasText: /^Profili düzenle$/ })
+        .click();
+      await expect(detail.getByLabel("Kullanıcı adı", { exact: true })).toBeVisible();
+      await capture("browser-profile");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+      await page.getByRole("button", { name: /^Platform: / }).click();
+      await page.getByRole("option", { name: "Facebook", exact: true }).click();
+      await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+      await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+      await page
+        .getByRole("button", { name: /Bunun yerine yeni bir Facebook hesabı oluştur/ })
+        .click();
+      await expect(page.getByRole("dialog").getByLabel("Hakkında", { exact: true })).toBeVisible();
+      await capture("signup");
+    });
+    test(`Facebook profile uploads and chat approval ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize({ width, height: 900 });
+      const open = async (member: boolean) => {
+        await page.goto(
+          `/tests/browser/social/social.html?facebook-page&facebook-profile-controls${member ? "&facebook-member" : ""}`,
+        );
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+        const name = member ? "Fixture Facebook Profile" : "Fixture Facebook Page";
+        await page.getByRole("button", { name: new RegExp(name) }).click();
+        return page.getByRole("dialog", { name });
+      };
+      const capture = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/social-facebook/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      const photo = {
+        name: "owner-cover.png",
+        mimeType: "image/png",
+        buffer: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zlll1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      };
+      const detail = await open(false);
+      await detail.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
+      await detail.getByRole("button", { name: /Facebook fotoğraf türü/ }).click();
+      await page.getByRole("option", { name: "Facebook kapak fotoğrafı" }).click();
+      await detail.locator('input[type="file"]').setInputFiles(photo);
+      await expect(detail.getByText(photo.name)).toBeVisible();
+      await capture("page-photo-upload");
+      await detail.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Facebook kapak fotoğrafı" })
+        .getByRole("button", { name: "Kaydet", exact: true })
+        .click();
+      await expect
+        .poll(() => requests(page, "facebook.page.uploadPhoto"))
+        .toEqual([
+          {
+            accountId: "fixture-facebook",
+            kind: "cover",
+            uploadId: "fixture-image-1",
+            confirm: "UPLOAD_FACEBOOK_PAGE_PHOTO",
+          },
+        ]);
+      await detail.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
+      await detail.locator("summary").filter({ hasText: "Facebook talepleri" }).click();
+      await detail.getByRole("button", { name: "Yenile" }).click();
+      await detail.getByRole("button", { name: "Sohbet için onayla" }).click();
+      await page
+        .getByRole("dialog", { name: "Gönderiyi düzenle" })
+        .getByRole("button", { name: "Sohbet için onayla" })
+        .click();
+      await expect(
+        detail.getByText("Bu Facebook değişikliğini uygulamak için sohbete dönün."),
+      ).toBeVisible();
+      await capture("chat-approval");
+      const member = await open(true);
+      await member.locator("summary").filter({ hasText: "Profili düzenle" }).click();
+      const fields = member.getByRole("button", { name: /Profil bilgileri/ });
+      await fields.click();
+      await page.getByRole("option", { name: "Profil adı" }).click();
+      await member.getByLabel("Facebook ikinci ad").fill("Deniz");
+      await capture("personal-name");
+      await fields.click();
+      await page.getByRole("option", { name: "Web sitesi", exact: true }).click();
+      await member
+        .locator("summary")
+        .filter({ hasText: "Facebook'ta zaten bulunan bir değeri değiştir" })
+        .click();
+      await expect(member.getByLabel(/Facebook’taki mevcut değer/)).toBeVisible();
+      await capture("personal-website");
+      await fields.click();
+      await page.getByRole("option", { name: "Facebook tanıtım bilgileri" }).click();
+      await member.getByLabel("Facebook’taki bilgi etiketi").fill("Ankara’da yaşıyor");
+      await capture("personal-intro-details");
+      await member.locator("summary").filter({ hasText: "Profili düzenle" }).click();
+      await member.locator("summary").filter({ hasText: "Facebook profil fotoğrafları" }).click();
+      await member
+        .locator('input[type="file"]')
+        .setInputFiles({ ...photo, name: "owner-avatar.png" });
+      await expect(member.getByText("owner-avatar.png")).toBeVisible();
+      await capture("personal-photo-upload");
+      await member.getByRole("button", { name: "Kaydet", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "Facebook profil resmi" })
+        .getByRole("button", { name: "Kaydet", exact: true })
+        .click();
+      await expect(member.getByText("Kaydedildi", { exact: true })).toBeVisible();
+    });
+  }
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
@@ -219,6 +1241,135 @@ for (const theme of ["light", "dark"])
     });
   }
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    const capture = async (page: Page, surface: string) => {
+      await page.screenshot({
+        path: `temp/verification/social-tiktok/${surface}-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    };
+    const toggleTheme = (page: Page) =>
+      page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+
+    test(`TikTok composer visual fixture ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?tiktok");
+      await toggleTheme(page);
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi" });
+      await editor.getByText("Demo TikTok", { exact: true }).click();
+      await editor
+        .getByRole("button", { name: /TikTok gönderi biçimi|TikTok post format/ })
+        .click();
+      await page.getByRole("option", { name: /^(Fotoğraflar|Photos)$/ }).click();
+      await editor
+        .getByRole("textbox", { name: /TikTok fotoğraf URL’si|TikTok photo URL/ })
+        .fill("https://example.com/tiktok-photo.jpg");
+      await editor.getByRole("button", { name: /^(Ekle|Add)$/ }).click();
+      const cover = editor.getByText(/TikTok kapak fotoğrafı|TikTok cover photo/);
+      await expect(cover).toBeVisible();
+      await capture(page, "composer");
+      await cover.scrollIntoViewIfNeeded();
+      await capture(page, "composer-options");
+    });
+
+    test(`TikTok account visual fixture ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?tiktok-browser");
+      await toggleTheme(page);
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo TikTok/ }).click();
+      const detail = page.getByRole("dialog", { name: "Demo TikTok" });
+      await detail
+        .locator("summary")
+        .filter({ hasText: /TikTok araçları|TikTok tools/ })
+        .click();
+      // Grouped tools: pick the group tab, then the view inside it when the group has several.
+      const select = async (group: RegExp, view?: RegExp) => {
+        await detail.getByRole("tab", { name: group }).click();
+        if (view) await detail.getByRole("radio", { name: view }).click();
+      };
+      const ACCOUNT = /^(Hesap|Account)$/;
+      const INSIGHTS = /^(Analiz|Analizler|Analitik|Analytics)$/;
+      const CONVERSATIONS = /^(Konuşmalar|Conversations)$/;
+      const expose = async (button: RegExp, result: string | RegExp, surface: string) => {
+        await detail.getByRole("button", { name: button }).click();
+        const value = detail
+          .getByText(result, { exact: typeof result === "string" })
+          .filter({ visible: true });
+        await expect(value).toBeVisible();
+        await value.scrollIntoViewIfNeeded();
+        await capture(page, surface);
+      };
+      await detail.getByRole("button", { name: /Profili oku|Read profile/i }).click();
+      await expect(detail.getByRole("textbox", { name: /Kullanıcı adı|Username/i })).toHaveValue(
+        "demo.creator",
+      );
+      await capture(page, "profile");
+      await detail
+        .getByRole("button", { name: /Profili kaydet|Save profile/i })
+        .scrollIntoViewIfNeeded();
+      await capture(page, "profile-options");
+      await select(ACCOUNT, /^(Gizlilik|Privacy)$/);
+      await detail
+        .getByRole("button", { name: /Gizlilik ayarlarını oku|Read privacy settings/ })
+        .click();
+      await expect(
+        detail.getByRole("checkbox", { name: /Gizli hesap|Private account/ }),
+      ).toBeVisible();
+      await capture(page, "privacy");
+      await select(INSIGHTS);
+      await expose(/Analizleri oku|Read analytics/, "128.450", "analytics");
+      await select(INSIGHTS, /^(Kazançlar|Earnings)$/);
+      await expose(/Kazançları oku|Read earnings/, "₺ 450,50", "earnings");
+      await select(CONVERSATIONS, /^(Yorumlar|Comments)$/);
+      await expose(/Yorumları oku|Read comments/, "Yeni video ne zaman geliyor?", "comments");
+      await select(CONVERSATIONS, /^(Bahsetmeler|Bahsedilenler|Mentions)$/);
+      await expose(/Bahsetmeleri oku|Read mentions/, "Yeni video ne zaman geliyor?", "mentions");
+      await select(CONVERSATIONS, /^(Doğrudan mesajlar|Direct messages)$/i);
+      await expose(
+        /Doğrudan mesajları oku|Read direct messages/,
+        "Yeni video ne zaman geliyor?",
+        "messages",
+      );
+      await select(/^(Hedef kitle|Audience)$/, /^(Takipçiler|Followers)$/);
+      await expose(/Hedef kitleyi oku|Read audience/, "@demo.fan", "audience");
+      await detail.getByRole("button", { name: /^(Takip et|Follow)$/ }).click();
+      await detail
+        .getByRole("button", { name: /İnceleme için sıraya al|Queue for review/ })
+        .click();
+      await expect(detail.getByText(/Onay bekliyor|Awaiting approval/)).toBeVisible();
+      expect(await requests(page, "tiktok.changes.apply")).toEqual([]);
+      await capture(page, "review");
+      await detail.getByRole("button", { name: /İncele ve uygula|Review and apply/ }).click();
+      const exactReview = page.getByRole("dialog", { name: /^(Takip et|Follow)$/ });
+      await expect(exactReview.getByText("@demo.fan", { exact: true })).toBeVisible();
+      await capture(page, "confirmation");
+      await exactReview.getByRole("button", { name: /^(Takip et|Follow)$/ }).click();
+      await expect
+        .poll(() => requests(page, "tiktok.changes.apply"))
+        .toEqual([{ accountId: "tiktok", reviewId: "review-1", confirm: true }]);
+      await select(/^TikTok LIVE$/);
+      await expose(
+        /Yayın anahtarını kaydet|Save stream key/,
+        /Yayın anahtarı bu Host’a kaydedildi|Stream key saved on this Host/,
+        "live",
+      );
+      await select(ACCOUNT, /^TikTok for Business$/);
+      await expose(
+        /Business API erişimini kontrol et|Check Business API access/,
+        /Bu Host’ta TikTok Business API erişimi yok|TikTok Business API access unavailable/,
+        "business",
+      );
+    });
+  }
+
 test("social extra caller visual matrix", async ({ page }) => {
   for (const theme of ["light", "dark"])
     for (const width of [800, 1280]) {
@@ -378,6 +1529,195 @@ test("account capability and Telegram connection visual matrix", async ({ page }
   }
 });
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`Reddit Chat uses the selected browser account ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?reddit-delete&reddit-chat");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Fixture Reddit/ }).click();
+      const account = page.getByRole("dialog", { name: "Fixture Reddit" });
+      await account.locator("summary").filter({ hasText: "Doğrudan mesajlar" }).click();
+      const open = account.getByRole("button", { name: "Tarayıcıda aç", exact: true });
+      await open.click();
+      const status = account.getByText("Reddit Chat’te devam et.", { exact: true });
+      await expect(status).toBeVisible();
+      await expect(open).toBeDisabled();
+      await account.getByRole("button", { name: "Kapat", exact: true }).click();
+      await expect(account).toBeHidden();
+      await page.getByRole("button", { name: /Fixture Reddit/ }).click();
+      await account.locator("summary").filter({ hasText: "Doğrudan mesajlar" }).click();
+      await expect(status).toBeVisible({ timeout: 3_000 });
+      await expect(open).toBeDisabled();
+      await status.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/reddit-chat-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "İptal", exact: true }).click();
+      await expect(account.getByText("İptal edildi", { exact: true })).toBeVisible();
+      await expect(open).toBeEnabled();
+      expect(
+        await page.evaluate(() => {
+          const { socialFixtureCalls } = window as unknown as {
+            socialFixtureCalls: { args: { method?: string; params?: unknown } }[];
+          };
+          return socialFixtureCalls
+            .filter(({ args }) =>
+              ["social.browser.workflow.begin", "social.browser.workflow.cancel"].includes(
+                args.method ?? "",
+              ),
+            )
+            .map(({ args }) => args.params);
+        }),
+      ).toEqual([
+        expect.objectContaining({ accountId: "fixture-reddit", intent: "inbox" }),
+        { accountId: "fixture-reddit", workflowId: "workflow-0" },
+      ]);
+    });
+
+    test(`X Chat uses the selected browser account ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?x-browser-delete&x-chat");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      const account = page.getByRole("dialog", { name: "Demo account" });
+      await account
+        .locator("summary")
+        .filter({ hasText: /X işlemleri/i })
+        .click();
+      await account.getByRole("button", { name: /X'te ne yapmak istiyorsunuz/ }).click();
+      await page.getByRole("option", { name: "Doğrudan mesajlar", exact: true }).click();
+      const open = account.getByRole("button", { name: "Tarayıcıda aç", exact: true });
+      await open.click();
+      const status = account.getByText("X tarayıcı penceresinde devam et.", { exact: true });
+      await expect(status).toBeVisible();
+      await expect(open).toBeDisabled();
+      await account.getByRole("button", { name: "Kapat", exact: true }).click();
+      await expect(account).toBeHidden();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      await account
+        .locator("summary")
+        .filter({ hasText: /X işlemleri/i })
+        .click();
+      await account.getByRole("button", { name: /X'te ne yapmak istiyorsunuz/ }).click();
+      await page.getByRole("option", { name: "Doğrudan mesajlar", exact: true }).click();
+      await expect(status).toBeVisible({ timeout: 3_000 });
+      await expect(open).toBeDisabled();
+      await status.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/x-chat-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "İptal", exact: true }).click();
+      await expect(account.getByText("İptal edildi", { exact: true })).toBeVisible();
+      await expect(open).toBeEnabled();
+      expect(
+        await page.evaluate(() => {
+          const { socialFixtureCalls } = window as unknown as {
+            socialFixtureCalls: { args: { method?: string; params?: unknown } }[];
+          };
+          return socialFixtureCalls
+            .filter(({ args }) =>
+              ["social.browser.workflow.begin", "social.browser.workflow.cancel"].includes(
+                args.method ?? "",
+              ),
+            )
+            .map(({ args }) => args.params);
+        }),
+      ).toEqual([
+        expect.objectContaining({ accountId: "x", intent: "inbox" }),
+        { accountId: "x", workflowId: "workflow-0" },
+      ]);
+    });
+
+    test(`X billing, actions and publishing ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?x-paid-fixture");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      const account = page.getByRole("dialog", { name: "Demo account" });
+      const actions = account.locator("summary").filter({ hasText: /X işlemleri/i });
+      await actions.click();
+      await expect(
+        account
+          .getByRole("button", { name: "Analiz", exact: true })
+          .or(account.getByRole("button", { name: "Analitik", exact: true })),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/social-x/account-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "Analiz", exact: true }).scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-x/actions-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
+      await page.getByRole("button", { name: "Yeni gönderi", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Yeni gönderi", exact: true });
+      await expect(editor).toBeVisible();
+      await editor.getByRole("checkbox", { name: "Demo account" }).check();
+      await editor.getByText("X için diğer seçenekler", { exact: true }).click();
+      await expect(
+        editor.getByRole("textbox", { name: "Alıntılanacak gönderinin kimliği" }),
+      ).toBeVisible();
+      await editor.getByRole("checkbox", { name: "Anket", exact: true }).check();
+      await editor.getByRole("button", { name: "Diziye gönderi ekle", exact: true }).click();
+      await editor
+        .getByRole("textbox", { name: "Dizideki 2. gönderi", exact: true })
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/social-x/content-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`X browser post deletion ${theme} ${width}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/social/social.html?x-browser-delete");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+      await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
+      await page.getByRole("button", { name: /Demo account/ }).click();
+      const account = page.getByRole("dialog", { name: "Demo account" });
+      await account
+        .locator("summary")
+        .filter({ hasText: /X işlemleri/i })
+        .click();
+      await expect(account.getByText("Gönderiyi sil", { exact: true })).toBeVisible();
+      await account.getByText("Bunun yerine bir gönderi kimliği kullanın", { exact: true }).click();
+      await account.getByRole("textbox", { name: "Gönderi kimliği" }).fill("123456789");
+      await page.screenshot({
+        path: testInfo.outputPath("x-browser-delete-picker.png"),
+        animations: "disabled",
+      });
+      await account.getByRole("button", { name: "İncele", exact: true }).click();
+      const confirm = page.getByRole("dialog", { name: "Gönderiyi sil" });
+      await expect(confirm.getByText("123456789")).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("x-browser-delete.png"),
+        animations: "disabled",
+      });
+      await confirm.getByRole("button", { name: "Sil", exact: true }).click();
+      await expect(account.getByText("Uygulandı", { exact: true })).toBeVisible();
+    });
+  }
+
 test("account settings and connection forms visual matrix", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {
     for (const width of [800, 1280]) {
@@ -427,60 +1767,213 @@ test("account settings and connection forms visual matrix", async ({ page }, tes
   }
 });
 
-test("a new account is created through the owner-assisted signup dialog", async ({
-  page,
-}, testInfo) => {
-  for (const theme of ["light", "dark"]) {
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto("/tests/browser/social/social.html?signup-create");
-    await page.evaluate(
-      (light) => document.documentElement.classList.toggle("theme-light", light),
-      theme === "light",
-    );
-    await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
-    await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
-    await page.getByRole("button", { name: /^Platform: / }).click();
-    await page.getByRole("option", { name: "Reddit" }).click();
-    await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
-    await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
-    await page.getByRole("button", { name: "Bunun yerine yeni bir Reddit hesabı oluştur" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("İsim").fill("Studio");
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-start-${theme}.png`),
-      animations: "disabled",
-    });
-    await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
-    await expect(dialog.getByLabel("E-posta adresi")).toBeVisible();
-    await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-fields-${theme}.png`),
-      animations: "disabled",
-    });
-    await dialog.getByLabel("E-posta adresi").fill("studio@example.com");
-    await dialog.getByRole("button", { name: "Devam et" }).click();
-    await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
-    await expect(dialog.getByLabel("E-posta adresi")).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-blockers-${theme}.png`),
-      animations: "disabled",
-    });
-    await page.evaluate(() =>
-      (
-        window as unknown as { socialFixtureCloseSignupWindow: () => void }
-      ).socialFixtureCloseSignupWindow(),
-    );
-    await expect(dialog.getByRole("button", { name: "Girişe devam et" })).toBeVisible({
-      timeout: 8000,
-    });
-    await page.screenshot({
-      path: testInfo.outputPath(`signup-closed-${theme}.png`),
-      animations: "disabled",
-    });
-    await dialog.getByRole("button", { name: "Girişe devam et" }).click();
-    await expect(page.getByRole("dialog", { name: "Studio" })).toBeVisible();
-  }
-});
+for (const width of [800, 1280]) {
+  test(`signup verification recovery at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["light", "dark"]) {
+      for (const [scene, platform, instruction] of [
+        ["signup-google-expired", "YouTube", "Google kayıt oturumunun süresi doldu."],
+        ["signup-google-device", "YouTube", "QR kodunu telefonunla tara"],
+        ["signup-instagram-phone", "Instagram", "Instagram’da cep telefonu numaranı gir"],
+        ["signup-x-welcome", "X", "X’te karşılama adımlarını bitir"],
+      ]) {
+        await page.goto(`/tests/browser/social/social.html?signup-create&${scene}`);
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+        await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+        await page.getByRole("button", { name: /^Platform: / }).click();
+        await page.getByRole("option", { name: platform, exact: true }).click();
+        await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+        await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+        await page
+          .getByRole("button", { name: `Bunun yerine yeni bir ${platform} hesabı oluştur` })
+          .click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByLabel("İsim").fill("Bycoda");
+        await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+        await expect(dialog.getByText(instruction, { exact: false })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Kaydı durdur" })).toBeEnabled();
+        await expect(dialog.locator('input[type="password"], input[type="tel"]')).toHaveCount(0);
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${scene}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+  });
+
+  test(`signup provider warnings at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["light", "dark"]) {
+      for (const [platform, name, warning] of [
+        ["x", "X", "X kayda devam edemedi."],
+        ["tiktok", "TikTok", "TikTok, kayıt denemesi sınırına ulaştı."],
+      ]) {
+        await page.goto("/tests/browser/social/social.html?signup-create&signup-provider-warning");
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+        await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+        await page.getByRole("button", { name: /^Platform: / }).click();
+        await page.getByRole("option", { name, exact: true }).click();
+        await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+        await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+        await page
+          .getByRole("button", { name: `Bunun yerine yeni bir ${name} hesabı oluştur` })
+          .click();
+        const dialog = page.getByRole("dialog");
+        await dialog.getByLabel("İsim").fill("Bycoda");
+        await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+        await expect(dialog.getByText(warning, { exact: false })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Kaydı durdur" })).toBeEnabled();
+        if (platform === "tiktok")
+          await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toHaveCount(
+            0,
+          );
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/${platform}-signup-warning-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      }
+    }
+  });
+}
+
+for (const [width, variant] of [
+  [1280, ""],
+  [800, ""],
+  [1280, "signup-limit"],
+  [800, "signup-limit"],
+  [1280, "signup-network-block"],
+  [800, "signup-network-block"],
+] as const) {
+  const networkBlocked = variant === "signup-network-block";
+  const state = networkBlocked ? " with network block" : variant ? " with email sign-up limit" : "";
+  test(`owner-assisted signup dialog${state} at ${width}px`, async ({ page }, testInfo) => {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/social/social.html?signup-create${variant ? `&${variant}` : ""}`,
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+      await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+      await page.getByRole("button", { name: /^Platform: / }).click();
+      await page.getByRole("option", { name: "Reddit" }).click();
+      await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+      await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+      await page
+        .getByRole("button", { name: "Bunun yerine yeni bir Reddit hesabı oluştur" })
+        .click();
+      const dialog = page.getByRole("dialog");
+      const close = dialog.locator("header").getByRole("button", { name: "Kapat", exact: true });
+      await expect(close).toBeEnabled();
+      await dialog.getByLabel("İsim").fill("Studio");
+      await page.screenshot({
+        path: testInfo.outputPath(`signup-start-${theme}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+      await expect(close).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Kaydı durdur", exact: true })).toBeEnabled();
+      await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+      if (!networkBlocked) {
+        await expect(dialog.getByLabel("E-posta adresi")).toBeVisible();
+        await page.screenshot({
+          path: testInfo.outputPath(`signup-fields-${theme}.png`),
+          animations: "disabled",
+        });
+        await dialog.getByLabel("E-posta adresi").fill("studio@example.com");
+        await dialog.getByRole("button", { name: "Devam et" }).click();
+      }
+      if (variant) {
+        await expect(
+          dialog.getByRole("status").filter({
+            hasText: networkBlocked
+              ? "Reddit, ağ güvenliği nedeniyle tarayıcı erişimini engelledi. Daha sonra tekrar deneyin."
+              : "Reddit, e-postayla kayıt sınırına ulaştı. Daha sonra tekrar deneyin.",
+          }),
+        ).toBeVisible();
+        await expect(dialog.getByText("İşleminiz bekleniyor", { exact: true })).toHaveCount(0);
+        await expect(dialog.getByRole("button", { name: "Devam et", exact: true })).toHaveCount(0);
+        await expect(
+          dialog.getByRole("button", { name: "Kaydı durdur", exact: true }),
+        ).toBeEnabled();
+        await page.screenshot({
+          path: `temp/verification/social-platform-acceptance/reddit-${variant}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        if (networkBlocked) {
+          await page.emulateMedia({ reducedMotion: "reduce" });
+          await page.goto(
+            "/tests/browser/social/social.html?reddit-delete&reddit-browser-network-block",
+          );
+          await page.evaluate(
+            (light) => document.documentElement.classList.toggle("theme-light", light),
+            theme === "light",
+          );
+          await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+          await page.getByRole("button", { name: /Fixture Reddit/ }).click();
+          const connection = page.getByRole("region", { name: "Bağlantı", exact: true });
+          await connection.getByRole("button", { name: "Bağlantıyı kontrol et" }).click();
+          await expect(connection.getByRole("alert")).toContainText(
+            "Reddit, ağ güvenliği nedeniyle tarayıcı erişimini engelledi. Daha sonra tekrar deneyin.",
+          );
+          const accountStatus = page
+            .getByRole("dialog", { name: "Fixture Reddit" })
+            .locator(".social-detail-status");
+          await expect(accountStatus.getByText("Bağlı", { exact: true })).toHaveCount(0);
+          await expect(
+            accountStatus.getByText("Bağlantı tekrar denenmeli", { exact: true }),
+          ).toHaveCount(1);
+          await page.screenshot({
+            path: `temp/verification/social-platform-acceptance/reddit-connect-network-block-${theme}-${width}.png`,
+            animations: "disabled",
+          });
+          await connection.getByRole("button", { name: "Bağlantıyı kontrol et" }).click();
+          await expect(accountStatus.getByText("Bağlı", { exact: true })).toHaveCount(1);
+          await expect(connection.getByRole("alert")).toHaveCount(0);
+        }
+        continue;
+      }
+      await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
+      await expect(
+        dialog.getByText(
+          "Aşağıda belirtilenleri platform penceresinde tamamla. Sonra burada Devam et’e tıkla.",
+        ),
+      ).toBeVisible();
+      await expect(dialog.getByText(/parola|koşul kabulü/i)).toHaveCount(0);
+      await expect(dialog.getByLabel("E-posta adresi")).toHaveCount(0);
+      await page.screenshot({
+        path: testInfo.outputPath(`signup-blockers-${theme}.png`),
+        animations: "disabled",
+      });
+      await page.evaluate(() =>
+        (
+          window as unknown as { socialFixtureCloseSignupWindow: () => void }
+        ).socialFixtureCloseSignupWindow(),
+      );
+      await expect(dialog.getByRole("button", { name: "Girişe devam et" })).toBeVisible({
+        timeout: 8000,
+      });
+      await expect(close).toBeEnabled();
+      await page.screenshot({
+        path: testInfo.outputPath(`signup-closed-${theme}.png`),
+        animations: "disabled",
+      });
+      await dialog.getByRole("button", { name: "Girişe devam et" }).click();
+      await expect(page.getByRole("dialog", { name: "Studio" })).toBeVisible();
+    }
+  });
+}
 
 test("automatic audience labels stay on one line", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {
@@ -505,8 +1998,11 @@ test("automatic audience labels stay on one line", async ({ page }, testInfo) =>
 });
 
 // Assertions below use the Turkish catalog, so every test starts in Turkish.
-test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+test.beforeEach(async ({ page }, testInfo) => {
+  await page.addInitScript(
+    (locale) => localStorage.setItem("bycoda.language", locale),
+    testInfo.title.startsWith("Snapchat ") ? "en" : "tr",
+  );
 });
 
 test("empty reply rules explain the disabled review once", async ({ page }, testInfo) => {

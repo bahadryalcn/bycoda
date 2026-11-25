@@ -1,9 +1,15 @@
 import type {
+  SnapchatPublishOptions,
+  LinkedInPostFormat,
+  FacebookPublishOptions,
   SocialCampaign,
+  SocialAccount,
   SocialMedia,
   TikTokVideoOptions,
   YouTubeVideoOptions,
 } from "../../model/social";
+import type { InstagramPublishOptions } from "../../../../integrations/social/adapters/instagram-publish";
+import { hasXPostExtras, type XPostExtras } from "../../../../integrations/social/x-publish";
 
 /** Read from the local file before upload (video only). Never sent to the Host. */
 export type MediaProbe = { durationSeconds?: number; width?: number; height?: number };
@@ -14,19 +20,48 @@ export type ContentMedia = {
   name: string;
   media: SocialMedia;
   probe?: MediaProbe;
+  /** Large attachments require disk streaming through the YouTube API. */
+  youtubeApiOnly?: true;
   /** Managed media claim, released when the attachment is removed. */
   mediaId?: string;
 };
 
-export type FacebookDraft = { target: "feed" | "reel"; frameRate?: number };
-export type RedditDraft = { subreddit: string; flair: string };
+export type FacebookDraft = {
+  target: FacebookPublishOptions["target"];
+  frameRate?: number;
+  /** Local datetime field. Empty delegates timing to the bycoda queue. */
+  scheduledPublishAt?: string;
+};
+export type RedditDraft = { subreddit: string; flair: string; title?: string };
+export type InstagramTagDraft = {
+  id: string;
+  localMediaId?: string;
+  username: string;
+  x?: number;
+  y?: number;
+};
+export type InstagramDraft = Omit<InstagramPublishOptions, "userTags"> & {
+  userTags?: InstagramTagDraft[];
+  altText?: Record<string, string>;
+};
+export type XPostDraft = {
+  quotePostId?: string;
+  communityId?: string;
+  poll?: { options: string; durationMinutes: string };
+  thread?: string[];
+};
 
 /** Platform options the owner sets per account. Only fields the Host accepts reach a variant. */
 export type PlatformDraft = {
+  snapchat?: Omit<SnapchatPublishOptions, "durationSeconds" | "width" | "height"> & {
+    sourceText?: string;
+  };
   tiktok?: Partial<Omit<TikTokVideoOptions, "durationSeconds">>;
   youtube?: Partial<YouTubeVideoOptions>;
   facebook?: FacebookDraft;
-  /** Kept in the draft for review; the Host has no Reddit variant field yet (see contentRules). */
+  instagram?: InstagramDraft;
+  x?: XPostDraft;
+  linkedinFormat?: LinkedInPostFormat;
   reddit?: RedditDraft;
 };
 
@@ -124,45 +159,173 @@ function withoutDuration(
   return copy;
 }
 
+/** Convert exact editor strings into validated Host fields only at the variant boundary. */
+export function xPostExtras(draft: XPostDraft | undefined): XPostExtras | undefined {
+  if (!draft) return undefined;
+  const lines = (value: string) =>
+    value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  const quotePostId = draft.quotePostId?.trim();
+  const communityId = draft.communityId?.trim();
+  const extras: XPostExtras = {
+    ...(quotePostId ? { quotePostId } : {}),
+    ...(communityId ? { communityId } : {}),
+    ...(draft.poll
+      ? {
+          poll: {
+            options: lines(draft.poll.options),
+            durationMinutes: Number(draft.poll.durationMinutes),
+          },
+        }
+      : {}),
+    ...(draft.thread?.length ? { thread: [...draft.thread] } : {}),
+  };
+  return hasXPostExtras(extras) ? extras : undefined;
+}
+
 /** Maps a saved campaign to an editable draft. Media keeps its upload identity and metadata. */
-export function draftFromCampaign(campaign: SocialCampaign): ContentDraft {
+export function draftFromCampaign(
+  campaign: SocialCampaign,
+  accounts: SocialAccount[] = [],
+): ContentDraft {
   const first = campaign.variants[0];
+  const caption =
+    campaign.variants.find((variant) => variant.instagram?.format !== "story") ?? first;
+  const firstAccount = accounts.find((account) => account.id === first?.accountId);
+  const igFirst =
+    first?.instagram !== undefined ||
+    (firstAccount?.platform === "instagram" && firstAccount.connection !== "browser");
+  const media: ContentMedia[] = (first?.media ?? []).map((asset, index, items) => {
+    const identity = asset.uploadId ?? asset.url;
+    const duplicate =
+      identity && items.findIndex((item) => (item.uploadId ?? item.url) === identity) !== index;
+    const baseAsset = { ...asset };
+    if (igFirst) delete baseAsset.alt;
+    return {
+      localId: identity && !duplicate ? identity : `saved-${index}`,
+      name: asset.title ?? asset.url ?? asset.kind,
+      media: baseAsset,
+    };
+  });
   const platform: Record<string, PlatformDraft> = {};
   for (const variant of campaign.variants) {
     const entry: PlatformDraft = {};
+    const account = accounts.find((account) => account.id === variant.accountId);
+    if (
+      variant.instagram ||
+      (account?.platform === "instagram" && account.connection !== "browser")
+    ) {
+      const { userTags, collaborators, ...options } = variant.instagram ?? {};
+      const mediaKey = (index: number) => {
+        const asset = variant.media[index];
+        const shared = media[index];
+        if (!asset || !shared) return undefined;
+        if (asset.uploadId === shared.media.uploadId && asset.url === shared.media.url)
+          return shared.localId;
+        return media.find(
+          (item) => item.media.uploadId === asset.uploadId && item.media.url === asset.url,
+        )?.localId;
+      };
+      entry.instagram = {
+        ...options,
+        ...(collaborators ? { collaborators: [...collaborators] } : {}),
+        ...(userTags
+          ? {
+              userTags: userTags.map(({ username, x, y, mediaIndex }, index) => ({
+                id: `saved-tag-${index}`,
+                localMediaId: mediaKey(mediaIndex ?? 0),
+                username,
+                x,
+                y,
+              })),
+            }
+          : {}),
+        altText: Object.fromEntries(
+          variant.media.flatMap((asset, index) => {
+            const key = mediaKey(index);
+            return key && asset.alt ? [[key, asset.alt]] : [];
+          }),
+        ),
+      };
+    }
     if (variant.youtube) entry.youtube = { ...variant.youtube };
     if (variant.tiktok) entry.tiktok = withoutDuration(variant.tiktok);
-    if (variant.facebook)
-      entry.facebook = { target: "reel", frameRate: variant.facebook.frameRate };
+    if (variant.x)
+      entry.x = {
+        quotePostId: variant.x.quotePostId,
+        communityId: variant.x.communityId,
+        poll: variant.x.poll && {
+          options: variant.x.poll.options.join("\n"),
+          durationMinutes: String(variant.x.poll.durationMinutes),
+        },
+        thread: variant.x.thread && [...variant.x.thread],
+      };
+    if (variant.snapchat) {
+      const {
+        durationSeconds: _duration,
+        width: _width,
+        height: _height,
+        ...options
+      } = variant.snapchat;
+      entry.snapchat = options;
+    }
+    if (variant.linkedinFormat) entry.linkedinFormat = structuredClone(variant.linkedinFormat);
+    if (variant.reddit)
+      entry.reddit = {
+        subreddit: variant.reddit.subreddits?.[0] ?? "",
+        flair: variant.reddit.flairId ?? "",
+        title: variant.reddit.title ?? "",
+      };
+    if (variant.facebook) {
+      const options = variant.facebook;
+      entry.facebook =
+        options.target === "reel"
+          ? { target: "reel", frameRate: options.frameRate }
+          : {
+              target: options.target,
+              ...((options.target === "feed" || options.target === "video") &&
+              options.scheduledPublishAt !== undefined
+                ? { scheduledPublishAt: toLocalInput(options.scheduledPublishAt) }
+                : {}),
+            };
+    }
     platform[variant.accountId] = entry;
   }
   // The media is one file shared by every variant, so its size and length come from whichever
   // variant carries them, not necessarily the first (a YouTube variant carries none).
   const sized =
-    campaign.variants.find((variant) => variant.facebook) ??
+    campaign.variants.find((variant) => variant.facebook?.target === "reel") ??
     campaign.variants.find((variant) => variant.tiktok);
-  const probe: MediaProbe | undefined = sized?.facebook
-    ? {
-        durationSeconds: sized.facebook.durationSeconds,
-        width: sized.facebook.width,
-        height: sized.facebook.height,
-      }
-    : sized?.tiktok
-      ? { durationSeconds: sized.tiktok.durationSeconds }
-      : undefined;
+  const snapchat = campaign.variants.find((variant) => variant.snapchat)?.snapchat;
+  const probe: MediaProbe | undefined =
+    sized?.facebook?.target === "reel"
+      ? {
+          durationSeconds: sized.facebook.durationSeconds,
+          width: sized.facebook.width,
+          height: sized.facebook.height,
+        }
+      : sized?.tiktok
+        ? { durationSeconds: sized.tiktok.durationSeconds }
+        : snapchat
+          ? {
+              durationSeconds: snapchat.durationSeconds,
+              width: snapchat.width,
+              height: snapchat.height,
+            }
+          : undefined;
   const scheduled = first?.scheduledAt;
   return {
     campaignId: campaign.id,
     revision: campaign.revision,
     name: campaign.name,
-    text: first?.text ?? "",
-    link: first?.link ?? "",
+    text: caption?.text ?? "",
+    link: caption?.link ?? "",
     accountIds: campaign.variants.map((variant) => variant.accountId),
-    media: (first?.media ?? []).map((media, index) => ({
-      localId: media.uploadId ?? media.url ?? `saved-${index}`,
-      name: media.title ?? media.url ?? media.kind,
-      media: { ...media },
-      probe: media.kind === "video" ? probe : undefined,
+    media: media.map((item) => ({
+      ...item,
+      probe: item.media.kind === "video" ? probe : undefined,
     })),
     // A saved time that has passed reopens as "Now"; the owner picks a new time before scheduling.
     when: scheduled && scheduled > Date.now() ? "later" : "now",

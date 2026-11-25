@@ -338,8 +338,8 @@ describe("YouTube audience collection", () => {
         at: Date.parse("2026-11-05T10:00:00Z"),
       },
     ]);
-    // One search (100 units) plus one comment-thread read per video (1 unit each).
-    expect(adapter.quota.usedToday().units).toBe(102);
+    // The search uses its dedicated bucket. Comment-thread reads use the shared quota.
+    expect(adapter.quota.usedToday()).toMatchObject({ units: 2, searchCalls: 1 });
   });
 
   it("collects commenters of owned videos and refuses sources it cannot read", async () => {

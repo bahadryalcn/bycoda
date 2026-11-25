@@ -91,7 +91,6 @@
     "host/social/media-custody.test.ts": 2,
     "host/social/oauth/tiktok.test.ts": 1,
     "host/social/social-browser-facebook-profile.test.ts": 2,
-    "host/social/social-browser-instagram-profile.test.ts": 17,
     "host/social/social-browser-linkedin-extended.test.ts": 1,
     "host/social/social-browser-linkedin-profile.test.ts": 18,
     "host/social/social-browser-messaging.test.ts": 1,

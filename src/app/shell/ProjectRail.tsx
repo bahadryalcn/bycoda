@@ -17,6 +17,10 @@ import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionLis
 import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import { Sash } from "../../shared/ui/Sash";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
+import {
+  requestOpenLiveStreamPage,
+  useLiveStreamPageOpen,
+} from "../../features/live-stream/public/liveStreamPage";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import { observeResize } from "../../shared/lib/observeResize";
@@ -45,6 +49,7 @@ import {
   Pin,
   PinOff,
   CircleAlert,
+  CircleDot,
   Clock,
   FileDiff,
   StickyNote,
@@ -356,6 +361,7 @@ export function ProjectRail({
       : undefined;
   const t = useT();
   const navigator = presentation === "navigator";
+  const liveStreamOpen = useLiveStreamPageOpen();
   const workspaceFeatures = useWorkspaceFeatures();
   const inboxShortcut = useKeybindingShortcut("App: Open Inbox");
   const notesShortcut = useKeybindingShortcut("App: Open Notes");
@@ -1155,8 +1161,15 @@ export function ProjectRail({
                         id: "servers",
                         label: t("Servers"),
                         icon: <Server className="icon-sm" />,
-                        active: serversActive,
+                        active: serversActive && !liveStreamOpen,
                         onSelect: onOpenServers,
+                      },
+                      {
+                        id: "live-stream",
+                        label: t("Live streaming"),
+                        icon: <CircleDot className="icon-sm" />,
+                        active: liveStreamOpen,
+                        onSelect: requestOpenLiveStreamPage,
                       },
                       ...(workspaceFeatures.inbox || inboxActive
                         ? [

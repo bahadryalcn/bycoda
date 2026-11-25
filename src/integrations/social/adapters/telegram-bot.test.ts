@@ -123,4 +123,39 @@ describe("Telegram bot adapter", () => {
     expect(result.cursor).toBe("11");
     expect(result.events).toHaveLength(1);
   });
+
+  it("polls automatic forwards with their exact discussion roots under the bot cursor", async () => {
+    const fetcher = jsonResponse([
+      {
+        update_id: 11,
+        message: {
+          message_id: 17,
+          date: 100,
+          text: "Channel post",
+          chat: { id: -100222, type: "supergroup", title: "Discussion" },
+          is_automatic_forward: true,
+          forward_origin: {
+            type: "channel",
+            chat: { id: -100111, type: "channel" },
+            message_id: 9,
+          },
+          from: { id: 9, is_bot: true },
+        },
+      },
+    ]);
+    const result = await createTelegramAdapter(new SocialHttp(fetcher)).poll(
+      account(),
+      TOKEN,
+      [],
+      "11",
+    );
+    expect(result.cursor).toBe("12");
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        eventId: "-100222:17",
+        contactId: "-100222",
+        threadId: "tg-discussion:-100111:9:-100222:17",
+      }),
+    ]);
+  });
 });

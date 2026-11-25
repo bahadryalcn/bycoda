@@ -13,6 +13,7 @@ vi.mock("./AccountPermissions", () => ({ AccountPermissions: () => null }));
 vi.mock("./AutonomySettings", () => ({ AutonomySettings: () => null }));
 vi.mock("./BrowserSettings", () => ({ BrowserSettings: () => null }));
 vi.mock("./ReplyRules", () => ({ ReplyRules: () => null }));
+vi.mock("./platform/InstagramAccountTools", () => ({ InstagramAccountTools: () => null }));
 
 let element: HTMLDivElement, root: Root;
 

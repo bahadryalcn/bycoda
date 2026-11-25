@@ -4,6 +4,31 @@ const captures = "temp/verification/2026-10-22-provider-add-ux/browser";
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`welcome offer yields to an account sheet ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?offerModal&theme=${theme}`);
+      const offer = page.locator("[data-tour-offer-start]");
+      const opener = page.getByRole("button", { name: "Open test account" });
+      await expect(offer).toBeVisible();
+      await opener.click();
+      const sheet = page.getByRole("dialog", { name: "Test account" });
+      await expect(sheet).toBeVisible();
+      await expect(offer).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/social-platform-acceptance/tour-account-sheet-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await sheet.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(offer).toBeVisible();
+      await expect(opener).toBeFocused();
+      await page.getByRole("button", { name: "Later", exact: true }).click();
+      await expect(offer).toHaveCount(0);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
     test(`setup illustrations follow motion preferences ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "no-preference" });

@@ -2,6 +2,10 @@ import { startTransition, useCallback, useEffect, type Dispatch, type SetStateAc
 import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation";
 import { OPEN_CREWS_PAGE_EVENT, setCrewsPageOpen } from "../../../features/crews/model/crewsPage";
+import {
+  OPEN_LIVE_STREAM_EVENT,
+  setLiveStreamPageOpen,
+} from "../../../features/live-stream/public/liveStreamPage";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
 import { START_TOUR_EVENT } from "../../../features/onboarding/model/tourState";
 import { subscribeInboxItemRequests } from "../../../features/inbox/public/workItemMentions";
@@ -53,31 +57,44 @@ export function useSurfaceOpeners({
     setFilePickerOpen,
     setNotesViewOpen,
   ]);
-  const onOpenCrews = useCallback(() => {
-    startTransition(() => {
-      setFilePickerOpen(false);
-      setSettingsOpen(false);
-      setSearchViewOpen(false);
-      setInboxViewOpen(false);
-      setNotesViewOpen(false);
-      setAutomationsViewOpen(false);
-      // Closing Servers also closes Crews, so it comes first.
-      setServersViewOpen?.(false);
-      setCrewsPageOpen(true);
-    });
-  }, [
-    setFilePickerOpen,
-    setSettingsOpen,
-    setSearchViewOpen,
-    setInboxViewOpen,
-    setNotesViewOpen,
-    setAutomationsViewOpen,
-    setServersViewOpen,
-  ]);
+  const openLocalTool = useCallback(
+    (reveal: () => void) => {
+      startTransition(() => {
+        setFilePickerOpen(false);
+        setSettingsOpen(false);
+        setSearchViewOpen(false);
+        setInboxViewOpen(false);
+        setNotesViewOpen(false);
+        setAutomationsViewOpen(false);
+        // Clear the previous tool before opening its replacement.
+        setServersViewOpen?.(false);
+        reveal();
+      });
+    },
+    [
+      setFilePickerOpen,
+      setSettingsOpen,
+      setSearchViewOpen,
+      setInboxViewOpen,
+      setNotesViewOpen,
+      setAutomationsViewOpen,
+      setServersViewOpen,
+    ],
+  );
+  const onOpenCrews = useCallback(
+    () => openLocalTool(() => setCrewsPageOpen(true)),
+    [openLocalTool],
+  );
+  // The rail routes these requests to the main window's tool state.
   useEffect(() => {
+    const onLiveStream = () => openLocalTool(() => setLiveStreamPageOpen(true));
     window.addEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
-    return () => window.removeEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
-  }, [onOpenCrews]);
+    window.addEventListener(OPEN_LIVE_STREAM_EVENT, onLiveStream);
+    return () => {
+      window.removeEventListener(OPEN_CREWS_PAGE_EVENT, onOpenCrews);
+      window.removeEventListener(OPEN_LIVE_STREAM_EVENT, onLiveStream);
+    };
+  }, [onOpenCrews, openLocalTool]);
   const onLeaveServers = useCallback(() => setServersViewOpen?.(false), [setServersViewOpen]);
   const onOpenInbox = useCallback(async (_routed = false) => {
     setPullRequestsOnly(false);

@@ -13,6 +13,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { EmptyHint } from "../common/EmptyHint";
 import { channelName, PlatformIcon } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
+import { LinkedInCommentActions } from "../linkedin/LinkedInCommentActions";
 import { inboxApi } from "./inboxApi";
 import { statusText, statusTone, timelineLines, type MessageLine } from "./inboxModel";
 import { MessageTimeline } from "./MessageTimeline";
@@ -24,7 +25,9 @@ import {
   type InboxStatus,
 } from "./inboxTypes";
 import { ReplyBox } from "./ReplyBox";
+import { InstagramCommentActions } from "./InstagramCommentActions";
 import {
+  useInboxAccounts,
   useInboxInvalidate,
   useInboxThread,
   useInboxTimeline,
@@ -52,6 +55,7 @@ export function ConversationView({
   const api = inboxApi(client);
   const thread = useInboxThread(client, threadId);
   const timeline = useInboxTimeline(client, item?.person?.id);
+  const snapshot = useInboxAccounts(client, false);
   const invalidate = useInboxInvalidate(client);
   const applyTags = useSavedInboxTags(client);
   const [saving, setSaving] = useState(false);
@@ -97,6 +101,9 @@ export function ConversationView({
     );
 
   const conversation = thread.data;
+  const instagram = snapshot.data?.accounts.find(
+    (account) => account.id === conversation.accountId && account.platform === "instagram",
+  );
   const lines: MessageLine[] = item?.person
     ? timelineLines(timeline.data?.pages ?? [])
     : [...conversation.events]
@@ -220,6 +227,11 @@ export function ConversationView({
           ) : null}
         </div>
       </header>
+      {item?.platform === "linkedin" &&
+      conversation.kind === "comment" &&
+      conversation.platformThreadId.startsWith("urn:li:comment:") ? (
+        <LinkedInCommentActions key={conversation.id} client={client} thread={conversation} />
+      ) : null}
 
       {item ? (
         <div className="inbox-tag-editor">
@@ -333,6 +345,19 @@ export function ConversationView({
         />
       ) : null}
 
+      {conversation.instagramSource === "live_comment" ? (
+        <Text size="caption" tone="muted">
+          {t("Instagram Live comment")}
+        </Text>
+      ) : null}
+      {instagram && conversation.kind === "comment" ? (
+        <InstagramCommentActions
+          key={conversation.id}
+          client={client}
+          account={instagram}
+          thread={conversation}
+        />
+      ) : null}
       <ReplyBox key={conversation.id} client={client} thread={conversation} />
     </article>
   );

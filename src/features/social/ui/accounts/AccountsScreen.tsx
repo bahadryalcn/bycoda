@@ -45,6 +45,14 @@ export function AccountsScreen({
   const { snapshot } = data;
   const accounts = snapshot?.accounts ?? [];
   const selected = accounts.find((account) => account.id === selectedId);
+  const youtubeSection =
+    target &&
+    typeof target === "object" &&
+    "youtubeSection" in target &&
+    target.youtubeSection === "videos" &&
+    accountTargetId(target) === selectedId
+      ? "videos"
+      : undefined;
   const hostOnline = snapshot?.hostOnline ?? shellState.hostOnline;
   const connectGate: ActionGate = shellState.unreachable
     ? { disabled: true, disabledReason: t("Could not reach this computer.") }
@@ -136,6 +144,7 @@ export function AccountsScreen({
             now={data.now}
             hostOnline={hostOnline}
             onChanged={data.reload}
+            youtubeSection={youtubeSection}
           />
         </Sheet>
       ) : null}

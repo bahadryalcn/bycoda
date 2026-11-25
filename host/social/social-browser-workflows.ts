@@ -10,6 +10,8 @@ import {
 } from "../../src/features/social/model/socialBrowser";
 import type { BrowserLauncher, BrowserPage, PlainBrowserLauncher } from "./social-browser";
 import type { SocialPrincipal, SocialService } from "./social";
+import { redditBrowserRecipe } from "./social-browser-reddit";
+import { xUserId } from "./social-browser-x-page";
 import {
   advanceSocialRegistration,
   inspectSocialRegistration,
@@ -193,6 +195,56 @@ export class SocialBrowserWorkflows {
       throw new Error("Open the browser workflow on the account's executor host.");
     return account;
   }
+
+  /** Match the saved account before navigating to its provider inbox. */
+  private async verifyInboxProfile(
+    service: SocialService,
+    principal: SocialPrincipal,
+    account: SocialAccount,
+    active: Active,
+    redditPage?: BrowserPage,
+  ) {
+    const verify = async () => {
+      await this.beforeAction(service, principal, active, false);
+      const current = await this.account(service, principal, account.id);
+      if (
+        current.connection !== "browser" ||
+        !current.connected ||
+        !current.accessApproved ||
+        current.platformId !== account.platformId
+      )
+        throw new WorkflowInterruption();
+    };
+    await verify();
+    const session = redditPage ? undefined : await this.automated!(this.profile(account), true);
+    const page = redditPage ?? session!.page;
+    try {
+      await page.goto(redditPage ? "https://www.reddit.com/" : "https://x.com/home");
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await verify();
+        if (redditPage) {
+          const identity = await redditBrowserRecipe.identity(page, account);
+          if (identity?.platformId === account.platformId) return;
+          if (identity) break;
+        } else if (
+          await page
+            .evaluate<boolean>(
+              'location.origin === "https://x.com" && location.pathname === "/home" && !!document.querySelector(\'[data-testid="AppTabBar_Profile_Link"]\')',
+            )
+            .catch(() => false)
+        ) {
+          if (xUserId(await page.cookies()) !== account.platformId) break;
+          return;
+        }
+        await this.wait(250);
+      }
+      throw new Error("The saved browser identity could not be verified.");
+    } finally {
+      await session?.close();
+      await session?.profileReleased?.();
+      await verify();
+    }
+  }
   private async records(
     service: SocialService,
     accountId: string,
@@ -245,7 +297,10 @@ export class SocialBrowserWorkflows {
             active.profile,
           );
           await this.beforeAction(service, principal, active);
-          this.progress(active, state);
+          // Reddit's toast expires even when signup is still on the same form.
+          const previousLimit = active.record.registration?.step === "rate_limit";
+          if (!previousLimit || state.blockers.length !== 1 || state.blockers[0] !== "terms")
+            this.progress(active, state);
           if (JSON.stringify(active.record.registration) !== previous)
             await this.save(service, active.record);
         } catch (error) {
@@ -309,7 +364,8 @@ export class SocialBrowserWorkflows {
           "A Page creation was already attempted for this account. Verify its result and connect the existing Page; do not register it again.",
         );
     }
-    if (profile ? !this.automated : !this.plain)
+    const redditChat = account.platform === "reddit" && input.intent === "inbox";
+    if (profile || redditChat ? !this.automated : !this.plain)
       throw new Error("Chrome or Edge is unavailable on this host.");
     const current = this.active.get(account.id);
     if (current) {
@@ -317,6 +373,21 @@ export class SocialBrowserWorkflows {
         throw new Error("Close or cancel the account's current browser workflow first.");
       return copy(current.record);
     }
+    const verifiedChat =
+      input.intent === "inbox" && (account.platform === "x" || account.platform === "reddit");
+    if (
+      verifiedChat &&
+      (!this.automated ||
+        account.connection !== "browser" ||
+        !account.connected ||
+        !account.accessApproved ||
+        !account.platformId)
+    )
+      throw new Error(
+        account.platform === "x"
+          ? "Connect X in its dedicated browser profile before opening Chat."
+          : "Connect Reddit in its dedicated browser profile before opening Chat.",
+      );
     const record: SocialBrowserWorkflow = {
       id: randomUUID(),
       accountId: account.id,
@@ -350,7 +421,12 @@ export class SocialBrowserWorkflows {
         return;
       }
       await this.beforeAction(service, principal, active, !!profile);
-      const session = profile ? await this.automated!(this.profile(account), false) : undefined;
+      if (verifiedChat && !redditChat)
+        await this.verifyInboxProfile(service, principal, account, active);
+      // Reddit's signed-in identity can be blocked in headless Chrome. Keep
+      // verification and the owner handoff in the same visible profile.
+      const session =
+        profile || redditChat ? await this.automated!(this.profile(account), false) : undefined;
       const window = session ?? (await this.plain!(this.profile(account), url));
       active.close = () => window.close();
       void window.closed.then(() => {
@@ -358,14 +434,24 @@ export class SocialBrowserWorkflows {
       });
       try {
         if (active.cancelled || this.stopped) return;
-        if (session) {
+        if (redditChat && session) {
+          await this.verifyInboxProfile(service, principal, account, active, session.page);
+          await session.page.goto(url);
+          await this.beforeAction(service, principal, active, false);
+          if (
+            !(await session.page.evaluate<boolean>(
+              'location.origin === "https://www.reddit.com" && /^\\/chat(?:\\/|$)/.test(location.pathname)',
+            ))
+          )
+            throw new Error("Reddit Chat could not be opened.");
+        } else if (session) {
           active.page = session.page;
           await this.beforeAction(service, principal, active);
           await session.page.goto(url);
           await this.serialize(active, () => this.prepareRegistration(service, principal, active));
         }
         if (active.cancelled || this.stopped) return;
-        if (!session) {
+        if (!profile) {
           record.status = "awaiting_owner";
           await this.save(service, record);
         }
@@ -385,6 +471,8 @@ export class SocialBrowserWorkflows {
         await this.save(service, record);
       } finally {
         if (!active.closed) await window.close();
+        active.close = undefined;
+        if (redditChat) await session?.profileReleased?.();
         active.page = undefined;
         active.profile = undefined;
       }
@@ -801,8 +889,10 @@ export class SocialBrowserWorkflows {
     service: SocialService,
     principal: SocialPrincipal,
     accountId: string,
+    workflowId?: string,
   ): Promise<void> {
     await this.account(service, principal, accountId);
+    if (workflowId !== undefined && this.active.get(accountId)?.record.id !== workflowId) return;
     await this.cancelAccount(service, accountId);
   }
   async cancelAccount(service: SocialService, accountId: string): Promise<void> {

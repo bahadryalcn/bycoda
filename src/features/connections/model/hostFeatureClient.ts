@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { withTimeout } from "../../../shared/lib/withTimeout";
+import { LIVE_STREAM_RPC } from "../../../shared/model/host-contracts/live-stream";
 import { backgroundMachineFor, hostProjectFor } from "../../automations/model/hostAutomationClient";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "./connections";
@@ -206,6 +207,7 @@ const PROJECT_BROWSER_METHODS = new Set([
   "browser.annotation.cancel",
 ]);
 const OWNER_HOST_METHOD_CAPABILITIES: Readonly<Record<string, string>> = {
+  ...Object.fromEntries(Object.keys(LIVE_STREAM_RPC).map((method) => [method, "liveStream.v1"])),
   "assistant.request": "assistant.v1",
   "voice.tools.list": "voice.tools.v1",
   "voice.tools.call": "voice.tools.v1",

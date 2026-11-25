@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { snapchatBrowserConnectionUrl } from "./social-browser-publishing";
 import { account, fixture, job, now, recipe } from "./social-browser-publishing-test-support";
@@ -90,6 +91,119 @@ describe("Snapchat existing-chat boundaries", () => {
       ),
     ).resolves.toEqual({ platformId: "new-message-456" });
     expect(submissions).toBe(1);
+  });
+
+  describe("new chat from a verified friend", () => {
+    const target = "web:snapchat:friend";
+    const threadId = "thread-12345";
+    const sendJob = job("message", { recipientId: target });
+    const friend =
+      '<div data-username="friend" data-relationship="friend"><button data-testid="open-chat">Chat</button></div>';
+    const friends = (rows: string) =>
+      header + '<div data-testid="my-friends-list">' + rows + "</div>";
+    const conversation = (extra = "", recipient = "friend") =>
+      header +
+      `
+      <div data-conversation-id="${threadId}">
+        <span data-participant-username="bycoda"></span><span data-participant-username="${recipient}"></span>
+        <span data-testid="empty-conversation"></span>
+        <div data-testid="chat-input" contenteditable="true"></div><button data-testid="send-chat">Send</button>
+        ${extra}
+      </div>`;
+    const receipt = `<div data-message-id="message-sent" data-sender-username="bycoda" data-recipient-username="friend">
+      <span data-message-text>A Bycoda update</span><time datetime="${new Date(now).toISOString()}"></time></div>`;
+    function openFriend(
+      rows = friend,
+      afterOpen = conversation(),
+      outcome: "persisted" | "missing" | "click-error" = "persisted",
+    ) {
+      let submissions = 0;
+      const f = fixture(recipe("snapchat"), own, header, {
+        render: (url) =>
+          url.includes("chatId=")
+            ? conversation(submissions && outcome === "persisted" ? receipt : "")
+            : friends(rows),
+        click: (el) => {
+          if (el.matches('[data-testid="open-chat"]')) f.window.document.body.innerHTML = afterOpen;
+          if (el.matches('[data-testid="send-chat"]')) {
+            submissions++;
+            if (outcome === "click-error") throw new Error("Connection closed after dispatch");
+          }
+        },
+      });
+      return { ...f, submissions: () => submissions };
+    }
+
+    it("opens an exact friend and returns a receipt only after reopening the chat", async () => {
+      const f = openFriend(
+        friend + friend.replace('data-username="friend"', 'data-username="friend-other"'),
+      );
+      await expect(recipe("snapchat").send(f.ctx, sendJob)).resolves.toEqual({
+        platformId: "message-sent",
+      });
+      expect(f.submissions()).toBe(1);
+      expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+      expect(f.page.goto).toHaveBeenLastCalledWith(`https://web.snapchat.com/?chatId=${threadId}`);
+    });
+
+    it.each([
+      friend + friend,
+      friend.replace('data-relationship="friend"', 'data-relationship="pending"'),
+      friend.replace('data-username="friend"', 'data-username="friend-other"'),
+      friend.replace(
+        ">Chat</button>",
+        '>Chat</button><button data-testid="add-friend">Add Friend</button>',
+      ),
+    ])("refuses an ambiguous or non-friend row before clicking", async (rows) => {
+      const f = openFriend(rows);
+      await expect(recipe("snapchat").send(f.ctx, sendJob)).rejects.toMatchObject({
+        code: "denied",
+      });
+      expect(f.page.click).not.toHaveBeenCalled();
+      expect(f.page.fill).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      conversation("", "other"),
+      conversation('<span data-participant-username="other"></span>'),
+      conversation() + "<h1>Enter the verification code</h1>",
+      conversation() + '<form><input type="password"></form>',
+    ])("leaves the composer untouched when the opened screen is unsafe", async (screen) => {
+      const f = openFriend(friend, screen);
+      await expect(recipe("snapchat").send(f.ctx, sendJob)).rejects.toMatchObject({
+        code:
+          screen.includes("<h1>") || screen.includes('type="password"') ? "needs_human" : "denied",
+      });
+      expect(f.page.fill).not.toHaveBeenCalled();
+      expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+    });
+
+    it("obeys the Host send gate again after filling and before submission", async () => {
+      const f = openFriend();
+      const verify = f.ctx.verifyIdentity;
+      f.ctx.verifyIdentity = async () => {
+        await verify();
+        if (vi.mocked(f.page.fill).mock.calls.length) throw new SocialPlatformError("denied");
+      };
+      await expect(recipe("snapchat").send(f.ctx, sendJob)).rejects.toMatchObject({
+        code: "denied",
+      });
+      expect(f.page.fill).toHaveBeenCalledOnce();
+      expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+      expect(f.submissions()).toBe(0);
+    });
+
+    it.each(["missing", "click-error"] as const)(
+      "holds %s delivery after one click",
+      async (outcome) => {
+        const f = openFriend(friend, conversation(), outcome);
+        await expect(recipe("snapchat").send(f.ctx, sendJob)).rejects.toMatchObject({
+          code: "unknown",
+        });
+        expect(f.submissions()).toBe(1);
+        expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+      },
+    );
   });
 });
 

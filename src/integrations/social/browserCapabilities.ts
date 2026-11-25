@@ -8,6 +8,7 @@ import type {
 /** X browser-session operations. Browser capability is derived from these, never from stored scopes. */
 export const X_BROWSER_OPERATIONS: readonly SocialOperation[] = [
   "publish",
+  "delete",
   "media",
   "reply",
   "comment",
@@ -31,6 +32,7 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "comment",
     "inbox.read",
     "message.reply",
+    "message.start",
     "poll",
   ],
   facebook: [
@@ -42,6 +44,10 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "inbox.read",
     "message.reply",
     "poll",
+    // Facebook owner profile tools use the account's verified browser actor.
+    "profile.read",
+    "profile.update",
+    "delete",
   ],
   linkedin: [
     "publish",
@@ -55,13 +61,38 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
     "poll",
   ],
   youtube: ["publish", "media", "comments.read", "reply", "comment", "poll"],
-  tiktok: ["publish", "media", "comments.read", "reply", "comment", "poll", "audience.collect"],
-  snapchat: ["publish", "media", "inbox.read", "message.reply", "poll", "audience.collect"],
+  // TikTok account recipes.
+  tiktok: [
+    "publish",
+    "media",
+    "comments.read",
+    "reply",
+    "comment",
+    "poll",
+    "audience.collect",
+    "inbox.read",
+    "message.reply",
+    "message.start",
+    "profile.read",
+    "analytics",
+    "delete",
+  ],
+  // Snapchat. New text chats require a verified friend in the web client.
+  snapchat: [
+    "publish",
+    "media",
+    "inbox.read",
+    "message.reply",
+    "poll",
+    "audience.collect",
+    "message.start",
+    "profile.read",
+  ],
   // No WhatsApp chat-sender reader is wired (dm_senders), so audience.collect is not offered here.
   whatsapp: ["inbox.read", "message.reply", "message.start", "poll", "media"],
   telegram: ["inbox.read", "message.reply", "message.start", "poll", "media"],
-  // Member web session: posts, comments and inbox replies. Reddit chat and private messages stay API-only.
-  reddit: ["publish", "comments.read", "comment", "reply", "poll"],
+  // Reddit Chat opens as an owner workflow. The browser recipe handles posts and comment replies.
+  reddit: ["publish", "comments.read", "comment", "reply", "poll", "delete"],
 };
 
 export function browserScopes(platform: Exclude<SocialPlatform, "x">): string[] {
@@ -73,12 +104,21 @@ export function browserOperations(
 ): readonly SocialOperation[] {
   if (account.platform === "x") return X_BROWSER_OPERATIONS;
   const operations = BROWSER_PLATFORM_OPERATIONS[account.platform];
+  if (account.platform === "facebook" && account.accountType !== "page")
+    return operations.filter((operation) => operation !== "delete");
   if (account.platform === "snapchat")
     return operations.filter((operation) =>
       account.accountType === "public_profile"
-        ? operation === "publish" || operation === "media"
+        ? ["publish", "media", "profile.read"].includes(operation)
         : account.accountType === "member" &&
-          ["inbox.read", "message.reply", "poll", "audience.collect"].includes(operation),
+          [
+            "inbox.read",
+            "message.reply",
+            "poll",
+            "audience.collect",
+            "message.start",
+            "profile.read",
+          ].includes(operation),
     );
   return account.platform === "linkedin" && account.accountType === "organization"
     ? operations.filter(
@@ -185,9 +225,22 @@ export function browserContentIssue(
   if (["youtube", "tiktok"].includes(account.platform) && job.kind === "publish") {
     if (account.platform === "tiktok" && job.payload.tiktok?.mode === "inbox")
       return "Inbox drafts need the API connection.";
-    if (account.platform === "tiktok" && job.payload.tiktok?.mediaType === "photo")
-      return "TikTok browser publishing currently supports video only. Photo publishing requires the API connection.";
-    if (media.length !== 1 || media[0].kind !== "video")
+    // TikTok Studio photo publishing requires its own photo controls and explicit music selection.
+    if (account.platform === "tiktok" && job.payload.tiktok?.mediaType === "photo") {
+      const options = job.payload.tiktok;
+      if (
+        !media.length ||
+        media.some(({ kind }) => kind !== "image") ||
+        !Number.isSafeInteger(options.photoCoverIndex ?? 0) ||
+        (options.photoCoverIndex ?? 0) < 0 ||
+        (options.photoCoverIndex ?? 0) >= media.length ||
+        typeof options.autoAddMusic !== "boolean" ||
+        !options.consent ||
+        options.allowDuet ||
+        options.allowStitch
+      )
+        return "Use one to four uploaded photos and review the cover, privacy and music settings.";
+    } else if (media.length !== 1 || media[0].kind !== "video")
       return "This publishing screen requires one uploaded video.";
     if (account.platform === "youtube") {
       const options = job.payload.youtube;

@@ -180,6 +180,47 @@ it("keeps Send disabled with its reason until the owner writes a reply", async (
   expect(fake.writes()).toEqual([]);
 });
 
+it("keeps the chosen Instagram PDF after an upload failure and queues only the reviewed upload", async () => {
+  const fake = fakeClient({
+    replyOptions: { canReply: true, instagram: { attachment: true, localAttachment: true } },
+  });
+  const upload = vi
+    .fn<SocialClient["uploadInstagramAttachment"]>()
+    .mockRejectedValueOnce(new Error("Upload interrupted"))
+    .mockResolvedValueOnce({ uploadId: "attachment-1" });
+  fake.client.uploadInstagramAttachment = upload;
+  await mount(fake.client);
+  await click(button("None"));
+  const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
+    (item) => item.textContent?.trim() === "PDF",
+  );
+  expect(option).toBeDefined();
+  await click(option!);
+  const input = element.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const file = new File(["%PDF-1.7\ncontents\n%%EOF"], "report.pdf", { type: "application/pdf" });
+  Object.defineProperty(input, "files", { configurable: true, value: [file] });
+  await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  expect(upload).not.toHaveBeenCalled();
+  expect(element.textContent).toContain(file.name);
+  await click(button("Send"));
+  expect(element.textContent).toContain("Reply preparation could not finish.");
+  expect(element.textContent).toContain(file.name);
+  expect(fake.writes()).toEqual([]);
+  await click(button("Send"));
+  expect(upload).toHaveBeenCalledTimes(2);
+  expect(upload).toHaveBeenLastCalledWith(thread.id, "document", file);
+  expect(fake.writes()[0]).toEqual({
+    action: "replies.draft",
+    input: {
+      threadId: thread.id,
+      text: "",
+      factIds: [],
+      media: [{ kind: "document", uploadId: "attachment-1" }],
+    },
+  });
+  expect(fake.writes().map((item) => item.action)).toEqual(WRITE_ACTIONS);
+});
+
 it("sends only after the owner presses Send: draft, approval of that exact draft, then queue", async () => {
   const fake = fakeClient();
   await mount(fake.client);

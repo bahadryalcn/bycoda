@@ -1,9 +1,29 @@
 .social-accounts-screen {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.25rem;
   min-width: 0;
-  max-inline-size: 68rem;
+  max-inline-size: 56rem;
+}
+
+/* A control with its explanation below it, at the start edge. */
+.social-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.social-stack > .social-limit-form {
+  align-self: stretch;
+}
+
+.social-dialog-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  flex-basis: 100%;
 }
 
 .social-accounts-section {
@@ -72,6 +92,10 @@
   min-width: 0;
 }
 
+.social-detail {
+  max-inline-size: none;
+}
+
 .social-detail-status {
   display: flex;
   flex-wrap: wrap;
@@ -97,7 +121,6 @@
   align-items: start;
   gap: var(--space-4);
   min-inline-size: 0;
-  max-inline-size: 52rem;
 }
 
 /* Section inside an account detail: a title above content, separated by spacing and a hairline. */

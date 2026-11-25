@@ -1,4 +1,10 @@
-import { Window } from "happy-dom";
+import {
+  type HTMLButtonElement,
+  type HTMLElement,
+  type HTMLInputElement,
+  type HTMLTextAreaElement,
+  Window,
+} from "happy-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import type { BrowserPage } from "./social-browser";
 import {
@@ -26,6 +32,7 @@ function fixture(
     duplicateInput?: boolean;
     redirect?: string;
     english?: boolean;
+    extended?: boolean;
   } = {},
 ) {
   const window = new Window({ url: "https://www.instagram.com/" });
@@ -34,7 +41,13 @@ function fixture(
     configurable: true,
     value: () => [{ width: 1, height: 1 }],
   });
-  let stored = { bio: "Old bio", photo: oldPhoto };
+  const stored = {
+    bio: "Old bio",
+    photo: oldPhoto,
+    name: "Old name",
+    username: "old_name",
+    website: "",
+  };
   const labels =
     options.english === false
       ? {
@@ -50,14 +63,27 @@ function fixture(
           cancel: "Cancel",
         };
   const render = () => {
-    window.document.body.innerHTML = `<main><button title="${labels.title}"><img></button><textarea id="pepBio" aria-label="Bio"></textarea><input aria-label="Website" disabled value="https://unchanged.example"><button role="switch" aria-checked="true">Show Threads badge</button><div role="button" aria-disabled="true"><span>${labels.submit}</span></div></main>`;
+    const extended = options.extended
+      ? '<input aria-label="Name"><input aria-label="Username"><input type="url" aria-label="Website">'
+      : '<input aria-label="Website" disabled value="https://unchanged.example">';
+    window.document.body.innerHTML = `<main><button title="${labels.title}"><img></button><textarea id="pepBio" aria-label="Bio"></textarea>${extended}<button role="switch" aria-checked="true">Show Threads badge</button><div role="button" aria-disabled="true"><span>${labels.submit}</span></div></main>`;
     window.document.querySelector("img")!.setAttribute("src", stored.photo);
     window.document.querySelector<HTMLTextAreaElement>("textarea")!.value = stored.bio;
+    const fields = { Name: "name", Username: "username", Website: "website" } as const;
+    if (options.extended)
+      for (const [label, field] of Object.entries(fields))
+        window.document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!.value =
+          stored[field];
     window.document.querySelector('[role="button"]')!.addEventListener("click", () => {
       if (options.persistBio !== false)
         stored.bio = window.document.querySelector<HTMLTextAreaElement>("textarea")!.value;
       if (!options.keepSubmitEnabled)
         window.document.querySelector('[role="button"]')!.setAttribute("aria-disabled", "true");
+      if (options.extended)
+        for (const [label, field] of Object.entries(fields))
+          stored[field] = window.document.querySelector<HTMLInputElement>(
+            `input[aria-label="${label}"]`,
+          )!.value;
     });
     window.document.querySelector("button[title]")!.addEventListener("click", () => {
       window.document.body.insertAdjacentHTML(
@@ -108,7 +134,7 @@ function fixture(
   return { window, page, authorize, identity, actions };
 }
 
-it("bounds desktop bio and owner image IDs without accepting mobile-only fields or secrets", () => {
+it("bounds profile fields and owner image IDs without accepting secrets", () => {
   expect(parseInstagramProfilePatch({ bio: "", ...imagePatch })).toEqual({
     bio: "",
     ...imagePatch,
@@ -120,13 +146,27 @@ it("bounds desktop bio and owner image IDs without accepting mobile-only fields 
     {},
     { bio: "a".repeat(151) },
     { bio: "\0" },
-    { name: "Bycoda" },
-    { website: "https://example.com" },
+    { name: "a".repeat(65) },
+    { username: "user/name" },
+    { website: "https://user:secret@example.com" },
     { bannerUploadId: imagePatch.avatarUploadId },
     { password: "secret" },
     { avatarUploadId: "C:/secret.png" },
   ])
     expect(() => parseInstagramProfilePatch(raw)).toThrow();
+});
+it("writes verified desktop fields once and refuses a mixed patch if a field needs a handoff", async () => {
+  const patch = { name: "Bycoda", username: "bycoda.app", website: "https://example.com" };
+  const extended = fixture({ extended: true });
+  await expect(extended.actions.update(patch, {})).resolves.toMatchObject(patch);
+  expect(extended.page.click).toHaveBeenCalledTimes(1);
+  const limited = fixture();
+  await expect(
+    limited.actions.update({ ...patch, bio: "Must not apply" }, {}),
+  ).rejects.toMatchObject({
+    code: "unsupported",
+  });
+  expect(limited.page.fill).not.toHaveBeenCalled();
 });
 it("reads only observed public fields without changing account preferences", async () => {
   const f = fixture();
@@ -293,12 +333,12 @@ it("rechecks sync scope after asynchronous authorization immediately before uplo
   expect(f.page.setFiles).not.toHaveBeenCalled();
 });
 it("requires the exact editor origin and path", async () => {
-  for (const redirect of [
-    "https://www.instagram.com/accounts/login/",
-    "https://evil.invalid/accounts/edit/",
+  for (const [redirect, code] of [
+    ["https://www.instagram.com/accounts/login/", "needs_human"],
+    ["https://evil.invalid/accounts/edit/", "unsupported"],
   ]) {
     const f = fixture({ redirect });
-    await expect(f.actions.read()).rejects.toMatchObject({ code: "unsupported" });
+    await expect(f.actions.read()).rejects.toMatchObject({ code });
     expect(f.page.click).not.toHaveBeenCalled();
   }
 });

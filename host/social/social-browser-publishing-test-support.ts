@@ -49,7 +49,7 @@ export const job = (
 });
 
 export function fixture(
-  target: BrowserRecipe,
+  target: Pick<BrowserRecipe, "loginUrl" | "identity">,
   own: SocialAccount,
   html: string,
   options: {

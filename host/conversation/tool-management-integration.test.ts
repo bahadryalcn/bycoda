@@ -22,7 +22,7 @@ const grant: McpGrant = {
 };
 
 describe("managed discovery across real tool catalogs", () => {
-  it("covers every declared operation and all 52 conversation families without inventing readiness", () => {
+  it("covers every declared operation and all 53 conversation families without inventing readiness", () => {
     const catalog = managedMcpCatalog();
     const rawCount = MCP_GROUPS.reduce((sum, group) => sum + mcpCatalog(group).length, 0);
     expect(catalog).toHaveLength(rawCount);
@@ -30,7 +30,7 @@ describe("managed discovery across real tool catalogs", () => {
     expect(catalog.filter((entry) => !entry.supported).map((entry) => entry.id)).toEqual([]);
     const conversation = catalog.filter((entry) => entry.group === "conversation");
     const families = new Set(conversation.map((entry) => entry.family));
-    expect(families.size).toBe(52);
+    expect(families.size).toBe(53);
     for (const family of ["notebook", "workspace", "remote", "social", "images"])
       expect(families.has(family)).toBe(true);
     expect(families.has("desktop")).toBe(true);

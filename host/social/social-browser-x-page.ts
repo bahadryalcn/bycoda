@@ -8,6 +8,7 @@ import type { BrowserLauncher, BrowserPage, BrowserSession } from "./social-brow
 export const EDITOR = '[data-testid="tweetTextarea_0"]';
 export const FILE_INPUT = 'input[data-testid="fileInput"]';
 export const LOGIN_PATH = /^\/(login|logout|i\/flow\/login|i\/flow\/signup)/;
+export const X_POST_PATH = /^\/(?:i\/web|[A-Za-z0-9_]{1,15})\/status\/(\d{1,25})\/?$/;
 
 /** Dependencies shared by the X browser operations. The session class supplies them. */
 export type XBrowserDeps = {
@@ -67,18 +68,28 @@ export function xUserId(cookies: { name: string; value: string }[]): string | un
   return /^u=(\d{1,25})$/.exec(decoded)?.[1];
 }
 
-/** Parses X web CreateTweet/CreateNoteTweet responses. Only an explicit error body proves no post was made. */
-export function parseCreateTweet(raw: string, now = Date.now()): SocialSendResult {
+/** Verifies the created post ID and the parent of an expected reply. Only an explicit error body proves no post was made. */
+export function parseCreateTweet(
+  raw: string,
+  now = Date.now(),
+  expectedReplyTo?: string,
+): SocialSendResult {
   let value: any;
   try {
     value = JSON.parse(raw);
   } catch {
     throw new SocialPlatformError("unknown");
   }
-  const id = (value?.data?.create_tweet ?? value?.data?.notetweet_create)?.tweet_results?.result
-    ?.rest_id;
-  if (typeof id === "string" && /^\d{1,25}$/.test(id))
+  const tweet = (value?.data?.create_tweet ?? value?.data?.notetweet_create)?.tweet_results?.result;
+  const id = tweet?.rest_id;
+  if (typeof id === "string" && /^\d{1,25}$/.test(id)) {
+    if (
+      expectedReplyTo &&
+      (id === expectedReplyTo || tweet.legacy?.in_reply_to_status_id_str !== expectedReplyTo)
+    )
+      throw new SocialPlatformError("unknown");
     return { platformId: id, url: `https://x.com/i/status/${id}` };
+  }
   const codes: number[] = Array.isArray(value?.errors)
     ? value.errors.map((error: { code?: unknown }) => Number(error?.code))
     : [];

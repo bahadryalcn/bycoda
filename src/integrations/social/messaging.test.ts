@@ -36,6 +36,146 @@ const job = (): SocialJob => ({
 });
 
 describe("Messaging adapters", () => {
+  const discussionRoot = {
+    message_id: 17,
+    chat: { id: -100222, type: "supergroup" },
+    is_automatic_forward: true,
+    forward_origin: { type: "channel", chat: { id: -100111, type: "channel" }, message_id: 9 },
+  };
+
+  const discussionReply = (): SocialJob => ({
+    ...job(),
+    payload: {
+      text: "Reviewed channel comment",
+      media: [],
+      threadId: "tg-discussion:-100111:9:-100222:17",
+      recipientId: "-100222",
+    },
+  });
+
+  function discussionApi({ linked = -100111, reply = discussionRoot } = {}) {
+    return vi.fn(async (url: unknown, _options?: RequestInit) => {
+      const method = String(url).split("/").at(-1);
+      const result =
+        method === "getMe"
+          ? { id: 123456, is_bot: true }
+          : method === "getChat"
+            ? { id: -100222, type: "supergroup", linked_chat_id: linked }
+            : {
+                message_id: 18,
+                chat: discussionRoot.chat,
+                ...(method === "sendPhoto"
+                  ? {
+                      caption: "Reviewed channel comment",
+                      photo: [{ file_id: "persisted-photo" }],
+                    }
+                  : { text: "Reviewed channel comment" }),
+                reply_to_message: reply,
+              };
+      return Response.json({ ok: true, result });
+    });
+  }
+
+  it("sends exactly one reply to the verified Telegram discussion message", async () => {
+    const fetcher = discussionApi();
+    const guard = vi.fn(async () => undefined);
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).telegram.send(
+        account("telegram"),
+        discussionReply(),
+        "123:synthetic",
+        async () => new Uint8Array(),
+        undefined,
+        guard,
+      ),
+    ).resolves.toEqual({ platformId: "-100222:18" });
+    expect(fetcher.mock.calls.map(([url]) => String(url).split("/").at(-1))).toEqual([
+      "getMe",
+      "getChat",
+      "sendMessage",
+    ]);
+    expect(JSON.parse(fetcher.mock.calls[2]![1]!.body as string)).toEqual({
+      chat_id: "-100222",
+      text: "Reviewed channel comment",
+      reply_parameters: { message_id: 17, allow_sending_without_reply: false },
+    });
+    expect(guard.mock.invocationCallOrder[0]).toBeLessThan(fetcher.mock.invocationCallOrder[2]!);
+  });
+
+  it("rejects a discussion relinked to another channel before sending", async () => {
+    const fetcher = discussionApi({ linked: -100999 });
+    const guard = vi.fn(async () => undefined);
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).telegram.send(
+        account("telegram"),
+        discussionReply(),
+        "123:synthetic",
+        async () => new Uint8Array(),
+        undefined,
+        guard,
+      ),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(guard).not.toHaveBeenCalled();
+  });
+
+  it("keeps a photo reply attached to the exact Telegram discussion message", async () => {
+    const fetcher = discussionApi();
+    const reply = discussionReply();
+    reply.payload.media = [{ kind: "image", uploadId: "reviewed-upload" }];
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).telegram.send(
+        account("telegram"),
+        reply,
+        "123:synthetic",
+        async () => png,
+      ),
+    ).resolves.toEqual({ platformId: "-100222:18" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    const [url, options] = fetcher.mock.calls[2]!;
+    expect(url).toBe("https://api.telegram.org/bot123:synthetic/sendPhoto");
+    const form = options?.body as FormData;
+    expect(form.get("chat_id")).toBe("-100222");
+    expect(form.get("caption")).toBe("Reviewed channel comment");
+    expect(JSON.parse(String(form.get("reply_parameters")))).toEqual({
+      message_id: 17,
+      allow_sending_without_reply: false,
+    });
+  });
+
+  it("keeps an acknowledgement attached to a different channel post uncertain", async () => {
+    const fetcher = discussionApi({
+      reply: {
+        ...discussionRoot,
+        forward_origin: { ...discussionRoot.forward_origin, message_id: 10 },
+      },
+    });
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).telegram.send(
+        account("telegram"),
+        discussionReply(),
+        "123:synthetic",
+        async () => new Uint8Array(),
+      ),
+    ).rejects.toMatchObject({ code: "unknown" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("refuses ad-hoc messages and other recipients for a discussion target before any request", async () => {
+    const fetcher = discussionApi();
+    const adapter = createSocialAdapters(new SocialHttp(fetcher)).telegram;
+    const reply = discussionReply();
+    for (const request of [
+      { ...reply, kind: "message" as const },
+      { ...reply, payload: { ...reply.payload, recipientId: "-100333" } },
+    ]) {
+      await expect(
+        adapter.send(account("telegram"), request, "123:synthetic", async () => new Uint8Array()),
+      ).rejects.toMatchObject({ code: "denied" });
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it.each(["telegram", "whatsapp"] as const)(
     "%s rechecks current send permission before transmitting a valid reply",
     async (platform) => {
@@ -93,7 +233,7 @@ describe("Messaging adapters", () => {
   });
   it("Telegram replies to the original group chat without parse-mode injection", async () => {
     const fetcher = vi.fn(async (_url: unknown, _options?: RequestInit) =>
-      Response.json({ ok: true, result: { message_id: 3, chat: { id: -123456 } } }),
+      Response.json({ ok: true, result: { message_id: 3, chat: { id: -123456 }, text: "Reply" } }),
     );
     const adapter = createSocialAdapters(new SocialHttp(fetcher)).telegram;
     expect(
@@ -120,6 +260,23 @@ describe("Messaging adapters", () => {
     ).rejects.toMatchObject({ code: "unsupported" });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it.each([undefined, "Different message"])(
+    "keeps a Telegram text acknowledgement uncertain when its content is %s",
+    async (text) => {
+      const fetcher = vi.fn(async () =>
+        Response.json({ ok: true, result: { message_id: 3, chat: { id: -123456 }, text } }),
+      );
+      await expect(
+        createSocialAdapters(new SocialHttp(fetcher)).telegram.send(
+          account("telegram"),
+          job(),
+          "123:synthetic",
+          async () => new Uint8Array(),
+        ),
+      ).rejects.toMatchObject({ code: "unknown" });
+      expect(fetcher).toHaveBeenCalledOnce();
+    },
+  );
   it("Telegram sanitizes token-bearing fetch errors and honors JSON retry_after", async () => {
     const fetcher = vi.fn(async () => {
       throw new Error("https://api.telegram.org/bot123:secret/getMe");
@@ -197,6 +354,7 @@ describe("Messaging API attachments", () => {
           result: {
             message_id: 8,
             chat: { id: -123456 },
+            caption: "<b>reviewed, literal caption</b>\nhttps://bycoda.com",
             ...(kind === "image"
               ? { photo: [{ file_id: "persisted-photo" }] }
               : { video: { file_id: "persisted-video" } }),
@@ -234,6 +392,29 @@ describe("Messaging API attachments", () => {
       expect(guard.mock.invocationCallOrder[0]).toBeLessThan(fetcher.mock.invocationCallOrder[0]!);
     },
   );
+
+  it("holds a Telegram attachment with the correct chat and wrong caption", async () => {
+    const fetcher = vi.fn(async () =>
+      Response.json({
+        ok: true,
+        result: {
+          message_id: 4,
+          chat: { id: -123456 },
+          photo: [{ file_id: "photo" }],
+          caption: "Other",
+        },
+      }),
+    );
+    await expect(
+      createSocialAdapters(new SocialHttp(fetcher)).telegram.send(
+        account("telegram"),
+        mediaJob(),
+        "123:synthetic",
+        async () => png,
+      ),
+    ).rejects.toMatchObject({ code: "unknown" });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
 
   it("permits an attachment-only Telegram message and binds its acknowledgement to the requested chat", async () => {
     const fetcher = vi.fn(async (_url: unknown, _options?: RequestInit) =>

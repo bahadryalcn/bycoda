@@ -76,6 +76,7 @@ export async function createLifecycleRuntime(
     | "attachmentOwnership"
     | "mobileLan"
     | "social"
+    | "liveStream"
     | "controls"
     | "websocket"
     | "nativeServiceUploads"
@@ -309,6 +310,7 @@ export async function createLifecycleRuntime(
       drain("conversationDesktop", () => dependencies.conversationDesktop.close());
       drain("hostNotes", async () => await dependencies.hostNotes.close());
       drain("social", async () => await dependencies.social.stop());
+      drain("live streaming", () => dependencies.liveStream.close());
       drain("xBrowser", async () => await dependencies.xBrowser.stop(dependencies.social));
       // Attach rejection handlers immediately while startup is still settling.
       const drained = Promise.allSettled(pending);

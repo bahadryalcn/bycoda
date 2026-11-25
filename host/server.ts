@@ -42,6 +42,7 @@ import { HostPrivateControl, HostPrivateControlHandler } from "./server/support"
 import { createTasksRuntime } from "./server/tasks";
 import { createAccountPlatformRuntime } from "./server/account-platform";
 import { createDecisionModelsRuntime } from "./server/decision-models";
+import { createLiveStreamRuntime } from "./server/live-stream";
 import { createVoiceRuntime } from "./server/voice";
 import { createPushRuntime } from "./server/push";
 import { createWebsocketRuntime } from "./server/websocket";
@@ -270,6 +271,7 @@ export async function createHostServer(
       pushNotifications: () => pushRuntime.pushNotifications,
       approvals: () => pushRuntime.approvals,
       decisionModels: () => decisionRuntime.decisionModels,
+      liveStream: () => liveStream,
       accountPlatform: () => accountPlatformRuntime,
       catalogs: () => projectsRuntime.catalogs,
       handoffHistory: () => devicesRuntime.handoffHistory,
@@ -351,12 +353,13 @@ export async function createHostServer(
   const voiceRuntime = createVoiceRuntime(dependencies);
   // Before Social so the decision service can be handed to it (see phase3-p35b-done.md).
   const decisionRuntime = createDecisionModelsRuntime(dependencies);
+  const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
+  const liveStream = createLiveStreamRuntime(dependencies, () => socialRuntime.current.social.live);
   const developmentRuntime = createDevelopmentRuntime(dependencies);
   const sessionsRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSessionsRuntime>>>();
   await bootPhase("runtime-sessions", () =>
     createSessionsRuntime(dependencies, sessionsRuntime.publish),
   );
-  const socialRuntime = createRuntimeSlot<Awaited<ReturnType<typeof createSocialRuntime>>>();
   await bootPhase("runtime-social", () => createSocialRuntime(dependencies, socialRuntime.publish));
   const sessionQueueRuntime =
     createRuntimeSlot<Awaited<ReturnType<typeof createSessionQueueRuntime>>>();

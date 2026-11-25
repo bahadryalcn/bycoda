@@ -91,6 +91,7 @@ test("portable artifact transfers exact embedded identity across normalized inde
     JSON.parse(readFileSync(path.join(destination, "build/build-info.json"), "utf8")),
     f.identity,
   );
+  assert.equal(readFileSync(path.join(destination, "build/host/host.mjs"), "utf8"), "// host\n");
   await consumeCommonArtifact(f.candidate, destination, f.artifact);
   writeFileSync(path.join(destination, "dist/index.html"), "tampered");
   await assert.rejects(

@@ -64,6 +64,7 @@ export function EmailAccountDialog({
   onSwitchToAccount,
 }: EmailAccountDialogProps) {
   const formId = useId();
+  const reasonId = useId();
   const [draft, setDraft] = useState<EmailDraft>(EMPTY);
   const { error, is, write } = useAccountWrite(
     t("The email account could not be saved. Try again."),
@@ -88,7 +89,7 @@ export function EmailAccountDialog({
       }}
       size="md"
       footer={
-        <ModalActions reason={gateReason(gate)}>
+        <ModalActions reason={gateReason(gate)} reasonId={reasonId}>
           <Button variant="ghost" disabled={is("email")} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -98,7 +99,7 @@ export function EmailAccountDialog({
             variant="primary"
             loading={is("email")}
             disabled={gate.disabled}
-            disabledReason={gateReason(gate)}
+            aria-describedby={gate.disabled ? reasonId : undefined}
           >
             {t("Save email account")}
           </Button>
@@ -177,7 +178,11 @@ export function EmailAccountDialog({
           description={t("Stored on this computer. It is not shown again.")}
           onChange={(event) => update({ secret: event.currentTarget.value })}
         />
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? (
+          <InlineError details={error}>
+            {t("The email account could not be saved. Try again.")}
+          </InlineError>
+        ) : null}
       </form>
     </Modal>
   );

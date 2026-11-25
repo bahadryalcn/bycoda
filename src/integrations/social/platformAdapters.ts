@@ -39,6 +39,7 @@ export function createSocialAdapters(
         (args[0].accountType === "channel" ? telegramChannel : telegramBot).send(...args),
       poll: (...args) =>
         (args[0].accountType === "channel" ? telegramChannel : telegramBot).poll(...args),
+      deletePost: telegramChannel.deletePost,
     },
     reddit: createRedditAdapter(http),
   };

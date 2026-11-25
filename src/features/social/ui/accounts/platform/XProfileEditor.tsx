@@ -13,6 +13,7 @@ import type { XProfilePatch, XProfileState } from "../../../model/socialBrowser"
 import type { SocialClient } from "../../../model/socialClient";
 import { useAccountWrite } from "../useAccountWrite";
 import "../accounts.css";
+import "./x.css";
 
 export type XProfileEditorProps = {
   client: SocialClient;
@@ -100,7 +101,7 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
       </Button>
       {values ? (
         <form
-          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
+          className="social-x-group"
           onSubmit={(event) => {
             event.preventDefault();
             if (changed && !saveReason) save();
@@ -117,8 +118,10 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
               setValues((current) => current && { ...current, bio: next });
             }}
           />
-          {field("location", t("Location"), 30)}
-          {field("website", t("Website"), 100)}
+          <div className="social-x-grid">
+            {field("location", t("Location"), 30)}
+            {field("website", t("Website"), 100)}
+          </div>
           <Button
             type="submit"
             variant="primary"
@@ -131,8 +134,8 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
           </Button>
         </form>
       ) : null}
-      <SectionLabel variant="inline" size="secondary">
-        {t("Follow")}
+      <SectionLabel variant="inline" size="secondary" as="h4">
+        {t("Follow an account")}
       </SectionLabel>
       <div className="social-field-row">
         <TextField
@@ -161,7 +164,9 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
         </InlineMessage>
       ) : null}
       {error ? (
-        <InlineError retry={{ onRetry: read, label: t("Read profile") }}>{error}</InlineError>
+        <InlineError details={error} retry={{ onRetry: read, label: t("Read profile") }}>
+          {t("The profile could not be verified. Read the profile again before saving.")}
+        </InlineError>
       ) : null}
     </section>
   );

@@ -222,11 +222,17 @@ export function ConnectAccountDialog({
           ))}
         </FieldGroup>
         {canCreateAccount(platform, method) ? (
-          <Button variant="link" size="sm" onClick={() => setKind("signup")}>
-            {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
-          </Button>
+          <div className="social-dialog-links">
+            <Button variant="link" size="sm" onClick={() => setKind("signup")}>
+              {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+            </Button>
+          </div>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? (
+          <InlineError details={error}>
+            {t("The account could not be added. Try again.")}
+          </InlineError>
+        ) : null}
       </form>
     </Modal>
   );

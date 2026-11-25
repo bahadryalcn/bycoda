@@ -25,6 +25,10 @@ import { ServerAgentContext } from "../../../features/connections/public/serverA
 import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
 import { workspaceActiveTool } from "./workspaceActiveTool";
 import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
+import {
+  setLiveStreamPageOpen,
+  useLiveStreamPageOpen,
+} from "../../../features/live-stream/public/liveStreamPage";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import type { ConversationTools } from "../../../features/host-tools/SessionHostTools";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -41,6 +45,7 @@ import {
   TasksView,
   ServersView,
   CrewsView,
+  LiveStreamView,
 } from "../surfaces/lazySurfaces";
 
 const SessionHostTools = lazySurface(
@@ -193,6 +198,7 @@ function WorkspaceToolPanelsComponent({
   onLaunchAutomationAssistant,
 }: WorkspaceToolPanelsProps) {
   const crewsOpen = useCrewsPageOpen();
+  const liveStreamOpen = useLiveStreamPageOpen();
   const [terminalId] = useState(() => `tools-terminal-${crypto.randomUUID()}`);
   const [goalReveal, setGoalReveal] = useState<{
     machineId: string;
@@ -255,6 +261,7 @@ function WorkspaceToolPanelsComponent({
   );
   const activeTool = workspaceActiveTool({
     crewsOpen,
+    liveStreamOpen,
     auxiliaryTool,
     automationsViewOpen,
     serversViewOpen,
@@ -290,6 +297,7 @@ function WorkspaceToolPanelsComponent({
     );
     // Leaving Servers above closed Crews; open it last.
     if (tool === "crews") setCrewsPageOpen(true);
+    if (tool === "live-stream") setLiveStreamPageOpen(true);
     setSocialBoardShown(tool === "social");
     setTaskBoardShown(tool === "tasks");
   });
@@ -578,7 +586,17 @@ function WorkspaceToolPanelsComponent({
           />
         </NavigationBoundary>
       </ToolPanel>
-      <ToolPanel active={serversViewOpen && !crewsOpen} keepEffects>
+      <ToolPanel active={liveStreamOpen}>
+        <NavigationBoundary name="Live streaming" onBack={onLeaveServers}>
+          <LiveStreamView
+            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
+            compactRail={compactRailActive}
+            onClose={onLeaveServers}
+            onToggleSidebar={onToggleSidebar}
+          />
+        </NavigationBoundary>
+      </ToolPanel>
+      <ToolPanel active={serversViewOpen && !crewsOpen && !liveStreamOpen} keepEffects>
         <NavigationBoundary name="Servers" onBack={onLeaveServers}>
           <ServerAgentContext.Provider value={serverAgent ?? null}>
             <ServersView

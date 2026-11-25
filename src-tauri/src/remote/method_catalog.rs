@@ -70,6 +70,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.oauth.begin"
             | "social.oauth.status"
             | "social.oauth.select"
+            | "social.x.liveKey.store"
             | "social.token.connect"
             | "social.token.inspect"
             | "social.tiktok.creator"
@@ -79,6 +80,17 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.profile.read"
             | "social.browser.profile.update"
             | "social.browser.profile.follow"
+            // Instagram owner operations use exact names.
+            | "social.browser.instagram.recipient"
+            | "social.browser.instagram.live"
+            | "social.browser.instagram.post"
+            | "social.browser.instagram.followers"
+            | "social.browser.instagram.follow"
+            | "social.browser.instagram.mentions"
+            | "social.browser.instagram.comment-like"
+            | "social.browser.instagram.earnings"
+            | "social.browser.instagram.highlights"
+            | "social.browser.instagram.highlight-change"
             | "social.browser.workflow.begin"
             | "social.browser.workflow.status"
             | "social.browser.workflow.cancel"
@@ -88,7 +100,12 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "social.browser.registration.reconcile"
             | "social.browser.view.frame"
             | "social.browser.view.input"
+            | "social.browser.linkedin.analytics.profile"
+            | "social.browser.linkedin.manage"
             | "social.monitoring.status"
+            // Facebook owner requests still pass through Host admission.
+            | "social.browser.facebook.monetization"
+            | "social.facebook.live.encoder"
             | "social.media.upload"
             | "social.media.claim"
             | "social.media.transfer"
@@ -330,6 +347,19 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "stewards.runNow"
             | "stewards.decline"
             | "decisionModels.catalog.get"
+            | "liveStream.status"
+            | "liveStream.start"
+            | "liveStream.stop"
+            | "liveStream.demo"
+            | "liveStream.report"
+            | "liveStream.obsSetup"
+            | "liveStream.obsStream"
+            | "liveStream.obsCredentials"
+            | "liveStream.eulerKey"
+            | "liveStream.live.accounts"
+            | "liveStream.live.status"
+            | "liveStream.live.start"
+            | "liveStream.live.stop"
             | "decisionModels.decide"
             | "decisionModels.discovery.results"
             | "decisionModels.discovery.scan"
@@ -396,9 +426,47 @@ pub(super) fn decision_model_key_allowed(
         || local_host
 }
 
+pub(super) fn live_stream_method_allowed(method: &str, local_host: bool) -> bool {
+    !matches!(
+        method,
+        "liveStream.eulerKey"
+            | "liveStream.obsCredentials"
+            | "liveStream.live.accounts"
+            | "liveStream.live.status"
+            | "liveStream.live.start"
+            | "liveStream.live.stop"
+    ) || local_host
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decision_model_key_allowed, supported_remote_method};
+    use super::{decision_model_key_allowed, live_stream_method_allowed, supported_remote_method};
+
+    #[test]
+    fn live_stream_admits_exact_names_and_keeps_sensitive_operations_local() {
+        for method in [
+            "liveStream.eulerKey",
+            "liveStream.obsCredentials",
+            "liveStream.live.accounts",
+            "liveStream.live.status",
+            "liveStream.live.start",
+            "liveStream.live.stop",
+        ] {
+            assert!(supported_remote_method(method));
+            assert!(!live_stream_method_allowed(method, false));
+            assert!(live_stream_method_allowed(method, true));
+        }
+        for method in [
+            "liveStream.status",
+            "liveStream.obsStream",
+            "liveStream.report",
+        ] {
+            assert!(supported_remote_method(method));
+            assert!(live_stream_method_allowed(method, false));
+        }
+        assert!(!supported_remote_method("liveStream.anything"));
+        assert!(!supported_remote_method("liveStream.live.anything"));
+    }
 
     #[test]
     fn plan_share_read_is_allowed_by_the_native_bridge() {
@@ -446,5 +514,29 @@ mod tests {
         }
         assert!(!supported_remote_method("social.media.releaseAll"));
         assert!(!supported_remote_method("social.media.claim.anything"));
+    }
+
+    #[test]
+    fn instagram_management_only_forwards_named_operations() {
+        for method in [
+            "social.browser.instagram.recipient",
+            "social.browser.instagram.live",
+            "social.browser.instagram.post",
+            "social.browser.instagram.followers",
+            "social.browser.instagram.follow",
+            "social.browser.instagram.mentions",
+            "social.browser.instagram.comment-like",
+            "social.browser.instagram.earnings",
+            "social.browser.instagram.highlights",
+            "social.browser.instagram.highlight-change",
+        ] {
+            assert!(supported_remote_method(method));
+        }
+        assert!(!supported_remote_method(
+            "social.browser.instagram.stream-key"
+        ));
+        assert!(!supported_remote_method(
+            "social.browser.instagram.recipient.anything"
+        ));
     }
 }

@@ -14,12 +14,12 @@ afterEach(async () => {
   for (const directory of cleanup.splice(0)) await rm(directory, { recursive: true, force: true });
 });
 const owner = { kind: "owner", actorId: "owner", provider: "owner" } as const;
-async function fixture() {
+async function fixture(platform: BrowserRecipe["platform"] = "facebook") {
   const directory = await mkdtemp(join(tmpdir(), "social-platform-browser-"));
   cleanup.push(directory);
   const account: SocialAccount = {
     id: "00000000-0000-4000-8000-000000000001",
-    platform: "facebook",
+    platform,
     platformId: "web:facebook:123",
     name: "Fixture",
     accountType: "member",
@@ -55,7 +55,7 @@ async function fixture() {
     closed: new Promise<void>(() => {}),
   }));
   const recipe: BrowserRecipe = {
-    platform: "facebook",
+    platform,
     loginUrl: "https://www.facebook.com/",
     operations: ["publish", "poll"],
     identity: vi.fn(async () => ({
@@ -234,6 +234,28 @@ describe("platform browser sessions", () => {
     await expect(f.manager.adapter().poll(f.account, "", [])).rejects.toMatchObject({
       code: "denied",
     });
+  });
+  it("reports Reddit's network block when checking the saved session or connecting", async () => {
+    const f = await fixture("reddit");
+    vi.mocked(f.page.evaluate).mockResolvedValue(true);
+    const error = "Reddit blocked browser access for network security. Try again later.";
+    await expect(f.manager.check(f.service, owner, f.account)).resolves.toMatchObject({
+      status: "failed",
+      error,
+    });
+
+    f.account.connected = false;
+    f.account.platformId = "";
+    expect((await f.manager.begin(f.service, owner, f.account)).status).toBe("waiting");
+    await new Promise<void>((done) => setTimeout(done, 1));
+    f.closeLogin();
+    await until(() => f.manager.status(f.account.id).status === "failed");
+    expect(f.manager.status(f.account.id)).toEqual({ status: "failed", error });
+    expect(f.page.evaluate).toHaveBeenCalledWith(
+      expect.stringContaining("blocked by network security"),
+    );
+    expect(f.recipe.identity).not.toHaveBeenCalled();
+    expect(f.connectAccount).not.toHaveBeenCalled();
   });
   it("only connects after closing owner login and verifying the persisted session", async () => {
     const f = await fixture();

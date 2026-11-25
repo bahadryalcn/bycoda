@@ -4,18 +4,33 @@ import type { DecisionService } from "../../decision-models/decision-types";
 import type { SecretValueStore } from "../../secrets/secret-store";
 import type { SocialAudienceStore } from "../store/social-audience-store";
 import type { SocialPrincipal } from "../social";
+import type { SocialCredentialStore } from "../social-credentials";
 import type { SocialServiceApi } from "./social-service-api";
+import type { YouTubeRuntime } from "../youtube/youtube-runtime";
 
 export type SocialActionContext = {
+  /** Executor of provider operations bound to this Host. */
+  environmentId?: string;
   service: SocialServiceApi;
   store: SocialAudienceStore;
   now: () => number;
   principal: SocialPrincipal;
   operationId: string;
+  /** Executor identity for X API actions that contact the provider directly. */
+  executorId?: string;
   /** Decision-model service from the Host composition; undefined when no model is configured. */
   decisions?: DecisionService;
   /** Host vault for email credentials; undefined makes every email action refuse before sending. */
   emailSecrets?: SecretValueStore;
+  /** YouTube management uses the verified account's executor and its credential vault. */
+  youtube?: YouTubeRuntime;
+  youtubeRequestId?: string;
+  // TikTok account operations.
+  tiktok?: import("../tiktok/tiktok-actions").TikTokRuntime;
+  /** Reads the Instagram professional-dashboard earnings in the account's browser session; read only. */
+  instagramEarnings?: (accountId: string) => Promise<unknown>;
+  /** Facebook Live receipts store encoder credentials on the account's executor. */
+  facebookLive?: { credentials: SocialCredentialStore; environmentId: string };
 };
 
 export type SocialActionSpec = {
@@ -101,6 +116,8 @@ export const SOCIAL_LEGACY_ACTIONS: readonly string[] = [
   "thread.page",
   "thread.read",
   "workspace.snapshot",
+  // X account billing.
+  "x.api.setProduct",
 ];
 
 /** Builds the action map. Throws on a duplicate name or a name the built-in switch already owns. */

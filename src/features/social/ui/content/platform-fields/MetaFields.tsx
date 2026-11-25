@@ -1,13 +1,23 @@
+import { openExternal } from "../../../../../platform/tauri/openExternal";
+import { Button } from "../../../../../shared/ui/Button";
+import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NativeSelect } from "../../../../../shared/ui/Select";
 import { SOCIAL_PLATFORM_NAMES } from "../../../model/social";
+import type { FacebookDraft } from "../contentDraft";
 import type { PlatformFieldProps } from "./PlatformFields";
+import { InstagramFields } from "./InstagramFields";
 
-/** Instagram and Facebook: feed or Reel for Facebook; carousel rules come from the attachment. */
-export function MetaFields({ account, value, disabled, onChange }: PlatformFieldProps) {
+const FACEBOOK_STORY_COMPOSER = "https://www.facebook.com/stories/create";
+
+/** Meta post destinations; carousel rules come from the attachments. */
+export function MetaFields(props: PlatformFieldProps) {
+  const { account, value, disabled, onChange } = props;
   const name = SOCIAL_PLATFORM_NAMES[account.platform];
+  if (account.platform === "instagram" && account.connection !== "browser")
+    return <InstagramFields {...props} />;
   if (account.platform !== "facebook") return null;
   const target = value.facebook?.target ?? "feed";
   return (
@@ -23,15 +33,37 @@ export function MetaFields({ account, value, disabled, onChange }: PlatformField
           onChange({
             ...value,
             facebook: {
-              target: event.target.value === "reel" ? "reel" : "feed",
+              target: event.target.value as FacebookDraft["target"],
               frameRate: value.facebook?.frameRate,
+              ...(value.facebook?.scheduledPublishAt
+                ? { scheduledPublishAt: value.facebook.scheduledPublishAt }
+                : {}),
             },
           })
         }
       >
         <option value="feed">{t("Page post")}</option>
         <option value="reel">{t("Reel")}</option>
+        {account.connection !== "browser" ? <option value="video">{t("Video")}</option> : null}
+        {account.connection !== "browser" ? <option value="story">{t("Story")}</option> : null}
       </NativeSelect>
+      {account.connection === "browser" ? (
+        // Stories need the Page API connection; a browser-connected Page hands off to the composer.
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              openExternal(FACEBOOK_STORY_COMPOSER).catch(() => undefined);
+            }}
+          >
+            {t("Create a Story on Facebook")}
+          </Button>
+          <InfoPopover className="shrink-0">
+            {t("In Facebook, switch to the Page first so the Story posts as the Page.")}
+          </InfoPopover>
+        </div>
+      ) : null}
     </FieldGroup>
   );
 }

@@ -1,9 +1,9 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
 import { Select } from "../../../../shared/ui/Select";
-
+import { Button } from "../../../../shared/ui/Button";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { TextField } from "../../../../shared/ui/TextField";
 import { PlatformIcon } from "../common/PlatformIcon";
 import {
@@ -51,22 +51,23 @@ export function CharacterLimits({ client, policies, onChanged }: CharacterLimits
   // Unsaved edits live here per scope, so switching scope or a saved change elsewhere keeps them.
   const [unsaved, setUnsaved] = useState<Partial<Record<PolicyScope, Drafts>>>({});
   return (
-    // The Disclosure around this card already names it, so there is no second title.
-    <div className="social-card">
-      <Select
-        hideLabel
-        label={t("Apply to")}
-        value={scope}
-        options={[
-          { value: "global", label: t("All accounts") },
-          ...SOCIAL_PLATFORMS.map((platform) => ({
-            value: platform,
-            label: SOCIAL_PLATFORM_NAMES[platform],
-            icon: <PlatformIcon platform={platform} />,
-          })),
-        ]}
-        onValueChange={(value) => setScope(value as PolicyScope)}
-      />
+    <div className="social-stack">
+      <div className="social-card-head">
+        <Select
+          label={t("Apply to")}
+          value={scope}
+          options={[
+            { value: "global", label: t("All accounts") },
+            ...SOCIAL_PLATFORMS.map((platform) => ({
+              value: platform,
+              label: SOCIAL_PLATFORM_NAMES[platform],
+              icon: <PlatformIcon platform={platform} />,
+            })),
+          ]}
+          onValueChange={(value) => setScope(value as PolicyScope)}
+        />
+        <InfoPopover>{t("Leave a field blank to inherit its value.")}</InfoPopover>
+      </div>
       <LimitFields
         key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
         client={client}
@@ -157,7 +158,11 @@ function LimitFields({
       <Button type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
         {t("Save limits")}
       </Button>
-      {localError || error ? <InlineError>{localError || error}</InlineError> : null}
+      {localError ? (
+        <InlineError>{localError}</InlineError>
+      ) : error ? (
+        <InlineError details={error}>{t("The limits could not be saved. Try again.")}</InlineError>
+      ) : null}
     </form>
   );
 }

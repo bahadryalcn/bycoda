@@ -36,6 +36,7 @@ vi.mock("../surfaces/lazySurfaces", () => {
     },
     InboxView: ({ cwd }: { cwd: string }) =>
       createElement("div", { "data-inbox-project": cwd }, view()),
+    LiveStreamView: view,
     NotesView: view,
     SocialView: view,
     TasksView: view,

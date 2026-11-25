@@ -99,7 +99,8 @@ export function assistantRoomMutationAllowed(profile: Policy, call: RoomManageme
   if (!assistantProjectMutationAllowed(profile, call.projectId ? [call.projectId] : []))
     return false;
   if (profile.permissionLevel !== "projects") return true;
-  if (/^(notebook|preferences|providers|servers|organization)\./.test(call.action)) return false;
+  if (/^(notebook|preferences|providers|servers|organization|liveStream)\./.test(call.action))
+    return false;
   if (
     [
       "crews.save",

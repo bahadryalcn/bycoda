@@ -11,6 +11,58 @@ const direct = {
 };
 
 describe("parseTelegramUpdate", () => {
+  const forwarded = {
+    message_id: 17,
+    date: 100,
+    caption: "Channel update",
+    chat: { id: -100222, type: "supergroup", title: "Discussion" },
+    is_automatic_forward: true,
+    forward_origin: { type: "channel", chat: { id: -100111, type: "channel" }, message_id: 9 },
+    from: { id: 9, is_bot: true },
+  };
+
+  it("preserves both message IDs for a Telegram channel's automatic forward", () => {
+    expect(parseTelegramUpdate({ update_id: 10, message: forwarded })).toEqual({
+      event: {
+        eventId: "-100222:17",
+        threadId: "tg-discussion:-100111:9:-100222:17",
+        contactId: "-100222",
+        contactName: "Discussion",
+        kind: "message",
+        text: "Channel update",
+        at: 100_000,
+      },
+      privateChat: false,
+    });
+  });
+
+  it("keeps a captionless forwarded post replyable using its provider identifiers", () => {
+    const incoming = parseTelegramUpdate({
+      update_id: 12,
+      message: { ...forwarded, caption: undefined, photo: [{ file_id: "photo" }] },
+    });
+    expect(incoming?.event.threadId).toBe("tg-discussion:-100111:9:-100222:17");
+    expect(incoming?.event.text).toBe("");
+  });
+
+  it.each([
+    { forward_origin: { type: "user", message_id: 9 } },
+    { chat: { id: 42, type: "private" } },
+    { forward_origin: { ...forwarded.forward_origin, message_id: 0 } },
+  ])("does not accept an invalid automatic-forward as an ordinary group message", (change) => {
+    expect(
+      parseTelegramUpdate({
+        update_id: 10,
+        message: {
+          ...forwarded,
+          text: "Not a valid discussion root",
+          from: direct.from,
+          ...change,
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it("returns a direct text message with a chat-scoped identity", () => {
     expect(parseTelegramUpdate({ update_id: 10, message: direct })).toEqual({
       event: {

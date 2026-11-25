@@ -1,14 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SocialAccount, SocialJob } from "../../../features/social/model/social";
 import { SocialHttp, SocialPlatformError } from "../adapter";
-import {
-  createXAdapter,
-  xAudienceRequest,
-  xBookmarkPost,
-  xLikePost,
-  xPostExtrasIssue,
-  xPostId,
-} from "./x";
+import { createXAdapter, xAudienceRequest, xPostExtrasIssue, xPostId } from "./x";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -249,8 +242,80 @@ describe("X API posting extras and actions", () => {
 
   it("posts a quote with quote_tweet_id", async () => {
     const { fetcher, http } = network({ body: { data: { id: "779" } } });
-    await createXAdapter(http).send(account(), job({ x: { quotePostId: "999" } }), "token", noop);
+    const quote = job({ x: { quotePostId: "999" } });
+    await expect(
+      createXAdapter(http).send(account({ xApiProduct: "pay-per-use" }), quote, "token", noop),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(fetcher).not.toHaveBeenCalled();
+    await createXAdapter(http).send(account({ xApiProduct: "enterprise" }), quote, "token", noop);
     expect(calledBody(fetcher).quote_tweet_id).toBe("999");
+  });
+
+  it("refuses polls with media before reading or uploading an asset", async () => {
+    const { http, fetcher } = network();
+    const readMedia = vi.fn(noop);
+    await expect(
+      createXAdapter(http).send(
+        account(),
+        job({
+          x: { poll: { options: ["Yes", "No"], durationMinutes: 60 } },
+          media: [{ kind: "image", uploadId: "asset" }],
+        }),
+        "token",
+        readMedia,
+      ),
+    ).rejects.toMatchObject({ code: "rejected" });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(readMedia).not.toHaveBeenCalled();
+  });
+
+  it("submits each Community thread post after its own gate and durable fence", async () => {
+    const { fetcher, http } = network(
+      { body: { data: { id: "101" } } },
+      { body: { data: { id: "102" } } },
+      { body: { data: { id: "103" } } },
+    );
+    const target = job({ x: { communityId: "555", thread: ["second", "third"] } });
+    const checkpoint = vi.fn();
+    const gate = vi.fn(async () => {
+      expect(checkpoint.mock.calls.at(-1)?.[0].xThread.submitting).toBe(true);
+    });
+    await expect(
+      createXAdapter(http).send(account(), target, "token", noop, checkpoint, gate),
+    ).resolves.toMatchObject({ platformId: "101" });
+    expect(gate).toHaveBeenCalledTimes(3);
+    expect(calledBody(fetcher, 0)).toEqual({ text: "hello", community_id: "555" });
+    expect(calledBody(fetcher, 1)).toEqual({
+      text: "second",
+      community_id: "555",
+      reply: { in_reply_to_tweet_id: "101" },
+    });
+    expect(calledBody(fetcher, 2).reply).toEqual({ in_reply_to_tweet_id: "102" });
+    expect(checkpoint).toHaveBeenLastCalledWith({
+      xThread: { postIds: ["101", "102", "103"], submitting: false },
+    });
+  });
+
+  it("refuses to resend a thread after a partial or uncertain dispatch", async () => {
+    const { fetcher, http } = network({ body: { data: { id: "101" } } }, { status: 503 });
+    const target = job({ x: { thread: ["second", "third"] } });
+    const checkpoint = vi.fn();
+    const send = () => createXAdapter(http).send(account(), target, "token", noop, checkpoint);
+    await expect(send()).rejects.toMatchObject({ code: "unknown" });
+    expect(target.preparation?.xThread).toEqual({ postIds: ["101"], submitting: true });
+    await expect(send()).rejects.toMatchObject({ code: "unknown" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the last confirmed receipt if given a known checkpoint", async () => {
+    const { fetcher, http } = network({ body: { data: { id: "102" } } });
+    const target = job({ x: { thread: ["second"] } });
+    target.preparation = { xThread: { postIds: ["101"], submitting: false } };
+    await expect(
+      createXAdapter(http).send(account(), target, "token", noop, vi.fn()),
+    ).resolves.toMatchObject({ platformId: "101" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(calledBody(fetcher).reply).toEqual({ in_reply_to_tweet_id: "101" });
   });
 
   it("refuses over-length text before any request", async () => {
@@ -266,17 +331,6 @@ describe("X API posting extras and actions", () => {
     const text = `https://example.com/${"x".repeat(200)} ${"b".repeat(250)}`;
     await createXAdapter(http).send(account(), job({ text }), "token", noop);
     expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it("likes, reposts and bookmarks as the account's own user ID", async () => {
-    const liked = network({ body: { data: { liked: true } } });
-    await xLikePost(liked.http, account(), "token", "555");
-    expect(calledUrl(liked.fetcher).pathname).toBe("/2/users/42/likes");
-    expect(calledBody(liked.fetcher)).toEqual({ tweet_id: "555" });
-
-    const bookmarked = network({ body: { data: { bookmarked: true } } });
-    await xBookmarkPost(bookmarked.http, account(), "token", "555");
-    expect(calledUrl(bookmarked.fetcher).pathname).toBe("/2/users/42/bookmarks");
   });
 
   it("validates numeric post IDs", () => {

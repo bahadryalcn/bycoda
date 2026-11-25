@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import OnboardingDialog from "../../../src/features/onboarding/ui/OnboardingDialog";
+import { OnboardingHost } from "../../../src/features/onboarding/ui/OnboardingHost";
 import UsageGuideDialog from "../../../src/features/onboarding/ui/UsageGuideDialog";
 import { WorkspaceFeatureGate } from "../../../src/features/settings/ui/WorkspaceFeatureGate";
 import { WORKSPACE_FEATURE_CHOICES } from "../../../src/features/settings/ui/WorkspaceFeatureSettings";
@@ -13,6 +14,8 @@ import {
   loadThemePreference,
 } from "../../../src/features/settings/model/appearance";
 import { setLanguagePreference, t } from "../../../src/shared/i18n";
+import { Button } from "../../../src/shared/ui/Button";
+import { Sheet } from "../../../src/shared/ui/Sheet";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
 import { agentDefaultsFixtureCommand } from "../settings/agent-defaults-fixture";
 import "../../../src/styles/index.css";
@@ -26,6 +29,7 @@ mockWindows("main");
 mockIPC(
   (command, args) => {
     if (command === "plugin:window|is_visible") return true;
+    if (command === "configure_file_access") return "selected-folders";
     if (command === "account_status" && new URLSearchParams(location.search).has("account")) {
       return { configured: true, signedIn: false, apiBaseUrl: null, environment: null };
     }
@@ -141,7 +145,8 @@ if (new URLSearchParams(location.search).has("highlight")) {
   localStorage.setItem("bycoda.highlights.v1", JSON.stringify({ baseline: "0.0.0", seen: [] }));
 }
 function Fixture() {
-  const [open, setOpen] = useState(true);
+  const offerModal = new URLSearchParams(location.search).has("offerModal");
+  const [open, setOpen] = useState(!offerModal);
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (!params.has("agents") && !params.has("projects")) return;
@@ -156,6 +161,20 @@ function Fixture() {
     });
     return () => cancelAnimationFrame(frame);
   }, []);
+  if (offerModal) {
+    return (
+      <main>
+        <Button onClick={() => setOpen(true)}>Open test account</Button>
+        <OnboardingHost
+          context={{ projects: 1, sessions: 0, restored: false, transferred: false }}
+          onImported={() => {}}
+          onOpenProject={() => {}}
+          projectCwd="/fixture"
+        />
+        {open ? <Sheet title="Test account" onClose={() => setOpen(false)} /> : null}
+      </main>
+    );
+  }
   if (new URLSearchParams(location.search).has("highlight")) {
     return (
       <main style={{ padding: 48 }}>

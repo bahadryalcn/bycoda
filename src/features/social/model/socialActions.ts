@@ -18,7 +18,12 @@ import type { SocialPlatform } from "./social";
 export type ListPage<T> = { items: T[]; next?: string };
 
 /** Read-only actions (section 3, RO = yes or list RO). The client sends no requestId for these. */
+import { YOUTUBE_READ_TOOLS } from "./youtubeManagement";
+
 export const SOCIAL_READ_ACTIONS = [
+  // YouTube management.
+  ...YOUTUBE_READ_TOOLS,
+  "youtube.operations.list",
   "people.list",
   "people.get",
   "people.matchSuggestions",
@@ -41,6 +46,42 @@ export const SOCIAL_READ_ACTIONS = [
   "browser.settings.get",
   "browser.recipeSuggestions.list",
   "accounts.requests.list",
+  // Instagram
+  "instagram.insights",
+  "instagram.mentions",
+  "instagram.post.deletion.status",
+  // TikTok account operations.
+  "tiktok.profile.read",
+  "tiktok.analytics.read",
+  "tiktok.audience.list",
+  "tiktok.mentions.list",
+  "tiktok.comments.list",
+  "tiktok.messages.list",
+  "tiktok.earnings.read",
+  "tiktok.privacy.read",
+  "tiktok.changes.list",
+  "tiktok.business.status",
+  // Snapchat
+  "snapchat.profile.read",
+  "snapchat.friends.list",
+  "snapchat.content.list",
+  "snapchat.analytics.get",
+  "snapchat.earnings.get",
+  "snapchat.monetization.get",
+  "snapchat.review.list",
+  // Facebook Page reads
+  "facebook.page.read",
+  "facebook.mentions.list",
+  "facebook.insights.read",
+  "facebook.earnings.read",
+  "facebook.posts.list",
+  "facebook.live.list",
+  "facebook.live.comments",
+  "facebook.management.list",
+  "reddit.posts.published",
+  "telegram.posts.published",
+  "instagram.comments.requests.list",
+  "instagram.management.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

@@ -17,6 +17,7 @@ import { UnreadableNotice } from "./InboxNotices";
 import { ConversationView } from "./ConversationView";
 import type { InboxFilterState } from "./inboxTypes";
 import { useInboxAccounts, useInboxInvalidate, useInboxList } from "./useInboxData";
+import { SnapchatNewChat } from "./SnapchatNewChat";
 import "./inbox.css";
 
 const NO_FILTER: InboxFilterState = { status: "all", accountId: "", query: "" };
@@ -32,7 +33,7 @@ export function InboxScreen(props: SocialScreenProps) {
   return <HostInboxScreen key={socialQueryScope(props.client).join(":")} {...props} />;
 }
 
-function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenProps) {
+function HostInboxScreen({ client, projectId, active, target, onNavigate }: SocialScreenProps) {
   useLocale();
   const api = inboxApi(client);
   const invalidate = useInboxInvalidate(client);
@@ -66,6 +67,20 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
       : loadedItems;
   const unreadable = list.data?.pages[0]?.unreadable ?? [];
   const accounts = snapshot.data?.accounts ?? [];
+  const snapchatMembers = projectId
+    ? accounts.filter(
+        (account) =>
+          account.platform === "snapchat" &&
+          account.accountType === "member" &&
+          account.connection === "browser" &&
+          !account.paused &&
+          account.grants[projectId]?.includes("draft") &&
+          account.grants[projectId]?.includes("message") &&
+          snapshot.data?.capabilities[account.id]?.some(
+            (row) => row.operation === "message.start" && row.status === "available",
+          ),
+      )
+    : [];
   const names = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
   const accountOptions = accounts.map((account) => ({ value: account.id, label: account.name }));
   const selectedId = chosen;
@@ -158,6 +173,16 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
           </Button>
         ) : null}
       </InboxFilters>
+
+      {projectId && (
+        <SnapchatNewChat
+          key={projectId}
+          client={client}
+          accounts={snapchatMembers}
+          projectId={projectId}
+          enabled={snapshot.data?.sendingEnabled === true}
+        />
+      )}
 
       {snapshot.isError ? (
         <InlineError

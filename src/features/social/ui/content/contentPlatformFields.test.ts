@@ -58,8 +58,13 @@ function setSelect(select: HTMLSelectElement, value: string) {
   });
 }
 
-function select(label: string): HTMLSelectElement {
-  return element.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+function tikTokPrivacy() {
+  return element.querySelector<HTMLButtonElement>('button[aria-label^="Who can see this video:"]');
+}
+
+function openTikTokPrivacy() {
+  act(() => tikTokPrivacy()!.click());
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
 }
 
 function checkbox(label: string): HTMLInputElement | undefined {
@@ -96,17 +101,58 @@ afterEach(() => {
 });
 
 describe("MetaFields", () => {
-  it("renders nothing for Instagram; the media rule is enforced by validation", () => {
-    render(createElement(MetaFields, props("instagram")));
+  it("renders nothing for Instagram browser accounts; the media rule is enforced by validation", () => {
+    render(
+      createElement(
+        MetaFields,
+        props("instagram", { account: { ...account("instagram"), connection: "browser" } }),
+      ),
+    );
     expect(element.querySelector("select")).toBeNull();
     expect(element.textContent).toBe("");
   });
 
-  it("defaults Facebook to a page post and offers the explicit Reel choice", () => {
+  it("offers Story and Instagram publishing options for professional API accounts", () => {
+    render(
+      createElement(MetaFields, props("instagram", { value: { instagram: { format: "story" } } })),
+    );
+    expect(element.textContent).toContain("Instagram format");
+    expect(element.textContent).toContain("Stories use one image or video");
+    expect(element.textContent).toContain("Label as AI-generated");
+  });
+
+  it("edits image alternative text and starts a tag bound to the only attachment", () => {
+    const media: ContentMedia[] = [
+      {
+        localId: "cover",
+        name: "cover.jpg",
+        media: { kind: "image", url: "https://cdn.example.com/cover.jpg" },
+      },
+    ];
+    render(createElement(MetaFields, props("instagram", { media })));
+    setInput(textInput("Alt text for cover.jpg")!, "A yellow kite.");
+    expect(onChange).toHaveBeenLastCalledWith({
+      instagram: { altText: { cover: "A yellow kite." } },
+    });
+    const add = [...element.querySelectorAll("button")].find(
+      (node) => node.textContent === "Add Instagram tag",
+    )!;
+    act(() => add.click());
+    expect(onChange).toHaveBeenLastCalledWith({
+      instagram: { userTags: [{ id: expect.any(String), localMediaId: "cover", username: "" }] },
+    });
+  });
+
+  it("defaults Facebook to a Page post and offers explicit API formats", () => {
     render(createElement(MetaFields, props("facebook")));
     const destination = element.querySelector("select")!;
     expect(destination.value).toBe("feed");
-    expect([...destination.options].map((option) => option.value)).toEqual(["feed", "reel"]);
+    expect([...destination.options].map((option) => option.value)).toEqual([
+      "feed",
+      "reel",
+      "video",
+      "story",
+    ]);
   });
 
   it("switches to Reel and back while keeping the entered frame rate", () => {
@@ -191,23 +237,30 @@ describe("FacebookReelFields", () => {
 });
 
 describe("TikTokFields", () => {
-  it("waits for the creator options and keeps the form locked until they load", () => {
+  it("waits for the creator options while keeping the format choice available", () => {
     render(createElement(TikTokFields, props("tiktok")));
     expect(element.textContent).toContain("Loading your TikTok options…");
-    expect(element.querySelector("fieldset")?.disabled).toBe(true);
+    expect(tikTokPrivacy()).toBeNull();
+    expect(
+      element.querySelector<HTMLButtonElement>('button[aria-label^="TikTok post format:"]')
+        ?.disabled,
+    ).toBe(false);
   });
 
   it("offers only the privacy choices the creator allows, with none selected", () => {
     render(createElement(TikTokFields, props("tiktok", { creator })));
-    const privacy = select("Who can see this video");
-    expect(privacy.value).toBe("");
-    const options = [...privacy.options];
+    expect(tikTokPrivacy()?.textContent).toContain("Choose who can see this video");
+    const options = openTikTokPrivacy();
     expect(options[0]!.disabled).toBe(true);
-    expect(options.slice(1).map((option) => option.value)).toEqual([
-      "SELF_ONLY",
-      "PUBLIC_TO_EVERYONE",
+    expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual([
+      "true",
+      "false",
+      "false",
     ]);
-    expect(options.slice(1).map((option) => option.textContent)).toEqual(["Only me", "Everyone"]);
+    expect(options.slice(1).map((option) => option.textContent?.trim())).toEqual([
+      "Only me",
+      "Everyone",
+    ]);
     expect(element.querySelector("fieldset")?.disabled).toBe(false);
   });
 
@@ -218,7 +271,9 @@ describe("TikTokFields", () => {
         props("tiktok", { creator, value: { tiktok: { allowComment: true } } }),
       ),
     );
-    setSelect(select("Who can see this video"), "SELF_ONLY");
+    const onlyMe = openTikTokPrivacy().find((option) => option.textContent?.trim() === "Only me");
+    expect(onlyMe).toBeDefined();
+    act(() => onlyMe!.click());
     expect(onChange).toHaveBeenLastCalledWith({
       tiktok: { allowComment: true, privacy: "SELF_ONLY" },
     });
@@ -267,7 +322,7 @@ describe("YouTubeFields", () => {
       createElement(YouTubeFields, props("youtube", { value: { youtube: { title: "Launch" } } })),
     );
     expect(element.textContent).toContain("6 of 100 characters");
-    expect(select("Privacy").value).toBe("");
+    expect(element.querySelector('button[aria-label="Privacy: Choose privacy"]')).not.toBeNull();
     expect(checkbox("Made for kids")!.checked).toBe(false);
   });
 
@@ -275,7 +330,12 @@ describe("YouTubeFields", () => {
     render(createElement(YouTubeFields, props("youtube")));
     setInput(textInput("Title")!, "Launch day");
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { title: "Launch day" } });
-    setSelect(select("Privacy"), "unlisted");
+    act(() => element.querySelector<HTMLButtonElement>('button[aria-label^="Privacy:"]')!.click());
+    act(() =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+        .find((item) => item.textContent === "Unlisted")!
+        .click(),
+    );
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { privacy: "unlisted" } });
     act(() => checkbox("Made for kids")!.click());
     expect(onChange).toHaveBeenLastCalledWith({ youtube: { madeForKids: true } });
@@ -330,9 +390,9 @@ describe("PlatformFields", () => {
     expect(element.textContent).toBe("");
     render(createElement(PlatformFields, props("tiktok", { creator })));
     expect(element.textContent).toContain("TikTok");
-    expect(element.querySelector('select[aria-label="Who can see this video"]')).not.toBeNull();
+    expect(tikTokPrivacy()).not.toBeNull();
     render(createElement(PlatformFields, props("youtube")));
-    expect(element.querySelector('select[aria-label="Privacy"]')).not.toBeNull();
+    expect(element.querySelector('button[aria-label^="Privacy:"]')).not.toBeNull();
     render(createElement(PlatformFields, props("reddit")));
     expect(element.textContent).toContain("Subreddit");
   });

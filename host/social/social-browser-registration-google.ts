@@ -30,6 +30,11 @@ const monthHelpers = String.raw`
 export const GOOGLE_PROBE = String.raw`
       const path=location.pathname;
       const one=selector=>{const found=[...document.querySelectorAll(selector)].filter(visible);return found.length===1&&!found[0].disabled&&!found[0].readOnly?found[0]:undefined;};
+      if(path==='/info/sessionexpired')return {...empty,googleBoundary:'expired'};
+      if(path==='/lifecycle/steps/signup/verifyemail'&&one('input[type="tel"]#code[name="code"]'))
+        return {...empty,blockers:[...new Set([...blockers,'verification'])],google:'signup'};
+      if(path==='/lifecycle/steps/signup/crossflowverification/initial'&&one('img[alt][src^="data:image/"]'))
+        return {...empty,blockers,googleBoundary:'device'};
       ${monthHelpers}
       if(/^\/(?:v3\/signin|signin\/v2)\/identifier$/.test(path)&&one('input#identifierId[name="identifier"]')&&!blockers.length)
         return {contract:'google-signin',fields:[],blockers,navigation:'google-signup',google:'signin'};

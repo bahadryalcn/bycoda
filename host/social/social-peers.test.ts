@@ -279,6 +279,8 @@ async function queuedPeerJob() {
     platform: "x",
     name: "Account",
     accountType: "member",
+    connection: "oauth",
+    xApiProduct: "pay-per-use",
     projectIds: [f.authority.project.id],
   })) as SocialAccount;
   await f.authority.social.connectAccount(

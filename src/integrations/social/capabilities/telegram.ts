@@ -1,6 +1,7 @@
 import type { SocialAccount, SocialOperation } from "../adapter";
 import {
   NOT_YET,
+  X_ONLY_UNSUPPORTED,
   r,
   type CapabilityRequirement,
   type OperationRequirements,
@@ -18,6 +19,8 @@ export function telegramCapabilities(type: SocialAccount["accountType"]): Platfo
     true,
   );
   const base: Record<SocialOperation, CapabilityRequirement> = {
+    ...X_ONLY_UNSUPPORTED,
+    ...NOT_YET,
     publish: unsupported,
     media: unsupported,
     "comments.read": unsupported,
@@ -47,7 +50,7 @@ export function telegramCapabilities(type: SocialAccount["accountType"]): Platfo
     );
     api.delete = r(
       ["channel.publish"],
-      "Deletes a post this bot published in the verified channel, when the bot still has delete rights.",
+      "Delete a Bycoda publication in the verified channel while the administrator bot has delete rights and Telegram's 48-hour window still applies.",
     );
   } else {
     api.media = r(
@@ -61,7 +64,7 @@ export function telegramCapabilities(type: SocialAccount["accountType"]): Platfo
     api.poll = api["inbox.read"];
     api["message.reply"] = r(
       ["bot.send"],
-      "Reply in a chat accessible to the bot; group privacy and chat permissions apply.",
+      "Reply in an accessible bot chat or under an observed post in its linked Telegram discussion group.",
     );
     api["message.start"] = r(
       [],

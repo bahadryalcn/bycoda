@@ -52,6 +52,19 @@ export async function snapchatChallenge(page: BrowserPage): Promise<ChallengeHit
   return null;
 }
 
+export async function snapchatProtectedScreen(page: BrowserPage): Promise<ChallengeHit | null> {
+  const hit = (await detectChallenge(page)) ?? (await snapchatChallenge(page));
+  if (hit) return hit;
+  const login = await page.evaluate<
+    { origin: string; path: string } | undefined
+  >(String.raw`(() => {
+    const passwords=[...document.querySelectorAll('input[type="password"],input[autocomplete="current-password"]')];
+    if(passwords.some(el=>!el.closest('[hidden],[aria-hidden="true"]')&&el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'))
+      return {origin:location.origin,path:location.pathname};
+  })()`);
+  return login ? { kind: "login", url: login.origin + login.path } : null;
+}
+
 /**
  * The error for a missing required element: a recognized challenge becomes NEEDS_HUMAN (no
  * interaction); any other page is handed to the layered driver as UnexpectedScreen.

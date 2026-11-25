@@ -46,7 +46,9 @@ export function publishGate(input: GateInput & { problems: Problem[] }): Publish
       disabledReason: t("Sending is off. Turn it on in Accounts & Settings."),
       fix: "accounts",
     };
-  if (input.problems.length) return closed(input.problems[0]!.text);
+  const problem = input.problems[0];
+  if (problem)
+    return problem.fix ? { ...closed(problem.text), fix: problem.fix } : closed(problem.text);
   return { disabled: false };
 }
 

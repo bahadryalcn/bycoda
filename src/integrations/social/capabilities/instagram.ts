@@ -10,7 +10,7 @@ export function instagramCapabilities(): PlatformCapabilities {
     ),
     media: r(
       ["instagram_business_content_publish"],
-      "HTTPS images, a single video published as a Reel in the feed, or an ordered image/video carousel. The Host accepts up to four media assets; processing is checked before publication. Stories are not implemented.",
+      "HTTPS images, feed Reels, ordered carousels of up to 20 assets, and Stories for eligible business accounts. Processing is checked before publication.",
     ),
     "comments.read": r(
       ["instagram_business_manage_comments"],
@@ -28,7 +28,7 @@ export function instagramCapabilities(): PlatformCapabilities {
     ),
     "message.reply": r(
       ["instagram_business_manage_messages"],
-      "User-initiated conversation; standard 24-hour response window. No human-agent tag for automation.",
+      "Existing conversations support text and image, video, audio or PDF attachments within the response window. Local files need the Host's HTTPS media origin. Eligible comments support one private reply.",
     ),
     "message.start": r(
       [],
@@ -48,13 +48,20 @@ export function instagramCapabilities(): PlatformCapabilities {
       ...NOT_YET,
       analytics: r(
         ["instagram_business_basic", "instagram_business_manage_insights"],
-        "Basic owned-media views and engagement counts. Metric names are unverified against live Graph; a metric Meta rejects fails the read.",
+        "Account and owned-media insights, with eligible audience breakdowns. Missing metrics are reported separately.",
       ),
       "audience.collect": r(
         ["instagram_business_manage_comments"],
         "Commenters on one selected owned post and recent DM senders (needs instagram_business_manage_messages). Hashtag, mention and follower sources are unsupported.",
       ),
     },
-    browser: {},
+    // Browser recipes for the verified Instagram owner profile (host/social/social-browser-instagram-*.ts).
+    browser: {
+      "profile.update": "Edit the verified account's name, username, bio and links in the browser.",
+      delete: "Owner-reviewed edit or removal of an exact owned post in the browser.",
+      "message.start":
+        "Owner-composed direct message to an exact recipient in the browser. No AI send path; an existing conversation is the only AI route.",
+      analytics: "Reads the professional dashboard earnings the verified account exposes.",
+    },
   };
 }

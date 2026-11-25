@@ -27,6 +27,8 @@ export type AutonomousRequest = {
   principal: SocialPrincipal;
 };
 
+export type SocialIngestOptions = { draftOnly?: true };
+
 /**
  * Narrow Host surface for Social action modules. SocialService implements it with the
  * same signatures and behavior as its methods; new modules must not reach past it.
@@ -65,6 +67,15 @@ export interface SocialServiceApi {
   project(p: SocialPrincipal, projectId: string): Promise<HostProject>;
   adapterFor(account: SocialAccount): SocialAdapter;
   credentialFor(accountId: string): Promise<SocialCredential | undefined>;
+  // Snapchat browser owner review
+  snapchatBrowserProfile?: (
+    principal: SocialPrincipal,
+    accountId: string,
+    action: "read" | "update" | "create" | "monetization" | "delete-story" | "friends",
+    input: Record<string, unknown>,
+  ) => Promise<unknown>;
+  // Facebook Page photo uploads reuse owner-only media custody.
+  readOwnerMedia(p: SocialPrincipal, id: string): Promise<Uint8Array>;
   capability(account: SocialAccount, operation: SocialOperation): void;
   createDraft(
     p: SocialPrincipal,
@@ -83,7 +94,11 @@ export interface SocialServiceApi {
   eraseContact(contact: SocialContact): Promise<SocialContact>;
   /** Owner only. Moves a job waiting for a person (review, needs_human) back to the queue. */
   requeueForHuman(p: SocialPrincipal, jobId: string): Promise<SocialJob>;
-  ingest(accountId: string, events: SocialInbound[]): Promise<number>;
+  ingest(
+    accountId: string,
+    events: SocialInbound[],
+    options?: SocialIngestOptions,
+  ): Promise<number>;
   writeJob(job: SocialJob): Promise<SocialJob>;
   audit(
     principal: SocialPrincipal,

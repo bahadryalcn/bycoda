@@ -2,25 +2,19 @@ import type { SocialOperation } from "../adapter";
 import { NOT_YET, r, type CapabilityRequirement, type PlatformCapabilities } from "./shared";
 
 /**
- * API: Public Profile Spotlight only. Marketing API and Creative Kit are deferred and have no
- * operation row (they are not implemented). Browser: Public Profile Spotlight/Story uploads and
- * existing member chats; each row says what the browser path can and cannot confirm.
+ * Public Profile API actions and verified browser-only Snapchat surfaces.
  */
 export function snapchatCapabilities(): PlatformCapabilities {
-  const unsupported = r(
-    [],
-    "Public Profile connection and Spotlight publishing only. Comments, messaging, Stories, metrics and audience collection are not implemented in this API adapter. Marketing API and Creative Kit are deferred.",
-    true,
-  );
+  const unsupported = r([], "The Public Profile API does not offer this Snapchat operation.", true);
   const api: Record<SocialOperation, CapabilityRequirement> = {
     ...NOT_YET,
     publish: r(
       ["snapchat-profile-api"],
-      "Spotlight video publishing through an allowlisted Snap Public Profile API app. One uploaded MP4, explicit locale and verified API profile are required; processing is tracked by the exact Spotlight ID until LIVE. Stories and messaging are not implemented in this API adapter.",
+      "Publish Spotlight, Public Stories and Saved Stories through an allowlisted Snap Public Profile API app. Unconfirmed submissions are held for review.",
     ),
     media: r(
       ["snapchat-profile-api"],
-      "One host-uploaded 6–60 second MP4 of at least 540 × 960 pixels, encrypted for the Public Profile media upload. No credentials or encryption keys are stored in job progress.",
+      "Use Host-uploaded media for the selected Snapchat format. The Public Profile API encrypts media uploads.",
     ),
     "comments.read": unsupported,
     reply: unsupported,
@@ -35,7 +29,19 @@ export function snapchatCapabilities(): PlatformCapabilities {
   return {
     api: {
       ...api,
-      ...NOT_YET,
+      // Snapchat Public Profile API
+      delete: r(
+        ["snapchat-profile-api"],
+        "Delete an exact Spotlight or Saved Story after owner review.",
+      ),
+      analytics: r(
+        ["snapchat-profile-api"],
+        "Read Public Profile, content, and aggregate subscriber metrics. Earnings require creator access.",
+      ),
+      "profile.read": r(
+        ["snapchat-profile-api"],
+        "Read the connected Public Profile and list its published content.",
+      ),
       "audience.collect": r(
         [],
         "The Public Profile API exposes no audience source in this adapter. Existing chat contacts are collected through the browser connection of a member account.",
@@ -51,6 +57,10 @@ export function snapchatCapabilities(): PlatformCapabilities {
         "Existing one-to-one chats of the signed-in member account, read from the visible chat list. New conversations and media are not supported.",
       "message.reply":
         "Replies in an existing chat only: the exact thread and recipient are verified before typing, and the sent message is read back. Text only.",
+      // Snapchat member chats
+      "message.start":
+        "Start a text chat only after the exact username is verified in the connected member's friends list.",
+      "profile.read": "Read the verified profile from the connected Snapchat browser session.",
       poll: "Bounded visible snapshots of up to two existing chats per run. An unrecognized layout is handed to the layered browser driver instead of reporting an empty inbox.",
       "audience.collect":
         "Contacts of existing chats on the signed-in member account, limited to what the chat list shows.",

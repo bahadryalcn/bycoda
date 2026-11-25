@@ -9,6 +9,15 @@ import type { SocialServiceInternals } from "../core/social-internals";
 import type { SocialService } from "../social";
 import { telegramWebhookSecret } from "../token-connections/telegram";
 import { whatsappReceipt } from "../social-delivery";
+import { parseInstagramMention, recordInstagramMention } from "./instagram-mentions";
+
+type InstagramCommentChange = {
+  id?: string;
+  media_id?: string;
+  media?: { id: string };
+  text?: string;
+  from?: { id: string; username?: string };
+};
 
 /** Verifies and ingests one signed Meta or WhatsApp delivery. The caller waits for readiness. */
 export async function receiveWebhook(
@@ -90,6 +99,10 @@ export async function receiveWebhook(
     object?: string;
     entry?: {
       id: string;
+      // Instagram Login can deliver comment fields directly on an entry.
+      time?: number;
+      field?: string;
+      value?: InstagramCommentChange;
       messaging?: {
         sender: {
           id: string;
@@ -110,6 +123,7 @@ export async function receiveWebhook(
           id?: string;
           comment_id?: string;
           post_id?: string;
+          media_id?: string;
           media?: {
             id: string;
           };
@@ -162,9 +176,24 @@ export async function receiveWebhook(
           at: event.timestamp,
           replyUntil: event.timestamp + 24 * 60 * 60000,
         });
-    for (const change of entry.changes ?? [])
-      if (
+    // Instagram dedicated mentions have no actor; keep metadata outside the replyable inbox.
+    const changes: NonNullable<NonNullable<typeof payload.entry>[number]["changes"]> =
+      platform === "instagram" && entry.field && entry.value
+        ? [...(entry.changes ?? []), { field: entry.field, value: entry.value }]
+        : (entry.changes ?? []);
+    for (const change of changes)
+      if (platform === "instagram" && change.field === "mentions") {
+        const receivedAt = Number(entry.time) * 1000;
+        const mention = parseInstagramMention(
+          change.value,
+          Number.isSafeInteger(receivedAt) && receivedAt > 0 && receivedAt <= s.now() + 60000
+            ? receivedAt
+            : s.now(),
+        );
+        if (mention) ingested += await recordInstagramMention(s.store, account.id, mention);
+      } else if (
         change.field === "comments" ||
+        (platform === "instagram" && change.field === "live_comments") ||
         (change.field === "feed" && change.value.item === "comment" && change.value.verb === "add")
       ) {
         const value = change.value;
@@ -177,6 +206,9 @@ export async function receiveWebhook(
           contactId: value.from.id,
           contactName: value.from.name ?? value.from.username ?? value.from.id,
           kind: "comment",
+          ...(platform === "instagram" && change.field === "live_comments"
+            ? { instagramSource: "live_comment" as const }
+            : {}),
           text: value.text ?? value.message ?? "[Attachment]",
           at: value.created_time ? value.created_time * 1000 : s.now(),
         });

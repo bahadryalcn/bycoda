@@ -1,9 +1,25 @@
 import { t } from "../../../../shared/i18n";
 import {
+  REDDIT_PROFILE_TARGET,
+  REDDIT_TITLE_LIMIT,
+} from "../../../../integrations/social/adapters/reddit-rules";
+import { xPostWeight } from "../../../../integrations/social/publishingFormats";
+import { xPostExtrasIssue, X_POST_WEIGHT_LIMIT } from "../../../../integrations/social/x-publish";
+import {
+  INSTAGRAM_CAROUSEL_MAX,
+  instagramPublishOptionsIssue,
+  instagramStoryAccountIssue,
+  type InstagramPublishOptions,
+} from "../../../../integrations/social/adapters/instagram-publish";
+import { browserContentIssue } from "../../../../integrations/social/browserCapabilities";
+import { snapchatContentIssue } from "../../../../integrations/social/snapchat";
+import { facebookScheduleTime } from "../../../../integrations/social/adapters/facebook-schedule";
+import {
   SOCIAL_PLATFORM_NAMES,
   type CampaignVariant,
   type Capability,
   type SocialAccount,
+  type SocialMedia,
   type SocialPolicies,
   type SocialSnapshot,
   type TikTokCreatorInfo,
@@ -15,9 +31,11 @@ import {
   mediaOf,
   scheduledMs,
   withUtm,
+  xPostExtras,
   type ContentDraft,
   type ContentMedia,
   type FacebookDraft,
+  type InstagramDraft,
   type MediaProbe,
   type PlatformDraft,
 } from "./contentDraft";
@@ -31,7 +49,11 @@ export const REEL_SIZE = { minWidth: 540, minHeight: 960 } as const;
 export const REEL_MIN_FPS = 23;
 export const REDDIT_SUBREDDIT = /^[A-Za-z0-9_]{3,21}$/;
 
-export type Problem = { text: string; accountId?: string };
+export function usesInstagramApi(account: SocialAccount): boolean {
+  return account.platform === "instagram" && account.connection !== "browser";
+}
+
+export type Problem = { text: string; accountId?: string; fix?: "accounts" };
 
 export type RuleInput = {
   draft: ContentDraft;
@@ -75,12 +97,14 @@ export function characterLimit(
     return Math.min(configured ?? Infinity, 2200);
   if (isTelegramChannelBot(account))
     return Math.min(configured ?? Infinity, shape.hasMedia ? 1024 : 4096);
+  if (account.platform === "x") return Math.min(configured ?? Infinity, X_POST_WEIGHT_LIMIT);
   return configured;
 }
 
 /** Platform count: text plus link. Telegram channel bot posts count UTF-16 units. */
 export function characterCount(account: SocialAccount, text: string, link?: string): number {
   const content = [text, link].filter(Boolean).join("\n");
+  if (account.platform === "x") return xPostWeight(content);
   return isTelegramChannelBot(account) ? content.length : socialCharacterCount(content);
 }
 
@@ -93,8 +117,74 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+export function isPublicMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function instagramPayload(options: InstagramDraft | undefined, media: ContentMedia[]) {
+  const story = options?.format === "story";
+  const instagram: InstagramPublishOptions = {
+    ...(story ? { format: "story" } : {}),
+    ...(!story && options?.collaborators ? { collaborators: options.collaborators } : {}),
+    ...(!story && options?.locationId ? { locationId: options.locationId } : {}),
+    ...(options?.isAiGenerated !== undefined ? { isAiGenerated: options.isAiGenerated } : {}),
+    ...(options?.userTags?.length
+      ? {
+          userTags: options.userTags.map(({ localMediaId, username, x, y }) => ({
+            username: username.trim(),
+            x,
+            y,
+            mediaIndex: media.findIndex((item) => item.localId === localMediaId),
+          })),
+        }
+      : {}),
+  };
+  return {
+    instagram,
+    media: media.map<SocialMedia>((item) => {
+      const { alt, ...asset } = item.media;
+      const description = options?.altText?.[item.localId] ?? alt;
+      return !story && description?.trim() ? { ...asset, alt: description.trim() } : asset;
+    }),
+  };
+}
+
+function isInstagramStory(account: SocialAccount, draft: ContentDraft): boolean {
+  return usesInstagramApi(account) && draft.platform[account.id]?.instagram?.format === "story";
+}
+
 function videoProbe(media: ContentMedia[]): MediaProbe | undefined {
   return media.find((item) => item.media.kind === "video")?.probe;
+}
+
+function snapchatOptions(draft: ContentDraft, accountId: string): CampaignVariant["snapchat"] {
+  const options = draft.platform[accountId]?.snapchat;
+  if (!options) return undefined;
+  const probe = videoProbe(draft.media);
+  const { sourceText, ...publish } = options;
+  const sources = sourceText
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const match = /^(snap|spotlight):(.+)$/.exec(entry);
+      return {
+        kind: match?.[1] === "spotlight" ? ("spotlight" as const) : ("snap" as const),
+        id: match?.[2].trim() ?? "",
+      };
+    });
+  return {
+    ...publish,
+    ...(sources ? { savedStorySources: sources } : {}),
+    durationSeconds: probe?.durationSeconds ?? 0,
+    width: probe?.width ?? 0,
+    height: probe?.height ?? 0,
+  };
 }
 
 /** Attachment rules per platform. Platforms without rules here return no problem. */
@@ -117,6 +207,10 @@ export function mediaProblems(
           ? [t("Up to four images per post.")]
           : [];
     case "tiktok":
+      return (media.length === 1 && videos === 1) ||
+        (images === media.length && images > 0 && images <= 4)
+        ? []
+        : [t("Attach one video or up to four TikTok photos.")];
     case "youtube":
       return media.length === 1 && videos === 1 ? [] : [t("Attach exactly one video.")];
     default:
@@ -152,16 +246,93 @@ export function reelProblems(options: FacebookDraft | undefined, media: ContentM
   return problems;
 }
 
+function facebookProblems(
+  options: FacebookDraft | undefined,
+  draft: ContentDraft,
+  now: number,
+): string[] {
+  const target = options?.target ?? "feed";
+  if (target === "reel") return reelProblems(options, draft.media);
+  const [attachment] = draft.media;
+  const problems: string[] = [];
+  if (target === "story") {
+    if (draft.media.length !== 1 || !attachment || attachment.media.kind === "document")
+      problems.push(t("Attach one photo or video for a Facebook Story."));
+    if (draft.text.trim() || draft.link.trim())
+      problems.push(t("Facebook Stories accept only the attached photo or video."));
+    const probe = attachment?.probe;
+    if (
+      attachment?.media.kind === "video" &&
+      (!probe?.durationSeconds ||
+        probe.durationSeconds < 3 ||
+        probe.durationSeconds > 60 ||
+        !probe.width ||
+        !probe.height ||
+        probe.width < 540 ||
+        probe.height < 960 ||
+        probe.width * 16 !== probe.height * 9)
+    )
+      problems.push(
+        t("Facebook Story videos need a 3–60 second vertical MP4 of at least 540 × 960 pixels."),
+      );
+  }
+  if (target === "video" && (draft.media.length !== 1 || attachment?.media.kind !== "video"))
+    problems.push(t("Attach exactly one video."));
+  if (
+    target === "feed" &&
+    options?.scheduledPublishAt &&
+    draft.media.some((item) => item.media.kind === "video")
+  )
+    problems.push(t("Choose Facebook Video, Reel, or Story for a video attachment."));
+  if (options?.scheduledPublishAt && (target === "feed" || target === "video")) {
+    const scheduled = new Date(options.scheduledPublishAt).getTime();
+    const dispatchAt = Math.max(now, scheduledMs(draft) ?? now);
+    if (draft.repeat.enabled)
+      problems.push(t("Facebook scheduling is supported for one-off campaigns only."));
+    else if (facebookScheduleTime(scheduled, dispatchAt) === undefined)
+      problems.push(t("Facebook scheduling requires 10 minutes to 75 days after dispatch."));
+  }
+  return problems;
+}
+
 export function tiktokProblems(
   options: PlatformDraft["tiktok"],
   media: ContentMedia[],
   creator?: TikTokCreatorInfo,
+  connection?: SocialAccount["connection"],
 ): string[] {
   const problems: string[] = [];
-  if (!options?.privacy) problems.push(t("Choose who can see the TikTok video."));
+  const photo = options?.mediaType === "photo";
+  const inbox = options?.mode === "inbox";
+  if (photo) {
+    if (!media.length || media.some((item) => item.media.kind !== "image"))
+      problems.push(t("Attach photos for the TikTok photo post."));
+    else if ((options?.photoCoverIndex ?? 0) >= media.length)
+      problems.push(t("Choose a cover from your TikTok photos."));
+    if (
+      connection !== undefined &&
+      media.some((item) => (connection === "browser" ? !item.media.uploadId : !item.media.url))
+    )
+      problems.push(
+        connection === "browser"
+          ? t("Attach local images for TikTok Studio.")
+          : t("Use photo URLs on a TikTok-verified domain or URL prefix."),
+      );
+  } else if (media.some((item) => item.media.kind === "image")) {
+    problems.push(t("Choose Photos as the TikTok post format."));
+  }
+  if (inbox) {
+    if (connection === "browser") problems.push(t("TikTok inbox drafts need the API connection."));
+    return problems;
+  }
+  if (!options?.privacy)
+    problems.push(
+      photo ? t("Choose who can see this post") : t("Choose who can see the TikTok video."),
+    );
   else if (creator && !creator.privacyOptions.includes(options.privacy))
     problems.push(t("Choose a privacy option your TikTok account offers."));
   if (options?.consent !== true) problems.push(t("Confirm the TikTok content consent."));
+  if (photo) return problems;
   const duration = videoProbe(media)?.durationSeconds;
   if (!duration) problems.push(t("The video length could not be read."));
   else if (creator && duration > creator.maxDurationSeconds)
@@ -169,7 +340,7 @@ export function tiktokProblems(
   return problems;
 }
 
-export function youtubeProblems(options: PlatformDraft["youtube"]): string[] {
+export function youtubeProblems(options: PlatformDraft["youtube"], probe?: MediaProbe): string[] {
   const problems: string[] = [];
   const title = options?.title?.trim() ?? "";
   if (!title) problems.push(t("Enter a YouTube title."));
@@ -178,18 +349,27 @@ export function youtubeProblems(options: PlatformDraft["youtube"]): string[] {
   if (!options?.privacy) problems.push(t("Choose YouTube privacy."));
   if (options?.madeForKids === undefined)
     problems.push(t("Say whether the video is made for kids."));
+  if (options?.format === "short") {
+    if (!probe?.durationSeconds || !probe.width || !probe.height) {
+      problems.push(t("Shorts need readable video dimensions and duration."));
+    } else if (probe.durationSeconds > 180 || probe.width > probe.height) {
+      problems.push(t("Shorts need a square or vertical video up to 3 minutes."));
+    }
+  }
   return problems;
 }
 
-/**
- * Reddit: one subreddit is required. The Host has no Reddit variant field yet, so publishing is
- * blocked after the subreddit check; the draft still keeps the choice for review.
- */
 export function redditProblems(options: PlatformDraft["reddit"]): string[] {
   const subreddit = options?.subreddit.trim() ?? "";
-  if (!REDDIT_SUBREDDIT.test(subreddit))
+  if (!REDDIT_SUBREDDIT.test(subreddit) && !REDDIT_PROFILE_TARGET.test(subreddit))
     return [t("Choose one subreddit: 3 to 21 letters, numbers or underscores.")];
-  return [t("Reddit posting is not connected to the Host yet.")];
+  const title = options?.title?.trim() ?? "";
+  if (!title) return [t("Enter a title.")];
+  if (title.length > REDDIT_TITLE_LIMIT)
+    return [t("Use at most {p0} characters.", { p0: REDDIT_TITLE_LIMIT })];
+  if (options?.flair.trim() && !/^[A-Za-z0-9-]{1,64}$/.test(options.flair.trim()))
+    return [t("Enter a valid Reddit flair ID.")];
+  return [];
 }
 
 /** Whether an account can be chosen for this post, with the plain reason when it cannot. */
@@ -218,7 +398,8 @@ export function draftProblems(input: RuleInput): Problem[] {
   const { draft, now } = input;
   const problems: Problem[] = [];
   if (!input.projectId) problems.push({ text: t("Choose a project first.") });
-  if (!draft.text.trim() && !draft.media.length)
+  const accounts = selectedAccounts(draft, input.accounts);
+  if (!hasPostContent(draft, accounts))
     problems.push({ text: t("Write the post or attach media.") });
   if (!draft.accountIds.length) problems.push({ text: t("Choose at least one account.") });
   const link = draft.link.trim();
@@ -243,38 +424,193 @@ export function draftProblems(input: RuleInput): Problem[] {
         accountId: id,
       });
   }
-  for (const account of selectedAccounts(draft, input.accounts)) {
+  const hasCaptionTarget = accounts.some((account) => !isInstagramStory(account, draft));
+  for (const account of accounts) {
     const name = accountLabel(account);
     const add = (text: string) =>
       problems.push({ text: `${name}: ${text}`, accountId: account.id });
     const availability = accountAvailability(account, input);
     if (availability.disabled) add(availability.reason!);
+    else if (input.projectId && !account.grants[input.projectId]?.includes("publish"))
+      problems.push({
+        text: `${name}: ${t("Grant publishing permission for this project in Accounts first.")}`,
+        accountId: account.id,
+        fix: "accounts",
+      });
     const limit = characterLimit(account, input.snapshot?.policies, {
       reel: draft.platform[account.id]?.facebook?.target === "reel",
       hasMedia: draft.media.length > 0,
     });
-    const count = characterCount(account, draft.text.trim(), withUtm(link, draft.utm));
+    const platform = draft.platform[account.id];
+    const story = isInstagramStory(account, draft);
+    const count = story ? 0 : characterCount(account, draft.text.trim(), withUtm(link, draft.utm));
     if (limit !== undefined && count > limit)
       add(t("Content for this account can be at most {p0} characters.", { p0: limit }));
-    for (const text of mediaProblems(account.platform, draft.media)) add(text);
-    const platform = draft.platform[account.id];
+    if (usesInstagramApi(account)) {
+      if (
+        draft.media.length < 1 ||
+        draft.media.length > INSTAGRAM_CAROUSEL_MAX ||
+        draft.media.some((item) => item.media.kind === "document")
+      )
+        add(t("Attach between one and 20 Instagram images or videos."));
+      if (
+        draft.media.some(
+          ({ media }) => !media.url || !isPublicMediaUrl(media.url) || media.uploadId,
+        )
+      )
+        add(t("Instagram API publishing requires public HTTPS media URLs."));
+      if (
+        platform?.instagram?.userTags?.some(
+          (tag) => !draft.media.some((item) => item.localId === tag.localMediaId),
+        )
+      )
+        add(t("Choose an attachment for every Instagram tag."));
+      const payload = instagramPayload(platform?.instagram, draft.media);
+      if (
+        draft.repeat.enabled &&
+        (Object.keys(payload.instagram).length || payload.media.some((item) => item.alt))
+      )
+        add(t("Instagram Stories, tags, alt text and publishing options require a one-time post."));
+      // A caption belongs to the other selected targets. For Stories alone, ask the owner to clear it.
+      const caption =
+        story && hasCaptionTarget ? "" : [draft.text, link].filter(Boolean).join("\n");
+      const issue =
+        instagramStoryAccountIssue(payload.instagram, account.instagramAccountType) ??
+        instagramPublishOptionsIssue(payload.instagram, payload.media, caption);
+      if (issue) add(issue);
+    } else {
+      for (const text of mediaProblems(account.platform, draft.media)) add(text);
+      if (
+        account.platform === "instagram" &&
+        draft.media.some(({ media }) => !media.uploadId || media.url)
+      )
+        add(t("Instagram browser publishing requires files uploaded from this device."));
+    }
+    if (account.platform === "x") {
+      const x = xPostExtras(platform?.x);
+      if (x) {
+        const xIssue = xPostExtrasIssue(x, draft.media.length);
+        if (xIssue) add(xExtrasIssueText(xIssue));
+        if (account.connection === "browser") add(t("Open X to publish these options manually."));
+        else if (x.quotePostId && account.xApiProduct !== "enterprise")
+          add(t("X quote posts require Enterprise API access."));
+        if (draft.repeat.enabled) add(t("Schedule this X format as a single campaign."));
+      }
+    }
+    if (draft.media.some((item) => item.media.kind === "document")) {
+      if (account.platform !== "linkedin") add(t("PDF documents require a LinkedIn account."));
+      else if (draft.media.length !== 1) add(t("Attach one PDF document by itself."));
+      else if (!draft.media[0]?.media.title?.trim()) add(t("Enter a document title."));
+    }
+    if (account.platform === "linkedin") {
+      const format = platform?.linkedinFormat;
+      if (format && draft.repeat.enabled)
+        add(t("Turn off repeat for LinkedIn polls and article links."));
+      if (format && (link || (format.kind === "poll" && draft.media.length)))
+        add(t("Remove attachments and the separate link for this LinkedIn format."));
+      if (format?.kind === "poll") {
+        const options = format.options.map((option) => option.trim()).filter(Boolean);
+        if (
+          !format.question.trim() ||
+          options.length < 2 ||
+          new Set(options.map((option) => option.toLowerCase())).size !== options.length
+        )
+          add(t("Enter a poll question and two to four distinct options."));
+      }
+      if (format?.kind === "article") {
+        if (!isHttpUrl(format.source) || !format.source.trim().startsWith("https://"))
+          add(t("Enter a link that starts with https://."));
+        if (!format.title.trim()) add(t("Enter a title."));
+        if (draft.media.length > 1 || draft.media.some((item) => item.media.kind !== "image"))
+          add(t("Attach one image for the article thumbnail."));
+      }
+    }
+    if (
+      draft.media.some((item) => item.youtubeApiOnly) &&
+      (account.platform !== "youtube" || account.connection === "browser")
+    )
+      add(t("Large videos require a YouTube API connection."));
     if (account.platform === "facebook")
-      for (const text of reelProblems(platform?.facebook, draft.media)) add(text);
+      for (const text of facebookProblems(platform?.facebook, draft, now)) add(text);
     if (account.platform === "tiktok")
-      for (const text of tiktokProblems(platform?.tiktok, draft.media, input.creator?.[account.id]))
+      for (const text of tiktokProblems(
+        platform?.tiktok,
+        draft.media,
+        input.creator?.[account.id],
+        account.connection ?? "oauth",
+      ))
         add(text);
     if (account.platform === "youtube")
-      for (const text of youtubeProblems(platform?.youtube)) add(text);
-    if (account.platform === "reddit")
+      for (const text of youtubeProblems(platform?.youtube, videoProbe(draft.media))) add(text);
+    if (account.platform === "reddit") {
       for (const text of redditProblems(platform?.reddit)) add(text);
+      if (draft.repeat.enabled) add(t("Turn off repeat for Reddit posts."));
+      if (draft.media.length) add(t("Reddit posts accept text or links without attachments."));
+      if (link && draft.text.trim()) add(t("Clear the separate link for a Reddit text post."));
+    }
+    if (account.platform === "snapchat") {
+      const snapchat = snapchatOptions(draft, account.id);
+      if (!snapchat) add(t("Choose a Snapchat publishing format."));
+      else {
+        const job = {
+          kind: "publish" as const,
+          payload: {
+            snapchat,
+            text: draft.text.trim(),
+            media: mediaOf(draft.media),
+            link: withUtm(link, draft.utm) || undefined,
+          },
+        };
+        const issue =
+          account.connection === "browser"
+            ? browserContentIssue(account, job)
+            : snapchatContentIssue(account, job);
+        if (issue) add(t(issue));
+      }
+    }
   }
   return problems;
+}
+
+/** Owner-readable text for each shared X option check; unknown checks keep the generic line. */
+function xExtrasIssueText(issue: string): string {
+  switch (issue) {
+    case "An X poll needs two to four options.":
+      return t("An X poll needs two to four options.");
+    case "Each X poll option must be 1 to 25 characters.":
+      return t("Each X poll option must be 1 to 25 characters.");
+    case "An X poll lasts 5 minutes to 7 days.":
+      return t("An X poll lasts 5 minutes to 7 days.");
+    case "An X poll cannot include media or a quote.":
+      return t("An X poll cannot include media or a quote.");
+    case "An X thread allows 1 to 24 additional posts, each up to 280 characters.":
+      return t("An X thread allows 1 to 24 additional posts, each up to 280 characters.");
+    case "Quote post ID must be numeric.":
+      return t("Quote post ID must be numeric.");
+    default:
+      return t("Check X publishing options.");
+  }
 }
 
 export function selectedAccounts(draft: ContentDraft, accounts: SocialAccount[]): SocialAccount[] {
   return draft.accountIds
     .map((id) => accounts.find((account) => account.id === id))
     .filter((account): account is SocialAccount => account !== undefined);
+}
+
+export function hasPostContent(draft: ContentDraft, accounts: SocialAccount[]): boolean {
+  return (
+    !!draft.text.trim() ||
+    !!draft.media.length ||
+    (accounts.length > 0 &&
+      accounts.every(
+        (account) =>
+          (account.platform === "linkedin" &&
+            account.connection === "oauth" &&
+            !!draft.platform[account.id]?.linkedinFormat) ||
+          (account.platform === "reddit" && !!draft.platform[account.id]?.reddit?.title?.trim()),
+      ))
+  );
 }
 
 /** The Host variants for a valid draft. Call only when `draftProblems` returned nothing. */
@@ -285,7 +621,9 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
   const link = withUtm(draft.link, draft.utm) || undefined;
   const media = mediaOf(draft.media);
   const probe = videoProbe(draft.media);
-  return selectedAccounts(draft, input.accounts).map((account) => {
+  const selected = selectedAccounts(draft, input.accounts);
+  const hasCaptionTarget = selected.some((account) => !isInstagramStory(account, draft));
+  return selected.map((account) => {
     const platform = draft.platform[account.id];
     const variant: CampaignVariant = {
       accountId: account.id,
@@ -295,6 +633,20 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
       scheduledAt: at,
       factIds: [...draft.factIds],
     };
+    if (account.platform === "x") {
+      const x = xPostExtras(platform?.x);
+      if (x) variant.x = x;
+    }
+    if (account.platform === "reddit" && platform?.reddit) {
+      const { subreddit, title, flair } = platform.reddit;
+      variant.reddit = {
+        subreddits: [subreddit.trim()],
+        title: title?.trim() ?? "",
+        kind: link ? "link" : "self",
+        ...(flair.trim() ? { flairId: flair.trim() } : {}),
+      };
+    }
+    if (account.platform === "snapchat") variant.snapchat = snapchatOptions(draft, account.id);
     // Spread the saved options first so fields without a form control (category, publish time,
     // TikTok mode and photo fields) survive an edit; the normalized fields below then override.
     if (account.platform === "youtube" && platform?.youtube) {
@@ -310,11 +662,18 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
       const tiktok = platform.tiktok;
       variant.tiktok = {
         ...tiktok,
+        ...(tiktok.mediaType === "photo"
+          ? {
+              photoTitle: tiktok.photoTitle?.trim() ?? "",
+              photoCoverIndex: tiktok.photoCoverIndex ?? 0,
+              autoAddMusic: tiktok.autoAddMusic ?? false,
+            }
+          : {}),
         privacy: tiktok.privacy ?? "",
         durationSeconds: probe?.durationSeconds ?? 0,
         allowComment: tiktok.allowComment ?? false,
-        allowDuet: tiktok.allowDuet ?? false,
-        allowStitch: tiktok.allowStitch ?? false,
+        allowDuet: tiktok.mediaType !== "photo" && (tiktok.allowDuet ?? false),
+        allowStitch: tiktok.mediaType !== "photo" && (tiktok.allowStitch ?? false),
         brandContent: tiktok.brandContent ?? false,
         brandOrganic: tiktok.brandOrganic ?? false,
         isAigc: tiktok.isAigc ?? false,
@@ -330,11 +689,56 @@ export function buildVariants(input: RuleInput): CampaignVariant[] {
         frameRate: platform.facebook.frameRate ?? 0,
       };
     }
+    if (usesInstagramApi(account)) {
+      const payload = instagramPayload(platform?.instagram, draft.media);
+      if (platform?.instagram) variant.instagram = payload.instagram;
+      variant.media = payload.media;
+      if (payload.instagram.format === "story" && hasCaptionTarget) {
+        variant.text = "";
+        delete variant.link;
+      }
+    }
+    if (account.platform === "linkedin" && account.connection === "oauth") {
+      const format = platform?.linkedinFormat;
+      if (format?.kind === "poll")
+        variant.linkedinFormat = {
+          ...format,
+          question: format.question.trim(),
+          options: format.options.map((option) => option.trim()).filter(Boolean),
+        };
+      if (format?.kind === "article")
+        variant.linkedinFormat = {
+          kind: format.kind,
+          source: format.source.trim(),
+          title: format.title.trim(),
+          ...(format.description?.trim() ? { description: format.description.trim() } : {}),
+        };
+    }
+    if (account.platform === "facebook" && platform?.facebook?.target === "story")
+      variant.facebook = { target: "story" };
+    if (account.platform === "facebook" && platform?.facebook?.target === "video")
+      variant.facebook = { target: "video" };
+    const native = platform?.facebook?.scheduledPublishAt;
+    const target = platform?.facebook?.target;
+    if (account.platform === "facebook" && native && (target === "feed" || target === "video"))
+      variant.facebook = { target, scheduledPublishAt: new Date(native).getTime() };
     return variant;
   });
 }
 
+export function isScheduledDraft(draft: ContentDraft): boolean {
+  return (
+    draft.when === "later" ||
+    draft.accountIds.some((id) => {
+      const facebook = draft.platform[id]?.facebook;
+      return (
+        facebook?.scheduledPublishAt && (facebook.target === "feed" || facebook.target === "video")
+      );
+    })
+  );
+}
+
 /** Button label for the single publish action. */
 export function publishLabel(draft: ContentDraft): string {
-  return draft.when === "now" ? t("Publish") : t("Schedule");
+  return isScheduledDraft(draft) ? t("Schedule") : t("Publish");
 }

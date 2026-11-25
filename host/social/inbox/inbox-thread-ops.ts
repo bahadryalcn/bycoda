@@ -3,6 +3,8 @@ import { accountCapabilities } from "../../../src/integrations/social/capabiliti
 import type { SocialActionContext } from "../core/social-actions";
 import { exact, str } from "../core/social-helpers";
 import { loadPersonThreads, loadThread } from "./inbox-threads";
+import { instagramPrivateReplyTarget } from "./instagram-reply";
+import { instagramLocalMediaAvailable } from "./instagram-media";
 import type { InboxReplyOptions, InboxTimelineEvent } from "./inbox-types";
 
 /** Platforms that only allow a free-form reply within 24 hours of the last inbound message. */
@@ -47,6 +49,31 @@ export async function inboxReplyOptions(
       reasonCode: REPLY_WINDOW_EXPIRED,
       reason: "24-hour window passed; only a template can be sent",
     };
+  if (account.platform === "instagram" && account.connection !== "browser") {
+    if (thread.kind === "message" && (thread.replyUntil ?? 0) > ctx.now())
+      return {
+        canReply: true,
+        instagram: {
+          attachment: true,
+          ...(ctx.principal.kind === "owner" && instagramLocalMediaAvailable()
+            ? { localAttachment: true }
+            : {}),
+        },
+      };
+    if (
+      capability.operation === "reply" &&
+      accountCapabilities(account, ctx.now()).some(
+        (row) => row.operation === "message.reply" && row.status === "available",
+      )
+    ) {
+      try {
+        instagramPrivateReplyTarget(account, thread, ctx.now());
+        return { canReply: true, instagram: { privateReply: true } };
+      } catch {
+        // Expired or non-Instagram comments keep the ordinary reply option.
+      }
+    }
+  }
   return { canReply: true };
 }
 

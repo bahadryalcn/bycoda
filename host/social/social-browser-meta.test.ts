@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Window } from "happy-dom";
 import type { SocialAccount, SocialJob } from "../../src/features/social/model/social";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
@@ -23,6 +23,10 @@ const fb = metaBrowserRecipes.find((entry) => entry.platform === "facebook")!;
 const postUrl = "https://www.facebook.com/123/posts/789/";
 const feedback = Buffer.from("feedback:789").toString("base64");
 const json = (value: unknown) => JSON.stringify(value);
+const facebookWindows: Window[] = [];
+afterEach(async () => {
+  await Promise.all(facebookWindows.splice(0).map((window) => window.happyDOM.close()));
+});
 
 it("holds partial mutation data with an error instead of retrying a possibly completed write", () => {
   expect(() =>
@@ -136,6 +140,149 @@ const facebookStory = (changes: Record<string, unknown> = {}) => ({
       },
     },
   },
+});
+
+describe("Facebook browser send targets", () => {
+  function destination(path: string, html: string, responses: string[], changeAtSubmit?: string) {
+    const f = browser("facebook", responses);
+    const window = new Window({ url: postUrl });
+    facebookWindows.push(window);
+    Object.defineProperty(window.HTMLElement.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [{ width: 1, height: 1 }],
+    });
+    window.document.body.innerHTML = html;
+    vi.mocked(f.page.goto).mockImplementation(async () => {
+      window.location.href = new URL(path, postUrl).href;
+    });
+    vi.mocked(f.page.evaluate).mockImplementation(
+      async <T>(expression: string) => window.eval(expression) as T,
+    );
+    vi.mocked(f.context.waitFor).mockImplementation(
+      async <T>(expression: string) => (await f.page.evaluate<T>(expression)) || undefined,
+    );
+    vi.mocked(f.page.click).mockImplementation(async (selector) => {
+      const control = window.document.querySelector<InstanceType<Window["HTMLElement"]>>(selector);
+      if (!control) throw new Error("Expected one marked control");
+      control.click();
+    });
+    if (changeAtSubmit)
+      vi.mocked(f.context.verifyIdentity).mockImplementation(async () => {
+        if (vi.mocked(f.page.fill).mock.calls.length)
+          window.location.href = new URL(changeAtSubmit, postUrl).href;
+      });
+    return { ...f, window };
+  }
+
+  const reply = job("facebook", {
+    kind: "reply",
+    payload: { postId: postUrl, threadId: "800", text: "Reply", media: [] },
+  });
+  function comment(
+    path = "/123/posts/789/",
+    parentUrl = "/123/posts/789/?comment_id=800",
+    changeAtSubmit?: string,
+  ) {
+    const f = destination(
+      path,
+      `<div role="main">
+        <div role="article"><a href="${parentUrl}">Date</a><button id="open-reply">Reply</button></div>
+        <div role="textbox" contenteditable="true" aria-label="Write a reply"></div><button>Comment</button>
+      </div>`,
+      [
+        json({
+          data: {
+            comment_create: {
+              comment: {
+                legacy_fbid: "900",
+                author: { id: actor },
+                body: { text: "Reply" },
+                feedback: { id: feedback },
+                parent_comment: { legacy_fbid: "800" },
+              },
+            },
+          },
+        }),
+      ],
+      changeAtSubmit,
+    );
+    const open = f.window.document.getElementById("open-reply")!;
+    open.addEventListener("click", () => open.remove());
+    return f;
+  }
+
+  it("replies on the matching canonical permalink and same-post comment", async () => {
+    const f = comment("/permalink.php?story_fbid=789&id=123");
+    await expect(fb.send(f.context, reply)).resolves.toEqual({ platformId: "900" });
+    expect(f.context.markSubmitted).toHaveBeenCalledOnce();
+  });
+
+  it("requires the parent before opening a post for a reply", async () => {
+    const f = comment();
+    const request = { ...reply, payload: { ...reply.payload, threadId: undefined } };
+    await expect(fb.send(f.context, request)).rejects.toMatchObject({ code: "unsupported" });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    expect(f.context.markSubmitted).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["loads another post", "/123/posts/790/", undefined, undefined],
+    ["shows another post's parent", undefined, "/123/posts/790/?comment_id=800", undefined],
+    ["changes the permalink before clicking", undefined, undefined, "/123/posts/790/"],
+  ] as const)("leaves a reply unsent when Facebook %s", async (_name, path, parent, change) => {
+    const f = comment(path, parent, change);
+    await expect(fb.send(f.context, reply)).rejects.toMatchObject({ code: "unsupported" });
+    expect(f.context.markSubmitted).not.toHaveBeenCalled();
+  });
+
+  const message = job("facebook", {
+    kind: "reply",
+    payload: { recipientId: recipient, threadId: "fb:777:456", text: "Message", media: [] },
+  });
+  function conversation(path = "/messages/t/456/", changeAtSubmit?: string) {
+    return destination(
+      path,
+      '<div role="main"><div role="textbox" contenteditable="true" aria-label="Message"></div><button>Send</button></div>',
+      [
+        json({
+          payload: { threads: [{ thread_fbid: "777", participants: ["fbid:123", "fbid:456"] }] },
+        }),
+        json({
+          payload: {
+            actions: [
+              {
+                message_id: "mid.$abc.123",
+                author: "fbid:123",
+                other_user_fbid: recipient,
+                thread_fbid: "777",
+                body: "Message",
+              },
+            ],
+          },
+        }),
+      ],
+      changeAtSubmit,
+    );
+  }
+
+  it("sends to the same verified Messenger thread", async () => {
+    const f = conversation();
+    await expect(fb.send(f.context, message)).resolves.toEqual({ platformId: "mid.$abc.123" });
+    expect(f.context.markSubmitted).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["during navigation", "/messages/t/457/", undefined],
+    ["before clicking Send", undefined, "/messages/t/457/"],
+  ] as const)(
+    "does not send if Messenger opens another conversation %s",
+    async (_name, path, change) => {
+      const f = conversation(path, change);
+      await expect(fb.send(f.context, message)).rejects.toMatchObject({ code: "unsupported" });
+      expect(f.page.click).not.toHaveBeenCalled();
+      expect(f.context.markSubmitted).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("Meta browser identity", () => {

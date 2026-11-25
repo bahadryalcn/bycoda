@@ -26,6 +26,7 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root.unmount());
+  vi.useRealTimers();
   element.remove();
 });
 
@@ -36,6 +37,7 @@ const account = (patch: Partial<SocialAccount> = {}): SocialAccount =>
     name: "Studio",
     accountType: "member",
     connection: "oauth",
+    xApiProduct: "pay-per-use",
     connected: false,
     paused: false,
     grants: {},
@@ -55,7 +57,8 @@ const expiredPublish: Capability = {
 function fakeClient(patch: Record<string, unknown> = {}) {
   return {
     browserBegin: vi.fn(async () => ({ status: "waiting", expiresAt: 1 })),
-    browserStatus: vi.fn(async () => ({ status: "connected" })),
+    browserStatus: vi.fn<SocialClient["browserStatus"]>(async () => ({ status: "connected" })),
+    browserCancelLogin: vi.fn<SocialClient["browserCancelLogin"]>(async () => ({ status: "idle" })),
     oauthBegin: vi.fn(async () => ({ url: "https://example.test/authorize", expiresAt: 1 })),
     oauthStatus: vi.fn(async () => ({ status: "waiting", candidates: [] })),
     oauthSelect: vi.fn(async () => ({})),
@@ -178,6 +181,7 @@ it("keeps an organization account from starting until the numeric organization I
 
 it("starts the browser sign-in from the row, the owner finishes it there, and a status check reports it", async () => {
   const client = fakeClient();
+  client.browserStatus.mockResolvedValueOnce({ status: "waiting" });
   const onChanged = render(client, {
     account: account({ connection: "browser", connected: true }),
     capabilities: [
@@ -189,11 +193,51 @@ it("starts the browser sign-in from the row, the owner finishes it there, and a 
   expect(element.textContent).toContain("Waiting for you");
   expect(button("Sign in again in the browser")).toBeTruthy();
   await act(async () => button("Check connection")?.click());
-  expect(client.browserStatus).toHaveBeenCalledWith("a1");
+  expect(client.browserStatus).toHaveBeenCalledWith("a1", true);
   expect(element.textContent).toContain("Connected");
   // The Host owns the verified state; starting or checking the sign-in never writes a grant.
   expect(client.request).not.toHaveBeenCalled();
   expect(onChanged).toHaveBeenCalledTimes(1);
+});
+
+it("updates an open browser sign-in through verification and failure without a click", async () => {
+  vi.useFakeTimers();
+  const client = fakeClient();
+  client.browserStatus
+    .mockResolvedValueOnce({ status: "waiting" })
+    .mockResolvedValueOnce({ status: "checking" })
+    .mockResolvedValueOnce({ status: "failed", error: "The identity could not be verified." });
+  const onChanged = render(client, {
+    account: account({ platform: "reddit", connection: "browser" }),
+  });
+
+  await act(async () => button("Sign in in the browser")?.click());
+  expect(element.textContent).toContain("Waiting for you");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(element.textContent).toContain("Checking…");
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(element.textContent).toContain("The identity could not be verified.");
+  expect(button("Stop")).toBeUndefined();
+  expect(button("Sign in in the browser")?.disabled).toBe(false);
+  expect(onChanged).not.toHaveBeenCalled();
+
+  await act(async () => vi.advanceTimersByTimeAsync(6_000));
+  expect(client.browserStatus).toHaveBeenCalledTimes(3);
+});
+
+it("ignores a status check still in flight when the owner stops sign-in", async () => {
+  const status = Promise.withResolvers<Awaited<ReturnType<SocialClient["browserStatus"]>>>();
+  const client = fakeClient();
+  client.browserStatus.mockReturnValueOnce(status.promise);
+  const onChanged = render(client, { account: account({ connection: "browser" }) });
+
+  await act(async () => button("Sign in in the browser")?.click());
+  expect(client.browserStatus).toHaveBeenCalledExactlyOnceWith("a1", true);
+  await act(async () => button("Stop")?.click());
+  expect(client.browserCancelLogin).toHaveBeenCalledExactlyOnceWith("a1");
+  await act(async () => status.resolve({ status: "connected" }));
+  expect(element.textContent).toContain("Not checked");
+  expect(onChanged).not.toHaveBeenCalled();
 });
 
 it("labels the first browser sign-in differently from signing in again", () => {
@@ -336,6 +380,7 @@ it("keeps capability details in compact status groups without hiding the connect
 
 it("requires a LinkedIn Page target for browser organizations", async () => {
   const client = fakeClient();
+  client.browserStatus.mockResolvedValueOnce({ status: "waiting" });
   render(client, {
     account: account({ platform: "linkedin", accountType: "organization", connection: "browser" }),
   });

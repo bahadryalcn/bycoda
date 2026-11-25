@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { YOUTUBE_CAPABILITIES } from "./capabilities/youtube-operations";
 import {
   SOCIAL_API_ACCOUNT_TYPES,
   SOCIAL_PLATFORMS,
@@ -7,7 +8,11 @@ import {
 } from "../../features/social/model/social";
 import { accountCapabilities, platformRequirements, X_BROWSER_SCOPES } from "./capabilities";
 import { browserOperations } from "./browserCapabilities";
-import { CAPABILITY_OPERATIONS, NOT_YET_OPERATIONS } from "./capabilities/shared";
+import {
+  CAPABILITY_OPERATIONS,
+  NOT_YET_OPERATIONS,
+  X_CAPABILITY_OPERATIONS,
+} from "./capabilities/shared";
 
 const account = (overrides: Partial<SocialAccount> = {}): SocialAccount => ({
   id: "a",
@@ -121,7 +126,10 @@ describe("X browser connection", () => {
 
 describe("X API connection", () => {
   it("keeps the OAuth scope requirement and its API reason code", () => {
-    const publish = row(accountCapabilities(apiAccount("x")), "publish");
+    const publish = row(
+      accountCapabilities(apiAccount("x", { xApiProduct: "pay-per-use" })),
+      "publish",
+    );
     expect(publish.status).toBe("pending");
     expect(publish.reasonCode).toBe("x.publish.api_required");
     expect(publish.reason).toContain("OAuth");
@@ -163,17 +171,25 @@ describe("capability table shape", () => {
         accountCapabilities(browserAccount(platform)),
       ]) {
         expect(caps.map((item) => item.operation).sort()).toEqual(
-          [...CAPABILITY_OPERATIONS].sort(),
+          [
+            ...CAPABILITY_OPERATIONS,
+            ...(platform === "x" ? X_CAPABILITY_OPERATIONS : []),
+            ...(platform === "youtube"
+              ? YOUTUBE_CAPABILITIES.filter(
+                  (operation) => !(CAPABILITY_OPERATIONS as readonly string[]).includes(operation),
+                )
+              : []),
+          ].sort(),
         );
         for (const item of caps) expect(item.reasonCode.length, platform).toBeGreaterThan(0);
       }
     }
   });
 
-  it("offers Reddit browser posts, comments and polling but no chat, while its API rows follow the Reddit table", () => {
+  it("matches published post deletion and other implemented Reddit browser operations", () => {
     for (const item of accountCapabilities(browserAccount("reddit")))
       expect(item.status === "available", item.operation).toBe(
-        ["publish", "comments.read", "comment", "reply", "poll"].includes(item.operation),
+        ["publish", "comments.read", "comment", "reply", "poll", "delete"].includes(item.operation),
       );
     const api = accountCapabilities(apiAccount("reddit"));
     expect(row(api, "analytics")).toMatchObject({
@@ -186,27 +202,45 @@ describe("capability table shape", () => {
   it("marks the new operations unsupported with unsupported.not_yet unless the API or a browser recipe opens them", () => {
     for (const platform of SOCIAL_PLATFORMS) {
       // API opens (per platform table; each platform test confirms it):
-      // YouTube: analytics, audience.collect, profile.read (youtube-capabilities.test.ts).
+      // YouTube: delete, analytics, audience.collect, profile.read.
       // Telegram bot: delete, audience.collect (capabilities/telegram.test.ts).
-      // Meta: Facebook delete, analytics, audience.collect; Instagram analytics, audience.collect.
-      // TikTok: analytics only (capabilities/tiktok.test.ts). X: delete, analytics, audience.collect, profile.read.
+      // TikTok: analytics and profile.read. X: delete, analytics, audience.collect, profile.read.
+      // Meta: Facebook Page management and reads; Instagram analytics and audience collection.
       // Reddit: delete, audience.collect, profile.read (capabilities/reddit.ts).
       const openedByApi =
-        platform === "youtube"
-          ? ["analytics", "audience.collect", "profile.read"]
-          : platform === "tiktok"
-            ? ["analytics"]
-            : platform === "telegram"
-              ? ["delete", "audience.collect"]
-              : platform === "facebook"
-                ? ["delete", "analytics", "audience.collect"]
-                : platform === "instagram"
-                  ? ["analytics", "audience.collect"]
-                  : platform === "x"
-                    ? ["delete", "analytics", "audience.collect", "profile.read"]
-                    : platform === "reddit"
-                      ? ["delete", "audience.collect", "profile.read"]
-                      : [];
+        platform === "snapchat"
+          ? ["delete", "analytics", "profile.read"]
+          : platform === "youtube"
+            ? ["delete", "analytics", "audience.collect", "profile.read"]
+            : platform === "tiktok"
+              ? ["analytics", "profile.read"]
+              : platform === "telegram"
+                ? ["delete", "audience.collect"]
+                : platform === "facebook"
+                  ? [
+                      "delete",
+                      "analytics",
+                      "audience.collect",
+                      "profile.read",
+                      "profile.update",
+                      "post.edit",
+                      "post.schedule",
+                      "comment.moderate",
+                      "comment.privateReply",
+                      "mentions.read",
+                      "live.read",
+                      "live.transmit",
+                    ]
+                  : platform === "instagram"
+                    ? ["analytics", "audience.collect"]
+                    : platform === "x"
+                      ? ["delete", "analytics", "audience.collect", "profile.read"]
+                      : platform === "reddit"
+                        ? ["delete", "audience.collect", "profile.read"]
+                        : [];
+      if (platform === "linkedin") openedByApi.push("analytics", "delete");
+      // YouTube management owns comment moderation through its own requirement row.
+      if (platform === "youtube") openedByApi.push("comment.moderate");
       // Browser recipes that open a not-yet operation (browserCapabilities.ts). The row is then "available".
       const openedByBrowser = browserOperations(browserAccount(platform)) as readonly string[];
       for (const operation of NOT_YET_OPERATIONS) {
@@ -218,7 +252,10 @@ describe("capability table shape", () => {
           expect(api.reasonCode, `${platform}.${operation} api`).toBe("unsupported.not_yet");
         }
         const browser = row(accountCapabilities(browserAccount(platform)), operation);
-        if (openedByBrowser.includes(operation))
+        if (
+          openedByBrowser.includes(operation) ||
+          (platform === "youtube" && operation === "delete")
+        )
           expect(browser.status, `${platform}.${operation} browser`).toBe("available");
         else {
           expect(browser.status, `${platform}.${operation} browser`).toBe("unsupported");
@@ -248,11 +285,14 @@ describe("capability table shape", () => {
   });
 });
 
-describe("Snapchat copy", () => {
-  it("describes Spotlight publishing as available and does not say publishing is missing", () => {
+describe("Snapchat access", () => {
+  it("enables Public Profile writes and insights only with the API scope", () => {
     const caps = accountCapabilities(apiAccount("snapchat", { scopes: ["snapchat-profile-api"] }));
-    expect(row(caps, "publish").status).toBe("available");
-    expect(row(caps, "publish").reason).not.toMatch(/Publishing.*not implemented/);
-    expect(row(caps, "reply").reason).toContain("Spotlight publishing");
+    const missing = accountCapabilities(apiAccount("snapchat", { scopes: [] }));
+    for (const operation of ["publish", "delete", "analytics", "profile.read"] as const) {
+      expect(row(caps, operation).status).toBe("available");
+      expect(row(missing, operation).status).toBe("pending");
+    }
+    expect(row(caps, "reply").status).toBe("unsupported");
   });
 });

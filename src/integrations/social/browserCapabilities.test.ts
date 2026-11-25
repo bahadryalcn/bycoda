@@ -160,6 +160,15 @@ describe("browser connection capability contracts", () => {
       "expired",
     );
   });
+
+  it("offers browser post deletion only to a verified Facebook Page", () => {
+    for (const accountType of ["page", "member"] as const)
+      expect(
+        accountCapabilities({ ...account("facebook"), accountType }).find(
+          (capability) => capability.operation === "delete",
+        )?.status,
+      ).toBe(accountType === "page" ? "available" : "unsupported");
+  });
 });
 
 describe("browser operations come from the recipe table", () => {
@@ -172,8 +181,11 @@ describe("browser operations come from the recipe table", () => {
   it("offers a not-yet operation through a browser recipe only where that recipe is wired", () => {
     // audience.collect: TikTok Studio commenters and Snapchat chat contacts (member accounts).
     const wired: Partial<Record<SocialPlatform, string[]>> = {
-      tiktok: ["audience.collect"],
-      snapchat: ["audience.collect"],
+      x: ["delete"],
+      tiktok: ["delete", "analytics", "audience.collect", "profile.read"],
+      snapchat: ["audience.collect", "profile.read"],
+      facebook: ["profile.read", "profile.update"],
+      reddit: ["delete"],
     };
     for (const platform of SOCIAL_PLATFORMS) {
       const operations = browserOperations({

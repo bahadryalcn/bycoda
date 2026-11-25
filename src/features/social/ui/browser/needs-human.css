@@ -1,3 +1,4 @@
+/* Waiting-for-you rows: platform mark, reason, what to do, and one primary action. */
 .needs-human-list {
   display: flex;
   flex-direction: column;
@@ -10,19 +11,21 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem var(--space-3);
-  padding: 0.5rem var(--space-3);
+  gap: var(--ui-space-2) var(--ui-space-3);
+  padding: var(--space-3) var(--ui-space-3);
   min-width: 0;
 }
 
 .needs-human-text {
   display: flex;
-  flex: 1 1 8rem;
+  flex: 1 1 12rem;
   flex-direction: column;
+  gap: 0.125rem;
   min-width: 0;
 }
 
-.needs-human-platform {
+.needs-human-platform,
+.needs-human-hint {
   margin: 0;
 }
 

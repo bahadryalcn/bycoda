@@ -74,6 +74,15 @@ export function AccountRequestList({
     write(`${mode}:${request.id}`, async () => {
       const result = await client.accountRequests.approve({ id: request.id, mode });
       await refresh();
+      // LinkedIn Pages require a Page target. Reconnect keeps the account's configured driver.
+      if (
+        request.platform === "linkedin" &&
+        mode === "signin" &&
+        (request.requestedAccountId || request.accountType === "organization")
+      ) {
+        onNavigate("accounts", { accountId: result.accountId });
+        return;
+      }
       if (mode === "create") {
         // The owner already chose to create the account, so its window opens now; if that fails the
         // dialog still offers to open it.
@@ -156,35 +165,45 @@ export function AccountRequestList({
                     </Text>
                   ) : null}
                 </div>
-                <InfoPopover label={t("Why it is needed")}>
-                  <Text as="p">{item.reason}</Text>
-                  {item.suggestedName || item.suggestedUsername ? (
-                    <Text as="p" tone="muted">
+                {item.suggestedName || item.suggestedUsername ? (
+                  <InfoPopover label={t("Suggested name")}>
+                    <Text as="p">
                       {[item.suggestedName, item.suggestedUsername && `@${item.suggestedUsername}`]
                         .filter(Boolean)
                         .join(" · ")}
                     </Text>
-                  ) : null}
-                </InfoPopover>
+                  </InfoPopover>
+                ) : null}
               </div>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="snug"
+                className="account-request-reason"
+              >
+                {item.reason}
+              </Text>
               <div className="account-request-actions">
+                {item.requestedAccountId ? null : (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={is(`create:${item.id}`)}
+                    disabled={busy}
+                    onClick={() => void approve(item, "create")}
+                  >
+                    {t("Create account")}
+                  </Button>
+                )}
                 <Button
                   size="sm"
-                  variant="primary"
-                  loading={is(`create:${item.id}`)}
-                  disabled={busy}
-                  onClick={() => void approve(item, "create")}
-                >
-                  {t("Create account")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
+                  variant={item.requestedAccountId ? "primary" : "secondary"}
                   loading={is(`signin:${item.id}`)}
                   disabled={busy}
                   onClick={() => void approve(item, "signin")}
                 >
-                  {t("I already have one")}
+                  {item.requestedAccountId ? t("Reconnect") : t("I already have one")}
                 </Button>
                 <Button
                   size="sm"

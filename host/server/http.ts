@@ -61,6 +61,7 @@ export function createHttpRuntime(
     | "mcpHttp"
     | "mcpHub"
     | "socialTransport"
+    | "liveStream"
     | "webControl"
     | "lifecycle"
     | "controls"

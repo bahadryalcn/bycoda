@@ -143,8 +143,9 @@ export function useInboxReplyOptions(client: SocialClient, threadId: string | un
 const REFERENCE_PARTS = new Set<unknown>(["accounts", "facts"]);
 
 /**
- * Account names, connection state and the Host auto-refresh setting from the accounts section only,
- * never the full workspace snapshot. Used by the screen alone, so it is read once per open.
+ * Accounts, their capabilities and the Host refresh and sending settings from the accounts section only,
+ * never the full workspace snapshot. Only the screen fetches it, so it is read once per open;
+ * conversation parts pass `active: false` and read the screen's cached result.
  */
 export function useInboxAccounts(client: SocialClient, active = true) {
   return useQuery({
@@ -152,7 +153,12 @@ export function useInboxAccounts(client: SocialClient, active = true) {
     queryFn: async () => {
       const { snapshot } = await client.sectionSnapshot({ section: "accounts", limit: 1 });
       if (!snapshot) throw new Error("The Host did not return the accounts.");
-      return { accounts: snapshot.accounts, pollingEnabled: snapshot.pollingEnabled };
+      return {
+        accounts: snapshot.accounts,
+        capabilities: snapshot.capabilities,
+        pollingEnabled: snapshot.pollingEnabled,
+        sendingEnabled: snapshot.sendingEnabled,
+      };
     },
     // Reopening the retained Inbox must reflect account/settings changes made elsewhere: the read
     // refetches when the screen becomes active, but not on every window focus.

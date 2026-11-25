@@ -8,6 +8,27 @@ export const json = JSON.stringify;
 export const content = (job: SocialJob) =>
   [job.payload.text, job.payload.link].filter(Boolean).join("\n");
 
+/** In-page expression for controls rendered inside open shadow roots. */
+export const OPEN_CONTROL_QUERY = String.raw`(function collect(root, selector) {
+  const matches = [...root.querySelectorAll(selector)];
+  if (root.shadowRoot) matches.push(...collect(root.shadowRoot, selector));
+  for (const element of root.querySelectorAll('*')) {
+    if (element.shadowRoot) matches.push(...collect(element.shadowRoot, selector));
+  }
+  return matches;
+})`;
+
+const CONTROL_MARKER = "[data-bycoda-web-control]";
+
+function scopedControlQuery(ctx: BrowserRecipeContext) {
+  return ctx.controlRoot
+    ? `selector => {
+        const roots = document.querySelectorAll(${json(ctx.controlRoot)});
+        return roots.length === 1 ? ${OPEN_CONTROL_QUERY}(roots[0], selector) : [];
+      }`
+    : "selector => [...document.querySelectorAll(selector)]";
+}
+
 /** Mark only a unique control. Ambiguous matches must never pick the first Post/Send button. */
 export async function control(
   ctx: BrowserRecipeContext,
@@ -19,12 +40,14 @@ export async function control(
   const marked = await ctx.waitFor<boolean>(
     String.raw`(() => {
     const labels = ${json(labels ?? [])};
-    const matches = [...document.querySelectorAll(${json(selector)})].filter(el =>
+    const query = ${scopedControlQuery(ctx)};
+    const matches = query(${json(selector)}).filter(el =>
       (${hidden} || (el.getClientRects().length && !el.hidden)) &&
       !el.disabled && el.getAttribute('aria-disabled') !== 'true' &&
       (!labels.length || labels.includes((el.getAttribute('aria-label') || el.textContent || '').trim())));
     if (matches.length !== 1) return false;
-    document.querySelectorAll('[data-bycoda-web-control]').forEach(el => el.removeAttribute('data-bycoda-web-control'));
+    const marked = ${ctx.controlRoot ? `${OPEN_CONTROL_QUERY}(document, ${json(CONTROL_MARKER)})` : `query(${json(CONTROL_MARKER)})`};
+    marked.forEach(el => el.removeAttribute('data-bycoda-web-control'));
     matches[0].setAttribute('data-bycoda-web-control', ${json(token)}); return true;
   })()`,
     20_000,
@@ -54,7 +77,11 @@ export async function fill(
   const target = await control(ctx, selector, token);
   await ctx.verifyIdentity();
   const existing = await ctx.page.evaluate<string | undefined>(
-    String.raw`(() => {const el=document.querySelector(${json(target)});return el?String(el.value??el.textContent??''):undefined;})()`,
+    String.raw`(() => {
+      const query = ${scopedControlQuery(ctx)};
+      const matches = query(${json(target)});
+      return matches.length === 1 ? String(matches[0].value ?? matches[0].textContent ?? '') : undefined;
+    })()`,
   );
   if (existing === undefined || (!replaceGenerated && existing.trim() && existing !== value))
     throw denied();

@@ -20,7 +20,9 @@ import {
   accountLabel,
   buildVariants,
   draftProblems,
+  hasPostContent,
   publishLabel,
+  isScheduledDraft,
   selectedAccounts,
 } from "./contentRules";
 import {
@@ -139,7 +141,7 @@ export function ContentEditor(props: ContentEditorProps) {
   const save = draftGate({
     ...common,
     hasAccounts: draft.accountIds.length > 0,
-    hasContent: draft.text.trim() !== "" || draft.media.length > 0,
+    hasContent: hasPostContent(draft, selected),
   });
   const variantsNow = () =>
     buildVariants({
@@ -148,7 +150,7 @@ export function ContentEditor(props: ContentEditorProps) {
       accounts,
       snapshot,
       creator: creators,
-      now: Date.now(),
+      now: wallClockNow(),
     });
   const campaignInput = () => ({
     campaignId: draft.campaignId,
@@ -218,7 +220,7 @@ export function ContentEditor(props: ContentEditorProps) {
             onOperationError?.(reasons.join("\n"));
             return;
           }
-          onDone(draft.when === "now" ? "published" : "scheduled");
+          onDone(isScheduledDraft(draft) ? "scheduled" : "published");
         } catch (caught) {
           const message =
             caught instanceof Error

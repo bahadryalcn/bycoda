@@ -9,6 +9,7 @@ export type InboxItem = {
   accountId: string;
   platform: SocialPlatform;
   kind: "comment" | "message";
+  instagramSource?: "live_comment";
   person?: { id: string; name: string };
   title: string;
   /** Last event text, shortened to a single preview line. */
@@ -38,6 +39,7 @@ export type InboxReplyOptions = {
   reason?: string;
   reasonCode?: string;
   templatesOnly?: boolean;
+  instagram?: { privateReply?: true; attachment?: true; localAttachment?: true };
 };
 
 export type InboxTimelineEvent = {

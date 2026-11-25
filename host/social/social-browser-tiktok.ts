@@ -3,7 +3,6 @@ import {
   type CommentRow,
   content,
   denied,
-  files,
   fill,
   inputId,
   json,
@@ -30,6 +29,11 @@ import type {
   BrowserRecipe,
   BrowserRecipeContext,
 } from "./social-browser-recipe";
+import {
+  checkTikTokPublishingChallenge,
+  selectTikTokPostMedia,
+} from "./tiktok/browser-publish-ext";
+import { tiktokDirectMessage } from "./tiktok/browser-dm";
 const TT = "https://www.tiktok.com";
 const EMPTY_SUMMARY: ScreenSummary = {
   url: "",
@@ -313,6 +317,7 @@ async function tiktokSwitch(ctx: BrowserRecipeContext, name: string, desired: bo
 
 async function tiktokUpload(ctx: BrowserRecipeContext, job: SocialJob): Promise<SocialSendResult> {
   const options = job.payload.tiktok;
+  const photo = options?.mediaType === "photo";
   const handle = /^web:tiktok:([\w.]{2,24})$/.exec(ctx.account.platformId)?.[1];
   if (
     !handle ||
@@ -321,17 +326,28 @@ async function tiktokUpload(ctx: BrowserRecipeContext, job: SocialJob): Promise<
     tiktokMode(options) !== "direct" ||
     !tiktokPrivacy[options.privacy] ||
     options.consent !== true ||
-    !Number.isFinite(options.durationSeconds) ||
-    options.durationSeconds <= 0 ||
-    ctx.files.length !== 1 ||
-    ctx.files[0].kind !== "video" ||
-    job.payload.media.length !== 1
+    ctx.files.length !== job.payload.media.length ||
+    (photo
+      ? ctx.files.length === 0 ||
+        ctx.files.length > 4 ||
+        ctx.files.some((item) => item.kind !== "image") ||
+        !Number.isInteger(options.photoCoverIndex) ||
+        options.photoCoverIndex! < 0 ||
+        options.photoCoverIndex! >= ctx.files.length ||
+        options.allowDuet ||
+        options.allowStitch ||
+        typeof options.autoAddMusic !== "boolean"
+      : !Number.isFinite(options.durationSeconds) ||
+        options.durationSeconds <= 0 ||
+        ctx.files.length !== 1 ||
+        ctx.files[0].kind !== "video")
   )
     throw unsupported();
   return guarded(ctx, async () => {
     await ctx.page.goto(`${TT}/tiktokstudio/upload`);
+    await checkTikTokPublishingChallenge(ctx);
     await ctx.verifyIdentity();
-    await files(ctx, 'input[type="file"][accept*="video"]');
+    await selectTikTokPostMedia(ctx, job, photo);
     await fill(
       ctx,
       '[data-e2e="caption-editor"][contenteditable="true"],[data-e2e="caption-editor"] [contenteditable="true"]',
@@ -351,49 +367,73 @@ async function tiktokUpload(ctx: BrowserRecipeContext, job: SocialJob): Promise<
     if (!visibility) throw unsupported();
     for (const [name, desired] of [
       ["allow-comment", options.allowComment],
-      ["allow-duet", options.allowDuet],
-      ["allow-stitch", options.allowStitch],
       ["content-disclosure", options.brandContent || options.brandOrganic],
       ["ai-generated-content", options.isAigc],
     ] as const)
       await tiktokSwitch(ctx, name, desired);
+    if (photo) await tiktokSwitch(ctx, "auto-add-music", options.autoAddMusic!);
+    else {
+      await tiktokSwitch(ctx, "allow-duet", options.allowDuet);
+      await tiktokSwitch(ctx, "allow-stitch", options.allowStitch);
+    }
     if (options.brandContent || options.brandOrganic) {
       await tiktokSwitch(ctx, "your-brand", options.brandOrganic);
       await tiktokSwitch(ctx, "branded-content", options.brandContent);
     }
     await tiktokSwitch(ctx, "music-usage-confirmation", true);
+    await checkTikTokPublishingChallenge(ctx);
     const id = await submitResponse(
       ctx,
       /\/api\/(?:v1\/)?(?:web\/)?(?:project|video|post)\/(?:post|create|publish)\/?$/,
       tiktokVideoCreatedId,
-      'button[data-e2e="post_video_button"],button[data-e2e="post-video-button"]',
-      "publish-video",
+      photo
+        ? 'button[data-e2e="post-photo-button"],button[data-e2e="post_photo_button"]'
+        : 'button[data-e2e="post_video_button"],button[data-e2e="post-video-button"]',
+      photo ? "publish-photos" : "publish-video",
     );
+    const publicationPath = `/@${handle}/${photo ? "photo" : "video"}/${id}`;
     await ctx.page.goto(`${TT}/@${handle}`);
     const persisted = await ctx.waitFor<boolean>(
       String.raw`(() => {
-      const items = [...document.querySelectorAll('[data-e2e="user-post-item"]')].filter(item => [...item.querySelectorAll('a[href]')].some(link => { try { return new URL(link.getAttribute('href'),location.origin).pathname === '/@' + ${json(handle)} + '/video/' + ${json(id)}; } catch { return false; } }));
+      const items = [...document.querySelectorAll('[data-e2e="user-post-item"]')].filter(item => [...item.querySelectorAll('a[href]')].some(link => { try { const url = new URL(link.getAttribute('href'),location.origin); return url.origin === location.origin && url.pathname === ${json(publicationPath)}; } catch { return false; } }));
       return items.length === 1 && [...items[0].querySelectorAll('[data-e2e="user-post-item-desc"],img[alt]')].some(el => (el.getAttribute('alt') || el.textContent || '').trim() === ${json(content(job))});
     })()`,
       120_000,
     );
     if (!persisted) throw unknown();
     await ctx.verifyIdentity();
-    return { platformId: id, url: `${TT}/@${handle}/video/${id}` };
+    return { platformId: id, url: TT + publicationPath };
   });
 }
 
 export const tiktokBrowserRecipe: BrowserRecipe = {
   platform: "tiktok",
   loginUrl: `${TT}/tiktokstudio/upload`,
-  operations: ["publish", "media", "comments.read", "comment", "reply", "poll", "audience.collect"],
+  operations: [
+    "publish",
+    "media",
+    "comments.read",
+    "comment",
+    "reply",
+    "poll",
+    "audience.collect",
+    // TikTok account recipes.
+    "inbox.read",
+    "message.reply",
+    "message.start",
+    "profile.read",
+    "analytics",
+    "delete",
+  ],
   identity: tiktokIdentity,
   creatorInfo: tiktokCreatorInfo,
   send: (ctx, job) =>
     job.kind === "publish"
       ? tiktokUpload(ctx, job)
-      : ["comment", "reply"].includes(job.kind)
-        ? tiktokComment(ctx, job)
-        : Promise.reject(unsupported()),
+      : job.kind === "message" || (job.kind === "reply" && !job.payload.postId)
+        ? tiktokDirectMessage(ctx, job, ctx.beforeSubmit)
+        : ["comment", "reply"].includes(job.kind)
+          ? tiktokComment(ctx, job)
+          : Promise.reject(unsupported()),
   poll: tiktokPoll,
 };

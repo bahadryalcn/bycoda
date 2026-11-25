@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getLanguagePreference, setLanguagePreference } from "../../../shared/i18n";
 import { SOCIAL_READ_ACTIONS } from "./socialActions";
 
 const { remoteRequest } = vi.hoisted(() => ({ remoteRequest: vi.fn() }));
@@ -16,6 +17,30 @@ function lastSocialPayload(): Record<string, unknown> {
 beforeEach(() => {
   remoteRequest.mockReset();
   remoteRequest.mockResolvedValue(undefined);
+});
+
+it.each([
+  [
+    "Large videos require a YouTube API connection.",
+    "Los vídeos de gran tamaño requieren una conexión con la API de YouTube.",
+  ],
+  [
+    "MP4 or WebM videos for YouTube can be at most 256 GiB.",
+    "Los vídeos MP4 o WebM para YouTube pueden ocupar hasta 256 GiB.",
+  ],
+])("localizes the YouTube staging rejection %s", async (message, translation) => {
+  const previousLanguage = getLanguagePreference();
+  try {
+    await setLanguagePreference("es");
+    remoteRequest.mockRejectedValueOnce(new Error(`Host rejected request: ${message}`));
+    const file = new File([new Uint8Array(12)], "fixture.mp4", { type: "video/mp4" });
+    await expect(socialClient("machine").uploadVideo(file, undefined, "youtube")).rejects.toThrow(
+      translation,
+    );
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
+  } finally {
+    await setLanguagePreference(previousLanguage);
+  }
 });
 
 describe("socialClient request ids", () => {

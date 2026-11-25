@@ -4,7 +4,8 @@ import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
-
+import { DescriptionItem, DescriptionList } from "../../../../../shared/ui/DescriptionList";
+import { SectionLabel } from "../../../../../shared/ui/SectionLabel";
 import { TextField } from "../../../../../shared/ui/TextField";
 import type { SocialAccount, SocialTelegramChannelReview } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
@@ -109,6 +110,16 @@ export function TelegramChannelConnect({
 
   return (
     <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
+      <div className="social-card-head">
+        <SectionLabel variant="inline" size="secondary" as="h4">
+          {t("1. Find the channel")}
+        </SectionLabel>
+        <InfoPopover width={360}>
+          {t(
+            "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",
+          )}
+        </InfoPopover>
+      </div>
       <div className="social-field-row">
         <TextField
           label={t("Telegram channel ID or public username")}
@@ -123,29 +134,29 @@ export function TelegramChannelConnect({
             setError("");
           }}
         />
-        <InfoPopover width={360}>
-          {t(
-            "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",
-          )}
-        </InfoPopover>
+        <Button
+          variant={review ? "secondary" : "primary"}
+          size="sm"
+          loading={pending === "inspect"}
+          disabled={busy || !target.trim()}
+          onClick={inspect}
+        >
+          {t("Inspect channel and bot")}
+        </Button>
       </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        loading={pending === "inspect"}
-        disabled={busy || !target.trim()}
-        onClick={inspect}
-      >
-        {t("Inspect channel and bot")}
-      </Button>
       {review ? (
-        <div>
-          <p>
-            {t("Channel")}: {review.channelName} ({review.channelId})
-          </p>
-          <p>
-            {t("Bot")}: {review.botName} ({review.botId})
-          </p>
+        <>
+          <SectionLabel variant="inline" size="secondary" as="h4">
+            {t("2. Connect what you reviewed")}
+          </SectionLabel>
+          <DescriptionList size="sm">
+            <DescriptionItem term={t("Channel")}>
+              {review.channelName} ({review.channelId})
+            </DescriptionItem>
+            <DescriptionItem term={t("Bot")}>
+              {review.botName} ({review.botId})
+            </DescriptionItem>
+          </DescriptionList>
           <InlineMessage tone="info" live="off">
             {t(
               "This connection publishes to the reviewed channel. Private messages and channel monitoring stay separate.",
@@ -154,13 +165,14 @@ export function TelegramChannelConnect({
           <Button
             variant="primary"
             size="sm"
+            className="self-start"
             loading={pending === "connect"}
             disabled={busy}
             onClick={connect}
           >
             {account.connected ? t("Reconnect reviewed channel") : t("Connect reviewed channel")}
           </Button>
-        </div>
+        </>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
     </div>

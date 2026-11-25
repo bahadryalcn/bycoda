@@ -40,6 +40,19 @@ function reasonLabel(reason: NeedsHumanItem["reason"]): string {
   }
 }
 
+function reasonHint(reason: NeedsHumanItem["reason"]): string {
+  switch (reason) {
+    case "challenge":
+      return t("Complete the security check on the page, then come back and press I'm done.");
+    case "verification":
+      return t("Enter the code shown on the page, then come back and press I'm done.");
+    case "login":
+      return t("Sign in on the page, then come back and press I'm done.");
+    case "unexpected_screen":
+      return t("Look at the page and clear whatever is blocking it, then press I'm done.");
+  }
+}
+
 /** Accounts waiting for the owner. The owner opens the live view, completes the step, then says "I'm done". */
 export function NeedsHumanList({
   client,
@@ -131,9 +144,12 @@ export function NeedsHumanList({
               <Text size="caption" tone="muted" leading="inherit" className="needs-human-platform">
                 {SOCIAL_PLATFORM_NAMES[item.platform]}
               </Text>
+              <Text size="caption" tone="secondary" leading="snug" className="needs-human-hint">
+                {reasonHint(item.reason)}
+              </Text>
             </div>
             <div className="needs-human-actions">
-              <Button size="sm" variant="secondary" onClick={() => setOpenAccount(item.accountId)}>
+              <Button size="sm" variant="primary" onClick={() => setOpenAccount(item.accountId)}>
                 {t("Open live view")}
               </Button>
               <Button
