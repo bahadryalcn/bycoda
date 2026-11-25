@@ -12786,5 +12786,9 @@
   "Raise the budget": "提高预算",
   "Update the instructions": "更新说明",
   "Fix or remove the dependency": "修复或移除依赖",
-  "Retry to run it again": "重试以再次运行"
+  "Retry to run it again": "重试以再次运行",
+  "No helpers": "无助手",
+  "Helpers: automatic": "助手：自动",
+  "Helpers: {p0}": "助手：{p0}",
+  "advisor": "顾问"
 }

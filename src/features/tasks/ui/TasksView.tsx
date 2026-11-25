@@ -91,6 +91,7 @@ import { TaskBoardStatusDialog, TaskDeliveryDialog, TaskMetricsDialog } from "./
 import { TasksViewDraftDialog } from "./TasksViewDraftDialog";
 import { TasksViewEmpty } from "./TasksViewEmpty";
 import { useFilteredTasks } from "./TasksViewFilter";
+import { crewAssignments } from "../model/taskRelatedWork";
 import { useBoardIndexes, useTaskContexts } from "./TasksViewIndexes";
 import { useTaskMutations } from "./TasksViewMutations";
 import { TasksViewRecovery } from "./TasksViewRecovery";
@@ -647,8 +648,9 @@ function TasksContent({
   };
   const cardActions = useStableCallback(actionsFor);
   const openCard = useStableCallback((key: string) => setSelectedKey(key));
+  // A task opened from its epic or crew task is not a row of the filtered list.
   const selected = selectedKey
-    ? tasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
+    ? storedTasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
     : undefined;
   // A task that is gone from the board takes its panel with it.
   if (selectedKey && !loading && !selected) setSelectedKey(null);
@@ -1031,6 +1033,7 @@ function TasksContent({
           filter={goalFilter}
           tasks={storedTasks}
           acting={acting}
+          onOpenTask={(task) => openCard(`${task.machineId}:${task.id}`)}
           revealKey={
             goalReveal
               ? `${goalReveal.machineId}:${goalReveal.goalId}:${goalReveal.token}`
@@ -1128,6 +1131,8 @@ function TasksContent({
             onClose={() => setSelectedKey(null)}
             onSaveDetails={(title, prompt) => onSaveDetails(selected, title, prompt)}
             planning={<SprintPlanningControls board={accessibleSprintBoard} tasks={[selected]} />}
+            assignments={crewAssignments(selected, storedTasks)}
+            onOpenTask={(task) => openCard(`${task.machineId}:${task.id}`)}
           />
         ) : null}
       </div>

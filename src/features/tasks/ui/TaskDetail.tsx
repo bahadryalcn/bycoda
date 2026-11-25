@@ -19,6 +19,8 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { canEditTask, type TaskStatus } from "../model/hostTasks";
 import { taskStatusLine } from "../model/taskStatusLine";
+import { taskResolvedLine } from "../model/taskResolvedLine";
+import { RelatedTaskList } from "./RelatedTaskList";
 import { TaskOutcomeSummary, TaskOwnerNotices } from "./TaskStatusLine";
 import { TaskStatusReason } from "./TaskStatusReason";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
@@ -70,6 +72,8 @@ export function TaskDetail({
   onClose,
   onSaveDetails,
   planning,
+  assignments = [],
+  onOpenTask,
   ...actions
 }: {
   task: BoardTask;
@@ -81,6 +85,9 @@ export function TaskDetail({
   /** Resolves true once the new title and description are saved. */
   onSaveDetails: (title: string, prompt: string) => Promise<boolean>;
   planning?: ReactNode;
+  /** The assignments of this task's crew run; each opens its own detail. */
+  assignments?: readonly BoardTask[];
+  onOpenTask?: (task: BoardTask) => void;
 } & TaskActionHandlers) {
   useLocale();
   const [editing, setEditing] = useState(false);
@@ -89,6 +96,7 @@ export function TaskDetail({
   const [saving, setSaving] = useState(false);
   const model = resolveModel(task.harness, task.model);
   const status = taskStatusLine(task);
+  const resolvedLine = taskResolvedLine(task.resolved);
   const editable = canEditTask(task.status);
   const canSave =
     title.trim().length > 0 && (task.status === "todo" || prompt.trim().length > 0) && !saving;
@@ -256,6 +264,13 @@ export function TaskDetail({
                   /> ·{" "}
                   {model.name}
                 </DescriptionItem>
+                {resolvedLine ? (
+                  <DescriptionItem term={t("Run with")} truncate>
+                    <Tooltip label={resolvedLine.why}>
+                      <span>{resolvedLine.text}</span>
+                    </Tooltip>
+                  </DescriptionItem>
+                ) : null}
                 <DescriptionItem term={t("Created")} truncate>
                   {formatTime(task.createdAt)}
                 </DescriptionItem>
@@ -311,6 +326,12 @@ export function TaskDetail({
               onOpenReview={actions.onOpenReview}
               isOpeningSession={actions.isOpeningSession}
             />
+          ) : null}
+          {assignments.length > 0 && onOpenTask ? (
+            <section className="task-detail-section">
+              <SectionLabel as="h3">{t("Assignments")}</SectionLabel>
+              <RelatedTaskList label={t("Assignments")} tasks={assignments} onOpen={onOpenTask} />
+            </section>
           ) : null}
           {goal ? (
             <Text

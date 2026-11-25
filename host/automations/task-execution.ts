@@ -3,6 +3,7 @@ import type { HostStore } from "../store";
 import { createWork } from "../tasks/work-request";
 import type { HostTasks } from "../tasks/service";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
+import { automationRunStatusOf, projectTask } from "../../src/shared/model/workProjection";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
 import type {
   HostAutomation,
@@ -77,24 +78,18 @@ export function automationTaskProjection(
   task: HostTask,
   waitingForInput = false,
 ): Partial<HostAutomationRun> & Pick<HostAutomationRun, "status"> {
-  const status =
-    task.status === "done"
-      ? "succeeded"
-      : task.status === "blocked"
-        ? run.cancellationRequested
-          ? "cancelled"
-          : "failed"
-        : task.status === "queued" || task.status === "todo"
-          ? "pending"
-          : "running";
+  const { phase } = projectTask(task);
   return {
-    status,
+    status: automationRunStatusOf(phase, run.cancellationRequested),
     sessionId: task.sessionId,
     runId: task.runId,
     startedAt: task.startedAt ?? run.startedAt,
     error: task.error,
     needsInput:
-      task.status === "review" || (task.status === "running" && waitingForInput) || undefined,
+      phase === "review" ||
+      phase === "input" ||
+      (phase === "running" && waitingForInput) ||
+      undefined,
   };
 }
 

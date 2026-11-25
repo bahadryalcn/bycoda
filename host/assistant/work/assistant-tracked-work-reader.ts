@@ -1,6 +1,6 @@
 import type { HostStore } from "../../store";
-import { taskNeedsInput } from "../../../src/shared/model/host-contracts/task-stop";
-import { taskStopText } from "../../../src/shared/model/taskStopSummary";
+import { summaryText } from "../../../src/shared/model/taskStopSummary";
+import { projectGoal, projectTask } from "../../../src/shared/model/workProjection";
 import type { HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { CrewRun } from "../../../src/features/crews/model/crew";
@@ -78,14 +78,15 @@ export function storeTrackedWorkReader(store: HostStore): TrackedWorkReader {
         | HostTask
         | undefined;
       if (!task) return undefined;
-      if (task.status === "done" || task.status === "review")
+      const { phase, stop } = projectTask(task);
+      if (phase === "done" || phase === "review")
         return { state: "done", verification: describeVerification(undefined, [task]) };
-      if (task.status === "blocked")
-        return { state: "failed", summary: (taskStopText(task) ?? "").slice(0, 1000) };
-      if (taskNeedsInput(task)) return { state: "waiting", waitingReason: "owner" };
+      if (phase === "stopped" || phase === "cancelled")
+        return { state: "failed", summary: (stop ? summaryText(stop) : "").slice(0, 1000) };
+      if (phase === "input") return { state: "waiting", waitingReason: "owner" };
       return {
         state:
-          task.status === "running" && (await silent(store, [task.sessionId], now, stallMs))
+          phase === "running" && (await silent(store, [task.sessionId], now, stallMs))
             ? "stalled"
             : "active",
       };
@@ -100,18 +101,25 @@ export function storeTrackedWorkReader(store: HostStore): TrackedWorkReader {
           .prepare("SELECT value FROM tasks WHERE json_extract(value,'$.goalId')=?")
           .all(goal.id)
       ).map((value) => JSON.parse(String(value.value)) as HostTask);
-      if (goal.status === "done")
+      const { phase, stop } = projectGoal(goal, children);
+      if (phase === "done")
         return { state: "done", verification: describeVerification(goal, children) };
-      if (goal.status === "cancelled") return { state: "cancelled" };
-      if (goal.status === "blocked")
+      if (phase === "cancelled") return { state: "cancelled" };
+      if (phase === "stopped")
         return {
           state: "failed",
-          summary: (goal.error ?? goal.planError ?? "The goal needs attention.").slice(0, 1000),
+          summary: (stop?.code === "unrecorded" && !stop.reason
+            ? "The goal needs attention."
+            : stop
+              ? summaryText(stop)
+              : ""
+          ).slice(0, 1000),
         };
-      if (goal.status === "awaiting-approval")
-        return { state: "waiting", waitingReason: "planApproval" };
-      if (children.some((task) => taskNeedsInput(task) && task.status !== "done"))
-        return { state: "waiting", waitingReason: "owner" };
+      if (phase === "input")
+        return {
+          state: "waiting",
+          waitingReason: goal.status === "awaiting-approval" ? "planApproval" : "owner",
+        };
       return {
         state: (await silent(
           store,

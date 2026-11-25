@@ -3,3 +3,4 @@ export type * as hostSettingsApi from "./public/hostSettings";
 export type * as agentDefaultsApi from "./public/agentDefaults";
 export type { BackgroundSessionTarget } from "./model/backgroundSession";
 export type * as taskCreationApi from "./public/taskCreation";
+export type * as workExecutorApi from "./public/workExecutor";

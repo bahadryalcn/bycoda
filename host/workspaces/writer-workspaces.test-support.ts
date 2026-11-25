@@ -3,12 +3,25 @@ import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import { vi } from "vitest";
 import type { ManagedWorkspace } from "./workspace-contracts";
-import type { StewardWorkspaceServices } from "../stewards/stewards";
+import type {
+  ExecutionActivityReservations,
+  WorkspacePolicyResolver,
+  WorkspaceRegistry,
+  WorkspaceRemovalService,
+} from "./workspace-service-contracts";
 import { invalidateHostWorktrees } from "../git/git-worktrees";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type { HostEngine } from "../engine";
 import { writerWorkspaceMode } from "../tasks/task-workspace-runtime";
 import { GitTurnHistory } from "../git/turn-git-history";
+
+export interface WriterWorkspaceServices {
+  policy?: WorkspacePolicyResolver;
+  registry: WorkspaceRegistry;
+  activity: ExecutionActivityReservations;
+  removal: WorkspaceRemovalService;
+  environmentId: string;
+}
 
 /** Test execution adapter: real Git worktrees; in-memory lifecycle records with
  * session ownership mirrored into the Host store for reviewer identity checks. */
@@ -125,7 +138,7 @@ export function writerWorkspaces(root: string, projectCwd: (id: string) => Promi
     registry: { prepare, get, finish, close, resume },
     activity: { start, stop },
     removal: { plan, apply },
-  } as unknown as StewardWorkspaceServices;
+  } as unknown as WriterWorkspaceServices;
   const required = async (id: string) => {
     const row = rows.get(id);
     if (!row || row.directoryState !== "present")

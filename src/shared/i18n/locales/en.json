@@ -12786,5 +12786,9 @@
   "Raise the budget": "Raise the budget",
   "Update the instructions": "Update the instructions",
   "Fix or remove the dependency": "Fix or remove the dependency",
-  "Retry to run it again": "Retry to run it again"
+  "Retry to run it again": "Retry to run it again",
+  "No helpers": "No helpers",
+  "Helpers: automatic": "Helpers: automatic",
+  "Helpers: {p0}": "Helpers: {p0}",
+  "advisor": "advisor"
 }

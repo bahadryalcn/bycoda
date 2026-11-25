@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { taskStopText } from "../../../src/shared/model/taskStopSummary";
+import { projectGoal, projectTask } from "../../../src/shared/model/workProjection";
 import { z } from "zod";
 import type { HostStore } from "../../store";
 import type { HostSession } from "../../../src/features/connections/model/protocol";
@@ -296,6 +297,7 @@ export class AssistantChiefReads {
         data: () => ({
           id: goal.id,
           status: goal.status,
+          phase: projectGoal(goal, []).phase,
           prompt: cut(goal.prompt, 2000),
           error: cut(goal.error ?? goal.planError, 500),
           tasks: goal.plan?.tasks.slice(0, 20).map((task) => ({
@@ -332,6 +334,7 @@ export class AssistantChiefReads {
         projectId: task.projectId,
         title: cut(task.title, 200),
         status: task.status,
+        phase: projectTask(task).phase,
         prompt: cut(task.prompt, 2000),
         stop: cut(taskStopText(task), 500),
         sessionId: task.sessionId,

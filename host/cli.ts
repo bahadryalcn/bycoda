@@ -832,7 +832,6 @@ Connect another computer using an SSH forward to the loopback port.`);
     mcpHub.warm(port);
     automations.start();
     tasks.start();
-    stewards.start();
     store.startMaintenance();
     await writeFileAtomic(statePath, JSON.stringify({ pid: process.pid, port, secret }), {
       mode: 0o600,

@@ -429,7 +429,8 @@ All roles have normal host session tools under their existing permissions. Agent
 use `tools.list` to discover actions, `crews.schema` and `crews.inspect` to inspect
 contracts/models, and `crews.save` to save project definitions. `crews.start`
 attaches a compatible conversation by default; `newConversation: true` launches
-a separate coordinator. `tasks.create` with `crewDefinitionId` and
+a separate coordinator. Either way the run's board task is created through the same
+Host work-creation path as `tasks.create`, keyed by the run ID. `tasks.create` with `crewDefinitionId` and
 `status: "queued"` schedules a board task, inheriting caller permissions and using
 the task ID as its idempotency key. A fixed coordinator must match an attached
 conversation. Starting a new coordinator avoids that attachment constraint.

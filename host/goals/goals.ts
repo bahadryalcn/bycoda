@@ -10,11 +10,11 @@ import { flatMapAsync, mapAsync, someAsync } from "../async-collections";
 import { deferredAssistantTurn } from "../assistant/core/assistant-turn-policy";
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { goalStateFromTasks } from "../../src/shared/model/workProjection";
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
 import {
   GOAL_CANCELLED,
-  goalStateFromTasks,
   goalPlanNeedsApproval,
   goalPlanReviews,
   parseGoalPlan,

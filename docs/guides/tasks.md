@@ -89,6 +89,12 @@ Epic progress and budget totals reflect the Host scheduler's latest recorded sta
 
 Open **Goal** beside the current work above the message input to see the provider's goal status, objective, reported token usage and elapsed time. **Pause** pauses an active goal. **Resume goal** continues a paused, blocked or limited goal. **Clear goal** removes it. These actions preserve the input draft and follow the conversation's messaging permissions. Wait for the current turn to finish before changing the goal. Current work and subagents can still be running while a goal is blocked. The panel shows when Codex has provided no reason for that state.
 
+## One row per piece of work
+
+The task list shows each independent piece of work once. The tasks an epic planned open from the epic card (**Details > Tasks**), and a crew's assignments open from the crew task's detail (**Assignments**); both show the work, model, status and reported cost, and each opens its own detail. Searching still finds them, and choosing an epic in the epic filter lists its tasks. An assignment whose crew task is not on the board stays a row. A task an automation created is the one record of that occurrence; the automation's history links to it. The task detail's **Run with** line says whether one agent or a crew ran it and which helpers were allowed, and its tooltip gives the reason the Host chose that.
+
+The same phase (pending, running, needs you, review, done, stopped, cancelled) and the same reason come from one place for tasks, epics, automation occurrences and the assistant's tracked work, so the card, the Room and a spoken or written status answer agree. Chat, dictation, reminders and a single question to a crew member are separate and never enter the list.
+
 ## Retry safely
 
 Tasks open across all projects and servers. Use **Server** to narrow tasks, sprint projects and report totals; **All servers** restores the shared view. The sprint list includes records saved on each connected server and identifies their owning server. Opening a sprint keeps actions on that server, even when another server uses the same sprint ID. Unavailable servers keep their last known catalog with an error and disabled actions.

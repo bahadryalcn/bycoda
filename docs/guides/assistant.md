@@ -394,6 +394,8 @@ Work you start by voice or in the Room (goals, standalone tasks and crew runs) i
 tracked once it is created. The assistant only watches it: you still get a notice
 when it is done, fails, needs you or stalls, and no new authority over it is
 granted. Up to 200 items are tracked; finished ones are forgotten after seven days.
+A status question, by voice or in writing, reads the same phase and reason the task
+card shows, so the answer matches what you see.
 
 Use a job's pause, resume or stop action to control that job. **Stop everything**
 interrupts the supervisor and requests that its linked jobs stop. Errors remain

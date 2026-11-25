@@ -3,7 +3,7 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { taskNeedsInput } from "../../../shared/model/host-contracts/task-stop";
 import { taskStopText } from "../../../shared/model/taskStopSummary";
 import type { BoardGoal } from "./goalClient";
-import { goalProgress } from "./hostGoals";
+import { goalProgress } from "../../../shared/model/workProjection";
 import type { BoardTask } from "./taskClient";
 
 /** A task as the summary lists it. `key` opens it on the board. */

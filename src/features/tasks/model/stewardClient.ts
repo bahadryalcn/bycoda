@@ -280,8 +280,8 @@ function stewardRequest<T = unknown>(steward: BoardSteward, method: string): Pro
   return remoteRequest<T>(steward.machineId, method, { stewardId: steward.id }, false, true);
 }
 
-/** Keep desktop bindings while replacing host fields, including optional run
- * metadata or errors that disappeared from the authoritative response. */
+/** Keep desktop bindings while replacing host fields, including optional
+ * errors that disappeared from the authoritative response. */
 function updatedSteward(steward: BoardSteward, updated: HostSteward): BoardSteward {
   return {
     ...updated,

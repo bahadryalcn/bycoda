@@ -17,7 +17,7 @@ import { workCrewId } from "../../../shared/model/host-contracts/work-executor";
 const RUNNING_KINDS: ReadonlySet<TaskStatusKind> = new Set(["running", "verifying", "correcting"]);
 
 /** Maps the task status line to the five shared status roles. */
-function statusTextTone(status: TaskStatusLine): StatusTextTone {
+export function statusTextTone(status: TaskStatusLine): StatusTextTone {
   if (RUNNING_KINDS.has(status.kind)) return "running";
   if (status.tone === "danger") return "failed";
   if (status.tone === "warning") return "needs-you";

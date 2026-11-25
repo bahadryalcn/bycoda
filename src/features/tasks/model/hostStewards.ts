@@ -52,23 +52,7 @@ export type HostStewardInput = AutomationSchedule & {
   isolate?: boolean;
 };
 
-/** The run a steward is in the middle of. */
-export type StewardRun = {
-  workspaceId?: string;
-  activityId?: string;
-  sessionId?: string;
-  runId?: string;
-  startedAt: number;
-  /** The throwaway checkout the run works in, and its branch. */
-  worktreeCwd?: string;
-  branch?: string;
-  /** Why the run is being stopped, saved before its turn was cancelled. */
-  error?: string;
-};
-
 export type HostSteward = HostStewardInput & {
-  /** Runtime admission hold; the owner configuration parser never accepts it. */
-  modelRoutingWait?: { reason: string; retryAt?: number };
   deliveryApprovalRequired?: boolean;
   nextRunAt: number;
   lastRunAt?: number;
@@ -79,7 +63,6 @@ export type HostSteward = HostStewardInput & {
   lastProposed?: number;
   /** Normalized titles of proposals the owner declined. */
   declined: string[];
-  run?: StewardRun;
   createdAt: number;
   updatedAt: number;
 };

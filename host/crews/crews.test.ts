@@ -246,6 +246,9 @@ describe("host crews", () => {
     expect(f.sourceRows).toHaveLength(1);
     expect(f.sourceRows[0]).toMatchObject({
       executor: { kind: "crew", crewDefinitionId: "crew" },
+      // Created by `createWork`, the one task front door: origin and request are recorded.
+      origin: { kind: "crew" },
+      request: f.sourceRows[0].prompt,
       crewExecutionId: "run",
       projectId: f.project.id,
     });

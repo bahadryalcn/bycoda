@@ -12786,5 +12786,9 @@
   "Raise the budget": "Bütçeyi artır",
   "Update the instructions": "Talimatları güncelle",
   "Fix or remove the dependency": "Bağımlılığı düzelt veya kaldır",
-  "Retry to run it again": "Yeniden çalıştırmak için tekrar dene"
+  "Retry to run it again": "Yeniden çalıştırmak için tekrar dene",
+  "No helpers": "Yardımcı yok",
+  "Helpers: automatic": "Yardımcılar: otomatik",
+  "Helpers: {p0}": "Yardımcılar: {p0}",
+  "advisor": "danışman"
 }

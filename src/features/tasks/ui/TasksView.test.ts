@@ -1563,10 +1563,11 @@ it("keeps goal and dependency details reachable from a compact task card", async
   await render();
   const card = container.querySelector<HTMLElement>('article[aria-label="Launch the beta"]')!;
   expect(card.textContent).toContain("0/2 done");
-  const queued = column("queued");
-  expect(queued.querySelector("[data-task-goal]")).toBeNull();
+  // The epic's tasks are not rows of the board; they open from the epic card.
+  expect(column("queued").querySelector('article[aria-label="Call the endpoint"]')).toBeNull();
+  expect(column("queued").querySelector('article[aria-label="Unrelated"]')).not.toBeNull();
   await act(async () =>
-    queued.querySelector<HTMLElement>('article[aria-label="Call the endpoint"]')!.click(),
+    card.querySelector<HTMLElement>('button[aria-label="Call the endpoint"]')!.click(),
   );
   expect(panel()!.textContent).toContain("Launch the beta");
   expect(panel()!.textContent).toContain("Add the endpoint");

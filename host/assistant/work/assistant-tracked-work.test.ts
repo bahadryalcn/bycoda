@@ -122,6 +122,25 @@ describe("tracked direct work", () => {
     ]);
   });
 
+  it("tells a blocked goal what stopped its task, as the task card does", async () => {
+    const f = await setup();
+    await f.service.trackDirectWork(item("g1"));
+    await f.put("tasks", {
+      id: "c1",
+      goalId: "g1",
+      status: "blocked",
+      stop: buildTaskStop({ code: "budget_exhausted", message: "Run budget reached." }, 1),
+    });
+    await f.put(
+      "goals",
+      goal({ status: "blocked", taskIds: ["c1"], error: "1 of 1 task blocked" }),
+    );
+    await f.service.tick();
+    expect(await f.notices()).toMatchObject([
+      { kind: "job.failed", body: "Run budget reached: Run budget reached." },
+    ]);
+  });
+
   it("reports a finished task with the recorded checks only", async () => {
     const f = await setup();
     await f.service.trackDirectWork(item("t2", "task"));

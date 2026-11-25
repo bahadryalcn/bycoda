@@ -35,13 +35,11 @@ import {
 import {
   cancelSessionRun,
   errorMessage,
-  launchSessionRun,
   sessionRunState,
   type SessionRunEngine,
 } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
-import { previewTaskFinalization, writerWorkspaceMode } from "../tasks/task-workspace-runtime";
-import { branchWorkRule, sharedCheckoutRule } from "../tasks/prompt-rules";
+import { previewTaskFinalization } from "../tasks/task-workspace-runtime";
 import type {
   ExecutionActivityReservations,
   WorkspaceRegistry,
@@ -747,7 +745,6 @@ export class HostAutomations {
     if (this.launching.has(automation.id))
       return this.finish(run, "skipped", PREVIOUS_RUN_SKIP, now);
     this.launching.add(automation.id);
-    let accepted: { sessionId: string; runId?: string } | undefined;
     try {
       const skip = (await this.hasRunningRun(automation.id, run.id))
         ? PREVIOUS_RUN_SKIP
@@ -824,148 +821,25 @@ export class HostAutomations {
           });
         return this.retainOwnedRun(run, { status: "pending" });
       }
-      // Existing direct-session occurrences retain their original recovery owner.
-      // New project occurrences are Tasks; only Task runtime creates sessions/workspaces.
-      if (!run.sessionId) {
-        if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
-        if (automation.template?.kind === "project-scan") {
-          if (!this.projectScan) throw new Error("Project scan migration service is unavailable.");
-          automation = {
-            ...automation,
-            prompt: await this.projectScan.prepare(automation.template.sourceStewardId),
-          };
-        }
-        return await createAutomationTask(this.store, this.tasks, automation, run);
-      }
-      const mode = await writerWorkspaceMode(
-        this.store,
-        this.workspaces,
-        automation.projectId,
-        automation.isolate,
-      );
-      let workspace: Awaited<ReturnType<WorkspaceRegistry["prepare"]>>["workspace"] | undefined;
-      if (mode === "worktree") {
-        if (!this.workspaces)
-          throw new Error("Update the Host to enable managed automation workspaces.");
-        await this.store.db.checkAuthorization();
-        workspace = (
-          await this.workspaces.registry.prepare({
-            idempotencyKey: `automation:${run.id}`,
-            projectId: automation.projectId,
-            environmentId: this.workspaces.environmentId,
-            owner: { kind: "automationRun", id: run.id },
-            slug: automation.name,
-            choice: { defaultMode: "worktree" },
-          })
-        ).workspace;
-        if (
-          workspace.owner.kind !== "automationRun" ||
-          workspace.owner.id !== run.id ||
-          workspace.projectId !== automation.projectId ||
-          workspace.directoryState !== "present"
-        )
-          throw new Error("The managed workspace does not belong to this automation run.");
-        run = { ...run, workspaceId: workspace.id };
-        await this.writeRun(run);
-        await this.store.db.checkAuthorization();
-        const activity = await this.workspaces.activity.start({
-          workspaceId: workspace.id,
-          kind: "provider",
-          ownerId: run.id,
-        });
-        run = { ...run, activityId: activity.id };
-        await this.writeRun(run);
-      }
-      // Persist producer ownership before Work admission, including capacity waits.
-      run = { ...run, workPending: true };
-      await this.writeRun(run);
-      const cwd = workspace?.path ?? (await this.store.project(automation.projectId)).cwd;
-      const started = await launchSessionRun(
-        this.store,
-        {
-          command: async (command) => {
-            const receipt = await this.engine.command(command);
-            const type = (command as { type?: unknown }).type;
-            if (type === "create") run = { ...run, sessionId: receipt.sessionId };
-            if (type === "send") accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
-            return receipt;
-          },
-          updateSession: (...args) => this.engine.updateSession(...args),
-          withMessageAuthor: this.engine.withMessageAuthor?.bind(this.engine),
-        },
-        {
-          projectId: automation.projectId,
-          author: {
-            // Work occurrence belongs to the durable automation run.
-            kind: "automation",
-            id: automation.id,
-            name: automation.name,
-            reason: "kickoff",
-          },
-          harness: automation.harness,
-          work: { kind: "automation", id: automation.id, occurrence: run.id },
-          providerAccountId: automation.providerAccountId,
-          model: automation.model,
-          modelSettings: automation.modelSettings,
-          runtimeMode: automation.runtimeMode,
-          title: automation.name,
-          prompt: `${
-            workspace
-              ? branchWorkRule(workspace.path, workspace.branchRef)
-              : sharedCheckoutRule(cwd)
-          }\n\n${automation.prompt}`,
-          ...(workspace
-            ? { worktreeCwd: workspace.path, workspaceId: workspace.id }
-            : { workspaceMode: "current" as const }),
-        },
-        async () => {
-          if (this.closing) return false;
-          const current = await this.store.db
-            .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
-            .get(run.id, automation.id);
-          if (!current) return false;
-          const latest = JSON.parse(String(current.value)) as HostAutomationRun;
-          return (
-            latest.status === "pending" ||
-            (latest.status === "running" &&
-              accepted !== undefined &&
-              latest.sessionId === accepted.sessionId &&
-              latest.runId === accepted.runId)
-          );
-        },
-      );
-      if (accepted) {
-        // The engine's durable send receipt, not the creator's subsequent
-        // connection/grant, owns the accepted run. SQL bookkeeping only.
-        return this.retainOwnedRun(run, {
-          status: "running",
-          startedAt: now,
-          ...accepted,
-        });
-      }
-      if (started.deferred) {
-        const retained = await this.retainOwnedRun(run, { status: "pending" });
-        // Preparation may have acquired activity after a concurrent pending stop.
-        if (retained.status === "cancelled") return this.finish(run, "cancelled", undefined, now);
-        return retained;
-      }
-      if (started.error !== undefined)
+      // A project occurrence is always a Task; only Task runtime creates sessions/workspaces.
+      // An occurrence that already has a session predates Tasks and is not resumed or rerun.
+      if (run.sessionId)
         return await this.finish(
-          { ...run, sessionId: started.sessionId },
+          run,
           "failed",
-          started.error,
+          "This run started before automations ran as tasks and cannot be resumed.",
           now,
         );
-      return await this.writeRun({
-        ...run,
-        status: "running",
-        startedAt: now,
-        sessionId: started.sessionId,
-        runId: started.runId,
-      });
+      if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+      if (automation.template?.kind === "project-scan") {
+        if (!this.projectScan) throw new Error("Project scan migration service is unavailable.");
+        automation = {
+          ...automation,
+          prompt: await this.projectScan.prepare(automation.template.sourceStewardId),
+        };
+      }
+      return await createAutomationTask(this.store, this.tasks, automation, run);
     } catch (error) {
-      if (accepted)
-        return this.retainOwnedRun(run, { status: "running", startedAt: now, ...accepted });
       try {
         await this.store.db.checkAuthorization();
       } catch (revoked) {

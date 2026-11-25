@@ -86030,23 +86030,6 @@
                 }
               ]
             },
-            "modelRoutingWait": {
-              "additionalProperties": false,
-              "properties": {
-                "reason": {
-                  "type": "string"
-                },
-                "retryAt": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "reason"
-              ],
-              "type": "object"
-            },
             "modelSettings": {
               "additionalProperties": {
                 "type": "string"
@@ -86068,41 +86051,6 @@
               "maxLength": 200,
               "minLength": 1,
               "type": "string"
-            },
-            "run": {
-              "additionalProperties": false,
-              "properties": {
-                "activityId": {
-                  "type": "string"
-                },
-                "branch": {
-                  "type": "string"
-                },
-                "error": {
-                  "type": "string"
-                },
-                "runId": {
-                  "type": "string"
-                },
-                "sessionId": {
-                  "type": "string"
-                },
-                "startedAt": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "worktreeCwd": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "startedAt"
-              ],
-              "type": "object"
             },
             "runtimeMode": {
               "enum": [
@@ -86343,23 +86291,6 @@
               }
             ]
           },
-          "modelRoutingWait": {
-            "additionalProperties": false,
-            "properties": {
-              "reason": {
-                "type": "string"
-              },
-              "retryAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "reason"
-            ],
-            "type": "object"
-          },
           "modelSettings": {
             "additionalProperties": {
               "type": "string"
@@ -86381,41 +86312,6 @@
             "maxLength": 200,
             "minLength": 1,
             "type": "string"
-          },
-          "run": {
-            "additionalProperties": false,
-            "properties": {
-              "activityId": {
-                "type": "string"
-              },
-              "branch": {
-                "type": "string"
-              },
-              "error": {
-                "type": "string"
-              },
-              "runId": {
-                "type": "string"
-              },
-              "sessionId": {
-                "type": "string"
-              },
-              "startedAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "workspaceId": {
-                "type": "string"
-              },
-              "worktreeCwd": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "startedAt"
-            ],
-            "type": "object"
           },
           "runtimeMode": {
             "enum": [
@@ -86673,23 +86569,6 @@
                       }
                     ]
                   },
-                  "modelRoutingWait": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "reason": {
-                        "type": "string"
-                      },
-                      "retryAt": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "reason"
-                    ],
-                    "type": "object"
-                  },
                   "modelSettings": {
                     "additionalProperties": {
                       "type": "string"
@@ -86711,41 +86590,6 @@
                     "maxLength": 200,
                     "minLength": 1,
                     "type": "string"
-                  },
-                  "run": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "activityId": {
-                        "type": "string"
-                      },
-                      "branch": {
-                        "type": "string"
-                      },
-                      "error": {
-                        "type": "string"
-                      },
-                      "runId": {
-                        "type": "string"
-                      },
-                      "sessionId": {
-                        "type": "string"
-                      },
-                      "startedAt": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
-                      "workspaceId": {
-                        "type": "string"
-                      },
-                      "worktreeCwd": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "startedAt"
-                    ],
-                    "type": "object"
                   },
                   "runtimeMode": {
                     "enum": [
@@ -86916,23 +86760,6 @@
                   }
                 ]
               },
-              "modelRoutingWait": {
-                "additionalProperties": false,
-                "properties": {
-                  "reason": {
-                    "type": "string"
-                  },
-                  "retryAt": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "reason"
-                ],
-                "type": "object"
-              },
               "modelSettings": {
                 "additionalProperties": {
                   "type": "string"
@@ -86954,41 +86781,6 @@
                 "maxLength": 200,
                 "minLength": 1,
                 "type": "string"
-              },
-              "run": {
-                "additionalProperties": false,
-                "properties": {
-                  "activityId": {
-                    "type": "string"
-                  },
-                  "branch": {
-                    "type": "string"
-                  },
-                  "error": {
-                    "type": "string"
-                  },
-                  "runId": {
-                    "type": "string"
-                  },
-                  "sessionId": {
-                    "type": "string"
-                  },
-                  "startedAt": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "workspaceId": {
-                    "type": "string"
-                  },
-                  "worktreeCwd": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "startedAt"
-                ],
-                "type": "object"
               },
               "runtimeMode": {
                 "enum": [
@@ -87199,23 +86991,6 @@
               }
             ]
           },
-          "modelRoutingWait": {
-            "additionalProperties": false,
-            "properties": {
-              "reason": {
-                "type": "string"
-              },
-              "retryAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "reason"
-            ],
-            "type": "object"
-          },
           "modelSettings": {
             "additionalProperties": {
               "type": "string"
@@ -87237,41 +87012,6 @@
             "maxLength": 200,
             "minLength": 1,
             "type": "string"
-          },
-          "run": {
-            "additionalProperties": false,
-            "properties": {
-              "activityId": {
-                "type": "string"
-              },
-              "branch": {
-                "type": "string"
-              },
-              "error": {
-                "type": "string"
-              },
-              "runId": {
-                "type": "string"
-              },
-              "sessionId": {
-                "type": "string"
-              },
-              "startedAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "workspaceId": {
-                "type": "string"
-              },
-              "worktreeCwd": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "startedAt"
-            ],
-            "type": "object"
           },
           "runtimeMode": {
             "enum": [
@@ -145637,23 +145377,6 @@
                             }
                           ]
                         },
-                        "modelRoutingWait": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "reason": {
-                              "type": "string"
-                            },
-                            "retryAt": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "reason"
-                          ],
-                          "type": "object"
-                        },
                         "modelSettings": {
                           "additionalProperties": {
                             "type": "string"
@@ -145675,41 +145398,6 @@
                           "maxLength": 200,
                           "minLength": 1,
                           "type": "string"
-                        },
-                        "run": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "activityId": {
-                              "type": "string"
-                            },
-                            "branch": {
-                              "type": "string"
-                            },
-                            "error": {
-                              "type": "string"
-                            },
-                            "runId": {
-                              "type": "string"
-                            },
-                            "sessionId": {
-                              "type": "string"
-                            },
-                            "startedAt": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            },
-                            "workspaceId": {
-                              "type": "string"
-                            },
-                            "worktreeCwd": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "startedAt"
-                          ],
-                          "type": "object"
                         },
                         "runtimeMode": {
                           "enum": [
@@ -145880,23 +145568,6 @@
                         }
                       ]
                     },
-                    "modelRoutingWait": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "reason": {
-                          "type": "string"
-                        },
-                        "retryAt": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "reason"
-                      ],
-                      "type": "object"
-                    },
                     "modelSettings": {
                       "additionalProperties": {
                         "type": "string"
@@ -145918,41 +145589,6 @@
                       "maxLength": 200,
                       "minLength": 1,
                       "type": "string"
-                    },
-                    "run": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "activityId": {
-                          "type": "string"
-                        },
-                        "branch": {
-                          "type": "string"
-                        },
-                        "error": {
-                          "type": "string"
-                        },
-                        "runId": {
-                          "type": "string"
-                        },
-                        "sessionId": {
-                          "type": "string"
-                        },
-                        "startedAt": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "workspaceId": {
-                          "type": "string"
-                        },
-                        "worktreeCwd": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "startedAt"
-                      ],
-                      "type": "object"
                     },
                     "runtimeMode": {
                       "enum": [
@@ -163357,5 +162993,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "cd6dfcb8606b1d6d51a93bccdf5fd737ac5159d1efd3363afdb513c01f80daef"
+  "schemaHash": "c1ccf05957743c1645f4a487c5b51df5f07c1026a182b601030e30fb73975323"
 }

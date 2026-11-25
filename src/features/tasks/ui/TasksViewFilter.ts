@@ -5,6 +5,7 @@ import { sprintTaskKey } from "../model/hostSprints";
 import { taskColumn } from "../model/hostTasks";
 import type { SprintBoardController } from "../model/sprintClient";
 import { taskMatchesProject } from "../model/taskBoardScope";
+import { isSubordinateTask } from "../model/taskRelatedWork";
 import type { BoardTask } from "../model/taskClient";
 import { ALL_GOALS } from "./TaskGoals";
 
@@ -38,8 +39,10 @@ export function useFilteredTasks({
     () =>
       visibleTasks.filter(
         (task) =>
-          (goalFilter === ALL_GOALS ||
-            (task.goalId && goalKey(task.machineId, task.goalId) === goalFilter)) &&
+          (goalFilter === ALL_GOALS
+            ? // One row per independent work: epic tasks and crew assignments open in their owner, and search still finds them.
+              searchQuery.trim() || !isSubordinateTask(task, visibleTasks)
+            : task.goalId && goalKey(task.machineId, task.goalId) === goalFilter) &&
           (statusFilter === "all" || taskColumn(task.status) === statusFilter) &&
           (machineFilter === "all" || task.machineId === machineFilter) &&
           taskMatchesProject(task, projectFilter, machines) &&

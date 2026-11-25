@@ -1,6 +1,6 @@
 import { ConversationWorkspaceTools } from "../conversation/conversation-workspace-tools";
 import { AsyncHostNotes } from "../host-notes-async";
-import { hostInbox } from "../notes/host-notes";
+import { hostInbox } from "../notes/host-inbox";
 import { ProviderInboxBridge } from "../providers/provider-inbox";
 import type { ServerBindings } from "./bindings";
 import { sessionFullAccessCoversInbox } from "./management";

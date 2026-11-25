@@ -39,7 +39,7 @@ export function StewardRow({
   useLocale();
   const busy = acting != null;
   const pending = acting === `steward:${steward.machineId}:${steward.id}`;
-  const running = steward.run != null;
+  const running = steward.lastRunStatus === "running";
   const failedOrSkipped = steward.lastRunStatus === "failed" || steward.lastRunStatus === "skipped";
   return (
     <ActionHost

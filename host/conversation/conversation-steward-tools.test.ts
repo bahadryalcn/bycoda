@@ -35,13 +35,10 @@ function setup() {
       else records.push(value);
       return value;
     }),
-    runNow: vi.fn(async (id: string) => ({
-      ...records.find((entry) => entry.id === id)!,
-      run: { sessionId: "worker", runId: "turn", startedAt: 1 },
-    })),
-    stopRun: vi.fn((id: string, runId: string) => ({
+    runNow: vi.fn(async (id: string) => records.find((entry) => entry.id === id)!),
+    stopRun: vi.fn((_id: string) => ({
       requested: true as const,
-      run: records.find((item) => item.id === id)?.run ?? { runId, startedAt: 1 },
+      run: { id: "occurrence", sessionId: "worker", startedAt: 1 } as never,
     })),
     delete: vi.fn(async (id: string) => {
       const at = records.findIndex((entry) => entry.id === id);
@@ -80,9 +77,9 @@ describe("steward conversation lifecycle", () => {
     const { create, call, records, proposals, service } = setup();
     await create();
     const input = { stewardId: "steward", expectedUpdatedAt: 1 };
-    records[0].run = { runId: "active", sessionId: "worker", startedAt: 1 };
+    records[0].lastRunStatus = "running";
     await expect(call("stewards.delete", input)).rejects.toThrow("settlement");
-    records[0].run = undefined;
+    records[0].lastRunStatus = undefined;
     proposals.set("proposal", {
       id: "proposal",
       projectId: "other",
@@ -176,21 +173,16 @@ describe("steward conversation lifecycle", () => {
     expect(service.runNow).not.toHaveBeenCalled();
   });
 
-  it("starts a run once while active and stops only through an explicit run identity", async () => {
-    const { create, call, records, service } = setup();
+  it("starts a run and stops the active one", async () => {
+    const { create, call, service } = setup();
     await create();
     expect(
       await call("stewards.runNow", { stewardId: "steward", expectedUpdatedAt: 1 }),
-    ).toMatchObject({ requested: true, run: { runId: "turn" } });
-    records[0].run = { runId: "turn", sessionId: "worker", startedAt: 1 };
-    expect(
-      await call("stewards.runNow", { stewardId: "steward", expectedUpdatedAt: 1 }),
-    ).toMatchObject({ requested: false, reason: "already-running" });
-    expect(service.runNow).toHaveBeenCalledTimes(1);
-    expect(
-      await call("stewards.stopRun", { stewardId: "steward", expectedUpdatedAt: 1, runId: "turn" }),
     ).toMatchObject({ requested: true });
-    expect(service.stopRun).toHaveBeenCalledWith("steward", "turn");
+    expect(
+      await call("stewards.stopRun", { stewardId: "steward", expectedUpdatedAt: 1 }),
+    ).toMatchObject({ requested: true, run: { runId: "occurrence", sessionId: "worker" } });
+    expect(service.stopRun).toHaveBeenCalledWith("steward");
   });
 
   it("denies revoked authority before mutation", async () => {

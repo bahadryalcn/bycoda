@@ -409,6 +409,29 @@ describe("host automations", () => {
     expect(f.turns).toHaveLength(0);
     await legacy.close();
   });
+  it("fails a pending occurrence that already has a session instead of rerunning it as a task", async () => {
+    const f = await setup();
+    await f.automations.save(f.input());
+    const run = {
+      id: "predates-tasks",
+      automationId: "nightly",
+      createdAt: f.clock.now,
+      trigger: "manual",
+      scheduledFor: f.clock.now,
+      status: "pending",
+      sessionId: "old-session",
+      workPending: true,
+    };
+    await f.store.db
+      .prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+      .run(run.id, "nightly", run.createdAt, JSON.stringify(run));
+    await f.automations.tick();
+    expect((await f.automations.runs("nightly"))[0]).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("cannot be resumed"),
+    });
+    expect(f.turns).toHaveLength(0);
+  });
   it("preserves an automation's dirty source and refuses finished delivery", async () => {
     const f = await setup();
     await f.automations.save(f.input());

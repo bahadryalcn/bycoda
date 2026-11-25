@@ -1,5 +1,6 @@
 import type { HostStore } from "../store";
 import type { HostTasks } from "../tasks/tasks";
+import { createWork } from "../tasks/work-request";
 import {
   crewWorkTitle,
   type CrewCandidate,
@@ -91,21 +92,25 @@ export async function reserveCrewRun({
         ? { kind: "task" as const, id: linkedTaskId, projectId, threadId: review.threadId }
         : undefined;
       if (origin) await onAssistantTaskOrigin?.({ ...origin, state: "pending" });
-      const createdTask = await tasks.save({
-        id: linkedTaskId,
-        expectedAbsent: true,
-        projectId,
-        title: crewWorkTitle(prompt) || definition.name,
-        prompt,
-        harness: selected.candidate.harness,
-        model: selected.candidate.model,
-        modelSettings: selected.candidate.modelSettings ?? {},
-        runtimeMode: mode ?? "supervised",
-        executor: { kind: "crew" as const, crewDefinitionId: definitionId },
-        isolate: false,
-        review: false,
-        status: "queued",
-      });
+      const createdTask = await createWork(
+        { store, tasks },
+        {
+          id: linkedTaskId,
+          projectId,
+          title: crewWorkTitle(prompt) || definition.name,
+          request: prompt,
+          source: { kind: "crew" },
+          executor: { kind: "crew", crewDefinitionId: definitionId },
+          execution: {
+            harness: selected.candidate.harness,
+            model: selected.candidate.model,
+            modelSettings: selected.candidate.modelSettings ?? {},
+            runtimeMode: mode ?? "supervised",
+          },
+          options: { isolate: false, review: false, status: "queued" },
+        },
+        { requestId },
+      );
       await tasks.reserveCrewExecution(linkedTaskId, requestId);
       if (origin)
         await onAssistantTaskOrigin?.({

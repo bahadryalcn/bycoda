@@ -1,5 +1,5 @@
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
 import { newTaskDraft, saveTask, taskMachines, type BoardTask, type TaskDraft } from "./taskClient";
 
 const TITLE_LENGTH = 80;

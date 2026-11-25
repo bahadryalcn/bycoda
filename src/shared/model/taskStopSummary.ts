@@ -197,8 +197,12 @@ export function taskStopSummary(task: TaskStopSummaryInput): TaskStopSummary | u
 }
 
 /** One line for plain-text surfaces (notes, voice, Room, notifications): "Title: reason". */
+export function summaryText(summary: TaskStopSummary): string {
+  return summary.reason ? `${summary.title}: ${summary.reason}` : summary.title;
+}
+
+/** `summaryText` of a task's stop or wait; undefined when it has neither. */
 export function taskStopText(task: TaskStopSummaryInput): string | undefined {
   const summary = taskStopSummary(task);
-  if (!summary) return undefined;
-  return summary.reason ? `${summary.title}: ${summary.reason}` : summary.title;
+  return summary ? summaryText(summary) : undefined;
 }

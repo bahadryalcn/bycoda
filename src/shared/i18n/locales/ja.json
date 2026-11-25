@@ -12786,5 +12786,9 @@
   "Raise the budget": "予算を増やす",
   "Update the instructions": "指示を更新する",
   "Fix or remove the dependency": "依存関係を修正または削除する",
-  "Retry to run it again": "再試行して再実行する"
+  "Retry to run it again": "再試行して再実行する",
+  "No helpers": "ヘルパーなし",
+  "Helpers: automatic": "ヘルパー: 自動",
+  "Helpers: {p0}": "ヘルパー: {p0}",
+  "advisor": "アドバイザー"
 }

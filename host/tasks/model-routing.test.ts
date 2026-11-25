@@ -319,19 +319,17 @@ it("keeps explicit goal planner fixed and layers delegation", async () => {
   });
 });
 
-it("routes steward account and copies choice and account into proposals", async () => {
+it("copies a steward's choice and account into proposals", async () => {
   order();
   const f = await fixture();
   await f.stewards.save({
     ...f.input(),
+    providerAccountId: "work",
     scheduleKind: "daily",
     time: "09:00",
     modelChoice: { kind: "default" },
   });
-  await f.stewards.runNow("item");
   const steward = (await f.stewards.list())[0];
-  expect(steward).toMatchObject({ model: "claude:routed", providerAccountId: "work" });
-  expect((await f.store.session(steward.run!.sessionId!)).session.providerAccountId).toBe("work");
   const internal = f.stewards as unknown as {
     propose(steward: unknown, reply: string): Promise<number>;
   };
@@ -346,7 +344,7 @@ it("routes steward account and copies choice and account into proposals", async 
   });
 });
 
-it("holds goal planning and steward runs until routing becomes eligible", async () => {
+it("holds goal planning until routing becomes eligible", async () => {
   order();
   eligible = false;
   const f = await fixture();
@@ -361,21 +359,11 @@ it("holds goal planning and steward runs until routing becomes eligible", async 
     error: expect.stringContaining("no eligible entry"),
   });
   expect(goal.plannerSessionId).toBeUndefined();
-  await f.stewards.save({
-    ...f.input({ id: "steward" }),
-    scheduleKind: "daily",
-    time: "09:00",
-    modelChoice: { kind: "default" },
-  });
-  await f.stewards.runNow("steward");
-  expect((await f.stewards.list())[0]).toMatchObject({ lastRunStatus: "skipped", nextRunAt: 2000 });
   expect(await f.store.sessions()).toHaveLength(0);
   eligible = true;
   f.setNow(2000);
   await f.tick();
-  await f.stewards.tick();
   expect((await f.goals.list())[0].plannerSessionId).toBeTruthy();
-  expect((await f.stewards.list())[0].run?.sessionId).toBeTruthy();
 });
 
 it("preserves caller account when conversation tool creates a fixed steward", async () => {
@@ -394,11 +382,6 @@ it("preserves caller account when conversation tool creates a fixed steward", as
   );
   const steward = (await f.stewards.list())[0];
   expect(steward).toMatchObject({ providerAccountId: "personal", model: "claude:stored" });
-  await f.stewards.runNow(steward.id);
-  const started = (await f.stewards.list())[0];
-  expect((await f.store.session(started.run!.sessionId!)).session.providerAccountId).toBe(
-    "personal",
-  );
 });
 
 const ENTRIES = [

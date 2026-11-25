@@ -55,7 +55,7 @@ import { threadCrewAction } from "../conversation/conversation-thread-crew-tools
 import { THREAD_WORK_ACTIONS } from "../conversation/conversation-thread-work-tools";
 import type { ConversationTool } from "../conversation/conversation-tools";
 import { runtimeLogToolQuery } from "../execution/runtime-log-tools";
-import { hostInbox } from "../notes/host-notes";
+import { hostInbox } from "../notes/host-inbox";
 import { prepareVoiceToolDispatch } from "../voice/voice-tools";
 import type { createAssistantRoomRuntime } from "./assistant-room";
 import type { ServerBindings } from "./bindings";

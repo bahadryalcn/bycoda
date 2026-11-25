@@ -297,7 +297,7 @@ describe("confirmed steward mutation results", () => {
   );
 
   it.each(["run", "disable"] as const)(
-    "returns confirmed %s state while clearing stale run/error fields",
+    "returns confirmed %s state while clearing stale error fields",
     async (action) => {
       const [current] = boardStewardsFromHost(
         mac,
@@ -308,7 +308,6 @@ describe("confirmed steward mutation results", () => {
         ...current,
         stale: true,
         lastRunError: "Old failure",
-        run: { sessionId: "old", runId: "old-turn", startedAt: 1 },
       };
       const response: HostSteward = {
         ...stored,
@@ -326,7 +325,6 @@ describe("confirmed steward mutation results", () => {
         cwd: current.cwd,
       });
       expect(updated.stale).toBeUndefined();
-      expect(updated).not.toHaveProperty("run");
       expect(updated).not.toHaveProperty("lastRunError");
       expect(remoteRequest).toHaveBeenCalledWith(
         mac.id,
@@ -348,7 +346,6 @@ describe("confirmed steward mutation results", () => {
       );
       expect(remoteRequest).toHaveBeenCalledOnce();
       expect(machineProjects).not.toHaveBeenCalled();
-      expect(old.run.sessionId).toBe("old");
     },
   );
 

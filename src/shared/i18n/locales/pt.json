@@ -12786,5 +12786,9 @@
   "Raise the budget": "Aumentar o orçamento",
   "Update the instructions": "Atualizar as instruções",
   "Fix or remove the dependency": "Corrigir ou remover a dependência",
-  "Retry to run it again": "Tentar novamente para executar de novo"
+  "Retry to run it again": "Tentar novamente para executar de novo",
+  "No helpers": "Sem ajudantes",
+  "Helpers: automatic": "Ajudantes: automático",
+  "Helpers: {p0}": "Ajudantes: {p0}",
+  "advisor": "consultor"
 }
