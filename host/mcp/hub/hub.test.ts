@@ -54,10 +54,10 @@ it("manages Hub servers at machine and project scope without provider configurat
   await hub.setProjectCredentials(undefined, machineEntry.name, { Authorization: "machine" });
   await hub.setProjectCredentials(project, machineEntry.name, { Authorization: "project" });
   expect((await hub.projectCredentialsFor(project, machineEntry))?.values).toEqual({
-    authorization: "project",
+    authorization: "Bearer project",
   });
   expect((await hub.projectCredentialsFor(other, machineEntry))?.values).toEqual({
-    authorization: "machine",
+    authorization: "Bearer machine",
   });
   await hub.manageServer(
     { action: "add", name, config: { command: "fixture", args: ["--stdio"] } },
