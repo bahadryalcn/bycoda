@@ -1262,9 +1262,6 @@
     "src/features/onboarding/ui/OnboardingDialog.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
-    "src/features/onboarding/ui/OnboardingHost.tsx": {
-      "bycoda/effect-names-its-sync": 3
-    },
     "src/features/onboarding/ui/TourOffer.tsx": {
       "bycoda/effect-names-its-sync": 1
     },

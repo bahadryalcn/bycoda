@@ -5,20 +5,10 @@ import {
   bundledPolicyUpdate,
   policyDocumentUrl,
   policyUpdateIntervalMs,
-  policyUpdateStorageKey,
+  policyUpdateSeen as seen,
   readPolicyUpdate,
 } from "../../../shared/lib/policyUpdates";
-import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { Toast } from "../../../shared/ui/ToastRegion";
-
-const seen = createStoredSetting({
-  key: policyUpdateStorageKey,
-  fallback: 0,
-  parse: Number,
-  serialize: String,
-  event: "bycoda:policy-update-seen",
-  storageEvents: true,
-});
 
 export function PolicyUpdateNotice() {
   const locale = useLocale();

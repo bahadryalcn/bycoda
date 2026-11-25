@@ -1,4 +1,5 @@
 import bundledUpdate from "./policy-updates.json";
+import { createStoredSetting } from "./storedSetting";
 import { isoTimestamp } from "./time/timestamps";
 
 const repository = "https://github.com/bahadryalcn/bycoda/blob/main/docs/guides";
@@ -59,6 +60,25 @@ export function policyDocumentUrl(document: Document): string {
 }
 
 export const bundledPolicyUpdate = parsePolicyUpdate(bundledUpdate);
+
+/** The newest policy revision this installation has shown or started from; 0 when unknown. */
+export const policyUpdateSeen = createStoredSetting({
+  key: policyUpdateStorageKey,
+  fallback: 0,
+  parse: Number,
+  serialize: String,
+  event: "bycoda:policy-update-seen",
+  storageEvents: true,
+});
+
+/**
+ * A fresh installation starts from the policies it ships with: there is no earlier version to
+ * announce a change from. An update keeps an older or missing record so its notice still shows.
+ */
+export function startPolicyUpdatesFromCurrent(): void {
+  const revision = bundledPolicyUpdate?.revision ?? 0;
+  if (revision > (policyUpdateSeen.load() || 0)) policyUpdateSeen.save(revision);
+}
 
 export async function readPolicyUpdate(signal: AbortSignal): Promise<PolicyUpdate | undefined> {
   if (signal.aborted) return undefined;

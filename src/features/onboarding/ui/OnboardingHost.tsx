@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
 import {
   finishOnboarding,
   OPEN_ONBOARDING_EVENT,
@@ -31,6 +31,7 @@ import { describeLocalError } from "../../connections/public/remoteFailure";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { hasActiveModalOverlay, useHasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { t } from "../../../shared/i18n";
+import { startPolicyUpdatesFromCurrent } from "../../../shared/lib/policyUpdates";
 import { FeatureHighlightMarkers } from "./FeatureHighlightMarkers";
 import type { GuidedTourOutcome } from "./GuidedTour";
 
@@ -68,7 +69,8 @@ export function OnboardingHost({
   onOpenProject: (path: string) => void;
   projectCwd: string;
 }) {
-  const [open, setOpen] = useState(() => shouldShowOnboarding(context));
+  const [freshInstall] = useState(() => shouldShowOnboarding(context));
+  const [open, setOpen] = useState(freshInstall);
   const [guide, setGuide] = useState<GuideView | null>(null);
   const [tour, setTour] = useState<ActiveTour | null>(null);
   const [offer, setOffer] = useState(false);
@@ -89,12 +91,18 @@ export function OnboardingHost({
   // and the guide are closed: those dialogs mount later and would cover the consent dialog
   // until its native deadline expires.
   const accessReady = !open && !guide;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Asks the native file-access consent once setup and the guide close; native storage owns the decision.
   useEffect(() => {
     if (accessReady) setupAccess();
   }, [accessReady]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Records a fresh installation's policy baseline in storage before the first paint so no "policies changed" notice flashes.
+  useLayoutEffect(() => {
+    if (freshInstall) startPolicyUpdatesFromCurrent();
+  }, [freshInstall]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Holds the window listeners that open setup, the guide and tours while mounted.
   useEffect(() => {
     // Record existing installations too: deleting their last project isn't a first run.
-    if (!shouldShowOnboarding(context)) finishOnboarding();
+    if (!freshInstall) finishOnboarding();
     // A fresh install starts "What's new" from this version; an update keeps older entries pending.
     syncHighlightBaseline();
     const show = () => {
@@ -129,11 +137,12 @@ export function OnboardingHost({
       window.removeEventListener(OPEN_USAGE_GUIDE_EVENT, showGuide);
       window.removeEventListener(START_TOUR_EVENT, showTour);
     };
-  }, []); // The boot context is intentionally evaluated once per window.
+  }, [freshInstall]); // The boot context is evaluated once per window.
 
   // Everyone who has never finished, skipped or declined the tour is offered it once, but never
   // over Quick setup, the guide or any open dialog: the offer waits until they are closed.
   const idle = !accessError && !open && !guide && !tour && !offer;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Holds the tour-offer timer while the window is idle.
   useEffect(() => {
     if (!idle) return;
     let timer = 0;
