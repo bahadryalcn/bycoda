@@ -65,7 +65,7 @@ export function VoiceReturnButton({
   );
 }
 
-/** Corner dot on the avatar: none while voice is off, grey when muted, live states pulse green. */
+/** Corner dot on the avatar: none while voice is off, grey in standby, live states pulse green. */
 export function voiceStatusTone(state: VoiceVisualState) {
   if (state === "off") return undefined;
   if (state === "muted") return "neutral";

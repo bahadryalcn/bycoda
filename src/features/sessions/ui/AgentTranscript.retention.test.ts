@@ -10,15 +10,32 @@ import { PooledTranscript, TranscriptPool, TranscriptPoolOutlet } from "./Transc
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 let rowHeight: number;
+// A native observer reports each target after it is observed; the stub reports on demand.
+const observers = new Set<{ report(): void }>();
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      targets = new Set<Element>();
+      constructor(private callback: (entries: unknown[]) => void) {
+        observers.add(this);
+      }
+      observe(target: Element) {
+        this.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target);
+      }
+      disconnect() {
+        this.targets.clear();
+      }
+      report() {
+        this.callback(
+          [...this.targets].map((target) => ({ target, contentRect: { width: 500, height: 0 } })),
+        );
+      }
     },
   );
   host = document.createElement("div");
@@ -90,6 +107,8 @@ it("reuses settled turns on visibility changes and remeasures their prompt clamp
   render(false);
   Object.defineProperty(previousPrompt(), "scrollHeight", { value: 160 });
   render(true);
+  // The returning tab keeps its last measurement until the observer reports the new layout.
+  act(() => observers.forEach((observer) => observer.report()));
   expect(previousPrompt().parentElement?.querySelector("button[aria-expanded]")).toBeTruthy();
   expect(turnItems.mock.calls.filter(([turn]) => turn[0]?.id === "u-0")).toHaveLength(0);
 });

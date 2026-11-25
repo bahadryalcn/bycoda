@@ -152,13 +152,31 @@ it("routes real owner voice RPCs through scoped tools without leaking or retaini
       input: {},
     });
     expect(mismatched.error).toMatch(/another project/);
-    const missingContext = await call("voice.tools.call", {
-      projectId: project.id,
-      family: "conversation",
-      action: "notes.list",
-      input: {},
-    });
-    expect(missingContext.error).toMatch(/explicit verified project and session/);
+    const diagnostic = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const missingContext = await call("voice.tools.call", {
+        projectId: project.id,
+        family: "conversation",
+        action: "notes.list",
+        input: { privateValue: "unverified tool payload" },
+      });
+      expect(missingContext.error).toMatch(/explicit verified project and session/);
+      await vi.waitFor(() =>
+        expect(diagnostic).toHaveBeenCalledWith(
+          "Voice tool",
+          expect.objectContaining({
+            action: null,
+            requestId: null,
+            stage: "validate-call",
+            outcome: "error",
+            fingerprint: expect.stringMatching(/^[0-9a-f]{12}$/),
+          }),
+        ),
+      );
+      expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("unverified tool payload");
+    } finally {
+      diagnostic.mockRestore();
+    }
     // Real owner HTTP route, true assistant-thread grant and no coding session.
     // Status reads isolated configuration; it never launches a desktop process.
     const opened = await call("assistant.request", { op: "threads.open" }),

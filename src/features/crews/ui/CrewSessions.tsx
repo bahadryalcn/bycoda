@@ -1,18 +1,30 @@
-import { useEffect } from "react";
+import { Text } from "../../../shared/ui/Text";
+import { useEffect, useState, type ComponentProps } from "react";
+import { t, useLocale } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Modal } from "../../../shared/ui/Modal";
+import { ChevronRight } from "../../../shared/ui/icons";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
 import { useProjectCrews } from "../model/crewClient";
+import { crewRunMatchesQuery } from "../model/crewPresentation";
+import { crewRunTitle } from "../model/crewRoster";
+import { CrewWorkManager } from "./CrewWorkManager";
+import { CrewWorkStatusText } from "./CrewWorkState";
 import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
 
+import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
+export type OpenSession = (target: BackgroundSessionTarget) => void | Promise<void>;
 type CrewState = ReturnType<typeof useProjectCrews>;
 
 /** Only query transport failures belong to the machine notice; mutations keep their own outcomes. */
 function useCrewConnectionFeedback(cwd: string, state: CrewState) {
   const failure = state.error ? classifyRemoteError(state.error) : undefined;
   const connectionFailure = failure && isConnectionFailure(failure);
-  // Registers this query's failure with the shared machine notice.
-  useRemoteConnectionFeedback(cwd, failure);
+  // Registers this query failure with the shared machine notice.
+  const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
   // Keyed on values, not the data object: a report re-renders the sidebar, so an
   // effect that ran on every new object looped forever (React #185).
   const loaded = state.isSuccess && !!state.data;
@@ -20,22 +32,21 @@ function useCrewConnectionFeedback(cwd: string, state: CrewState) {
     if (state.error && connectionFailure) reportRemoteConnection(cwd, "crews", state.error);
     else if (loaded) reportRemoteConnection(cwd, "crews");
   }, [cwd, state.error, loaded, connectionFailure]);
+  return !!connectionFailure && sharedConnectionIssue;
 }
 
-/**
- * Renders nothing. Keeps the Sessions list informed about the conversations a live crew manages
- * (they are read there, managed from the Crews page) and reports the crew query's connection
- * health. Crew work itself is listed in the Crews page, not in the sidebar.
- */
+/** Reports managed sessions and shows unfinished Crew work for the selected project. */
 export function CrewSidebar({
   cwd,
   onManagedChange,
+  ...props
 }: {
   cwd: string;
+  query?: string;
+  onOpen?: OpenSession;
   onManagedChange: (cwd: string, ids: string[]) => void;
 }) {
   const state = useProjectCrews(cwd);
-  useCrewConnectionFeedback(cwd, state);
   // The managed ids as one value, so the parent hears only real changes; a new
   // data object on each render must not set parent state on each render.
   const managed = state.data
@@ -48,10 +59,125 @@ export function CrewSidebar({
           .filter((id): id is string => !!id),
       )
     : undefined;
-  // Tells the parent which sessions this project's crews manage, once per real change.
+  // Tells the parent which sessions this project manages, once per real change.
   useEffect(() => {
     if (managed === undefined) return;
     onManagedChange(cwd, JSON.parse(managed) as string[]);
   }, [cwd, managed, onManagedChange]);
-  return null;
+  return <CrewSessions cwd={cwd} state={state} {...props} />;
+}
+
+/** Navigation stays compact. All operations and conversations live in one work view. */
+export function CrewSessions({
+  cwd,
+  state,
+  query = "",
+  definitionId,
+  onOpen,
+}: {
+  cwd: string;
+  state: CrewState;
+  query?: string;
+  definitionId?: string;
+  onOpen?: OpenSession;
+}) {
+  useLocale();
+  const [opened, setOpened] = useState<{
+    definitionId?: string;
+    runId?: string;
+  } | null>(null);
+  const data = state.data;
+  const sharedConnectionIssue = useCrewConnectionFeedback(cwd, state);
+  const q = query.trim();
+  const ongoingRuns = (data?.runs ?? []).filter(
+    (run) => run.status !== "finished" && (!definitionId || run.definition.id === definitionId),
+  );
+  const runs = ongoingRuns
+    .filter((run) => crewRunMatchesQuery(run, q))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  return (
+    <>
+      {ongoingRuns.length > 0 || state.visibleError ? (
+        <section
+          aria-label={t("Crew work")}
+          aria-busy={state.pendingFailure || undefined}
+          className="px-1.5 pt-1"
+        >
+          {ongoingRuns.length > 0 ? (
+            <div className="flex min-h-7 items-center gap-1 ps-2.5 pe-0.5">
+              <Text tone="muted" weight="medium" className="min-w-0 flex-1">
+                {t("Crew work")}
+              </Text>
+              <Button variant="ghost" size="sm" onClick={() => setOpened({ definitionId })}>
+                {t("Manage")}
+              </Button>
+            </div>
+          ) : null}
+          {state.visibleError && !sharedConnectionIssue ? (
+            <InlineError
+              className="px-2.5 py-1"
+              details={state.errorDetails}
+              retry={{ onRetry: () => void state.refetch(), pending: state.isFetching }}
+            >
+              {state.visibleError}
+            </InlineError>
+          ) : null}
+          {sharedConnectionIssue && !data ? (
+            <Text role="status" as="p" tone="muted" className="px-2.5 py-1">
+              {t("Not connected")}
+            </Text>
+          ) : null}
+          <div className="flex flex-col gap-0 empty:hidden">
+            {runs.map((run) => (
+              <Button
+                key={run.id}
+                data-crew-work-link={run.id}
+                variant="item"
+                motion="none"
+                className="min-w-0 w-full"
+                onClick={() => setOpened({ definitionId: run.definition.id, runId: run.id })}
+                tooltip={crewRunTitle(run)}
+                tooltipWhen="overflow"
+              >
+                <span className="min-w-0 flex-1 text-start">
+                  <Text size="inherit" tone="inherit" weight="medium" truncate className="block">
+                    {crewRunTitle(run)}
+                  </Text>
+                  <Text className="mt-0.5 flex min-w-0 items-center gap-2">
+                    <Text size="inherit" tone="inherit" truncate>
+                      {run.definition.name}
+                    </Text>
+                    <CrewWorkStatusText run={run} />
+                  </Text>
+                </span>
+                <ChevronRight className="icon-sm shrink-0" />
+              </Button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {opened ? (
+        <CrewManagementDialog
+          cwd={cwd}
+          state={state}
+          definitionId={opened.definitionId}
+          initialRunId={opened.runId}
+          onOpen={onOpen}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** The Crew work dialog: the shared work manager in a modal. */
+export function CrewManagementDialog({
+  onClose,
+  ...props
+}: ComponentProps<typeof CrewWorkManager> & { onClose: () => void }) {
+  return (
+    <Modal padding="none" title={t("Crews")} size="lg" onClose={onClose}>
+      <CrewWorkManager {...props} />
+    </Modal>
+  );
 }

@@ -57,7 +57,7 @@ it("follows Turkish locale while retaining the original MIT license", async () =
   await openPolicy();
   expect(document.querySelector("article")?.lang).toBe("tr");
   expect(document.querySelector("article")?.textContent).toContain(
-    "Hesapla da hesapsız da asla toplanmayanlar",
+    "bycoda neyi toplar, neyi toplamaz",
   );
   await openPolicy("software-license");
   expect(document.querySelector("article")?.lang).toBe("en");

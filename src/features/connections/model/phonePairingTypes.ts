@@ -25,7 +25,11 @@ export type PhonePairingApi = {
   cancel(machine: RemoteMachine, pairingId: string): Promise<void>;
 };
 
-export type PhonePairingError = "connection" | "host-update" | "invalid-response";
+export type PhonePairingError =
+  | "connection"
+  | "host-update"
+  | "invalid-response"
+  | "management-required";
 
 export type PhonePairingSession = {
   pairingId: string;

@@ -1,14 +1,33 @@
 // @vitest-environment happy-dom
 import { expect, it } from "vitest";
 import {
+  isLocalBrowserAddress,
   resolveBrowserAddress,
   validBrowserHome,
   validBrowserSearchTemplate,
 } from "./browserAddress";
 
+it("uses direct preview only for loopback pages outside the app development origin", () => {
+  for (const url of ["http://localhost:3000", "http://127.0.0.1:5173/a", "https://[::1]:4443"])
+    expect(isLocalBrowserAddress(url)).toBe(true);
+  for (const url of [
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "http://localhost.attacker.example:3000",
+    "https://example.com",
+    "http://user:secret@localhost:3000",
+    "file:///localhost",
+    "invalid",
+  ])
+    expect(isLocalBrowserAddress(url)).toBe(false);
+});
+
 it("resolves safe URLs and encodes searches without accepting dangerous addresses", () => {
   const search = { engine: "duckduckgo" as const, template: "https://duckduckgo.com/?q={query}" };
   expect(resolveBrowserAddress("https://example.com/a", search)).toBe("https://example.com/a");
+  expect(resolveBrowserAddress("localhost:3000/path", search)).toBe("http://localhost:3000/path");
+  expect(resolveBrowserAddress("[::1]:5173", search)).toBe("http://[::1]:5173");
+  expect(resolveBrowserAddress("localhost:99999", search)).toBeUndefined();
   expect(resolveBrowserAddress("cats & dogs", search)).toBe(
     "https://duckduckgo.com/?q=cats%20%26%20dogs",
   );

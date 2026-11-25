@@ -354,7 +354,7 @@ it("forwards Cursor text deltas without duplicating snapshots", async () => {
   ]);
 });
 
-async function openScopedText(sessionId: string) {
+async function openScopedText(sessionId: string, modelError?: string) {
   await waitFor(() => !!outbound("initialize"), "scoped initialize");
   reply("initialize", {});
   await waitFor(() => !!outbound("authenticate"), "scoped authenticate");
@@ -364,7 +364,17 @@ async function openScopedText(sessionId: string) {
   await waitFor(() => !!outbound("session/set_mode"), "scoped mode");
   reply("session/set_mode", {});
   await waitFor(() => !!outbound("session/set_config_option"), "scoped model");
-  reply("session/set_config_option", {});
+  if (modelError) {
+    onLine?.(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: outbound("session/set_config_option")?.id,
+        error: { code: -32000, message: modelError },
+      }),
+    );
+  } else {
+    reply("session/set_config_option", {});
+  }
 }
 function answerScopedText(text: string) {
   onLine?.(
@@ -377,6 +387,41 @@ function answerScopedText(text: string) {
   );
   reply("session/prompt", {});
 }
+
+it("selects a saved Cursor model using the ACP model ID", async () => {
+  const result = runCursorTextPrompt({
+    cwd: "/repo",
+    model: "composer-2.5",
+    modelSettings: { model: "unexpected-model" },
+    prompt: "Generate helper text",
+  });
+  await openScopedText("cursor-model");
+  await waitFor(() => !!outbound("session/prompt"), "prompt");
+  answerScopedText("answer");
+  await expect(result).resolves.toBe("answer");
+  expect(outbound("session/set_config_option")?.params).toMatchObject({ value: "composer-2.5" });
+  expect(messages().filter(({ method }) => method === "session/set_config_option")).toHaveLength(1);
+});
+
+it("does not send helper text after Cursor rejects the selected model", async () => {
+  const result = runCursorTextPrompt({
+    cwd: "/repo",
+    model: "cursor:unavailable",
+    prompt: "Helper",
+  });
+  const rejected = expect(result).rejects.toThrow("Model unavailable");
+  await openScopedText("cursor-rejected-model", "Model unavailable");
+  await waitFor(() => !!outbound("session/set_model"), "legacy model selection");
+  onLine?.(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: outbound("session/set_model")?.id,
+      error: { code: -32000, message: "Model unavailable" },
+    }),
+  );
+  await rejected;
+  expect(outbound("session/prompt")).toBeUndefined();
+});
 
 it("retains each original naming scope across queueing and the preceding actual cleanup", async () => {
   // Actual text pool and ACP multiplexer; opaque scopes belong only to this

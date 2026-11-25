@@ -12,10 +12,11 @@ repository, using that Host's Git model routing and provider accounts. They neve
 fall back to a local provider when the remote Host is unavailable. Stopping
 generation dismisses the pending result; the Host call retains its 90-second
 provider deadline. Edited drafts and changed staged content remain protected.
-The arrow beside **Generate commit message** opens the model picker with the
-selected model's supported effort and speed controls. The choice is saved per
-checkout and applies to commit messages. **Automatic** clears the commit-specific
-choice. Remote checkouts list models from their own Host.
+The arrow beside **Generate commit message** opens the account and model picker
+with **Reasoning** and **Fast** where the model supports them. Choosing an
+account for the current provider or editing a model setting saves the model and
+its options for the selected checkout. **Automatic** clears the commit-specific
+choice. Remote checkouts list accounts and models from their own Host.
 
 Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories
@@ -137,8 +138,9 @@ list instead, only when you choose it; provider error text is not shown.
 
 While there are changes, the main button is **Commit**: it commits what is staged,
 or every change when nothing is staged (amending never adds unstaged files). It
-never pushes. After a successful regular commit, a tracked branch shows the
-updated outgoing commit count while Git refreshes the full status.
+never pushes. After a successful commit, the file list and Changes tab totals update
+together while Git refreshes the full status. A regular commit on a tracked branch
+also updates the outgoing commit count.
 **Commit & Push** and **Commit, Push & Create PR** are in its menu.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
@@ -164,6 +166,10 @@ hidden zero-width surfaces retain their previous mode. Editor constraints can st
 prevent a saved split choice from being rendered. A failed preference save keeps the
 persisted selection and offers local retry. Diff consumers listen for changes from
 other windows without creating another preference store.
+
+Use **Add to chat** on a file or diff line comment to insert an inline reference
+such as `build.mjs L20`. Select it in the draft to view or edit the comment.
+Sent references open the saved comment, file path and source line.
 
 ## GitHub CLI
 

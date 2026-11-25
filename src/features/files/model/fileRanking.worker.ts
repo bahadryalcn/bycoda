@@ -1,15 +1,17 @@
 import type { ProjectFile } from "../../../platform/tauri/fs";
-import { rankProjectFiles } from "./rankProjectFiles";
+import { rankMentionCandidates, rankProjectFiles } from "./rankProjectFiles";
 
 export type FileRankingMessage = {
   files?: ProjectFile[];
   query: string;
   recents: string[];
   limit?: number;
+  mentions?: boolean;
 };
 
 let files: ProjectFile[] = [];
 self.onmessage = ({ data }: MessageEvent<FileRankingMessage>) => {
   if (data.files) files = data.files;
-  self.postMessage(rankProjectFiles(files, data.query, data.recents, data.limit));
+  const rank = data.mentions ? rankMentionCandidates : rankProjectFiles;
+  self.postMessage(rank(files, data.query, data.recents, data.limit));
 };

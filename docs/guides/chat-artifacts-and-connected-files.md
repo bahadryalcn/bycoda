@@ -21,6 +21,7 @@ while typing. The draft keeps its text and attachment references.
 If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.
 If copying fails, press **Copy message** again to retry or open **Details** for the reason.
 Pasting into a Bycoda draft restores the text, files and inline attachment references in place, including in Quick Composer and the queue editor.
+Each draft holds up to 20 attachments. When a selection exceeds the remaining space, the composer attaches the files that fit and reports the limit.
 Copied folders appear as paths at their original inline position or after the message if they had no inline reference.
 You can also copy or cut a selection containing attachment references in the chat composer.
 Undoing a cut restores the text and its attachments. Other apps can paste the plain message text.
@@ -48,6 +49,9 @@ on one row. Click the active mode icon in the composer to turn that mode off.
 In narrow chat panes, Queue and Steer take priority while you have a draft. Use your Stop
 shortcut to interrupt the turn while keeping the draft. Stop is visible again when the draft is empty.
 
+When this computer's Host is running the conversation, Stop stays pending until
+the Host reports that the targeted turn ended or the confirmation wait expires.
+If the outcome is still uncertain, a notification lets you know you can try again.
 After you press Stop on a running turn, the conversation shows **You stopped this turn** with **Continue** when the session can resume.
 
 ## Composer mentions
@@ -68,11 +72,11 @@ When you paste 8,000 or more characters into a desktop chat that supports attach
 
 Recognized skills, attached images and files, quotes, file references and MCP
 references show compact inline tokens with leading type icons while composing.
-Quick Composer uses the same skill, attachment and link treatment. Tracker
-references retain their Jira, GitHub, GitLab or other provider mark; web links
-show a link icon or a recognized provider mark. These decorations preserve the
-original draft text, selection and copied references. Sent skills retain their
-skill icon alongside attachment and tracker identities.
+Tracker references retain their Jira, GitHub, GitLab or other provider mark.
+Web links are compact in the inline chat editor. Quick Composer and other native
+text fields highlight the full URL so following text stays aligned with the caret.
+These decorations preserve the original draft text, selection and copied references.
+Sent skills retain their skill icon alongside attachment and tracker identities.
 
 Draft attachment tokens show a type icon and ordinal, with the original `[imageN]`
 or `[fileN]` text preserved for copying and sending.
@@ -138,6 +142,8 @@ run, **Queue message** and **Shift+Tab** stay available: queued messages show
 Send still starts a new turn at once. Each queued row shows its saved model, account and
 reasoning effort beside the provider icon. The drag handle stays visible for a
 single message, but reordering is disabled until another message is queued.
+Long queues reveal more rows as you scroll. Use **Show more** to reach the next
+group from the keyboard.
 Remove takes a message out immediately. A small **Message removed · Undo** notice
 below the queue restores its text, attachments, saved target and original position.
 The notice closes after five seconds; keyboard focus or a pending/failed restore

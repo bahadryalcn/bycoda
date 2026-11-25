@@ -10,7 +10,7 @@ pub(super) enum FailureKind {
     /// The shared browser process died: every webview is dead and a reload
     /// cannot work.
     BrowserExited,
-    /// This webview's renderer exited or stopped responding.
+    /// This webview's renderer exited.
     RendererFailed,
     /// GPU, utility, sandbox helper and other processes WebView2 restarts itself.
     Other,
@@ -20,7 +20,7 @@ pub(super) enum FailureKind {
 pub(super) enum Action {
     Ignore,
     Reload,
-    Relaunch,
+    Recreate,
     /// The attempt budget is spent; recovering again would loop.
     GiveUp,
 }
@@ -29,6 +29,7 @@ pub(super) const RELOAD_WINDOW_MS: u64 = 60_000;
 pub(super) const MAX_RELOADS_PER_WINDOW: usize = 3;
 pub(super) const RELAUNCH_WINDOW_MS: u64 = 10 * 60_000;
 pub(super) const MAX_RELAUNCHES_PER_WINDOW: usize = 2;
+const MAX_RECREATIONS_PER_WINDOW: usize = 2;
 
 /// Maps `COREWEBVIEW2_PROCESS_FAILED_KIND`. An unresponsive renderer can recover
 /// and a reload would discard its live state; a failed frame is only a subframe.
@@ -47,12 +48,12 @@ pub(super) fn classify(raw_kind: i32) -> (FailureKind, &'static str) {
 }
 
 /// Kind plus the attempts already made inside their windows gives the action.
-pub(super) fn decide(kind: FailureKind, recent_reloads: usize, recent_relaunches: usize) -> Action {
+fn decide(kind: FailureKind, recent_reloads: usize, recent_recreations: usize) -> Action {
     match kind {
         FailureKind::Other => Action::Ignore,
         FailureKind::RendererFailed if recent_reloads < MAX_RELOADS_PER_WINDOW => Action::Reload,
-        FailureKind::BrowserExited if recent_relaunches < MAX_RELAUNCHES_PER_WINDOW => {
-            Action::Relaunch
+        FailureKind::BrowserExited if recent_recreations < MAX_RECREATIONS_PER_WINDOW => {
+            Action::Recreate
         }
         FailureKind::RendererFailed | FailureKind::BrowserExited => Action::GiveUp,
     }
@@ -64,6 +65,7 @@ pub(super) fn decide(kind: FailureKind, recent_reloads: usize, recent_relaunches
 #[derive(Default)]
 pub(super) struct History {
     reloads: HashMap<String, Vec<u64>>,
+    recreations: Vec<u64>,
     relaunches: Vec<u64>,
 }
 
@@ -75,13 +77,21 @@ fn recent(stamps: &mut Vec<u64>, now: u64, window: u64) -> usize {
 impl History {
     pub(super) fn with_relaunches(relaunches: Vec<u64>) -> Self {
         Self {
-            reloads: HashMap::new(),
             relaunches,
+            ..Self::default()
         }
     }
 
     pub(super) fn relaunches(&self) -> &[u64] {
         &self.relaunches
+    }
+
+    pub(super) fn record_relaunch(&mut self, now: u64) -> bool {
+        if recent(&mut self.relaunches, now, RELAUNCH_WINDOW_MS) >= MAX_RELAUNCHES_PER_WINDOW {
+            return false;
+        }
+        self.relaunches.push(now);
+        true
     }
 
     /// Decides and records the attempt in one step so concurrent events for
@@ -91,11 +101,11 @@ impl History {
         let action = decide(
             kind,
             recent(reloads, now, RELOAD_WINDOW_MS),
-            recent(&mut self.relaunches, now, RELAUNCH_WINDOW_MS),
+            recent(&mut self.recreations, now, RELAUNCH_WINDOW_MS),
         );
         match action {
             Action::Reload => reloads.push(now),
-            Action::Relaunch => self.relaunches.push(now),
+            Action::Recreate => self.recreations.push(now),
             Action::Ignore | Action::GiveUp => {}
         }
         action
@@ -107,9 +117,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renderer_failures_reload_and_browser_exit_relaunches() {
+    fn renderer_failures_reload_and_browser_exit_recreates_webviews() {
         assert_eq!(decide(FailureKind::RendererFailed, 0, 0), Action::Reload);
-        assert_eq!(decide(FailureKind::BrowserExited, 0, 0), Action::Relaunch);
+        assert_eq!(decide(FailureKind::BrowserExited, 0, 0), Action::Recreate);
         assert_eq!(decide(FailureKind::Other, 0, 0), Action::Ignore);
     }
 
@@ -129,17 +139,17 @@ mod tests {
             Action::GiveUp
         );
         assert_eq!(
-            decide(FailureKind::BrowserExited, 0, MAX_RELAUNCHES_PER_WINDOW),
+            decide(FailureKind::BrowserExited, 0, MAX_RECREATIONS_PER_WINDOW),
             Action::GiveUp
         );
-        // A relaunch budget does not block a renderer reload, nor the reverse.
+        // A browser recovery budget does not block a renderer reload, nor the reverse.
         assert_eq!(
-            decide(FailureKind::RendererFailed, 0, MAX_RELAUNCHES_PER_WINDOW),
+            decide(FailureKind::RendererFailed, 0, MAX_RECREATIONS_PER_WINDOW),
             Action::Reload
         );
         assert_eq!(
             decide(FailureKind::BrowserExited, MAX_RELOADS_PER_WINDOW, 0),
-            Action::Relaunch
+            Action::Recreate
         );
     }
 
@@ -174,13 +184,33 @@ mod tests {
         let mut history = History::with_relaunches(vec![now - 1_000, now - 2_000]);
         assert_eq!(
             history.record(FailureKind::BrowserExited, "main", now),
+            Action::Recreate
+        );
+        assert!(!history.record_relaunch(now));
+        let mut aged = History::with_relaunches(vec![0, 1_000]);
+        assert!(aged.record_relaunch(now));
+        assert_eq!(aged.relaunches(), &[now]);
+    }
+
+    #[test]
+    fn browser_recreation_is_bounded_across_window_labels() {
+        let mut history = History::default();
+        assert_eq!(
+            history.record(FailureKind::BrowserExited, "main", 10),
+            Action::Recreate
+        );
+        assert_eq!(
+            history.record(FailureKind::BrowserExited, "quick-composer", 20),
+            Action::Recreate
+        );
+        assert_eq!(
+            history.record(FailureKind::BrowserExited, "window-1", 30),
             Action::GiveUp
         );
-        let mut aged = History::with_relaunches(vec![0, 1_000]);
+        assert!(history.relaunches().is_empty());
         assert_eq!(
-            aged.record(FailureKind::BrowserExited, "main", now),
-            Action::Relaunch
+            history.record(FailureKind::BrowserExited, "main", RELAUNCH_WINDOW_MS + 20),
+            Action::Recreate
         );
-        assert_eq!(aged.relaunches(), &[now]);
     }
 }

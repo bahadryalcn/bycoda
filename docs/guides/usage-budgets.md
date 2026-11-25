@@ -4,6 +4,10 @@ Open **Settings > Usage & limits** for usage reports, provider quotas and local
 budgets. This page sits beside Providers in the Agents group. The workspace usage
 footer and existing provider-usage links open it directly.
 
+Token totals and recorded time appear as soon as the local logs are read. Cost estimates
+use built-in prices until the model price list arrives. Open **Limits** to load quotas and
+budget rules. Switching between Usage tabs preserves an unfinished budget edit.
+
 Custom periods use the shared date/time range field. Select two calendar days or a
 preset, adjust the Start or End hour/minute columns, then Apply. The end instant is
 exclusive. Typing local `YYYY-MM-DDTHH:mm` endpoints remains available; invalid or
@@ -49,6 +53,11 @@ nothing is available, the notice stays and **Resume at reset** still applies.
 Limits restored at launch are not switched. Conversations running through a Host use
 the setting saved on that computer. Tasks, goals, crews, stewards, automations and
 Assistant work keep their own limit handling and never switch through this setting.
+
+The model picker, workspace footer and Usage & limits use the same account
+reading. If a refresh fails, the last measured percentage stays visible with its
+age. A new account or a reading that has passed its reset may be unavailable
+until the provider answers. Connected mobile clients use the same Host cache.
 
 Grok shows the signed-in Grok Build CLI's plan quota in this view and the workspace
 footer. The used/remaining preference applies to its provider-reported credit usage

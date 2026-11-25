@@ -4,6 +4,15 @@ Historical owner statements explain design intent; they do not authorize operati
 
 ## Browser observation and control
 
+Owner request, 2026-11-24:
+
+> aynı pc deyse yerel önizleme yapalım bizde?
+
+Implementation decision: manual loopback previews on the desktop's own
+computer open directly in a separate native view. Remote URLs retain their
+selected Host, and explicitly shared browsing retains the existing browser
+scope and control.
+
 Owner defect report, 2026-11-06, showing `Claim browser control before using it.` on `browser.frame`:
 
 > while using the bycoda integrated browser it keeps getting this error [image1]; let's improve it properly so it stops (translated)
@@ -75,3 +84,11 @@ Owner decision, 2026-11-06. Owner message, original Turkish:
 > what if, for subagents, it could select the enabled models of connected providers? It could select several, and the main model decides which one to call (translated)
 
 Recorded decision: cross-provider delegation runs through Host `agents.*` tools as child sessions. The owner selects enabled models from any connected provider for subagents, several allowed, and the main model chooses which one to call. The parent link is kept in `modelSettings` until the native session schema gains a column.
+
+## Detached tool views
+
+Owner decision, 2026-11-24 (translated):
+
+> If it already follows, remove this button.
+
+The detached window follows conversation focus automatically. Its selector switches between open tool views until the next focus change.

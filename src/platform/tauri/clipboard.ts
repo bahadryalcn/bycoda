@@ -1,4 +1,5 @@
 import { errorText } from "../../shared/lib/errors";
+import { t } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import {
   attachmentDraftTokens,
@@ -11,6 +12,7 @@ import {
   rewriteTokenMatches,
   stripAttachmentTokens,
   type Attachment,
+  type AttachmentReadCapacity,
 } from "../../features/sessions/public/attachments";
 import { decodeBase64 } from "../../shared/lib/base64";
 import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
@@ -435,12 +437,16 @@ export type NativeClipboardPaste = {
  * batch at a time until the quota is met. Counting them before converting would
  * drop a good file that sat behind an unreadable one.
  */
-async function attachmentsFromClipboardPaths(paths: string[]) {
+async function attachmentsFromClipboardPaths(paths: string[], capacity?: AttachmentReadCapacity) {
   const files: Attachment[] = [];
   let consumed = 0;
-  while (consumed < paths.length && files.length < MAX_ATTACHMENTS) {
+  while (
+    consumed < paths.length &&
+    files.length < MAX_ATTACHMENTS &&
+    (!capacity || capacity.remaining() > 0)
+  ) {
     const batch = paths.slice(consumed, consumed + MAX_ATTACHMENTS);
-    for (const file of await attachmentsFromPaths(batch)) {
+    for (const file of await attachmentsFromPaths(batch, capacity)) {
       if (files.length >= MAX_ATTACHMENTS) break;
       files.push(file);
     }
@@ -457,11 +463,19 @@ async function attachmentsFromClipboardPaths(paths: string[]) {
  * paths before image bytes; an image is only worth reading when the paste
  * carried no text at all.
  */
-export async function nativeClipboardAttachments(text: string): Promise<NativeClipboardPaste> {
+export async function nativeClipboardAttachments(
+  text: string,
+  capacity?: AttachmentReadCapacity,
+): Promise<NativeClipboardPaste> {
   const paths = await readClipboardFilePaths();
   if (paths.length) {
-    const { files, consumed } = await attachmentsFromClipboardPaths(paths);
-    if (!files.length)
+    const { files, consumed } = await attachmentsFromClipboardPaths(paths, capacity);
+    if (
+      !files.length &&
+      consumed === paths.length &&
+      !capacity?.notice() &&
+      !capacity?.matchedPendingPath
+    )
       throw new Error(
         `Nothing to attach. The ${
           paths.length === 1 ? "file" : "files"
@@ -477,9 +491,11 @@ export async function nativeClipboardAttachments(text: string): Promise<NativeCl
     };
   }
   if (text) return { files: [] };
+  if (capacity?.remaining() === 0)
+    return { files: [], warning: t("Attachment limit reached ({p0})", { p0: MAX_ATTACHMENTS }) };
   // An empty clipboard is a no-op. A real read failure still surfaces.
   const image = await readClipboardImage();
-  return { files: image ? await attachmentsFromFiles([image]) : [] };
+  return { files: image ? await attachmentsFromFiles([image], { capacity }) : [] };
 }
 
 /**

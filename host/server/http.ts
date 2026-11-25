@@ -11,6 +11,7 @@ import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects"
 import { getHostRpcMethod } from "../../src/shared/model/host-contracts/methods";
 import { trackRpc } from "../diagnostics/loop-stall";
 import { createLogger } from "../diagnostics/logger";
+import { failureFields } from "../diagnostics/failure-fields";
 import { mcpMetricName, perfMetrics, syncDbTiming } from "../diagnostics/perf-metrics";
 import { runWithRequestTrace, startRequestTrace } from "../diagnostics/request-trace";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
@@ -277,6 +278,7 @@ export function createHttpRuntime(
         const resultScopeReleases: Array<() => void> = [];
         const resultScopeSettlements: Promise<void>[] = [];
         let voiceToolLog: HttpToolRequest["voiceToolLog"];
+        let voiceToolFailure: ReturnType<typeof failureFields> | undefined;
         try {
           if (await dependencies.bulkHandler(request, response)) return;
           if (await dependencies.mobilePairing.handle(request, response)) return;
@@ -862,7 +864,10 @@ export function createHttpRuntime(
             } else await finishResult();
           }
         } catch (error) {
-          if (voiceToolLog) voiceToolLog.outcome = "error";
+          if (voiceToolLog) {
+            voiceToolLog.outcome = "error";
+            voiceToolFailure = failureFields(error);
+          }
           const internal = isInternalFailure(error);
           if (!response.destroyed && !response.headersSent)
             response
@@ -926,6 +931,7 @@ export function createHttpRuntime(
               requestId: voiceToolLog.requestId,
               elapsedMs: elapsedSince(voiceToolLog.startedAt),
               ...(voiceToolLog.stage ? { stage: voiceToolLog.stage } : {}),
+              ...voiceToolFailure,
               outcome:
                 response.destroyed && !response.writableEnded
                   ? "disconnected"

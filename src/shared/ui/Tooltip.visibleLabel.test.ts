@@ -114,6 +114,60 @@ afterEach(() => {
   act(() => roots.splice(0).forEach((root) => root.unmount()));
   document.body.innerHTML = "";
   vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+it("requires 450 ms on every control, even directly after another tooltip closes", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () =>
+    root.render(
+      ["First", "Second", "Third"].map((label) =>
+        createElement(Tooltip, {
+          key: label,
+          label,
+          asChild: true,
+          children: createElement("button", { type: "button" }, label),
+        }),
+      ),
+    ),
+  );
+  const [first, second, third] = host.querySelectorAll("button");
+  const pointer = (element: HTMLButtonElement, type: "pointerover" | "pointerout") =>
+    element.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: "mouse" }));
+  const tooltip = () => document.querySelector('[role="tooltip"]');
+
+  act(() => {
+    pointer(first, "pointerover");
+    vi.advanceTimersByTime(450);
+  });
+  expect(tooltip()?.textContent).toBe("First");
+  act(() => {
+    pointer(first, "pointerout");
+    pointer(second, "pointerover");
+    vi.advanceTimersByTime(60);
+  });
+  expect(tooltip()).toBeNull();
+  act(() => {
+    pointer(second, "pointerout");
+    pointer(third, "pointerover");
+    vi.advanceTimersByTime(449);
+  });
+  expect(tooltip()).toBeNull();
+  act(() => vi.advanceTimersByTime(1));
+  expect(tooltip()?.textContent).toBe("Third");
+
+  act(() => {
+    pointer(third, "pointerout");
+    pointer(first, "pointerover");
+  });
+  vi.spyOn(first, "matches").mockReturnValue(true);
+  act(() => first.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+  expect(tooltip()?.textContent).toBe("First");
 });
 
 function Anchor({ content, text }: { content: TooltipContent; text: string }) {

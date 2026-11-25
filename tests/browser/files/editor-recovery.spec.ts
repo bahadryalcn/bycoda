@@ -280,12 +280,15 @@ test("pending Native copy keeps the real recovery dialog open through Escape and
 }) => {
   await page.goto("/tests/browser/files/editor-recovery.html?hold-target");
   await openCatalog(page);
+  const close = page
+    .getByRole("dialog", { name: "Recovered work", exact: true })
+    .getByRole("button", { name: "Close", exact: true });
+  await expect(close).not.toHaveAttribute("data-tooltip-owner");
   await sourceRow(page).getByRole("button", { name: "Open copy in new tab", exact: true }).click();
   await expect.poll(async () => (await snapshot(page)).held).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
   // Close is disabled while the copy is pending; a forced click must not dismiss the dialog.
-  const close = page.getByRole("dialog").getByRole("button", { name: "Close", exact: true });
   await expect(close).toBeDisabled();
   await close.click({ force: true });
   await expect(page.getByRole("dialog")).toBeVisible();

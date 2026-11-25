@@ -38,6 +38,7 @@ function Draft({ initial }: { initial: string }) {
         setActive(ids !== null);
       },
       onRemoveAttachment: vi.fn(),
+      onChangeCitations: vi.fn(),
     }),
     createElement("textarea", {
       ref: field,

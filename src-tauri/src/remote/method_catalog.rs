@@ -7,6 +7,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "modelRouting.resolve"
             | "modelRouting.save"
             | "modelRouting.status"
+            | "usage.planShare.read"
+            | "usage.quota.read"
             | "assistant.request"
             | "assistant.ownerActive"
             | "approvals.mirror"
@@ -397,6 +399,13 @@ pub(super) fn decision_model_key_allowed(
 #[cfg(test)]
 mod tests {
     use super::{decision_model_key_allowed, supported_remote_method};
+
+    #[test]
+    fn plan_share_read_is_allowed_by_the_native_bridge() {
+        assert!(supported_remote_method("usage.planShare.read"));
+        assert!(supported_remote_method("usage.quota.read"));
+        assert!(!supported_remote_method("usage.planShare.write"));
+    }
 
     #[test]
     fn secret_inputs_use_exact_owner_method_names() {

@@ -2119,6 +2119,32 @@ it("gives the xAI commit acknowledgement time after the audio upload finishes", 
   }
 });
 
+it("gives xAI a separate transcript window after a late commit acknowledgement", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events, "xai");
+    candidateAudio();
+    await vi.advanceTimersByTimeAsync(14_000);
+    sockets[0].emit({ type: "input_audio_buffer.committed", item_id: "late-commit" });
+    sockets[0].emit({
+      type: "conversation.item.added",
+      item: { id: "late-commit", type: "message", role: "user" },
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    sockets[0].emit({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "late-commit",
+      transcript: "merhaba",
+    });
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith("merhaba");
+    expect(events.error).not.toHaveBeenCalled();
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("does not end voice while a slow upload keeps draining", async () => {
   vi.useFakeTimers();
   try {

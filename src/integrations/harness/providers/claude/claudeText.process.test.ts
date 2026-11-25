@@ -47,6 +47,20 @@ beforeEach(() => {
   mocks.resolve.mockReset().mockResolvedValue({ path: "/fake/claude" });
 });
 afterEach(() => stopClaudeTextPrompt());
+
+it.each([
+  ["claude:sonnet", "sonnet"],
+  ["claude:sonnet-4.6", "claude-sonnet-4-6"],
+  ["claude-sonnet-4-6", "claude-sonnet-4-6"],
+  ["custom-endpoint-sonnet-v1", "custom-endpoint-sonnet-v1"],
+])("passes %s to the isolated Claude process as %s", async (model, expected) => {
+  await runClaudeTextPrompt({ cwd: "/repo", prompt: "Group skills", model, ephemeral: true });
+
+  const args = mocks.spawn.mock.calls[0][2] as string[];
+  expect(args).toContain("--model");
+  expect(args[args.indexOf("--model") + 1]).toBe(expected);
+});
+
 it("scopes a requested output allowance to the isolated child settings and resumes the same identity when it changes", async () => {
   for (const maxOutputTokens of [120, 240])
     await runClaudeTextPrompt({

@@ -76,6 +76,59 @@ async function select(page: Page, label: string, value: string) {
   await page.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
   await page.getByRole("option", { name: value, exact: true }).click();
 }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`chart tooltips require a fresh hover dwell ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 960 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.clock.install();
+      await page.goto(`/tests/browser/usage/usage-budgets.html?page=1&analytics=1&theme=${theme}`);
+      await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
+
+      const trend = page.locator('[data-usage-chart="trend"]');
+      const slider = trend.getByRole("slider");
+      await slider.scrollIntoViewIfNeeded();
+      const plot = (await slider.boundingBox())!;
+      const chartCursor = trend.locator("[data-scrubbing]");
+      await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+      await page.mouse.move(plot.x + plot.width * 0.5, plot.y + 10);
+      await page.clock.runFor(300);
+      await page.mouse.move(plot.x + plot.width * 0.01, plot.y + 10);
+      await page.clock.runFor(449);
+      await expect(chartCursor).toHaveCount(0);
+      await page.clock.runFor(1);
+      await expect(chartCursor).toHaveCount(1);
+      await expect(slider).toHaveAttribute("aria-valuenow", "1");
+      await page.clock.resume();
+      await page.screenshot({
+        path: `temp/verification/tooltip-dwell/trend-${theme}-${width}.png`,
+      });
+
+      await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
+      await select(page, "Date range", "90 days");
+      const calendar = page.locator('[data-usage-chart="calendar"]');
+      const cells = calendar.getByRole("gridcell");
+      await cells.first().scrollIntoViewIfNeeded();
+      const first = (await cells.nth(0).boundingBox())!;
+      const second = (await cells.nth(1).boundingBox())!;
+      const bubble = calendar.locator('[class*="_bubble_"]');
+      await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2);
+      await page.clock.runFor(300);
+      await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
+      await page.clock.runFor(449);
+      await expect(bubble).toHaveCSS("opacity", "0");
+      await page.clock.runFor(650);
+      await expect(bubble).toHaveCSS("opacity", "1");
+      await page.clock.resume();
+      await page.screenshot({
+        path: `temp/verification/tooltip-dwell/calendar-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
 async function openFilters(page: Page) {
   await page.getByRole("button", { name: /^Filters(?: \(\d+\))?$/, exact: true }).click();
 }

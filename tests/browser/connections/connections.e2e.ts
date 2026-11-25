@@ -99,7 +99,17 @@ for (const theme of ["light", "dark"]) {
       const connectPhone = root.getByRole("button", { name: "Connect a phone", exact: true });
       expect(await actionPosition(connectPhone)).toEqual(computersActionPosition);
       await expect(root.getByRole("heading", { name: "Phone access", exact: true })).toBeVisible();
-      await expect(root.getByText("iPhone 16", { exact: true })).toBeVisible();
+      const phoneRow = root.locator(".settings-row").filter({ hasText: "iPhone 16" });
+      const phoneName = phoneRow.getByText("iPhone 16", { exact: true });
+      await expect(phoneName).toBeVisible();
+      await expect(root.getByText("Studio Mac desktop", { exact: true })).toHaveCount(0);
+      await expect(root.getByText("This desktop", { exact: true })).toHaveCount(1);
+      const activity = phoneRow.getByText(/^Paired /);
+      await expect(activity).toHaveAttribute("data-tone", "muted");
+      await expect(activity).not.toHaveCSS(
+        "color",
+        await phoneName.evaluate((name) => getComputedStyle(name).color),
+      );
       await page.screenshot({ path: `${evidence}/${theme}-${width}-devices.png` });
       await connectPhone.click();
       const phone = page.getByRole("dialog", { name: "Connect your phone", exact: true });

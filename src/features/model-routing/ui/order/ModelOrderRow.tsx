@@ -13,6 +13,7 @@ import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { GripVertical } from "../../../../shared/ui/icons";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
+import { supportsProviderAccounts } from "../../../providers/public/providerAccounts";
 import { defaultModelSettings, resolveModel } from "../../../sessions/public/models";
 import { entrySettings } from "../../model/modelRoutingDraft";
 import type { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
@@ -85,38 +86,40 @@ export function ModelOrderRow({
       ref={(node) => sortable?.setItemRef(entry.id, node)}
       {...surfaceAttributes(
         invalidMessage ? { tone: "warning" } : {},
-        "reorder-item flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2",
+        "reorder-item grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-1 px-4 py-2 @min-[40rem]/model-order:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]",
       )}
       data-entry-id={entry.id}
       data-dragging={sortable?.draggingId === entry.id ? "" : undefined}
       aria-label={t("Position {p0}", { p0: index + 1 })}
     >
-      {onSelect ? (
-        <Checkbox
-          checked={selected}
-          aria-label={t("Select model {p0}", { p0: index + 1 })}
-          onChange={(event) => onSelect(event.currentTarget.checked)}
-        />
-      ) : null}
-      {sortable ? (
-        <Button
-          iconOnly
-          variant="ghost"
-          size="sm"
-          label={t("Reorder model {p0}", { p0: index + 1 })}
-          tooltip={t("Drag to reorder")}
-          shortcut="Alt+↑ / Alt+↓"
-          disabled={count < 2}
-          onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
-          onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
-        >
-          <GripVertical className="icon-sm" />
-        </Button>
-      ) : null}
-      <Text size="secondary" tone="secondary" aria-hidden="true" className="w-4 text-center">
-        {format.formatNumber(index + 1)}
-      </Text>
-      <div className="min-w-48 flex-1">
+      <div className="flex items-center gap-2">
+        {onSelect ? (
+          <Checkbox
+            checked={selected}
+            aria-label={t("Select model {p0}", { p0: index + 1 })}
+            onChange={(event) => onSelect(event.currentTarget.checked)}
+          />
+        ) : null}
+        {sortable ? (
+          <Button
+            iconOnly
+            variant="ghost"
+            size="sm"
+            label={t("Reorder model {p0}", { p0: index + 1 })}
+            tooltip={t("Drag to reorder")}
+            shortcut="Alt+↑ / Alt+↓"
+            disabled={count < 2}
+            onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
+            onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
+          >
+            <GripVertical className="icon-sm" />
+          </Button>
+        ) : null}
+        <Text size="secondary" tone="secondary" aria-hidden="true" className="w-4 text-center">
+          {format.formatNumber(index + 1)}
+        </Text>
+      </div>
+      <div className="col-start-2 col-end-4 row-start-1 min-w-0 @min-[40rem]/model-order:col-end-3">
         <ModelPicker
           harness={entry.harness}
           model={entry.model}
@@ -125,6 +128,7 @@ export function ModelOrderRow({
           presentation="field"
           showExtras
           hideAgentSettings
+          accountChoices
           accountId={entry.providerAccountId}
           onChange={(harness, model, accountId) => {
             if (!isRemoteProvider(harness)) return;
@@ -132,10 +136,9 @@ export function ModelOrderRow({
               ...entry,
               harness,
               model,
-              providerAccountId:
-                harness === "claude" || harness === "codex"
-                  ? (accountId ?? (harness === entry.harness ? entry.providerAccountId : undefined))
-                  : undefined,
+              providerAccountId: supportsProviderAccounts(harness)
+                ? (accountId ?? (harness === entry.harness ? entry.providerAccountId : undefined))
+                : undefined,
               modelSettings: entrySettings(
                 harness === entry.harness && model === entry.model
                   ? entry.modelSettings
@@ -151,11 +154,11 @@ export function ModelOrderRow({
           }
         />
       </div>
-      <div className="flex w-16 shrink-0">
+      <div className="col-start-3 row-start-2 flex justify-end @min-[40rem]/model-order:row-start-1 @min-[40rem]/model-order:w-16 @min-[40rem]/model-order:justify-start">
         <ModelProfileBadge harness={entry.harness} model={entry.model} />
       </div>
-      {/* A fixed width keeps tags and quota aligned across rows; content wraps inside it instead of spilling into the profile column. */}
-      <div className="flex w-56 max-w-full shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
+      {/* Align the secondary line with the model field when it can't sit beside it. */}
+      <div className="col-start-2 col-end-3 row-start-2 flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 @min-[40rem]/model-order:col-start-4 @min-[40rem]/model-order:col-end-5 @min-[40rem]/model-order:row-start-1 @min-[40rem]/model-order:w-56 @min-[40rem]/model-order:justify-end">
         {next ? (
           <Badge size="xs" tone="success" className="shrink-0">
             {t("Next")}
@@ -174,18 +177,20 @@ export function ModelOrderRow({
           </Text>
         ) : null}
       </div>
-      <ModelOrderRowMore
-        entry={entry}
-        index={index}
-        percent={percent}
-        providerPercent={providerPercent}
-        account={account}
-        onChange={onChange}
-        onPercent={onPercent}
-        onRemove={onRemove}
-      />
+      <div className="col-start-4 row-start-1 @min-[40rem]/model-order:col-start-5">
+        <ModelOrderRowMore
+          entry={entry}
+          index={index}
+          percent={percent}
+          providerPercent={providerPercent}
+          account={account}
+          onChange={onChange}
+          onPercent={onPercent}
+          onRemove={onRemove}
+        />
+      </div>
       {invalidMessage ? (
-        <div className="basis-full ps-6">
+        <div className="col-span-full ps-6">
           <InlineMessage tone="warning">{invalidMessage}</InlineMessage>
         </div>
       ) : null}

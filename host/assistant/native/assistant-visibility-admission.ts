@@ -72,18 +72,32 @@ export type ExpectedAccountCapture = Pick<
   "environmentId" | "threadId" | "relayId" | "requestId" | "operationHash"
 >;
 
+type VisibilityPolicy = {
+  epoch: number;
+  revision: number;
+  digest: string;
+  installationId: string;
+  registryRevision: string;
+  issuer: string;
+  privacyRevision: number;
+  generation: string;
+};
+type VerifiedProject = {
+  policy: VisibilityPolicy;
+  value: z.infer<typeof captureSchema>;
+  installationId: string;
+  revision: string;
+};
+type VerifiedAccount = {
+  policy: VisibilityPolicy;
+  value: z.infer<typeof accountCaptureSchema>;
+  installationId: string;
+  revision: string;
+};
+
 /** Native signer supplies exact bytes only after the durable projection commit and issuer checks. */
 export class AssistantVisibilityAdmission {
-  private policy?: {
-    epoch: number;
-    revision: number;
-    digest: string;
-    installationId: string;
-    registryRevision: string;
-    issuer: string;
-    privacyRevision: number;
-    generation: string;
-  };
+  private policy?: VisibilityPolicy;
   constructor(
     private readonly hostId: string,
     private readonly native: NativeAdmissionOwner,
@@ -187,7 +201,10 @@ export class AssistantVisibilityAdmission {
     const currentPolicy = () =>
       !!policy && this.policy === policy && this.fence.currentEpoch() === policy.epoch;
     const input = z
-      .strictObject({ operationJson: z.string().max(128000), proof: z.unknown() })
+      .strictObject({
+        operationJson: z.string().max(128000),
+        proof: z.unknown(),
+      })
       .parse(envelope);
     const capture = accountCaptureSchema.parse(JSON.parse(input.operationJson));
     for (const key of [
@@ -261,123 +278,178 @@ export class AssistantVisibilityAdmission {
     return this.withCaptures([{ envelope, expected }], authorized, body);
   }
 
-  /** Capture every target before acquiring the one shared native registry lease. */
+  /**
+   * Native proofs live seconds, and every source costs a desktop round trip. A caller that
+   * captures many sources therefore verifies each proof the moment it arrives, then runs the
+   * body once under the one shared native registry lease over all of them.
+   */
+  collect(authorized: () => Promise<boolean>) {
+    const projects: VerifiedProject[] = [];
+    const accounts: VerifiedAccount[] = [];
+    return {
+      project: async (envelope: unknown, expected: ExpectedVisibilityCapture) => {
+        projects.push(await this.verifyProject(envelope, expected, authorized));
+      },
+      account: async (envelope: unknown, expected: ExpectedAccountCapture) => {
+        accounts.push(await this.verifyAccount(envelope, expected, authorized));
+      },
+      run: <T>(
+        body: (
+          valid: () => boolean,
+          identity: VisibilityIdentity & { issuer: string },
+        ) => Promise<T>,
+      ) => this.withVerified(projects, accounts, authorized, body),
+    };
+  }
+
+  /** Verifies and holds sources that already arrived together. */
   async withCaptures<T>(
     inputs: Array<{ envelope: unknown; expected: ExpectedVisibilityCapture }>,
     authorized: () => Promise<boolean>,
     body: (valid: () => boolean, identity: VisibilityIdentity & { issuer: string }) => Promise<T>,
-    accountInputs: Array<{ envelope: unknown; expected: ExpectedAccountCapture }> = [],
+    accountInputs: Array<{
+      envelope: unknown;
+      expected: ExpectedAccountCapture;
+    }> = [],
   ): Promise<T> {
     if ((!inputs.length && !accountInputs.length) || inputs.length + accountInputs.length > 1000)
       throw new Error("Invalid native source scope count.");
+    const collected = this.collect(authorized);
+    for (const { envelope, expected } of inputs) await collected.project(envelope, expected);
+    for (const { envelope, expected } of accountInputs) await collected.account(envelope, expected);
+    return collected.run(body);
+  }
+
+  private async verifyProject(
+    envelope: unknown,
+    expected: ExpectedVisibilityCapture,
+    authorized: () => Promise<boolean>,
+  ): Promise<VerifiedProject> {
     const policy = this.policy;
-    const captures: Array<{
-      value: z.infer<typeof captureSchema>;
-      installationId: string;
-      revision: string;
-    }> = [];
-    const accounts: Array<{
-      value: z.infer<typeof accountCaptureSchema>;
-      installationId: string;
-      revision: string;
-    }> = [];
-    const currentPolicy = () =>
-      !!policy && this.policy === policy && this.fence.currentEpoch() === policy.epoch;
-    for (const { envelope, expected } of inputs) {
-      const input = z
-        .strictObject({ operationJson: z.string().max(128000), proof: z.unknown() })
-        .parse(envelope);
-      const capture = captureSchema.parse(JSON.parse(input.operationJson));
-      for (const key of [
-        "environmentId",
-        "threadId",
-        "projectId",
-        "targetCwd",
-        "action",
-        "requestId",
-        "operationHash",
-        "relayId",
-      ] as const)
-        if (capture[key] !== expected[key]) throw new Error("Native project scope changed.");
-      if (
-        capture.environmentId !== this.hostId ||
-        !capture.sequence ||
-        !capture.visibleCwds.includes(expected.targetCwd)
-      )
-        throw new Error("Project scope unavailable.");
-      if (
-        !currentPolicy() ||
-        capture.projectionRevision !== policy!.revision ||
-        capture.policyDigest !== policy!.digest ||
-        capture.privacyRevision !== policy!.privacyRevision ||
-        !(await authorized())
-      )
-        throw new Error("Native project qualification unavailable.");
-      const proof = input.proof as NativeAdmissionProof;
-      const installationId = identity.parse(proof?.challenge?.installationId);
-      const revision = await this.native.consume(
-        {
-          installationId,
-          hostId: this.hostId,
-          action: "assistant.visibility.capture",
-          requestDigest: nativeAdmissionDigest(input.operationJson),
-        },
-        proof,
-      );
-      if (
-        installationId !== policy!.installationId ||
-        revision !== policy!.registryRevision ||
-        capture.issuer !== policy!.issuer
-      )
-        throw new Error("Native project issuer or trust changed.");
-      captures.push({ value: capture, installationId, revision });
-    }
-    for (const { envelope, expected } of accountInputs) {
-      const input = z
-        .strictObject({ operationJson: z.string().max(128000), proof: z.unknown() })
-        .parse(envelope);
-      const capture = accountCaptureSchema.parse(JSON.parse(input.operationJson));
-      for (const key of [
-        "environmentId",
-        "threadId",
-        "relayId",
-        "requestId",
-        "operationHash",
-      ] as const)
-        if (capture[key] !== expected[key]) throw new Error("Native account source changed.");
-      if (
-        capture.environmentId !== this.hostId ||
-        !capture.sequence ||
-        !currentPolicy() ||
-        capture.projectionRevision !== policy!.revision ||
-        capture.policyDigest !== policy!.digest ||
-        capture.privacyRevision !== policy!.privacyRevision ||
-        !(await authorized())
-      )
-        throw new Error("Native account qualification unavailable.");
-      const proof = input.proof as NativeAdmissionProof;
-      const installationId = identity.parse(proof?.challenge?.installationId);
-      const revision = await this.native.consume(
-        {
-          installationId,
-          hostId: this.hostId,
-          action: "assistant.account.capture",
-          requestDigest: nativeAdmissionDigest(input.operationJson),
-        },
-        proof,
-      );
-      if (
-        installationId !== policy!.installationId ||
-        revision !== policy!.registryRevision ||
-        capture.issuer !== policy!.issuer
-      )
-        throw new Error("Native account issuer or trust changed.");
-      accounts.push({ value: capture, installationId, revision });
-    }
+    const input = z
+      .strictObject({
+        operationJson: z.string().max(128000),
+        proof: z.unknown(),
+      })
+      .parse(envelope);
+    const capture = captureSchema.parse(JSON.parse(input.operationJson));
+    for (const key of [
+      "environmentId",
+      "threadId",
+      "projectId",
+      "targetCwd",
+      "action",
+      "requestId",
+      "operationHash",
+      "relayId",
+    ] as const)
+      if (capture[key] !== expected[key]) throw new Error("Native project scope changed.");
+    if (
+      capture.environmentId !== this.hostId ||
+      !capture.sequence ||
+      !capture.visibleCwds.includes(expected.targetCwd)
+    )
+      throw new Error("Project scope unavailable.");
+    if (
+      !policy ||
+      !this.currentPolicyOf(policy) ||
+      capture.projectionRevision !== policy.revision ||
+      capture.policyDigest !== policy.digest ||
+      capture.privacyRevision !== policy.privacyRevision ||
+      !(await authorized())
+    )
+      throw new Error("Native project qualification unavailable.");
+    const proof = input.proof as NativeAdmissionProof;
+    const installationId = identity.parse(proof?.challenge?.installationId);
+    const revision = await this.native.consume(
+      {
+        installationId,
+        hostId: this.hostId,
+        action: "assistant.visibility.capture",
+        requestDigest: nativeAdmissionDigest(input.operationJson),
+      },
+      proof,
+    );
+    if (
+      installationId !== policy.installationId ||
+      revision !== policy.registryRevision ||
+      capture.issuer !== policy.issuer
+    )
+      throw new Error("Native project issuer or trust changed.");
+    return { policy, value: capture, installationId, revision };
+  }
+
+  private async verifyAccount(
+    envelope: unknown,
+    expected: ExpectedAccountCapture,
+    authorized: () => Promise<boolean>,
+  ): Promise<VerifiedAccount> {
+    const policy = this.policy;
+    const input = z
+      .strictObject({
+        operationJson: z.string().max(128000),
+        proof: z.unknown(),
+      })
+      .parse(envelope);
+    const capture = accountCaptureSchema.parse(JSON.parse(input.operationJson));
+    for (const key of [
+      "environmentId",
+      "threadId",
+      "relayId",
+      "requestId",
+      "operationHash",
+    ] as const)
+      if (capture[key] !== expected[key]) throw new Error("Native account source changed.");
+    if (
+      capture.environmentId !== this.hostId ||
+      !capture.sequence ||
+      !policy ||
+      !this.currentPolicyOf(policy) ||
+      capture.projectionRevision !== policy.revision ||
+      capture.policyDigest !== policy.digest ||
+      capture.privacyRevision !== policy.privacyRevision ||
+      !(await authorized())
+    )
+      throw new Error("Native account qualification unavailable.");
+    const proof = input.proof as NativeAdmissionProof;
+    const installationId = identity.parse(proof?.challenge?.installationId);
+    const revision = await this.native.consume(
+      {
+        installationId,
+        hostId: this.hostId,
+        action: "assistant.account.capture",
+        requestDigest: nativeAdmissionDigest(input.operationJson),
+      },
+      proof,
+    );
+    if (
+      installationId !== policy.installationId ||
+      revision !== policy.registryRevision ||
+      capture.issuer !== policy.issuer
+    )
+      throw new Error("Native account issuer or trust changed.");
+    return { policy, value: capture, installationId, revision };
+  }
+
+  private currentPolicyOf(policy: VisibilityPolicy): boolean {
+    return this.policy === policy && this.fence.currentEpoch() === policy.epoch;
+  }
+
+  private async withVerified<T>(
+    captures: VerifiedProject[],
+    accounts: VerifiedAccount[],
+    authorized: () => Promise<boolean>,
+    body: (valid: () => boolean, identity: VisibilityIdentity & { issuer: string }) => Promise<T>,
+  ): Promise<T> {
+    if ((!captures.length && !accounts.length) || captures.length + accounts.length > 1000)
+      throw new Error("Invalid native source scope count.");
     const first = captures[0] ?? accounts[0];
+    const policy = first.policy;
+    const currentPolicy = () => this.currentPolicyOf(policy);
     if (
       [...captures, ...accounts].some(
         (item) =>
+          item.policy !== policy ||
           item.installationId !== first.installationId ||
           item.revision !== first.revision ||
           item.value.issuer !== first.value.issuer,
@@ -390,19 +462,32 @@ export class AssistantVisibilityAdmission {
         throw new Error("Native project scope revoked.");
       const permits: Array<{ valid(): boolean; release(): void }> = [];
       try {
-        const threads = new Map<string, { projects: typeof captures; accounts: typeof accounts }>();
+        const threads = new Map<
+          string,
+          { projects: VerifiedProject[]; accounts: VerifiedAccount[] }
+        >();
         for (const capture of captures) {
-          const group = threads.get(capture.value.threadId) ?? { projects: [], accounts: [] };
+          const group = threads.get(capture.value.threadId) ?? {
+            projects: [],
+            accounts: [],
+          };
           group.projects.push(capture);
           threads.set(capture.value.threadId, group);
         }
         for (const account of accounts) {
-          const group = threads.get(account.value.threadId) ?? { projects: [], accounts: [] };
+          const group = threads.get(account.value.threadId) ?? {
+            projects: [],
+            accounts: [],
+          };
           group.accounts.push(account);
           threads.set(account.value.threadId, group);
         }
         for (const [threadId, group] of threads) {
-          const source = { issuer: first.value.issuer, environmentId: this.hostId, threadId };
+          const source = {
+            issuer: first.value.issuer,
+            environmentId: this.hostId,
+            threadId,
+          };
           const targets = group.projects.map(({ value }) => ({
             projectId: value.projectId,
             cwd: value.targetCwd,
@@ -411,7 +496,7 @@ export class AssistantVisibilityAdmission {
             source,
             Math.max(...[...group.projects, ...group.accounts].map((item) => item.value.sequence)),
             targets,
-            policy!.epoch,
+            policy.epoch,
           );
           for (const target of targets) permits.push(this.fence.acquire(source, target));
           if (group.accounts.length) permits.push(this.fence.acquireSource(source));
@@ -422,8 +507,8 @@ export class AssistantVisibilityAdmission {
         const result = await body(valid, {
           installationId: first.installationId,
           registryRevision: first.revision,
-          visibilityEpoch: policy!.epoch,
-          policyGeneration: policy!.generation,
+          visibilityEpoch: policy.epoch,
+          policyGeneration: policy.generation,
           issuer: first.value.issuer,
         });
         if (!valid() || !(await authorized()))

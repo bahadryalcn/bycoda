@@ -261,7 +261,8 @@ export async function createSessionQueueRuntime(
       ];
     },
     accounts: () => hostProviderAccounts(),
-    limits: () => readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    limits: (target) =>
+      readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId), target),
     models: () => dependencies.models(),
     routing: () => hostModelRoutingService(dependencies.engine.store),
   });

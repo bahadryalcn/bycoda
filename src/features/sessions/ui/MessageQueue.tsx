@@ -1,4 +1,5 @@
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { flushSync } from "react-dom";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
@@ -99,6 +100,8 @@ async function runQueueAction(
 }
 
 type AccountList = { id: string; label: string }[];
+// Even compact rows fill the capped viewport well before the end of one page.
+const QUEUE_PAGE_SIZE = 12;
 
 export function MessageQueue({
   sessionId,
@@ -145,6 +148,11 @@ export function MessageQueue({
   });
   const departing = useAcceptedQueueDeparture(messages, delivery);
   const reviewRow = messages.find((row) => row.deliveryUnknown);
+  const [visibleCount, setVisibleCount] = useState(QUEUE_PAGE_SIZE);
+  // An uncertain delivery must be reachable immediately, including in a deep queue.
+  const hasMoreRows = !reviewRow && visibleCount < messages.length;
+  const visibleMessages = hasMoreRows ? messages.slice(0, visibleCount) : messages;
+  const showMoreRows = () => setVisibleCount(visibleCount + QUEUE_PAGE_SIZE);
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
   const dragAdmission = useRef<{
@@ -291,6 +299,7 @@ export function MessageQueue({
     event.preventDefault();
     const next = moveQueuedMessage(messages, id, index + (event.key === "ArrowUp" ? -1 : 1));
     if (next === messages) return;
+    if (hasMoreRows && index + 1 === visibleCount && event.key === "ArrowDown") showMoreRows();
     refocus.current = id;
     onReorder?.(next.map((message) => message.id));
     announceDrag(
@@ -585,6 +594,15 @@ export function MessageQueue({
         <div
           className="max-h-[min(30dvh,15rem)] min-h-0 overflow-y-auto overscroll-contain"
           data-message-queue-rows
+          onScroll={
+            hasMoreRows
+              ? (event) => {
+                  const list = event.currentTarget;
+                  if (list.scrollHeight - list.scrollTop - list.clientHeight < list.clientHeight)
+                    showMoreRows();
+                }
+              : undefined
+          }
         >
           {departing ? (
             <div className="queue-departure" data-queue-departure={departing.id} aria-hidden="true">
@@ -599,7 +617,7 @@ export function MessageQueue({
               </Text>
             </div>
           ) : null}
-          {messages.map((message, index) => {
+          {visibleMessages.map((message, index) => {
             if (message.author?.kind === "delegation")
               return (
                 <QueuedDelegationRow
@@ -680,6 +698,8 @@ export function MessageQueue({
                     if (dragAdmission.current && !dragAdmission.current.ended) return;
                     const admitted = queueOwner.admit();
                     if (!admitted) return;
+                    // Pointer reordering measures every row once at drag start.
+                    if (hasMoreRows) flushSync(() => setVisibleCount(messages.length));
                     // This may synchronously finish the previous settling
                     // drag. Its callback must still see its original ticket.
                     if (sortable.onItemPointerDown(message.id, event) !== true) {
@@ -829,6 +849,21 @@ export function MessageQueue({
               </Text>
             );
           })}
+          {hasMoreRows ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const next = visibleMessages.length;
+                flushSync(showMoreRows);
+                card.current
+                  ?.querySelectorAll<HTMLElement>("[data-queue-handle], [data-queue-notice] button")
+                  [next]?.focus();
+              }}
+            >
+              {t("Show more")}
+            </Button>
+          ) : null}
         </div>
         {removals.map((entry) => (
           <QueueRemovalNotice

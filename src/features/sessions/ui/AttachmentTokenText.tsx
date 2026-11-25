@@ -7,7 +7,7 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
 import { splitCitationTokens } from "../model/citationTokens";
-import type { ChatCitation } from "../model/chatCitation";
+import type { ComposerCitation } from "../model/chatCitation";
 import { CitationTokenPill, ScopedMentionText } from "./ChatCitationText";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
@@ -129,7 +129,7 @@ function CitationTokenText({
   citations = [],
 }: {
   text: string;
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
 }) {
   if (!citations.length) return <ScopedMentionText text={text} />;
   return splitCitationTokens(text, citations.length).map((part, index) =>
@@ -149,7 +149,7 @@ export function AttachmentTokenText({
 }: {
   text: string;
   attachments: Attachment[] | undefined;
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
 }) {
   useLocale();
   if (!attachments?.length) return <CitationTokenText text={text} citations={citations} />;

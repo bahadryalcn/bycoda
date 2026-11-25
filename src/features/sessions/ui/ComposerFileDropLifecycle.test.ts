@@ -42,35 +42,38 @@ let root: Root;
 let submit: ReturnType<typeof vi.fn>;
 let handlers: Set<(event: { payload: DragDropEvent }) => void>;
 
+function composer(props: Record<string, unknown>) {
+  return createElement(Composer, {
+    focused: false,
+    harness: "codex",
+    model: "",
+    runtimeMode: "supervised",
+    executionCwd: "~",
+    hideTopBar: true,
+    onFocus: vi.fn(),
+    onCwdChange: vi.fn(),
+    onModelChange: vi.fn(),
+    onRuntimeModeChange: vi.fn(),
+    onSubmit: submit,
+    ...props,
+  });
+}
+
 async function render(props: Record<string, unknown> = {}) {
   await act(async () => {
-    root.render(
-      createElement(
-        "div",
-        { "data-session-drop": "session-1" },
-        createElement(Composer, {
-          focused: false,
-          harness: "codex",
-          model: "",
-          runtimeMode: "supervised",
-          executionCwd: "~",
-          hideTopBar: true,
-          onFocus: vi.fn(),
-          onCwdChange: vi.fn(),
-          onModelChange: vi.fn(),
-          onRuntimeModeChange: vi.fn(),
-          onSubmit: submit,
-          ...props,
-        }),
-      ),
-    );
+    root.render(createElement("div", { "data-session-drop": "session-1" }, composer(props)));
   });
   setDropRect(0, 0, 500, 500);
   return container.querySelector<HTMLElement>("[data-composer-box]")!;
 }
 
-function setDropRect(left: number, top: number, right: number, bottom: number) {
-  const session = container.querySelector<HTMLElement>("[data-composer-box]")!;
+function setDropRect(
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+  session = container.querySelector<HTMLElement>("[data-composer-box]")!,
+) {
   session.getBoundingClientRect = () =>
     ({
       left,
@@ -244,6 +247,55 @@ describe("Composer image drops", () => {
     expect(attachmentCount()).toBe(1);
   });
 
+  it("shares one native listener across split panels and their warm replacements", async () => {
+    const setPair = async (active: number) => {
+      await act(async () => {
+        root.render(
+          createElement(
+            "div",
+            {},
+            [0, 1, 2, 3].map((index) =>
+              composer({
+                key: index,
+                enabled: Math.floor(index / 2) === active,
+                focused: index === 2,
+              }),
+            ),
+          ),
+        );
+      });
+      const boxes = Array.from(container.querySelectorAll<HTMLElement>("[data-composer-box]"));
+      boxes.forEach((box, index) =>
+        setDropRect((index % 2) * 400, 0, (index % 2) * 400 + 399, 500, box),
+      );
+      return boxes;
+    };
+    await setPair(0);
+    const boxes = await setPair(1);
+    expect(listen).toHaveBeenCalledTimes(1);
+    expect(handlers.size).toBe(1);
+    for (const receive of handlers) {
+      receive({
+        payload: {
+          type: "enter",
+          paths: ["/project/report.pdf"],
+          position: { x: 550, y: 100 },
+        } as DragDropEvent,
+      });
+      receive({ payload: { type: "over", position: { x: 100, y: 100 } } as DragDropEvent });
+    }
+    expect(boxes[2].dataset.dropIndicator).toBe("inside");
+    expect(dropBadge()).toBe("Attach 1 file");
+    await nativeDrop(["/project/report.pdf"], 550, 100);
+    expect(attachmentCount()).toBe(1);
+    expect(boxes[3].querySelector("[data-attachment-chip]")).not.toBeNull();
+    expect(invoke.mock.calls.filter(([command]) => command === "inspect_paths")).toHaveLength(1);
+    await setPair(0);
+    await nativeDrop(["/project/other.pdf"], 120, 100);
+    expect(boxes[0].querySelector("[data-attachment-chip]")).not.toBeNull();
+    expect(listen).toHaveBeenCalledTimes(1);
+  });
+
   it("uses current attachment capabilities without replacing the listener", async () => {
     const session = await render();
     await render({ harness: "fx" });
@@ -260,9 +312,9 @@ describe("Composer image drops", () => {
     expect(attachmentCount()).toBe(1);
   });
 
-  it("ignores a native listener whose registration finishes after disabling", async () => {
+  it("ignores a late native registration while disabled and after a new registration", async () => {
     let finishRegistration: (() => void) | undefined;
-    listen.mockImplementation((handler) => {
+    listen.mockImplementationOnce((handler) => {
       handlers.add(handler);
       return new Promise<() => void>((resolve) => {
         finishRegistration = () =>
@@ -277,9 +329,15 @@ describe("Composer image drops", () => {
     expect(attachmentCount()).toBe(0);
     expect(invoke).not.toHaveBeenCalledWith("inspect_paths", expect.anything());
 
+    await render({ disabled: false });
+    await nativeDrop(["/project/report.pdf"]);
+    expect(attachmentCount()).toBe(1);
+    expect(invoke.mock.calls.filter(([command]) => command === "inspect_paths")).toHaveLength(1);
     await act(async () => {
       finishRegistration?.();
     });
+    expect(handlers.size).toBe(1);
+    await render({ disabled: true });
     expect(handlers.size).toBe(0);
   });
 

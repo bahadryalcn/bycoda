@@ -10,6 +10,27 @@ reap/state. Owner close/reload closes it; overlay/native close docks and shows o
 without disconnecting. Floating stays in the More voice options menu. Scoped subscriptions expose
 failures and clean up under StrictMode.
 
+The presented drawer view (`workspace.live_work.present`) is one typed snapshot per call:
+a tree of catalog components (`model/voicePresentedCatalog.ts`, one spec per component, the
+single source for validation, `workspace.live_work.catalog` discovery and the OpenUI library
+in `ui/companion/presented/`). The tree is Zod-validated, compiled to an OpenUI program of
+literals, `$field` variables and node references, and drawn with shared components; model
+HTML or OpenUI source never reaches it, and earlier `blocks`/`content` calls map onto the
+same components. Fields keep drafts while their ids survive an update; a Button's
+`action.input` (and its target fields) may read fields with `{"$bind":"id"}`, resolved at
+press into the descriptor `voicePresentedActions` re-validates against the live catalog with
+current authority. Observed components (TestResult, WorkResults and the like) draw only what
+the turn measured. Bound values keep their own type: period pickers hold `{start, end}` text
+(local days, or local date-times with an exclusive end), lists and suggestion fields name rows
+`rows`/`suggestions` so no option is chosen for the owner. `model/voicePresentedCoverage.ts`
+places every shared catalog component as drawn by a presented component or omitted for one
+reason (overlay, approval, authority, state, chrome), and a test keeps it equal to
+`docs/reference/ui-components.md`. Links are plain https with no login and show their host;
+JSON data is bounded and refuses credential keys. Add a component by adding its spec, view and
+example together; the parity tests fail otherwise. Copy uses the shared CopyButton/clipboard, and the tool reports
+completed only when that version is painted in the drawer. A new present replaces the view;
+follow-up turns keep it, and call end clears it.
+
 Compact/full/floating controls retain Stop work, speaker mute, microphone and Finish,
 with turn-ending choice in the expanded dock (compact and floating menus only add Finish turn). Disconnect, speaker mute, silence and Stop work differ.
 Speaker mute cancels/prevents output-only briefings without replay. Opt-in Push to Talk

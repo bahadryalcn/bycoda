@@ -75,11 +75,69 @@ function visibleFailure(error: Error) {
   };
 }
 
-it("lists nothing in the sidebar: it only reports the connection and the managed sessions", async () => {
+it("reports a pending connection failure before showing sidebar feedback", async () => {
   const error = new Error("Machine is unreachable");
   await renderFeed({ error, pendingFailure: true });
   expect(container.textContent).toBe("");
   expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews", error);
+
+  await renderFeed(visibleFailure(error));
+  expect(container.textContent).toContain("Not connected");
+  expect(container.textContent).not.toContain("Try again");
+});
+
+it("retains the last Crew work rows during a shared connection interruption", async () => {
+  const data = {
+    definitions: [{ id: "definition", name: "Review team" }],
+    runs: [
+      {
+        id: "run",
+        title: "Review connection recovery",
+        status: "active",
+        updatedAt: 1,
+        definition: { id: "definition", name: "Review team" },
+        tasks: [],
+        messages: [],
+        assignments: [],
+      },
+    ],
+  } as unknown as NonNullable<CrewState["data"]>;
+  await renderFeed({
+    data,
+    error: new Error("RPC_CONNECTION_INTERRUPTED: Host connection interrupted"),
+  });
+  expect(container.textContent).toContain("Review connection recovery");
+  expect(container.textContent).not.toContain("Try again");
+  expect(container.textContent).not.toContain("Not connected");
+});
+
+it("shows Crew work only while the project has unfinished runs", async () => {
+  const definition = { id: "definition", name: "Review team" };
+  const run = {
+    id: "run",
+    title: "Review connection recovery",
+    status: "active",
+    updatedAt: 1,
+    definition,
+    tasks: [],
+    messages: [],
+    assignments: [],
+  };
+  const stateWithRuns = (runs: (typeof run)[]) => ({
+    data: { definitions: [definition], runs } as unknown as NonNullable<CrewState["data"]>,
+  });
+  await renderFeed(stateWithRuns([]));
+  expect(container.querySelector("section")).toBeNull();
+
+  await renderFeed(stateWithRuns([run]));
+  expect(container.textContent).toContain("Manage");
+  expect(container.textContent).toContain(run.title);
+
+  await renderFeed(stateWithRuns([{ ...run, status: "paused" }]));
+  expect(container.textContent).toContain("Manage");
+
+  await renderFeed(stateWithRuns([{ ...run, status: "finished" }]));
+  expect(container.querySelector("section")).toBeNull();
 });
 
 it("does not report recovery before the query has a verified result", async () => {
@@ -93,6 +151,22 @@ it("does not report recovery before the query has a verified result", async () =
 it("does not report a service failure as a lost connection", async () => {
   await renderFeed(visibleFailure(new Error("Host rejected request: Crew storage unavailable")));
   expect(reportRemoteConnection).not.toHaveBeenCalled();
+});
+
+it("offers a sidebar retry for a service failure with an empty cached collection", async () => {
+  const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
+  const refetch = vi.fn();
+  await renderFeed({
+    data,
+    refetch,
+    ...visibleFailure(new Error("Host rejected request: Crew storage unavailable")),
+  });
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Try again",
+  )!;
+  expect(retry).toBeTruthy();
+  await act(async () => retry.click());
+  expect(refetch).toHaveBeenCalledOnce();
 });
 
 it("keeps a service failure and its local retry in the Work tab", async () => {

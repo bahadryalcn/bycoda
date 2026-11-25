@@ -33,12 +33,12 @@ const trigger = () => host.querySelector<HTMLButtonElement>("button")!;
 const card = () => document.querySelector<HTMLElement>("[data-hover-card]");
 const scrollRegion = () => document.querySelector<HTMLElement>('[data-popover-flow="scroll"]');
 
-function Probe({ options }: { options: HoverCardOptions }) {
+function Probe({ options, label = "Subagents" }: { options: HoverCardOptions; label?: string }) {
   const hover = useHoverCard(options);
   return createElement(
     "div",
     null,
-    createElement("button", { type: "button", ...hover.trigger }, "Subagents"),
+    createElement("button", { type: "button", ...hover.trigger }, label),
     hover.card(
       createElement(
         "ul",
@@ -58,9 +58,46 @@ async function render(options: HoverCardOptions) {
 async function hoverTrigger() {
   await act(async () => {
     trigger().dispatchEvent(new Event("pointerover", { bubbles: true }));
-    vi.advanceTimersByTime(400);
+    vi.advanceTimersByTime(450);
   });
 }
+
+it("requires a fresh 450 ms dwell on each row after a preview closes", async () => {
+  await act(async () =>
+    root.render(
+      ["First issue", "Second issue", "Third issue"].map((label) =>
+        createElement(Probe, { key: label, label, options: { "aria-label": label } }),
+      ),
+    ),
+  );
+  const [first, second, third] = host.querySelectorAll("button");
+  const pointer = (target: HTMLButtonElement, type: "pointerover" | "pointerout") =>
+    target.dispatchEvent(new Event(type, { bubbles: true }));
+
+  await act(async () => {
+    pointer(first, "pointerover");
+    vi.advanceTimersByTime(450);
+  });
+  expect(card()?.getAttribute("aria-label")).toBe("First issue");
+
+  await act(async () => {
+    pointer(first, "pointerout");
+    vi.advanceTimersByTime(150);
+    pointer(second, "pointerover");
+    vi.advanceTimersByTime(60);
+  });
+  expect(card()).toBeNull();
+
+  await act(async () => {
+    pointer(second, "pointerout");
+    pointer(third, "pointerover");
+    vi.advanceTimersByTime(449);
+  });
+  expect(card()).toBeNull();
+
+  await act(async () => vi.advanceTimersByTime(1));
+  expect(card()?.getAttribute("aria-label")).toBe("Third issue");
+});
 
 // Regression for #634: the subagent hover card hid rows past its height bound and
 // ignored the wheel, because it was passive and `pointer-events-none`.

@@ -43,7 +43,7 @@ import { workItemMentionOf } from "../model/workItemMentionRows";
 import { ComposerSuggestions } from "./ComposerSuggestions";
 import { FileMentionPicker } from "./FileMentionPicker";
 import { keepEqualToken } from "./keepEqualToken";
-import { useComposerMentionSources } from "./useComposerMentionSources";
+import { useComposerMentionSources, usePendingMentionPick } from "./useComposerMentionSources";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import { isProjectlessCwd } from "../model/recentSessions";
 
@@ -210,6 +210,15 @@ export function QueuedEditSuggestions({
     el.focus();
   };
 
+  const pickPendingMention = usePendingMentionPick(
+    executionCwd,
+    sessionId,
+    mentionOpen ? mention : null,
+    mentions.fileRankingPending,
+    files[mentionActive],
+    pickMention,
+  );
+
   /** Arrow, Tab and Enter keys of one open list. */
   const listKey = <Item,>(
     event: KeyboardEvent<HTMLTextAreaElement>,
@@ -217,6 +226,7 @@ export function QueuedEditSuggestions({
     active: number,
     select: (index: number) => void,
     pick: (item: Item) => void,
+    onPending?: (field: HTMLTextAreaElement) => void,
   ) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -229,9 +239,10 @@ export function QueuedEditSuggestions({
     if (event.key !== "Tab" && (event.key !== "Enter" || event.shiftKey)) return false;
     if (event.ctrlKey || event.metaKey) return false;
     const item = items[active];
-    if (!item) return false;
+    if (!item && !onPending) return false;
     event.preventDefault();
-    pick(item);
+    if (item) pick(item);
+    else onPending?.(event.currentTarget);
     return true;
   };
 
@@ -262,7 +273,15 @@ export function QueuedEditSuggestions({
     },
     keyDown: (event) => {
       if (slash) return listKey(event, skills, skillActive, selectSkill, pickSkill);
-      if (mentionOpen) return listKey(event, files, mentionActive, selectMention, pickMention);
+      if (mentionOpen)
+        return listKey(
+          event,
+          files,
+          mentionActive,
+          selectMention,
+          pickMention,
+          mentions.fileRankingPending ? pickPendingMention : undefined,
+        );
       return false;
     },
     openSkills: () => {
@@ -325,6 +344,7 @@ export function QueuedEditSuggestions({
           mentions.serversLoading ||
           mentions.workItemsLoading ||
           mentions.scopeLoading ||
+          mentions.fileRankingPending ||
           (!mentions.serversScoped &&
             !mentions.workItemsScoped &&
             !mentions.scope &&

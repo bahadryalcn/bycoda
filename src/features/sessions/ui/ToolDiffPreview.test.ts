@@ -116,7 +116,7 @@ describe("tool diff popovers", () => {
     const { trigger } = renderPreview();
     expect(dialog()).toBeNull();
     pointer(trigger, "pointerover");
-    advance(299);
+    advance(449);
     expect(dialog()).toBeNull();
     advance(1);
     expect(dialog()?.textContent).toContain("before");
@@ -156,13 +156,13 @@ describe("tool diff popovers", () => {
     expect(onOpenFile).not.toHaveBeenCalled();
     pointer(trigger, "pointerout");
     pointer(trigger, "pointerover");
-    advance(300);
+    advance(450);
     expect(dialog()).not.toBeNull();
     act(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
     expect(dialog()).toBeNull();
     pointer(trigger, "pointerout");
     pointer(trigger, "pointerover");
-    advance(300);
+    advance(450);
     const fileButton = [...dialog()!.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
       button.textContent?.trim().endsWith("notes.md"),
     )!;
@@ -254,7 +254,7 @@ describe("tool diff popovers", () => {
   it("keeps a hover-opened dialog while the chip keeps focus, and still closes it on leave", () => {
     const { trigger } = renderPreview();
     pointer(trigger, "pointerover");
-    advance(300);
+    advance(450);
     expect(dialog()).not.toBeNull();
     // Focus arriving on the chip while the pointer preview is open must not close or reopen it.
     act(() => trigger.focus());
@@ -271,7 +271,7 @@ describe("tool diff popovers", () => {
     act(() => trigger.focus());
     expect(dialog()).toBeNull();
     pointer(trigger, "pointerover");
-    advance(300);
+    advance(450);
     expect(dialog()).not.toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     act(() =>
@@ -319,7 +319,7 @@ describe("tool diff popovers", () => {
       act(() => trigger.focus());
       expect(dialog()).toBeNull();
       pointer(trigger, "pointerover");
-      advance(300);
+      advance(450);
       expect(dialog()?.textContent).toContain("before");
       expect(dialog()?.textContent).toContain("after");
       act(() => trigger.click());

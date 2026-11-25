@@ -22,6 +22,8 @@ import {
   type InlineReferenceContext,
 } from "./composerInlineReferences";
 import styles from "./ComposerInlineEditor.module.css";
+import { ComposerCitations } from "./ComposerCitations";
+import type { ComposerCitation } from "../model/chatCitation";
 
 type Props = {
   field: RefObject<HTMLTextAreaElement | null>;
@@ -36,6 +38,7 @@ type Props = {
   hasSubagents: boolean;
   onInlineAttachments: (ids: ReadonlySet<string> | null) => void;
   onRemoveAttachment: (id: string) => void;
+  onChangeCitations: (citations: ComposerCitation[], removed?: number) => void;
 };
 
 /** Inline reference widgets share the composer's original draft and dispatch endpoint. */
@@ -52,6 +55,7 @@ export function ComposerInlineEditor({
   hasSubagents,
   onInlineAttachments,
   onRemoveAttachment,
+  onChangeCitations,
 }: Props) {
   const t = useT();
   const mount = useRef<HTMLDivElement>(null);
@@ -232,6 +236,16 @@ export function ComposerInlineEditor({
       <Text as="div" size="body" tone="neutral">
         <div ref={mount} className={styles.mount} data-subagents={hasSubagents || undefined} />
       </Text>
+      {active && reference?.kind === "file-comment" && references.citationSources ? (
+        <ComposerCitations
+          key={reference.value}
+          citations={references.citationSources}
+          disabled={readOnly || disabled}
+          onChange={onChangeCitations}
+          openFileComment={{ id: reference.value, anchor: active.anchor }}
+          onCloseFileComment={close}
+        />
+      ) : null}
       {active && attachment ? (
         <ComposerAttachmentPreview
           key={attachment.id}

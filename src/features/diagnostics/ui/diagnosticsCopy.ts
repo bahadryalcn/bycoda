@@ -12,6 +12,8 @@ export function diagnosticResultText(status: DiagnosticSendStatus): string {
       return t("Sending diagnostic logs is not available in this build.");
     case "empty":
       return t("There were no logs to send.");
+    case "declined":
+      return t("Data sharing canceled.");
     case "failed":
       return t("Could not send the diagnostic logs.");
   }

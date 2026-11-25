@@ -138,14 +138,36 @@ describe("useWindowChromeActions toggles under StrictMode", () => {
     expect(appearance.saveProjectRailOpen.mock.calls).toEqual([[false], [true], [false]]);
   });
 
-  it("onToggleSidebar is the project rail toggle", () => {
-    render(false, false);
+  it("cycles from both panes to the session sidebar, then the compact rail, then both panes", () => {
+    render(true, true);
 
     act(() => latest.actions.onToggleSidebar());
+    expect(latest.projectRailOpen).toBe(false);
+    expect(latest.sessionSidebarOpen).toBe(true);
 
+    act(() => latest.actions.onToggleSidebar());
+    expect(latest.projectRailOpen).toBe(false);
+    expect(latest.sessionSidebarOpen).toBe(false);
+
+    act(() => latest.actions.onToggleSidebar());
     expect(latest.projectRailOpen).toBe(true);
-    expect(appearance.saveProjectRailOpen).toHaveBeenCalledTimes(1);
-    expect(appearance.saveProjectRailOpen).toHaveBeenCalledWith(true);
+    expect(latest.sessionSidebarOpen).toBe(true);
+    expect(appearance.saveProjectRailOpen.mock.calls).toEqual([[false], [true]]);
+    expect(appearance.saveSessionSidebarOpen.mock.calls).toEqual([[false], [true]]);
+  });
+
+  it("cycles from the latest pane state even before React commits", () => {
+    render(true, false);
+
+    act(() => {
+      latest.actions.onToggleSidebar();
+      latest.actions.onToggleSidebar();
+    });
+
+    expect(latest.projectRailOpen).toBe(false);
+    expect(latest.sessionSidebarOpen).toBe(true);
+    expect(appearance.saveProjectRailOpen.mock.calls).toEqual([[false]]);
+    expect(appearance.saveSessionSidebarOpen.mock.calls).toEqual([[true]]);
   });
 
   it("flips the session sidebar once and saves exactly once", () => {

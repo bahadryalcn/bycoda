@@ -14,6 +14,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Group, Row } from "../../../shared/ui/settings";
 import { AnonymousUsageSetting } from "./AnonymousUsageSetting";
+import { ActivitySharingSetting, SharingNoticeSetting } from "../../data-sharing";
 import { useDataExport, useDataSummary } from "../hooks/useAccountData";
 
 export function retentionLabel(key: RetentionKey): string {
@@ -168,6 +169,8 @@ export function AccountData() {
       {summary ? <StoredData summary={summary} /> : null}
       <DataExportRow />
       <AnonymousUsageSetting />
+      <ActivitySharingSetting />
+      <SharingNoticeSetting />
     </Group>
   );
 }

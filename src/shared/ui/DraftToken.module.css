@@ -174,11 +174,15 @@
   background: color-mix(in srgb, var(--chip-ink) 16%, transparent);
 }
 .compact:focus-visible {
-  outline: 2px solid var(--ui-focus-ring-color);
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: 1px;
 }
 .compact:is([data-inline-reference="url"], [data-inline-reference="file"]) {
   --chip-ink: var(--ui-tone-info-fg);
+}
+.compact[data-inline-reference="file-comment"] {
+  --chip-ink: var(--color-feature);
+  background: color-mix(in oklch, var(--chip-ink) 13%, transparent);
 }
 .compact[data-inline-icon="json"] {
   --chip-ink: var(--ui-tone-warning-fg);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import {
   AUTOMATIC_SUBAGENTS,
   decodeAdvisor,
@@ -17,12 +17,15 @@ export function SubagentSelectionControl({
   setting,
   value,
   onChange,
+  compact = false,
 }: {
   setting: ModelSetting;
   value: string | undefined;
   onChange: (value: string) => void;
+  compact?: boolean;
 }) {
   const t = useT();
+  const { formatNumber } = useFormat();
   const [picking, setPicking] = useState<{ value: string | undefined } | null>(null);
   const selection = decodeSubagentSelection(value ?? AUTOMATIC_SUBAGENTS);
   const selected = selection === AUTOMATIC_SUBAGENTS ? [] : selection;
@@ -46,6 +49,13 @@ export function SubagentSelectionControl({
           label={t(setting.label)}
           hideLabel
           placeholder={t("Add")}
+          selectionLabels={
+            compact
+              ? {
+                  summary: (count) => t("{p0} selected", { p0: formatNumber(count) }),
+                }
+              : undefined
+          }
           value={selected.map((ref) => encodeAdvisor(ref)!)}
           options={setting.options
             .filter(

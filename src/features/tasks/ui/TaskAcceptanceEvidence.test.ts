@@ -53,6 +53,23 @@ it("keeps criteria unverified when a legacy review passed without per-criterion 
   expect(container.textContent).toContain("Verify the sources");
 });
 
+it("keeps closed evidence searchable and mounts verdict badges on first expansion", async () => {
+  await render({ prompt: brief() });
+  const details = container.querySelector("details")!;
+  const rows = [...details.querySelectorAll("[data-acceptance-verdict]")];
+  expect(rows).toHaveLength(2);
+  expect(rows[0]?.textContent).toContain("Not verified");
+  expect(rows[0]?.textContent).toContain("Save the report");
+  expect(details.querySelectorAll('[data-variant="label"]')).toHaveLength(0);
+
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  expect(details.querySelectorAll('[data-variant="label"]')).toHaveLength(2);
+  expect(details.querySelector("[data-acceptance-verdict]")).toBe(rows[0]);
+});
+
 it("shows recorded verdicts and inert evidence, with provenance opening only the recorded review", async () => {
   const onOpenReview = vi.fn();
   await render(

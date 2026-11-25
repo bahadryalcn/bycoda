@@ -9,7 +9,7 @@ import {
   withProviderRetirement,
 } from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
-import { modelsFor } from "../../../../features/sessions/model/models";
+import { modelsFor, nativeModelId } from "../../../../features/sessions/model/models";
 import {
   createChildProcessHandle,
   spawnChild,
@@ -69,7 +69,7 @@ function stateFor(flavor: PiFlavor): TextState {
 
 function pickTextModel(flavor: PiFlavor, requested?: string): string | undefined {
   const selected = requested?.trim();
-  if (selected?.includes("/")) return selected;
+  if (selected) return nativeModelId(selected);
   const models = modelsFor(flavor.id).filter((model) => Boolean(model.nativeId?.includes("/")));
   const cheap = models.find((model) =>
     /haiku|mini|flash|nano|lite|luna/i.test(`${model.nativeId ?? ""} ${model.name} ${model.id}`),

@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
+  Activity,
   useContext,
   useDeferredValue,
   useEffect,
@@ -94,6 +95,7 @@ const presetLabels: Record<Preset, string> = {
 };
 type Load = {
   queryKey: string;
+  prices?: ModelPrices | null;
   usage: AccountUsage[];
   turns: UsageTurnReport | null;
   failed: number;
@@ -116,6 +118,21 @@ const initialLoad: Load = {
 const presetWindow = (preset: Preset, now: number): UsageWindow =>
   usagePresetWindow(preset === "custom" ? "today" : preset, now);
 
+function viewForSetting(revealed: string | null, fallback: string) {
+  switch (revealed) {
+    case "account-limits":
+    case "usage-budgets":
+    case "show-remaining-usage":
+      return "limits";
+    case "provider-usage":
+      return "projects";
+    case "cost-overview":
+      return "overview";
+    default:
+      return fallback;
+  }
+}
+
 export function UsageOverview({
   refresh = 0,
   limits,
@@ -127,25 +144,18 @@ export function UsageOverview({
 }) {
   const locale = useLocale();
   const revealed = useContext(RevealedSetting);
-  const [selection, setSelection] = useState({ view: "overview", revealed });
+  const [selection, setSelection] = useState(() => ({
+    view: viewForSetting(revealed, "overview"),
+    revealed,
+  }));
   const view = limitsOnly ? "limits" : selection.view;
+  const [limitsVisited, setLimitsVisited] = useState(view === "limits");
+  if (view === "limits" && !limitsVisited) setLimitsVisited(true);
   const setView = (next: string) => {
     setSelection({ view: next, revealed });
   };
   if (selection.revealed !== revealed) {
-    setSelection({
-      revealed,
-      view:
-        revealed === "account-limits" ||
-        revealed === "usage-budgets" ||
-        revealed === "show-remaining-usage"
-          ? "limits"
-          : revealed === "provider-usage"
-            ? "projects"
-            : revealed === "cost-overview"
-              ? "overview"
-              : view,
-    });
+    setSelection({ revealed, view: viewForSetting(revealed, view) });
   }
   const [preset, setPreset] = useState<Preset>("30d");
   const [interval, setInterval] = useState<UsageWindow>(() => presetWindow("30d", Date.now()));
@@ -173,7 +183,7 @@ export function UsageOverview({
   const [version, setVersion] = useState(0);
   const [load, setLoad] = useState<Load>(() => recallUsageLoad(interval, initialLoad));
   useEffect(() => rememberUsageLoad(load), [load]);
-  const [prices, setPrices] = useState<ModelPrices | null | undefined>();
+  const { prices } = load;
   const [search, setSearch] = useState("");
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const filterAnchor = useRef<HTMLButtonElement>(null);
@@ -197,7 +207,7 @@ export function UsageOverview({
     return subscribeUsageViewIntent(apply);
   }, [limitsOnly, revealed]);
   const accounts = useMemo(() => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts), [version]);
-  const quotaHistory = useRateLimitHistory();
+  const quotaHistory = useRateLimitHistory(view === "limits" && preset === "all");
   const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
   const since = preset === "all" ? 0 : Math.max(0, previousUsageWindow(interval).start);
   const queryKey = `${since}:${interval.end}:${reload}:${refresh}:${version}`;
@@ -205,44 +215,46 @@ export function UsageOverview({
   useEffect(() => {
     if (limitsOnly) return;
     let cancelled = false;
-    void loadUsageSources(accounts, since, interval.end).then(
-      ({ reports, turns, prices: nextPrices }) => {
-        if (cancelled) return;
-        const failed = reports.filter((r) => r.failed).length;
-        setLoad((previousLoad) => ({
-          queryKey,
-          usage: reports.map(({ account, rows, failed: unavailable }) => ({
-            account,
-            rows: unavailable
-              ? (previousLoad.usage.find(
-                  (r) => r.account.id === account.id && r.account.provider === account.provider,
-                )?.rows ?? [])
-              : rows,
-          })),
-          turns: turns ?? previousLoad.turns,
-          failed,
-          turnsFailed: turns === null,
-          stale:
-            (turns === null && previousLoad.turns !== null) ||
-            reports.some(
-              ({ account, failed }) =>
-                failed &&
-                previousLoad.usage.some(
-                  (report) =>
-                    report.account.id === account.id &&
-                    report.account.provider === account.provider &&
-                    report.rows.length > 0,
-                ),
-            ),
-          refreshedAt: Date.now(),
-          error:
-            accounts.length > 0 && failed === accounts.length
-              ? "Usage could not be read for the selected accounts. Reload usage to try again."
-              : null,
-        }));
-        setPrices(nextPrices);
-      },
-    );
+    const sources = loadUsageSources(accounts, since, interval.end);
+    void sources.prices.then((nextPrices) => {
+      if (!cancelled) setLoad((previous) => ({ ...previous, prices: nextPrices }));
+    });
+    void Promise.all([sources.reports, sources.turns]).then(([reports, turns]) => {
+      if (cancelled) return;
+      const failed = reports.filter((r) => r.failed).length;
+      setLoad((previousLoad) => ({
+        queryKey,
+        prices: previousLoad.prices,
+        usage: reports.map(({ account, rows, failed: unavailable }) => ({
+          account,
+          rows: unavailable
+            ? (previousLoad.usage.find(
+                (r) => r.account.id === account.id && r.account.provider === account.provider,
+              )?.rows ?? [])
+            : rows,
+        })),
+        turns: turns ?? previousLoad.turns,
+        failed,
+        turnsFailed: turns === null,
+        stale:
+          (turns === null && previousLoad.turns !== null) ||
+          reports.some(
+            ({ account, failed }) =>
+              failed &&
+              previousLoad.usage.some(
+                (report) =>
+                  report.account.id === account.id &&
+                  report.account.provider === account.provider &&
+                  report.rows.length > 0,
+              ),
+          ),
+        refreshedAt: Date.now(),
+        error:
+          accounts.length > 0 && failed === accounts.length
+            ? "Usage could not be read for the selected accounts. Reload usage to try again."
+            : null,
+      }));
+    });
     return () => {
       cancelled = true;
     };
@@ -768,6 +780,11 @@ export function UsageOverview({
       )}
       {view !== "limits" && showAnalytics && (
         <>
+          {prices === undefined && !isEmptyPeriod && (
+            <Text as="p" size="caption" tone="secondary" leading="inherit">
+              {t("Using built-in prices while model prices load.")}
+            </Text>
+          )}
           {/* One empty state replaces every tile, chart and panel; refreshing is shown by aria-busy. */}
           {isEmptyPeriod ? (
             <EmptyState
@@ -1086,10 +1103,14 @@ export function UsageOverview({
           )}
         </>
       )}
-      <div hidden={view !== "limits"} className="usage-limits-view">
-        {limits?.(quotaFilters)}
-        {limits && <QuotaHistory window={window} filters={quotaFilters} accounts={accounts} />}
-      </div>
+      {limits && limitsVisited && (
+        <Activity mode={view === "limits" ? "visible" : "hidden"}>
+          <div hidden={view !== "limits"} className="usage-limits-view">
+            {limits(quotaFilters)}
+            <QuotaHistory window={window} filters={quotaFilters} accounts={accounts} />
+          </div>
+        </Activity>
+      )}
     </section>
   );
 }

@@ -23,7 +23,7 @@ import {
   GIT_PANEL_ENTRY_FRESH_MS,
   GIT_PANEL_FOCUS_FRESH_MS,
 } from "../model/gitRefreshPolicy";
-import { applyProjectDiffStats } from "./useProjectDiffStats";
+import { applyProjectIndexStats } from "./useProjectDiffStats";
 
 const indexByCwd = new CheckoutCache<string, GitDiffIndex>();
 
@@ -47,7 +47,7 @@ export function useDiffIndex(
 ): {
   index: GitDiffIndex | null;
   reload: () => void;
-  showOptimistic: (next: GitDiffIndex) => void;
+  showOptimistic: (next: GitDiffIndex, options?: { publishStats: boolean }) => void;
   error: string | null;
   loading: boolean;
   /** The read on entry or explicit refresh has not answered yet; a cached index may be stale. */
@@ -86,11 +86,12 @@ export function useDiffIndex(
     setNonce((value) => value + 1);
   }, []);
   const showOptimistic = useCallback(
-    (next: GitDiffIndex) => {
+    (next: GitDiffIndex, options?: { publishStats: boolean }) => {
       holdRef.current = true;
       indexByCwd.set(cwd, next);
       indexRef.current = next;
       setIndex(next);
+      if (options?.publishStats) applyProjectIndexStats(cwd, next);
     },
     [cwd],
   );
@@ -139,15 +140,7 @@ export function useDiffIndex(
         const prev = indexRef.current;
         const announced = announcedRef.current;
         announcedRef.current = false;
-        applyProjectDiffStats(
-          cwd,
-          {
-            files: next.files.length + (next.conflicts?.length ?? 0),
-            additions: next.additions,
-            deletions: next.deletions,
-          },
-          peekFullGitIndex(cwd)?.at,
-        );
+        applyProjectIndexStats(cwd, next, peekFullGitIndex(cwd)?.at);
         if (sameIndex(prev, next)) return;
         indexByCwd.set(cwd, next);
         indexRef.current = next;

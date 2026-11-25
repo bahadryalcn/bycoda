@@ -596,7 +596,7 @@ function WorkspaceToolPanelsComponent({
             pullRequestsOnly={pullRequestsOnly}
             onPullRequestsOnlyChange={setPullRequestsOnly}
             onOpenProject={pickProject}
-            cwd={sidebarCwd}
+            cwd={projectCwd || sidebarCwd}
             recents={visibleRecents}
             {...toolRail}
             onClose={onLeaveInbox}

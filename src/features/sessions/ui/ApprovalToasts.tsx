@@ -319,6 +319,7 @@ export function ApprovalToasts({
     <NotificationBell
       label={t("Notifications")}
       muted={!popupsEnabled}
+      iconSize={triggerTarget ? "md" : "sm"}
       count={badgeCount}
       tone={count > 0 ? "warning" : "accent"}
       countId={`${panelId}-count`}

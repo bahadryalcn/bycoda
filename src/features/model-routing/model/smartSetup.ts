@@ -47,7 +47,10 @@ export type SetupCandidate = {
   /** The model's reasoning-effort setting and the values it accepts, when it has one. */
   effort?: { id: string; options: string[] };
 };
-export type SetupPoolNames = Record<"smartest" | "balanced" | "fast" | "work" | "personal", string>;
+export type SetupPoolNames = Record<
+  "smartest" | "balanced" | "light" | "work" | "personal",
+  string
+>;
 
 /**
  * A complete setup proposal over the candidate list: candidate indexes in priority order,
@@ -285,15 +288,15 @@ export function rulePlan(candidates: SetupCandidate[], names: SetupPoolNames): S
     (a, b) => candidateScore(candidates[b]!) - candidateScore(candidates[a]!),
   );
   const balanced = pick((c) => ["workhorse", "standard"].includes(candidateTier(c)));
-  let fast = pick((c) => c.profile.intelligence <= 2).sort(
+  let light = pick((c) => c.profile.intelligence <= 2).sort(
     (a, b) => candidates[a]!.profile.cost - candidates[b]!.profile.cost,
   );
-  if (!fast.length) fast = pick((c) => c.profile.cost === 1 && c.profile.intelligence <= 3);
+  if (!light.length) light = pick((c) => c.profile.cost === 1 && c.profile.intelligence <= 3);
   const withKinds = candidates.some((candidate) => candidate.account?.kind);
   const pools: SetupPlan["pools"] = [
     { name: names.smartest, members: smartest, includes: [] },
     { name: names.balanced, members: balanced, includes: [] },
-    { name: names.fast, members: fast, includes: [] },
+    { name: names.light, members: light, includes: [] },
     ...(withKinds
       ? [
           { name: names.work, members: pick((c) => c.account?.kind !== "personal"), includes: [] },
@@ -308,7 +311,7 @@ export function rulePlan(candidates: SetupCandidate[], names: SetupPoolNames): S
     return name ? { pool: name } : ("order" as const);
   };
   const preference = {
-    light: [names.fast, names.balanced],
+    light: [names.light, names.balanced],
     standard: [names.balanced, names.smartest],
     heavy: [names.smartest, names.balanced],
   };
@@ -481,7 +484,7 @@ function planPools(
 /**
  * Apply a plan: add pool members and per-account tier fallbacks at medium effort in the
  * planned order, create or refill the planned pools by name, and bind the planned roles.
- * Existing entries keep their ids, limits and settings; pools and roles the plan does not name
+ * Existing entries keep their ids, limits and other settings; pools and roles the plan does not name
  * are untouched.
  */
 export function applySmartSetup(
@@ -521,12 +524,28 @@ export function applySmartSetup(
     percentages,
     routing: {
       ...draft.routing,
-      entries: sorted,
+      entries: sorted.map((entry) => {
+        const modelSettings = withoutSetupAcceleration(entry.modelSettings);
+        return modelSettings === entry.modelSettings ? entry : { ...entry, modelSettings };
+      }),
       pools,
       roles,
       delegation: planDelegation(draft.routing.delegation, candidates),
     },
   };
+}
+
+/** Smart Setup uses the standard provider speed for planning and generated routing. */
+export function withoutSetupAcceleration(settings: Record<string, string>): Record<string, string> {
+  const fast = settings.fast !== undefined && settings.fast !== "false";
+  const tier = settings.serviceTier !== undefined && settings.serviceTier !== "default";
+  return fast || tier
+    ? {
+        ...settings,
+        ...(fast ? { fast: "false" } : {}),
+        ...(tier ? { serviceTier: "default" } : {}),
+      }
+    : settings;
 }
 
 /**

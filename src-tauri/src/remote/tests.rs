@@ -2245,10 +2245,15 @@ fn legacy_host_writes_preserve_ssh_only_records_and_organization() {
     let mut host = serde_json::to_value(saved("host", "owner@host")).unwrap();
     host["metadata"] =
         json!({"group":"Work","tags":[],"favorite":false,"forwards":[{"id":"rule"}]});
-    write_store_values(&path, &[host, ssh.clone()]).unwrap();
+    write_store_values_inner(&path, &[host, ssh.clone()]).unwrap();
+    assert!(credential_store::has_legacy_tokens(
+        &read_store_values(&path).unwrap()
+    ));
+    write_protected_store(&path, None).unwrap();
     let mut hosts = read(&path).unwrap();
     assert_eq!(hosts.len(), 1);
     assert_eq!(hosts[0].id, "host");
+    assert_eq!(hosts[0].token, "secret-token");
     hosts[0].name = "Renamed".into();
     write(&path, &hosts).unwrap();
     let records = read_store_values(&path).unwrap();
@@ -2260,7 +2265,10 @@ fn legacy_host_writes_preserve_ssh_only_records_and_organization() {
     assert_eq!(host["metadata"]["group"], "Work");
     assert_eq!(host["metadata"]["forwards"][0]["id"], "rule");
     assert_eq!(host["environmentId"], "env-host");
-    assert_eq!(host["token"], "secret-token");
+    assert!(credential_store::has_sealed_tokens(std::slice::from_ref(
+        host
+    )));
+    assert_eq!(read(&path).unwrap()[0].token, "secret-token");
     write(&path, &[]).unwrap();
     assert_eq!(read_store_values(&path).unwrap(), vec![ssh]);
     let _ = std::fs::remove_file(path);

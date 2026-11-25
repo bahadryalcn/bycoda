@@ -9,13 +9,7 @@ import {
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { PopoverAlign, PopoverSide, PopoverSize } from "../lib/popover";
 import { Popover, type PopoverFlow, type PopoverVariant } from "./Popover";
-import {
-  HOVER_CARD_CLOSE_MS,
-  HOVER_CARD_OPEN_MS,
-  TOOLTIP_WARM_MS,
-  tooltipAnchor,
-  useHoverIntent,
-} from "./Tooltip";
+import { HOVER_CARD_CLOSE_MS, TOOLTIP_DELAY_MS, tooltipAnchor, useHoverIntent } from "./Tooltip";
 
 export type HoverCardOptions = {
   side?: PopoverSide;
@@ -30,7 +24,7 @@ export type HoverCardOptions = {
   flow?: PopoverFlow;
   /** Paint the card with the opaque Popover backdrop. */
   solid?: boolean;
-  /** Pointer rest time before opening. Default {@link HOVER_CARD_OPEN_MS} (300 ms). */
+  /** Pointer dwell time on each trigger. Default {@link TOOLTIP_DELAY_MS} (450 ms). */
   openDelay?: number;
   /** Grace period after the pointer leaves the trigger or card. Default {@link HOVER_CARD_CLOSE_MS} (150 ms). */
   closeDelay?: number;
@@ -59,7 +53,7 @@ export type HoverCardTriggerProps = {
  * (row, chip, avatar) and render `card(content)` next to it; it portals and adds no box.
  * Use the `HoverCard` component to wrap a single trigger instead.
  *
- * - Opens after the pointer rests 300 ms (at once within 250 ms of another card closing),
+ * - Opens after the pointer stays on each trigger for 450 ms,
  *   or at once on keyboard focus (`:focus-visible`). Touch never opens it.
  * - The pointer can cross into the card: leaving the trigger or the card closes after
  *   150 ms, and entering either again cancels the close. Focus inside the card keeps it open.
@@ -79,7 +73,7 @@ export function useHoverCard({
   maxHeight,
   flow,
   solid,
-  openDelay = HOVER_CARD_OPEN_MS,
+  openDelay = TOOLTIP_DELAY_MS,
   closeDelay = HOVER_CARD_CLOSE_MS,
   disabled = false,
   onOpenChange,
@@ -88,10 +82,8 @@ export function useHoverCard({
   "aria-label": ariaLabel,
 }: HoverCardOptions = {}) {
   const intent = useHoverIntent({
-    group: "hover-card",
     openDelay,
     closeDelay,
-    warmMs: TOOLTIP_WARM_MS,
   });
   const surface = useRef<HTMLDivElement | null>(null);
   const anchor = intent.anchor;

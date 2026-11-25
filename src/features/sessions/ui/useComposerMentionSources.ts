@@ -3,9 +3,15 @@ import {
   loadProjectFiles,
   peekProjectFiles,
   recentOpenedFiles,
+  revalidateProjectFiles,
   subscribeProjectFiles,
+  useFileRanking,
 } from "../../files/public/fileIndex";
-import { buildMentionIndex, rankMentionFiles } from "../../files/public/fileMentions";
+import {
+  buildMentionIndex,
+  mentionCandidates,
+  type MentionToken,
+} from "../../files/public/fileMentions";
 import { projectFilesTruncated, type ProjectFile } from "../../../platform/tauri/fs";
 import { looksLikeProject } from "../../projects/public/recents";
 import {
@@ -35,6 +41,56 @@ type ScopedProjectFiles = { cwd: string; files: ProjectFile[] };
 
 const NO_FILES: ProjectFile[] = [];
 const NO_NOTES: NoteSummary[] = [];
+
+/** Apply an early Enter or Tab when the worker answers, while the same draft still has focus. */
+export function usePendingMentionPick<Item extends ProjectFile>(
+  cwd: string,
+  sessionId: string | undefined,
+  token: MentionToken | null,
+  pending: boolean,
+  first: Item | undefined,
+  pick: (file: Item) => void,
+) {
+  const intent = useRef<{
+    field: HTMLTextAreaElement;
+    value: string;
+    caret: number;
+    token: MentionToken;
+    cwd: string;
+    sessionId?: string;
+  } | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Complete the queued keyboard pick only for the original focused token and project.
+  useEffect(() => {
+    const next = intent.current;
+    if (!next) return;
+    const { field } = next;
+    const current =
+      token === next.token &&
+      cwd === next.cwd &&
+      sessionId === next.sessionId &&
+      field === document.activeElement &&
+      !field.disabled &&
+      !field.readOnly &&
+      field.value === next.value &&
+      field.selectionStart === next.caret &&
+      field.selectionEnd === next.caret;
+    if (current && pending) return;
+    intent.current = null;
+    if (current && first) pick(first);
+  }, [token, cwd, sessionId, pending, first, pick]);
+  return (field: HTMLTextAreaElement) => {
+    if (pending && token) {
+      intent.current = {
+        field,
+        value: field.value,
+        caret: field.selectionStart,
+        token,
+        cwd,
+        sessionId,
+      };
+    }
+  };
+}
 
 /** A file list read for another directory is never shown for this one. */
 export function visibleProjectFiles(state: ScopedProjectFiles, cwd: string): ProjectFile[] {
@@ -83,19 +139,24 @@ export function useComposerProjectFiles(input: {
     let cancelled = false;
     const apply = (files: ProjectFile[]) => {
       if (cancelled) return;
-      setState({ cwd, files });
+      setState((current) =>
+        current.cwd === cwd && current.files === files ? current : { cwd, files },
+      );
       setFailedCwd(null);
     };
     const forceRefresh = retryCwd.current === cwd;
     retryCwd.current = null;
     apply(peekProjectFiles(cwd) ?? NO_FILES);
     if (!cwd) return;
-    void loadProjectFiles(cwd, forceRefresh || (mentionOpen && !remote))
-      .then(apply)
-      .catch((error) => {
-        console.warn("Composer operation failed", error);
-        if (!cancelled) setFailedCwd(cwd);
-      });
+    const listing = forceRefresh
+      ? loadProjectFiles(cwd, true)
+      : mentionOpen && !remote
+        ? revalidateProjectFiles(cwd)
+        : loadProjectFiles(cwd);
+    void listing.then(apply).catch((error) => {
+      console.warn("Composer operation failed", error);
+      if (!cancelled) setFailedCwd(cwd);
+    });
     const unsubscribe = subscribeProjectFiles(() => {
       const next = peekProjectFiles(cwd);
       if (next) apply(next);
@@ -195,11 +256,21 @@ export function useComposerMentionSources(input: {
     query: scope === CREWS_MENTION_SCOPE ? mentionQuery.slice(scope.length) : mentionQuery,
   });
   const noteFiles = notesAvailable ? notesAsProjectFiles(notes) : [];
-  const mentionIndex = buildMentionIndex([...files, ...noteFiles]);
+  const mentionIndex = buildMentionIndex(noteFiles.length ? [...files, ...noteFiles] : files);
   for (const note of noteFiles) {
     mentionIndex.labels.set(scopedNoteMentionLabel(note.relative), note);
   }
   const deferredMentionQuery = useDeferredValue(mentionQuery);
+  const filesScopedOut = Boolean(scope || workItems.scoped || serversScoped);
+  const rankFiles = mentionOpen && !filesScopedOut && looksLikeProject(executionCwd);
+  const { results: fileHits, pending: fileRankingPending } = useFileRanking(
+    rankFiles,
+    executionCwd,
+    rankFiles ? mentionCandidates(files) : NO_FILES,
+    mentionQuery,
+    recentOpenedFiles(executionCwd),
+    { mentions: true },
+  );
   const rankedFiles = useMemo(() => {
     if (!mentionOpen) return [];
     const crews = crewHits.filter((row) => row.crew.kind === "crew");
@@ -211,9 +282,6 @@ export function useComposerMentionSources(input: {
     const serverHits = remote || !servers ? [] : serverMentionRows(mentionQuery, servers);
     if (serversScoped) return serverHits;
     if (workItems.scoped) return workItems.rows;
-    const fileHits = looksLikeProject(executionCwd)
-      ? rankMentionFiles(files, deferredMentionQuery, recentOpenedFiles(executionCwd))
-      : [];
     const noteHits = notesAvailable ? rankNoteFiles(notes, deferredMentionQuery) : [];
     return [
       ...workItems.rows,
@@ -229,8 +297,7 @@ export function useComposerMentionSources(input: {
   }, [
     crewHits,
     crewsAvailable,
-    executionCwd,
-    files,
+    fileHits,
     deferredMentionQuery,
     mentionOpen,
     mentionQuery,
@@ -243,10 +310,10 @@ export function useComposerMentionSources(input: {
     workItems.rows,
     workItems.scoped,
   ]);
-  const filesScopedOut = Boolean(scope || workItems.scoped || serversScoped);
   return {
     mentionIndex,
     rankedFiles,
+    fileRankingPending,
     filesFailed: !filesScopedOut && filesFailed,
     // Work-item and crew rows do not come from the file index.
     filesIndexNotice:

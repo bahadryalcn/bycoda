@@ -18,7 +18,7 @@ export interface HttpToolRequest {
   response: ServerResponse;
   voiceToolLog:
     | {
-        action: string;
+        action: string | null;
         requestId: string | null;
         startedAt: number;
         outcome: string;

@@ -13,6 +13,7 @@ import type { ParentAdmission, ParentInputHandle } from "../data/parentInputClos
 import type { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
 import { MAX_ATTACHMENTS, revokeAttachment, type SkippedAttachment } from "../model/attachments";
 import { collectSkippedAttachments } from "../model/attachmentSkips";
+import { beginAttachmentRead, type AttachmentReadCapacity } from "../model/attachmentReadCapacity";
 import { setComposerAttachments } from "../model/draftCache";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { harnessSupportsAttachments, type Attachment, type HarnessId } from "../model/session";
@@ -148,6 +149,7 @@ export function useComposerAttachmentLifecycle({
 }
 
 type ReadOptions = {
+  attachmentsRef: RefObject<Attachment[]>;
   parentInputRef: RefObject<ParentInputHandle | null>;
   mountedClosure: MountedClosure;
   sinkRef: RefObject<AttachmentSink>;
@@ -177,6 +179,7 @@ function applyAtDepth<T>(depth: { current: number }, mutation: () => T): T {
  * Composer's send path, which also reads them; this hook only advances them.
  */
 export function useComposerAttachmentReads({
+  attachmentsRef,
   parentInputRef,
   mountedClosure,
   sinkRef,
@@ -187,8 +190,13 @@ export function useComposerAttachmentReads({
   setPasteError,
 }: ReadOptions) {
   const t = useT();
+  const slots = useRef({ generation: 0, pending: new Set<string | symbol>() });
   const rememberAttachmentRead = useCallback(
-    (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
+    (
+      read: (
+        accepted: ComposerPreparation & { isCurrent(): boolean; capacity: AttachmentReadCapacity },
+      ) => Promise<void>,
+    ) => {
       let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
       if (!parentAttempt) {
         setPasteError(t("Attachments cannot be added while this conversation changes. Try again."));
@@ -209,12 +217,16 @@ export function useComposerAttachmentReads({
           throw new Error("Attachment preparation belongs to an earlier draft.");
         generation = pasteGenerationRef.current;
         failures = pasteFailuresRef.current;
+        if (generation !== slots.current.generation)
+          slots.current = { generation, pending: new Set() };
+        const capacity = beginAttachmentRead(() => attachmentsRef.current, slots.current.pending);
         return read({
           ...accepted,
+          capacity,
           isCurrent: () => pasteGenerationRef.current === generation,
           apply: (mutation) =>
             attempt.apply(() => accepted.apply(() => applyAtDepth(attachmentApplyDepth, mutation))),
-        });
+        }).finally(capacity.finish);
       });
       void work.then(initialParentAttempt.finish, initialParentAttempt.finish);
       const flight = work.then(
@@ -241,6 +253,7 @@ export function useComposerAttachmentReads({
     // The ref objects are stable; they are listed so the compiler can keep this memoization.
     [
       mountedClosure,
+      attachmentsRef,
       setPasteError,
       t,
       pasteFlightRef,
@@ -252,14 +265,22 @@ export function useComposerAttachmentReads({
   );
 
   const readDroppedAttachments = useCallback(
-    (read: (onSkipped: (skipped: SkippedAttachment[]) => void) => Promise<Attachment[]>) => {
+    (
+      read: (
+        onSkipped: (skipped: SkippedAttachment[]) => void,
+        capacity?: AttachmentReadCapacity,
+      ) => Promise<Attachment[]>,
+    ) => {
       setPasteError(null);
       rememberAttachmentRead((accepted) =>
         Promise.resolve()
           .then(() => {
             // Per read, so an explicit retry never reports an earlier attempt twice.
             const skips = collectSkippedAttachments();
-            return read(skips.onSkipped).then((incoming) => ({ incoming, notice: skips.notice() }));
+            return read(skips.onSkipped, accepted.capacity).then((incoming) => ({
+              incoming,
+              notice: skips.notice(accepted.capacity),
+            }));
           })
           .then(({ incoming, notice }) =>
             accepted.apply(() => {

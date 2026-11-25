@@ -107,7 +107,18 @@ it("truncates a long string in the row but copies and exposes its full value", a
   const row = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].find((item) =>
     item.getAttribute("aria-label")?.startsWith("text:"),
   )!;
-  expect(row.querySelector("[title]")?.getAttribute("title")).toBe(long);
+  const value = row.querySelector("[data-tooltip-owner]")!;
+  expect(value.hasAttribute("title")).toBe(false);
+  vi.useFakeTimers();
+  try {
+    act(() => {
+      value.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      vi.advanceTimersByTime(450);
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(long);
+  } finally {
+    vi.useRealTimers();
+  }
   const copy = row.querySelector<HTMLButtonElement>('button[aria-label="Copy value"]')!;
   // Row actions are revealed with the row, not in the tab order of every row.
   expect(copy.tabIndex).toBe(-1);

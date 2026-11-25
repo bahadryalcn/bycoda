@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   archiveProject,
   forgetProject,
+  loadArchivedProjects,
+  readArchivedProjects,
   rememberImportedProjects,
   rememberProject,
 } from "./recents";
@@ -36,6 +38,46 @@ function refuseWrite(key: string, silent = false) {
     write(target, value);
   });
 }
+
+it("reuses the decoded archive while checking current storage and isolating mutable results", () => {
+  const first = JSON.stringify([{ path: "/tmp/cache-test", archivedAt: 7 }]);
+  const second = JSON.stringify([{ path: "/tmp/replacement", archivedAt: 8 }]);
+  localStorage.setItem(ARCHIVE, first);
+  const parse = vi.spyOn(JSON, "parse");
+  const read = readArchivedProjects();
+  read.items[0]!.path = "/tmp/mutated";
+  read.items.pop();
+  const loaded = loadArchivedProjects();
+  expect(loaded).toEqual([{ path: "/tmp/cache-test", archivedAt: 7 }]);
+  loaded[0]!.archivedAt = 999;
+  expect(readArchivedProjects().items[0]!.archivedAt).toBe(7);
+  expect(parse.mock.calls.filter(([raw]) => raw === first)).toHaveLength(1);
+
+  const get = vi.spyOn(localStorage, "getItem");
+  get.mockImplementationOnce(() => {
+    throw new Error("unavailable");
+  });
+  expect(readArchivedProjects()).toEqual({ state: "unavailable", items: [] });
+  localStorage.setItem(ARCHIVE, second);
+  expect(readArchivedProjects().items).toEqual([{ path: "/tmp/replacement", archivedAt: 8 }]);
+  localStorage.removeItem(ARCHIVE);
+  expect(readArchivedProjects()).toEqual({ state: "ready", items: [] });
+});
+
+it("serializes the remaining archive once when restoring a project", async () => {
+  localStorage.setItem(
+    ARCHIVE,
+    JSON.stringify([
+      { path: project, archivedAt: 1 },
+      { path: "/tmp/keep", archivedAt: 2 },
+    ]),
+  );
+  const stringify = vi.spyOn(JSON, "stringify");
+  await rememberProject(project);
+  const remaining = '[{"path":"/tmp/keep","archivedAt":2}]';
+  expect(localStorage.getItem(ARCHIVE)).toBe(remaining);
+  expect(stringify.mock.results.filter(({ value }) => value === remaining)).toHaveLength(1);
+});
 
 it.each([false, true])("retains the rail entry when archive writes fail (silent=%s)", (silent) => {
   localStorage.setItem(RECENTS, recent);

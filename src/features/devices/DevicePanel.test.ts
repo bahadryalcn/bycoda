@@ -637,12 +637,13 @@ it("shows capture progress in its button and identifies capture failure without 
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
-it("clears a capture error after live view successfully resumes", async () => {
+it("recovers live view after one failed background capture without showing an error", async () => {
   vi.useFakeTimers();
   const api = makeApi();
   vi.mocked(api.capture).mockRejectedValueOnce(new Error("Host unavailable"));
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.textContent).not.toContain("The device connection is unavailable");
   const live = container.querySelector<HTMLButtonElement>(
     '[aria-pressed][aria-label="Live view"]',
   )!;
@@ -694,14 +695,17 @@ it("adds the selected device to a draft only on request and blocks duplicate att
 });
 
 it("replaces a disconnected selection and clears a stale discovery error on refresh", async () => {
+  vi.useFakeTimers();
   const api = makeApi();
   vi.mocked(api.list)
+    .mockResolvedValueOnce({ devices: [device], errors: ["temporary discovery warning"] })
     .mockResolvedValueOnce({ devices: [device], errors: ["temporary discovery warning"] })
     .mockResolvedValueOnce({
       devices: [{ ...device, id: "new-phone", name: "Connected phone", physical: true }],
       errors: [],
     });
   await act(async () => root.render(createElement(DevicePanel, { api })));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "temporary discovery warning",
   );
@@ -762,9 +766,11 @@ it("does not request an old host's screenshot after an action finishes in a diff
 });
 
 it("loads devices from an already-running host and offers status retry", async () => {
+  vi.useFakeTimers();
   const api = makeApi();
   let finish!: (value: DeviceHostStatus) => void;
   vi.mocked(api.status)
+    .mockRejectedValueOnce(new Error("Host unavailable"))
     .mockRejectedValueOnce(new Error("Host unavailable"))
     .mockReturnValueOnce(
       new Promise((resolve) => {
@@ -772,6 +778,7 @@ it("loads devices from an already-running host and offers status retry", async (
       }),
     );
   await act(async () => root.render(createElement(DevicePanel, { api })));
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not load devices",
   );
@@ -782,7 +789,7 @@ it("loads devices from an already-running host and offers status retry", async (
   expect(retry.getAttribute("aria-busy")).toBe("true");
   expect(document.activeElement).toBe(retry);
   await act(async () => retry.click());
-  expect(api.status).toHaveBeenCalledTimes(2);
+  expect(api.status).toHaveBeenCalledTimes(3);
   await act(async () => finish(status));
   expect(api.list).toHaveBeenCalledOnce();
   expect(devicePicker().textContent).toContain("Android emulator");
@@ -945,6 +952,7 @@ it("keeps platform-specific control help available without filling the device pa
 });
 
 it("retires the old device capture error after selecting a healthy device", async () => {
+  vi.useFakeTimers();
   const api = makeApi();
   vi.mocked(api.list).mockResolvedValue({
     devices: [device, { ...device, id: "healthy", name: "Healthy phone" }],
@@ -955,6 +963,12 @@ it("retires the old device capture error after selecting a healthy device", asyn
     return { mime: "image/png", base64: "healthy", capturedAt: "now" };
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
+  await act(async () => vi.advanceTimersByTimeAsync(2999));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Device screen unavailable",
+  );
   expect(container.textContent).toContain("Old device capture failed");
   await act(async () => devicePicker().click());
   const options = document.body.querySelectorAll<HTMLButtonElement>('[role="option"]');
@@ -1181,7 +1195,7 @@ it("keeps the screen live while a tap is sent and sends following taps in order"
     "test-lease",
   );
   await act(async () => finishes[1]!("Done"));
-  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  await act(async () => vi.advanceTimersByTimeAsync(333));
   expect(api.capture).toHaveBeenCalledTimes(2);
 });
 

@@ -92,9 +92,7 @@ mod mac {
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
-    use tauri::{
-        AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
-    };
+    use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager};
 
     /// Bumped by every show/close; a tracking thread stops when it changes.
     static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -235,25 +233,21 @@ mod mac {
         let url = format!("permission-helper.html?permission={}", pane_name(id));
         // CG window bounds and Tauri logical positions share a top-left origin
         // in display points, including negative coordinates on other displays.
-        crate::webview_args::inherit_main_browser_args(
-            &app,
-            WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::App(url.into())),
-        )
-        .title(&app.package_info().name)
-        .inner_size(560.0, super::HELPER_HEIGHT)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .always_on_top(true)
-        .visible_on_all_workspaces(true)
-        .skip_taskbar(true)
-        .focused(false)
-        .visible(false)
-        .build()
-        .map_err(|error| error.to_string())?;
+        crate::webview_args::new_app_window(&app, LABEL, url)
+            .title(&app.package_info().name)
+            .inner_size(560.0, super::HELPER_HEIGHT)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .decorations(false)
+            .shadow(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .skip_taskbar(true)
+            .focused(false)
+            .visible(false)
+            .build()
+            .map_err(|error| error.to_string())?;
         std::thread::spawn(move || track(app, id, generation));
         Ok(())
     }

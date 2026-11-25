@@ -257,7 +257,8 @@ export function ModelPicker({
     accountsSnapshot,
     source.accounts === undefined && (open || recentMenu != null),
   );
-  const { usage, limitReason } = accountUsage;
+  const { limitReason } = accountUsage;
+  const usage = open && !hideSettings && source.accounts === undefined ? accountUsage.usage : null;
   // Account picked per provider tab while browsing; the current provider starts on its account.
   const [tabAccounts, setTabAccounts] = useState<Partial<Record<HarnessId, string>>>({});
   const [accountListOpen, setAccountListOpen] = useState(false);
@@ -280,6 +281,7 @@ export function ModelPicker({
   const field = presentation === "field";
   const inherit = hideSettings ? undefined : inheritChoice;
   const inheritSelected = inherit?.selected === true;
+  const settingsEnabled = !inheritSelected || settingsScope === "reasoning-and-speed";
   // The local default account lives in browser storage, so React reads it through its store.
   const localDefaultAccountId = useSyncExternalStore(
     subscribeProviderAccounts,
@@ -348,14 +350,17 @@ export function ModelPicker({
   // Explicit field accounts can be shown without accountChoices. Missing accounts keep their warning.
   // oxlint-disable-next-line bycoda/compiler-owns-memo -- Reads the account store snapshot like triggerAccountLabel above; the compiler cannot prove that read pure, so the memo keeps the trigger from recomputing it each render.
   const fieldAccount = useMemo((): ModelTriggerBadgeData["account"] => {
-    if (!field || inheritSelected || !accountId || !supportsProviderAccounts(harness))
+    const selectedAccountId = accountId ?? (accountChoices ? currentAccountId : undefined);
+    if (!field || inheritSelected || !selectedAccountId || !supportsProviderAccounts(harness))
       return undefined;
     if (source.accounts !== undefined) {
       if (!accountsKnown) return undefined;
       const accounts = source.accounts[harness] ?? [];
-      const saved = accounts.find((account) => account.id === accountId);
+      const saved = accounts.find((account) => account.id === selectedAccountId);
       if (!saved)
-        return accountId === "default" ? undefined : { label: t("Unavailable Host account") };
+        return selectedAccountId === "default"
+          ? undefined
+          : { label: t("Unavailable Host account") };
       return accounts.length > 1
         ? {
             label: accountDisplayLabel(accounts, saved),
@@ -365,7 +370,7 @@ export function ModelPicker({
         : undefined;
     }
     const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
-    const saved = accounts.find((account) => account.id === accountId);
+    const saved = accounts.find((account) => account.id === selectedAccountId);
     if (saved)
       return accounts.length > 1
         ? {
@@ -374,10 +379,21 @@ export function ModelPicker({
             number: accounts.indexOf(saved) + 1,
           }
         : undefined;
-    if (accountId !== defaultProviderAccountId(harness) && accountId !== "default")
+    if (selectedAccountId !== defaultProviderAccountId(harness) && selectedAccountId !== "default")
       return { label: t("Removed account") };
-    return { label: providerAccountLabel(harness, accountId) };
-  }, [accountId, accountsKnown, accountsSnapshot, field, harness, inheritSelected, source, t]);
+    return accountId ? { label: providerAccountLabel(harness, accountId) } : undefined;
+  }, [
+    accountId,
+    accountChoices,
+    accountsKnown,
+    accountsSnapshot,
+    currentAccountId,
+    field,
+    harness,
+    inheritSelected,
+    source,
+    t,
+  ]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
     currentRef.current = current;
@@ -403,7 +419,7 @@ export function ModelPicker({
   const settings = useMemo(() => {
     // In beside-picker mode every option row renders as a toolbar pill, so the
     // menu lists models only.
-    if (hideSettings || inheritSelected) return [];
+    if (!open || hideSettings || !settingsEnabled) return [];
     if (settingsScope === "reasoning-and-speed")
       return [effortSetting(current), fastSetting(current)].filter(
         (setting): setting is ModelSetting => setting !== undefined,
@@ -416,7 +432,7 @@ export function ModelPicker({
         source,
         accountChoices: true,
         currentAccountId,
-        signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
+        signedOutAccounts: usage ? signedOutAccountKeys(usage) : undefined,
         signedOutLabel: t("Not signed in"),
         savedAccountLabel: t("Saved account"),
         values,
@@ -435,8 +451,9 @@ export function ModelPicker({
     currentAccountId,
     hideAgentSettings,
     hideSettings,
-    inheritSelected,
+    open,
     pickerHarnesses,
+    settingsEnabled,
     settingsScope,
     source,
     t,
@@ -774,11 +791,11 @@ export function ModelPicker({
   };
 
   // Choosing an account on the current provider switches the current model to it; on another
-  // provider it waits for the model picked there.
+  // provider it waits for the model picked there. Scoped settings can pin the current default.
   const selectAccount = (id: string) => {
     if (visibleTab === "favorites" || limitReason(visibleTab, id)) return;
     setTabAccounts((previous) => ({ ...previous, [visibleTab]: id }));
-    if (visibleTab === current.harness && !inheritSelected && id !== currentAccountId)
+    if (visibleTab === current.harness && settingsEnabled && id !== currentAccountId)
       onChange(current.harness, current.id, id);
   };
 
@@ -1108,7 +1125,7 @@ export function ModelPicker({
             ) : undefined
           }
           settings={
-            inheritSelected
+            !settingsEnabled || ((settingsScope || hideAgentSettings) && settings.length === 0)
               ? undefined
               : {
                   current,

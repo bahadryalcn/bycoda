@@ -54,7 +54,7 @@ vi.mock("../../sessions/ui/AgentMarkdown", async () => {
     AgentMarkdown: ({ text }: { text: string }) =>
       createElement(
         "p",
-        {},
+        { "data-test-rich-markdown": "" },
         text,
         text.includes("Linked") ? createElement("a", { href: "#linked" }, "open link") : null,
       ),
@@ -150,7 +150,7 @@ it("gives each block one named keyboard stop and keeps links, pointer editing an
   const onFocus = vi.fn();
   const onEditingChange = vi.fn();
   function Fixture() {
-    const [value, setValue] = useState("First paragraph.\n\nLinked paragraph.");
+    const [value, setValue] = useState("First paragraph.\n\nLinked [paragraph](#linked).");
     return createElement(NoteEditablePreview, {
       value,
       viewRef: useRef(null),
@@ -172,7 +172,7 @@ it("gives each block one named keyboard stop and keeps links, pointer editing an
     const pencils = [...host.querySelectorAll<HTMLButtonElement>("[data-note-block-edit]")];
     expect(pencils.map((pencil) => pencil.getAttribute("aria-label"))).toEqual([
       "Edit block: First paragraph.",
-      "Edit block: Linked paragraph.",
+      "Edit block: Linked [paragraph](#linked).",
     ]);
     const link = host.querySelector<HTMLAnchorElement>("a")!;
     expect(link.closest('[role="button"]')).toBeNull();
@@ -200,12 +200,51 @@ it("gives each block one named keyboard stop and keeps links, pointer editing an
 
     // The pencil is the keyboard path and edits its own block.
     await act(async () =>
-      host.querySelector<HTMLElement>('[aria-label="Edit block: Linked paragraph."]')!.click(),
+      host
+        .querySelector<HTMLElement>('[aria-label="Edit block: Linked [paragraph](#linked)."]')!
+        .click(),
     );
-    expect(host.querySelector("textarea")?.value).toBe("Linked paragraph.");
+    expect(host.querySelector("textarea")?.value).toBe("Linked [paragraph](#linked).");
   } finally {
     await act(async () => root.unmount());
     host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps every paragraph readable and editable while mounting rich renderers only for markup", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const paragraphs = Array.from({ length: 250 }, (_, index) => `Note paragraph ${index}.`);
+  paragraphs[42] = "هذه فقرة.";
+  paragraphs[221] = "See [details][ref].";
+  const value = [...paragraphs, "[ref]: https://example.com"].join("\n\n");
+  try {
+    await act(async () =>
+      root.render(
+        createElement(NoteEditablePreview, {
+          value,
+          viewRef: { current: null },
+          rangeRef: { current: null },
+          onChange: vi.fn(),
+          onSave: vi.fn(),
+          onEditingChange: vi.fn(),
+          onFocus: vi.fn(),
+        }),
+      ),
+    );
+    const blocks = host.querySelectorAll(".note-preview-content");
+    expect(blocks).toHaveLength(251);
+    expect(host.querySelectorAll("[data-test-rich-markdown]")).toHaveLength(1);
+    expect(blocks[42].querySelector("p")?.getAttribute("dir")).toBe("rtl");
+    expect(blocks[221].textContent).toContain("[ref]: https://example.com");
+    expect(blocks[249].textContent).toBe(paragraphs[249]);
+    const lastPencil = host.querySelectorAll<HTMLButtonElement>("[data-note-block-edit]")[249];
+    await act(async () => lastPencil.click());
+    expect(host.querySelector("textarea")?.value).toBe(paragraphs[249]);
+  } finally {
+    await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
 });

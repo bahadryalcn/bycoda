@@ -49,7 +49,8 @@ vi.mock("./piClient", () => ({
   },
 }));
 
-const { runPiTextPrompt, stopPiTextPrompt } = await import("./piText");
+const { runOmpTextPrompt, runPiTextPrompt, stopOmpTextPrompt, stopPiTextPrompt } =
+  await import("./piText");
 
 async function waitFor(predicate: () => boolean, label: string) {
   for (let index = 0; index < 200; index += 1) {
@@ -67,6 +68,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await stopPiTextPrompt();
+  await stopOmpTextPrompt();
 });
 
 it("does not send a prompt when the fresh session request fails", async () => {
@@ -142,33 +144,41 @@ it("cancels binary-held A and binds B's PiRpc constructor call to B's handle", a
   }
 });
 
-it("forwards Pi text and reasoning deltas to an isolated prompt", async () => {
-  const events: HarnessEvent[] = [];
-  const result = runPiTextPrompt({
-    cwd: "/repo",
-    model: "anthropic/claude-haiku",
-    prompt: "question",
-    onEvent: (event) => events.push(event),
-  });
+it.each([
+  ["pi", runPiTextPrompt],
+  ["omp", runOmpTextPrompt],
+] as const)(
+  "uses the saved model and forwards isolated %s text and reasoning deltas",
+  async (harness, run) => {
+    const events: HarnessEvent[] = [];
+    const result = run({
+      cwd: "/repo",
+      model: `${harness}:anthropic/claude-haiku`,
+      prompt: "question",
+      onEvent: (event) => events.push(event),
+    });
 
-  await waitFor(
-    () => mocks.request.mock.calls.some(([request]) => request.type === "prompt"),
-    "prompt",
-  );
-  const frame = mocks.frames[0]!;
-  frame({
-    type: "message_update",
-    assistantMessageEvent: { type: "thinking_delta", delta: "Checking" },
-  });
-  frame({
-    type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "Partial answer" },
-  });
-  frame({ type: "agent_settled" });
+    await waitFor(
+      () => mocks.request.mock.calls.some(([request]) => request.type === "prompt"),
+      "prompt",
+    );
+    const frame = mocks.frames[0]!;
+    frame({
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "Checking" },
+    });
+    frame({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Partial answer" },
+    });
+    frame({ type: "agent_settled" });
 
-  await expect(result).resolves.toBe("Partial answer");
-  expect(events).toEqual([
-    { type: "reasoning.delta", text: "Checking" },
-    { type: "message.delta", text: "Partial answer" },
-  ]);
-});
+    await expect(result).resolves.toBe("Partial answer");
+    const args = processConstructions.operations.find(({ kind }) => kind === "spawn")?.args[1];
+    expect(args).toEqual(expect.arrayContaining(["--model", "anthropic/claude-haiku"]));
+    expect(events).toEqual([
+      { type: "reasoning.delta", text: "Checking" },
+      { type: "message.delta", text: "Partial answer" },
+    ]);
+  },
+);

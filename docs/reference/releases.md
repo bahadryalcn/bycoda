@@ -6,6 +6,16 @@ nor an installed application. The maintained controls never publish implicitly.
 
 ## Channels and immutable selection
 
+### Privacy and terms changes
+
+For a material change, update the relevant policy text and increase `revision`
+in `src/shared/lib/policy-updates.json` in the same change. Set the publication
+date, list the changed documents (`privacy`, `terms`) and summarize the change
+in English and Turkish. Keep the desktop policy, bundled mobile policy and
+website copy aligned. The desktop and mobile apps can display the bundled notice
+offline and check this file from the public `main` branch for newer revisions.
+The notice does not require a bycoda account or record acknowledgement on a server.
+
 `scripts/release/release-candidate.mjs` accepts a full lowercase 40-character
 source SHA. Every channel requires a completed successful `.github/workflows/ci.yml`
 run at that SHA with exactly one successful job named `Check`. Stable and nightly

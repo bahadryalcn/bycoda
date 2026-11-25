@@ -1,6 +1,81 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["dark", "light"]) {
+  test(`failed status aligns with last activity in ${theme}`, async ({ page }) => {
+    await page.goto(`/tests/browser/sessions/session-recovery.html?theme=${theme}`);
+    const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
+    const failed = dialog.getByText("Failed", { exact: true });
+
+    for (const width of [1000, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await failed.scrollIntoViewIfNeeded();
+      const lines = await failed.evaluate((status) => {
+        const text = document.createTreeWalker(status.parentElement!, NodeFilter.SHOW_TEXT);
+        const tops: number[] = [];
+        for (let node = text.nextNode(); node; node = text.nextNode()) {
+          if (!/Failed|Last activity:/.test(node.textContent ?? "")) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          tops.push(range.getBoundingClientRect().top);
+        }
+        return tops;
+      });
+      expect(lines).toHaveLength(2);
+      expect(Math.abs(lines[0] - lines[1])).toBeLessThan(0.5);
+      await page.screenshot({
+        path: `temp/verification/recovery-status-alignment/${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    }
+  });
+
+  test(`recovery row actions clear the scrollbar in ${theme}`, async ({ page }) => {
+    await page.goto(`/tests/browser/sessions/session-recovery.html?theme=${theme}`);
+    const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
+    await expect(dialog.getByRole("button", { name: /^Open all/ })).not.toHaveAttribute(
+      "data-tooltip-owner",
+    );
+    await dialog.getByRole("radio", { name: /^All sessions/ }).click();
+    const remove = dialog.getByRole("button", { name: /^Remove .+ from recovery list$/ }).first();
+    for (const button of [
+      remove,
+      dialog.getByRole("button", { name: "Close", exact: true }),
+      dialog.getByRole("button", { name: "Recovery list maintenance" }),
+      dialog.getByRole("button", { name: "Restore chat layout" }),
+    ]) {
+      await expect(button).not.toHaveAttribute("data-tooltip-owner");
+    }
+
+    for (const [width, scrollbarSize] of [
+      [1000, 6],
+      [800, 14],
+    ] as const) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.evaluate((size) => {
+        document.documentElement.style.setProperty("--ui-scrollbar-size", `${size}px`);
+      }, scrollbarSize);
+      await expect(remove).toBeInViewport();
+      const spacing = await remove.evaluate((button) => {
+        const scrollport = button.closest<HTMLElement>(".recovery-body")!;
+        return {
+          scrolls: scrollport.scrollHeight > scrollport.clientHeight,
+          clearance:
+            scrollport.getBoundingClientRect().left +
+            scrollport.clientWidth -
+            button.getBoundingClientRect().right,
+        };
+      });
+      expect(spacing.scrolls).toBe(true);
+      expect(spacing.clearance).toBeGreaterThanOrEqual(scrollbarSize);
+      await remove.click({ trial: true });
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/recovery-scrollbar/${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    }
+  });
+
   test(`rail keeps footer recovery readable in ${theme}`, async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.clear();

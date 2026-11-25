@@ -18,6 +18,9 @@ type LivePicture = Size & { aspect: number };
 
 // Bound data waiting behind the decoder, including when a Host catches up in a burst.
 const PUSH_QUEUE_LIMIT = 8;
+const PUSH_FRAGMENT_LIMIT = 64;
+const PUSH_BASE64_LIMIT =
+  Math.ceil(DEVICE_STREAM_MAX_CHUNK_BYTES / 3) * 4 + PUSH_FRAGMENT_LIMIT * 4;
 const RESTART_PUSH = Symbol("restart device stream");
 
 function canFallBackToPolling(cause: unknown, setupFailed: boolean | undefined) {
@@ -50,12 +53,14 @@ export function useDeviceLiveStream({
   deviceId,
   enabled,
   onFrame,
+  onInterrupted,
 }: {
   stream: DevicePanelApi["stream"];
   subscribeStream?: DevicePanelApi["subscribeStream"];
   deviceId: string;
   enabled: boolean;
   onFrame: (deviceId: string) => void;
+  onInterrupted: (deviceId: string, lastFrame?: DeviceFrame) => void;
 }) {
   const [live, setLive] = useState<{
     deviceId: string;
@@ -68,6 +73,8 @@ export function useDeviceLiveStream({
   const deviceSize = useRef<Size>({ width: 0, height: 0 });
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
+  const onInterruptedRef = useRef(onInterrupted);
+  onInterruptedRef.current = onInterrupted;
 
   const paint = useCallback(() => {
     const frame = latest.current;
@@ -140,6 +147,8 @@ export function useDeviceLiveStream({
       let failure: { cause: unknown; setup: boolean } | undefined;
       let receive: (() => void) | undefined;
       const queue: DeviceStreamChunk[] = [];
+      let pictures = 0;
+      let queuedChars = 0;
       const fail = (cause: unknown, setup = false) => {
         if (closed || failure) return;
         failure = { cause, setup };
@@ -153,7 +162,15 @@ export function useDeviceLiveStream({
             id,
             (value) => {
               if (closed || failure) return;
-              if (queue.length >= PUSH_QUEUE_LIMIT) return fail(RESTART_PUSH);
+              // Several transport fragments can belong to the same encoded picture.
+              pictures += Number(value.boundary !== false);
+              queuedChars += value.base64.length;
+              if (
+                pictures > PUSH_QUEUE_LIMIT ||
+                queuedChars > PUSH_BASE64_LIMIT ||
+                queue.length >= PUSH_FRAGMENT_LIMIT
+              )
+                return fail(RESTART_PUSH);
               queue.push(value);
               receive?.();
             },
@@ -179,7 +196,12 @@ export function useDeviceLiveStream({
             });
           }
           if (failure) throw failure.cause;
-          return queue.shift();
+          const next = queue.shift();
+          if (next) {
+            pictures -= Number(next.boundary !== false);
+            queuedChars -= next.base64.length;
+          }
+          return next;
         },
         interrupt() {
           receive?.();
@@ -244,7 +266,16 @@ export function useDeviceLiveStream({
     }
     let decoder: VideoDecoder = openDecoder();
     /** Drops everything of the failed attempt; the next attempt starts from a key picture. */
-    function recover() {
+    function recover(keepPicture = false) {
+      if (keepPicture && latest.current) {
+        let lastFrame: DeviceFrame | undefined;
+        try {
+          lastFrame = snapshot();
+        } catch {
+          // A lost canvas can still recover through the next stream or still capture.
+        }
+        onInterruptedRef.current(id, lastFrame);
+      }
       discardPicture();
       if (decoder.state !== "closed") decoder.close();
       decoder = openDecoder();
@@ -314,7 +345,7 @@ export function useDeviceLiveStream({
           if (value.reset) {
             splitBytes = 0;
             if (push && configured) {
-              recover();
+              recover(true);
             } else {
               units.reset();
               decoder.reset();
@@ -363,16 +394,17 @@ export function useDeviceLiveStream({
           if (cause !== RESTART_PUSH && isFatalStreamFailure(cause)) return stop();
           if (healthyAt !== undefined && elapsedSince(healthyAt) >= STREAM_HEALTHY_MS) failures = 0;
           const delay = STREAM_RETRY_DELAYS_MS[failures++];
+          recover(true);
           if (delay === undefined) return stop();
-          recover();
-          await pause(delay);
+          // A cursor gap needs a fresh key frame. Reopen once immediately, then back off.
+          if (cause !== RESTART_PUSH || failures > 1) await pause(delay);
         }
       }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     run().catch(stop);
     return stop;
-  }, [enabled, stream, subscribeStream, deviceId, paint]);
+  }, [enabled, stream, subscribeStream, deviceId, paint, snapshot]);
 
   const canvasRef = useCallback(
     (node: HTMLCanvasElement | null) => {

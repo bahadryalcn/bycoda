@@ -765,7 +765,7 @@
    keeps its own typography, hover/pressed/selected/disabled/loading presentation and
    keyboard focus. A divider replaces the per-segment border, so the group is exactly
    one control tall and every state stays readable on its own segment. */
-:global([data-button-group="joined"]) > .control[data-button-tone][data-button-hierarchy] {
+:global([data-button-group="joined"]) > .control:where([data-button-tone][data-button-hierarchy]) {
   align-self: stretch;
   border-width: 0;
   border-radius: 0;

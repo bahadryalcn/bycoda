@@ -43,8 +43,7 @@ use objc2_foundation::NSObjectProtocol;
 use std::sync::OnceLock;
 use tauri::window::{Effect, EffectState, EffectsBuilder};
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewWindow, WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::{
     GlobalShortcutExt, Modifiers, Shortcut, ShortcutEvent, ShortcutState,
@@ -892,30 +891,23 @@ fn toggle(app: &AppHandle) {
 fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let creation = crate::native_window_lifecycle::admit_window(app, QUICK_COMPOSER_LABEL)
         .map_err(std::io::Error::other)?;
-    let builder = crate::webview_args::inherit_main_browser_args(
-        app,
-        WebviewWindowBuilder::new(
-            app,
-            QUICK_COMPOSER_LABEL,
-            WebviewUrl::App("quick-composer.html".into()),
-        ),
-    )
-    .title(&app.package_info().name)
-    .inner_size(WIDTH, INITIAL_HEIGHT)
-    .resizable(false)
-    .maximizable(false)
-    .minimizable(false)
-    .decorations(false)
-    .transparent(true)
-    // The window is exactly the card, so the native shadow follows the
-    // rounded blur instead of a CSS shadow being clipped at the window edge.
-    .shadow(true)
-    // Popover follows the window's appearance, which the page sets to the
-    // app theme. Active keeps it vibrant while another app is frontmost.
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .visible(false)
-    .focused(false);
+    let builder =
+        crate::webview_args::new_app_window(app, QUICK_COMPOSER_LABEL, "quick-composer.html")
+            .title(&app.package_info().name)
+            .inner_size(WIDTH, INITIAL_HEIGHT)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .decorations(false)
+            // The window is exactly the card, so the native shadow follows the
+            // rounded blur instead of a CSS shadow being clipped at the window edge.
+            .shadow(true)
+            // Popover follows the window's appearance, which the page sets to the
+            // app theme. Active keeps it vibrant while another app is frontmost.
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .visible(false)
+            .focused(false);
     let panel = panel_effects(builder, CORNER_RADIUS).build()?;
 
     creation.created(&panel);

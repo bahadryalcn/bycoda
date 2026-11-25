@@ -292,6 +292,7 @@ export function createEnvironmentRuntime(
         GITHUB_WORK_ITEMS,
         "usage.sessions.read",
         "usage.limits.read",
+        "usage.quota.read",
         "usage.cost.read",
         "usage.planShare.v1",
         "pullRequests.link.v1",

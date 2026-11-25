@@ -1,11 +1,11 @@
+import type { ReactNode } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
-import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
-import { Globe, MessageMultiple, Square } from "../../../../shared/ui/icons";
+import { Square } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceCallScene } from "./VoiceCallScene";
@@ -26,11 +26,9 @@ export function VoiceCompanionStatus({
   statusText,
   sessionStatusText,
   privacy,
-  workspace,
-  globalScope,
+  scope,
   stage,
   caption,
-  onScopeChange,
   onStopWork,
 }: {
   visualState: VoiceVisualState;
@@ -42,13 +40,11 @@ export function VoiceCompanionStatus({
   sessionStatusText: string;
   /** Where audio goes, only when it leaves this computer; empty for local voice. */
   privacy: string;
-  workspace: boolean;
-  globalScope: boolean;
+  scope?: ReactNode;
   /** Show the large call stage. */
   stage: boolean;
   /** The latest spoken line, shown under the status on the large stage. */
   caption: string;
-  onScopeChange: (global: boolean) => void;
   onStopWork: () => void;
 }) {
   const tone = voiceStatusTone(visualState);
@@ -123,23 +119,7 @@ export function VoiceCompanionStatus({
           )}
         </div>
       ) : null}
-      {workspace && (
-        <div className={styles.scope}>
-          <SegmentedControl
-            label={t("Voice scope")}
-            value={globalScope ? "global" : "session"}
-            onValueChange={(value) => onScopeChange(value === "global")}
-            options={[
-              { value: "global", label: t("Global"), icon: <Globe className="icon-sm" /> },
-              {
-                value: "session",
-                label: t("Project"),
-                icon: <MessageMultiple className="icon-sm" />,
-              },
-            ]}
-          />
-        </div>
-      )}
+      {scope && <div className={styles.scope}>{scope}</div>}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { Switch } from "../../../../shared/ui/Switch";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { SocialScreenProps } from "../shell/screens";
 import { inboxApi } from "./inboxApi";
+import { matchesInboxText } from "./inboxRefresh";
 import { InboxFilters } from "./InboxFilters";
 import { InboxList } from "./InboxList";
 import { UnreadableNotice } from "./InboxNotices";
@@ -56,16 +57,23 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
     enabled: active,
     refresh: active && autoRefresh === true,
   });
-  const items = list.data?.pages.flatMap((page) => page.items) ?? [];
+  const loadedItems = list.data?.pages.flatMap((page) => page.items) ?? [];
+  const needle = filter.query.trim().toLocaleLowerCase();
+  // Preview the Host's unified text match over already loaded rows until its full search returns.
+  const items =
+    list.isPlaceholderData && needle
+      ? loadedItems.filter((item) => matchesInboxText(item, needle))
+      : loadedItems;
   const unreadable = list.data?.pages[0]?.unreadable ?? [];
   const accounts = snapshot.data?.accounts ?? [];
   const names = Object.fromEntries(accounts.map((account) => [account.id, account.name]));
   const accountOptions = accounts.map((account) => ({ value: account.id, label: account.name }));
   const selectedId = chosen;
-  const selectedItem = items.find((item) => item.threadId === selectedId);
+  const selectedItem = loadedItems.find((item) => item.threadId === selectedId);
   // The list is only trusted to say a conversation is gone once every page is loaded and no
   // refresh is in flight; a not-yet-listed navigation target is kept until it has been seen.
-  const listSettled = list.isSuccess && !list.isFetching && !list.hasNextPage;
+  const listSettled =
+    list.isSuccess && !list.isPlaceholderData && !list.isFetching && !list.hasNextPage;
   // Selection is pinned in state, so a refresh that reorders rows never swaps the open
   // conversation. It only moves when nothing is open yet or the open one left the list.
   if (selectedId === undefined) {
@@ -180,7 +188,11 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
 
       <div className="inbox-body">
         <div className="inbox-column">
-          {!list.isPending && items.length === 0 && !list.isError && !snapshot.isError ? (
+          {!list.isPending &&
+          !list.isPlaceholderData &&
+          items.length === 0 &&
+          !list.isError &&
+          !snapshot.isError ? (
             snapshot.isPending ? (
               <LoadingText>{t("Loading accounts…")}</LoadingText>
             ) : accounts.length === 0 ? (
@@ -213,8 +225,8 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
               items={items}
               selectedId={selectedId}
               stateKey={[...socialQueryScope(client), filter.accountId, filter.status].join(":")}
-              loading={list.isPending}
-              hasMore={list.hasNextPage}
+              loading={list.isPending || (list.isPlaceholderData && !items.length)}
+              hasMore={!list.isPlaceholderData && list.hasNextPage}
               loadingMore={list.isFetchingNextPage}
               onSelect={setChosen}
               onMore={() => void list.fetchNextPage().catch(() => undefined)}

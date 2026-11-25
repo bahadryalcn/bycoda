@@ -26,6 +26,7 @@ import {
   type AdoptedMirrorDeps,
   type AdoptedResolution,
 } from "./adoptedSessions";
+import { observeAdoptedStop } from "./adoptedSessionCommands";
 import { createHostMetadataMirror } from "./adoptedSessionMetadata";
 import { adoptedSyncingIds, setAdoptedSyncing } from "./adoptedSyncing";
 import {
@@ -198,6 +199,11 @@ export function useAdoptedSessions(
               )
             )
               throw new Error("This conversation belongs to another project.");
+            if (!stopped) {
+              for (const entry of entries) {
+                if (entry.status !== "running") observeAdoptedStop(entry.id, entry);
+              }
+            }
             return entries;
           },
           load: async (sessionId, known) => {
@@ -207,6 +213,7 @@ export function useAdoptedSessions(
             });
             if (host.session.id !== sessionId || (target && host.projectId !== target.projectId))
               throw new Error("This conversation belongs to another project.");
+            if (!stopped) observeAdoptedStop(sessionId, host);
             await metadata.observe(host).catch(() => undefined);
             return host;
           },

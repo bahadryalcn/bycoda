@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { remoteRequest } from "../../connections/public/connections";
+import { PendingLifecycle } from "./pendingLifecycle";
 import type { AutoSettleSettings, SessionLifecycleView } from "./sessionLifecycle";
 
 export interface SessionLifecycleList {
@@ -8,25 +9,35 @@ export interface SessionLifecycleList {
 }
 
 /** Typed wrappers for the `sessions.lifecycle.*` and `sessions.taskLink.*` Host methods. */
-export function sessionLifecycleClient(machineId: string, trackLocal = true) {
+export function sessionLifecycleClient(
+  machineId: string,
+  trackLocal = true,
+  beforeWrite?: () => void,
+) {
   const change = (
     sessionId: string,
     method: "sessions.lifecycle.settle" | "sessions.lifecycle.unsettle",
+    running = false,
   ) => {
-    const request = remoteRequest<SessionLifecycleView>(
-      machineId,
-      method,
-      { sessionId },
-      false,
-      true,
-    );
-    return trackLocal ? confirmedMutation(request) : request;
+    const send = async () => {
+      beforeWrite?.();
+      return remoteRequest<SessionLifecycleView>(machineId, method, { sessionId }, false, true);
+    };
+    return trackLocal
+      ? pending.change(
+          sessionId,
+          method === "sessions.lifecycle.unsettle" ? "active" : running ? "settling" : "settled",
+          () => confirmedMutation(send()),
+          publishShown,
+        )
+      : send();
   };
   return {
     get: (sessionId: string) =>
       remoteRequest<SessionLifecycleView>(machineId, "sessions.lifecycle.get", { sessionId }),
     list: () => remoteRequest<SessionLifecycleList>(machineId, "sessions.lifecycle.list", {}),
-    settle: (sessionId: string) => change(sessionId, "sessions.lifecycle.settle"),
+    settle: (sessionId: string, running = false) =>
+      change(sessionId, "sessions.lifecycle.settle", running),
     unsettle: (sessionId: string) => change(sessionId, "sessions.lifecycle.unsettle"),
     configure: (settings: Partial<AutoSettleSettings>) =>
       remoteRequest<AutoSettleSettings>(machineId, "sessions.lifecycle.configure", settings),
@@ -49,10 +60,18 @@ type Snapshot = {
   autoSettle?: AutoSettleSettings;
 };
 let snapshot: Snapshot = { views: new Map() };
+let shown = snapshot;
+const pending = new PendingLifecycle();
 const listeners = new Set<() => void>();
 
 function publish(next: Snapshot): void {
   snapshot = next;
+  publishShown();
+}
+
+function publishShown(): void {
+  const views = pending.project(snapshot.views);
+  shown = views === snapshot.views ? snapshot : { ...snapshot, views };
   for (const listener of listeners) listener();
 }
 
@@ -121,6 +140,7 @@ const confirmedAt = new Map<string, number>();
 async function confirmedMutation(request: Promise<SessionLifecycleView>) {
   const view = await request;
   confirmedAt.set(view.sessionId, ++generation);
+  setSessionLifecycle(view);
   return view;
 }
 
@@ -148,11 +168,11 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useSessionLifecycleView(sessionId: string): SessionLifecycleView | undefined {
-  return useSyncExternalStore(subscribe, () => snapshot.views.get(sessionId));
+  return useSyncExternalStore(subscribe, () => shown.views.get(sessionId));
 }
 
 export function useSessionLifecycleSnapshot(): Snapshot {
-  return useSyncExternalStore(subscribe, () => snapshot);
+  return useSyncExternalStore(subscribe, () => shown);
 }
 
 /** The Host answered a lifecycle list, so it supports settling. */

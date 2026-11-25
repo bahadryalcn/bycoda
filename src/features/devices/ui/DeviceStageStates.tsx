@@ -238,8 +238,9 @@ export function DeviceWaitingState({
   onSelect: (id: string, booted: boolean) => void;
 }) {
   useLocale();
+  // With no observed devices, the header already shows the discovery progress.
   if (loadingDevices)
-    return (
+    return devices.length ? (
       <Text
         as="div"
         size="caption"
@@ -250,7 +251,7 @@ export function DeviceWaitingState({
       >
         <LoadingText>{t("Loading devices…")}</LoadingText>
       </Text>
-    );
+    ) : null;
   if (device && !device.booted)
     return (
       <Text
@@ -279,11 +280,11 @@ export function DeviceWaitingState({
         {device.physical ? (
           <div className="device-panel-waiting-actions">
             <InfoTooltip label={t("How to connect")}>
-              <p>
+              <Text as="p" size="caption" tone="secondary" leading="relaxed">
                 {t(
                   "This phone is not available. Connect it with USB debugging enabled and unlocked, then refresh devices.",
                 )}
-              </p>
+              </Text>
             </InfoTooltip>
             <SetupAccessButton onSetup={onSetup} />
           </div>

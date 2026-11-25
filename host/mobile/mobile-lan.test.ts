@@ -111,6 +111,7 @@ describe("encrypted mobile LAN access", () => {
     const pairing = new MobilePairing({
       environmentId: "pc",
       hasDeviceHash: () => true,
+      canIssuePairing: () => true,
       issueDevice: () => ({ id: "phone", token: device }),
     });
     const ticket = await pairing.create(owner);

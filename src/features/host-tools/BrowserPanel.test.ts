@@ -2,12 +2,28 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { BrowserPanel } from "./BrowserPanel";
+import { LocalBrowserSurface } from "./ui/LocalBrowserSurface";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 
 vi.mock("../connections/model/hostFeatureClient", () => ({
   hostFeatureRequest: vi.fn(),
   hostToolRequest: vi.fn(),
+  openBrowserFrameStream: vi.fn().mockRejectedValue(new Error("Binary frames unavailable")),
+}));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: vi.fn(),
+  isTauri: vi.fn(),
+}));
+vi.mock("../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../platform/tauri/platform")>()),
+  IS_WIN: true,
+}));
+vi.mock("../../platform/tauri/listenWindow", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../platform/tauri/listenWindow")>()),
+  listenWindowAsync: vi.fn().mockResolvedValue(() => {}),
 }));
 let root: Root;
 let container: HTMLDivElement;
@@ -21,9 +37,147 @@ beforeEach(() => {
   vi.setSystemTime(1_000_000);
   vi.mocked(hostFeatureRequest).mockReset();
   vi.mocked(hostToolRequest).mockReset();
+  vi.mocked(isTauri).mockReset().mockReturnValue(false);
+  vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+it("opens a local project directly and can open the same address on the shared Host", async () => {
+  const address = "http://localhost:3000/";
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(invoke).mockImplementation(async (command) =>
+    command === "local_browser_preview_location" ? address : undefined,
+  );
+  vi.mocked(hostFeatureRequest).mockResolvedValue({
+    open: true,
+    controlling: true,
+    url: address,
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", initialUrl: address })),
+  );
+  expect(invoke).toHaveBeenCalledWith(
+    "local_browser_preview_open",
+    expect.objectContaining({ address }),
+  );
+  expect(hostFeatureRequest).not.toHaveBeenCalled();
+  const slot = container.querySelector("[data-local-browser-preview]")!;
+  const measureSlot = vi.spyOn(slot, "getBoundingClientRect").mockReturnValue({
+    left: 20,
+    top: 40,
+    width: 640,
+    height: 400,
+  } as DOMRect);
+  window.dispatchEvent(new Event("resize"));
+  await act(async () => vi.advanceTimersByTimeAsync(50));
+  expect(invoke).toHaveBeenCalledWith(
+    "local_browser_preview_layout",
+    expect.objectContaining({ bounds: expect.objectContaining({ width: expect.any(Number) }) }),
+  );
+  measureSlot.mockClear();
+  await act(async () => vi.advanceTimersByTimeAsync(200));
+  expect(measureSlot).not.toHaveBeenCalled();
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", initialUrl: address, active: false }),
+    ),
+  );
+  expect(invoke).toHaveBeenLastCalledWith(
+    "local_browser_preview_layout",
+    expect.objectContaining({ bounds: null }),
+  );
+  expect(invoke).not.toHaveBeenCalledWith("local_browser_preview_close", expect.anything());
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", initialUrl: address, active: true }),
+    ),
+  );
+  await act(async () => button("Reload").click());
+  expect(invoke).toHaveBeenCalledWith(
+    "local_browser_preview_reload",
+    expect.objectContaining({ id: expect.any(String) }),
+  );
+  await act(async () => button("Shared host browser").click());
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "/project",
+    "browser.shared",
+    "browser.open",
+    expect.objectContaining({ url: address }),
+  );
+  expect(invoke).toHaveBeenCalledWith(
+    "local_browser_preview_close",
+    expect.objectContaining({ id: expect.any(String) }),
+  );
+});
+
+it("delivers the latest native bounds if the slot moves during an in-flight layout", async () => {
+  const page = { id: "preview", address: "http://localhost:3000/" };
+  await act(async () =>
+    root.render(
+      createElement(LocalBrowserSurface, {
+        page,
+        visible: true,
+        onLocation: vi.fn(),
+        onBlocked: vi.fn(),
+        onFailure: vi.fn(),
+      }),
+    ),
+  );
+  const slot = container.querySelector("[data-local-browser-preview]")!;
+  let release: (() => void) | undefined;
+  vi.mocked(invoke).mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const rect = vi
+    .spyOn(slot, "getBoundingClientRect")
+    .mockReturnValue(new DOMRect(10, 20, 320, 200));
+  window.dispatchEvent(new Event("resize"));
+  await act(async () => vi.advanceTimersByTimeAsync(100));
+  expect(release).toBeTypeOf("function");
+  rect.mockReturnValue(new DOMRect(40, 20, 320, 200));
+  window.dispatchEvent(new Event("resize"));
+  await act(async () => vi.advanceTimersByTimeAsync(100));
+  await act(async () => release!());
+  expect(invoke).toHaveBeenLastCalledWith("local_browser_preview_layout", {
+    id: page.id,
+    bounds: { x: 40, y: 20, width: 320, height: 200 },
+  });
+});
+
+it("falls back to the shared Host when the local WebView cannot start", async () => {
+  const address = "http://localhost:3000/";
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("webview unavailable"));
+  vi.mocked(hostFeatureRequest).mockResolvedValue({ open: true, controlling: true, url: address });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", initialUrl: address })),
+  );
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    "/project",
+    "browser.shared",
+    "browser.open",
+    expect.objectContaining({ url: address }),
+  );
+  expect(container.querySelector("[data-local-browser-preview]")).toBeNull();
+});
+
+it("uses the remote Host for its localhost address", async () => {
+  const address = "http://localhost:3000/";
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(hostFeatureRequest).mockResolvedValue({ open: true, controlling: true, url: address });
+  const cwd = "remote://mac/project";
+  await act(async () => root.render(createElement(BrowserPanel, { cwd, initialUrl: address })));
+  expect(hostFeatureRequest).toHaveBeenCalledWith(
+    cwd,
+    "browser.shared",
+    "browser.open",
+    expect.objectContaining({ url: address }),
+  );
+  expect(invoke).not.toHaveBeenCalledWith("local_browser_preview_open", expect.anything());
 });
 it("updates the address after page navigation while preserving an edited address draft", async () => {
   let url = "https://example.test";

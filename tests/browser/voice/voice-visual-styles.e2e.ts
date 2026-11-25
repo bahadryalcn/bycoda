@@ -8,6 +8,29 @@ const workViewports = [
   ["light", 1280],
   ["dark", 800],
 ] as const;
+
+test("presented session form creates the edited draft in the selected project", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?navigation&session-form");
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  await page.getByRole("button", { name: "Start voice", exact: true }).click();
+  await page.evaluate(() =>
+    (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+      "prepare project session",
+    ),
+  );
+  const results = page.getByRole("region", { name: "Live results" });
+  await results.getByRole("button", { name: /Destination/ }).click();
+  await page.getByRole("option", { name: "Bycoda" }).click();
+  const draft = results.getByLabel("Draft text");
+  await draft.fill("Initial text");
+  await draft.fill("Son düzenlenen taslak.");
+  await results.getByRole("button", { name: "Create session" }).click();
+  const workspace = page.locator("output[data-fixture-project='/fixture-next']");
+  await expect(workspace).toHaveAttribute("data-fixture-selected-tab", /.+/);
+  await expect(workspace.locator("[data-fixture-session]")).toHaveText("Son düzenlenen taslak.");
+});
 type FixtureVoice = typeof import("./voice-visual-styles-mocks").fixtureVoice;
 
 test("voice opens the explicitly requested project in the real session drawer", async ({
@@ -403,12 +426,59 @@ for (const [theme, width] of workViewports)
     expect(await pixels(light)).toBe(still[1]);
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await panel.getByRole("button", { name: "Stop speaking", exact: true }).click();
+    await page.evaluate(() => (window as any).fixtureVoice.callbacks.state("listening"));
     await expect(panel).not.toHaveAttribute("data-voice-state", "assistant");
     await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
-    await check("muted", false);
+    await expect(panel.getByText("Connected · Microphone off", { exact: true })).toBeVisible();
+    await check("connected", true);
+    await page.evaluate(() => (window as any).fixtureVoice.callbacks.playback(true));
+    await expect(panel.getByText("Assistant speaking", { exact: true })).toBeVisible();
+    await expect(orb).toHaveAttribute("data-state", "assistant");
+    await expect(
+      panel.getByRole("button", { name: "Mute microphone", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
     await panel.getByRole("button", { name: "Disconnect voice", exact: true }).click();
     await check("off", false);
   });
+for (const [theme, width] of workViewports)
+  test(`short voice panel keeps scope controls reachable ${theme} ${width}`, async ({ page }) => {
+    await mkdir(captures, { recursive: true });
+    await page.addInitScript(() => {
+      localStorage.setItem("bycoda:voice-size", JSON.stringify({ width: 320, height: 260 }));
+    });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&working`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    const globalScope = panel.getByRole("radio", { name: "Global", exact: true });
+    const projectScope = panel.getByRole("radio", { name: "Project", exact: true });
+    const start = panel.getByRole("button", { name: "Start voice", exact: true });
+    await start.click();
+    await page.evaluate(() => {
+      (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+        "Keep this voice conversation visible while the project is working. ".repeat(4),
+      );
+    });
+    const assertControls = async (state: string, action: string) => {
+      await panel.screenshot({
+        path: join(captures, `${theme}-${width}-short-scope-${state}.png`),
+      });
+      for (const control of [
+        globalScope,
+        projectScope,
+        panel.getByRole("button", { name: action }),
+      ])
+        await expect(control).toBeInViewport({ ratio: 0.99 });
+    };
+    await assertControls("live", "Disconnect voice");
+    await panel.getByRole("button", { name: "Disconnect voice", exact: true }).click();
+    await assertControls("idle", "Start voice");
+    await projectScope.click();
+    await expect(projectScope).toBeChecked();
+    await globalScope.click();
+    await expect(globalScope).toBeChecked();
+  });
+
 for (const theme of ["light", "dark"])
   for (const [width, height] of [
     [800, 286],
@@ -435,8 +505,10 @@ for (const theme of ["light", "dark"])
         await expect(orb).toBeInViewport({ ratio: 0.99 });
         expect((await orb.boundingBox())!.width).toBeGreaterThanOrEqual(height < 300 ? 84 : 220);
         const stageBounds = (await stage.boundingBox())!;
-        const buttonBounds = (await button.boundingBox())!;
-        expect(buttonBounds.y - (stageBounds.y + stageBounds.height)).toBeLessThan(32);
+        const scope = panel.getByRole("radiogroup", { name: "Voice scope" });
+        await expect(scope).toBeInViewport({ ratio: 0.99 });
+        const scopeBounds = (await scope.boundingBox())!;
+        expect(scopeBounds.y - (stageBounds.y + stageBounds.height)).toBeLessThan(32);
         await panel.screenshot({ path: join(captures, `${theme}-${width}-stage-${action}.png`) });
       };
       await assertStage("Start voice");
@@ -1250,3 +1322,146 @@ for (const theme of ["light", "dark"])
       await expect(panel.getByRole("button", { name: "Stop waiting" })).toBeVisible();
       await page.screenshot({ path: info.outputPath(`voice-activity-${theme}-${width}.png`) });
     });
+
+for (const [theme, width] of workViewports) {
+  test(`fullscreen call composes a form whose chosen values drive a real action ${theme} ${width}`, async ({
+    page,
+  }) => {
+    const directory = join(captures, "presented-form");
+    await mkdir(directory, { recursive: true });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?global&usage&theme=${theme}`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    await page.evaluate(() => {
+      (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech("show usage form");
+    });
+    const results = panel.getByRole("region", { name: "Live results", exact: true });
+    await expect(results.getByRole("heading", { name: "Usage report", exact: true })).toBeVisible();
+    await expect(panel).toHaveAttribute("data-full-screen", "true");
+    const read = results.getByRole("button", { name: "Read usage", exact: true });
+    await expect(read).toBeEnabled();
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-composed.png`) });
+
+    // Choose in a Select, switch a segmented control and type, then press the button.
+    await results.getByRole("button", { name: /Period/ }).click();
+    await page.getByRole("option", { name: "Last 30 days" }).click();
+    await results.getByRole("radio", { name: "Tokens" }).click();
+    await results.getByLabel("Note").fill("typed note");
+    const originalWidth = (await results.boundingBox())!.width;
+    await results.getByRole("button", { name: "Maximize panel" }).click();
+    await expect
+      .poll(async () => (await results.boundingBox())!.width)
+      .toBeGreaterThan(originalWidth + 80);
+    await expect(panel.getByRole("button", { name: "Mute microphone" })).toBeVisible();
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-expanded.png`) });
+    await results.getByRole("button", { name: "Restore panel layout" }).press("Enter");
+    await expect
+      .poll(async () => (await results.boundingBox())!.width)
+      .toBeCloseTo(originalWidth, 0);
+    await expect(results.getByLabel("Note")).toHaveValue("typed note");
+    await read.click();
+    const reads = () =>
+      page.evaluate(() =>
+        (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.actions.filter(
+          (action) => action.startsWith("usage:"),
+        ),
+      );
+    // The real executor read exactly what the owner chose, not the starting values.
+    await expect.poll(reads).toEqual(["usage:last-30-days:tokens"]);
+    await expect(results.getByText("Completed", { exact: true })).toBeVisible();
+    await expect(results.getByLabel("Note")).toHaveValue("typed note");
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-after-press.png`) });
+  });
+}
+
+for (const [theme, width] of workViewports) {
+  test(`fullscreen call draws a nested composition of shared components ${theme} ${width}`, async ({
+    page,
+  }) => {
+    const directory = join(captures, "presented-composition");
+    await mkdir(directory, { recursive: true });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?global&theme=${theme}`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    await page.evaluate(() => {
+      (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+        "show composed report",
+      );
+    });
+    const results = panel.getByRole("region", { name: "Live results", exact: true });
+    await expect(
+      results.getByRole("heading", { name: "Release report", exact: true }),
+    ).toBeVisible();
+    await expect(results.getByText("One check failed", { exact: true })).toBeVisible();
+    await expect(results.getByText("Lint failed", { exact: true })).toBeVisible();
+    await expect(results.getByText("Not observed in this turn.", { exact: true })).toBeVisible();
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-top.png`) });
+    for (const name of ["Packages", "Options"]) {
+      await results.getByRole("tab", { name, exact: true }).click();
+      await results.getByRole("tabpanel").scrollIntoViewIfNeeded();
+      await panel.screenshot({
+        path: join(directory, `${theme}-${width}-${name.toLowerCase()}.png`),
+      });
+    }
+    await expect(results.getByRole("switch", { name: "Notify me" })).toBeChecked();
+  });
+}
+
+for (const [theme, width] of workViewports) {
+  test(`fullscreen call presents copyable text, updates it in place and runs a button ${theme} ${width}`, async ({
+    page,
+  }) => {
+    const directory = join(captures, "presented-view");
+    await mkdir(directory, { recursive: true });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(
+      `/tests/browser/voice/voice-visual-styles.html?navigation&session-outlet&theme=${theme}`,
+    );
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    const say = (text: string) =>
+      page.evaluate((value) => {
+        (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(value);
+      }, text);
+    await say("show copyable draft");
+    const results = panel.getByRole("region", { name: "Live results", exact: true });
+    await expect(results.getByRole("heading", { name: "Release note", exact: true })).toBeVisible();
+    const view = results.locator("[data-voice-presented-version]");
+    await expect(view).toHaveAttribute("data-voice-presented-version", "1");
+    await expect(panel).toHaveAttribute("data-full-screen", "true");
+    const copy = results.getByRole("button", { name: "Copy", exact: true });
+    await expect(copy).toBeVisible();
+    await copy.click();
+    await expect(results.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+    expect(
+      (await page.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n"),
+    ).toBe("Voice results can now show text you copy.\n  Press Copy to take it with you.");
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-first.png`) });
+
+    await say("shorten copyable draft");
+    await expect(view).toHaveAttribute("data-voice-presented-version", "2");
+    await expect(results.getByText("Voice results now show copyable text.")).toBeVisible();
+    await results.getByRole("button", { name: "Copy", exact: true }).click();
+    expect(
+      (await page.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n"),
+    ).toBe("Voice results now show copyable text.");
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-updated.png`) });
+
+    await results.getByRole("button", { name: "Open next session", exact: true }).click();
+    await expect(panel).not.toHaveAttribute("data-full-screen");
+    expect(
+      await page.evaluate(
+        () => (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.connects,
+      ),
+    ).toBe(1);
+  });
+}

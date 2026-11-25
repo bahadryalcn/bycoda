@@ -1,6 +1,7 @@
 import { t } from "../../../shared/i18n";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { MAX_EMBED_BYTES, type SkippedAttachment } from "./attachments";
+import type { AttachmentReadCapacity } from "./attachmentReadCapacity";
 
 const NAMED_FILES = 3;
 const NAME_GRAPHEMES = 48;
@@ -30,6 +31,7 @@ export function collectSkippedAttachments() {
     onSkipped: (more: SkippedAttachment[]) => {
       skipped.push(...more);
     },
-    notice: () => skippedAttachmentNotice(skipped),
+    notice: (capacity?: AttachmentReadCapacity) =>
+      [skippedAttachmentNotice(skipped), capacity?.notice()].filter(Boolean).join(" ") || null,
   };
 }

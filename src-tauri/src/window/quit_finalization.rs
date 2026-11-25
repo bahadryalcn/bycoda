@@ -48,6 +48,12 @@ pub(crate) fn is_finalizing() -> bool {
 }
 
 fn start_run(app: &AppHandle, restart: bool) {
+    #[cfg(windows)]
+    if crate::webview_recovery::is_rebuilding() {
+        // The native windows still own work while their webviews are replaced.
+        log::info!("quit request skipped during WebView2 recovery");
+        return;
+    }
     let mut labels = workspace_labels(app);
     if labels.is_empty() && crate::host_lifecycle::owned_pid().is_some() {
         // A dock-only app must still be able to ask before interrupting its Host.

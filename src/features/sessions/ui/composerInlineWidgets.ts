@@ -31,6 +31,7 @@ const iconPaths = {
   external: "M14 4h6v6m0-6-9 9m7-2v8H5V6h8",
   down: "m6 9 6 6 6-6",
   quote: "M4 7h6v7l-3 3m7-10h6v7l-3 3",
+  "file-comment": "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z",
 };
 
 function icon(document: Document, path: keyof typeof iconPaths) {
@@ -48,6 +49,7 @@ function referenceIcon(ref: InlineReference): keyof typeof iconPaths {
     case "skill":
     case "group":
     case "quote":
+    case "file-comment":
       return ref.kind;
     case "url":
       return "link";

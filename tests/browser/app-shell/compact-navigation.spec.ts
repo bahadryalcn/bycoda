@@ -154,7 +154,27 @@ async function installNavigationFixture(page: Page) {
           currentWindow: { label: "fixture" },
         },
         transformCallback: () => 1,
-        invoke: async (command: string, args?: { method?: string }) => {
+        invoke: async (command: string, args?: { method?: string; kind?: string }) => {
+          if (new URLSearchParams(location.search).has("linkGithub")) {
+            if (command === "git_github_repo") return "acme/widgets";
+            if (command === "git_github_work_items") {
+              const pr = args?.kind === "pr";
+              return [
+                {
+                  kind: pr ? "pr" : "issue",
+                  number: pr ? 27 : 12,
+                  title: pr ? "Build Docker images" : "Update Docker documentation",
+                  repo: "acme/widgets",
+                  url: `https://github.com/acme/widgets/${pr ? "pull/27" : "issues/12"}`,
+                  state: "open",
+                  updatedAt: "2026-11-24T09:00:00Z",
+                  labels: [],
+                  assignees: [],
+                  draft: false,
+                },
+              ];
+            }
+          }
           if (
             command === "session_list_recent" &&
             new URLSearchParams(location.search).has("railPolish")
@@ -379,6 +399,58 @@ test("session scrollbar preserves geometry and follows pointer or keyboard inter
         .poll(() => rail.evaluate((element) => element.scrollTop))
         .toBeGreaterThan(before);
     }
+  }
+});
+
+test("session GitHub link supports suggestions and pasted URLs", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const [theme, width] of [
+    ["dark", 1280],
+    ["light", 1280],
+    ["dark", 800],
+    ["light", 800],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/tests/browser/app-shell/compact-navigation.html?linkGithub");
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    const openDialog = async () => {
+      await page.locator("[data-session-card]").first().click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Link GitHub issue or PR…" }).click();
+    };
+    await openDialog();
+    const dialog = page.getByRole("dialog", { name: "Link GitHub issue or PR" });
+    const field = dialog.getByRole("combobox", { name: "GitHub issue or pull request" });
+    await field.fill("Docker");
+    const option = page.getByRole("option", { name: /Build Docker images/ });
+    await expect(option).toBeVisible();
+    await expect(page.getByRole("option", { name: /Update Docker documentation/ })).toBeVisible();
+    const link = dialog.getByRole("button", { name: "Link", exact: true });
+    expect((await link.boundingBox())!.y).toBeGreaterThan(
+      (await option.boundingBox())!.y + (await option.boundingBox())!.height,
+    );
+    await page.screenshot({ path: `temp/verification/session-github-link/${theme}-${width}.png` });
+    if (theme === "light") {
+      await field.press("ArrowDown");
+      await field.press("ArrowDown");
+      await field.press("Enter");
+    } else {
+      await option.click();
+    }
+    await link.click();
+    await expect(dialog).toBeHidden();
+    const output = page.getByLabel("Selected action");
+    await expect(output).toHaveText("https://github.com/acme/widgets/pull/27");
+
+    await openDialog();
+    await field.fill("https://github.com/acme/widgets/issues/88");
+    if (theme === "light") await field.press("Enter");
+    else await link.click();
+    await expect(dialog).toBeHidden();
+    await expect(output).toHaveText("https://github.com/acme/widgets/issues/88");
   }
 });
 
@@ -706,13 +778,13 @@ test("workspace header keeps location before session tools and holds no window n
             ),
           });
           const frame = (await titleFrame.boundingBox())!;
-          const constrained = await workspacePane.evaluate((element) => {
+          const paneWidth = await workspacePane.evaluate((element) => {
             const style = getComputedStyle(element);
             return (
-              element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) <
-              340
+              element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
             );
           });
+          const constrained = paneWidth < 340;
           // A narrow pane keeps one header row: the location sits beside the tools, not above them.
           if (constrained) {
             const tool = (await header
@@ -754,7 +826,7 @@ test("workspace header keeps location before session tools and holds no window n
           previousRight = toolsBounds.x + toolsBounds.width;
           if (project) {
             const label = newSession.getByText("New session", { exact: true });
-            const showLabel = pane === "wide" && width === 1280;
+            const showLabel = paneWidth >= 350;
             if (showLabel) await expect(label).toBeVisible();
             else await expect(label).toBeHidden();
             const button = (await newSession.boundingBox())!;

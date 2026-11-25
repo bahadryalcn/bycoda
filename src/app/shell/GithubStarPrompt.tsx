@@ -140,12 +140,20 @@ function GithubStarPromptBody({
   ) : null;
   return (
     <ButtonGroup
-      surface={icon ? "transparent" : "navigation"}
+      surface={icon || oncePerVersion ? "transparent" : "navigation"}
       aria-label={t("Actions")}
       data-github-star-prompt
       data-icon={icon || undefined}
       data-compact={compact || undefined}
-      className={icon ? styles.icons : visible ? "w-full" : "self-end"}
+      className={
+        icon
+          ? styles.icons
+          : oncePerVersion
+            ? "ms-auto max-w-full"
+            : visible
+              ? "w-full"
+              : "self-end"
+      }
     >
       {icon && visible ? (
         <div {...actionContentScopeAttributes(styles.star)}>{buttons}</div>

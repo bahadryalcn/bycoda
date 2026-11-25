@@ -49,7 +49,7 @@ export const voiceUsageTools = [
   ],
   [
     "workspace.usage.open",
-    "Show the Usage dashboard with exactly the same period, metric and filters as a report request. Navigation only: changes no setting and sends no work. Use when the owner asks to see or open the dashboard.",
+    "Open the Usage dashboard with the requested period, metric and filters only when the owner asks for that screen. For a usage question or chart, use workspace.usage.report. Navigation changes no setting and sends no work.",
     properties,
     ["period"],
   ],

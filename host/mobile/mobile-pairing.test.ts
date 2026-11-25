@@ -23,6 +23,7 @@ function setup() {
   const owner = secret();
   const otherOwner = secret();
   const deviceHashes = new Set([digest(owner), digest(otherOwner)]);
+  const managersByHash = new Set(deviceHashes);
   const issueDevice = vi.fn((_name: string) => {
     const token = secret();
     deviceHashes.add(digest(token));
@@ -32,6 +33,7 @@ function setup() {
     {
       environmentId: "test-environment",
       hasDeviceHash: (hash) => deviceHashes.has(hash),
+      canIssuePairing: (hash) => deviceHashes.has(hash) && managersByHash.has(hash),
       deviceProofKeys: async () => [...deviceHashes],
       proofOrigins: async () => ["https://host.test"],
       issueDevice,
@@ -55,6 +57,7 @@ function setup() {
     owner,
     otherOwner,
     deviceHashes,
+    managersByHash,
     issueDevice,
     redeem,
     advance: (ms: number) => {
@@ -118,6 +121,7 @@ it("serializes asynchronous claims and never replays an issuance with an uncerta
   const manager = new MobilePairing({
     environmentId: "test-environment",
     hasDeviceHash: async (hash) => allowed.has(hash),
+    canIssuePairing: async (hash) => allowed.has(hash),
     issueDevice,
   });
   managers.push(manager);
@@ -143,6 +147,15 @@ it("serializes asynchronous claims and never replays an issuance with an uncerta
 });
 
 describe("short-lived mobile pairing", () => {
+  it("rejects new and outstanding tickets after device management is removed", async () => {
+    const { manager, owner, managersByHash, redeem, issueDevice } = setup();
+    const ticket = await manager.create(owner);
+    managersByHash.delete(digest(owner));
+    await expect(manager.create(owner)).rejects.toThrow("Device management permission required");
+    await expect(manager.redeem(redeem(ticket))).rejects.toThrow("invalid or expired");
+    expect(issueDevice).not.toHaveBeenCalled();
+  });
+
   it("proves ticket and saved-device possession without receiving either secret or hash", async () => {
     const { manager, owner, deviceHashes, issueDevice } = setup();
     const ticket = await manager.create(owner);
@@ -407,16 +420,18 @@ describe("short-lived mobile pairing", () => {
   });
 
   it("bounds concurrent tickets without evicting another live retry credential", async () => {
-    const { manager, owner, deviceHashes, redeem, issueDevice } = setup();
+    const { manager, owner, deviceHashes, managersByHash, redeem, issueDevice } = setup();
     const firstInput = redeem(await manager.create(owner));
     const firstResult = await manager.redeem(firstInput);
     for (let index = 1; index < 32; index++) {
       const nextOwner = secret();
       deviceHashes.add(digest(nextOwner));
+      managersByHash.add(digest(nextOwner));
       await manager.create(nextOwner);
     }
     const overflowOwner = secret();
     deviceHashes.add(digest(overflowOwner));
+    managersByHash.add(digest(overflowOwner));
     await expect((async () => await manager.create(overflowOwner))()).rejects.toThrow(
       "Too many phone connections",
     );

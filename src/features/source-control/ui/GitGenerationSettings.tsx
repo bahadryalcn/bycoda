@@ -164,6 +164,8 @@ function CommitModelPicker({
       harness={harness}
       model={model.id}
       values={values}
+      accountId={choice?.providerAccountId}
+      accountChoices
       project={cwd}
       allowedHarnesses={allowed}
       settingsScope="reasoning-and-speed"
@@ -174,15 +176,13 @@ function CommitModelPicker({
         selected: !choice,
         onSelect: () => onChange(undefined),
       }}
-      onChange={(nextHarness, nextModel) => {
+      onChange={(nextHarness, nextModel, providerAccountId) => {
         const resolved = source.resolve(nextHarness, nextModel);
         onChange({
           harness: nextHarness,
           model: resolved.id,
+          providerAccountId,
           modelSettings: mergeModelSettings(resolved, nextHarness === harness ? values : undefined),
-          ...(nextHarness === choice?.harness
-            ? { providerAccountId: choice.providerAccountId }
-            : {}),
         });
       }}
       onSettingsChange={(modelSettings) =>

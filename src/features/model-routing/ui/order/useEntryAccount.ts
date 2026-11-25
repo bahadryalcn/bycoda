@@ -6,14 +6,19 @@ import {
   type ProviderAccount,
 } from "../../../providers/public/providerAccounts";
 import { useProviderAccounts } from "../../../providers/public/useProviderAccounts";
+import { useModelSource, type ModelSource } from "../../../sessions/public/modelSource";
+
+type EntryAccountProfile = Pick<ProviderAccount, "id" | "label" | "isDefault" | "kind"> & {
+  color?: string;
+};
 
 export type EntryAccount = {
-  /** Only Claude and Codex entries carry accounts. */
   supported: boolean;
   id: string;
-  accounts: ProviderAccount[];
+  accounts: readonly EntryAccountProfile[];
+  known: boolean;
   /** The selected account, when it still exists. */
-  account?: ProviderAccount;
+  account?: EntryAccountProfile;
   /** The account's type, with Personal for legacy profiles. */
   kind?: "personal" | "work";
 };
@@ -24,17 +29,35 @@ export type EntryAccount = {
  */
 export function entryProviderAccount(
   entry: Pick<ModelRoutingEntry, "harness" | "providerAccountId">,
-): ProviderAccount | undefined {
+  source?: ModelSource,
+): EntryAccountProfile | undefined {
   if (!supportsProviderAccounts(entry.harness)) return undefined;
-  const id = entry.providerAccountId ?? defaultProviderAccountId(entry.harness);
-  return providerAccounts(entry.harness).find((candidate) => candidate.id === id);
+  const accounts =
+    source?.accounts === undefined
+      ? providerAccounts(entry.harness)
+      : (source.accounts[entry.harness] ?? []);
+  return accounts.find((candidate) => candidate.id === entryAccountId(entry, source));
+}
+
+export function entryAccountId(
+  entry: Pick<ModelRoutingEntry, "harness" | "providerAccountId">,
+  source?: ModelSource,
+) {
+  if (!supportsProviderAccounts(entry.harness)) return "";
+  return (
+    entry.providerAccountId ??
+    (source?.accounts === undefined
+      ? defaultProviderAccountId(entry.harness)
+      : (source.accounts[entry.harness]?.find((account) => account.isDefault)?.id ?? "default"))
+  );
 }
 
 /** The Personal/Work kind of the account an entry runs on; undefined for shared accounts. */
 export function entryAccountKind(
   entry: Pick<ModelRoutingEntry, "harness" | "providerAccountId">,
+  source?: ModelSource,
 ): "personal" | "work" | undefined {
-  const account = entryProviderAccount(entry);
+  const account = entryProviderAccount(entry, source);
   return account ? (account.kind ?? "personal") : undefined;
 }
 
@@ -42,15 +65,21 @@ export function entryAccountKind(
 export function useEntryAccount(
   entry: Pick<ModelRoutingEntry, "harness" | "providerAccountId">,
 ): EntryAccount {
+  const source = useModelSource();
   const provider = supportsProviderAccounts(entry.harness) ? entry.harness : undefined;
   // Shared store snapshot: rows get the same array identity, so no per-row parse.
-  const accounts = useProviderAccounts(provider ?? null);
-  const id = entry.providerAccountId ?? (provider ? defaultProviderAccountId(provider) : "");
+  const localAccounts = useProviderAccounts(
+    source.accounts === undefined ? (provider ?? null) : null,
+  );
+  const accounts =
+    provider && source.accounts !== undefined ? (source.accounts[provider] ?? []) : localAccounts;
+  const id = entryAccountId(entry, source);
   const account = accounts.find((candidate) => candidate.id === id);
   return {
     supported: provider !== undefined,
     id,
     accounts,
+    known: source.accountsKnown?.(entry.harness) !== false,
     account,
     kind: account ? (account.kind ?? "personal") : undefined,
   };

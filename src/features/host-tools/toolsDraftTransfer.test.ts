@@ -37,6 +37,42 @@ describe("tools presentation transfer", () => {
     ).toBe("Türkçe draft");
     expect(JSON.stringify(value)).not.toContain("leaseId");
   });
+  it("keeps screenshot bytes out of draft-write clones while isolating mutable annotations", () => {
+    const scope = { cwd: "/devices", sessionId: "annotation-edit", targetValue: "project" };
+    const frame = { mime: "image/png" as const, base64: "original-screenshot", capturedAt: "now" };
+    const mark = { id: "1", type: "pen" as const, points: [{ x: 0.1, y: 0.2 }] };
+    const document = { marks: [mark] };
+    const draft = { frame, document, undo: [document], redo: [document], comment: "first" };
+    const part = { selected: "phone", app: "", text: "", zoom: 1, annotations: { phone: draft } };
+    const clone = vi.spyOn(globalThis, "structuredClone");
+    writeToolsDraftPart(scope, "device", part);
+    writeToolsDraftPart(scope, "device", {
+      ...part,
+      text: "typed",
+      annotations: { phone: { ...draft, comment: "updated" } },
+    });
+    const copiedScreenshot = clone.mock.calls.some(([value]) =>
+      JSON.stringify(value).includes(frame.base64),
+    );
+    clone.mockRestore();
+    expect(copiedScreenshot).toBe(false);
+
+    frame.base64 = "new-screenshot";
+    mark.points[0].x = 1;
+    const stored = peekToolsDraftPart(scope, "device")!;
+    expect(stored.text).toBe("typed");
+    const saved = stored.annotations.phone;
+    expect(saved.comment).toBe("updated");
+    expect(saved.frame.base64).toBe("original-screenshot");
+    for (const version of [saved.document, ...saved.undo, ...saved.redo]) {
+      expect(version.marks).toEqual([{ ...mark, points: [{ x: 0.1, y: 0.2 }] }]);
+    }
+    const moved = readToolsWorkspaceDrafts(scope.cwd, scope.sessionId).project.device!;
+    moved.annotations.phone.frame.base64 = "another-window";
+    moved.annotations.phone.undo.length = 0;
+    expect(saved.frame.base64).toBe("original-screenshot");
+    expect(saved.undo).toHaveLength(1);
+  });
   it("rejects snapshot while an operation is in flight and permits it after settlement", () => {
     const scope = { cwd: "/repo", sessionId: "pending-test", targetValue: "project" };
     const release = holdToolsDraftTransfer(scope);

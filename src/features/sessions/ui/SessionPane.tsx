@@ -197,7 +197,7 @@ import {
 import type { HostSession, RefreshAdoptedSession } from "../../connections";
 import { AdoptedSessionNotice } from "../../connections/public/AdoptedSessionNotice";
 import { useAdoptedSteerSupport } from "../../connections/public/remoteCapabilities";
-import { remoteOrigin } from "./RemoteOriginMark";
+import { RemoteOriginMark, remoteOrigin } from "./RemoteOriginMark";
 import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
   session: Session;
@@ -780,11 +780,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     scope: string;
     effect: Parameters<typeof useProjectBackgroundEffect>[1];
   } | null = JSON.parse(projectBackgroundJson);
-  // The default account lives in a store; a string snapshot keeps the read value-stable.
+  // RemoteSession supplies the owning Host's selection. An unset remote account
+  // leaves the default to that Host.
   const sessionAccountId = useSyncExternalStore(subscribeProviderAccounts, () =>
-    supportsProviderAccounts(session.harness)
-      ? sessionProviderAccountId(session.harness, session)
-      : undefined,
+    remoteSession
+      ? session.providerAccountId
+      : supportsProviderAccounts(session.harness)
+        ? sessionProviderAccountId(session.harness, session)
+        : undefined,
   );
   const projectBackgroundImageRevision = useSyncExternalStore(
     subscribeProjectChatBackground,
@@ -1495,6 +1498,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           },
         }
       : undefined;
+  const origin = remoteSession ? undefined : remoteOrigin(session);
   const ownerComposer = (
     <Composer
       notices={composerNotices}
@@ -1508,7 +1512,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ? undefined
           : adoptedSteerSupported && !!session.adoptedRunId && session.adoptedRunId !== "desktop"
       }
-      remoteOrigin={remoteOrigin(session)}
       managedWorkspaceCreationReady={managedWorkspaceCreationReady}
       sendBlockedReason={sendBlockedReason}
       sendHeldReason={
@@ -1542,25 +1545,36 @@ const LocalSessionPane = memo(function LocalSessionPane({
         remoteExecutionEnvironment(session) ?? session.hostBinding?.environmentId
       }
       machinePicker={
-        !embedded && !managed && !session.inboxAsk && onSessionMachineChange
-          ? (locked) => (
-              <SessionMachinePicker
-                environmentId={remoteExecutionEnvironment(session)}
-                returnFocusRef={composerReturnFocus(paneRef)}
-                projectMachines={projectMachines}
-                onSelect={
-                  !locked &&
-                  !remoteSessionStarted &&
-                  !remoteSessionRetargetBlocked &&
-                  !session.hostBinding &&
-                  !session.providerSessionId &&
-                  !session.queuedMessages?.length &&
-                  isBlankSession(session)
-                    ? (environmentId) => onSessionMachineChange(session.id, environmentId)
-                    : undefined
-                }
-              />
-            )
+        !embedded && !managed && (origin || (!session.inboxAsk && onSessionMachineChange))
+          ? (locked) => {
+              const selectMachine =
+                !locked &&
+                !session.inboxAsk &&
+                onSessionMachineChange &&
+                !remoteSessionStarted &&
+                !remoteSessionRetargetBlocked &&
+                !session.hostBinding &&
+                !session.providerSessionId &&
+                !session.queuedMessages?.length &&
+                isBlankSession(session)
+                  ? (environmentId: string | undefined) =>
+                      onSessionMachineChange(session.id, environmentId)
+                  : undefined;
+              if (origin && !selectMachine) return <RemoteOriginMark origin={origin} />;
+              const picker = (
+                <SessionMachinePicker
+                  environmentId={remoteExecutionEnvironment(session)}
+                  returnFocusRef={composerReturnFocus(paneRef)}
+                  projectMachines={projectMachines}
+                  onSelect={selectMachine}
+                />
+              );
+              return origin ? (
+                <RemoteOriginMark origin={origin}>{picker}</RemoteOriginMark>
+              ) : (
+                picker
+              );
+            }
           : undefined
       }
       // An inbox Ask keeps the standard composer layout; its folder comes from the
@@ -1708,6 +1722,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const lifecycle = useSessionLifecycleActions({
     sessionId: session.id,
+    running: !!session.busy || !!session.continuingElsewhere,
     cwd: session.cwd,
     local: !remote,
     hasMessages,

@@ -1,10 +1,16 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import type { SocialClient } from "../../model/socialClient";
 import { useFirstPageRefresh } from "../../hooks/useFirstPageRefresh";
 import { socialQueryScope } from "../../model/socialQuery";
 import { inboxApi } from "./inboxApi";
-import { dedupeInboxPages, refreshInboxPages } from "./inboxRefresh";
-import type { InboxFilterState } from "./inboxTypes";
+import {
+  dedupeInboxPages,
+  refreshInboxPages,
+  updateInboxTags,
+  type InboxPages,
+} from "./inboxRefresh";
+import type { InboxFilterState, InboxItem, InboxTagReceipt } from "./inboxTypes";
 
 /** Automatic list refresh while the screen is visible and auto-refresh is on. */
 export const INBOX_REFRESH_MS = 60_000;
@@ -26,15 +32,36 @@ export function useInboxList(
   options: { enabled: boolean; refresh: boolean },
 ) {
   const api = inboxApi(client);
-  const queryKey = keyOf(client, "list", filter);
-  const polling = options.enabled && options.refresh;
+  const text = filter.query.trim();
+  const queryKey = keyOf(client, "list", { ...filter, query: text });
+  const [settledText, setSettledText] = useState(text);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Wait for typing to settle before starting a Host search; cancel the timer on change or hide.
+  useEffect(() => {
+    if (!options.enabled || text === settledText) return;
+    if (!text) {
+      setSettledText("");
+      return;
+    }
+    const timer = window.setTimeout(() => setSettledText(text), 150);
+    return () => window.clearTimeout(timer);
+  }, [options.enabled, text, settledText]);
+  const enabled = options.enabled && (!text || text === settledText);
+  const polling = enabled && options.refresh;
   const list = useInfiniteQuery({
     queryKey,
     queryFn: ({ pageParam }) => api.unified(filter, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next,
     select: dedupeInboxPages,
-    enabled: options.enabled,
+    placeholderData: (previous, previousQuery) => {
+      const prior = previousQuery?.queryKey[queryKey.length - 1] as InboxFilterState | undefined;
+      return previousQuery?.queryKey[1] === queryKey[1] &&
+        prior?.accountId === filter.accountId &&
+        prior.status === filter.status
+        ? previous
+        : undefined;
+    },
+    enabled,
     // The newest-page poll keeps the list current; only an invalidation makes it stale.
     staleTime: polling ? Infinity : 0,
   });
@@ -46,6 +73,40 @@ export function useInboxList(
     merge: refreshInboxPages,
   });
   return list;
+}
+
+/** A tag write returns the authoritative tags. Only searches whose membership may change,
+ * racing reads and legacy Hosts without a receipt need another list read. */
+export function useSavedInboxTags(client: SocialClient) {
+  const cache = useQueryClient();
+  return async (item: InboxItem, saved: InboxTagReceipt) => {
+    const lists = cache.getQueryCache().findAll({ queryKey: keyOf(client, "list") });
+    const refresh = lists.map(async (list) => {
+      const filter = list.queryKey[list.queryKey.length - 1] as InboxFilterState;
+      if (filter.accountId && filter.accountId !== item.accountId) return;
+      const key = { queryKey: list.queryKey, exact: true };
+      const raced = list.state.fetchStatus !== "idle";
+      const hasReceipt = saved?.threadId === item.threadId && Array.isArray(saved.tags);
+      if (
+        hasReceipt &&
+        !raced &&
+        !list.state.isInvalidated &&
+        !filter.query.trim() &&
+        filter.status === "all"
+      ) {
+        const data = cache.getQueryData<InboxPages>(list.queryKey);
+        if (!data) return;
+        const updated = updateInboxTags(data, item, saved);
+        if (updated) {
+          cache.setQueryData(list.queryKey, updated);
+          return;
+        }
+      }
+      if (raced) await cache.cancelQueries(key);
+      await cache.invalidateQueries(key);
+    });
+    await Promise.all(refresh);
+  };
 }
 
 export function useInboxThread(client: SocialClient, threadId: string | undefined) {
@@ -125,7 +186,7 @@ export function useInboxProjectFacts(client: SocialClient, projectId: string | u
 }
 
 /**
- * Invalidates the inbox list and conversation reads after a status, tag or reply change. Cached
+ * Invalidates the inbox list and conversation reads after a status or reply change. Cached
  * queries of other conversations only turn stale. Pass `reference` after a change that can move
  * accounts or the auto-refresh setting (settings, Check now) to reload those reads too.
  */

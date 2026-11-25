@@ -108,7 +108,7 @@ export function realtimeSession(
 /** Silence (s) that ends a spoken turn. Natural mid-sentence pauses are often
  * 0.6–1 s, so a shorter value answers half-finished sentences. */
 export const REALTIME_END_SILENCE = 1.2;
-/** ASR wait for one committed candidate, including its upload. */
+/** Separate progress windows for commit/upload and ASR. */
 const TRANSCRIPT_TIMEOUT = 15_000;
 /** Renew the socket credential when less than this is left: socket open plus session
  * confirmation may take the whole socket budget. */
@@ -761,8 +761,7 @@ export class RealtimeVoice {
           !this.createdItems.has(id) &&
           ownerAudioItem(event.item)
         ) {
-          this.pendingInput.itemId = id;
-          this.pendingInput.acknowledged = true;
+          this.acknowledgePendingInput(id);
         }
         this.rememberCreatedItem(id);
         this.deleteDiscardedInput();
@@ -871,9 +870,7 @@ export class RealtimeVoice {
           this.activateCandidate = undefined;
           break;
         }
-        if (this.pendingInput) this.pendingInput.acknowledged = true;
-        if (typeof event.item_id === "string" && this.pendingInput && !this.pendingInput.itemId)
-          this.pendingInput.itemId = event.item_id;
+        this.acknowledgePendingInput(typeof event.item_id === "string" ? event.item_id : undefined);
         break;
       }
       case "conversation.item.input_audio_transcription.completed":
@@ -1016,6 +1013,16 @@ export class RealtimeVoice {
     this.send({ type: "input_audio_buffer.commit" });
   }
 
+  private acknowledgePendingInput(id?: string) {
+    const pending = this.pendingInput;
+    if (!pending) return;
+    if (!pending.itemId && id) pending.itemId = id;
+    if (pending.acknowledged) return;
+    pending.acknowledged = true;
+    clearTimeout(pending.timer);
+    pending.timer = this.transcriptDeadline();
+  }
+
   /** Starts the wait for a committed candidate's transcript. Re-armed on restore. */
   private transcriptDeadline(): ReturnType<typeof setTimeout> {
     let uploading = Number.POSITIVE_INFINITY;
@@ -1026,9 +1033,8 @@ export class RealtimeVoice {
       // Quarantine untranscribed audio (often noise). A late final transcript
       // can still be accepted until a delete was actually sent; otherwise only
       // confirmed deletion or a fresh provider session can release the fence.
-      if (pending.itemId) return this.rejectPending(true);
       const buffered = this.socket?.bufferedAmount ?? 0;
-      const stage = pending.acknowledged ? "transcript" : "commit";
+      const stage = pending.acknowledged || pending.itemId ? "transcript" : "commit";
       // Give a draining upload another window, including when it just reached
       // zero. A buffer that was always empty still uses the original deadline.
       if (
@@ -1054,6 +1060,7 @@ export class RealtimeVoice {
             ? undefined
             : Math.round(elapsedSince(this.lastProviderFrameAt)),
       });
+      if (pending.itemId) return this.rejectPending(true);
       // Confirmed audio with no item identity cannot be deleted; only a fresh session is clean.
       if (pending.acknowledged) {
         this.fail("Voice connection is too slow. Start voice again.", "audio-transcript-missing");
@@ -1231,7 +1238,7 @@ export class RealtimeVoice {
     this.pendingCalls++;
     void voiceRuntimeDeadline(
       (wait) =>
-        voiceToolWaitsForOwner(name)
+        voiceToolWaitsForOwner(name, args)
           ? this.callbacks.tool(name, args, wait)
           : this.callbacks.tool(name, args),
       this.lifetime.signal,

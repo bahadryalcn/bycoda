@@ -19,11 +19,16 @@ import { Button } from "../../../src/shared/ui/Button";
 import { TextareaField } from "../../../src/shared/ui/TextareaField";
 import { WandSparkles } from "../../../src/shared/ui/icons";
 import { GitCommitGenerationNotice } from "../../../src/features/source-control/ui/GitFeedback";
+import { saveProviderAccount } from "../../../src/features/providers/model/providerAccounts";
 // Shared tokens (control heights, field roles) so shared Buttons size as in the app.
 import "../../../src/styles/index.css";
 import "./git-generation.css";
 
 setHarnessModels("claude", modelsForClaudeVersion("2.1.300"));
+if (new URLSearchParams(location.search).has("commit")) {
+  saveProviderAccount({ id: "work", provider: "claude", label: "Work" });
+  saveProviderAccount({ id: "personal", provider: "claude", label: "Personal" });
+}
 // Git generation offers only text-capable providers; their models feed the advisor and subagent rows.
 const unavailable = async () => {
   throw new Error("No live provider in git generation fixture");

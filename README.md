@@ -99,9 +99,10 @@ releases; see [releases and updates](docs/reference/fork.md#releases-and-updates
 
 ## Privacy
 
-bycoda collects no telemetry. Workspace data stays on your machines and on the
-services you connect. Provider subscriptions, quotas and charges are governed by
-each provider's terms.
+Sharing installation statistics or daily token totals and estimated costs is
+off by default. Diagnostic reports ask for approval by default. Workspace data
+stays on your machines and on the services you connect. Provider subscriptions,
+quotas and charges are governed by each provider's terms.
 
 - [Privacy policy](docs/guides/privacy-policy.md)
 - [Terms of use](docs/guides/terms-of-use.md)

@@ -66,6 +66,7 @@ mod macos;
 mod macos_background;
 mod mcp;
 pub use mcp::remote_config::maybe_run as maybe_run_mcp_config_helper;
+mod local_browser_preview;
 mod menu;
 mod messaging;
 mod mobile_pty;
@@ -569,6 +570,12 @@ pub fn run() {
             |_context, request, responder| html_preview::respond_async(request, responder),
         )
         .invoke_handler(tauri::generate_handler![
+            local_browser_preview::local_browser_preview_open,
+            local_browser_preview::local_browser_preview_layout,
+            local_browser_preview::local_browser_preview_navigate,
+            local_browser_preview::local_browser_preview_reload,
+            local_browser_preview::local_browser_preview_location,
+            local_browser_preview::local_browser_preview_close,
             package_smoke::package_smoke_dom_proof,
             build_info::build_identity,
             native_authority_checkpoint::native_renderer_checkpoint,
@@ -655,6 +662,7 @@ pub fn run() {
             host_lifecycle::switch::local_host_mode,
             host_lifecycle::switch::local_host_set_mode,
             bundled_host::local_host_bundle_status,
+            bundled_host::local_host_update_activity,
             bundled_host::local_host_bundle_update,
             generic_acp::generic_acp_list,
             generic_acp::generic_acp_save,
@@ -1344,6 +1352,7 @@ pub fn run() {
             ..
         } => {
             voice_overlay::window_destroyed(handle, &label);
+            local_browser_preview::detach_window(&label);
             window_transfer::window_closed(handle, &label);
             handle
                 .state::<remote::RemoteConnections>()

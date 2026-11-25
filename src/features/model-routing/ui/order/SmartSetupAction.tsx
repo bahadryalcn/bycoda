@@ -3,9 +3,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Popover } from "../../../../shared/ui/Popover";
+import { Text } from "../../../../shared/ui/Text";
 import { toast } from "../../../../shared/ui/ToastRegion";
-import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
+import { useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import { refreshLocalLiveCatalogFacts } from "../../model/liveCatalogFacts";
 import { applySmartSetup, rulePlan, setupCandidates } from "../../model/smartSetup";
@@ -43,7 +46,7 @@ export function SmartSetupAction({
   const names = {
     smartest: t("Smartest"),
     balanced: t("Balanced"),
-    fast: t("Fast"),
+    light: t("Low"),
     work: t("Work"),
     personal: t("Personal"),
   };
@@ -60,11 +63,12 @@ export function SmartSetupAction({
     return applied;
   }
   async function candidatesForSetup() {
+    if (source.id) return setupCandidates(source);
     const [, catalog] = await Promise.all([
       refreshLocalLiveCatalogFacts(3000),
       localSetupCatalog((machineId) => client.fetchQuery(setupCatalogQuery(machineId))),
     ]);
-    return setupCandidates(source.id ? LOCAL_MODEL_SOURCE : source, catalog);
+    return setupCandidates(source, catalog);
   }
   async function runRules() {
     const controller = new AbortController();
@@ -103,6 +107,7 @@ export function SmartSetupAction({
     // Only a fallback to the rules is news; a planned draft is shown by the draft itself.
     toast.show({
       tone: "warning",
+      extra: result.failure?.detail ? <ErrorDetails detail={result.failure.detail} /> : undefined,
       message: result.failure
         ? t(
             "{p0} could not plan the setup ({p1}), so the researched benefit-per-cost ranking was used. Review it, then save.",
@@ -113,7 +118,7 @@ export function SmartSetupAction({
                   ? t("it timed out")
                   : result.failure.reason === "unreadable"
                     ? t("its answer could not be read")
-                    : (result.failure.detail ?? t("it failed")),
+                    : t("it failed"),
             },
           )
         : t(
@@ -141,6 +146,7 @@ export function SmartSetupAction({
         aria-expanded={optionsOpen}
         aria-controls={optionsOpen ? optionsId : undefined}
         disabled={running}
+        disabledReason={running ? t("Planning…") : undefined}
         onClick={() => setOptionsOpen((open) => !open)}
       >
         {t("Setup options")}
@@ -167,6 +173,16 @@ export function SmartSetupAction({
           >
             {t("Plan setup with AI")}
           </Button>
+          <InfoPopover>
+            <Text as="p" size="secondary" tone="secondary">
+              {t(
+                "Sets model order, job groups and agent defaults in a draft. Uses standard speed. Review the draft before saving.",
+              )}
+            </Text>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Prices and scores: OpenRouter, Artificial Analysis.")}
+            </Text>
+          </InfoPopover>
         </Popover>
       ) : null}
     </>

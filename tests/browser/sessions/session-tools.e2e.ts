@@ -69,7 +69,7 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-test("two renderer windows follow focused sessions, retain pin, select manually, clear empty sessions and capture both themes", async ({
+test("two renderer windows follow focused sessions, select manually, clear empty sessions and capture both themes", async ({
   context,
 }) => {
   const source = await context.newPage();
@@ -83,19 +83,12 @@ test("two renderer windows follow focused sessions, retain pin, select manually,
   await source.getByRole("button", { name: "Studio", exact: true }).click();
   await expect(identity).toContainText("Studio");
   await hub.bringToFront();
-  await hub.getByRole("button", { name: "Follow active conversation", exact: true }).click();
-  await source.bringToFront();
+  await expect(hub.getByRole("button", { name: "Follow active conversation" })).toHaveCount(0);
   await source.getByRole("button", { name: "Atlas", exact: true }).click();
-  await expect(identity).toContainText("Studio");
-  await hub.bringToFront();
-  await hub.getByRole("button", { name: "Keep this conversation", exact: true }).click();
   await expect(identity).toContainText("Atlas");
   await identity.click();
   await hub.getByRole("option").filter({ hasText: "Studio" }).click();
   await expect(identity).toContainText("Studio");
-  await expect(
-    hub.getByRole("button", { name: "Follow active conversation", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
   await source.bringToFront();
   await source.getByRole("button", { name: "Notes", exact: true }).click();
   await expect(identity).toContainText("Notes");

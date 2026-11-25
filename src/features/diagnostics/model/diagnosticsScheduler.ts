@@ -101,7 +101,7 @@ export function createDiagnosticsScheduler(deps: DiagnosticsDeps) {
       hostCrash: crash.hostCrash,
       summary: crash.message,
     });
-    if (status === "sent" || status === "empty") await clearCrash(crash);
+    if (status === "sent" || status === "empty" || status === "declined") await clearCrash(crash);
     // A crash report carries the same logs, so it also counts as this interval's periodic one.
     if (status === "sent") writeLastPeriodic(now());
     return status;
@@ -112,7 +112,7 @@ export function createDiagnosticsScheduler(deps: DiagnosticsDeps) {
     if (!crash) return;
     const mode = getDiagnosticsMode();
     if (mode === "off") await clearCrash(crash);
-    else if (mode === "auto") await reportCrash(crash); // -- a failure keeps the marker for the next start.
+    else if (mode === "auto" || deps.review) await reportCrash(crash); // -- a failure keeps the marker for the next start.
     else setPending(crash);
   }
 

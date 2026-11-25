@@ -4,12 +4,19 @@ import { useSyncExternalStore } from "react";
 import { focusManager, replaceEqualDeep } from "@tanstack/react-query";
 import { recordRateLimitHistory } from "./rateLimitHistory";
 import { fetchGrokRateLimits } from "./grokRateLimitsFetch";
+import { fetchPiUsage } from "./piUsage";
+import { readHostAccountQuota } from "./hostAccountQuota";
+import { subscribeCodexQuotaObservations } from "../../../integrations/harness/providers/codex/codexQuotaObservations";
 import {
   errorRateLimits,
   fetchingRateLimits,
   idleRateLimits,
+  mergeCodexQuotaWindows,
+  QUOTA_POLL_MS,
+  QUOTA_RETRY_MS,
   type ProviderRateLimits,
   type RateLimitProvider,
+  type QuotaSource,
 } from "./rateLimits";
 import {
   fetchClaudeRateLimits,
@@ -19,17 +26,18 @@ import {
 
 const snapshots = new Map<string, ProviderRateLimits>();
 const pending = new Map<string, Promise<ProviderRateLimits>>();
-const queuedRefreshes = new Map<string, Promise<ProviderRateLimits>>();
 const generations = new Map<string, symbol>();
 const listeners = createStore();
 let allSnapshots: Record<string, ProviderRateLimits> = {};
 
-function keyFor(provider: RateLimitProvider, accountId: string): string {
+export { QUOTA_POLL_MS, type QuotaSource } from "./rateLimits";
+
+function keyFor(provider: QuotaSource, accountId: string): string {
   return `${provider}:${accountId}`;
 }
 
 function publish(key: string, value: ProviderRateLimits): ProviderRateLimits {
-  recordRateLimitHistory(key, value);
+  if (!key.startsWith("pi-")) recordRateLimitHistory(key, value);
   const previous = snapshots.get(key);
   value = replaceEqualDeep(previous, value);
   if (previous === value) return value;
@@ -38,6 +46,12 @@ function publish(key: string, value: ProviderRateLimits): ProviderRateLimits {
   listeners.notify();
   return value;
 }
+
+subscribeCodexQuotaObservations((accountId, update) => {
+  const key = keyFor("codex", accountId);
+  const previous = snapshots.get(key);
+  if (previous?.status === "ok") publish(key, mergeCodexQuotaWindows(previous, update));
+});
 
 export function subscribeRateLimits(listener: () => void): () => void {
   return listeners.subscribe(listener);
@@ -48,21 +62,23 @@ export function getAllRateLimits(): Record<string, ProviderRateLimits> {
 }
 
 export function getCachedRateLimits(
-  provider: RateLimitProvider,
+  provider: QuotaSource,
   accountId = "default",
 ): ProviderRateLimits {
   return snapshots.get(keyFor(provider, accountId)) ?? idle[provider];
 }
 
-const idle: Record<RateLimitProvider, ProviderRateLimits> = {
+const idle: Record<QuotaSource, ProviderRateLimits> = {
   claude: idleRateLimits("claude"),
   codex: idleRateLimits("codex"),
   opencode: idleRateLimits("opencode"),
   grok: idleRateLimits("grok"),
+  "pi-anthropic": idleRateLimits("claude"),
+  "pi-openai-codex": idleRateLimits("codex"),
 };
 
 export function useCachedRateLimits(
-  provider: RateLimitProvider,
+  provider: QuotaSource,
   accountId = "default",
 ): ProviderRateLimits {
   return useSyncExternalStore(
@@ -82,52 +98,43 @@ export function setCachedRateLimits(
 
 /** Fetch an account once per window lifetime, or again on explicit refresh. */
 export function loadRateLimits(
-  provider: RateLimitProvider,
+  provider: QuotaSource,
   accountId = "default",
   force = false,
   canRetry: () => boolean = () => true,
   background = false,
   oneShot = false,
+  maxAgeMs?: number,
 ): Promise<ProviderRateLimits> {
   const key = keyFor(provider, accountId);
   const running = pending.get(key);
-  if (running) {
-    // A focus refresh and a retry resumed by the same focus share this read.
-    if (oneShot || background || !force) return running;
-    const queued = queuedRefreshes.get(key);
-    if (queued) return queued;
-    const generation = generations.get(key);
-    const next = running.then((result) =>
-      generations.get(key) === generation
-        ? loadRateLimits(provider, accountId, true, canRetry, background)
-        : result,
-    );
-    queuedRefreshes.set(key, next);
-    void next.finally(() => {
-      if (queuedRefreshes.get(key) === next) queuedRefreshes.delete(key);
-    });
-    return next;
-  }
+  if (running) return running;
   const cached = snapshots.get(key);
   if (cached && !force) return Promise.resolve(cached);
 
   cancelRetry(key);
   const generation = Symbol(key);
   generations.set(key, generation);
-  if (!oneShot && (!background || !cached)) publish(key, fetchingRateLimits(provider, cached));
+  if (!oneShot && (!background || !cached))
+    publish(key, fetchingRateLimits(idle[provider].provider, cached));
   const run = (async () => {
     let result: ProviderRateLimits;
     try {
+      const intent = oneShot ? "approved" : force && !background ? "refresh" : "read";
+      const hostRead = readHostAccountQuota(provider, accountId, intent, maxAgeMs);
       result =
-        provider === "claude"
+        (hostRead ? await hostRead : undefined) ??
+        (provider === "claude"
           ? await fetchClaudeRateLimits(accountId, oneShot)
           : provider === "codex"
             ? await fetchCodexRateLimits(accountId)
             : provider === "grok"
               ? await fetchGrokRateLimits(accountId)
-              : await fetchOpencodeGoRateLimits();
+              : provider === "opencode"
+                ? await fetchOpencodeGoRateLimits()
+                : await fetchPiUsage(provider === "pi-anthropic" ? "anthropic" : "openai-codex"));
     } catch (error) {
-      result = errorRateLimits(provider, errorText(error));
+      result = errorRateLimits(idle[provider].provider, errorText(error));
     } finally {
       if (generations.get(key) === generation) pending.delete(key);
     }
@@ -137,15 +144,18 @@ export function loadRateLimits(
     if (result.renewalPending !== true) renewalChecks.delete(key);
     if (result.status === "error") {
       const renewalPending = result.renewalPending === true;
+      const { retryAt } = result;
       // A failed request (a 429, a dropped connection) says nothing about the
       // usage itself: the last windows stay, dated when they were read.
-      if (cached && hasWindows(cached)) {
+      if (result.reason !== "signedOut" && cached && hasWindows(cached)) {
         result = {
-          ...errorRateLimits(provider, result.error ?? "", cached, result.reason),
+          ...errorRateLimits(result.provider, result.error ?? "", cached, result.reason),
           ...(renewalPending ? { renewalPending } : {}),
+          ...(retryAt !== undefined ? { retryAt } : {}),
         };
       }
-      if (!oneShot) scheduleRetry(provider, accountId, canRetry, background, renewalPending);
+      if (!oneShot)
+        scheduleRetry(provider, accountId, canRetry, background, renewalPending, retryAt);
     } else {
       retryAttempts.delete(key);
     }
@@ -161,16 +171,15 @@ export function refreshClaudeQuotaOnce(accountId: string, canPublish: () => bool
 }
 
 export function loadPolledRateLimits(
-  provider: RateLimitProvider,
+  provider: QuotaSource,
   accountId: string,
-  force: boolean,
   canRetry: () => boolean,
 ): Promise<ProviderRateLimits> {
-  // A periodic tick must not shorten the backoff after a failed Claude quota read.
-  if (provider === "claude" && retryTimers.has(keyFor(provider, accountId))) {
-    return Promise.resolve(getCachedRateLimits(provider, accountId));
-  }
-  return loadRateLimits(provider, accountId, force, canRetry, true);
+  const age =
+    provider === "pi-anthropic" || provider === "pi-openai-codex"
+      ? 5 * 60_000
+      : QUOTA_POLL_MS[provider];
+  return loadAutomaticRateLimits(provider, accountId, age, canRetry);
 }
 
 /**
@@ -183,17 +192,35 @@ export function loadFreshRateLimits(
   accountId = "default",
   maxAgeMs: number,
 ): Promise<ProviderRateLimits> {
-  const cached = snapshots.get(keyFor(provider, accountId));
-  const fresh = cached?.status === "ok" && Date.now() - cached.updatedAt < maxAgeMs;
-  return loadRateLimits(provider, accountId, !fresh);
+  return loadAutomaticRateLimits(provider, accountId, maxAgeMs);
+}
+
+function loadAutomaticRateLimits(
+  provider: QuotaSource,
+  accountId: string,
+  maxAgeMs: number,
+  canRetry: () => boolean = () => true,
+): Promise<ProviderRateLimits> {
+  const key = keyFor(provider, accountId);
+  const running = pending.get(key);
+  if (running) return running;
+  const cached = snapshots.get(key);
+  if (
+    cached &&
+    (retryTimers.has(key) ||
+      pausedRetries.has(key) ||
+      (cached.retryAt ?? 0) > Date.now() ||
+      Date.now() - cached.updatedAt < maxAgeMs)
+  ) {
+    return Promise.resolve(cached);
+  }
+  return loadRateLimits(provider, accountId, true, canRetry, true, false, maxAgeMs);
 }
 
 function hasWindows(limits: ProviderRateLimits): boolean {
   return Boolean(limits.session || limits.weekly || limits.monthly || limits.resetCredits);
 }
 
-/** Waits between automatic retries of a failed read; the last one repeats. */
-const RETRY_DELAYS_MS = [60_000, 3 * 60_000, 10 * 60_000, 15 * 60_000];
 /**
  * Re-read interval while a Claude token awaits CLI renewal. That read only
  * checks the local credential, so usage appears soon after the CLI renews it.
@@ -216,11 +243,12 @@ function cancelRetry(key: string): void {
 }
 
 function scheduleRetry(
-  provider: RateLimitProvider,
+  provider: QuotaSource,
   accountId: string,
   canRetry: () => boolean,
   background: boolean,
   renewalPending = false,
+  retryAt?: number,
 ): void {
   const key = keyFor(provider, accountId);
   const checks = renewalChecks.get(key) ?? 0;
@@ -245,7 +273,11 @@ function scheduleRetry(
         if (canRetry()) resume();
         else pausedRetries.set(key, resume);
       },
-      renewing ? RENEWAL_CHECK_MS : RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)],
+      retryAt !== undefined
+        ? Math.min(2_147_483_647, Math.max(1_000, retryAt - Date.now()))
+        : renewing
+          ? RENEWAL_CHECK_MS
+          : QUOTA_RETRY_MS[Math.min(attempt, QUOTA_RETRY_MS.length - 1)],
     ),
   );
 }
@@ -268,7 +300,6 @@ export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: 
     renewalChecks.delete(key);
     generations.delete(key);
     pending.delete(key);
-    queuedRefreshes.delete(key);
     snapshots.delete(key);
     const { [key]: _removed, ...rest } = allSnapshots;
     allSnapshots = rest;
@@ -279,7 +310,6 @@ export function clearCachedRateLimits(provider?: RateLimitProvider, accountId?: 
     renewalChecks.clear();
     generations.clear();
     pending.clear();
-    queuedRefreshes.clear();
     snapshots.clear();
     allSnapshots = {};
   }

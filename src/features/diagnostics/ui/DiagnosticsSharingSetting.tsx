@@ -20,9 +20,8 @@ import { diagnosticResultText } from "./diagnosticsCopy";
 const NOTE_MAX = 2000;
 
 /**
- * Off / Ask me / Send automatically for diagnostic logs, the line that says what a non-Off mode
- * does, and a manual "Send logs now" whose optional note is asked in a dialog. The retention
- * explanation belongs in the info icon of the row that hosts this control (Settings → Privacy).
+ * Diagnostic sharing modes and their help, plus manual report review with an optional note.
+ * The retention explanation belongs in the info icon of the host row (Settings → Privacy).
  */
 export function DiagnosticsSharingSetting() {
   useLocale();
@@ -37,7 +36,7 @@ export function DiagnosticsSharingSetting() {
     const ok = await confirm({
       title: t("Send logs now"),
       message: t("Help us fix crashes by sending redacted app logs."),
-      confirmLabel: t("Send"),
+      confirmLabel: t("Review report"),
       tone: "neutral",
       body: (
         <TextField
@@ -67,8 +66,8 @@ export function DiagnosticsSharingSetting() {
           <InfoPopover label={t("Share diagnostic logs")}>
             <Text as="p" size="caption" tone="secondary">
               {mode === "auto"
-                ? t("After a crash they are sent automatically, and once a week.")
-                : t("After a crash you are asked whether to send them.")}
+                ? t("Review a crash report or weekly logs before they are sent automatically.")
+                : t("Every report requires approval.")}
             </Text>
           </InfoPopover>
         ) : null}
@@ -77,22 +76,26 @@ export function DiagnosticsSharingSetting() {
           value={mode}
           onValueChange={(value) => setDiagnosticsMode(value as DiagnosticsMode)}
           options={[
-            { value: "off", label: t("Off") },
-            { value: "ask", label: t("Ask me") },
-            { value: "auto", label: t("Send automatically") },
+            { value: "off", label: t("Do not send") },
+            { value: "ask", label: t("Ask every time") },
+            { value: "auto", label: t("Send every time") },
           ]}
         />
         <Button
           variant="ghost"
           size="sm"
           loading={busy}
+          disabled={mode === "off"}
+          disabledReason={t("Choose a diagnostic sharing mode to review a report.")}
           onClick={() => send().catch(() => undefined)}
         >
           {t("Send logs now")}
         </Button>
       </div>
       {result ? (
-        <InlineMessage tone={result === "sent" ? "success" : "danger"}>
+        <InlineMessage
+          tone={result === "sent" ? "success" : result === "declined" ? "info" : "danger"}
+        >
           {diagnosticResultText(result)}
         </InlineMessage>
       ) : null}

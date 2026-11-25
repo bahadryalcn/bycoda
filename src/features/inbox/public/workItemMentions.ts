@@ -1,6 +1,6 @@
 /** Work-item mention contract for chat composer and outgoing turns. */
 export type { InboxItem, InboxProvider } from "../model/githubTasks";
-export { WorkItemSearchError } from "../model/workItemMentionSearch";
+export { WorkItemSearchError, searchWorkItemMentions } from "../model/workItemMentionSearch";
 export { InboxProviderMark } from "../ui/InboxProviderMark";
 export {
   WORK_ITEM_ALIASES,

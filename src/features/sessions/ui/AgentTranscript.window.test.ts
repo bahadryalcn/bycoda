@@ -76,6 +76,7 @@ it("keeps pending approval and live output mounted outside bounded historical wi
     "Open this request in its conversation to respond.",
   );
   expect(host.querySelector('[data-transcript-turn="u-199"]')).not.toBeNull();
+  expect(host.textContent).toContain("Load newer messages");
   expect(
     [...host.querySelectorAll("button")].some((button) =>
       button.textContent?.includes("Jump to latest"),
@@ -86,6 +87,16 @@ it("keeps pending approval and live output mounted outside bounded historical wi
   expect(host.querySelector('[data-transcript-turn="u-199"]')).not.toBeNull();
   // Twenty tail turns plus the still unresolved original approval, never a hidden permission action.
   expect(host.querySelectorAll("[data-transcript-turn]")).toHaveLength(21);
+});
+
+it("offers only the live jump when the last turn is already shown below the history page", () => {
+  render(conversation().slice(0, 122));
+  act(() => reveal?.("u-0"));
+
+  expect(host.querySelectorAll("[data-transcript-turn]")).toHaveLength(61);
+  expect(host.querySelector('[data-transcript-turn="u-60"]')).not.toBeNull();
+  expect(host.textContent).toContain("Jump to latest");
+  expect(host.textContent).not.toContain("Load newer messages");
 });
 
 it("retains a reader's selected historical DOM while latest output arrives", () => {

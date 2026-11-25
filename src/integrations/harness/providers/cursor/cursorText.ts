@@ -40,7 +40,7 @@ type LiveText = {
   process: ChildProcessHandle;
   acp: AcpClient;
   cwd: string;
-  model: string;
+  model?: string;
   settingsKey: string;
   acpSessionId: string;
   collecting: boolean;
@@ -176,7 +176,7 @@ async function ensureLive(
   operationContext?: HarnessOperationContext,
   retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
-  const model = requestedModel?.trim() || TEXT_MODEL;
+  const model = requestedModel?.trim() || undefined;
   const settingsKey = modelSettingsKey(modelSettings);
   const generation = stopGeneration;
   const current = live;
@@ -209,7 +209,7 @@ async function ensureLive(
 
 async function startLive(
   cwd: string,
-  model = TEXT_MODEL,
+  model?: string,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
   retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
@@ -320,7 +320,7 @@ async function openSession(
   session: LiveText,
   writer: AcpWriterView,
   cwd: string,
-  model: string,
+  model?: string,
   modelSettings?: Record<string, string>,
 ): Promise<void> {
   const setup = await writer.request<{
@@ -335,29 +335,28 @@ async function openSession(
     .catch(() => undefined);
 
   const modelConfigId = extractModelConfigId(setup.configOptions);
+  const modelId = model ?? TEXT_MODEL;
   await writer
     .request(
       "session/set_config_option",
       {
         sessionId: acpSessionId,
         configId: modelConfigId,
-        value: model,
+        value: modelId,
       },
       REQUEST_TIMEOUT_MS,
     )
     .catch(() =>
       writer
-        .request(
-          "session/set_model",
-          { sessionId: acpSessionId, modelId: model },
-          REQUEST_TIMEOUT_MS,
-        )
-        .catch(() => undefined),
+        .request("session/set_model", { sessionId: acpSessionId, modelId }, REQUEST_TIMEOUT_MS)
+        .catch((error: unknown) => {
+          if (model) throw error;
+        }),
     );
 
   for (const [settingId, value] of Object.entries(modelSettings ?? {})) {
     const configId = resolveSettingConfigId(setup.configOptions, settingId);
-    if (!configId) continue;
+    if (!configId || configId === modelConfigId) continue;
     await writer
       .request(
         "session/set_config_option",

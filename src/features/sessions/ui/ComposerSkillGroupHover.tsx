@@ -4,12 +4,7 @@ import { observeResize } from "../../../shared/lib/observeResize";
 import { Popover } from "../../../shared/ui/Popover";
 import { Text } from "../../../shared/ui/Text";
 import { SkillIcon } from "../../../shared/ui/icons";
-import {
-  HOVER_CARD_CLOSE_MS,
-  HOVER_CARD_OPEN_MS,
-  TOOLTIP_WARM_MS,
-  useHoverIntent,
-} from "../../../shared/ui/Tooltip";
+import { HOVER_CARD_CLOSE_MS, useHoverIntent } from "../../../shared/ui/Tooltip";
 
 export type ComposerSkillGroup = { name: string; members: readonly string[] };
 
@@ -42,10 +37,7 @@ export function ComposerSkillGroupHover({
   groups: ReadonlyMap<string, ComposerSkillGroup>;
 }) {
   const intent = useHoverIntent({
-    group: "hover-card",
-    openDelay: HOVER_CARD_OPEN_MS,
     closeDelay: HOVER_CARD_CLOSE_MS,
-    warmMs: TOOLTIP_WARM_MS,
   });
   // Null means the next hit test reads the rects again. Cleared when the draft, the textarea
   // size or any scroll position changes, because the rects are viewport-relative.

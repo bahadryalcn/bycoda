@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -18,6 +19,7 @@ type Props = {
 /** Reviewer evidence is a recorded result, never a live check of the working copy. */
 export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }: Props) {
   useLocale();
+  const [showBadges, setShowBadges] = useState(false);
   const expected = readTaskInstructions(task.prompt)?.acceptance ?? [];
   if (!expected.length) return null;
   const report = readTaskAcceptanceReport(task.verification?.acceptance);
@@ -33,7 +35,15 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
       record?.verdict === "verified" && !record.evidence.some((item) => item.trim())
         ? "unresolved"
         : (record?.verdict ?? "unresolved");
-    return { criterion, record, verdict };
+    const label =
+      verdict === "verified"
+        ? t("Verified")
+        : verdict === "failed"
+          ? t("Failed")
+          : record
+            ? t("Unresolved")
+            : t("Not verified");
+    return { criterion, record, verdict, label };
   });
   const verified = rows.filter((row) => row.verdict === "verified").length;
   const failed = rows.filter((row) => row.verdict === "failed").length;
@@ -43,6 +53,11 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
       <Disclosure
         className="min-w-0"
         variant="row"
+        onClickCapture={(event) => {
+          // A summary click (including keyboard activation) prepares the badges before paint.
+          if (!event.currentTarget.open) setShowBadges(true);
+        }}
+        onOpenChange={setShowBadges}
         summary={
           <>
             <Text weight="medium" size="inherit" tone="inherit">
@@ -105,22 +120,24 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
           </Text>
         )}
         <Text as="ol" size="caption" tone="inherit" className="space-y-3">
-          {rows.map(({ criterion, record, verdict }, index) => (
+          {rows.map(({ criterion, record, verdict, label }, index) => (
             <li key={index} className="min-w-0 space-y-1" data-acceptance-verdict={verdict}>
               <div className="flex min-w-0 flex-wrap items-start gap-2">
-                <Badge
-                  tone={
-                    verdict === "verified" ? "success" : verdict === "failed" ? "danger" : "warning"
-                  }
-                >
-                  {verdict === "verified"
-                    ? t("Verified")
-                    : verdict === "failed"
-                      ? t("Failed")
-                      : record
-                        ? t("Unresolved")
-                        : t("Not verified")}
-                </Badge>
+                {showBadges ? (
+                  <Badge
+                    tone={
+                      verdict === "verified"
+                        ? "success"
+                        : verdict === "failed"
+                          ? "danger"
+                          : "warning"
+                    }
+                  >
+                    {label}
+                  </Badge>
+                ) : (
+                  label
+                )}
                 <Text
                   tone="neutral"
                   size="inherit"

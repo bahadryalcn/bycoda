@@ -86,6 +86,9 @@ Read only the section affected by the change. UI owners are in [source owners](s
   account grants are separate, versioned and default denied. Retain provenance
   through provider calls, reply persistence, history and speech delivery.
 
+- The snapshot's action history is best-effort: it discloses a bounded set of Room/project sources
+  within a time budget and gives way alone, so one silent desktop never fails the whole snapshot.
+
 - Observation journal coverage is source-specific, bounded and metadata-only.
   Cursor acknowledgement follows authorized delivery; gaps require resnapshot.
   Missing live source permits mean unavailable, never an active subscription.

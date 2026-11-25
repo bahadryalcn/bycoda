@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { dedupeInboxPages, refreshInboxPages, type InboxPages } from "./inboxRefresh";
+import {
+  dedupeInboxPages,
+  refreshInboxPages,
+  updateInboxTags,
+  type InboxPages,
+} from "./inboxRefresh";
 import type { InboxItem, InboxUnifiedResult } from "./inboxTypes";
 
 /** Thread `id` last active at `at`; the Host lists `at` descending, then id descending. */
@@ -31,6 +36,17 @@ function loaded(): InboxPages {
     pageParams: [undefined, "70|t7"],
   };
 }
+
+it("patches only the page with the saved thread and requests reconciliation after a concurrent edit", () => {
+  const data = loaded();
+  const original = data.pages[1].items[1];
+  const saved = { ...original, tags: ["vip", "later"] };
+  const updated = updateInboxTags(data, original, saved)!;
+  expect(updated.pageParams).toBe(data.pageParams);
+  expect(updated.pages[0]).toBe(data.pages[0]);
+  expect(updated.pages[1].items[1].tags).toEqual(saved.tags);
+  expect(updateInboxTags(updated, original, { ...original, tags: ["older"] })).toBeUndefined();
+});
 
 it("keeps loaded pages and their cursors when the newest page only gained a thread", () => {
   const data = loaded();

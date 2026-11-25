@@ -1,18 +1,11 @@
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { useT } from "../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
+import { piUsageProvider, type PiUsageProvider } from "../../features/providers/model/piUsage";
 import {
-  fetchPiUsage,
-  piBillingProvider,
-  piUsageProvider,
-  type PiUsageProvider,
-} from "../../features/providers/model/piUsage";
-import {
-  idleRateLimits,
-  RATE_LIMIT_MIN_REFETCH_MS,
-  RATE_LIMIT_POLL_MS,
-} from "../../features/providers/model/rateLimits";
+  loadRateLimitsForQuery,
+  useRateLimitQuery,
+} from "../../features/providers/model/useRateLimitQuery";
 import { UsageProviderChip } from "./UsageProviderChip";
 
 export function PiUsage({ model, now }: { model?: string; now: number }) {
@@ -37,52 +30,15 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
 }
 
 function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: number }) {
-  const [limits, setLimits] = useState(() => idleRateLimits(piBillingProvider(provider)));
-  const refreshRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
-  useEffect(() => {
-    let disposed = false;
-    let inflight = false;
-    let lastFetchAt = 0;
-    const refresh = async (force = false) => {
-      if (disposed || inflight) return;
-      if (
-        !force &&
-        (document.visibilityState !== "visible" ||
-          Date.now() - lastFetchAt < RATE_LIMIT_MIN_REFETCH_MS)
-      )
-        return;
-      inflight = true;
-      setLimits({
-        ...idleRateLimits(piBillingProvider(provider)),
-        status: "fetching",
-      });
-      await fetchPiUsage(provider)
-        .then((result) => {
-          if (!disposed) setLimits(result);
-        })
-        .finally(() => {
-          inflight = false;
-          lastFetchAt = Date.now();
-        });
-    };
-    refreshRef.current = refresh;
-    const onVisible = () => void refresh().catch(console.error);
-    onVisible();
-    const timer = window.setInterval(onVisible, RATE_LIMIT_POLL_MS);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
-    };
-  }, [provider]);
+  const source = `pi-${provider}` as const;
+  const limits = useRateLimitQuery(source, "default", true);
   return (
     <UsageProviderChip
       limits={limits}
       now={now}
-      onRefresh={() => refreshRef.current(true).catch(console.error)}
+      onRefresh={async () => {
+        await loadRateLimitsForQuery(source, "default", true);
+      }}
       refreshing={limits.status === "fetching"}
       presentation={{
         sourceLabel: "Pi's saved OAuth account",

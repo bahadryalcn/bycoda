@@ -7,10 +7,7 @@
 //! One overlay belongs to one workspace window and closes with it.
 
 use serde::{Deserialize, Serialize};
-use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, Monitor, PhysicalPosition, WebviewWindow};
 
 use crate::window::is_workspace_window;
 
@@ -173,13 +170,10 @@ pub async fn voice_overlay_open(
         let _ = existing.set_focus();
         return Ok(label);
     }
-    let overlay = crate::webview_args::inherit_main_browser_args(
+    let overlay = crate::webview_args::new_app_window(
         &app,
-        WebviewWindowBuilder::new(
-            &app,
-            &label,
-            WebviewUrl::App(format!("voice-overlay.html?owner={owner}").into()),
-        ),
+        &label,
+        format!("voice-overlay.html?owner={owner}"),
     )
     .title(&app.package_info().name)
     .inner_size(width, height)
@@ -187,7 +181,6 @@ pub async fn voice_overlay_open(
     .maximizable(false)
     .minimizable(false)
     .decorations(false)
-    .transparent(true)
     // macOS shadows follow the page's alpha. Elsewhere an undecorated
     // transparent window would get a rectangular frame, so the page draws
     // its own outline instead.

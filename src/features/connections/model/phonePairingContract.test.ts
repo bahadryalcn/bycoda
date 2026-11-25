@@ -101,6 +101,9 @@ describe("phone pairing wire validation", () => {
 
   it("keeps arbitrary native diagnostic content out of UI error copy", () => {
     expect(phonePairingError(new Error("ticket=secret CLI output"))).toBe("connection");
+    expect(phonePairingError(new Error("Device management permission required."))).toBe(
+      "management-required",
+    );
     expect(phonePairingError(new Error("Unknown method: mobile.pairing.create"))).toBe(
       "host-update",
     );

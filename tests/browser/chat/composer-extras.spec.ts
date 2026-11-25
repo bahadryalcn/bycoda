@@ -88,10 +88,18 @@ for (const theme of ["light", "dark"]) {
       expect(
         await page.evaluate(() => (window as unknown as { refreshEvents: number }).refreshEvents),
       ).toBe(1);
+      // Without a sidebar the bell sits alone at the footer's start; the other tools form one group.
+      const bell = bar.getByRole("button", { name: "Notifications", exact: true });
       const actions = bar.locator(
-        'nav button:visible, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
+        'nav button:visible, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"]',
       );
-      await expect(actions).toHaveCount(6);
+      await expect(actions).toHaveCount(5);
+      const bellBox = await bell.evaluate((button) => {
+        const box = button.getBoundingClientRect();
+        const icon = button.querySelector("svg")!.getBoundingClientRect();
+        return { x: box.x, width: box.width, height: box.height, iconWidth: icon.width };
+      });
+      expect(bellBox).toMatchObject({ width: 28, height: 28, iconWidth: 14 });
       const boxes = await actions.evaluateAll((buttons) =>
         buttons
           .map((button) => {
@@ -114,6 +122,7 @@ for (const theme of ["light", "dark"]) {
         expect(box.iconHeight).toBe(14);
         if (index > 0) expect(box.x - boxes[index - 1].x - boxes[index - 1].width).toBe(4);
       }
+      expect(bellBox.x).toBeLessThan(boxes[0].x);
       expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: `temp/verification/2026-11-15-workspace-footer/footer-${theme}-${width}.png`,
@@ -2371,14 +2380,14 @@ test("model picker aligns account rows and keeps quota readable in both themes a
       for (const count of [2, 3]) {
         await page.setViewportSize({ width, height: 850 });
         await page.goto(
-          `/tests/browser/chat/composer-extras.html?chat-layout&accounts=${count}&account-usage&theme=${theme}`,
+          `/tests/browser/chat/composer-extras.html?chat-layout&accounts=${count}&account-usage&stale-usage&theme=${theme}`,
         );
         await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
         const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
         if (count === 3) {
           const trigger = panel.locator("[data-model-account-menu]");
           const account = trigger.getByText("personal", { exact: true });
-          const quota = trigger.getByText("8% used", { exact: true });
+          const quota = trigger.getByText("92% remaining", { exact: true });
           await expect(quota).toBeVisible();
           const accountBox = (await account.boundingBox())!;
           const quotaBox = (await quota.boundingBox())!;
@@ -2395,8 +2404,10 @@ test("model picker aligns account rows and keeps quota readable in both themes a
         const rows = panel.locator("[data-model-account-list]").getByRole("radio");
         await expect(rows).toHaveCount(count);
         await expect(rows.first()).toBeChecked();
-        await expect(rows.first()).toContainText("8% used");
-        await expect(rows.nth(1)).toContainText("35% used");
+        await expect(rows.first()).toContainText("92% remaining");
+        await expect(rows.nth(1)).toContainText("47% remaining");
+        await expect(rows.nth(1).getByRole("meter")).toHaveAttribute("aria-valuenow", "47");
+        await expect(rows.nth(1)).toContainText("Refresh failed. Updated 24m ago");
         await expect(rows.last()).toBeInViewport();
         const first = (await rows.first().boundingBox())!;
         const last = (await rows.last().boundingBox())!;
@@ -2419,7 +2430,7 @@ test("model picker aligns account rows and keeps quota readable in both themes a
           await expect(rows.nth(1)).toBeChecked();
           await expect(rows.nth(1)).toBeFocused();
         } else {
-          await expect(rows.last()).toContainText("100% used");
+          await expect(rows.last()).toContainText("0% remaining");
         }
       }
     }

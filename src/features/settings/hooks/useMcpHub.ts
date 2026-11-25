@@ -40,6 +40,7 @@ export type McpHub = {
   signIn: (name: string) => Promise<void>;
   cancelSignIn?: () => void;
   signOut: (name: string) => Promise<void>;
+  accountProfile?: (name: string) => Promise<string | undefined>;
   manageServer?: (
     scope: "user" | "project",
     input: ManagedMcpRequest,
@@ -350,6 +351,14 @@ export function useMcpHub(
     signIn,
     cancelSignIn,
     signOut,
+    accountProfile: async (name) => {
+      const result = await request<{ servers: McpOAuthServer[] }>(
+        await machineId(),
+        "mcp.oauth.status",
+        { ...params, profileFor: name },
+      );
+      return result.servers.find((server) => server.name === name)?.profile;
+    },
     projectCredentials:
       scope || loading?.managedServers
         ? async (operation, name, values) => {

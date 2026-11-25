@@ -27,7 +27,7 @@ asynchronous results.
 
 Execution, frame evidence and mounted panel are separate preview results. Viewport change
 invalidates annotations; duplicate request identity cannot renavigate. Dock follows active
-canonical conversation. Detached presentation follows by default or pins without changing
+canonical conversation. Detached presentation follows focus and allows manual view selection without changing
 composer ownership or browser leases; retain hidden drafts and stop hidden polling.
 Native transfers require destination mount acknowledgement. Configured native window creation
 retains main WebView2 environment options/data directory. URLs contain bounded presentation
@@ -44,6 +44,13 @@ The desktop browser's read-only binary path uses the same project or owner
 presentation scope as `browser.frame`. The native viewer owns the saved route
 and retains the newest packet. The panel checks document identity around
 decode, and its existing frame RPC covers unsupported Hosts and Room views.
+
+Desktop local previews admit only verified local tool targets and loopback
+HTTP(S) addresses. An unmanaged native WebView draws directly into the
+window without the application IPC or asset protocols. It owns temporary
+browser data and is hidden behind workbench overlays or inactive tabs. The
+panel switches to the existing shared browser for annotations, recording and
+agent-visible page state.
 
 ## Draft transfer and recovery
 

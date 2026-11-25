@@ -40,8 +40,11 @@ it("follows the measured input while you speak and stays flat when muted", () =>
   expect(loud).toBeGreaterThan(4);
 
   act(() =>
-    root.render(createElement(VoiceCore, { state: "muted", level, name: "", avatar: undefined })),
+    root.render(
+      createElement(VoiceCore, { state: "connected", level, name: "", avatar: undefined }),
+    ),
   );
+  expect(core.dataset.pose).toBe("connected");
   const quiet = Math.max(...[...host.querySelectorAll("[data-spoke]")].map(spokeLength));
   expect(quiet).toBeCloseTo(1, 1);
 });
@@ -119,13 +122,10 @@ it("states where audio goes only when it leaves this computer", () => {
     statusText: "Listening",
     sessionStatusText: "",
     privacy: "Audio is sent to the provider while voice is on.",
-    workspace: false,
-    globalScope: true,
     name: "Arif",
     avatar: undefined,
     stage: true,
     caption: "Latest spoken line",
-    onScopeChange: () => {},
     onStopWork: () => {},
   };
   act(() => root.render(createElement(VoiceCompanionStatus, props)));

@@ -7,6 +7,7 @@ import { meteredTurnUsage, type UsageTurnReport } from "../../usage/public/usage
 import { isAccountMockMode } from "./accountClient";
 import type { AccountNative } from "./accountNative";
 import { installationId } from "./accountPrivacy";
+import { dataTransfers, jsonSharingFile, sharingMode, type SharingMode } from "../../data-sharing";
 
 const DAY_MS = 86_400_000;
 const RETRY_MS = 10 * 60_000;
@@ -24,6 +25,20 @@ const sharing = createStoredSetting({
 
 export const subscribeAnonymousUsage = sharing.subscribe;
 export const isAnonymousUsageEnabled = () => sharing.load() > 0;
+const tokensMode = sharingMode("tokens", "ask");
+export const getTokensMode = (): SharingMode =>
+  isAnonymousUsageEnabled() ? tokensMode.load() : "off";
+export function subscribeTokensMode(listener: () => void) {
+  const stop = tokensMode.subscribe(listener);
+  const stopSharing = sharing.subscribe(listener);
+  return () => {
+    stop();
+    stopSharing();
+  };
+}
+export function setTokensMode(mode: SharingMode) {
+  if (tokensMode.save(mode)) setAnonymousUsageEnabled(mode !== "off");
+}
 
 export function setAnonymousUsageEnabled(enabled: boolean): void {
   if (enabled !== isAnonymousUsageEnabled()) sharing.save(enabled ? Date.now() : 0);
@@ -72,6 +87,7 @@ async function sendCompletedDays(
   since: number,
   end: number,
   signal: AbortSignal,
+  review: boolean,
 ): Promise<boolean> {
   const status = await native.status();
   if (!status.configured || !status.apiBaseUrl || signal.aborted) return false;
@@ -98,12 +114,28 @@ async function sendCompletedDays(
         signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
       }),
   });
-  await client.anonymousUsage({ body: body.data });
+  const send = () => client.anonymousUsage({ body: body.data }, { signal });
+  if (review)
+    return dataTransfers.run(
+      {
+        kind: "tokens",
+        destination: status.apiBaseUrl.replace(/\/+$/, "") + "/v1/anonymous/usage",
+        linkedToAccount: false,
+        files: [jsonSharingFile("anonymous-usage.json", body.data)],
+      },
+      getTokensMode,
+      send,
+      signal,
+    );
+  await send();
   return true;
 }
 
 /** Sample completed UTC days on launch and day rollover. The server deduplicates retries. */
-export function startAnonymousUsage(native: Pick<AccountNative, "status">): () => void {
+export function startAnonymousUsage(
+  native: Pick<AccountNative, "status">,
+  review = false,
+): () => void {
   if (isAccountMockMode()) return () => undefined;
   let completed = "";
   let running: AbortController | undefined;
@@ -114,7 +146,7 @@ export function startAnonymousUsage(native: Pick<AccountNative, "status">): () =
     if (!since || since >= end || completed === key || running) return;
     const request = new AbortController();
     running = request;
-    void sendCompletedDays(native, since, end, request.signal)
+    void sendCompletedDays(native, since, end, request.signal, review)
       .then((sent) => {
         if (sent) completed = key;
       })

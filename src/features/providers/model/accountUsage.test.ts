@@ -9,7 +9,7 @@ const fetches = vi.hoisted(() => ({
   codex: vi.fn<(accountId: string) => Promise<ProviderRateLimits>>(),
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 vi.mock("./rateLimitsFetch", () => ({
   fetchClaudeRateLimits: fetches.claude,
   fetchCodexRateLimits: fetches.codex,
@@ -78,7 +78,14 @@ describe("accountStatus", () => {
     );
     expect(
       accountStatus(limits(window(10), null, { status: "error", error: "Sign-in expired" }), now),
-    ).toMatchObject({ tone: "unknown", label: "Sign-in expired" });
+    ).toMatchObject({
+      tone: "unknown",
+      label: "Refresh failed. Updated just now",
+      detail: "90% left",
+    });
+    expect(
+      accountStatus(limits(window(10), null, { status: "error", reason: "signedOut" }), now),
+    ).toEqual({ tone: "unknown", label: "Not signed in", detail: null });
     expect(
       bestAlternativeAccount(
         [account("stale")],
@@ -305,24 +312,22 @@ describe("useProviderAccountUsage", () => {
     expect(fetches.claude).toHaveBeenCalledTimes(1);
   });
 
-  it("runs an explicit refresh after an in-flight first load", async () => {
+  it("joins an explicit refresh to an in-flight first load", async () => {
     let complete: ((value: ProviderRateLimits) => void) | undefined;
-    fetches.claude
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            complete = resolve;
-          }),
-      )
-      .mockResolvedValueOnce(limits(window(75)));
+    fetches.claude.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
 
     const first = loadRateLimits("claude", "default");
     const refreshed = loadRateLimits("claude", "default", true);
     expect(fetches.claude).toHaveBeenCalledTimes(1);
     complete?.(limits(window(10)));
     await first;
-    expect((await refreshed).session?.usedPercent).toBe(75);
-    expect(fetches.claude).toHaveBeenCalledTimes(2);
+    expect((await refreshed).session?.usedPercent).toBe(10);
+    expect(fetches.claude).toHaveBeenCalledTimes(1);
   });
 });
 

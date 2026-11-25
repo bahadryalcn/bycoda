@@ -8,6 +8,7 @@ import { HarnessIcon } from "../../../../shared/ui/identity/HarnessIcon";
 import { MoreHorizontal } from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import { AccountColorDot } from "../../../providers/public/accountIdentity";
+import { PROVIDER_ACCOUNT_COLORS } from "../../../providers/public/providerAccounts";
 import type { AccountGroup } from "./orderGrouping";
 
 /** The account a run of rows belongs to: colour, name, provider, live quota and account actions. */
@@ -33,7 +34,10 @@ export function AccountGroupHeader({
   const anchor = useRef<HTMLButtonElement>(null);
   const { account, harness, rows } = group;
   const label =
-    account?.label ?? (group.accountId ? t("Unavailable account") : HARNESS_TITLE[harness]);
+    account?.label ??
+    (group.accountId && group.accountId !== "default" && group.accountsKnown !== false
+      ? t("Unavailable account")
+      : HARNESS_TITLE[harness]);
   return (
     <div className="flex items-center gap-2 px-4 pt-2 pb-1">
       <Checkbox
@@ -42,7 +46,15 @@ export function AccountGroupHeader({
         aria-label={t("Select all models of {p0}", { p0: label })}
         onChange={(event) => onSelectAll(event.currentTarget.checked)}
       />
-      {account ? <AccountColorDot account={account} /> : null}
+      {account ? (
+        <AccountColorDot
+          account={{
+            id: account.id,
+            provider: harness,
+            color: PROVIDER_ACCOUNT_COLORS.find((color) => color.id === account.color)?.id,
+          }}
+        />
+      ) : null}
       <HarnessIcon harness={harness} size="sm" />
       <Text size="secondary" weight="medium" truncate className="min-w-0">
         {label}

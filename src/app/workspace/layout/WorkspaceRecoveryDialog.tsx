@@ -56,6 +56,7 @@ export function WorkspaceRecoveryDialog({
         title={t("Recovered work")}
         onClose={props.onClose}
         closeDisabled={busy}
+        hideCloseTooltip
         size="md"
         fitViewport
       >

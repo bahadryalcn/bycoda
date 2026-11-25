@@ -1,17 +1,30 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import { TreeFragment, type Tree } from "@lezer/common";
 
-type PreviewBlock = { from: number; to: number; text: string; definition: boolean };
+type PreviewBlock = {
+  from: number;
+  to: number;
+  text: string;
+  definition: boolean;
+  plainParagraph: boolean;
+};
 export type NotePreviewBlock = PreviewBlock & { key: number };
 
 function blocksFromTree(body: string, tree: Tree): PreviewBlock[] {
   const blocks: PreviewBlock[] = [];
   for (let node = tree.topNode.firstChild; node; node = node.nextSibling) {
+    const text = body.slice(node.from, node.to);
     blocks.push({
       from: node.from,
       to: node.to,
-      text: body.slice(node.from, node.to),
+      text,
       definition: node.name === "LinkReference",
+      // The two parsers have different extensions. Only bypass rich rendering for
+      // literal prose; keep autolinks, workspace references, hard breaks and markup with it.
+      plainParagraph:
+        node.name === "Paragraph" &&
+        text === text.trim() &&
+        !/[^\p{L}\p{M}\p{N} ,.'’!?]|\.(?=[^ ])/u.test(text),
     });
   }
   return blocks;
@@ -49,7 +62,9 @@ export class NotePreviewParser {
     const raw = blocksFromTree(body, tree);
     const previous = this.blocks;
     const equal = (left: PreviewBlock, right: PreviewBlock) =>
-      left.text === right.text && left.definition === right.definition;
+      left.text === right.text &&
+      left.definition === right.definition &&
+      left.plainParagraph === right.plainParagraph;
     let prefix = 0;
     while (prefix < Math.min(raw.length, previous.length) && equal(raw[prefix], previous[prefix]))
       prefix += 1;

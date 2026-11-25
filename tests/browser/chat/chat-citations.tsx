@@ -8,7 +8,12 @@ import { InterruptedNotice } from "../../../src/features/sessions/ui/Interrupted
 import { newSession } from "../../../src/features/sessions/model/session";
 import { markTurnInterrupted } from "../../../src/features/sessions/model/inFlight";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
-import type { QuoteRequest } from "../../../src/features/sessions/model/quoteDraft";
+import {
+  ADD_TO_CHAT_EVENT,
+  type AddToChatRequest,
+  type QuoteRequest,
+} from "../../../src/features/sessions/model/quoteDraft";
+import { DiffCommentComposer } from "../../../src/features/source-control/ui/DiffCommentComposer";
 import type { Block } from "../../../src/features/sessions/model/session";
 import {
   modelsFor,
@@ -23,6 +28,7 @@ import "../../../src/styles/index.css";
 
 const sessionId = "citation-fixture-session";
 const showRecovery = new URLSearchParams(location.search).has("recovery");
+const showFileComment = new URLSearchParams(location.search).has("fileComment");
 const recoverySession = markTurnInterrupted({
   ...newSession("claude", "/fixture/chat-citations"),
   busy: true,
@@ -106,6 +112,17 @@ function Fixture() {
   const [submitted, setSubmitted] = useState("");
   const [continued, setContinued] = useState(false);
   const requestId = useRef(0);
+  const [commentAnchor, setCommentAnchor] = useState<HTMLElement | null>(null);
+  // Route the shared Add to chat event to the fixture's mounted composer.
+  useEffect(() => {
+    if (!showFileComment) return;
+    const receive = (event: Event) => {
+      const detail = (event as CustomEvent<AddToChatRequest>).detail;
+      setQuoteRequest({ id: ++requestId.current, ...detail });
+    };
+    window.addEventListener(ADD_TO_CHAT_EVENT, receive);
+    return () => window.removeEventListener(ADD_TO_CHAT_EVENT, receive);
+  }, []);
   useEffect(() => {
     window.__chatCitationFixture = {
       draft: () => draft,
@@ -129,6 +146,28 @@ function Fixture() {
           Isolated component fixture
         </span>
       </header>
+      {showFileComment ? (
+        <div className="px-5 py-2">
+          <button type="button" onClick={(event) => setCommentAnchor(event.currentTarget)}>
+            Comment on line 149
+          </button>
+          {commentAnchor ? (
+            <DiffCommentComposer
+              path="G:/Working Copy/src/claudeText.ts"
+              target={{
+                anchor: commentAnchor,
+                line: {
+                  kind: "add",
+                  oldNumber: null,
+                  newNumber: 149,
+                  text: "  await startTurn();",
+                },
+              }}
+              onDismiss={() => setCommentAnchor(null)}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1" data-testid="transcript-pane">
         <AgentTranscript
           sessionId={sessionId}

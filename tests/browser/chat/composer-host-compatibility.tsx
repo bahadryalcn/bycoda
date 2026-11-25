@@ -5,6 +5,10 @@ import { Composer } from "../../../src/features/sessions/ui/Composer";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
 import { notifyRemoteRecovered } from "../../../src/features/connections/model/remoteHealth";
 import {
+  cancelAdoptedTurn,
+  observeAdoptedStop,
+} from "../../../src/features/connections/model/adoptedSessionCommands";
+import {
   modelsFor,
   resolveModel,
   findModel,
@@ -33,7 +37,10 @@ const source = {
 };
 
 function Fixture() {
-  const initialMode = new URLSearchParams(location.search).get("mode");
+  const params = new URLSearchParams(location.search);
+  const initialMode = params.get("mode");
+  const adoptedStop = params.has("adopted-stop");
+  const [busy, setBusy] = useState(adoptedStop);
   const [mode, setMode] = useState<WorkspaceMode | undefined>(
     initialMode === "current" || initialMode === "worktree" ? initialMode : undefined,
   );
@@ -45,24 +52,39 @@ function Fixture() {
         <span>Browser fixture · no live Host or provider</span>
         <Button
           onClick={() => {
+            if (adoptedStop) {
+              observeAdoptedStop("c1-compatibility-draft", { revision: 2, status: "idle" });
+              setBusy(false);
+              return;
+            }
             window.c1Host.upgraded = true;
             notifyRemoteRecovered("c1-environment");
           }}
         >
-          Simulate Host upgrade and reconnect
+          {adoptedStop ? "Settle Host turn" : "Simulate Host upgrade and reconnect"}
         </Button>
       </div>
       <ModelSourceContext.Provider value={source}>
         <Composer
           sessionId="c1-compatibility-draft"
           focused
+          busy={busy}
           harness="claude"
           model="claude:sonnet-5"
           runtimeMode="supervised"
           cwd="/fixture/c1-project"
           executionCwd="/fixture/c1-project"
           branch="main"
-          initialDraft="Keep this draft while the Host updates"
+          initialDraft={adoptedStop ? "" : "Keep this draft while the Host updates"}
+          onStop={
+            adoptedStop
+              ? () => {
+                  void cancelAdoptedTurn("c1-compatibility-draft", "fixture-run").catch(
+                    console.error,
+                  );
+                }
+              : undefined
+          }
           inputAriaLabel="Message"
           draftWorkspace
           workspaceMode={mode}

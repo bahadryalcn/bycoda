@@ -282,6 +282,12 @@ function onStorage(event: StorageEvent) {
   }
   publish(loadAll());
 }
-export function useRateLimitHistory() {
-  return useSyncExternalStore(subscribe, getSnapshot, () => empty);
+const emptySnapshot = () => empty;
+const skipSubscription = () => () => {};
+export function useRateLimitHistory(active = true) {
+  return useSyncExternalStore(
+    active ? subscribe : skipSubscription,
+    active ? getSnapshot : emptySnapshot,
+    emptySnapshot,
+  );
 }

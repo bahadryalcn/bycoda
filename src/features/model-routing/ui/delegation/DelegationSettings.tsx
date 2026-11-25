@@ -6,10 +6,8 @@ import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
 import { Plus, X } from "../../../../shared/ui/icons";
 import { Group } from "../../../../shared/ui/settings";
 import { Text } from "../../../../shared/ui/Text";
-import {
-  providerAccounts,
-  supportsProviderAccounts,
-} from "../../../providers/public/providerAccounts";
+import { useModelSource, type ModelSource } from "../../../sessions/public/modelSource";
+import { entryProviderAccount } from "../order/useEntryAccount";
 import {
   inheritedValues,
   layerId,
@@ -43,6 +41,7 @@ export function DelegationSettings({
   onChange: (draft: OrderDraft) => void;
 }) {
   const t = useT();
+  const source = useModelSource();
   const delegation = draft.routing.delegation;
   // An override without keys is not stored, so a freshly added one lives here until it has a key.
   const [pending, setPending] = useState<DelegationLayer[]>([]);
@@ -73,23 +72,29 @@ export function DelegationSettings({
         action={
           <AddOverrideMenu
             targets={free}
+            source={source}
             disabled={disabled}
             onPick={(layer) => setPending((current) => [...current, layer])}
           />
         }
       >
+        {layers.length === 0 ? (
+          <Text as="p" size="secondary" tone="secondary" className="px-4 py-3">
+            {t("Every provider and account uses the defaults above.")}
+          </Text>
+        ) : null}
         {layers.map((layer) => (
-          <div key={layerId(layer)} role="group" aria-label={layerLabel(layer)}>
+          <div key={layerId(layer)} role="group" aria-label={layerLabel(layer, source)}>
             <div className="flex min-h-8 items-center justify-between gap-2">
               <Text size="caption" weight="medium" truncate className="min-w-0">
-                {layerLabel(layer)}
+                {layerLabel(layer, source)}
               </Text>
               <Button
                 variant="ghost"
                 size="sm"
                 iconOnly
                 type="button"
-                label={t("Remove all {p0} overrides", { p0: layerLabel(layer) })}
+                label={t("Remove all {p0} overrides", { p0: layerLabel(layer, source) })}
                 disabled={disabled}
                 onClick={() => {
                   setPending((current) => current.filter((item) => !sameLayer(item, layer)));
@@ -115,22 +120,28 @@ export function DelegationSettings({
 }
 
 /** "Claude" for a provider override, "Claude · Work" for an account override. */
-function layerLabel(layer: DelegationLayer): string {
+function layerLabel(layer: DelegationLayer, source: ModelSource): string {
   if (layer.kind === "global") return "";
   const provider = HARNESS_TITLE[layer.harness];
   if (layer.kind === "provider") return provider;
-  const account = (
-    supportsProviderAccounts(layer.harness) ? providerAccounts(layer.harness) : []
-  ).find((item) => item.id === layer.accountId);
+  const account = entryProviderAccount(
+    {
+      harness: layer.harness,
+      providerAccountId: layer.accountId,
+    },
+    source,
+  );
   return `${provider} · ${account?.label || layer.accountId}`;
 }
 
 function AddOverrideMenu({
   targets,
+  source,
   disabled,
   onPick,
 }: {
   targets: readonly DelegationLayer[];
+  source: ModelSource;
   disabled: boolean;
   onPick: (layer: DelegationLayer) => void;
 }) {
@@ -160,7 +171,7 @@ function AddOverrideMenu({
           items={targets.map((target) => ({
             kind: "item" as const,
             id: layerId(target),
-            label: layerLabel(target),
+            label: layerLabel(target, source),
           }))}
           onPick={(id) => {
             const target = targets.find((item) => layerId(item) === id);

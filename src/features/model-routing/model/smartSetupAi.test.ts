@@ -22,7 +22,7 @@ import { buildSetupPrompt, parsePlanAnswer, planFromAnswer, planSmartSetup } fro
 const names: SetupPoolNames = {
   smartest: "Smartest",
   balanced: "Balanced",
-  fast: "Fast",
+  light: "Low",
   work: "Work",
   personal: "Personal",
 };
@@ -114,7 +114,11 @@ it("keeps only valid keys, known roles and estimated or kind-less answers", () =
 });
 
 it("plans through the routing-setup binding and names the planner", async () => {
-  provider.resolve.mockResolvedValue({ harness: "codex", model: "helper", modelSettings: {} });
+  provider.resolve.mockResolvedValue({
+    harness: "codex",
+    model: "helper",
+    modelSettings: { serviceTier: "ultrafast", reasoningEffort: "high" },
+  });
   provider.run.mockResolvedValue(JSON.stringify(answer));
   const candidates = [make("known", false), make("mystery", true)];
   const result = await planSmartSetup(candidates, names, {});
@@ -124,11 +128,29 @@ it("plans through the routing-setup binding and names the planner", async () => 
   expect(provider.run).toHaveBeenCalledWith(
     expect.objectContaining({
       model: "helper",
+      modelSettings: { serviceTier: "default", reasoningEffort: "high" },
       cwd: "~",
       ephemeral: true,
       timeoutMs: expect.any(Number),
     }),
   );
+});
+
+it("discards Fast groups, includes and bindings returned by a planner", () => {
+  const { plan } = planFromAnswer(
+    [make("known", false)],
+    parsePlanAnswer(
+      JSON.stringify({
+        pools: [
+          { name: "Fast", members: [0] },
+          { name: "Balanced", members: [0], includes: ["Fast"] },
+        ],
+        roles: { "task.worker": { pool: "Balanced" }, "text.title": { pool: "Fast" } },
+      }),
+    )!,
+  );
+  expect(plan.pools).toEqual([{ name: "Balanced", members: [0], includes: [] }]);
+  expect(plan.roles).toEqual({ "task.worker": { pool: "Balanced" } });
 });
 
 it("falls back to the cheapest strong catalog model when no binding exists", async () => {

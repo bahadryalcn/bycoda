@@ -267,6 +267,262 @@ export async function converseWithAssistant(input: {
     fixtureVoice.observations.push(result);
     return { action: "reply", reply: "Two packages finished." };
   }
+  if (input.transcript === "show usage form") {
+    // Composed from shared controls; the button reads the owner's choices through `$bind`.
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Usage report",
+        summary: "Pick what to read, then press the button.",
+        blocks: [
+          {
+            type: "Card",
+            title: "Report",
+            children: [
+              {
+                type: "Stack",
+                direction: "row",
+                children: [
+                  {
+                    type: "Select",
+                    id: "period",
+                    label: "Period",
+                    options: [
+                      { value: "month-to-date", label: "This month" },
+                      { value: "last-30-days", label: "Last 30 days" },
+                    ],
+                  },
+                  {
+                    type: "SegmentedControl",
+                    id: "metric",
+                    label: "Metric",
+                    options: [
+                      { value: "cost", label: "Cost" },
+                      { value: "tokens", label: "Tokens" },
+                    ],
+                  },
+                ],
+              },
+              { type: "TextField", id: "note", label: "Note", placeholder: "Optional" },
+              {
+                type: "Button",
+                label: "Read usage",
+                variant: "primary",
+                requires: ["period"],
+                action: {
+                  action: "workspace.usage.report",
+                  input: { period: { $bind: "period" }, metric: { $bind: "metric" } },
+                },
+              },
+            ],
+          },
+          { type: "DescriptionList", items: [{ label: "Source", value: "Usage dashboard" }] },
+        ],
+      },
+      requestId: "fixture-usage-form",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The form is on screen." };
+  }
+  if (input.transcript === "prepare project session") {
+    await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      requestId: "fixture-session-form",
+      input: {
+        title: "Session draft",
+        summary: "Choose project and draft.",
+        blocks: [
+          {
+            type: "Select",
+            id: "project",
+            label: "Destination",
+            options: [
+              { label: "Current", value: "/fixture" },
+              { label: "Bycoda", value: "/fixture-next" },
+            ],
+          },
+          { type: "TextareaField", id: "draft", label: "Draft text" },
+          {
+            type: "Button",
+            label: "Create session",
+            requires: ["project", "draft"],
+            action: {
+              action: "workspace.sessions.create",
+              input: {
+                projectPath: { $bind: "project" },
+                prompt: { $bind: "draft" },
+                submit: false,
+                harness: "codex",
+              },
+            },
+          },
+        ],
+      },
+    });
+    return { action: "reply", reply: "Choose the destination." };
+  }
+  if (input.transcript === "show composed report") {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Release report",
+        summary: "Everything composed from the shared catalog.",
+        blocks: [
+          { type: "Alert", tone: "warning", title: "One check failed", text: "Lint needs a look." },
+          {
+            type: "Grid",
+            columns: 2,
+            children: [
+              {
+                type: "Card",
+                title: "Totals",
+                children: [
+                  {
+                    type: "StatRow",
+                    label: "Tests",
+                    items: [
+                      { label: "Passed", value: "41" },
+                      { label: "Failed", value: "1" },
+                    ],
+                  },
+                  { type: "Progress", value: 41, max: 42, label: "Passing" },
+                  { type: "StatusText", tone: "failed", text: "Lint failed" },
+                ],
+              },
+              {
+                type: "Card",
+                title: "Share",
+                children: [
+                  {
+                    type: "DonutChart",
+                    label: "Tests by package",
+                    items: [
+                      { label: "Web", value: 30 },
+                      { label: "Host", value: 12 },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            type: "Tabs",
+            children: [
+              {
+                type: "Tab",
+                label: "Trend",
+                children: [
+                  {
+                    type: "LineChart",
+                    label: "Failures",
+                    series: [{ key: "failed", label: "Failed" }],
+                    points: [
+                      { label: "Mon", values: { failed: 3 } },
+                      { label: "Tue", values: { failed: 1 } },
+                      { label: "Wed", values: { failed: 2 } },
+                    ],
+                  },
+                ],
+              },
+              {
+                type: "Tab",
+                label: "Packages",
+                children: [
+                  {
+                    type: "Table",
+                    caption: "Packages",
+                    columns: ["Name", "Status"],
+                    rows: [
+                      ["web", "passed"],
+                      ["host", "failed"],
+                    ],
+                  },
+                ],
+              },
+              {
+                type: "Tab",
+                label: "Options",
+                children: [
+                  { type: "Switch", id: "notify", label: "Notify me", value: true },
+                  { type: "Checkbox", id: "draft", label: "Create draft" },
+                  {
+                    type: "Slider",
+                    id: "retries",
+                    label: "Retries",
+                    min: 0,
+                    max: 5,
+                    step: 1,
+                    value: 2,
+                  },
+                  { type: "TagInput", id: "labels", label: "Labels", value: ["release"] },
+                  {
+                    type: "RadioGroup",
+                    id: "channel",
+                    label: "Channel",
+                    options: [
+                      { value: "stable", label: "Stable", description: "Everyone" },
+                      { value: "beta", label: "Beta" },
+                    ],
+                  },
+                  { type: "DatePicker", id: "day", label: "Ship on", value: "2026-11-30" },
+                ],
+              },
+            ],
+          },
+          { type: "TestResult" },
+          {
+            type: "Disclosure",
+            summary: "Details",
+            children: [{ type: "Code", text: "pnpm check:web", block: true }],
+          },
+        ],
+      },
+      requestId: "fixture-composed-report",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The report is on screen." };
+  }
+  const copyDraft = /^(show|shorten) copyable draft$/.exec(input.transcript)?.[1];
+  if (copyDraft) {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.live_work.present",
+      input: {
+        title: "Release note",
+        blocks: [
+          { kind: "text", text: "Here is the draft you asked for." },
+          {
+            kind: "copy",
+            label: "Draft",
+            text:
+              copyDraft === "show"
+                ? "Voice results can now show text you copy.\n  Press Copy to take it with you."
+                : "Voice results now show copyable text.",
+          },
+          {
+            kind: "actions",
+            items: [
+              {
+                label: "Open next session",
+                action: "workspace.sessions.open",
+                input: {
+                  projectPath: "/fixture-next",
+                  sessionId: "fixture-next",
+                  surface: "project",
+                },
+              },
+            ],
+          },
+        ],
+      },
+      requestId: `fixture-${copyDraft}-copyable-draft`,
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The draft is on screen." };
+  }
   if (input.transcript === "show choices") {
     const selected = await input.execute("present_choices", {
       question: "Which project should I follow?",

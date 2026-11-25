@@ -21,14 +21,19 @@ export async function readUsageReport(
 ): Promise<UsageReport | UsageReportFailure> {
   const accounts = PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts);
   const { window } = usageReportWindows(request, now);
-  const sources = await loadUsageSources(accounts, window.start, window.end);
+  const sources = loadUsageSources(accounts, window.start, window.end);
+  const [reports, turns, prices] = await Promise.all([
+    sources.reports,
+    sources.turns,
+    sources.prices,
+  ]);
   return buildUsageReport({
-    usage: sources.reports.map(({ account, rows }) => ({ account, rows })),
-    turns: sources.turns,
-    pricing: createUsagePricing(sources.prices?.models),
+    usage: reports.map(({ account, rows }) => ({ account, rows })),
+    turns,
+    pricing: createUsagePricing(prices?.models),
     groupFor: railGroupLookup(),
     isLocked: isProjectLocked,
-    accountsFailed: sources.reports.filter((report) => report.failed).length,
+    accountsFailed: reports.filter((report) => report.failed).length,
     now,
     request,
   });

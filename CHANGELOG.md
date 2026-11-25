@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Settings > Chat > Advanced conversation settings > At usage limit, continue on** chooses what a conversation does when its provider stops it at a usage limit.
 - Jira Inbox changes an issue's status from its detail and shares filters across the list, Kanban and backlog views.
 - MCP sign-in can be cancelled while the browser step is pending.
+- Local video and audio files play inline in conversations, above the reply that links them or the sent message that attaches them.
 
 ### Improved
 
@@ -58,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Device and Browser panels obtain control automatically and stream live frames where the Host supports it.
 - Assistant access presets apply one permission level and show **Custom** whenever grants differ.
 - Remote sessions load faster, and workspace file navigation follows the project on each machine.
+- The notification bell sits beside Settings at the bottom of the left sidebar, and moves to the workspace footer when the sidebar is hidden.
 
 ### Fixed
 

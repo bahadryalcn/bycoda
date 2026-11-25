@@ -151,6 +151,7 @@ export function ArchivedConversations({
               itemKey={(entry) => entry.session.id}
               stateKey={`archive-conversations:${cwd}`}
               estimateSize={44}
+              windowThreshold={24}
               renderItem={({ session, title }) => (
                 <ActionHost {...surfaceAttributes({ radius: "none" }, "settings-collection-row")}>
                   <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />

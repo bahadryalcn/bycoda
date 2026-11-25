@@ -74,7 +74,7 @@ describe("voice workspace owner actions", () => {
     const { execute } = setup();
     expect(await execute("workspace.projects.select", { projectPath: "/missing" })).toMatchObject({
       status: "rejected",
-      next: expect.stringContaining("ask how to continue"),
+      next: expect.stringContaining("ask only if a necessary choice remains"),
     });
   });
   it("lists a visible project's run actions without running anything", async () => {

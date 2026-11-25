@@ -34,7 +34,7 @@ the bycoda app skill owns tool usage, never granting operation authority here.
 - Pending/error/cancellation stay at initiating controls. Target generations and cleanup fence delayed results across navigation/close; native/mobile keep their own acceptance contracts.
 - Discovery transport/domain filters, schema/service bounds and cursor/default recovery stay aligned; validation identifies fields/types/bounds without echoing caller input.
 - Preview execution, frame evidence and mounted panel are separate. Viewport changes invalidate annotations; repeated immutable request IDs never renavigate.
-- Dock follows active canonical conversation; detached view follows or pins without changing composer ownership/leases. Retain hidden drafts, stop hidden polling, require mount ACK.
+- Dock follows active canonical conversation; detached view follows focus and allows manual view selection without changing composer ownership/leases. Retain hidden drafts, stop hidden polling, require mount ACK.
 - Detached windows retain native configured-window environment/data directory. URLs carry bounded presentation metadata only; drafts use targeted native events, never URLs/layout storage.
 - Input retains same-target frames, document/lease checks and serialization. Capture IDs/comments remain annotation-scoped; geometry persists bounded/versioned, DOM handles stay ephemeral. Transfers match source, destination, conversation, tool and machine. Uncertain retry retains immutable identity/payload and reconciles receipts; changed content preserves both drafts.
 

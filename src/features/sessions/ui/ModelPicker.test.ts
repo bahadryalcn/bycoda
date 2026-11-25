@@ -289,7 +289,7 @@ describe("model picker", () => {
     expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(1);
   });
 
-  it("refreshes delegation settings when enabled catalog models change", async () => {
+  it("refreshes open delegation settings when enabled catalog models change", async () => {
     const models = [
       { id: "claude:opus-4-6", name: "Reactive Opus", harness: "claude" as const },
       { id: "claude:sonnet-5", name: "Reactive Sonnet", harness: "claude" as const },
@@ -319,6 +319,9 @@ describe("model picker", () => {
             }),
           ),
         ),
+      );
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click(),
       );
       const options = () => JSON.stringify(settings.mock.results.at(-1)?.value);
       expect(options()).toContain("Reactive Sonnet");

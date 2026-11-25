@@ -333,7 +333,7 @@ export function SessionRecoveryPanel({
         size={showToolbar ? undefined : "sm"}
         iconOnly
         label={t("Recovery list maintenance")}
-        tooltip={t("Recovery list maintenance")}
+        title=""
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         className={showToolbar ? "ms-auto" : undefined}
@@ -461,13 +461,21 @@ export function SessionRecoveryPanel({
                         {HARNESS_TITLE[stub.harness]} · {modelDisplayName(stub.model, stub.harness)}
                       </p>
                     </Text>
-                    <Text as="div" size="caption" tone="secondary">
-                      <RecoveryStatusBadge key={status} status={status} /> ·{" "}
-                      {activityAt
-                        ? t("Last activity: {p0}", { p0: formatRelative(activityAt, Date.now()) })
-                        : t("Recovered {p0}", {
-                            p0: formatRelative(recovery.capturedAt, Date.now()),
-                          })}
+                    <Text
+                      as="div"
+                      size="caption"
+                      tone="secondary"
+                      className="flex flex-wrap items-center gap-x-1"
+                    >
+                      <RecoveryStatusBadge key={status} status={status} />
+                      <span>
+                        <span aria-hidden="true">· </span>
+                        {activityAt
+                          ? t("Last activity: {p0}", { p0: formatRelative(activityAt, Date.now()) })
+                          : t("Recovered {p0}", {
+                              p0: formatRelative(recovery.capturedAt, Date.now()),
+                            })}
+                      </span>
                     </Text>
                     {verification ? (
                       <RecoveryVerification
@@ -499,7 +507,7 @@ export function SessionRecoveryPanel({
                     disabled={pending}
                     loading={pendingAction === `remove:${stub.id}`}
                     aria-label={t("Remove {p0} from recovery list", { p0: title })}
-                    tooltip={t("Remove from recovery list. Session history is kept.")}
+                    title=""
                     onClick={() => void remove([stub.id], `remove:${stub.id}`)}
                   >
                     <X className="icon-md" aria-hidden="true" />
@@ -642,6 +650,7 @@ export function SessionRecoveryPanel({
       onClose={pending ? () => {} : onClose}
       size="md"
       scroll="none"
+      hideCloseTooltip
       fitViewport
     >
       {content}

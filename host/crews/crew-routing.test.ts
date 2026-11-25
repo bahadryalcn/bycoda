@@ -113,11 +113,11 @@ async function setup(entries: ModelRoutingEntry[]) {
   const current = await readModelRouting(store);
   await saveModelRouting(
     store,
-    {
+    () => ({
       ...structuredClone(EMPTY_MODEL_ROUTING),
       entries,
       delegation: { global: { crossAdvisor: "codex:advisor" }, providers: {}, accounts: {} },
-    },
+    }),
     current.version,
     1,
   );

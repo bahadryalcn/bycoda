@@ -37,8 +37,13 @@ import {
   revokeAttachment,
 } from "../model/attachments";
 import { collectSkippedAttachments } from "../model/attachmentSkips";
+import { beginAttachmentRead, type AttachmentReadCapacity } from "../model/attachmentReadCapacity";
 import { attachmentDraftTokens, insertAtSelection } from "../model/attachmentTokens";
-import { extractChatCitations, withChatCitations, type ChatCitation } from "../model/chatCitation";
+import {
+  extractChatCitations,
+  withChatCitations,
+  type ComposerCitation,
+} from "../model/chatCitation";
 import { removeCitationFromText } from "../model/citationTokens";
 import { HARNESS_TITLE } from "../model/session";
 import { ComposerAddMenu } from "./ComposerAddMenu";
@@ -150,7 +155,7 @@ function QueueEditContent({
   // Quotes live beside the text, as in the composer; the row's text keeps them serialized.
   const [source] = useState(() => extractChatCitations(message.text));
   const body = { ...message, text: source.text };
-  const [citations, setCitations] = useState<ChatCitation[]>(source.citations);
+  const [citations, setCitations] = useState<ComposerCitation[]>(source.citations);
   const [inlineAttachments, setInlineAttachments] = useState<ReadonlySet<string> | null>(null);
   const inlineActive = inlineAttachments !== null;
   const menus = useRef<QueuedEditSuggestionsHandle>(null);
@@ -160,6 +165,7 @@ function QueueEditContent({
   const [error, setError] = useState<string | null>(null);
   const [loadingAttachments, setLoadingAttachments] = useState(0);
   const pendingAttachments = useRef(0);
+  const pendingSlots = useRef(new Set<string | symbol>());
   const field = useRef<HTMLTextAreaElement>(null);
   const dropBox = useRef<HTMLDivElement>(null);
   const dropFeedback = useExternalDropFeedback();
@@ -345,7 +351,7 @@ function QueueEditContent({
     el.focus();
   };
 
-  const changeCitations = (next: ChatCitation[], removed?: number) => {
+  const changeCitations = (next: ComposerCitation[], removed?: number) => {
     if (!parentChanged.canMutate()) return;
     const current = draftRef.current.text;
     const text = removeCitationFromText(current, citations.length, removed ?? -1);
@@ -452,22 +458,25 @@ function QueueEditContent({
     if (!canAttach || (text && !isFileReferenceText(text))) return;
     event.preventDefault();
     const captured = isFileReferenceText(text) ? captureDraft(event.currentTarget) : null;
+    let clipboardConsumed = false;
     void collect(
-      async () => {
-        const { files: pasted, warning } = await nativeClipboardAttachments(text);
+      async (capacity) => {
+        const { files: pasted, warning } = await nativeClipboardAttachments(text, capacity);
+        clipboardConsumed =
+          pasted.length > 0 || !!warning || !!capacity.notice() || capacity.matchedPendingPath;
         if (alive.current && warning) setError(warning);
         return pasted;
       },
-      (pasted) => {
+      () => {
         if (!captured) return;
-        if (pasted.length) dropPastedText(captured, text);
+        if (clipboardConsumed) dropPastedText(captured, text);
         else insertRestoredText(captured, text);
       },
     );
   };
 
   const collect = async (
-    read: () => Promise<Attachment[]>,
+    read: (capacity: AttachmentReadCapacity) => Promise<Attachment[]>,
     restore?: (incoming: Attachment[]) => void,
     pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | null | undefined,
   ) => {
@@ -488,18 +497,32 @@ function QueueEditContent({
       parentChanged();
       setLoadingAttachments(pendingAttachments.current);
       setError(null);
+      const capacity = beginAttachmentRead(() => {
+        const current = draftRef.current;
+        const range = pendingCaret.current === null && captureDraft(field.current);
+        if (!range || range.start === range.end) return current.attachments;
+        return editDraftText(
+          current,
+          current.text.slice(0, range.start) + current.text.slice(range.end),
+          range.start,
+        ).draft.attachments;
+      }, pendingSlots.current);
       await finishCollect({
-        read,
+        read: () => read(capacity),
         apply: (incoming) =>
           admitted.apply(() => {
             restore?.(incoming);
             const layout = pasteLayout?.(incoming);
             if (layout === null) incoming.forEach(revokeAttachment);
             else attach(incoming, layout);
+            const limit = capacity.notice();
+            if (limit && alive.current)
+              setError((previous) => [previous, limit].filter(Boolean).join(" "));
           }),
         isAlive: () => alive.current,
         setError,
         release: () => {
+          capacity.finish();
           pendingAttachments.current -= 1;
           parentChanged();
           pending.release();
@@ -515,9 +538,12 @@ function QueueEditContent({
     pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | null | undefined,
   ) =>
     collect(
-      async () => {
+      async (capacity) => {
         const skips = collectSkippedAttachments();
-        const attached = await attachmentsFromFiles(files, { onSkipped: skips.onSkipped });
+        const attached = await attachmentsFromFiles(files, {
+          onSkipped: skips.onSkipped,
+          capacity,
+        });
         const notice = skips.notice();
         if (alive.current && notice) setError(notice);
         return attached;
@@ -633,6 +659,7 @@ function QueueEditContent({
                   {...references}
                   attachments={draft.attachments}
                   citations={citations.length}
+                  citationSources={citations}
                   field={field}
                 />
               )
@@ -662,6 +689,7 @@ function QueueEditContent({
                     citations={citations}
                     disabled={parentClosed}
                     onChange={changeCitations}
+                    inlineText={inlineActive ? draft.text : undefined}
                   />
                   {draft.attachments.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
@@ -701,7 +729,7 @@ function QueueEditContent({
                         })
                   }
                   skillPrefix={skillPrefix}
-                  onUpload={() => void collect(pickAttachments)}
+                  onUpload={() => void collect((capacity) => pickAttachments(undefined, capacity))}
                   onSkills={() => menus.current?.openSkills()}
                 />
               ) : undefined
@@ -720,6 +748,7 @@ function QueueEditContent({
                 mcpTags: references?.mcpTags ?? [],
                 attachments: draft.attachments,
                 citations: citations.length,
+                citationSources: citations,
                 modeEnd: leadingMode?.end ?? 0,
                 onOpenFile: references?.onOpenFile,
               }}
@@ -731,6 +760,7 @@ function QueueEditContent({
               hasSubagents={false}
               onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={remove}
+              onChangeCitations={changeCitations}
             />
           </PromptField>
           {suggestions ? (

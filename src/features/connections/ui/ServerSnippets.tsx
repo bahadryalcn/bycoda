@@ -62,12 +62,15 @@ function ServerSnippetsForm({
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
   const createOnly = initialCommand !== undefined;
-  const matches = snippets.filter((snippet) =>
-    `${snippet.name} ${snippet.command}`
-      .toLocaleLowerCase()
-      .includes(search.trim().toLocaleLowerCase()),
-  );
+  const query = search.trim().toLocaleLowerCase();
+  const matches = query
+    ? snippets.filter((snippet) =>
+        `${snippet.name} ${snippet.command}`.toLocaleLowerCase().includes(query),
+      )
+    : snippets;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the visible command list in sync with local and cross-window template edits.
   useEffect(() => {
+    if (createOnly) return;
     const load = () => {
       try {
         setSnippets(loadSshSnippets(serverId));
@@ -77,7 +80,7 @@ function ServerSnippetsForm({
     };
     load();
     return subscribeSshSnippets(load);
-  }, [serverId]);
+  }, [serverId, createOnly]);
   return (
     <section
       aria-label={t("Saved SSH commands")}

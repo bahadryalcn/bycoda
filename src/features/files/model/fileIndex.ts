@@ -22,6 +22,7 @@ let refreshing = false;
 let refreshAgain = false;
 const listeners = new Set<Listener>();
 const recentsByCwd = new Map<string, string[]>();
+const NO_RECENTS: string[] = [];
 const remoteIndexes = new Map<
   string,
   {
@@ -121,7 +122,7 @@ export function rememberOpenedFile(cwd: string, path: string) {
 }
 
 export function recentOpenedFiles(cwd: string): string[] {
-  return recentsByCwd.get(normCwd(cwd)) ?? [];
+  return recentsByCwd.get(normCwd(cwd)) ?? NO_RECENTS;
 }
 
 export function prefetchProjectFiles(cwd: string) {

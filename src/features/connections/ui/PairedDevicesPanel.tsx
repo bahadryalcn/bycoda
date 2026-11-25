@@ -7,10 +7,10 @@ import {
   useAccountState,
 } from "../../account";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -19,7 +19,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Text } from "../../../shared/ui/Text";
 import { KeyRound, Laptop, Plus, RefreshCw, Smartphone } from "../../../shared/ui/icons";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
-import { isLocalSyncMachine } from "../model/localSync";
+import { isLocalSyncMachine, LOCAL_SYNC_MACHINE_NAME } from "../model/localSync";
 import { accountDeviceAccess } from "../model/accountDeviceAccess";
 import {
   revokePairedDevice,
@@ -79,6 +79,10 @@ function DeviceIcon({ device }: { device: PairedDevice }) {
   return <Icon aria-hidden className="icon-sm shrink-0" tone="muted" />;
 }
 
+function hasLocalSyncName(device: PairedDevice) {
+  return device.kind !== "phone" && device.name === LOCAL_SYNC_MACHINE_NAME;
+}
+
 function DeviceRow({
   machine,
   device,
@@ -92,7 +96,7 @@ function DeviceRow({
 }) {
   const format = useFormat();
   const settings = useConfirmedPreferences();
-  const canEdit = !device.isCurrent && !device.isLocalDesktop && canRevoke;
+  const canEdit = !device.isCurrent && canRevoke;
   const permission = device.canManageDevices;
   const now = wallClockNow();
   const activity =
@@ -105,15 +109,21 @@ function DeviceRow({
     <Row
       label={
         <span className="flex min-w-0 items-center gap-2">
-          <DeviceIcon device={device} />
+          {device.isCurrent ? (
+            <InfoTooltip icon={<Laptop aria-hidden className="icon-sm shrink-0" tone="accent" />}>
+              {t("This desktop")}
+            </InfoTooltip>
+          ) : (
+            <DeviceIcon device={device} />
+          )}
           <Text truncate size="inherit" tone="inherit" className="min-w-0">
-            {device.name}
+            {hasLocalSyncName(device) ? t("Local sync") : device.name}
           </Text>
-          {!device.isCurrent && device.isLocalDesktop ? <Badge>{t("Local desktop")}</Badge> : null}
         </span>
       }
       description={activity}
       descriptionVisible={Boolean(activity)}
+      descriptionTone="muted"
       feedback={settings.feedback(device.id)}
     >
       {canEdit && permission !== undefined ? (
@@ -132,7 +142,7 @@ function DeviceRow({
           }
         />
       ) : null}
-      {!device.isCurrent && !device.isLocalDesktop ? (
+      {!device.isCurrent ? (
         <ConfirmMorph
           label={t("Revoke")}
           tone="danger"
@@ -163,10 +173,14 @@ function ComputerDevices({
   onRetry: () => void;
 }) {
   const format = useFormat();
-  const title = isLocalSyncMachine(machine) ? t("This computer") : machine.name;
+  const isLocal = isLocalSyncMachine(machine);
+  const title = isLocal ? t("This computer") : machine.name;
   const list = entry?.phase === "ready" ? entry.list : undefined;
   const devices = list?.state === "ready" ? list.devices : [];
-  const others = devices.filter((device) => !device.isCurrent);
+  const visibleDevices = devices.filter(
+    (device) =>
+      !device.isLocalDesktop && !(isLocal && device.isCurrent && hasLocalSyncName(device)),
+  );
   const feedback =
     !entry || entry.phase === "loading" ? (
       <LoadingText>{t("Loading devices…")}</LoadingText>
@@ -202,7 +216,7 @@ function ComputerDevices({
     );
   return (
     <Group title={title} feedback={feedback}>
-      {devices.map((device) => (
+      {visibleDevices.map((device) => (
         <DeviceRow
           key={device.id}
           machine={machine}
@@ -211,7 +225,7 @@ function ComputerDevices({
           onRevoked={onChanged}
         />
       ))}
-      {list?.state === "ready" && others.length === 0 ? (
+      {list?.state === "ready" && !visibleDevices.some((device) => !device.isCurrent) ? (
         <Row label={t("No other devices")} />
       ) : null}
     </Group>

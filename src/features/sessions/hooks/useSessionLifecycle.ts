@@ -10,6 +10,7 @@ import {
   useSessionLifecycleView,
 } from "../model/sessionLifecycleClient";
 import { subscribeSharedRead } from "../model/sharedLifecycleRead";
+import { PendingLifecycle } from "../model/pendingLifecycle";
 import type { AutoSettleSettings, SessionLifecycleView } from "../model/sessionLifecycle";
 
 const POLL_SETTLING_MS = 3000;
@@ -77,11 +78,22 @@ export function useSessionLifecycleList(enabled = true) {
 }
 
 let remoteLists: ReadonlyMap<string, ReadonlyMap<string, SessionLifecycleView>> = new Map();
+let shownRemoteLists = remoteLists;
+const pendingRemote = new Map<string, PendingLifecycle>();
 const remoteRevisions = new Map<string, number>();
 const remoteListeners = new Set<() => void>();
 
 function publishRemoteList(machineId: string, records: ReadonlyMap<string, SessionLifecycleView>) {
   remoteLists = new Map(remoteLists).set(machineId, records);
+  showRemoteList(machineId);
+}
+function showRemoteList(machineId: string) {
+  const records = remoteLists.get(machineId);
+  if (!records) return;
+  shownRemoteLists = new Map(shownRemoteLists).set(
+    machineId,
+    pendingRemote.get(machineId)?.project(records) ?? records,
+  );
   for (const listener of remoteListeners) listener();
 }
 
@@ -92,18 +104,34 @@ function subscribeRemoteLists(listener: () => void) {
 
 const subscribeNothing = () => () => {};
 
-async function changeRemoteLifecycle(machineId: string, sessionId: string, undo: boolean) {
-  const client = sessionLifecycleClient(machineId, false);
-  const view = await (undo ? client.unsettle(sessionId) : client.settle(sessionId));
-  remoteRevisions.set(machineId, (remoteRevisions.get(machineId) ?? 0) + 1);
-  publishRemoteList(machineId, new Map(remoteLists.get(machineId)).set(sessionId, view));
+async function changeRemoteLifecycle(
+  machineId: string,
+  sessionId: string,
+  undo: boolean,
+  running = false,
+  beforeWrite?: () => void,
+) {
+  const client = sessionLifecycleClient(machineId, false, beforeWrite);
+  const pending = pendingRemote.get(machineId) ?? new PendingLifecycle();
+  pendingRemote.set(machineId, pending);
+  await pending.change(
+    sessionId,
+    undo ? "active" : running ? "settling" : "settled",
+    async () => {
+      const view = await (undo ? client.unsettle(sessionId) : client.settle(sessionId));
+      remoteRevisions.set(machineId, (remoteRevisions.get(machineId) ?? 0) + 1);
+      publishRemoteList(machineId, new Map(remoteLists.get(machineId)).set(sessionId, view));
+      return view;
+    },
+    () => showRemoteList(machineId),
+  );
 }
 
 /** The header, project shelf and recent list share a lifecycle snapshot per owning Host. */
 export function useRemoteSessionLifecycleLists(machineKey: string) {
   const lists = useSyncExternalStore(
     machineKey ? subscribeRemoteLists : subscribeNothing,
-    () => remoteLists,
+    () => shownRemoteLists,
   );
   const machineIds = machineKey ? (JSON.parse(machineKey) as string[]) : [];
   // Only a Host with a settling session polls fast; the others keep their own cadence.

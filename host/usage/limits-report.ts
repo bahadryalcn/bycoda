@@ -2,8 +2,28 @@ import type { HostProviderAccountCatalog } from "../providers/provider-accounts"
 import type { LimitsFetch } from "./limits-fetch";
 import type { NamedWindow, WindowKind } from "./limits-parse";
 import { windowReading, type WindowReading } from "./limits-pace";
+import {
+  errorRateLimits,
+  idleRateLimits,
+  mergeCodexQuotaWindows,
+  quotaBillingProvider,
+  QUOTA_POLL_MS,
+  QUOTA_RETRY_MS,
+  unavailableRateLimits,
+  type ProviderRateLimits,
+  type QuotaSource,
+} from "../../src/shared/model/provider-quota";
 
-type Provider = "claude" | "codex" | "opencode";
+const providersWithQuota = ["claude", "codex", "opencode", "grok"] as const;
+type Provider = (typeof providersWithQuota)[number];
+export type QuotaTarget = { provider: Provider; accountId: string };
+
+export function isQuotaProvider(provider: unknown): provider is Provider {
+  return providersWithQuota.some((candidate) => candidate === provider);
+}
+export function isQuotaSource(source: unknown): source is QuotaSource {
+  return isQuotaProvider(source) || source === "pi-anthropic" || source === "pi-openai-codex";
+}
 type Account = {
   id: string;
   label: string;
@@ -37,6 +57,7 @@ export type AccountStatus = {
   status: "ok" | "unavailable" | "error";
   error: string | null;
   resetCredits: number | null;
+  observedAt?: number | null;
 };
 export type UsageLimitsReport = {
   environmentId: string;
@@ -53,7 +74,7 @@ export type LimitsDeps = {
   environmentId: string;
   /** `opencode` is a single synthetic account, listed only while its key is connected. */
   accounts: () => Promise<HostProviderAccountCatalog & { opencode?: Account[] }>;
-  fetchAccount: (provider: Provider, accountId: string) => Promise<LimitsFetch>;
+  fetchAccount: (provider: QuotaSource, accountId: string) => Promise<LimitsFetch>;
   now?: () => number;
 };
 
@@ -62,28 +83,151 @@ const KIND_ORDER: Record<WindowKind, number> = {
   weekly: 1,
   monthly: 2,
 };
-const OK_TTL_MS = 2 * 60_000;
-const FAIL_TTL_MS = 30_000;
-const cache = new Map<string, { at: number; ttl: number; value: Promise<LimitsFetch> }>();
+type Good = { observedAt: number; result: Extract<LimitsFetch, { status: "ok" }> };
+type QuotaObservation = {
+  latest: LimitsFetch;
+  good: Good | null;
+  attemptedAt: number;
+  nextReadAt: number;
+};
+type CacheEntry = {
+  pending?: Promise<QuotaObservation>;
+  observation?: QuotaObservation;
+  nextReadAt: number;
+  failures: number;
+  approvedAt?: number;
+};
+const cache = new Map<string, CacheEntry>();
+const quotaKey = (environmentId: string, provider: QuotaSource, accountId: string) =>
+  JSON.stringify([environmentId, provider, accountId]);
 
-/** Shares one in-flight read per account and keeps it briefly, so several phones do not hammer a provider. */
-function cached(key: string, now: number, load: () => Promise<LimitsFetch>): Promise<LimitsFetch> {
-  const hit = cache.get(key);
-  if (hit && now - hit.at < hit.ttl) return hit.value;
-  const entry = { at: now, ttl: OK_TTL_MS, value: load() };
-  entry.value.then(
-    (result) => {
-      if (result.status !== "ok") entry.ttl = FAIL_TTL_MS;
-    },
-    () => {
-      entry.ttl = 0;
-    },
-  );
-  if (cache.size > 256) cache.clear();
+/** The active Codex child can update known overall windows without another probe. */
+export function observeCodexQuota(
+  environmentId: string,
+  accountId: string,
+  update: ProviderRateLimits,
+) {
+  const observation = cache.get(quotaKey(environmentId, "codex", accountId))?.observation;
+  if (observation?.latest.status !== "ok" || !observation.good) return;
+  const { result } = observation.good;
+  if (!result.desktop) return;
+  const desktop = mergeCodexQuotaWindows(result.desktop, update);
+  const windows = result.limits.windows.map((window) => {
+    const observed = update[window.kind];
+    return window.model === null && observed ? { ...window, window: observed } : window;
+  });
+  const merged = { ...result, desktop, limits: { ...result.limits, windows } };
+  observation.latest = merged;
+  observation.good.result = merged;
+}
+
+/** Report readers and individual consumers share one provider call per Host account. */
+export function readAccountQuota(
+  deps: LimitsDeps,
+  target: { provider: QuotaSource; accountId: string },
+  intent: "read" | "refresh" | "approved" = "read",
+  maxAgeMs = QUOTA_POLL_MS[target.provider],
+): Promise<QuotaObservation> {
+  const { provider, accountId } = target;
+  const key = quotaKey(deps.environmentId, provider, accountId);
+  const clock = deps.now ?? Date.now;
+  const now = clock();
+  const entry = cache.get(key) ?? { nextReadAt: 0, failures: 0 };
+  if (entry.pending) return entry.pending;
+  if (intent === "approved" && entry.approvedAt !== undefined && now - entry.approvedAt < 300_000) {
+    throw new Error("Wait before refreshing this account's quota again");
+  }
+  const last = entry.observation;
+  const withinBackoff = last && last.latest.status !== "ok" && now < entry.nextReadAt;
+  const fresh = last && last.latest.status === "ok" && now - last.attemptedAt < maxAgeMs;
+  if (
+    last &&
+    ((intent === "read" && (fresh || withinBackoff)) ||
+      (withinBackoff &&
+        last.latest.status === "error" &&
+        last.latest.reason !== "signedOut" &&
+        !last.latest.renewalPending))
+  ) {
+    return Promise.resolve(last);
+  }
+  if (intent === "approved") entry.approvedAt = now;
+  if (!cache.has(key) && cache.size >= 256) {
+    const evictable = [...cache].find(([, candidate]) => !candidate.pending);
+    if (evictable) cache.delete(evictable[0]);
+  }
   cache.set(key, entry);
-  return entry.value;
+  entry.pending = Promise.resolve()
+    .then(() => deps.fetchAccount(provider, accountId))
+    .catch((): LimitsFetch => ({ status: "error", error: "Quota read failed" }))
+    .then((latest) => {
+      const attemptedAt = clock();
+      const good =
+        latest.status === "ok"
+          ? { result: latest, observedAt: attemptedAt }
+          : latest.status === "unavailable" || latest.reason === "signedOut"
+            ? null
+            : (entry.observation?.good ?? null);
+      const delay =
+        latest.status === "ok"
+          ? QUOTA_POLL_MS[provider]
+          : latest.renewalPending && entry.failures < 10
+            ? 15_000
+            : Math.max(
+                latest.retryAfterMs ?? 0,
+                QUOTA_RETRY_MS[Math.min(entry.failures, QUOTA_RETRY_MS.length - 1)],
+              );
+      entry.failures = latest.status === "ok" ? 0 : entry.failures + 1;
+      entry.nextReadAt = attemptedAt + delay;
+      entry.observation = { latest, good, attemptedAt, nextReadAt: entry.nextReadAt };
+      return entry.observation;
+    })
+    .finally(() => {
+      delete entry.pending;
+    });
+  return entry.pending;
 }
 export const clearLimitsCache = () => cache.clear();
+
+export async function readDesktopQuota(
+  deps: LimitsDeps,
+  target: { provider: QuotaSource; accountId: string },
+  intent: "read" | "refresh" | "approved",
+  maxAgeMs?: number,
+): Promise<ProviderRateLimits> {
+  const provider = quotaBillingProvider(target.provider);
+  const { latest, good, attemptedAt, nextReadAt } = await readAccountQuota(
+    deps,
+    target,
+    intent,
+    maxAgeMs,
+  );
+  const previous = good
+    ? {
+        ...(good.result.desktop ?? {
+          ...idleRateLimits(provider),
+          ...Object.fromEntries(
+            good.result.limits.windows
+              .filter(({ model }) => model === null)
+              .map(({ kind, window }) => [kind, window]),
+          ),
+          status: "ok" as const,
+        }),
+        updatedAt: good.observedAt,
+      }
+    : null;
+  if (latest.status === "ok" && previous) return previous;
+  if (latest.status === "ok") throw new Error("Quota observation missing");
+  const failure =
+    latest.status === "unavailable"
+      ? unavailableRateLimits(provider, latest.error, latest.reason)
+      : errorRateLimits(provider, latest.error, previous, latest.reason);
+  return {
+    ...failure,
+    updatedAt: previous?.updatedAt ?? attemptedAt,
+    retryAt: nextReadAt,
+    ...(latest.renewalPending ? { renewalPending: true } : {}),
+  };
+}
 
 /** Groups accounts' windows into one card per window, ranked by most headroom. */
 export function buildCards(
@@ -121,47 +265,51 @@ export function buildCards(
     );
 }
 
-export async function readUsageLimits(deps: LimitsDeps): Promise<UsageLimitsReport> {
+export async function readUsageLimits(
+  deps: LimitsDeps,
+  target?: QuotaTarget,
+): Promise<UsageLimitsReport> {
   const now = (deps.now ?? Date.now)();
   const catalog = await deps.accounts();
   const providers = await Promise.all(
-    (["claude", "codex", "opencode"] as const).map(async (provider) => {
-      const accounts = catalog[provider] ?? [];
+    (target ? [target.provider] : providersWithQuota).map(async (provider) => {
+      const accounts = (catalog[provider] ?? []).filter(
+        (account) => !target || account.id === target.accountId,
+      );
       const results = await Promise.all(
         accounts.map(async (account) => ({
           account,
-          fetch: await cached(`${provider}:${account.id}`, now, () =>
-            deps.fetchAccount(provider, account.id),
-          ).catch((): LimitsFetch => ({
-            status: "error",
-            error: "Quota read failed",
-          })),
+          observation: await readAccountQuota(deps, { provider, accountId: account.id }),
         })),
       );
       // OpenCode Go is optional: without a key or plan it is left out rather than shown as an error.
-      if (provider === "opencode" && results.every(({ fetch }) => fetch.status === "unavailable"))
+      if (
+        (provider === "opencode" || provider === "grok") &&
+        results.every(({ observation }) => observation.latest.status === "unavailable")
+      )
         return null;
       return {
         provider,
         cards: buildCards(
-          results.map(({ account, fetch }) => ({
+          results.map(({ account, observation }) => ({
             account,
-            windows: fetch.status === "ok" ? fetch.limits.windows : [],
+            windows: observation.good?.result.limits.windows ?? [],
           })),
           now,
         ),
-        accounts: results.map(({ account, fetch }): AccountStatus => ({
+        accounts: results.map(({ account, observation: { latest, good } }): AccountStatus => ({
           ...account,
-          status: fetch.status,
-          error: fetch.status === "ok" ? null : fetch.error,
-          resetCredits: fetch.status === "ok" ? fetch.limits.resetCredits : null,
+          status: latest.status,
+          error: latest.status === "ok" ? null : latest.error,
+          resetCredits: latest.status === "ok" ? latest.limits.resetCredits : null,
+          observedAt: good?.observedAt ?? null,
         })),
       };
     }),
   );
   return {
     environmentId: deps.environmentId,
-    sampledAt: now,
+    sampledAt: (deps.now ?? Date.now)(),
     source: "host-provider-api",
     providers: providers.filter((entry): entry is NonNullable<typeof entry> => entry !== null),
   };

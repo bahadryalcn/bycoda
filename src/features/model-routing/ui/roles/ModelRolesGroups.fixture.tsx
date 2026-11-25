@@ -47,7 +47,8 @@ vi.mock("../../../../shared/ui/settings", () => ({
     children: ReactNode;
     feedback?: ReactNode;
   }) => (
-    <section aria-label={String(label)}>
+    <section data-role-row>
+      <div data-role-label>{label}</div>
       {children}
       {feedback}
     </section>
@@ -305,7 +306,10 @@ const entry = {
   modelSettings: {},
   unknownLimit: "use",
 } as const;
-const rowOf = (label: string) => container.querySelector(`section[aria-label="${label}"]`)!;
+const rowOf = (label: string) =>
+  Array.from(container.querySelectorAll("[data-role-row]")).find((row) =>
+    row.querySelector("[data-role-label]")?.textContent?.startsWith(label),
+  )!;
 
 it("groups all roles and stores fixed targets in the draft without delegation keys", async () => {
   await render(<Groups initial={draftOf()} />);

@@ -86,9 +86,20 @@ it("lists only a pool's members, in order, instead of every model", () => {
 });
 
 it("reorders and removes members through one setPoolMembers edit", async () => {
-  await act(() => main().querySelector<HTMLElement>('[aria-label="Move a down"]')!.click());
+  await act(() => {
+    main()
+      .querySelector<HTMLElement>('[aria-label="Reorder in A"]')!
+      .dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+  });
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["b", "a"] });
-  await act(() => main().querySelector<HTMLElement>('[aria-label="Remove b from group"]')!.click());
+  await act(() => main().querySelector<HTMLElement>('[aria-label="Remove B from group"]')!.click());
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["a"] });
 });
 
@@ -99,7 +110,7 @@ it("adds a model not yet in the pool and an includable pool", async () => {
   await act(() => add.click());
   const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
   expect(items().map((item) => item.getAttribute("data-menu-label"))).toEqual([
-    "c · Personal",
+    "C · Personal",
     "Inner",
   ]);
   await act(() =>
@@ -133,8 +144,8 @@ it("tells same-model entries on different accounts apart and adds the one picked
   await act(() => add.click());
   const items = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
   expect(items.map((item) => item.getAttribute("data-menu-label"))).toEqual([
-    "gpt-5 · Work",
-    "gpt-5 · Personal",
+    "GPT-5 · Work",
+    "GPT-5 · Personal",
   ]);
   await act(() => items[1]!.click());
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["z", "y"] });

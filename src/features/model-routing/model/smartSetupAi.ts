@@ -20,6 +20,7 @@ import {
   baselineOrder,
   enforceRoleNeeds,
   ROLE_NEED,
+  withoutSetupAcceleration,
   rulePlan,
   type SetupCandidate,
   type SetupPlan,
@@ -163,10 +164,10 @@ export function buildSetupPrompt(candidates: SetupCandidate[], names: SetupPoolN
     `Accounts have kind work, personal or unknown. Work projects never run on personal accounts and personal projects never on work accounts; ` +
     `shared accounts serve both. Decide each unknown account's kind from its label (shared when it says neither). When any account is work or personal, ` +
     `create pools named ${JSON.stringify(names.work)} (work + shared accounts) and ${JSON.stringify(names.personal)} (personal + shared accounts). ` +
-    `Also create tier pools such as ${JSON.stringify(names.smartest)}, ${JSON.stringify(names.balanced)} and ${JSON.stringify(names.fast)}; ` +
+    `Create groups for capability and reasoning effort, such as ${JSON.stringify(names.smartest)}, ${JSON.stringify(names.balanced)} and ${JSON.stringify(names.light)}. Never create a Fast or Ultrafast group. ` +
     `a pool may include other pools by name (no loops). At most ${MAX_POOLS} pools. Bind every role to a pool or "order". ` +
     "Every job runs on a model suited to it: roles with need light (titles, commit text, translation, quick and spoken replies) must use a pool " +
-    "whose first models are cheap and fast (cost 1, intelligence 3 or less); need heavy (reviews, planning, coordination) the strongest models; " +
+    "whose first models are inexpensive (cost 1, intelligence 3 or less); need heavy (reviews, planning, coordination) the strongest models; " +
     "need standard the best benefit per cost among capable models, never the most expensive first. Create role-specific pools when a role needs its own mix. " +
     "Each pool runs at the reasoning effort of the roles bound to it (light only: low, any heavy: high, otherwise medium; never above high), " +
     "so keep light roles in their own pools. " +
@@ -233,8 +234,14 @@ export function planFromAnswer(
     };
   });
   const valid = (key: number) => key < candidates.length;
+  const allowedPool = (name: string) => !/^(?:ultra[ -]?)?fast$/i.test(name.trim());
   const pools = answer.pools
-    .map((pool) => ({ ...pool, members: pool.members.filter(valid) }))
+    .filter((pool) => allowedPool(pool.name))
+    .map((pool) => ({
+      ...pool,
+      members: pool.members.filter(valid),
+      includes: pool.includes.filter(allowedPool),
+    }))
     .filter((pool) => pool.members.length || pool.includes.length);
   const names = new Set(pools.map((pool) => pool.name.trim().toLowerCase()));
   const roles: SetupPlan["roles"] = {};
@@ -329,6 +336,9 @@ export async function planSmartSetup(
     const text = await Promise.race([
       runHarnessTextPrompt({
         ...choice,
+        ...(choice.modelSettings
+          ? { modelSettings: withoutSetupAcceleration(choice.modelSettings) }
+          : {}),
         // The project-less session folder; an empty cwd is not a directory and fails the spawn.
         cwd: "~",
         ephemeral: true,

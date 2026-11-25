@@ -17,9 +17,11 @@ import { AndroidDeviceTouch } from "./android-device-touch";
 import { DeviceControlLeases } from "./device-control-leases";
 import { iosCaptureDisplay } from "./ios-display";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
+import { readSimulatorVideo } from "./simulator-video";
 import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
 import {
   DEVICE_HUB_VERSION,
+  DEVICE_STILL_MIN_GAP_MS,
   type DeviceAction,
   type DeviceFrame,
   type DeviceHostStatus,
@@ -211,6 +213,10 @@ export class DeviceHost {
   readonly streams = new DeviceStreams({
     device: (id) => this.device(id),
     platform: () => this.platform,
+    iosVideo: (id, signal, publish) => {
+      if (!this.origin) throw new Error("Device hub is stopped");
+      return readSimulatorVideo(this.origin, id, signal, publish);
+    },
     adb: () => this.androidBinary("adb"),
     env: () => this.env,
     closed: () => this.closing || this.disposed,
@@ -1232,7 +1238,10 @@ export class DeviceHost {
     const pending = this.runForDevice(
       id,
       async () => {
-        if (this.lastCapture?.id === id && Date.now() - this.lastCapture.time < 1000)
+        if (
+          this.lastCapture?.id === id &&
+          Date.now() - this.lastCapture.time < DEVICE_STILL_MIN_GAP_MS
+        )
           return this.lastCapture.frame;
         fresh = await this.captureFrame(id, effect);
         return fresh;

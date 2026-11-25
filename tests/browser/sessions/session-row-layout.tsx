@@ -350,6 +350,7 @@ function Fixture() {
     setGitCwd(row.worktreeCwd ?? path);
   };
   const [pinCount, setPinCount] = useState(0);
+  const [reminderTarget, setReminderTarget] = useState("");
   const [createdProject, setCreatedProject] = useState("");
   const [createCount, setCreateCount] = useState(0);
   const [tab, setTab] = useState<ComponentProps<typeof Sidebar>["tab"]>("sessions");
@@ -444,6 +445,12 @@ function Fixture() {
               ),
             );
           }}
+          onSetSessionLinkedWorkItem={(id, linkedWorkItem) =>
+            setHistory((rows) =>
+              rows.map((row) => (row.id === id ? { ...row, linkedWorkItem } : row)),
+            )
+          }
+          onSetReminders={(ids) => setReminderTarget(ids.join(","))}
           onArchiveSession={() => {}}
           onDeleteSession={() => {}}
           onPinSession={(id, pinned) => {
@@ -495,6 +502,7 @@ function Fixture() {
           <output aria-label="Created project">{createdProject}</output>
           <output aria-label="Created sessions">{createCount}</output>
           <output aria-label="Pin operations">{pinCount}</output>
+          <output aria-label="Reminder target">{reminderTarget}</output>
         </main>
       </div>
     </QueryClientProvider>

@@ -23,6 +23,7 @@ import { newRequestId } from "../../../shared/lib/id/requestId";
 export function useSessionTitleRegeneration({
   sessionsRef,
   setSessions,
+  setHistory,
   loadedSessionCache,
   lastPersisted,
   invalidateLoadedSession,
@@ -81,7 +82,19 @@ export function useSessionTitleRegeneration({
           ),
         );
         refreshRemoteProjectSessions();
-        await refreshHistory(cwd);
+        if (pathKey(cwd) === pathKey(sidebarCwd)) {
+          await refreshHistory(sidebarCwd);
+        } else {
+          setHistory?.((rows) =>
+            rows.map((row) =>
+              row.id === sessionId &&
+              pathKey(row.cwd) === pathKey(cwd) &&
+              row.title === originalTitle
+                ? { ...row, title: result.title }
+                : row,
+            ),
+          );
+        }
         requests.current.delete(sessionId);
       } catch (error) {
         if (error instanceof TitleRegenerationConflictError) requests.current.delete(sessionId);
@@ -93,6 +106,7 @@ export function useSessionTitleRegeneration({
     [
       sessionsRef,
       setSessions,
+      setHistory,
       loadedSessionCache,
       lastPersisted,
       invalidateLoadedSession,

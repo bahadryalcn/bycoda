@@ -3,6 +3,42 @@ import { expect, test, type Page } from "@playwright/test";
 
 const fixture = "/tests/browser/host-tools/host-tools.html";
 const captures = "temp/verification/2026-10-26-device-panel";
+const recoveryCaptures = "temp/verification/device-failure-grace";
+
+test("opening discovery silently recovers from one failed read", async ({ page }) => {
+  await page.goto(`${fixture}?detached=1&devicesReady=1&deviceListFailures=1`);
+  const panel = page.getByRole("region", { name: "Devices", exact: true });
+  await expect(panel.getByText("Loading devices…", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("img", { name: "Current device screen" })).toBeVisible();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(
+    panel.getByText("The device connection is unavailable", { exact: false }),
+  ).toHaveCount(0);
+});
+
+for (const detached of [0, 1])
+  for (const theme of ["light", "dark"]) {
+    test(`discovery interruption grace ${detached ? "detached" : "docked"} ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`${fixture}?detached=${detached}&theme=${theme}&deviceListFailures=2`);
+      const panel = page.getByRole("region", { name: "Devices", exact: true });
+      const error = panel.getByRole("alert");
+      const path = `${recoveryCaptures}/${detached ? "detached" : "docked"}-${theme}`;
+      await expect(panel.getByText("Loading devices…", { exact: true })).toBeVisible();
+      await expect(error).toHaveCount(0);
+      await page.screenshot({ path: `${path}-retrying.png` });
+      await expect(error).toContainText("Could not load devices");
+      await expect(panel.getByText("Unknown", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${path}-persistent.png` });
+      await panel.getByRole("button", { name: "Refresh devices", exact: true }).click();
+      await expect(error).toHaveCount(0);
+      await expect(
+        panel.getByRole("button", { name: "Start emulator", exact: true }),
+      ).toBeVisible();
+    });
+  }
 
 test("selects a remote Mac from device setup without starting it", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 800, height: 980 });

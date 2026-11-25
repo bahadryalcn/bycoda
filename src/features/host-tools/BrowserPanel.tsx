@@ -1,5 +1,9 @@
 import { errorText } from "../../shared/lib/errors";
-import { resolveBrowserAddress, validBrowserHome } from "./model/browserAddress";
+import {
+  isLocalBrowserAddress,
+  resolveBrowserAddress,
+  validBrowserHome,
+} from "./model/browserAddress";
 import { browserDefaultViewport, toolPreferences } from "./model/toolPreferences";
 import type { BrowserViewState as BrowserState } from "./model/browserViewState";
 import { StatusDot } from "../../shared/ui/StatusDot";
@@ -15,6 +19,7 @@ import { InlineError, InlineMessage } from "../../shared/ui/InlineError";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type ClipboardEvent, type CSSProperties } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { IS_MAC, IS_WIN } from "../../platform/tauri/platform";
 import type { RoomToolsUiContext } from "./toolsUiControl";
 import {
   hostFeatureRequest,
@@ -44,8 +49,15 @@ import {
   writeBrowserDraftTransfer,
   subscribeBrowserDraftTransfer,
 } from "./browserDraftTransfer";
-import { CursorMagicSelection, RefreshCw, MessageSquarePlus, X } from "../../shared/ui/icons";
+import {
+  CursorMagicSelection,
+  Globe,
+  RefreshCw,
+  MessageSquarePlus,
+  X,
+} from "../../shared/ui/icons";
 import { BrowserAddressInput, BrowserLiveToggle } from "./ui/BrowserControls";
+import { LocalBrowserSurface, type LocalBrowserPage } from "./ui/LocalBrowserSurface";
 import { BrowserStartPage } from "./ui/BrowserStartPage";
 import { BrowserViewportMenu } from "./ui/BrowserViewportMenu";
 import { rememberBrowserUrl } from "./model/browserRecents";
@@ -82,6 +94,7 @@ type Props = {
   composerSessionId?: string;
   composerWindow?: string;
   hostTarget?: HostToolTarget;
+  localBrowserTarget?: boolean;
   annotationsAllowed?: boolean;
   hostLabel?: string;
   active?: boolean;
@@ -119,6 +132,8 @@ function ProjectBrowserPanel({
   composerSessionId = sessionId,
   composerWindow,
   hostTarget = { kind: "project" },
+  localBrowserTarget = hostTarget.kind === "local" ||
+    (hostTarget.kind === "project" && !!cwd.trim() && !cwd.startsWith("remote://")),
   annotationsAllowed = hostTarget.kind === "project",
   hostLabel,
   active = true,
@@ -131,6 +146,15 @@ function ProjectBrowserPanel({
   useLocale();
   const [state, setState] = useState<BrowserState>();
   const [url, setUrl] = useState(() => initialUrl ?? toolPreferences.browserHomeUrl.load());
+  const [localPage, setLocalPage] = useState<LocalBrowserPage>();
+  const localAddress = useRef("");
+  const localPreviewAvailable =
+    localBrowserTarget && !roomSubject && isTauri() && (IS_WIN || IS_MAC);
+  const canUseLocal = (address: string) => localPreviewAvailable && isLocalBrowserAddress(address);
+  const startLocal = (address: string) => {
+    localAddress.current = address;
+    setLocalPage({ id: crypto.randomUUID(), address });
+  };
   const [frame, setFrame] = useState<Frame>();
   const [cursor, setCursor] = useState<string>();
   // Mounting always starts with a status read; controls wait for it instead of
@@ -593,6 +617,11 @@ function ProjectBrowserPanel({
   useEffect(() => {
     if (!active || initialized.current) return;
     initialized.current = true;
+    if (initialUrl && !mode.current && canUseLocal(initialUrl)) {
+      startLocal(initialUrl);
+      setBusy(false);
+      return;
+    }
     void action(async () => {
       const status = await request("browser.status");
       if (!status) return;
@@ -677,7 +706,7 @@ function ProjectBrowserPanel({
     !!latest.current?.open &&
     latest.current.documentId === identity.documentId &&
     latest.current.navigationId === identity.navigationId;
-  const liveEnabled = active && live && !!state?.open && !selecting;
+  const liveEnabled = active && live && !!state?.open && !selecting && !localPage;
   const nativeStream = useBrowserFrameStream({
     enabled: liveEnabled && !roomSubject,
     canvas: previewCanvas,
@@ -721,32 +750,43 @@ function ProjectBrowserPanel({
     },
   });
   useBrowserStatusPolling(
-    active && !!state?.open && (!live || nativeStream) && !selecting,
+    active && !!state?.open && (!live || nativeStream) && !selecting && !localPage,
     async () => {
       if (!pending.current && !queuedInputs.current && !liveReading.current)
         await request("browser.status");
     },
     nativeStream ? 1500 : 60_000,
   );
-  useBrowserControlRecovery(active && !!state?.open && !state.controlling && !busy, async () => {
-    const current = latest.current;
-    if (pending.current || !current?.open || current.controlling) return;
-    await request(current.heldBy ? "browser.status" : "browser.claim");
-  });
-  useBrowserLeaseKeepAlive(active && !!state?.controlling, state?.leaseDeadline, async () => {
-    const current = latest.current;
-    // Only the lease this panel already holds is renewed; after it ended a claim would
-    // create a new one.
-    if (!current?.controlling || !current.leaseId || (current.leaseDeadline ?? 0) <= monotonicNow())
-      return;
-    try {
-      await request("browser.claim");
-    } catch (cause) {
-      // A revoked lease shows up in the status and stops further renewals.
-      await request("browser.status").catch(() => {});
-      throw cause;
-    }
-  });
+  useBrowserControlRecovery(
+    active && !!state?.open && !state.controlling && !busy && !localPage,
+    async () => {
+      const current = latest.current;
+      if (pending.current || !current?.open || current.controlling) return;
+      await request(current.heldBy ? "browser.status" : "browser.claim");
+    },
+  );
+  useBrowserLeaseKeepAlive(
+    active && !!state?.controlling && !localPage,
+    state?.leaseDeadline,
+    async () => {
+      const current = latest.current;
+      // Only the lease this panel already holds is renewed; after it ended a claim would
+      // create a new one.
+      if (
+        !current?.controlling ||
+        !current.leaseId ||
+        (current.leaseDeadline ?? 0) <= monotonicNow()
+      )
+        return;
+      try {
+        await request("browser.claim");
+      } catch (cause) {
+        // A revoked lease shows up in the status and stops further renewals.
+        await request("browser.status").catch(() => {});
+        throw cause;
+      }
+    },
+  );
   const scheduleInputFrame = () => {
     // The live stream already delivers the picture after each action.
     if (inputFrameTimer.current || streaming.current || nativeStream) return;
@@ -932,13 +972,25 @@ function ProjectBrowserPanel({
   const setupRequired = state?.runtime?.installed === false;
   const validUrl = !!resolveBrowserAddress(url, searchSettings);
 
-  const openWebsite = async (target = url.trim()) => {
+  const openWebsite = async (target = url.trim(), allowLocal = true) => {
     const resolved = resolveBrowserAddress(target, searchSettings);
     if (!resolved || selecting) return;
+    if (allowLocal && canUseLocal(resolved)) {
+      if (localPage) {
+        await invoke("local_browser_preview_navigate", { id: localPage.id, address: resolved });
+      } else {
+        startLocal(resolved);
+      }
+      setUrl((draft) => (draft.trim() === target ? resolved : draft));
+      rememberBrowserUrl(resolved);
+      return;
+    }
     const current = latest.current ?? (await request("browser.status"));
     if (!current) return;
-    if (current.runtime?.installed === false)
+    if (current.runtime?.installed === false) {
+      setLocalPage(undefined);
       throw new Error(t("Set up the browser on this computer, then open your website."));
+    }
     if (
       !current.controlling ||
       (current.leaseDeadline != null && current.leaseDeadline <= monotonicNow())
@@ -955,6 +1007,7 @@ function ProjectBrowserPanel({
         ...(isTauri() && !roomSubject ? { preview: true } : {}),
       })
     ) {
+      setLocalPage(undefined);
       setUrl((draft) => (draft.trim() === target ? resolved : draft));
       rememberBrowserUrl(resolved);
       if (!current.open && !(await request("browser.resize", defaultViewport))) return;
@@ -983,7 +1036,7 @@ function ProjectBrowserPanel({
       setUrl(target);
       // An annotation in progress keeps its draft; the address waits for an explicit Open.
       if (selecting) throw new Error(t("Finish selection"));
-      await openWebsite(target);
+      await openWebsite(target, false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, busy, navigation?.id]);
@@ -1032,17 +1085,19 @@ function ProjectBrowserPanel({
         >
           <StatusDot
             data-browser-status-dot=""
-            tone={statusTone}
+            tone={localPage && !error ? "success" : statusTone}
             appearance="solid"
             size="md"
-            title={statusLabel}
+            title={localPage && !error ? t("Local") : statusLabel}
           />
           <BrowserAddressInput
             inputRef={addressInput}
             url={url}
             busy={busy}
             selecting={selecting}
-            setupRequired={setupRequired}
+            setupRequired={
+              setupRequired && !canUseLocal(resolveBrowserAddress(url, searchSettings) ?? "")
+            }
             validUrl={validUrl}
             searchEnabled={searchSettings.engine !== "disabled"}
             onChange={setUrl}
@@ -1052,11 +1107,15 @@ function ProjectBrowserPanel({
             type="button"
             variant="ghost"
             iconOnly
-            label={!state && error ? t("Retry") : t("Refresh frame")}
-            disabled={busy || (!state?.open && (!!state || !error))}
+            label={localPage ? t("Reload") : !state && error ? t("Retry") : t("Refresh frame")}
+            disabled={busy || (!localPage && !state?.open && (!!state || !error))}
             disabledReason={busy ? t("Working on the host…") : t("Open a website")}
             onClick={() =>
               void action(async () => {
+                if (localPage) {
+                  await invoke("local_browser_preview_reload", { id: localPage.id });
+                  return;
+                }
                 const current = latest.current ?? (await request("browser.status"));
                 const result = current?.open ? await request("browser.frame") : undefined;
                 if (result?.data) {
@@ -1070,94 +1129,119 @@ function ProjectBrowserPanel({
           </Button>
         </form>
         <div className="host-browser-view-actions" role="toolbar" aria-label={t("Browser")}>
-          <BrowserLiveToggle
-            live={live}
-            open={!!state?.open}
-            busy={busy}
-            selecting={selecting}
-            onToggle={() => setLive((value) => !value)}
-          />
-          <Button
-            motion="none"
-            type="button"
-            variant="ghost"
-            iconOnly
-            label={t("Select element and add to composer")}
-            tooltip={
-              !annotationsAllowed
-                ? t("Browser selections can be attached only on this conversation's project host.")
-                : t("Select element and add to composer")
-            }
-            pressed={selecting}
-            disabled={
-              !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
-            }
-            disabledReason={
-              !annotationsAllowed
-                ? t("Browser selections can be attached only on this conversation's project host.")
-                : (inputDisabledReason ?? t("Select a conversation and refresh the frame first."))
-            }
-            onClick={() =>
-              void action(async () => {
-                await inputQueue.current.catch(() => {});
-                if (inputFrameTimer.current) {
-                  clearTimeout(inputFrameTimer.current);
-                  inputFrameTimer.current = undefined;
+          {localPage ? (
+            <Button
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Shared host browser")}
+              disabled={busy}
+              disabledReason={t("Working on the host…")}
+              onClick={() =>
+                void action(async () => {
+                  const address = await invoke<string>("local_browser_preview_location", {
+                    id: localPage.id,
+                  }).catch(() => localAddress.current);
+                  await openWebsite(address, false);
+                })
+              }
+            >
+              <Globe className="icon-sm" aria-hidden />
+            </Button>
+          ) : (
+            <>
+              <BrowserLiveToggle
+                live={live}
+                open={!!state?.open}
+                busy={busy}
+                selecting={selecting}
+                onToggle={() => setLive((value) => !value)}
+              />
+              <Button
+                motion="none"
+                type="button"
+                variant="ghost"
+                iconOnly
+                label={t("Select element and add to composer")}
+                pressed={selecting}
+                disabled={
+                  !canInput ||
+                  !sessionId ||
+                  !frame?.navigationId ||
+                  selecting ||
+                  !annotationsAllowed
                 }
-                const fresh = await request("browser.frame");
-                if (!fresh?.navigationId) return;
-                const result = await request("browser.annotation.start", {
-                  navigationId: fresh.navigationId,
-                });
-                if (!result?.annotationId || !result.navigationId) return;
-                mode.current = { id: result.annotationId, navigationId: result.navigationId };
-                setSelecting(true);
-                setNotice("");
-                setSelection(undefined);
-              })
-            }
-          >
-            <CursorMagicSelection className="icon-sm" aria-hidden />
-          </Button>
-          {selecting ? (
-            <Button
-              type="button"
-              variant="ghost"
-              iconOnly
-              label={t("Cancel selection")}
-              onClick={cancelSelection}
-            >
-              <X className="icon-sm" aria-hidden />
-            </Button>
-          ) : null}
-          {selection || captures.length ? (
-            <Button
-              ref={selectionTrigger}
-              type="button"
-              variant="ghost"
-              iconOnly
-              label={t("Selected browser element")}
-              aria-haspopup="dialog"
-              aria-expanded={selectionOpen}
-              selected={selectionOpen}
-              onClick={() => setSelectionOpen((value) => !value)}
-            >
-              <MessageSquarePlus className="icon-sm" aria-hidden />
-            </Button>
-          ) : null}
-          {/* Page size and preview scale share one menu, labelled with the current size. */}
-          {active && state?.open && state.viewport ? (
-            <BrowserViewportMenu
-              viewport={state.viewport}
-              disabled={!canPageInput}
-              disabledReason={inputDisabledReason}
-              actualSize={actualSize}
-              canScale={!!frame}
-              onActualSizeChange={setActualSize}
-              action={action}
-              request={request}
-            />
-          ) : null}
+                disabledReason={
+                  !annotationsAllowed
+                    ? t(
+                        "Browser selections can be attached only on this conversation's project host.",
+                      )
+                    : (inputDisabledReason ??
+                      t("Select a conversation and refresh the frame first."))
+                }
+                onClick={() =>
+                  void action(async () => {
+                    await inputQueue.current.catch(() => {});
+                    if (inputFrameTimer.current) {
+                      clearTimeout(inputFrameTimer.current);
+                      inputFrameTimer.current = undefined;
+                    }
+                    const fresh = await request("browser.frame");
+                    if (!fresh?.navigationId) return;
+                    const result = await request("browser.annotation.start", {
+                      navigationId: fresh.navigationId,
+                    });
+                    if (!result?.annotationId || !result.navigationId) return;
+                    mode.current = { id: result.annotationId, navigationId: result.navigationId };
+                    setSelecting(true);
+                    setNotice("");
+                    setSelection(undefined);
+                  })
+                }
+              >
+                <CursorMagicSelection className="icon-sm" aria-hidden />
+              </Button>
+              {selecting ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  iconOnly
+                  label={t("Cancel selection")}
+                  onClick={cancelSelection}
+                >
+                  <X className="icon-sm" aria-hidden />
+                </Button>
+              ) : null}
+              {selection || captures.length ? (
+                <Button
+                  ref={selectionTrigger}
+                  type="button"
+                  variant="ghost"
+                  iconOnly
+                  label={t("Selected browser element")}
+                  aria-haspopup="dialog"
+                  aria-expanded={selectionOpen}
+                  selected={selectionOpen}
+                  onClick={() => setSelectionOpen((value) => !value)}
+                >
+                  <MessageSquarePlus className="icon-sm" aria-hidden />
+                </Button>
+              ) : null}
+              {/* Page size and preview scale share one menu, labelled with the current size. */}
+              {active && state?.open && state.viewport ? (
+                <BrowserViewportMenu
+                  viewport={state.viewport}
+                  disabled={!canPageInput}
+                  disabledReason={inputDisabledReason}
+                  actualSize={actualSize}
+                  canScale={!!frame}
+                  onActualSizeChange={setActualSize}
+                  action={action}
+                  request={request}
+                />
+              ) : null}
+            </>
+          )}
         </div>
         {busy ? (
           <Progress
@@ -1170,7 +1254,7 @@ function ProjectBrowserPanel({
       </div>
       <LiveText className="sr-only" text={`${statusLabel}${notice ? ` · ${notice}` : ""}`} />
       {error && !selectionOpen ? <InlineError details={error}>{errorSummary}</InlineError> : null}
-      {setupRequired ? (
+      {setupRequired && !localPage ? (
         <Text
           as="section"
           size="caption"
@@ -1201,8 +1285,24 @@ function ProjectBrowserPanel({
       ) : null}
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
         <div {...surfaceAttributes({ radius: "none" }, "host-browser-stage")}>
-          {limitation ? <Alert tone="info">{limitation}</Alert> : null}
-          {frame ? (
+          {limitation && !localPage ? <Alert tone="info">{limitation}</Alert> : null}
+          {localPage ? (
+            <LocalBrowserSurface
+              page={localPage}
+              visible={active}
+              onLocation={(address) => {
+                const previous = localAddress.current;
+                localAddress.current = address;
+                setUrl((draft) => (draft === previous ? address : draft));
+                setError("");
+              }}
+              onBlocked={() => setError(t("Local previews only open addresses on this computer."))}
+              onFailure={() => {
+                setError(t("Browser unavailable"));
+                void action(() => openWebsite(localAddress.current, false));
+              }}
+            />
+          ) : frame ? (
             <div
               className="host-tool-preview host-browser-preview"
               data-actual-size={actualSize}
@@ -1606,7 +1706,7 @@ function ProjectBrowserPanel({
             </div>
           ) : (
             <BrowserStartPage
-              disabled={busy || selecting || setupRequired}
+              disabled={busy || selecting || (setupRequired && !localPreviewAvailable)}
               onOpen={(target) => {
                 setUrl(target);
                 void action(() => openWebsite(target));

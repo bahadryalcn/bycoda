@@ -6,12 +6,14 @@ import {
   type ModelRoutingEntry,
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Button } from "../../../../shared/ui/Button";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { Heading } from "../../../../shared/ui/Heading";
 import { Text } from "../../../../shared/ui/Text";
 import { Group } from "../../../../shared/ui/settings";
-import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
+import { useModelSource } from "../../../sessions/public/modelSource";
 import {
   entrySettings,
   reorderKind,
@@ -87,25 +89,26 @@ export function ModelOrderList({
   const root = useRef<HTMLDivElement>(null);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const { entries, pools } = draft.routing;
+  const kindFor = (entry: ModelRoutingEntry) => kindOf(entry, source);
   const byKind = {
-    work: entries.filter((entry) => kindOf(entry) === "work"),
-    personal: entries.filter((entry) => kindOf(entry) === "personal"),
-    shared: entries.filter((entry) => kindOf(entry) === "shared"),
+    work: entries.filter((entry) => kindFor(entry) === "work"),
+    personal: entries.filter((entry) => kindFor(entry) === "personal"),
+    shared: entries.filter((entry) => kindFor(entry) === "shared"),
   };
   const sortables = {
     work: useAnimatedReorder(
       byKind.work.map((entry) => entry.id),
-      (ids) => change(reorderKind(draft, kindOf, "work", ids)),
+      (ids) => change(reorderKind(draft, kindFor, "work", ids)),
       "y",
     ),
     personal: useAnimatedReorder(
       byKind.personal.map((entry) => entry.id),
-      (ids) => change(reorderKind(draft, kindOf, "personal", ids)),
+      (ids) => change(reorderKind(draft, kindFor, "personal", ids)),
       "y",
     ),
     shared: useAnimatedReorder(
       byKind.shared.map((entry) => entry.id),
-      (ids) => change(reorderKind(draft, kindOf, "shared", ids)),
+      (ids) => change(reorderKind(draft, kindFor, "shared", ids)),
       "y",
     ),
   };
@@ -183,12 +186,7 @@ export function ModelOrderList({
   };
   const addAll = (group: AccountGroup) =>
     edit((current) =>
-      addAccountModels(
-        current,
-        setupCandidates(source.id ? LOCAL_MODEL_SOURCE : source, catalog),
-        group.harness,
-        group.accountId,
-      ),
+      addAccountModels(current, addChoices, group.harness, group.accountId, source),
     );
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape" || event.defaultPrevented || !chosen.size) return;
@@ -247,7 +245,7 @@ export function ModelOrderList({
   };
 
   const jobs = jobsUsingOrder(draft.routing.roles);
-  const actions = (
+  const listControls = (
     <div className="flex flex-wrap items-center gap-2">
       <SegmentedControl
         label={t("List models")}
@@ -258,16 +256,13 @@ export function ModelOrderList({
           { value: "priority", label: t("Priority") },
         ]}
       />
-      <OrderSortMenu disabled={entries.length < 2} onEdit={edit} />
-      <SmartSetupAction onEdit={edit} />
-      <Button
-        size="sm"
-        disabled={listFull || !addChoice}
-        disabledReason={addBlockedReason}
-        onClick={addEntry}
-      >
-        {t("Add model")}
-      </Button>
+      <OrderSortMenu
+        disabled={entries.length < 2}
+        onEdit={(operation) => {
+          edit(operation);
+          onView("priority");
+        }}
+      />
     </div>
   );
   if (!entries.length)
@@ -294,60 +289,97 @@ export function ModelOrderList({
     );
   return (
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape from any control inside the list clears the bulk selection; the controls themselves stay the interactive elements.
-    <div ref={root} className="flex flex-col gap-4" onKeyDown={onKeyDown}>
-      <Text size="caption" tone="secondary">
-        {chatFallback
-          ? t("Jobs using this order: {p0}, plus chat fallback", { p0: jobs })
-          : t("Jobs using this order: {p0}", { p0: jobs })}
-      </Text>
-      {KINDS.filter((kind) => byKind[kind].length).map((kind, sectionIndex) => (
-        <Group
-          key={kind}
-          title={sectioned ? t(SECTION_TITLE[kind]) : t("All models")}
-          layout="full"
-          info={
-            sectionIndex === 0
-              ? t(
-                  "Tried from the top: new work starts on the first model with quota left. A work project uses only work and shared models, a personal project only personal and shared ones. Running work keeps its model.",
-                )
-              : undefined
+    <div ref={root} className="@container/model-order flex flex-col gap-4" onKeyDown={onKeyDown}>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid min-w-0 gap-1">
+          <Heading as="h2" size="page">
+            {t("Model priority")}
+          </Heading>
+          <Text size="caption" tone="secondary">
+            {chatFallback
+              ? t("Jobs using this order: {p0}, plus chat fallback", { p0: jobs })
+              : t("Jobs using this order: {p0}", { p0: jobs })}
+          </Text>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <SmartSetupAction onEdit={edit} />
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={listFull || !addChoice}
+            disabledReason={addBlockedReason}
+            onClick={addEntry}
+          >
+            {t("Add model")}
+          </Button>
+        </div>
+      </div>
+      {listControls}
+      {status.error ? (
+        <FailureState
+          size="inline"
+          title={t("Model limits could not be read.")}
+          description=""
+          error={status.error}
+          onRetry={() => status.refetch()}
+        />
+      ) : null}
+      {selected.length ? (
+        <OrderSelectionBar
+          selected={selected}
+          pools={pools}
+          onRemove={() => remove(selected.map((entry) => entry.id))}
+          onEffort={(value) => edit((current) => setEntriesEffort(current, new Set(chosen), value))}
+          onAddToGroup={(poolId) =>
+            edit((current) =>
+              addEntriesToPool(
+                current,
+                poolId,
+                selected.map((entry) => entry.id),
+              ),
+            )
           }
-          action={sectionIndex === 0 ? actions : undefined}
-        >
-          {sectionIndex === 0 && status.error ? (
-            <FailureState
-              size="inline"
-              title={t("Model limits could not be read.")}
-              description=""
-              error={status.error}
-              onRetry={() => status.refetch()}
-            />
-          ) : null}
-          {selected.length && sectionIndex === 0 ? (
-            <OrderSelectionBar
-              selected={selected}
-              pools={pools}
-              onRemove={() => remove(selected.map((entry) => entry.id))}
-              onEffort={(value) =>
-                edit((current) => setEntriesEffort(current, new Set(chosen), value))
-              }
-              onAddToGroup={(poolId) =>
-                edit((current) =>
-                  addEntriesToPool(
-                    current,
-                    poolId,
-                    selected.map((entry) => entry.id),
-                  ),
-                )
-              }
-              onClear={clear}
-            />
-          ) : null}
-          {view === "account"
-            ? groupByAccount(byKind[kind]).map((group) => accountSection(group, kind))
-            : byKind[kind].map((entry, index) => row(entry, index, kind, true))}
-        </Group>
-      ))}
+          onClear={clear}
+        />
+      ) : null}
+      {KINDS.filter((kind) => byKind[kind].length).map((kind, sectionIndex) => {
+        const ids = byKind[kind].map((entry) => entry.id);
+        const selectedCount = ids.filter((id) => chosen.has(id)).length;
+        const title = sectioned ? t(SECTION_TITLE[kind]) : t("All models");
+        return (
+          <Group
+            key={kind}
+            title={title}
+            layout="full"
+            info={
+              sectionIndex === 0
+                ? t(
+                    "Tried from the top: new work starts on the first model with quota left. A work project uses only work and shared models, a personal project only personal and shared ones. Running work keeps its model.",
+                  )
+                : undefined
+            }
+          >
+            {view === "account" ? (
+              groupByAccount(byKind[kind], source).map((group) => accountSection(group, kind))
+            ) : (
+              <>
+                <div className="flex items-center gap-2 px-4 pt-2">
+                  <Checkbox
+                    label={t("Select all")}
+                    size="caption"
+                    tone="secondary"
+                    checked={selectedCount === ids.length}
+                    indeterminate={selectedCount > 0 && selectedCount < ids.length}
+                    aria-label={t("Select all models of {p0}", { p0: title })}
+                    onChange={(event) => choose(ids, event.currentTarget.checked)}
+                  />
+                </div>
+                {byKind[kind].map((entry, index) => row(entry, index, kind, true))}
+              </>
+            )}
+          </Group>
+        );
+      })}
     </div>
   );
 }

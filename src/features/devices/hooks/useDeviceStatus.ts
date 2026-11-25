@@ -1,48 +1,54 @@
 import { useEffect, useState } from "react";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnMachineReconnect } from "../../connections/public/useReloadOnReconnect";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import type { DeviceHostStatus, DevicePanelApi } from "../types";
 
 /** Opening a surface observes the runtime; starting it remains an explicit action.
- * Returns a counter that changes once when the machine answers again while this
- * status read or the caller's device list (listFailed) is failed; the list effect re-runs on it. */
+ * Rechecks a failed observation when the machine recovers. */
 export function useDeviceStatus(
   api: DevicePanelApi,
   visible: boolean,
   setStatus: (value: DeviceHostStatus | undefined) => void,
-  setError: (value: string) => void,
-  setBusy: (value: boolean) => void,
   listFailed = false,
-): number {
+) {
   const [reload, setReload] = useState(0);
-  const [statusFailed, setStatusFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<unknown>();
+  const [loading, setLoading] = useState(visible);
   useReloadOnMachineReconnect(api.environmentId, () => setReload((value) => value + 1), {
-    active: statusFailed || listFailed,
+    active: visible && (!!failure || listFailed),
   });
+  const { visibleError } = useGracedFailure({
+    error: visible ? failure : undefined,
+    loading: visible && loading,
+    retry: () => setAttempt((value) => value + 1),
+    defer: true,
+  });
+  // Observe the current Host on open, retry and machine recovery.
   useEffect(() => {
     if (!visible) return;
     let current = true;
-    setBusy(true);
+    setLoading(true);
     void api.status().then(
       (value) => {
         if (current) {
           setStatus(value);
-          setStatusFailed(false);
-          setBusy(false);
+          setFailure(undefined);
+          setLoading(false);
         }
       },
       (cause: unknown) => {
         if (current) {
           setStatus(undefined);
-          setStatusFailed(true);
-          setError(presentRemoteError(cause, { explicit: true }));
-          setBusy(false);
+          // The RPC transport logs the failure even when the panel recovers during grace.
+          setFailure(() => cause);
+          setLoading(false);
         }
       },
     );
     return () => {
       current = false;
     };
-  }, [api, visible, setStatus, setError, setBusy, reload]);
-  return reload;
+  }, [api, visible, setStatus, reload, attempt]);
+  return { reload, visibleError, loading, clearFailure: () => setFailure(undefined) };
 }

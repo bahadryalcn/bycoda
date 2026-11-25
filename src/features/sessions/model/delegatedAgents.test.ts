@@ -589,7 +589,10 @@ describe("a subagent's own subagents", () => {
 
   it("mark their parent's row while one waits on the user, and are counted there", () => {
     const children = delegatedChildren(sessions, PARENT);
-    const rows = delegatedDockAgents(children, 1_000, nestedDelegatedChildren(sessions, children));
+    const descendants = new Map(
+      children.map((child) => [child.id, nestedDelegatedChildren(sessions, [child])]),
+    );
+    const rows = delegatedDockAgents(children, 1_000, descendants);
     expect(rows.find((row) => row.sessionId === "sub")).toMatchObject({
       needsInput: true,
       nested: 1,
@@ -598,10 +601,12 @@ describe("a subagent's own subagents", () => {
     expect(rows.find((row) => row.sessionId === "adv")).not.toHaveProperty("nested");
     // A parent that already yielded is still in progress while its subagent waits.
     const idle = { ...sub, busy: false };
-    const [row] = delegatedDockAgents([idle], 1_000, [grand]);
+    const [row] = delegatedDockAgents([idle], 1_000, descendants);
     expect(row).toMatchObject({ needsInput: true, status: "running" });
     const answered = { ...grand, pendingOwnerApproval: false };
-    expect(delegatedDockAgents([idle], 1_000, [answered])[0]).not.toHaveProperty("needsInput");
+    expect(
+      delegatedDockAgents([idle], 1_000, new Map([[idle.id, [answered]]]))[0],
+    ).not.toHaveProperty("needsInput");
   });
 });
 

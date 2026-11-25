@@ -1,8 +1,13 @@
 /** Bound the wait, not the effect. Expiry never proves cancellation or permits replay. */
 export const VOICE_TOOL_TIMEOUT_MS = 35_000;
 export type VoiceToolWait = { waitForOwner(): void };
-export const voiceToolWaitsForOwner = (name: string) =>
-  name === "present_choices" || name === "give_jobs";
+export const voiceToolWaitsForOwner = (name: string, args: Record<string, unknown>) =>
+  name === "present_choices" ||
+  name === "give_jobs" ||
+  (name === "app_tool_call" &&
+    args.family === "workspace" &&
+    args.action === "workspace.sessions.create" &&
+    (args.input as { projectPath?: unknown } | undefined)?.projectPath === undefined);
 
 /** Owner approvals raised by a running tool; their own prompt owns the wait. */
 export type VoiceApprovalPort = {

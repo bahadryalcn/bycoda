@@ -9,6 +9,8 @@ use std::sync::{
 use tauri::{AppHandle, Manager};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
+/// A capture slower than this is logged with its stage durations.
+const SLOW_CAPTURE: std::time::Duration = std::time::Duration::from_millis(1_000);
 // A privacy writer closes this gate before invalidating the Host epoch. An
 // admitted effect owns its guard until the actual canonical operation settles.
 struct EffectGate {
@@ -253,9 +255,11 @@ pub(super) fn capture(
         taken.check()
     };
     check()?;
+    let started = std::time::Instant::now();
     let snapshot = crate::control::privacy_scope_admission_pinned(app, &window, &owner)?;
     let (revision, policy_digest) =
         crate::privacy_projection::scope_projection_metadata(app, &owner, &snapshot)?;
+    let first_scope = started.elapsed();
     let mut visible = snapshot["visibleProjects"]
         .as_array()
         .ok_or("Invalid visible project scope")?
@@ -301,6 +305,7 @@ pub(super) fn capture(
     let challenge_value = challenge.project(|value| Ok(value.clone()))?;
     check()?;
     challenge.check()?;
+    let challenged = started.elapsed();
     let current = crate::control::privacy_scope_admission_pinned(app, &window, &owner)?;
     if current != snapshot
         || crate::privacy_projection::scope_projection_metadata(app, &owner, &current)?
@@ -319,6 +324,18 @@ pub(super) fn capture(
         return Err("Privacy scope changed before capture".into());
     }
     check()?;
+    // Each capture is one sequential round trip of a Room disclosure, so a slow one is worth a
+    // line: three window reads and one Host challenge, with durations only.
+    let total = started.elapsed();
+    if total >= SLOW_CAPTURE {
+        log::info!(
+            "privacy scope capture slow: total {} ms (first scope {} ms, challenge {} ms, rechecks and signature {} ms)",
+            total.as_millis(),
+            first_scope.as_millis(),
+            (challenged - first_scope).as_millis(),
+            (total - challenged).as_millis()
+        );
+    }
     Ok(json!({"operationJson":operation_json,"proof":proof}))
 }
 

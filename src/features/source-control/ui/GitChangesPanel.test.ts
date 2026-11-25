@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetGitIndexStore } from "../model/gitIndexStore";
 import { resetGitResourceCache } from "../hooks/useGitResource";
+import { useProjectsDiffStats } from "../hooks/useProjectDiffStats";
 import { resetGitPanelState, withGitOperation } from "../model/gitPanelState";
 
 vi.mock("../../../shared/model/appConfirm", async () => {
@@ -31,6 +32,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   saveGeneratedImage: vi.fn(),
   deleteGeneratedImages: vi.fn(),
   gitDiffIndex: vi.fn(),
+  gitDiffStats: vi.fn(async () => ({ files: 0, additions: 0, deletions: 0 })),
   gitTrustRepository: vi.fn(async () => {}),
   gitInit: vi.fn(async () => {}),
   gitHistory: vi.fn(async () => ({ head: null, commits: [] })),
@@ -106,6 +108,7 @@ import {
   gitStashList,
   gitStashAction,
   gitDiffIndex,
+  gitDiffStats,
   gitTrustRepository,
   gitInit,
   gitPrCreate,
@@ -1559,6 +1562,61 @@ describe("GitChangesPanel navigation", () => {
 });
 
 describe("GitChangesPanel loading and publication recovery", () => {
+  it("updates the Changes totals with the committed file list before the refresh finishes", async () => {
+    const cwd = "/repo-commit-totals";
+    const committedFile: GitChangedFile = {
+      path: `${cwd}/committed.ts`,
+      relative: "committed.ts",
+      status: "modified",
+      additions: 5,
+      deletions: 2,
+      staged: true,
+      unstaged: false,
+    };
+    const staleTotals = { files: 1, additions: 5, deletions: 2 };
+    const pendingTotals = Promise.withResolvers<typeof staleTotals>();
+    const refresh = Promise.withResolvers<GitDiffIndex>();
+    vi.mocked(gitDiffStats).mockImplementationOnce(() => pendingTotals.promise);
+    vi.mocked(gitDiffIndex)
+      .mockResolvedValueOnce(index({ files: [committedFile], additions: 5, deletions: 2 }))
+      .mockReturnValue(refresh.promise);
+    function ChangesTotals() {
+      const [stats] = useProjectsDiffStats([cwd], true);
+      return createElement("output", null, JSON.stringify(stats));
+    }
+    await act(async () =>
+      root.render([
+        createElement(ChangesTotals, { key: "totals" }),
+        createElement(GitChangesPanel, {
+          key: cwd,
+          cwd,
+          enabled: true,
+          onOpenFile: vi.fn(),
+          onOpenAllChanges: vi.fn(),
+          onOpenCommit: vi.fn(),
+        }),
+      ]),
+    );
+    const totals = () => JSON.parse(container.querySelector("output")!.textContent!);
+    expect(gitDiffStats).toHaveBeenCalledWith(cwd);
+    expect(totals()).toEqual(staleTotals);
+    await fillCommitMessage("Commit staged file");
+    await act(async () => primaryAction().click());
+    expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit staged file", false, false);
+    expect(container.textContent).toContain("No uncommitted changes");
+    expect(totals()).toEqual({ files: 0, additions: 0, deletions: 0 });
+
+    await act(async () => pendingTotals.resolve(staleTotals));
+    expect(totals()).toEqual({ files: 0, additions: 0, deletions: 0 });
+
+    const newEdit = changedFile("new-edit.ts");
+    await act(async () =>
+      refresh.resolve(index({ head: "new-head", files: [newEdit], additions: 1 })),
+    );
+    expect(container.textContent).toContain("new-edit.ts");
+    expect(totals()).toEqual({ files: 1, additions: 1, deletions: 0 });
+  });
+
   it("centers the clean working tree with an icon above its message", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index());
     await renderPanel("/repo-clean-empty-state");

@@ -6,7 +6,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Link, linkContentAttributes } from "../../../shared/ui/Link";
-import { HOVER_CARD_OPEN_MS, Tooltip } from "../../../shared/ui/Tooltip";
+import { TOOLTIP_DELAY_MS, Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -143,7 +143,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
           restTimer.current = window.setTimeout(() => {
             restTimer.current = null;
             load();
-          }, HOVER_CARD_OPEN_MS);
+          }, TOOLTIP_DELAY_MS);
         }}
         onPointerLeave={cancelRest}
         onFocus={(event) => {

@@ -3,6 +3,56 @@ import { mkdir } from "node:fs/promises";
 
 const captures = "temp/verification/2026-11-04-chat-thumbnails";
 
+test("native composer displays the full URL without blank space inside the link", async ({
+  page,
+}) => {
+  const evidence = "temp/verification/composer-link-spacing";
+  await mkdir(evidence, { recursive: true });
+  const address =
+    "http://localhost:3000/dashboard/user/user-authorization-operations?view=permissions";
+  const draft = `${address} üzerinden`;
+  for (const theme of ["dark", "light"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/chat/attachment-cards.html?references&theme=${theme}`);
+      const section = page.getByRole("region", { name: "Reference tokens" });
+      const field = section.getByRole("textbox", { name: "Reference token message" });
+      await field.fill(draft);
+      await field.blur();
+      const token = section.locator("[data-composer-link-token]");
+      await expect(token).toBeVisible();
+      await section.screenshot({ path: `${evidence}/${theme}-${width}.png` });
+      const layout = await token.evaluate((link) => {
+        const source = document.createTreeWalker(link, NodeFilter.SHOW_TEXT).nextNode()!;
+        const url = document.createRange();
+        url.selectNodeContents(source);
+        const cursor = document.createTreeWalker(
+          link.closest("[data-reference-overlay]")!,
+          NodeFilter.SHOW_TEXT,
+        );
+        cursor.currentNode = source;
+        let next = cursor.nextNode();
+        while (next && !next.textContent?.includes("üzerinden")) next = cursor.nextNode();
+        if (!next) throw new Error("Missing text after the link");
+        const word = document.createRange();
+        word.setStart(next, next.textContent!.indexOf("üzerinden"));
+        word.setEnd(next, next.textContent!.length);
+        const urlEnd = url.getBoundingClientRect().right;
+        return {
+          text: source.textContent,
+          color: getComputedStyle(source.parentElement!).color,
+          gap: word.getBoundingClientRect().left - urlEnd,
+        };
+      });
+      expect(layout.text).toBe(address);
+      expect(layout.color).not.toBe("rgba(0, 0, 0, 0)");
+      expect(layout.gap).toBeGreaterThan(0);
+      expect(layout.gap).toBeLessThan(8);
+      await expect(field).toHaveValue(draft);
+    }
+  }
+});
+
 test("inline draft references open and keep a shared baseline", async ({ page }) => {
   await page.goto("/tests/browser/chat/attachment-cards.html?references&opener");
   const section = page.getByRole("region", { name: "Reference tokens", exact: true });
@@ -96,7 +146,7 @@ test("reference token icons preserve editable text in both themes and widths", a
       await expect(overlay.locator("[data-composer-attachment-kind] svg")).toHaveCount(3);
       await expect(overlay.locator("[data-mcp-tag] svg")).toHaveCount(1);
       await expect(overlay.locator("[data-work-item-mention] svg")).toHaveCount(3);
-      await expect(overlay.locator("[data-composer-link-icon] svg")).toHaveCount(4);
+      await expect(overlay.locator("[data-composer-link-token]")).toHaveCount(4);
       const transcript = section.locator("[data-reference-transcript]");
       await expect(transcript.locator("[data-skill-token] svg")).toHaveCount(2);
       await expect(transcript.locator("[data-work-item-mention] svg")).toHaveCount(3);

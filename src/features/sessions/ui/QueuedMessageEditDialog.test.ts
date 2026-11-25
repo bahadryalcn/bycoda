@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import type { Attachment, QueuedMessage } from "../model/session";
 import * as attachmentApi from "../model/attachments";
+import { attachmentDraftTokens } from "../model/attachmentTokens";
 import { withChatCitations } from "../model/chatCitation";
 
 let container: HTMLDivElement;
@@ -181,6 +182,46 @@ describe("QueuedMessageEditDialog", () => {
     const { field } = await open();
     expect(field.value).toBe("look at [Image 1 · shot.png · 1 B]");
     expect(document.body.querySelector('[aria-label="Remove shot.png"]')).not.toBeNull();
+  });
+
+  it("skips writes at capacity and can replace a selected reference in the full draft", async () => {
+    const files = Array.from({ length: attachmentApi.MAX_ATTACHMENTS }, (_, i) => ({
+      ...message.attachments[0],
+      id: String(i),
+      name: `seed-${i}.png`,
+    }));
+    const tokens = attachmentDraftTokens(files);
+    const invoke = vi.fn(async (_command: string, args: { name: string }) => "/saved/" + args.name);
+    vi.stubGlobal("__TAURI_INTERNALS__", { invoke });
+    const { field, button, onSave } = await open({
+      message: { id: "full", text: tokens.join(" "), attachments: files },
+    });
+    const pasteFiles = () => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: () => "",
+          files: ["one.txt", "two.txt"].map((name) => new File(["a"], name)),
+        },
+      });
+      field.dispatchEvent(event);
+    };
+    field.setSelectionRange(field.value.length, field.value.length);
+    await act(async () => pasteFiles());
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(0);
+    expect(document.body.textContent).toContain("0 of 2");
+    field.setSelectionRange(0, tokens[0].length);
+    await act(async () => {
+      pasteFiles();
+      await vi.waitFor(() =>
+        expect(invoke.mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(1),
+      );
+    });
+    await act(async () => button("Save").click());
+    expect(onSave.mock.calls[0][1].map((file: Attachment) => file.name)).toEqual([
+      ...files.slice(1).map((file) => file.name),
+      "one.txt",
+    ]);
   });
 
   it.each([false, true])(

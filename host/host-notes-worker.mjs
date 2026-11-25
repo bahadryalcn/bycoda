@@ -46,6 +46,7 @@ const notes = new HostNotes(
 notes.onDelete = (note) => {
   deletedNote = note;
 };
+const retrySignal = new Int32Array(new SharedArrayBuffer(4));
 const methods = new Set([
   "list",
   "get",
@@ -124,6 +125,7 @@ parentPort.on(
             undefined,
             undefined,
             (path, options) => databaseFactory.open(path, options),
+            (ms) => Atomics.wait(retrySignal, 0, 0, ms),
           );
           desktopPlatform = platform;
         }

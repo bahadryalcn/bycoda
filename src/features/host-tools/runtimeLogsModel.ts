@@ -171,12 +171,11 @@ export function createRuntimeLogFilter(filters: RuntimeLogFilters) {
     if (sourceIds && !sourceIds.has(entry.sourceId)) return false;
     if (levels && !levels.has(level ?? runtimeLogDisplayLevel(entry, message))) return false;
     if (!query) return true;
-    return [
-      message ?? entry.message,
-      entry.stack,
-      entry.location?.file,
-      runtimeLogDetailsText(entry.details),
-    ].some((text) => text?.toLocaleLowerCase().includes(query));
+    return (
+      [message ?? entry.message, entry.stack, entry.location?.file].some((text) =>
+        text?.toLocaleLowerCase().includes(query),
+      ) || runtimeLogDetailsText(entry.details).toLocaleLowerCase().includes(query)
+    );
   };
 }
 

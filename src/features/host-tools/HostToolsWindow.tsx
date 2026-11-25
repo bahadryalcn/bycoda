@@ -19,6 +19,7 @@ import type { HostToolsWindow as HostToolsWindowProps } from "../../app/model/ho
 import { SessionHostTools } from "./SessionHostTools";
 import { Alert } from "../../shared/ui/Alert";
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Button } from "../../shared/ui/Button";
 import { Modal } from "../../shared/ui/Modal";
 import { LoadingText } from "../../shared/ui/LoadingText";
@@ -28,8 +29,9 @@ import {
   hideReturnedTools,
   RETURN_PRESENTATION_MS,
 } from "./model/toolsReturnPresentation";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { Folder, Link2, Pin, PanelRightClose, Wrench } from "../../shared/ui/icons";
+import { Folder, PanelRightClose, Wrench } from "../../shared/ui/icons";
 import { t, useLocale } from "../../shared/i18n/technical";
 import {
   mergeToolsSource,
@@ -66,16 +68,8 @@ function sessionStatusBadge(status: string | undefined) {
   ) : undefined;
 }
 const paneKey = (pane: ToolsSession) => `${toolsSessionKey(pane)}:${pane.onlyTab ?? "all"}`;
-const FOLLOW_KEY = "bycoda.tools-hub.follow.v1";
 function sameWindowSet(previous: ReadonlySet<string> | null, next: ReadonlySet<string>) {
   return !!previous && previous.size === next.size && [...next].every((id) => previous.has(id));
-}
-function initialFollow() {
-  try {
-    return localStorage.getItem(FOLLOW_KEY) !== "false";
-  } catch {
-    return true;
-  }
 }
 
 /** Selection changes presentation only; each panel retains its originating composer. */
@@ -94,15 +88,9 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   }
   const [sources, setSources] = useState<ReadonlyMap<string, ToolsSourceSnapshot>>(new Map());
   const [selected, setSelected] = useState<ToolsSession | null>(props);
-  const [follow, setFollow] = useState(initialFollow);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
-  const followRef = useRef(follow);
-  followRef.current = follow;
-  const latestSelection = useRef<{ revision: number; session: ToolsSession | null }>({
-    revision: 0,
-    session: props,
-  });
+  const latestSelectionRevision = useRef(0);
   const [retained, setRetained] = useState<ToolsRegistration[]>([
     { ...props, initialUrl: undefined, id: toolsSessionKey(props), detached: true },
   ]);
@@ -195,9 +183,9 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         return;
       sourceRevisions.current.set(next.sourceWindow, { epoch, revision: next.revision });
       setSources((previous) => mergeToolsSource(previous, next));
-      if (next.selectionRevision > latestSelection.current.revision) {
-        latestSelection.current = { revision: next.selectionRevision, session: next.active };
-        if (followRef.current) setSelected(next.active);
+      if (next.selectionRevision > latestSelectionRevision.current) {
+        latestSelectionRevision.current = next.selectionRevision;
+        setSelected(next.active);
       }
       setSelected((previous) =>
         previous &&
@@ -418,6 +406,20 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         onlyTab: selected.onlyTab,
       }
     : null;
+  const sessionTooltip = current
+    ? {
+        label: current.title,
+        details: [
+          toolsProjectName(current),
+          current.cwd,
+          current.worktreeCwd,
+          current.branch,
+          current.model,
+          sessionStatusBadge(current.status),
+        ].filter((value) => value !== undefined),
+        wide: true,
+      }
+    : undefined;
   const retainedPane = current
     ? retained.find((pane) => sameToolsSession(pane, current) && pane.onlyTab === current.onlyTab)
     : undefined;
@@ -428,20 +430,19 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   const currentPane = ownerUnavailable ? undefined : retainedPane;
   // Asks the other windows again which of them still own tools, after the owner went away.
   const checkAgain = () => {
+    setReturnFailed(false);
+    setError("");
     void requestToolsSources()
       .then((windows) => setAvailableWindows(windows))
       .catch((cause) => setError(toolsTransferError(cause)));
   };
-  const toggleFollow = () => {
-    const next = !follow;
-    setFollow(next);
-    try {
-      localStorage.setItem(FOLLOW_KEY, String(next));
-    } catch {
-      /* Session choice still applies. */
-    }
-    if (next) setSelected(latestSelection.current.session);
-  };
+  const returnCancelled = t("Return cancelled.");
+  const returnChanged = t(
+    "Tools changed after an uncertain transfer. Both workspaces retained for review.",
+  );
+  const returnErrorTitle = t("Could not return to conversation");
+  const cancelled = returnFailed && error === returnCancelled;
+  const showReturnDetails = returnFailed && !cancelled && error !== returnChanged;
   const reattach = async () => {
     if (!currentPane?.composerWindow || returning.current) return;
     returning.current = true;
@@ -449,7 +450,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     const abort = new AbortController();
     returnAbort.current = abort;
     const assertNotCancelled = () => {
-      if (abort.signal.aborted) throw new Error(t("Return cancelled."));
+      if (abort.signal.aborted) throw new Error(returnCancelled);
     };
     setPending(true);
     setError("");
@@ -466,10 +467,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       const submittedEdits = JSON.stringify(toolsTransferEdits(session, drafts));
       const editFingerprint = await toolsTransferFingerprint(toolsTransferEdits(session, drafts));
       const previous = pendingReturns.current.get(paneKey(currentPane));
-      if (previous && previous.editFingerprint !== editFingerprint)
-        throw new Error(
-          t("Tools changed after an uncertain transfer. Both workspaces retained for review."),
-        );
+      if (previous && previous.editFingerprint !== editFingerprint) throw new Error(returnChanged);
       const operation = previous ?? {
         requestId: crypto.randomUUID(),
         editFingerprint,
@@ -522,7 +520,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         session,
         views.current.get(paneKey(currentPane)),
         submittedEdits,
-        t("Tools changed after an uncertain transfer. Both workspaces retained for review."),
+        returnChanged,
       );
       await hideReturnedTools(
         getCurrentWebviewWindow(),
@@ -563,65 +561,41 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           {t("Conversation tools")}
         </Text>
         <div className="tools-hub-identity">
-          <SearchableSelect
-            hideLabel
-            label={t("Tool conversations")}
-            disabled={pending}
-            variant="transparent"
-            value={current ? toolsSessionKey(current) : ""}
-            placeholder={t("Conversation tools")}
-            searchable
-            align="end"
-            options={options.map((session) => ({
-              value: toolsSessionKey(session),
-              label: `${toolsProjectName(session)} · ${session.title}`,
-              description: session.cwd,
-              disabled:
-                !!session.composerWindow &&
-                !!availableWindows &&
-                !availableWindows.has(session.composerWindow),
-              meta: sessionStatusBadge(session.status),
-              icon: <Folder className="icon-sm" aria-hidden />,
-            }))}
-            tooltip={
-              current
-                ? {
-                    label: current.title,
-                    details: [
-                      toolsProjectName(current),
-                      current.cwd,
-                      current.worktreeCwd,
-                      current.branch,
-                      current.model,
-                      sessionStatusBadge(current.status),
-                    ].filter((value) => value !== undefined),
-                    wide: true,
-                  }
-                : undefined
-            }
-            onChange={(key) => {
-              const session = options.find((entry) => toolsSessionKey(entry) === key);
-              if (session) setSelected(session);
-            }}
-          />
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          pressed={follow}
-          tone={follow ? "accent" : "neutral"}
-          // One fixed name; the pressed state carries on/off, so a screen reader never hears a contradiction.
-          label={t("Follow active conversation")}
-          disabled={pending}
-          onClick={toggleFollow}
-        >
-          {follow ? (
-            <Link2 className="icon-sm" aria-hidden />
+          {current && options.length === 1 && sessionTooltip ? (
+            <Tooltip {...sessionTooltip} asChild>
+              <Text as="div" tabIndex={0} size="body" truncate>
+                {toolsProjectName(current)} · {current.title}
+              </Text>
+            </Tooltip>
           ) : (
-            <Pin className="icon-sm" aria-hidden />
+            <SearchableSelect
+              hideLabel
+              label={t("Tool conversations")}
+              disabled={pending}
+              variant="transparent"
+              value={current ? toolsSessionKey(current) : ""}
+              placeholder={t("Conversation tools")}
+              searchable={options.length > 5}
+              align="end"
+              options={options.map((session) => ({
+                value: toolsSessionKey(session),
+                label: `${toolsProjectName(session)} · ${session.title}`,
+                description: session.cwd,
+                disabled:
+                  !!session.composerWindow &&
+                  !!availableWindows &&
+                  !availableWindows.has(session.composerWindow),
+                meta: sessionStatusBadge(session.status),
+                icon: <Folder className="icon-sm" aria-hidden />,
+              }))}
+              tooltip={sessionTooltip}
+              onChange={(key) => {
+                const session = options.find((entry) => toolsSessionKey(entry) === key);
+                if (session) setSelected(session);
+              }}
+            />
           )}
-        </Button>
+        </div>
         <Button
           variant="ghost"
           size="sm"
@@ -638,14 +612,18 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       </header>
       {error ? (
         <Alert
-          tone="danger"
+          tone={cancelled ? "info" : "danger"}
+          title={showReturnDetails ? returnErrorTitle : undefined}
+          extra={
+            showReturnDetails ? <ErrorDetails title={returnErrorTitle} detail={error} /> : undefined
+          }
           action={
             returnFailed && currentPane?.composerWindow && !pending
               ? { label: t("Try again"), onClick: () => void reattach() }
               : undefined
           }
         >
-          {error}
+          {showReturnDetails ? undefined : error}
         </Alert>
       ) : null}
       <div className="tools-hub-body">

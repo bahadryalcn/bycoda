@@ -29,7 +29,8 @@ import { kindOf } from "./orderGrouping";
 import { changedTabs, type OrderTab } from "./orderTabs";
 import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
 import { useRetainedTransaction } from "../../model/retainedTransaction";
-import type { MachineLimits } from "../../../tasks/public/hostSettings";
+import { useModelSource } from "../../../sessions/public/modelSource";
+import type { ModelRoutingEntry } from "../../../../shared/model/host-contracts/model-routing";
 
 export type ModelOrderSettingsProps = {
   /** The Host whose routing is edited. */
@@ -57,30 +58,27 @@ function OrderSettingsLoader({ machineId }: { machineId: string }) {
   const t = useT();
   const client = useQueryClient();
   const settings = useOrderSettings(machineId);
-  if (settings.routing.loading || settings.limits.isPending)
+  if (settings.routing.loading)
     return <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>;
-  if (!settings.routing.state || !settings.limits.data)
+  if (!settings.routing.state)
     return (
       <SettingsFeedback
         state="error"
         action={{
           label: t("Retry"),
           onClick: async () => {
-            await Promise.all([
-              settings.limits.refetch(),
-              client.refetchQueries({ queryKey: [HOST_MODEL_ROUTING, machineId], exact: true }),
-            ]);
+            await client.refetchQueries({ queryKey: [HOST_MODEL_ROUTING, machineId], exact: true });
           },
         }}
       >
-        {t("Models and limits could not be read.")}
+        {t("Models could not be read.")}
       </SettingsFeedback>
     );
   return (
     <OrderSettingsForm
       machineId={machineId}
       settings={settings}
-      initial={{ routing: settings.routing.state, limits: settings.limits.data.state }}
+      initial={{ routing: settings.routing.state, limits: settings.limits.data?.state }}
     />
   );
 }
@@ -95,24 +93,26 @@ function OrderSettingsForm({
 }: {
   machineId: string;
   settings: ReturnType<typeof useOrderSettings>;
-  initial: Parameters<typeof useOrderDraft>[1] & { limits: MachineLimits };
+  initial: Parameters<typeof useOrderDraft>[1];
 }) {
   const t = useT();
   // Account kinds decide which list an entry sits in.
   useSyncExternalStore(subscribeProviderAccounts, accountsSnapshot, accountsSnapshot);
   const editor = useOrderDraft(settings, initial, machineId);
+  const source = useModelSource();
   const status = useModelRoutingStatus(machineId, true);
   // The tab and list view survive leaving Settings; a first visit with no models starts at the list.
   const [tab, setTab] = useRetainedTransaction<OrderTab>(
     `order:${machineId}:tab`,
     initial.routing.entries.length ? "jobs" : "models",
   );
-  const [view, setView] = useRetainedTransaction<OrderView>(`order:${machineId}:view`, "account");
+  const [view, setView] = useRetainedTransaction<OrderView>(`order:${machineId}:view`, "priority");
   const [focusRequest, setFocusRequest] = useState<FocusRequest>();
   const { draft } = editor;
-  const change = (next: OrderDraft) => editor.change(groupEntriesByKind(next, kindOf));
+  const kindFor = (entry: ModelRoutingEntry) => kindOf(entry, source);
+  const change = (next: OrderDraft) => editor.change(groupEntriesByKind(next, kindFor));
   const edit = (operation: (current: OrderDraft) => OrderDraft) =>
-    editor.edit((current) => groupEntriesByKind(operation(current), kindOf));
+    editor.edit((current) => groupEntriesByKind(operation(current), kindFor));
   const savedRouting = settings.routing.state ?? initial.routing;
   const listed = editor.dirty ? orderChanges(editor.base, draft, change) : [];
   // Anything the list does not name still counts, so Save never hides behind a clean count.
@@ -185,16 +185,33 @@ function OrderSettingsForm({
             {tab === "agents" ? (
               <DelegationSettings draft={draft} disabled={editor.pending} onChange={change} />
             ) : null}
-            {tab === "limits" ? (
+            {tab === "limits" && settings.limits.data ? (
               <ModelOrderLimitsTab
                 machineId={machineId}
-                machine={settings.limits.data?.machine}
+                machine={settings.limits.data.machine}
                 draft={draft}
-                usage={settings.limits.data?.state ?? initial.limits}
+                usage={{ ...settings.limits.data.state, stale: settings.limits.isError }}
                 hostProviders={hostProvidersFrom(settings.catalog)}
                 onChange={change}
                 onFieldInvalid={editor.fieldInvalid}
               />
+            ) : null}
+            {tab === "limits" && !settings.limits.data ? (
+              <SettingsFeedback
+                state={settings.limits.isPending ? "loading" : "error"}
+                action={
+                  settings.limits.isPending
+                    ? undefined
+                    : {
+                        label: t("Retry"),
+                        onClick: async () => {
+                          await settings.limits.refetch();
+                        },
+                      }
+                }
+              >
+                {settings.limits.isPending ? t("Loading…") : t("Work limits could not be read.")}
+              </SettingsFeedback>
             ) : null}
           </FieldGroup>
         </TabPanel>

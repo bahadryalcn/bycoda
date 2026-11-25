@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { useT } from "../../../../shared/i18n";
 import {
   MODEL_ROUTING_MAX_POOLS,
   type ModelRoutingPool,
 } from "../../../../shared/model/host-contracts/model-routing";
-import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { TextField } from "../../../../shared/ui/TextField";
@@ -24,6 +26,7 @@ export function ModelOrderPools({
 }) {
   const t = useT();
   const { entries, pools } = draft.routing;
+  const [expanded, setExpanded] = useState<string | undefined>(() => pools[0]?.id);
   // A group is only a draft edit until Save and Discard reverts it, so removing needs no confirmation.
   const removePool = (pool: ModelRoutingPool) =>
     onEdit((current) => removeOrderPool(current, pool.id));
@@ -42,7 +45,8 @@ export function ModelOrderPools({
                 ? t("The group limit is reached.")
                 : undefined
           }
-          onClick={() =>
+          onClick={() => {
+            const id = crypto.randomUUID();
             onChange({
               ...draft,
               routing: {
@@ -50,14 +54,15 @@ export function ModelOrderPools({
                 pools: [
                   ...pools,
                   {
-                    id: crypto.randomUUID(),
+                    id,
                     name: nextOrderPoolName(pools, t("New group")),
                     entryIds: [entries[0]!.id],
                   },
                 ],
               },
-            })
-          }
+            });
+            setExpanded(id);
+          }}
         >
           {t("New group")}
         </Button>
@@ -72,70 +77,86 @@ export function ModelOrderPools({
             aria-label={pool.name || t("Unnamed group")}
             className="flex flex-col gap-2 px-4 py-3"
           >
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <TextField
-                  label={t("Group name")}
-                  hideLabel
-                  maxLength={80}
-                  value={pool.name}
-                  onChange={(event) =>
-                    onChange({
-                      ...draft,
-                      routing: {
-                        ...draft.routing,
-                        pools: pools.map((candidate) =>
-                          candidate.id === pool.id
-                            ? { ...candidate, name: event.currentTarget.value }
-                            : candidate,
-                        ),
-                      },
-                    })
-                  }
-                />
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <SegmentedControl
-                  label={t("Effort of {p0}", { p0: pool.name || t("Unnamed group") })}
-                  value={pool.effort ?? "default"}
-                  onValueChange={(effort) =>
-                    onChange({
-                      ...draft,
-                      routing: {
-                        ...draft.routing,
-                        pools: pools.map((candidate) => {
-                          if (candidate.id !== pool.id) return candidate;
-                          const { effort: _previous, ...rest } = candidate;
-                          return effort === "default"
-                            ? rest
-                            : { ...rest, effort: effort as ModelRoutingPool["effort"] };
-                        }),
-                      },
-                    })
-                  }
-                  options={[
-                    { value: "default", label: t("Default") },
-                    { value: "low", label: t("Low") },
-                    { value: "medium", label: t("Medium") },
-                    { value: "high", label: t("High") },
-                  ]}
-                />
-                <InfoTooltip label={t("Group effort")}>
-                  {t(
-                    "Work that runs on this group uses this effort on every model that supports it, including models of included groups. Default keeps each model's own setting.",
-                  )}
-                </InfoTooltip>
-              </div>
-              <Button
-                iconOnly
-                variant="ghost"
-                label={t("Delete group {p0}", { p0: pool.name || t("Unnamed group") })}
-                onClick={() => removePool(pool)}
-              >
-                <Trash2 className="icon-sm" />
-              </Button>
+            <SectionLabel
+              collapsible
+              expanded={expanded === pool.id}
+              onExpandedChange={(open) => setExpanded(open ? pool.id : undefined)}
+              controls={`routing-pool-${pool.id}`}
+              count={pool.entryIds.length + (pool.poolIds?.length ?? 0)}
+              actions={
+                <Button
+                  iconOnly
+                  variant="ghost"
+                  label={t("Delete group {p0}", { p0: pool.name || t("Unnamed group") })}
+                  onClick={() => removePool(pool)}
+                >
+                  <Trash2 className="icon-sm" />
+                </Button>
+              }
+            >
+              {pool.name || t("Unnamed group")}
+            </SectionLabel>
+            <div id={`routing-pool-${pool.id}`} hidden={expanded !== pool.id}>
+              {expanded === pool.id ? (
+                <>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="min-w-0 flex-1">
+                      <TextField
+                        label={t("Group name")}
+                        maxLength={80}
+                        value={pool.name}
+                        onChange={(event) =>
+                          onChange({
+                            ...draft,
+                            routing: {
+                              ...draft.routing,
+                              pools: pools.map((candidate) =>
+                                candidate.id === pool.id
+                                  ? { ...candidate, name: event.currentTarget.value }
+                                  : candidate,
+                              ),
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <SegmentedControl
+                        label={t("Effort of {p0}", { p0: pool.name || t("Unnamed group") })}
+                        value={pool.effort ?? "default"}
+                        onValueChange={(effort) =>
+                          onChange({
+                            ...draft,
+                            routing: {
+                              ...draft.routing,
+                              pools: pools.map((candidate) => {
+                                if (candidate.id !== pool.id) return candidate;
+                                const { effort: _previous, ...rest } = candidate;
+                                return effort === "default"
+                                  ? rest
+                                  : { ...rest, effort: effort as ModelRoutingPool["effort"] };
+                              }),
+                            },
+                          })
+                        }
+                        options={[
+                          { value: "default", label: t("Default") },
+                          { value: "low", label: t("Low") },
+                          { value: "medium", label: t("Medium") },
+                          { value: "high", label: t("High") },
+                        ]}
+                      />
+                      <InfoPopover label={t("Group effort")}>
+                        {t(
+                          "Work that runs on this group uses this effort on every model that supports it, including models of included groups. Default keeps each model's own setting.",
+                        )}
+                      </InfoPopover>
+                    </div>
+                  </div>
+                  <PoolMembers draft={draft} pool={pool} onEdit={onEdit} />
+                </>
+              ) : null}
             </div>
-            <PoolMembers draft={draft} pool={pool} onEdit={onEdit} />
           </div>
         ))}
       </>

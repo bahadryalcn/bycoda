@@ -1,3 +1,4 @@
+import { emitCodexQuotaObservation } from "./codexQuotaObservations";
 import { errorText } from "../../../../shared/lib/errors";
 import { resumeCodexThread } from "./codexThreadRecovery";
 import {
@@ -1869,6 +1870,11 @@ function noteRateLimits(live: Live, update: Record<string, unknown>): void {
     primary: update.primary ?? current.primary,
     secondary: update.secondary ?? current.secondary,
   });
+  if (id === "codex") {
+    const limits = parseCodexRateLimits(update);
+    if (limits.session || limits.weekly || limits.monthly)
+      emitCodexQuotaObservation(live.providerAccountId ?? "default", limits);
+  }
 }
 
 function usageLimitResetAt(live: Live): number | null {

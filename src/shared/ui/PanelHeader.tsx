@@ -18,6 +18,7 @@ export type PanelHeaderProps = {
   onClose?: () => void;
   /** Keeps the close target visible but unavailable during a bounded operation. */
   closeDisabled?: boolean;
+  hideCloseTooltip?: boolean;
   closeLabel?: string;
   closeRef?: Ref<HTMLButtonElement>;
   /** Extra trailing actions placed before the close action (28px ghost icon Buttons). */
@@ -44,6 +45,7 @@ export function PanelHeader({
   descriptionId,
   onClose,
   closeDisabled,
+  hideCloseTooltip,
   closeLabel,
   closeRef,
   actions,
@@ -74,6 +76,7 @@ export function PanelHeader({
           iconOnly
           size="sm"
           label={closeLabel ?? t("Close")}
+          title={hideCloseTooltip ? "" : undefined}
           variant="ghost"
           onClick={onClose}
           disabled={closeDisabled}

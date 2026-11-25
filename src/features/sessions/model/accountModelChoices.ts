@@ -22,7 +22,9 @@ export type AccountModelChoice = AgentModel & {
   /** The account's display label, kept apart from `name` so a row can truncate the model first. */
   accountLabel?: string;
 };
-type ModelAccountProfile = Pick<ProviderAccount, "id" | "label" | "isDefault"> & { color?: string };
+type ModelAccountProfile = Pick<ProviderAccount, "id" | "label" | "isDefault" | "kind"> & {
+  color?: string;
+};
 
 export type ModelAccountCatalog = Partial<
   Record<"codex" | "claude" | "grok", readonly ModelAccountProfile[]>
@@ -79,21 +81,27 @@ export function accountModelChoices(
   enabled: boolean,
   catalog?: ModelAccountCatalog,
 ): AccountModelChoice[] {
+  if (!enabled) return models.slice();
+  const identities = new Map<AgentModel["harness"], ReturnType<typeof modelAccountIdentities>>();
   return models.flatMap((model) => {
-    if (!enabled || !supportsProviderAccounts(model.harness)) return [model];
+    if (!supportsProviderAccounts(model.harness)) return [model];
     // A Host that has not reported this provider's accounts leaves the account unknown: the
     // model stays one row and the owning Host picks its account, never this device's profiles.
     if (catalog !== undefined && catalog[model.harness] === undefined) return [model];
-    const accounts =
-      catalog === undefined ? providerAccounts(model.harness) : (catalog[model.harness] ?? []);
-    return modelAccountIdentities(model.harness, accounts).map(
-      ({ id, isDefault: _default, ...account }) => ({
-        ...model,
-        ...account,
-        name: `${model.name} ${account.accountLabel}`,
-        accountId: id,
-      }),
-    );
+    let accounts = identities.get(model.harness);
+    if (!accounts) {
+      accounts = modelAccountIdentities(
+        model.harness,
+        catalog === undefined ? providerAccounts(model.harness) : (catalog[model.harness] ?? []),
+      );
+      identities.set(model.harness, accounts);
+    }
+    return accounts.map(({ id, isDefault: _default, ...account }) => ({
+      ...model,
+      ...account,
+      name: `${model.name} ${account.accountLabel}`,
+      accountId: id,
+    }));
   });
 }
 

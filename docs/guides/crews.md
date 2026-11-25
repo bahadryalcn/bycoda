@@ -318,16 +318,44 @@ tasks and conversations remain available.
 
 ## Crew work and conversations
 
-**Crews > Work** is the one place to read and manage work. It opens by default when
-something needs a decision. A rail row, and the bar on a conversation a crew runs, open it
-for that crew or run. At the top, crew members working in other projects or on other
-hosts are listed by project; select one to open its conversation. Below, a crew
-selector (when there is more than one crew) and the **Ongoing** and **Finished**
-views list this project's work. A search appears once a view holds seven or more
-works. The list appears only when a crew has more than one piece of work; a single
-piece opens its detail directly, and a crew without work shows **No crew work yet**.
-In a narrow window the page shows either the list or one piece of work, with **Back
-to work list**.
+Open **Crew work** from the rail. In the Sessions sidebar, **Crew work** and
+**Manage** appear while the project has ongoing or paused crew work. Visit the
+**Work** tab on the Crews page for finished work.
+
+The management dialog has a crew selector, **Ongoing** and **Finished** views,
+a search over the loaded work (shown once a view holds seven or more works) and a
+selectable work list with update times. The search and selection survive refreshes;
+switching crews clears the search. Each item shows a live or paused state only when it says something, and,
+separately, whether it needs you (**Needs decision**, **Needs review** or
+**Blocked**); a paused run can still need a decision and stays answerable. A
+selected work item has one row of controls next to its title: **Pause** and
+**Stop**, or **Resume** and **Stop** while paused (the Resume button is the
+paused signal). Below it are progress, decisions needed, blocked assignments,
+the conversations with member names and models from that run (view only), the
+team, one message box and the latest timeline events (**Show all** for the
+rest). The team is a strip of member faces fixed when the work started; hover a
+face for its role, model and spend, or select it to address that member. The
+message box sends a note to the lead by default; for a specialist or advisor it
+also offers **Assign**, which uses the first line of the message as the task
+title. Select a conversation to open it. The session sidebar keeps managed conversations grouped
+instead of duplicating them in the ordinary Sessions list.
+
+**Pause** holds new assignments while active work continues; **Resume**
+allows scheduling again. **Stop work** asks for confirmation, pauses the run and
+cancels active assignments; it is not offered again for that work while the
+coordinator's cancellation settles (**Stopping…**). Stopped assignments remain in Tasks; resuming does
+not automatically retry blocked work. **Delete work** is available only on hosts
+with run-delete support and after active work is stopped. It removes the work
+from the list while keeping the crew, tasks and conversations. Decisions are
+answered in the coordinator conversation through **Answer**.
+
+The list appears only when a crew has more than one piece of work; a single piece opens its
+detail directly, and a crew without work shows **No crew work yet**. In a narrow window the
+dialog shows either the list or one piece of work, with **Back to work list**. Crew members
+working in other projects or on other hosts are listed by project; select one to open its
+conversation.
+
+On mobile, **Pause**, **Resume**, and **Stop work** appear beside the run status and above its expanded details. **Delete work** is in the work menu.
 
 When more than one connected machine runs crews, a **Machine** selector chooses
 whose crews and work are shown and where **New work** runs, with a **Project**

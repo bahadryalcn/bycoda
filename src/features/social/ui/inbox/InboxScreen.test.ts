@@ -179,8 +179,16 @@ it("reads the accounts section once, never the full workspace, while conversatio
   ]);
 });
 
-it("keeps the accounts read on a tag change but reloads the list and not on window focus", async () => {
-  const fake = fakeClient();
+it("applies the Host's saved tags without refetching the list, conversation or accounts", async () => {
+  const fake = fakeClient({
+    handlers: {
+      "inbox.setStatus": () => ({
+        threadId: "t1",
+        status: "unread",
+        tags: ["other-window", "lead"],
+      }),
+    },
+  });
   await mount(fake.client);
   const sectionReads = () => vi.mocked(fake.client.sectionSnapshot).mock.calls.length;
   const listReads = fake.of("inbox.unified").length;
@@ -197,7 +205,10 @@ it("keeps the accounts read on a tag change but reloads the list and not on wind
   });
   await flush();
   expect(fake.of("inbox.setStatus")).toHaveLength(1);
-  expect(fake.of("inbox.unified").length).toBeGreaterThan(listReads);
+  expect(fake.of("inbox.unified")).toHaveLength(listReads);
+  expect(fake.of("thread.read")).toHaveLength(1);
+  expect(fake.of("inbox.replyOptions")).toHaveLength(1);
+  expect(element.querySelector('[aria-label="Remove other-window"]')).not.toBeNull();
   expect(sectionReads()).toBe(1);
   await act(async () => {
     focusManager.setFocused(false);
@@ -213,6 +224,76 @@ it("reloads the accounts read after Check now because connection state can chang
   await act(async () => button("Check now")!.click());
   await flush();
   expect(vi.mocked(fake.client.sectionSnapshot)).toHaveBeenCalledTimes(2);
+});
+
+it("rechecks a tag search when a saved change removes its last matching conversation", async () => {
+  let tags = ["vip"];
+  const fake = fakeClient({
+    handlers: {
+      "inbox.unified": (input) => ({
+        items:
+          (input?.filter as { query?: string } | undefined)?.query && !tags.length
+            ? []
+            : [item("t1", "Ana", { tags })],
+        unreadable: [],
+      }),
+      "inbox.setStatus": () => {
+        tags = [];
+        return { threadId: "t1", status: "unread", tags };
+      },
+    },
+  });
+  await mount(fake.client);
+  const search = element.querySelector<HTMLInputElement>("input[type=search]")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "vip");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await vi.waitFor(() => expect(fake.of("inbox.unified")).toHaveLength(2));
+  await flush();
+  await act(async () =>
+    element.querySelector<HTMLButtonElement>('[aria-label="Remove vip"]')!.click(),
+  );
+  await flush();
+  expect(fake.of("inbox.unified")).toHaveLength(3);
+  expect(rows()).toHaveLength(0);
+  expect(element.textContent).toContain("No conversations match these filters.");
+});
+
+it("reconciles a tag save with a pending list refresh without replaying the old response", async () => {
+  const initial = item("t1", "Ana");
+  const saved = { ...initial, tags: ["vip"] };
+  let reads = 0;
+  let finishOldRead!: (result: InboxUnifiedResult) => void;
+  const fake = fakeClient({
+    handlers: {
+      "inbox.unified": () => {
+        reads++;
+        if (reads === 2)
+          return new Promise((resolve) => {
+            finishOldRead = resolve;
+          });
+        return { items: [reads === 1 ? initial : saved], unreadable: [] };
+      },
+      "inbox.setStatus": () => saved,
+    },
+  });
+  await mount(fake.client);
+  await act(async () => button("Check now")!.click());
+  await vi.waitFor(() => expect(finishOldRead).toBeDefined());
+  const input = element.querySelector<HTMLInputElement>('input[placeholder="Add tag"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "vip");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  await flush();
+  expect(reads).toBe(3);
+  await act(async () => finishOldRead({ items: [initial], unreadable: [] }));
+  await flush();
+  expect(element.querySelector('[aria-label="Remove vip"]')).not.toBeNull();
 });
 
 it("does not load the list while the screen is retained but hidden", async () => {
@@ -311,12 +392,48 @@ it("sends the search text to the Host and explains an empty filtered result with
     setter.call(search, " zzz ");
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  await vi.waitFor(() =>
+    expect(fake.of("inbox.unified").at(-1)?.input).toMatchObject({ filter: { query: "zzz" } }),
+  );
   await flush();
   const last = fake.of("inbox.unified").at(-1)!;
   expect(last.input).toMatchObject({ filter: { query: "zzz" } });
   expect(element.textContent).toContain("No conversations match these filters.");
   expect(button("Clear filters")).toBeDefined();
   expect(button("Check now")!.closest(".inbox-toolbar")).not.toBeNull();
+});
+
+it("retains matching rows and the selected person's timeline while the latest query settles", async () => {
+  const ana = item("t1", "Planning", { person: { id: "pe1", name: "Ana" } });
+  let settle!: (result: InboxUnifiedResult) => void;
+  const fake = fakeClient({
+    handlers: {
+      "inbox.unified": (input) =>
+        (input?.filter as { query?: string } | undefined)?.query
+          ? new Promise<InboxUnifiedResult>((resolve) => {
+              settle = resolve;
+            })
+          : { items: [ana, item("t2", "News", { preview: "Daily news" })], unreadable: [] },
+    },
+  });
+  await mount(fake.client);
+  const original = rows()[0];
+  const search = element.querySelector<HTMLInputElement>("input[type=search]")!;
+  for (const text of ["p", "pl", "plan"]) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, text);
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toBe(original);
+    expect(element.querySelector(".inbox-conversation-title")?.textContent).toBe("Ana");
+  }
+  await vi.waitFor(() => expect(settle).toBeDefined());
+  expect(fake.of("inbox.unified")).toHaveLength(2);
+  expect(fake.of("inbox.unified").at(-1)?.input).toMatchObject({ filter: { query: "plan" } });
+  await act(async () => settle({ items: [ana], unreadable: [] }));
+  await flush();
+  expect(fake.of("inbox.timeline")).toHaveLength(1);
 });
 
 it("names every account the Host cannot read while still listing the rest", async () => {

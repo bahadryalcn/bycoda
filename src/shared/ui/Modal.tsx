@@ -99,6 +99,8 @@ type Props = {
   onClose: () => void;
   /** Holds Close, Escape and backdrop dismissal while a bounded operation owns the dialog. */
   closeDisabled?: boolean;
+  /** Hide the close button tooltip while retaining its accessible name. */
+  hideCloseTooltip?: boolean;
   /** Override Escape without changing the close button. */
   onEscape?: () => void;
   /** Keep the modal focus boundary while showing the workspace without a scrim. */
@@ -192,6 +194,7 @@ export function ModalPanel({
   languageDomain,
   onClose,
   closeDisabled = false,
+  hideCloseTooltip,
   onEscape,
   title,
   description,
@@ -381,6 +384,7 @@ export function ModalPanel({
                   closeLabel={t("Close")}
                   onClose={onClose}
                   closeDisabled={closeDisabled}
+                  hideCloseTooltip={hideCloseTooltip}
                   actions={minimalHeader ? undefined : headerActions}
                 />
                 <div

@@ -7,6 +7,7 @@ import type {
 } from "../../../../shared/model/host-contracts/model-routing";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
+import { Text } from "../../../../shared/ui/Text";
 import { Row } from "../../../../shared/ui/settings";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import {
@@ -15,6 +16,7 @@ import {
   resolveModel,
 } from "../../../sessions/public/models";
 import { withoutDelegation } from "../../model/modelRoutingRoles";
+import { ResolvedRoutingModel } from "../choice/ModelRoutingResolution";
 import { ModelRolePreview, type RolePreview } from "./ModelRolePreview";
 
 const POOL_PREFIX = "pool:";
@@ -87,10 +89,27 @@ export function ModelRoleRow({
     { value: "fixed", label: t("Fixed model") },
   ];
   // Every job says which model it runs on now, so the order and groups need no explanation.
-  const previewNode = preview ? <ModelRolePreview preview={preview} helper={helper} /> : null;
+  const resolved = preview?.data;
+  const previewNode =
+    !helper && !preview?.isError && resolved?.ok ? (
+      <Text as="p" size="caption" tone="secondary">
+        <ResolvedRoutingModel target={resolved.target} compact />
+      </Text>
+    ) : preview ? (
+      <ModelRolePreview preview={preview} helper={helper} />
+    ) : null;
   return (
     <Row
-      label={t(label)}
+      label={
+        previewNode ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <span>{t(label)}</span>
+            {previewNode}
+          </div>
+        ) : (
+          t(label)
+        )
+      }
       disabled={disabled}
       stacked={choice?.kind === "fixed"}
       feedback={
@@ -100,13 +119,11 @@ export function ModelRoleRow({
               "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
             )}
           </InlineMessage>
-        ) : (
-          previewNode
-        )
+        ) : null
       }
     >
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <div className="w-56 max-w-full shrink-0">
+      <div className="flex min-w-0 w-full flex-wrap items-center gap-2">
+        <div className="w-48 max-w-full shrink-0">
           <Select
             label={t("Model for {p0}", { p0: t(label) })}
             hideLabel
@@ -124,13 +141,15 @@ export function ModelRoleRow({
           />
         </div>
         {choice?.kind === "fixed" ? (
-          <div className="min-w-56 flex-1">
+          <div className="min-w-0 flex-1 basis-52">
             <ModelPicker
               harness={choice.target.harness}
               model={choice.target.model}
               values={choice.target.modelSettings}
               presentation="field"
               hideAgentSettings
+              accountChoices
+              accountId={choice.target.providerAccountId}
               showExtras
               extrasDisabled={disabled}
               onChange={(harness, model, providerAccountId) => {

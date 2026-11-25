@@ -61,3 +61,35 @@ it("polls only the Host with a settling session at 3 s and keeps the other subsc
   await act(async () => vi.advanceTimersByTimeAsync(51_000));
   expect(callsFor("idle")).toBe(idleAfterMount + 1);
 });
+
+it("moves a remote row before the reply and rolls it back only on its owning Host", async () => {
+  let current!: ReturnType<typeof useRemoteSessionLifecycleLists>;
+  function SharedSessionId() {
+    current = useRemoteSessionLifecycleLists(JSON.stringify(["left", "right"]));
+    return null;
+  }
+  remoteRequest.mockResolvedValue({
+    records: [{ sessionId: "same", state: "active", participants: owner }],
+    autoSettle,
+  });
+  await act(async () => root.render(createElement(SharedSessionId)));
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  let reject!: (error: Error) => void;
+  remoteRequest.mockImplementationOnce(
+    () =>
+      new Promise((_, no) => {
+        reject = no;
+      }),
+  );
+  let save!: Promise<void>;
+  act(() => {
+    save = current.change("left", "same", false);
+  });
+  expect(current.lists.get("left")?.get("same")?.state).toBe("settled");
+  expect(current.lists.get("right")?.get("same")?.state).toBe("active");
+  await act(async () => {
+    reject(new Error("Host refused"));
+    await expect(save).rejects.toThrow("Host refused");
+  });
+  expect(current.lists.get("left")?.get("same")?.state).toBe("active");
+});

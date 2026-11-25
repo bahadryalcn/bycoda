@@ -635,7 +635,7 @@ describe("subscribeDeviceVideo", () => {
         vi.fn(),
         vi.fn(),
       ),
-    ).rejects.toThrow("DEVICE_STREAM_UNSUPPORTED");
+    ).rejects.toThrow("RPC_WS_UNSUPPORTED");
     expect(acquireRemoteHostRuntime).not.toHaveBeenCalled();
     expect(bindMachineEnvironment).not.toHaveBeenCalled();
     expect(remoteRequest).not.toHaveBeenCalled();

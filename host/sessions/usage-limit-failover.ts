@@ -19,7 +19,7 @@ import type { HostEngine } from "../engine";
 import { providerAccountKind } from "../model-routing/account-kind";
 import { isProfileProvider, type HostProviderAccountCatalog } from "../providers/provider-accounts";
 import { readHostAgentDefaults } from "../settings-defaults/read-defaults";
-import type { UsageLimitsReport } from "../usage/limits-report";
+import { isQuotaProvider, type QuotaTarget, type UsageLimitsReport } from "../usage/limits-report";
 
 /** The engine drops a settled turn right after its callback; a stuck turn gets no failover. */
 const RELEASE_WAIT_MS = 5_000;
@@ -32,7 +32,7 @@ export type UsageLimitFailoverPorts = {
   /** Tasks, goals, crews, stewards and automation runs: anything naming the session owns it. */
   workRecords(id: string): Promise<unknown[]>;
   accounts(): Promise<HostProviderAccountCatalog>;
-  limits(): Promise<UsageLimitsReport>;
+  limits(target: QuotaTarget): Promise<UsageLimitsReport>;
   models(): Promise<HostModelCatalog>;
   routing(): ModelRoutingService;
 };
@@ -82,9 +82,8 @@ async function accountTarget(
   isLimited: (key: string) => boolean,
 ): Promise<FailoverTarget | undefined> {
   const { harness, model, providerAccountId } = value.session;
-  if (!isProfileProvider(harness)) return undefined;
-  const [report, state, project] = await Promise.all([
-    ports.limits().catch(() => undefined),
+  if (!isProfileProvider(harness) || !isQuotaProvider(harness)) return undefined;
+  const [state, project] = await Promise.all([
     ports.routing().get(),
     ports.engine.store.project(value.projectId).catch(() => undefined),
   ]);
@@ -100,7 +99,13 @@ async function accountTarget(
         return id !== current && (!kind || kind === scope);
       }),
     limited: isLimited,
-    hasQuota: async (id) => accountHasQuota(report, harness, id, model),
+    hasQuota: async (id) =>
+      accountHasQuota(
+        await ports.limits({ provider: harness, accountId: id }).catch(() => undefined),
+        harness,
+        id,
+        model,
+      ),
   });
 }
 
