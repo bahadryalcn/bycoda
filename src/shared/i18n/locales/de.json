@@ -14943,5 +14943,7 @@
   "Searched {p0} sites": "{p0} Websites durchsucht",
   "Show sources for {p0}": "Quellen für {p0} anzeigen",
   "Hide sources for {p0}": "Quellen für {p0} ausblenden",
-  "{p0} more sources": "{p0} weitere Quellen"
+  "{p0} more sources": "{p0} weitere Quellen",
+  "Playback speed": "Wiedergabegeschwindigkeit",
+  "Playback speed {p0}, {p1}": "Wiedergabegeschwindigkeit {p0}, {p1}"
 }

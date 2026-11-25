@@ -96,6 +96,13 @@ export function seekMedia(element: HTMLMediaElement | null, seconds: number): vo
   if (element) element.currentTime = seconds;
 }
 
+/** Playback speed, kept as the default too so a reload of the same source keeps it. */
+export function setPlaybackSpeed(element: HTMLMediaElement | null, rate: number): void {
+  if (!element) return;
+  element.playbackRate = rate;
+  element.defaultPlaybackRate = rate;
+}
+
 export function toggleMuted(element: HTMLMediaElement | null): void {
   if (element) element.muted = !element.muted;
 }

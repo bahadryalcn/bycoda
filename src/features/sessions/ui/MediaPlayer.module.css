@@ -1,46 +1,30 @@
 /* Quiet inline players: a compact audio card with a waveform, and video chrome that fades
    while playing. The played waveform is a clipped copy, so progress never repaints bars. */
 @layer components {
+  /* Audio: one pill, a round play button, thin waveform bars that are also the seek control,
+     then the time, which steps through the playback speeds when pressed. */
   .audio {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    max-inline-size: 35rem;
-    padding: 0.625rem 0.625rem 0.625rem 0.75rem;
-    /* ui-drift-ignore: surface-style -- Inline player card frame, same card tokens as a transcript notice. */
-    border: 1px solid var(--ui-card-border);
-    /* ui-drift-ignore: surface-style -- Card radius of the inline player. */
-    border-radius: var(--ui-radius-card);
-    /* ui-drift-ignore: surface-style -- Card ground of the inline player. */
-    background-color: var(--ui-card-surface);
+    gap: var(--space-2);
+    max-inline-size: 26rem;
+    padding-block: var(--space-1);
+    padding-inline: var(--space-1) var(--space-2);
+    /* ui-drift-ignore: surface-style -- Inline player pill: the quiet fill of a voice note, no frame. */
+    border-radius: var(--radius-pill);
+    /* ui-drift-ignore: surface-style -- Inline player pill ground. */
+    background-color: var(--ui-fill-subtle);
   }
   .play {
     flex: none;
   }
-  .main {
-    display: grid;
-    flex: 1;
-    gap: 0.375rem;
-    min-inline-size: 0;
-  }
-  .top {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-inline-size: 0;
-  }
-  .name {
-    min-inline-size: 0;
-  }
   .time {
-    margin-inline-start: auto;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
   .actions {
     display: flex;
     flex: none;
-    gap: 0.125rem;
   }
 
   .scrub {
@@ -56,23 +40,27 @@
     outline-offset: 2px;
   }
   .wave {
-    block-size: 1.75rem;
+    flex: 1;
+    min-inline-size: 0;
+    block-size: 1.5rem;
   }
   .bars {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 2px;
   }
   .bars i {
     flex: 1;
     min-inline-size: 1px;
-    block-size: calc(var(--h) * 100%);
+    max-inline-size: 3px;
+    block-size: max(3px, calc(var(--h) * 100%));
     /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
-    border-radius: var(--ui-radius-xs);
+    border-radius: var(--radius-pill);
     /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
-    background: color-mix(in srgb, var(--transcript-ink-body) 20%, transparent);
+    background: color-mix(in srgb, var(--transcript-ink-body) 28%, transparent);
   }
   .neutral i {
     --h: 0.3;
@@ -82,7 +70,7 @@
   }
   .played i {
     /* ui-drift-ignore: surface-style -- Drawn waveform, seek track and video chrome encode playback progress, not an application surface. */
-    background: var(--ui-tone-accent-solid);
+    background: var(--transcript-ink-body);
   }
 
   /* Video */

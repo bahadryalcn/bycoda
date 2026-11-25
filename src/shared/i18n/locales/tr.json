@@ -14943,5 +14943,7 @@
   "Searched {p0} sites": "{p0} site tarandı",
   "Show sources for {p0}": "{p0} kaynaklarını göster",
   "Hide sources for {p0}": "{p0} kaynaklarını gizle",
-  "{p0} more sources": "{p0} kaynak daha"
+  "{p0} more sources": "{p0} kaynak daha",
+  "Playback speed": "Oynatma hızı",
+  "Playback speed {p0}, {p1}": "Oynatma hızı {p0}, {p1}"
 }

@@ -79,3 +79,21 @@ it("draws a neutral waveform when the peaks cannot be computed", async () => {
   expect(container.querySelectorAll("i").length).toBeGreaterThan(0);
   expect(container.querySelector("[class*=neutral]")).not.toBeNull();
 });
+
+it("steps the playback speed through 1×, 1.5× and 2× from the time label", async () => {
+  await act(async () => root.render(card("/work/speed.wav")));
+  const audio = container.querySelector("audio")!;
+  const speed = () =>
+    [...container.querySelectorAll("button")].find((button) =>
+      button.getAttribute("aria-label")?.startsWith("Playback speed"),
+    )!;
+  expect(speed().textContent).not.toContain("×");
+  await act(async () => speed().click());
+  expect(audio.playbackRate).toBe(1.5);
+  expect(speed().textContent).toContain("1.5×");
+  await act(async () => speed().click());
+  expect(audio.playbackRate).toBe(2);
+  await act(async () => speed().click());
+  expect(audio.playbackRate).toBe(1);
+  expect(speed().textContent).not.toContain("×");
+});

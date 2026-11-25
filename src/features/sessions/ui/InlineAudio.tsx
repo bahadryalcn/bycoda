@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Download, ExternalLink, Pause, Play } from "../../../shared/ui/icons";
 import { loadPeaks, PEAK_BARS } from "./mediaPeaks";
 import { playbackText } from "./mediaPlayback";
 import { ScrubBar } from "./ScrubBar";
-import { seekMedia, togglePlayback, useMediaState } from "./useMediaState";
+import { seekMedia, setPlaybackSpeed, togglePlayback, useMediaState } from "./useMediaState";
 import styles from "./MediaPlayer.module.css";
+
+/** Playback speeds the time label steps through, as on a voice note. */
+const SPEEDS = [1, 1.5, 2];
 
 /** Waveform heights for `path`: null until decoded, and for good when it cannot be. */
 function useWaveform(path: string, url: string): number[] | null {
@@ -40,8 +43,9 @@ function Bars({ peaks, className }: { peaks: number[] | null; className: string 
 }
 
 /**
- * Compact audio card: play or pause, a waveform that is also the seek control, the time, and
- * download or open. The `<audio>` element has no native controls and is the playback source.
+ * Voice-note style audio pill: play or pause, a waveform that is also the seek control, the time
+ * (total before playing, elapsed after) that steps through the playback speeds when pressed, and
+ * open or download. The `<audio>` element has no native controls and is the playback source.
  */
 export function InlineAudio({
   path,
@@ -61,6 +65,8 @@ export function InlineAudio({
   onOpen?: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
+  const [speed, setSpeed] = useState(1);
   const [element, setElement] = useState<HTMLAudioElement | null>(null);
   // A stable ref callback: a new one each render would re-run and set state in a loop.
   const attach = useStableCallback((node: HTMLAudioElement | null) => {
@@ -72,6 +78,8 @@ export function InlineAudio({
   const peaks = useWaveform(path, url);
   const name = path.split(/[\\/]/).pop() || label;
   const time = `${playbackText(second)} / ${playbackText(duration)}`;
+  const shownTime = playbackText(playing || second > 0 ? second : duration);
+  const speedText = `${format.formatNumber(speed)}×`;
   const neutral = peaks ? "" : ` ${styles.neutral}`;
   return (
     <div className={styles.audio} data-playing={playing ? "" : undefined}>
@@ -86,7 +94,7 @@ export function InlineAudio({
       <Button
         variant="primary"
         iconOnly
-        size="lg"
+        size="md"
         shape="pill"
         label={playing ? t("Pause") : t("Play")}
         className={styles.play}
@@ -98,51 +106,52 @@ export function InlineAudio({
           <Play className="icon-sm" aria-hidden />
         )}
       </Button>
-      <div className={styles.main}>
-        <div className={styles.top}>
-          <OverflowTooltip label={name}>
-            <Text
-              truncate
-              size="caption"
-              tone="inherit"
-              className={`${styles.name} text-(--transcript-ink-chrome)`}
-            >
-              {name}
-            </Text>
-          </OverflowTooltip>
-          <Text
-            size="caption"
-            tone="inherit"
-            className={`${styles.time} text-(--transcript-ink-chrome)`}
-          >
-            {time}
-          </Text>
-        </div>
-        <ScrubBar
-          ref={wave}
-          label={t("Seek in {p0}", { p0: name })}
-          value={second}
-          max={duration}
-          step={5}
-          valueText={time}
-          className={styles.wave}
-          onChange={(value) => {
-            seekMedia(element, value);
-          }}
+      <ScrubBar
+        ref={wave}
+        label={t("Seek in {p0}", { p0: name })}
+        value={second}
+        max={duration}
+        step={5}
+        valueText={time}
+        className={styles.wave}
+        onChange={(value) => {
+          seekMedia(element, value);
+        }}
+      >
+        <Bars peaks={peaks} className={styles.bars + neutral} />
+        <Bars peaks={peaks} className={`${styles.bars} ${styles.played}${neutral}`} />
+      </ScrubBar>
+      <Button
+        variant="ghost"
+        size="sm"
+        motion="none"
+        tooltip={t("Playback speed")}
+        aria-label={t("Playback speed {p0}, {p1}", { p0: speedText, p1: time })}
+        onClick={() => {
+          const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]!;
+          setSpeed(next);
+          setPlaybackSpeed(element, next);
+        }}
+      >
+        <Text
+          size="caption"
+          tone="inherit"
+          className={`${styles.time} text-(--transcript-ink-chrome)`}
         >
-          <Bars peaks={peaks} className={styles.bars + neutral} />
-          <Bars peaks={peaks} className={`${styles.bars} ${styles.played}${neutral}`} />
-        </ScrubBar>
-      </div>
+          {shownTime}
+        </Text>
+        {speed !== 1 ? <Badge size="xs">{speedText}</Badge> : null}
+      </Button>
       <div className={styles.actions}>
         {onOpen ? (
-          <Button variant="ghost" iconOnly label={t("Open")} onClick={onOpen}>
+          <Button variant="ghost" iconOnly size="sm" label={t("Open")} onClick={onOpen}>
             <ExternalLink className="icon-sm" aria-hidden />
           </Button>
         ) : null}
         <Button
           variant="ghost"
           iconOnly
+          size="sm"
           label={t("Download")}
           onClick={() => {
             // The native file URL downloads under the file's own name.

@@ -14943,5 +14943,7 @@
   "Searched {p0} sites": "已搜索 {p0} 个网站",
   "Show sources for {p0}": "显示 {p0} 的来源",
   "Hide sources for {p0}": "隐藏 {p0} 的来源",
-  "{p0} more sources": "另外 {p0} 个来源"
+  "{p0} more sources": "另外 {p0} 个来源",
+  "Playback speed": "播放速度",
+  "Playback speed {p0}, {p1}": "播放速度 {p0}，{p1}"
 }

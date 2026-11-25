@@ -14943,5 +14943,7 @@
   "Searched {p0} sites": "Searched {p0} sites",
   "Show sources for {p0}": "Show sources for {p0}",
   "Hide sources for {p0}": "Hide sources for {p0}",
-  "{p0} more sources": "{p0} more sources"
+  "{p0} more sources": "{p0} more sources",
+  "Playback speed": "Playback speed",
+  "Playback speed {p0}, {p1}": "Playback speed {p0}, {p1}"
 }

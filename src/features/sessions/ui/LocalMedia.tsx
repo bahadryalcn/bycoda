@@ -86,6 +86,7 @@ export function LocalMedia({
   const pauseUnlessVisible = (element: HTMLMediaElement) => {
     if (!visible || document.hidden) element.pause();
   };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- pauses the player when its pane or the window is hidden, and on unmount or source change
   useLayoutEffect(() => {
     const element = player.current;
     const pauseWhenHidden = () => {
@@ -99,6 +100,7 @@ export function LocalMedia({
     };
   }, [visible, url]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- prepares the local media source near view and aborts a stale run on path change or release
   useEffect(() => {
     // Prepares the source for this exact path while it is near view. The cleanup aborts
     // the run (path change, release, hidden Activity pane, unmount), so a late reply
@@ -155,7 +157,7 @@ export function LocalMedia({
         <span
           ref={box}
           data-local-media={path}
-          className="[margin-block:0.5rem] block min-h-[62px] w-[35rem] max-w-full"
+          className="[margin-block:0.5rem] block min-h-11 w-[26rem] max-w-full"
         >
           {url ? (
             <InlineAudio

@@ -14943,5 +14943,7 @@
   "Searched {p0} sites": "{p0} 件のサイトを検索",
   "Show sources for {p0}": "{p0} の情報源を表示",
   "Hide sources for {p0}": "{p0} の情報源を隠す",
-  "{p0} more sources": "ほか {p0} 件の情報源"
+  "{p0} more sources": "ほか {p0} 件の情報源",
+  "Playback speed": "再生速度",
+  "Playback speed {p0}, {p1}": "再生速度 {p0}、{p1}"
 }

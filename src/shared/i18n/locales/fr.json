@@ -14943,5 +14943,7 @@
   "Searched {p0} sites": "{p0} sites consultés",
   "Show sources for {p0}": "Afficher les sources de {p0}",
   "Hide sources for {p0}": "Masquer les sources de {p0}",
-  "{p0} more sources": "{p0} sources de plus"
+  "{p0} more sources": "{p0} sources de plus",
+  "Playback speed": "Vitesse de lecture",
+  "Playback speed {p0}, {p1}": "Vitesse de lecture {p0}, {p1}"
 }
