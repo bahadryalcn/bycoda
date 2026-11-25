@@ -52,7 +52,7 @@ it("reuses the readonly helper after a size refusal", async () => {
 
 it("exits when its parent disconnects", async () => {
   const child = fork(fileURLToPath(new URL("../session-read-helper.mjs", import.meta.url)), [], {
-    execArgv: ["--experimental-transform-types"],
+    execArgv: [],
     stdio: ["ignore", "ignore", "ignore", "ipc"],
     windowsHide: true,
   });

@@ -59,10 +59,15 @@ export class SessionReadProcesses {
   private readonly pending = new Set<Job>();
   private readonly helpers = new Set<Helper>();
   private closed = false;
+  declare private readonly helper: NodeURL;
+  declare private readonly spawn: typeof fork;
   constructor(
-    private readonly helper = new NodeURL("./session-read-helper.mjs", import.meta.url),
-    private readonly spawn: typeof fork = fork,
-  ) {}
+    helper = new NodeURL("./session-read-helper.mjs", import.meta.url),
+    spawn: typeof fork = fork,
+  ) {
+    this.helper = helper;
+    this.spawn = spawn;
+  }
   read<T>(request: SessionReadRequest, signal: AbortSignal): Promise<T> {
     if (this.closed) return Promise.reject(new Error("Session read processes are closed."));
     if (signal.aborted) return Promise.reject(aborted());
@@ -216,7 +221,7 @@ export class SessionReadProcesses {
     delete environment.NODE_PATH;
     const child = this.spawn(fileURLToPath(this.helper), [], {
       execPath: process.execPath,
-      execArgv: import.meta.url.endsWith(".ts") ? ["--experimental-transform-types"] : [],
+      execArgv: [],
       env: environment,
       windowsHide: true,
       stdio: ["ignore", "ignore", "ignore", "ipc"],

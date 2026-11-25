@@ -164,6 +164,10 @@ function Invoke-CleanTool([string]$Executable, [string[]]$Arguments, [string]$In
     return $result
 }
 
+function Test-RunnerNodeVersion($Probe) {
+    return $Probe.exitCode -eq 0 -and $Probe.output.Trim() -match '^v26\.\d+\.\d+$'
+}
+
 function Get-RunnerFacts {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -210,7 +214,7 @@ function Get-RunnerFacts {
     }
     $compiler = "$WindowsRoot\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
     $nodeValid = (Test-Protected $NodePath -Ancestors) -and (Get-AuthenticodeSignature -LiteralPath $NodePath).Status -eq 'Valid'
-    if ($nodeValid) { $nodeValid = (Invoke-CleanTool $NodePath @('--version')).output.Trim() -match '^v24\.' }
+    if ($nodeValid) { $nodeValid = Test-RunnerNodeVersion (Invoke-CleanTool $NodePath @('--version')) }
     $pwshValid = (Test-Protected $PowerShellPath -Ancestors) -and (Get-AuthenticodeSignature -LiteralPath $PowerShellPath).Status -eq 'Valid'
     if ($policy -and $hashes) {
         $hashes = (Test-Protected $policy.powerShellPath -Ancestors) -and (Get-Sha $policy.powerShellPath) -eq $policy.powerShellSha256
@@ -241,7 +245,7 @@ function Get-RunnerFacts {
         current = @{ sid = $identity.User.Value; administrator = $admin; profile = $currentProfile; interactive = [Environment]::UserInteractive; sessionId = (Get-Process -Id $PID).SessionId }
         paths = @{ fixedRoots = $ownedRoots; reparseFree = $reparseFree; rootAbsent = -not (Test-Path -LiteralPath $Root) }
         archive = @{ verified = $archiveVerified }
-        tools = @{ node24ProtectedSigned = $nodeValid; pwsh7Protected = $pwshValid; frameworkCompiler = (Test-Protected $compiler -Ancestors) }
+        tools = @{ node26ProtectedSigned = $nodeValid; pwsh7Protected = $pwshValid; frameworkCompiler = (Test-Protected $compiler -Ancestors) }
         sources = @{ complete = (Test-Path -LiteralPath "$PSScriptRoot\windows-runner-model.mjs") -and (Test-Path -LiteralPath "$PSScriptRoot\..\checks\windows-runner-trust.mjs") }
         policy = $policy
         prepared = @{ trusted = $trusted; hashes = $hashes -and $listenerVersion -eq $Version; profilesDisabledByShim = $shim }
@@ -255,8 +259,11 @@ function Invoke-Model($Facts, [string]$DecisionMode = $Mode) {
     $runtime = if ($useControl) { "$Control\node.exe" } else { $NodePath }
     $model = if ($useControl) { "$Control\windows-runner-model.mjs" } else { "$PSScriptRoot\windows-runner-model.mjs" }
     if ($DecisionMode -in @('Plan', 'Status') -and -not (Test-Path -LiteralPath $runtime)) { $runtime = (Get-Command node -ErrorAction Stop).Source }
-    if (-not (Test-Path -LiteralPath $runtime)) { throw 'Protected Node24 runtime prerequisite missing; no setup performed.' }
+    if (-not (Test-Path -LiteralPath $runtime)) { throw 'Protected Node 26 runtime prerequisite missing; no setup performed.' }
     if ($DecisionMode -notin @('Plan', 'Status') -and (-not (Test-Protected $runtime -Ancestors) -or ($useControl -and -not (Test-Protected $model -Ancestors)))) { throw 'Protected control runtime/model required.' }
+    if ($useControl -and -not (Test-RunnerNodeVersion (Invoke-CleanTool $runtime @('--version')))) {
+        throw 'Protected runner control requires Node 26. Prepare the reviewed runtime in the dedicated guest.'
+    }
     $json = $Facts | ConvertTo-Json -Depth 20 -Compress
     $result = Invoke-CleanTool $runtime @($model, $DecisionMode, $Purpose) $json
     if ($result.exitCode -notin @(0, 2)) { throw 'Runner decision helper failed.' }

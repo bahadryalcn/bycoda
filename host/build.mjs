@@ -16,43 +16,17 @@ const options = {
 };
 await build({
   ...options,
-  entryPoints: ["host/cli.ts"],
-  outfile: "build/host/bycoda-host.mjs",
-});
-await build({
-  ...options,
-  entryPoints: ["host/mcp-entry.ts"],
-  outfile: "build/host/host.mjs",
+  entryPoints: [
+    { in: "host/cli.ts", out: "bycoda-host" },
+    { in: "host/mcp-entry.ts", out: "host" },
+    { in: "host/workspace-cleanup-worker.mjs", out: "workspace-cleanup-worker" },
+    { in: "host/host-notes-worker.mjs", out: "host-notes-worker" },
+    { in: "host/store-worker.mjs", out: "store-worker" },
+    { in: "host/storage/snapshot-worker.mjs", out: "snapshot-worker" },
+    { in: "host/social/audience/audience-sheet-worker.mjs", out: "audience-sheet-worker" },
+    { in: "host/session-read-helper.mjs", out: "session-read-helper" },
+  ],
+  outdir: "build/host",
+  outExtension: { ".js": ".mjs" },
 });
 await copyFile("host/provider-guard.mjs", "build/host/provider-guard.mjs");
-await build({
-  ...options,
-  entryPoints: ["host/workspace-cleanup-worker.mjs"],
-  outfile: "build/host/workspace-cleanup-worker.mjs",
-});
-await build({
-  ...options,
-  entryPoints: ["host/host-notes-worker.mjs"],
-  outfile: "build/host/host-notes-worker.mjs",
-});
-await build({
-  ...options,
-  entryPoints: ["host/store-worker.mjs"],
-  outfile: "build/host/store-worker.mjs",
-});
-await build({
-  ...options,
-  entryPoints: ["host/storage/snapshot-worker.mjs"],
-  outfile: "build/host/snapshot-worker.mjs",
-});
-await build({
-  ...options,
-  entryPoints: ["host/social/audience/audience-sheet-worker.mjs"],
-  outfile: "build/host/audience-sheet-worker.mjs",
-});
-
-await build({
-  ...options,
-  entryPoints: ["host/session-read-helper.mjs"],
-  outfile: "build/host/session-read-helper.mjs",
-});

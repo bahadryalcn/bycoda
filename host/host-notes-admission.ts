@@ -64,11 +64,11 @@ export interface HostNotesAdmissionOptions {
   admissionArtifact?: string;
 }
 export class HostNotesAdmissionError extends Error {
-  constructor(
-    readonly code: "HOST_NOTES_ADMISSION_BUSY" | "HOST_NOTES_ADMISSION_FAULT",
-    message: string,
-  ) {
+  declare readonly code: "HOST_NOTES_ADMISSION_BUSY" | "HOST_NOTES_ADMISSION_FAULT";
+
+  constructor(code: HostNotesAdmissionError["code"], message: string) {
     super(message);
+    this.code = code;
     this.name = "HostNotesAdmissionError";
   }
 }

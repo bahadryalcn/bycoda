@@ -1064,7 +1064,7 @@ Zod wire schemas generate deterministic draft 2020-12 JSON Schema. Run
 `pnpm check:host-contracts` for drift. The artifact hash identifies the schema
 bundle; independently released clients negotiate supported wire/method versions.
 `pnpm check:host-boundaries` enforces neutral/domain import boundaries. Existing
-normal `tsc-rs` checks and publishing restrictions remain separate.
+normal `tsrs` checks and publishing restrictions remain separate.
 
 `pnpm check:host-headless` inspects the actual production bundle in memory and
 rejects UI, React or CSS dependencies. Translation state and provider attachment

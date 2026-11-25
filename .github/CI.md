@@ -38,7 +38,9 @@ A repository-graph regression guards that include list. Narrow gates alongside v
 boundaries, with regression cases. Mobile remains an independent nested repository;
 its own test/typecheck and native/device acceptance are outside this desktop CI.
 
-The Scripts job also runs `pnpm eval:offline` and requires its JSON report.
+The Scripts job runs `pnpm eval:check` and `pnpm eval:offline:bun`. Check
+requires the resulting JUnit XML report. The offline evals use isolated modules
+and randomized test order, and the reported seed can reproduce that order.
 These are deterministic model-behavior grader/schema fixtures, with no provider
 calls. Context/transport byte measurements and static usage remain advisory;
 see [quality tooling](../docs/reference/quality.md).
@@ -51,7 +53,7 @@ see [quality tooling](../docs/reference/quality.md).
 The pnpm store key includes namespace, OS, architecture, Node, pnpm, manifest/lock/
 workspace files, `.npmrc`, `.pnpmfile.cjs`, and patches. Fallback cache restores
 reusable downloads; installation still validates the lockfile. Checkouts do not
-share whole `node_modules` or mutable build output. Every job uses Node 24. Cargo caches remain separate, with native/RPM
+share whole `node_modules` or mutable build output. Every job uses Node 26.13.1, matching `.nvmrc`. Cargo caches remain separate, with native/RPM
 cache writes restricted to main. No remote test-result cache is enabled.
 
 ## Local entry points
@@ -99,6 +101,26 @@ Changes, Repository hygiene and Check. A download error cannot turn missing requ
 evidence into success. Branch protection/rulesets must separately require the
 intended Check after delivery; YAML alone does not configure repository policy.
 
+Merge queue candidates run CI on `merge_group.checks_requested` with every
+change gate enabled, including the full browser matrix. Check rejects any
+disabled gate on that event, even if the selector and test jobs agree to skip it.
+The repository merge queue must require the aggregate Check before selective PR
+tests can become the only feedback on the pull request.
+
+CI uses the workspace-pinned tsrs for application, package, Host, evaluation
+and browser types, including the test type ratchet. Web checks application
+and portable core types before running Vitest. The offline eval test runner
+uses Bun 1.4.5, pinned in `.github/actions/setup-bun`.
+
+With the same Bun version on PATH, local equivalents include
+`pnpm host:build:bun`, `pnpm eval:offline:bun`, `pnpm eval:check:bun` and
+`pnpm test:packages:bun`. The core, account contracts, and desktop packages also
+expose `typecheck:bun` through their pnpm filters.
+
+`pnpm format:bun` and `pnpm format:check:bun` share the repository formatter
+configuration with Vite+. Repository hygiene still uses Vite+ for its required
+formatter and lint ratchet.
+
 ## Release performance and retained coverage
 
 The required `preflight` job checks shared schemas/headless boundaries and Rust
@@ -115,6 +137,10 @@ checker proves disjoint/full selection, retaining serial isolated files.
 `host-test-environment.mjs` uses the installed Vitest sequencer to install Chromium
 only for shards containing real Playwright consumers. Runtime caches never cache
 test success. The Windows self-hosted heavy lane remains serial by design.
+
+Each Host CI shard runs `pnpm host:build` once before Vitest. tsrs checks types
+and the Node build emits the existing Host and worker bundles in one esbuild
+call. Vitest uses the same scope, isolation, shard arguments, and JSON result.
 
 Release packaging consumes a single exact-candidate web/Host JS artifact from
 `desktop-package.yml`'s common producer. Desktop jobs still package their own

@@ -48,7 +48,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: "24"
+          node-version: "26.13.1"
           install: "false"
       - id: candidate
         name: Select immutable source, channel version and exact full CI receipt

@@ -19,7 +19,7 @@ const output = [
 
 test("launches the Unix compiler executable separately from its arguments", () => {
   const result = runProject("tsconfig.tests.json", "linux", (bin, args, options) => {
-    assert.match(bin.replaceAll("\\", "/"), /\/node_modules\/\.bin\/tsc-rs$/);
+    assert.match(bin.replaceAll("\\", "/"), /\/node_modules\/\.bin\/tsrs$/);
     assert.deepEqual(args, ["--noEmit", "--pretty", "false", "-p", "tsconfig.tests.json"]);
     assert.equal(options.shell, undefined);
     return { status: 0, stdout: "", stderr: "" };
@@ -29,10 +29,7 @@ test("launches the Unix compiler executable separately from its arguments", () =
 
 test("uses one quoted Windows command for the compiler cmd shim", () => {
   runProject("host/tsconfig.tests.json", "win32", (command, options) => {
-    assert.match(
-      command,
-      /^".+tsc-rs\.cmd" --noEmit --pretty false -p host\/tsconfig\.tests\.json$/,
-    );
+    assert.match(command, /^".+tsrs\.cmd" --noEmit --pretty false -p host\/tsconfig\.tests\.json$/);
     assert.equal(options.shell, true);
     return { status: 0, stdout: "", stderr: "" };
   });

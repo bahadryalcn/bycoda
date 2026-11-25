@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --dir ../.. exec vite --config vite.config.ts",
-    "typecheck": "pnpm --dir ../.. exec tsc-rs --noEmit -p apps/desktop/tsconfig.json",
-    "build": "pnpm --dir ../.. exec tsc-rs --noEmit -p apps/desktop/tsconfig.json && pnpm --dir ../.. exec vite build --config vite.config.ts"
+    "typecheck": "pnpm --dir ../.. exec tsrs --noEmit -p apps/desktop/tsconfig.json",
+    "typecheck:bun": "bun check --no-script -p tsconfig.json",
+    "build": "pnpm --dir ../.. exec tsrs --noEmit -p apps/desktop/tsconfig.json && pnpm --dir ../.. exec vite build --config vite.config.ts"
   },
   "dependencies": {
     "@bycoda/core": "workspace:*"

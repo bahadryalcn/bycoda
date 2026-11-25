@@ -106,6 +106,15 @@ test("the aggregate accepts full success and only explicitly irrelevant skips", 
   assert.equal(evaluateResults(input).success, false);
 });
 
+test("the merge queue rejects a selector that marks a required suite irrelevant", () => {
+  const input = passing(true, "merge_group");
+  assert.equal(evaluateResults(input).success, true);
+  input.needs.changes.outputs.browser = "false";
+  input.needs["browser-full"].result = "skipped";
+  input.evidence = input.evidence.filter(({ job }) => job !== "browser-full");
+  assert.deepEqual(evaluateResults(input).errors, ["Merge queue requires full coverage: browser"]);
+});
+
 test("recorded rerun receipts survive artifact merging and keep strict source/attempt checks", (t) => {
   const root = mkdtempSync(path.join(tmpdir(), "bycoda-ci-rerun-evidence-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

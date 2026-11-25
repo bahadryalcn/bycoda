@@ -32,7 +32,7 @@ export const jobs = {
     variants: ["linux"],
     requiredFiles: [
       "temp/test-results/scripts-ci/results.json",
-      "temp/test-results/scripts-ci/evals.json",
+      "temp/test-results/scripts-ci/evals.xml",
     ],
   },
   python: {
@@ -48,7 +48,7 @@ export const jobs = {
   },
   "browser-full": {
     gate: "browser",
-    events: ["push", "workflow_dispatch"],
+    events: ["push", "workflow_dispatch", "merge_group"],
     variants: browserCiVariants().map((entry) => entry.variant),
     requiredFiles: ["temp/test-results/browser-full/run.json"],
   },
@@ -262,7 +262,9 @@ export function evaluateResults({
   const errors = [];
   const selected = needs?.changes?.outputs ?? {};
   for (const gate of gates)
-    if (!["true", "false"].includes(selected[gate]))
+    if (eventName === "merge_group" && selected[gate] !== "true")
+      errors.push(`Merge queue requires full coverage: ${gate}`);
+    else if (!["true", "false"].includes(selected[gate]))
       errors.push(`Missing or invalid change gate: ${gate}`);
   if (selected.source_sha !== sourceSha)
     errors.push("Change selection does not match this source SHA");

@@ -133,10 +133,10 @@ export function evaluateRunner(facts, { mode = "Plan", purpose = "ci" } = {}) {
       "Setup operator",
     );
     need(
-      facts?.tools?.node24ProtectedSigned === true &&
+      facts?.tools?.node26ProtectedSigned === true &&
         facts.tools.pwsh7Protected === true &&
         facts.tools.frameworkCompiler === true,
-      "protected-node24-pwsh7-and-framework-compiler-required",
+      "protected-node26-pwsh7-and-framework-compiler-required",
       "VM administrator",
     );
     need(

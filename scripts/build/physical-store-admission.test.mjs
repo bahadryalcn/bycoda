@@ -29,7 +29,7 @@ test("Windows load budget includes its namespace and UTF-8 byte length", (t) => 
 });
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "bycoda-admission-bundle-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }));
   return root;
 }
 // Header fixtures test packaging boundaries, not whether a native image executes.
@@ -193,8 +193,9 @@ test("missing native input fails package preflight before replacing an existing 
       "--native-admission",
       "--directory-only",
     ],
-    { cwd: root, encoding: "utf8", windowsHide: true, timeout: 10_000 },
+    { cwd: root, encoding: "utf8", windowsHide: true, timeout: 30_000 },
   );
+  assert.ifError(result.error);
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /ENOENT|no such file/i);
   assert.equal(await readFile(sentinel, "utf8"), "preserved");
@@ -235,8 +236,9 @@ test("overlapping native inputs survive package preflight, including a canonical
         directory,
         "--directory-only",
       ],
-      { cwd: root, encoding: "utf8", windowsHide: true, timeout: 10_000 },
+      { cwd: root, encoding: "utf8", windowsHide: true, timeout: 30_000 },
     );
+    assert.ifError(result.error);
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stderr, /source and package output overlap/);
     assert.equal(await readFile(sentinel, "utf8"), "preserved");
@@ -284,8 +286,9 @@ test("canonical output path budget refuses a long junction target before deletin
       join(root, "native-inputs"),
       "--directory-only",
     ],
-    { cwd: root, encoding: "utf8", windowsHide: true, timeout: 10_000 },
+    { cwd: root, encoding: "utf8", windowsHide: true, timeout: 30_000 },
   );
+  assert.ifError(child.error);
   assert.equal(child.status, 1, child.stderr);
   assert.match(child.stderr, /260 UTF-8 bytes/);
   assert.equal(await readFile(existing, "utf8"), "preserved");

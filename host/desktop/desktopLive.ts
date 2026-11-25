@@ -447,16 +447,25 @@ export class DesktopLive {
    * expires one window length after. Revisions and command retention stay on the wall clock.
    */
   private readonly clock: AwakeClock;
+  declare private readonly now: () => number;
+  declare private readonly watchSuspension: boolean;
   /**
    * `watchSuspension` starts the clock's own sampling with the first heartbeat. It defaults on only
    * for the real wall clock: a test clock is moved by hand and would read as one long sleep.
    */
+  declare private readonly verifyHeadless: ReturnType<typeof dedicatedWorktreeVerifier>;
+  declare private readonly requireEditorChecks: boolean;
+
   constructor(
-    private readonly now: () => number = Date.now,
-    private readonly watchSuspension: boolean = now === Date.now,
-    private readonly verifyHeadless = dedicatedWorktreeVerifier(),
-    private readonly requireEditorChecks: boolean = REQUIRE_DESKTOP_EDITOR_CHECK,
+    now: () => number = Date.now,
+    watchSuspension: boolean = now === Date.now,
+    verifyHeadless = dedicatedWorktreeVerifier(),
+    requireEditorChecks: boolean = REQUIRE_DESKTOP_EDITOR_CHECK,
   ) {
+    this.now = now;
+    this.watchSuspension = watchSuspension;
+    this.verifyHeadless = verifyHeadless;
+    this.requireEditorChecks = requireEditorChecks;
     this.clock = new AwakeClock(now);
     this.startedAwake = this.clock.now();
     this.groupLock = new DesktopGroupLock(now);

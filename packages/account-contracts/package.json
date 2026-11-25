@@ -9,7 +9,8 @@
     "./mock": "./src/mock/index.ts"
   },
   "scripts": {
-    "typecheck": "pnpm --dir ../.. exec tsc-rs --noEmit -p packages/account-contracts/tsconfig.json",
+    "typecheck": "pnpm --dir ../.. exec tsrs --noEmit -p packages/account-contracts/tsconfig.json",
+    "typecheck:bun": "bun check --no-script -p tsconfig.json",
     "test": "pnpm --dir ../.. exec vitest run --config packages/account-contracts/vitest.config.ts"
   },
   "dependencies": {

@@ -28,7 +28,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
       - name: Validate selection and run one bounded diagnostic
         shell: pwsh
         env:

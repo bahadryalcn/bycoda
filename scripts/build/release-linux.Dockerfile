@@ -1,4 +1,4 @@
-FROM node:24-bookworm AS node
+FROM node:26.13.1-bookworm AS node
 FROM rust:1-bookworm
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules

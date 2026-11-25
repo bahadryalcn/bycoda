@@ -25,7 +25,7 @@ jobs:
         run: pwsh -NoProfile -NonInteractive -File scripts/setup/windows-runner.ps1 -Mode Verify -Purpose package -ExportEnvironment
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: 24
+          node-version: "26.13.1"
           install: "false"
       - name: Exercise admission rejection and read available toolchains
         shell: pwsh

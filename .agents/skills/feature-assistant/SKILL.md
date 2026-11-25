@@ -40,7 +40,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 
 ## Focused checks
 
-Use `pnpm exec vitest run src/features/assistant` and `pnpm exec vitest run --config host/vitest.config.ts host/assistant` for affected folders; select narrower paths when possible. Use normal `tsc-rs` project commands. Presence changes also need relevant Rust tests and Windows lock/unlock acceptance. UI changes need tier-required light/dark captures. Mock sockets do not prove Wi-Fi recovery or acoustics; source is not installed acceptance.
+Use `pnpm exec vitest run src/features/assistant` and `pnpm exec vitest run --config host/vitest.config.ts host/assistant` for affected folders; select narrower paths when possible. Use normal `tsrs` project commands. Presence changes also need relevant Rust tests and Windows lock/unlock acceptance. UI changes need tier-required light/dark captures. Mock sockets do not prove Wi-Fi recovery or acoustics; source is not installed acceptance.
 
 ## References
 

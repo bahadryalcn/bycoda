@@ -451,10 +451,13 @@ function searchColumn(line: string, options: ContentSearchOptions): number {
   );
   for (const match of line.matchAll(pattern)) {
     if (options.wholeWord) {
-      // Match complete code points, including letters outside the BMP.
-      const before = line.slice(0, match.index);
+      // Match the adjacent code point directly. An unanchored Unicode class
+      // followed by $ can miss a final supplementary character on Node 26.
+      const previous = line.charCodeAt(match.index - 1);
+      const width = previous >= 0xdc00 && previous <= 0xdfff ? 2 : 1;
+      const before = line.slice(Math.max(0, match.index - width), match.index);
       const after = line.slice(match.index + match[0].length);
-      if (/[\p{L}\p{N}_]$/u.test(before) || /^[\p{L}\p{N}_]/u.test(after)) continue;
+      if (/^[\p{L}\p{N}_]$/u.test(before) || /^[\p{L}\p{N}_]/u.test(after)) continue;
     }
     return match.index + 1;
   }

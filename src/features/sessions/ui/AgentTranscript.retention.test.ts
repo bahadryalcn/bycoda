@@ -32,7 +32,9 @@ beforeEach(() => {
         this.targets.clear();
       }
       report() {
-        this.callback([...this.targets].map((target) => ({ target, contentRect: { width: 500, height: 0 } })));
+        this.callback(
+          [...this.targets].map((target) => ({ target, contentRect: { width: 500, height: 0 } })),
+        );
       }
     },
   );
