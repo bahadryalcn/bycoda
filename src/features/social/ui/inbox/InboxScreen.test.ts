@@ -232,7 +232,7 @@ it("rechecks a tag search when a saved change removes its last matching conversa
     handlers: {
       "inbox.unified": (input) => ({
         items:
-          (input?.filter as { query?: string }).query && !tags.length
+          (input?.filter as { query?: string } | undefined)?.query && !tags.length
             ? []
             : [item("t1", "Ana", { tags })],
         unreadable: [],
@@ -409,7 +409,7 @@ it("retains matching rows and the selected person's timeline while the latest qu
   const fake = fakeClient({
     handlers: {
       "inbox.unified": (input) =>
-        (input?.filter as { query?: string }).query
+        (input?.filter as { query?: string } | undefined)?.query
           ? new Promise<InboxUnifiedResult>((resolve) => {
               settle = resolve;
             })

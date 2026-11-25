@@ -384,7 +384,7 @@ export function LineChart({
   // Scrubbing: a new range lets go of the crosshair.
   const { anchor: active, close, scheduleOpen } = useHoverIntent<number>();
   const resetActive = useStableCallback(close);
-  // Cancel the pointer's pending reading when the chart range changes.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- cancels the hover-intent timer and reading when the chart range changes
   useLayoutEffect(() => resetActive(), [signature, resetActive]);
   const index = active === null || empty ? null : Math.min(active, last);
   const scrubbing = index !== null;

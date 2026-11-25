@@ -1,4 +1,4 @@
-import { t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/core";
 import { MAX_ATTACHMENTS } from "./attachments";
 import type { Attachment } from "./session";
 

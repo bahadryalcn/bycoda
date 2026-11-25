@@ -7,10 +7,10 @@ import { retryGroupLockStorage, setRelockOnLaunch } from "../../group-lock/model
 import { saveMaskEmails } from "../model/displayPrefs";
 vi.mock("../../account", () => ({
   AnonymousUsageSetting: () => null,
-  isAnonymousStatsEnabled: () => false,
-  setAnonymousStatsEnabled: vi.fn(),
+  getStatisticsMode: () => "off",
+  setStatisticsMode: vi.fn(),
   statsDisclosure: () => "Statistics disclosure",
-  subscribeAnonymousStats: () => () => {},
+  subscribeStatisticsMode: () => () => {},
 }));
 vi.mock("../../diagnostics", () => ({ DiagnosticsSharingSetting: () => null }));
 vi.mock("./FileAccessSettings", () => ({ FileAccessSettings: () => null }));

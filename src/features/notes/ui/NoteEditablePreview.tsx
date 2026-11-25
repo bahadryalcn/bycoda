@@ -191,6 +191,7 @@ export function NoteEditablePreview({
               {block.definition ? (
                 <OutputBlock>{block.text}</OutputBlock>
               ) : block.plainParagraph ? (
+                // ui-drift-ignore: feature-typography -- mirrors AgentMarkdown's root type for unparsed paragraphs
                 <div className="agent-markdown min-w-0 whitespace-normal font-sans text-ui-body leading-6">
                   <p dir={detectTextDirection(block.text)}>{block.text}</p>
                 </div>
