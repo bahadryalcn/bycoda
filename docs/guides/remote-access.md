@@ -112,14 +112,9 @@ start the tunnel again afterwards.
 
 Phones do not use public paths unless you turn on **Allow phones over the public
 internet** (off by default; turning it on asks first). While it is on, the Host accepts
-phone credentials and phone pairing on its public tunnels and advertises live public Host
-tunnel addresses as the last route; phones keep preferring the local network, then
-Tailscale. Turning it off refuses phones on new requests and connections again.
-
-While it is on and a public Host tunnel is ready, the phone pairing dialog offers a third
-choice, **Public internet**, next to **Same Wi-Fi** and **Tailscale (private)**. Its QR code
-points at the public tunnel address (https, no network key) and is labelled with a warning.
-The choice is hidden when the setting is off or no public Host tunnel is ready.
+phones on its public tunnels and offers live public Host tunnel addresses as the last
+route, after the local network and Tailscale. Turning it off refuses phones on new
+requests and connections again.
 
 ### Device keys
 
