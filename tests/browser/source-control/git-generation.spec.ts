@@ -59,11 +59,21 @@ test("commit generation keeps model, effort and speed together beside the wand",
   expect(Math.abs(wandBounds!.x + wandBounds!.width - arrowBounds!.x)).toBeLessThan(2);
   await arrow.click();
   await expect(panel).toBeVisible();
+  const settings = panel.locator("[data-model-settings]");
+  const accountMenu = panel.locator("[data-model-account-menu]");
+  await expect(settings.getByRole("switch", { name: "Fast" })).toBeVisible();
+  await accountMenu.click();
+  await panel.getByRole("radio", { name: /Work/ }).click();
+  await expect(accountMenu).toContainText("Work");
+  const savedChoice = () =>
+    page.evaluate(() =>
+      JSON.parse(localStorage.getItem("bycoda.gitCommitGeneration.v1:/fixture") ?? "null"),
+    );
+  await expect.poll(savedChoice).toMatchObject({ providerAccountId: "work" });
   await panel.getByRole("option", { name: /^Claude Opus 5\.5\b/ }).click();
   await expect(panel.getByRole("tab", { name: /^Agents/ })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Provider settings" })).toHaveCount(0);
-  const settings = panel.locator("[data-model-settings]");
-  await expect(settings.getByText(/Context window|Advisor|Subagents/i)).toHaveCount(0);
+  await expect(settings.getByText(/Auto.compact|Context window|Advisor|Subagents/i)).toHaveCount(0);
   await settings.getByRole("radio", { name: "High", exact: true }).click();
   await settings.getByRole("switch", { name: "Fast" }).click();
   await expect(draft).toHaveValue("Keep this commit draft");
@@ -78,7 +88,7 @@ test("commit generation keeps model, effort and speed together beside the wand",
       await page.setViewportSize({ width, height: 780 });
       await expect(settings.getByRole("switch", { name: "Fast" })).toBeInViewport();
       await page.screenshot({
-        path: `${evidence}/model-${theme}-${width}.png`,
+        path: `${evidence}/model-account-${theme}-${width}.png`,
         animations: "disabled",
       });
     }
@@ -86,20 +96,17 @@ test("commit generation keeps model, effort and speed together beside the wand",
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(arrow).toBeFocused();
-  await expect
-    .poll(() =>
-      page.evaluate(() =>
-        JSON.parse(localStorage.getItem("bycoda.gitCommitGeneration.v1:/fixture") ?? "null"),
-      ),
-    )
-    .toMatchObject({
-      harness: "claude",
-      model: "claude:opus-5-5",
-      modelSettings: { effort: "high", fast: "true" },
-    });
+  await expect.poll(savedChoice).toMatchObject({
+    harness: "claude",
+    providerAccountId: "work",
+    model: "claude:opus-5-5",
+    modelSettings: { effort: "high", fast: "true" },
+  });
   await generate.click();
   await expect(draft).toHaveValue("Fixture commit message");
+  await page.reload();
   await arrow.click();
+  await expect(accountMenu).toContainText("Work");
   await panel.getByRole("button", { name: "Automatic", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("bycoda.gitCommitGeneration.v1:/fixture")))
@@ -149,9 +156,11 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await modelButton.click();
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute("data-model-panel");
-  const advisorField = panel.locator("[data-model-settings]").getByRole("button", {
-    name: /^Advisor\b/,
-  });
+  // Advisor offers Add while empty and an edit control once a model is picked.
+  const advisorGroup = panel
+    .locator("[data-model-settings]")
+    .getByRole("group", { name: "Advisor", exact: true });
+  const advisorField = advisorGroup.getByRole("button");
   // Advisor and Subagents open a picker in the settings column; options are named by model
   // alone because the provider heading carries the "Claude Code · " prefix.
   const delegate = async (name: "Advisor" | "Subagents", option: RegExp) => {
@@ -171,14 +180,15 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     await choice.click();
     if (name === "Subagents") {
       await expect(choice).toHaveAttribute("aria-selected", "true");
-      await picker.getByRole("button", { name: "Done", exact: true }).click();
+      await picker.getByRole("button", { name: "Apply", exact: true }).click();
     }
     await expect(picker).toHaveCount(0);
   };
   await delegate("Advisor", /^Claude Opus 5\.5\b/);
-  await expect(advisorField).toContainText("Claude Opus 5.5");
+  await expect(advisorGroup).toContainText("Claude Opus 5.5");
   await expect(panel.locator("[data-model-settings]")).toHaveCSS("color-scheme", "dark");
-  await delegate("Subagents", /^Claude Haiku 4\.5\b/);
+  // Subagent rows name Claude models without the provider prefix their icon already shows.
+  await delegate("Subagents", /^Haiku 4\.5\b/);
   await choose("Subagent model policy", "Override all");
   await expect.poll(saved).toEqual({
     model: "claude:haiku-4.5",

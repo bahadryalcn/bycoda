@@ -4,9 +4,8 @@ import { describe, expect, it } from "vitest";
 
 /**
  * Source regression for issue #1012: idle crew labels were drawn at 45% opacity, which faded
- * their names and context percentages below the 4.5:1 text minimum. Text must keep full opacity
- * in every theme; idle and working labels differ by colour and weight, and the backdrop dims only
- * its artwork.
+ * their names and context percentages below the 4.5:1 text minimum in the hero scene.
+ * The decorative conversation backdrop dims its artwork and label layer together.
  */
 
 // happy-dom rewrites import.meta.url, so resolve from the vitest root instead.
@@ -48,11 +47,11 @@ describe("crew scene label legibility", () => {
     expect(base?.body).not.toMatch(/font-weight/);
   });
 
-  it("dims only the backdrop artwork, not the labels drawn over it", () => {
-    const [scene] = rulesFor("CrewScene.css", ".crew-scene--background");
-    expect(scene?.body).not.toMatch(/opacity/);
-    const [artwork] = rulesFor("CrewScene.css", ".crew-scene--background canvas");
-    expect(artwork?.body).toMatch(/opacity:\s*0\.28/);
+  it("dims the backdrop labels to the same opacity as the artwork", () => {
+    for (const selector of ["canvas", ".crew-scene__labels"]) {
+      const [layer] = rulesFor("CrewScene.css", `.crew-scene--background ${selector}`);
+      expect(layer?.body ?? "", selector).toMatch(/opacity:\s*0\.28/);
+    }
   });
 
   it("applies one idle caption colour to every theme, with no light-only override", () => {

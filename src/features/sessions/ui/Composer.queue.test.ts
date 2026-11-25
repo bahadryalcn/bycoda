@@ -211,12 +211,12 @@ describe("local asynchronous submission recovery", () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click();
     });
     expect(textarea.value).toBe("");
-    expect(container.querySelector('[aria-label="Remove review.png"]')).toBeNull();
+    expect(container.querySelector('[data-attachment-name="review.png"]')).toBeNull();
     await act(async () => {
       failSync(new Error("project unavailable"));
     });
     expect(textarea.value).toContain("inspect this image");
-    expect(container.querySelector('[aria-label="Remove review.png"]')).not.toBeNull();
+    expect(container.querySelector('[data-attachment-name="review.png"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Turn off Plan mode"]')).not.toBeNull();
   });
 
@@ -262,6 +262,54 @@ function press(textarea: HTMLTextAreaElement, init: KeyboardEventInit) {
   });
   return event;
 }
+
+describe("an attached card while its send is still starting", () => {
+  const inboxCard = {
+    provider: "jira",
+    kind: "issue",
+    identifier: "ENG-1",
+    title: "Filters",
+    url: "https://example.test/ENG-1",
+    source: "ENG",
+    labels: [],
+    prompt: "Work on this Jira issue: ENG-1",
+  } as NonNullable<ComponentProps<typeof Composer>["inboxCard"]>;
+  const pressEnter = (textarea: HTMLTextAreaElement) =>
+    act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+    });
+
+  it("does not send the card again on a second Enter", async () => {
+    const onSubmit = vi.fn(() => true);
+    const textarea = await renderComposer({ inboxCard: { ...inboxCard } }, onSubmit);
+    await pressEnter(textarea);
+    await pressEnter(textarea);
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("sends a typed follow-up without repeating the card", async () => {
+    const onSubmit = vi.fn((_text: string) => true);
+    const textarea = await renderComposer({ inboxCard: { ...inboxCard } }, onSubmit as never);
+    await pressEnter(textarea);
+    await type(textarea, "also check sorting");
+    await pressEnter(textarea);
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(onSubmit.mock.calls[1][0]).toBe("also check sorting");
+  });
+
+  it("can send the card again after the first send is rejected", async () => {
+    const onSubmit = vi.fn(() => false);
+    const textarea = await renderComposer({ inboxCard: { ...inboxCard } }, onSubmit);
+    await pressEnter(textarea);
+    await act(async () => {
+      textarea.value = "";
+    });
+    await pressEnter(textarea);
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("Shift+Tab queues while a turn runs", () => {
   const shiftTab = { key: "Tab", code: "Tab", shiftKey: true };

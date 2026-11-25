@@ -83,6 +83,8 @@ type Props = {
   onClose: () => void;
   /** Holds Close, Escape and backdrop dismissal while a bounded operation owns the dialog. */
   closeDisabled?: boolean;
+  /** Hide the close button tooltip while retaining its accessible name. */
+  hideCloseTooltip?: boolean;
   /** Override Escape without changing the close button. */
   onEscape?: () => void;
   /** Keep the modal focus boundary while showing the workspace without a scrim. */
@@ -98,6 +100,8 @@ type Props = {
   className?: string;
   /** `workspace-panel` gives workspace dialogs an opaque canvas shared by header and body. */
   surface?: "floating" | "workspace-panel";
+  /** Translucent shared glass for reading dialogs; reduced transparency keeps the opaque surface. */
+  frosted?: boolean;
   /** Keep taller dialogs inside the viewport, scrolling their content. */
   fitViewport?: boolean;
   /**
@@ -162,6 +166,7 @@ export function ModalPanel({
   languageDomain,
   onClose,
   closeDisabled = false,
+  hideCloseTooltip,
   onEscape,
   title,
   description,
@@ -170,6 +175,7 @@ export function ModalPanel({
   minimalHeader = false,
   className,
   surface,
+  frosted = false,
   fitViewport = true,
   placement = "center",
   panelStyle,
@@ -306,7 +312,11 @@ export function ModalPanel({
                 `relative isolate flex flex-col overflow-hidden border-[color:var(--modal-frame-color,var(--ui-pane-border))] shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
               )}
             >
-              {workspacePanel ? null : <GlassBackdrop />}
+              {workspacePanel ? null : (
+                <GlassBackdrop
+                  className={frosted && !popupHost ? "popover-backdrop popover-frosted" : undefined}
+                />
+              )}
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={
@@ -323,6 +333,7 @@ export function ModalPanel({
                   closeLabel={t("Close")}
                   onClose={onClose}
                   closeDisabled={closeDisabled}
+                  hideCloseTooltip={hideCloseTooltip}
                   actions={minimalHeader ? undefined : headerActions}
                 />
                 <div

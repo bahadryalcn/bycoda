@@ -17,6 +17,16 @@ pub struct Grant {
     principal: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsentStatus {
+    revision: u64,
+    active: bool,
+    permission_level: String,
+    project_ids: Vec<String>,
+    critical_exclusions: Vec<String>,
+}
+
 fn database(app: &AppHandle) -> Result<Connection, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -58,7 +68,7 @@ fn read(db: &Connection, environment: &str) -> Result<Option<Grant>, String> {
     .transpose()
 }
 fn valid_fields(level: &str, projects: &[String], exclusions: &[String]) -> bool {
-    matches!(level, "watch" | "projects" | "everything")
+    matches!(level, "ask" | "watch" | "projects" | "everything")
         && projects.len() <= 100
         && projects.iter().all(|id| !id.is_empty() && id.len() <= 200)
         && exclusions.len() <= 6
@@ -92,13 +102,19 @@ pub async fn assistant_consent_get(
     app: AppHandle,
     window: Window,
     environment_id: String,
-) -> Result<Option<Grant>, String> {
+) -> Result<Option<ConsentStatus>, String> {
     crate::harness::run_blocking("assistant_consent_get", move || {
         crate::session_store::canonical_store::page(&window)?;
         let channel = selection(&app, &environment_id)?;
         let result = read(&database(&app)?, &environment_id)?;
         channel.check()?;
-        Ok(result)
+        Ok(result.map(|grant| ConsentStatus {
+            revision: grant.revision,
+            active: grant.principal == channel.consent_principal(),
+            permission_level: grant.permission_level,
+            project_ids: grant.project_ids,
+            critical_exclusions: grant.critical_exclusions,
+        }))
     })
     .await
 }
@@ -190,6 +206,9 @@ pub(crate) fn decision(
 }
 
 fn classify(grant: &Grant, request: &Value) -> Option<bool> {
+    if grant.permission_level == "ask" {
+        return None;
+    }
     if grant.permission_level == "watch" {
         return Some(false);
     }
@@ -215,19 +234,40 @@ fn classify(grant: &Grant, request: &Value) -> Option<bool> {
             return Some(false);
         }
     }
-    // Arbitrary command/shell execution can conceal excluded effects. Keep exact prompts.
+    if grant.critical_exclusions.iter().any(|item| item == "spend")
+        && matches!(
+            action,
+            "workspace.sessions.submit"
+                | "sessions.message"
+                | "tasks.start"
+                | "tasks.retry"
+                | "tasks.review.recheck"
+                | "goals.create"
+                | "goals.replan"
+                | "automations.runNow"
+                | "crews.start"
+                | "crews.resume"
+                | "crews.member.ask"
+                | "sprints.plan"
+        )
+    {
+        return None;
+    }
+    // Arbitrary commands may conceal any selected exclusion.
     if matches!(
         action,
         "commands.run" | "commands.dispatch" | "terminals.write" | "terminals.create"
     ) {
         return if grant.permission_level == "projects" {
             Some(false)
+        } else if grant.permission_level == "everything" && grant.critical_exclusions.is_empty() {
+            Some(true)
         } else {
             None
         };
     }
     let critical = match action {
-        "social.send" | "workspace.sessions.submit" => Some("sendMessages"),
+        "social.send" | "workspace.sessions.submit" | "sessions.message" => Some("sendMessages"),
         "projects.delete" => Some("deleteProject"),
         "sessions.delete" => Some("deleteSession"),
         "desktop.act" => Some("computerUse"),
@@ -257,6 +297,25 @@ fn classify(grant: &Grant, request: &Value) -> Option<bool> {
     };
     if critical.is_some_and(|key| grant.critical_exclusions.iter().any(|item| item == key)) {
         return None;
+    }
+    if grant.permission_level == "everything" && grant.critical_exclusions.is_empty() {
+        return crate::conversation_tools_bridge::MANAGEMENT_APPROVAL_ACTIONS
+            .contains(&action)
+            .then_some(true);
+    }
+    if grant.permission_level == "everything"
+        && matches!(
+            action,
+            "workspace.projects.select"
+                | "projects.open"
+                | "providers.quota.refresh"
+                | "devServers.stop"
+                | "terminals.interrupt"
+                | "sessions.draft"
+                | "tasks.reorder"
+        )
+    {
+        return Some(true);
     }
     // Explicit list: newly added actions never silently inherit standing consent.
     if ![
@@ -409,6 +468,40 @@ mod tests {
                 "{name} keeps its SQLite work"
             );
         }
+    }
+
+    #[test]
+    fn full_access_covers_every_registered_management_operation() {
+        let mut grant = Grant {
+            revision: 1,
+            environment_id: "host".into(),
+            permission_level: "everything".into(),
+            project_ids: vec![],
+            critical_exclusions: vec![],
+            issuer: "i".into(),
+            principal: "p".into(),
+        };
+        for action in crate::conversation_tools_bridge::MANAGEMENT_APPROVAL_ACTIONS {
+            let request = json!({"input":{"operation":{"action":action,"input":{
+                "review":{"targetRef":"refs/heads/main","currentBranch":"main"}
+            }}}});
+            assert_eq!(classify(&grant, &request), Some(true), "{action}");
+        }
+        let start = json!({"input":{"operation":{"action":"devServers.start","input":{
+            "command":"npx --yes serve -l 4173 .","expectedPort":4173
+        }}}});
+        grant.critical_exclusions.push("sendMessages".into());
+        assert_eq!(classify(&grant, &start), None);
+        grant.critical_exclusions.clear();
+        grant.permission_level = "ask".into();
+        assert_eq!(classify(&grant, &start), None);
+        assert_eq!(
+            classify(
+                &grant,
+                &json!({"input":{"operation":{"action":"files.write"}}})
+            ),
+            None
+        );
     }
 
     #[test]

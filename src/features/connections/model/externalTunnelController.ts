@@ -24,8 +24,8 @@ export type TunnelApi = {
   status: (fresh?: boolean) => Promise<unknown>;
   start: (input: TunnelStart) => Promise<unknown>;
   stop: (id: string) => Promise<unknown>;
+  stopAutomatic?: () => Promise<unknown>;
   credential: (token: string) => Promise<unknown>;
-  automatic?: (enabled: boolean) => Promise<unknown>;
 };
 
 export function externalTunnelApi(machine: RemoteMachine): TunnelApi {
@@ -35,16 +35,8 @@ export function externalTunnelApi(machine: RemoteMachine): TunnelApi {
     stop: (id) => remoteRequest(machine.id, "tunnels.stop", { id }, false, true),
     credential: (token) =>
       remoteRequest(machine.id, "tunnels.credential", { provider: "ngrok", token }, false, true),
-    automatic: (enabled) =>
-      enabled
-        ? remoteRequest(
-            machine.id,
-            "tunnels.start",
-            { provider: "cloudflare", target: "host", automatic: true },
-            false,
-            true,
-          )
-        : remoteRequest(machine.id, "tunnels.stop", { automatic: true }, false, true),
+    stopAutomatic: () =>
+      remoteRequest(machine.id, "tunnels.stop", { automatic: true }, false, true),
   };
 }
 
@@ -267,9 +259,9 @@ export class ExternalTunnelController {
     );
   stop = (id: string) => this.mutate(() => this.api.stop(id));
   credential = (token: string) => this.mutate(() => this.api.credential(token));
-  automatic = (enabled: boolean) =>
+  stopAutomatic = () =>
     this.mutate(() => {
-      if (!this.api.automatic) throw new Error("Update bycoda Host");
-      return this.api.automatic(enabled);
+      if (!this.api.stopAutomatic) throw new Error("Update bycoda Host");
+      return this.api.stopAutomatic();
     });
 }

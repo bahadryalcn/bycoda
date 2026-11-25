@@ -14,6 +14,8 @@ export const CROSS_SUBAGENT_MAX_EFFORT_KEY = "crossSubagentMaxEffort";
 export const CROSS_ADVISOR_KEY = "crossAdvisor";
 /** Set by the Host on a child session; display linkage only, never authority. */
 export const DELEGATION_PARENT_KEY = "delegationParent";
+/** Host-owned provider history policy for new delegated sessions. */
+export const DELEGATION_PROVIDER_HISTORY_KEY = "delegationProviderHistory";
 /**
  * Set by the Host on a child started with `files: false`: a chat-only run in an empty scratch
  * folder, read-only, without provider memory or skill listing. Only ever narrows the child.
@@ -37,6 +39,7 @@ export const CROSS_DELEGATION_KEYS = [
 const RESERVED_KEYS = new Set<string>([
   ...CROSS_DELEGATION_KEYS,
   DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
   DELEGATION_CHAT_ONLY_KEY,
   CREW_MEMBER_KEY,
   CREW_TOOLS_KEY,

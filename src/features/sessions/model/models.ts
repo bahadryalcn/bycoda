@@ -583,7 +583,7 @@ export function resolveModelFromCatalog(
   if (id) {
     const exact = catalog.all.find((model) => model.id === id) ?? savedFastVariant(id, catalog.all);
     if (exact && exact.harness === harness) return exact;
-    const slug = nativeIdFrom(id);
+    const slug = nativeIdFrom(harness === "claude" ? id.trim().replace(/\[1m\]$/i, "") : id);
     const byNative = available.find((model) => (model.nativeId ?? nativeIdFrom(model.id)) === slug);
     if (byNative) return byNative;
     // Keep moving Claude aliases as aliases until the CLI advertises them.
@@ -640,10 +640,7 @@ export function resolveModelFromCatalog(
   // until discovery finishes instead of borrowing another provider's model.
   if (available.length === 0) {
     const requested = id?.trim() ?? "";
-    const modelId =
-      requested && (!requested.includes(":") || requested.startsWith(`${harness}:`))
-        ? requested
-        : "";
+    const modelId = requested && modelBelongsToHarness(harness, requested) ? requested : "";
     const nativeId = nativeIdFrom(modelId);
     return {
       id: modelId,
@@ -739,11 +736,10 @@ export function nativeModelId(model: AgentModel | string): string {
 function nativeIdForUnknownKey(id: string): string {
   const trimmed = id.trim();
   const slug = nativeIdFrom(trimmed);
-  const colon = trimmed.indexOf(":");
-  const harness = colon >= 0 ? trimmed.slice(0, colon).toLowerCase() : "";
+  if (!trimmed.toLowerCase().startsWith("claude:")) return slug;
   // Picker keys can use dotted versions (`opus-4.8`), while Claude's CLI
   // expects hyphenated native ids (`claude-opus-4-8`).
-  return harness === "claude" ? claudeNativeId("claude", slug.replace(/\.(?=\d)/g, "-")) : slug;
+  return claudeNativeId("claude", slug.replace(/\.(?=\d)/g, "-"));
 }
 
 /**
@@ -1202,9 +1198,11 @@ function compatibleSettingValue(
 function nativeIdFrom(id: string): string {
   const trimmed = id.trim();
   const colon = trimmed.indexOf(":");
-  const slug = colon >= 0 ? trimmed.slice(colon + 1) : trimmed;
-  const bracket = slug.indexOf("[");
-  return bracket >= 0 ? slug.slice(0, bracket) : slug;
+  if (colon < 0) return trimmed;
+  const owner = trimmed.slice(0, colon).toLowerCase() as HarnessId;
+  if (!HARNESSES.includes(owner)) return trimmed;
+  const slug = trimmed.slice(colon + 1);
+  return owner === "claude" ? slug.replace(/\[1m\]$/i, "") : slug;
 }
 
 /** Match Claude ids with and without the provider prefix. */

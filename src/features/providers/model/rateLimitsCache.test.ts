@@ -8,6 +8,7 @@ import {
   getCachedRateLimits,
   getAllRateLimits,
   loadFreshRateLimits,
+  loadPolledRateLimits,
   loadRateLimits,
   refreshClaudeQuotaOnce,
 } from "./rateLimitsCache";
@@ -148,7 +149,7 @@ it("keeps the last usage, with its own age, when a refresh is rate limited", asy
   expect(getCachedRateLimits("claude")).toBe(result);
 });
 
-it("keeps each failure's own reason on the account it belongs to when old usage is retained", async () => {
+it("drops the signed-out account's reading and keeps each failure's own reason", async () => {
   fetchClaude.mockResolvedValueOnce(usage(40));
   await loadRateLimits("claude", "account-work");
   fetchClaude.mockResolvedValueOnce(errorRateLimits("claude", "Fake text", null, "signedOut"));
@@ -156,7 +157,7 @@ it("keeps each failure's own reason on the account it belongs to when old usage 
   expect(signedOut).toMatchObject({
     status: "error",
     reason: "signedOut",
-    session: { usedPercent: 40 },
+    session: null,
   });
   expect(getCachedRateLimits("claude", "account-personal").reason).toBeUndefined();
   // A later unclassified failure never inherits the old cause.
@@ -179,6 +180,37 @@ it("tries again by itself after a failed read, and stops once it works", async (
   });
 
   await vi.advanceTimersByTimeAsync(60 * 60_000);
+  expect(fetchClaude).toHaveBeenCalledTimes(2);
+});
+
+it("honors Claude retry backoff when the foreground poll comes due", async () => {
+  fetchClaude
+    .mockResolvedValueOnce(rateLimited())
+    .mockResolvedValueOnce(rateLimited())
+    .mockResolvedValueOnce(usage(12));
+  await loadRateLimits("claude");
+  await vi.advanceTimersByTimeAsync(120_000);
+
+  const polled = await loadPolledRateLimits("claude", "default", () => true);
+
+  expect(polled.status).toBe("error");
+  expect(fetchClaude).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(getCachedRateLimits("claude")).toMatchObject({
+    status: "ok",
+    session: { usedPercent: 12 },
+  });
+  expect(fetchClaude).toHaveBeenCalledTimes(3);
+});
+
+it("allows a manual Claude refresh while an automatic retry is scheduled", async () => {
+  fetchClaude.mockResolvedValueOnce(rateLimited()).mockResolvedValueOnce(usage(20));
+  await loadRateLimits("claude");
+
+  const refreshed = await loadRateLimits("claude", "default", true, () => true, true);
+
+  expect(refreshed).toMatchObject({ status: "ok", session: { usedPercent: 20 } });
+  await vi.advanceTimersByTimeAsync(60_000);
   expect(fetchClaude).toHaveBeenCalledTimes(2);
 });
 
@@ -254,4 +286,24 @@ it("shares a recent read instead of asking the provider again", async () => {
   vi.setSystemTime(1_000_000 + 61_000);
   await loadFreshRateLimits("claude", "default", 60_000);
   expect(fetchClaude).toHaveBeenCalledTimes(2);
+});
+
+it("shares pending reads and does not bypass quota backoff for an automatic freshness check", async () => {
+  let finish!: (value: ProviderRateLimits) => void;
+  fetchClaude.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  fetchClaude.mockResolvedValue(rateLimited());
+  const initial = loadRateLimits("claude");
+  const concurrent = loadFreshRateLimits("claude", "default", 60_000);
+  finish(rateLimited());
+  await Promise.all([initial, concurrent]);
+
+  expect(await loadFreshRateLimits("claude", "default", 60_000)).toMatchObject({
+    status: "error",
+  });
+  expect(fetchClaude).toHaveBeenCalledTimes(1);
 });

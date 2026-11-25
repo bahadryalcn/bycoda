@@ -117,7 +117,14 @@ const overlap = (a: string, b: string) => {
   b = normalize(b);
   return a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
 };
-async function git(cwd: string, args: string[], index?: string, input?: string): Promise<Buffer> {
+/** `magic`: pathspecs carry explicit magic (each one `literal`), so the global literal mode is off. */
+async function git(
+  cwd: string,
+  args: string[],
+  index?: string,
+  input?: string,
+  magic = false,
+): Promise<Buffer> {
   const { stdout } = await hostGitExec.exec("git", ["--no-pager", ...args], {
     cwd,
     input,
@@ -127,7 +134,7 @@ async function git(cwd: string, args: string[], index?: string, input?: string):
     maxBuffer: 20 * 1024 * 1024,
     env: {
       ...process.env,
-      GIT_LITERAL_PATHSPECS: "1",
+      GIT_LITERAL_PATHSPECS: magic ? "0" : "1",
       GIT_OPTIONAL_LOCKS: "0",
       GIT_TERMINAL_PROMPT: "0",
       ...(index ? { GIT_INDEX_FILE: index } : {}),
@@ -275,9 +282,10 @@ export class HostCheckpoints {
     private root: string,
     leaseRoot = join(root, ".active-leases"),
     private readonly authority?: FileRevertAuthority,
+    hostOwned: readonly string[] = [],
   ) {
     this.leases = new CheckpointLeases(leaseRoot);
-    this.fileHistory = new SessionFileRevert(root, undefined, authority);
+    this.fileHistory = new SessionFileRevert(root, undefined, authority, hostOwned);
   }
   /** Run after the session's provider and desktop writers are retired. */
   retireDeletedSessionHistory(session: string, cwd: string) {
@@ -655,7 +663,24 @@ export class HostCheckpoints {
         await rm(index, { force: true });
         await git(cwd, ["read-tree", hasHead ? "HEAD" : "--empty"], index);
       }
-      await git(cwd, ["add", "-A", "--", "."], index);
+      // Host storage inside the checkout (database, sidecars, attachments, checkpoint data)
+      // stays out of the private tree; a checkout inside Host storage adds nothing.
+      if (!(await this.fileHistory.isHostOwned(cwd, "")))
+        await git(
+          cwd,
+          [
+            "add",
+            "-A",
+            "--",
+            ":(literal).",
+            ...(await this.fileHistory.hostOwnedWithin(cwd)).map(
+              (path) => `:(exclude,literal)${path}`,
+            ),
+          ],
+          index,
+          undefined,
+          true,
+        );
       const tree = (await git(cwd, ["write-tree"], index)).toString().trim();
       await git(cwd, ["update-ref", `refs/bycoda/checkpoints/${session}/${turn}/${phase}`, tree]);
       return tree;
@@ -667,6 +692,11 @@ export class HostCheckpoints {
   /** Lenient reads skip symlinks, submodules and nested repositories; Git trees still capture them. */
   private async raw(cwd: string, path: string, lenient = false): Promise<string | undefined> {
     const abs = await safeGitPath(cwd, path);
+    // Opening and closing Host database files here would drop SQLite's locks on them.
+    if (await this.fileHistory.isHostOwned(cwd, path)) {
+      if (lenient) return;
+      throw new Error("Host storage is never captured or restored");
+    }
     try {
       const meta = await lstat(abs);
       if (!meta.isFile() || meta.isSymbolicLink()) {
@@ -757,6 +787,7 @@ export class HostCheckpoints {
               reason ??= `more than ${MAX_FILES} files were already modified or untracked when the turn started`;
               break;
             }
+            if (await this.fileHistory.isHostOwned(cwd, path)) continue;
             let raw: string | undefined;
             try {
               raw = await this.raw(cwd, path, true);
@@ -882,6 +913,8 @@ export class HostCheckpoints {
       const files: Record["files"] = Object.assign(Object.create(null), record.files);
       for (const { path, fields } of entries) {
         await safeGitPath(record.cwd, path);
+        // Host storage in the checkout is never read in this process or restored.
+        if (await this.fileHistory.isHostOwned(record.cwd, path)) continue;
         const before = blob(fields[0], fields[2]),
           next = blob(fields[1], fields[3]);
         const old = files[path];
@@ -1221,7 +1254,8 @@ export class HostCheckpoints {
       // Validate the whole selection before writing the first file.
       for (const path of paths) {
         const pair = record.files[path];
-        if (!pair) continue;
+        // A record kept from before Host storage was excluded is never applied to it.
+        if (!pair || (await this.fileHistory.isHostOwned(record.cwd, path))) continue;
         const abs = await safeGitPath(record.cwd, path);
         if (undo) {
           if (pair.uncaptured) throw new Error(`Cannot safely undo ${path}: ${pair.uncaptured}`);

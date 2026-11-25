@@ -12,7 +12,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
-import { ChevronDown, GripVertical, Maximize2, StickyNote, X } from "../../../shared/ui/icons";
+import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
@@ -48,7 +48,7 @@ import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/public/ProjectQuickActions";
 import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import type { ProjectAction } from "../../projects";
-import type { OpenFileFn } from "../../search/model/search";
+import type { OpenFileFn } from "../../search";
 import {
   sessionProviderAccountId,
   subscribeProviderAccounts,
@@ -127,8 +127,6 @@ import { useMessageRewind } from "./useMessageRewind";
 import { useQuoteRequests } from "./useQuoteRequests";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
-import { currentExecutionTools } from "../model/commandInspection";
-import { SessionWorkSummary } from "./SessionWorkSummary";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
 import { syncPaneBackground } from "../../../shared/lib/paneBackground";
@@ -182,7 +180,13 @@ import type { SessionOrganizationResult } from "../model/sessionOrganizationStor
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/public/RemoteSession";
 import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
+import { SessionMachinePicker } from "../../connections/public/SessionMachinePicker";
+import { remoteExecutionEnvironment } from "../../connections/public/sessionMachineTarget";
+import { isBlankSession } from "../../projects/public/projectReturn";
+import { useProjectLinks } from "../../projects/public/projectRepositories";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { sameOptionalSessionIgnoringStreamingText, usePaneSession } from "../model/sessionsStore";
+import { FLAT_TRANSCRIPT_GLASS } from "../model/transcriptGlass";
 import {
   LiveSessionBackground,
   LiveSessionBlocks,
@@ -191,10 +195,9 @@ import {
 import type { HostSession, RefreshAdoptedSession } from "../../connections";
 import { AdoptedSessionNotice } from "../../connections/public/AdoptedSessionNotice";
 import { useAdoptedSteerSupport } from "../../connections/public/remoteCapabilities";
-import { remoteOrigin } from "./RemoteOriginMark";
+import { RemoteOriginMark, remoteOrigin } from "./RemoteOriginMark";
 import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
-  onOpenVoiceWork?: (target: Pick<Session, "id" | "cwd">) => void;
   session: Session;
   workspaceSwitchingSessionId?: string;
   windowMovingSessionIds?: ReadonlySet<string>;
@@ -219,14 +222,15 @@ export type SessionPaneProps = {
   onFocus: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
+  onSessionMachineChange?: (sessionId: string, environmentId: string | undefined) => void;
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onRemoteSnapshot?: (shellId: string, snapshot?: HostSession) => void;
   onRefreshAdoptedSession?: RefreshAdoptedSession;
   /** Reads this conversation's stored history again after it failed to load. */
   onRetrySessionHistory?: (sessionId: string) => void;
-  onLoadSessionHistory?: (sessionId: string) => Promise<number>;
-  onPrepareSessionHistory?: (sessionId: string) => Promise<boolean>;
+  onLoadSessionHistory?: (sessionId: string, findAll?: AbortSignal) => Promise<number>;
+  onPrepareSessionHistory?: (sessionId: string, mode?: "prefetch") => Promise<boolean>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
@@ -315,6 +319,7 @@ export type SessionPaneProps = {
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
   onRunCode?: CodeExecutionScope["openTerminal"];
+  onRunRemoteCode?: CodeExecutionScope["openRemoteTerminal"];
   onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   /** Keeps this transcript mounted after the pane closes. */
   transcriptPool?: TranscriptPool;
@@ -341,6 +346,7 @@ type Props = SessionPaneProps & {
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
+  remoteSessionRetargetBlocked?: boolean;
   managedWorkspaceCreationReady?: boolean;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
@@ -393,7 +399,11 @@ const OwnedSessionPane = memo(function OwnedSessionPane(props: SessionPaneProps)
   const hostBinding = useHostSessionBinding(props.session);
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
-  if (hostBinding || isRemoteProjectPath(props.session.cwd))
+  if (
+    hostBinding ||
+    paneSession.remoteExecutionEnvironmentId ||
+    isRemoteProjectPath(paneSession.cwd)
+  )
     return (
       <RemoteSession
         shell={props.session}
@@ -402,6 +412,11 @@ const OwnedSessionPane = memo(function OwnedSessionPane(props: SessionPaneProps)
         onOpenFile={props.onOpenFile}
         onOpenDiff={props.onOpenDiff}
         onOpenPlan={props.onOpenPlan}
+        onSelectMachine={
+          !props.embedded && props.onSessionMachineChange
+            ? (environmentId) => props.onSessionMachineChange?.(paneSession.id, environmentId)
+            : undefined
+        }
         render={(remote) => <LocalSessionPane {...props} {...remote} />}
       />
     );
@@ -419,11 +434,11 @@ function approvalContextFor(getSession: () => Session, dispatch: Props["onApprov
 }
 
 const LocalSessionPane = memo(function LocalSessionPane({
-  onOpenVoiceWork,
   remoteSession = false,
   remoteFeatures,
   remoteSessionLoading = false,
   remoteSessionStarted = false,
+  remoteSessionRetargetBlocked = false,
   remoteLifecycleTarget,
   managedWorkspaceCreationReady = false,
   headerStatus,
@@ -450,6 +465,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onFocus,
   onClose,
   onCwdChange: onCwdChangeProp,
+  onSessionMachineChange,
   onBranchChange: onBranchChangeProp,
   onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
@@ -505,6 +521,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onNewTerminal,
   onRunProjectAction,
   onRunCode,
+  onRunRemoteCode,
   onPaneDragStart,
   transcriptPool,
   onRewindMessage,
@@ -619,6 +636,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
         rootMutation(() => onNewSessionProp(...args))
     : undefined;
   const t = useT();
+  const projectLinks = useProjectLinks(recents);
+  // Environment ids holding a copy of this project; "" is this computer.
+  const projectMachines =
+    session.cwd === "~"
+      ? undefined
+      : projectLinks
+          .copiesOf(session.cwd)
+          .map((copy) => parseRemotePath(copy)?.environmentId ?? "");
   const orchestrationRuns = useSyncExternalStore(
     orchestrator.subscribe,
     orchestrator.snapshot,
@@ -737,11 +762,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     scope: string;
     effect: Parameters<typeof useProjectBackgroundEffect>[1];
   } | null = JSON.parse(projectBackgroundJson);
-  // The default account lives in a store; a string snapshot keeps the read value-stable.
+  // RemoteSession supplies the owning Host's selection. An unset remote account
+  // leaves the default to that Host.
   const sessionAccountId = useSyncExternalStore(subscribeProviderAccounts, () =>
-    supportsProviderAccounts(session.harness)
-      ? sessionProviderAccountId(session.harness, session)
-      : undefined,
+    remoteSession
+      ? session.providerAccountId
+      : supportsProviderAccounts(session.harness)
+        ? sessionProviderAccountId(session.harness, session)
+        : undefined,
   );
   const projectBackgroundImageRevision = useSyncExternalStore(
     subscribeProjectChatBackground,
@@ -953,14 +981,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => peekTranscriptJump(session.id),
     () => null,
   );
+  const hasEarlierHistory = session.storedHistory?.before != null || remoteHistoryHasMore;
+  const readEarlierHistory =
+    session.storedHistory && onLoadSessionHistory
+      ? (findAll?: AbortSignal) => onLoadSessionHistory(session.id, findAll)
+      : onLoadRemoteHistory;
   useCitedTurnHistory({
     visible,
     jump: jumpRequest,
     blocks: stableBlocks,
-    hasMore: remoteHistoryHasMore,
+    hasMore: hasEarlierHistory,
     loading: remoteHistoryLoading,
     error: remoteHistoryError,
-    load: onLoadRemoteHistory,
+    load: readEarlierHistory,
   });
   useEffect(() => {
     if (!visible || !navigatorReady || !jumpRequest) return;
@@ -1040,7 +1073,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     initialDraft: composerDraftSeed,
     text: composerDraftText,
     change: setComposerDraftState,
-  } = useSessionComposerDraft(session.id);
+  } = useSessionComposerDraft(
+    session.id,
+    visible && !remoteSession && !session.busy && session.historyLoading
+      ? session.storedHistory?.revision
+      : undefined,
+    onPrepareSessionHistory,
+  );
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
     sessionId: session.id,
@@ -1356,8 +1395,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const reviewRow = session.queuedMessages?.find((row) => row.deliveryUnknown);
   const reviewInQueue = queueVisible && !!reviewRow && reviewRow.author?.kind !== "delegation";
   const sharedQueueRecovery = <SharedQueueRecoveryNotice key={session.id} sessionId={session.id} />;
-  const currentWork = visible ? currentExecutionTools(stableBlocks) : undefined;
-  const openLiveWork = onOpenVoiceWork ? () => onOpenVoiceWork(session) : undefined;
   const composerNotices = (
     <>
       <ApprovalDecisionProvider {...approvalContext}>
@@ -1382,28 +1419,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onStopAll={stopDockAll}
           delegatedAgents={delegatedAgents}
           goalControl={goalControl}
-          workControl={
-            currentWork?.tools.length ? (
-              <>
-                <SessionWorkSummary
-                  key={`${session.id}:${currentWork.turnId}`}
-                  tools={currentWork.tools}
-                  busy={turnOpen}
-                  onOpenLiveWork={openLiveWork}
-                />
-                {openLiveWork && (
-                  <Button
-                    iconOnly
-                    variant="ghost"
-                    label={t("View live work")}
-                    onClick={openLiveWork}
-                  >
-                    <Maximize2 className="icon-sm" />
-                  </Button>
-                )}
-              </>
-            ) : null
-          }
         />
       </ApprovalDecisionProvider>
       <InterruptedNotice
@@ -1429,6 +1444,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
     </>
   );
+  const origin = remoteSession ? undefined : remoteOrigin(session);
   const ownerComposer = (
     <Composer
       notices={composerNotices}
@@ -1446,7 +1462,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ? undefined
           : adoptedSteerSupported && !!session.adoptedRunId && session.adoptedRunId !== "desktop"
       }
-      remoteOrigin={remoteOrigin(session)}
       managedWorkspaceCreationReady={managedWorkspaceCreationReady}
       sendBlockedReason={sendBlockedReason}
       sendHeldReason={
@@ -1475,6 +1490,41 @@ const LocalSessionPane = memo(function LocalSessionPane({
         embedded || !!session.inboxAsk || (hideProjectPicker ? !showDeckProjectPicker : false)
       }
       hideBranchPicker={embedded || managed}
+      machineEnvironmentId={
+        remoteExecutionEnvironment(session) ?? session.hostBinding?.environmentId
+      }
+      machinePicker={
+        !embedded && !managed && (origin || (!session.inboxAsk && onSessionMachineChange))
+          ? (locked) => {
+              const selectMachine =
+                !locked &&
+                !session.inboxAsk &&
+                onSessionMachineChange &&
+                !remoteSessionStarted &&
+                !remoteSessionRetargetBlocked &&
+                !session.hostBinding &&
+                !session.providerSessionId &&
+                !session.queuedMessages?.length &&
+                isBlankSession(session)
+                  ? (environmentId: string | undefined) =>
+                      onSessionMachineChange(session.id, environmentId)
+                  : undefined;
+              if (origin && !selectMachine) return <RemoteOriginMark origin={origin} />;
+              const picker = (
+                <SessionMachinePicker
+                  environmentId={remoteExecutionEnvironment(session)}
+                  projectMachines={projectMachines}
+                  onSelect={selectMachine}
+                />
+              );
+              return origin ? (
+                <RemoteOriginMark origin={origin}>{picker}</RemoteOriginMark>
+              ) : (
+                picker
+              );
+            }
+          : undefined
+      }
       // An inbox Ask keeps the standard composer layout; its folder comes from the
       // inbox working-folder picker and the host refuses app control for it.
       hideOrchestrator={embedded || !!session.inboxAsk}
@@ -1522,6 +1572,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onWorktreeChange={composerWorktreeChange}
       draftWorkspace={
         !embedded &&
+        !session.remoteExecutionEnvironmentId &&
         !session.inboxAsk &&
         !session.worktreeRemoved &&
         !managed &&
@@ -1620,6 +1671,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const lifecycle = useSessionLifecycleActions({
     sessionId: session.id,
+    running: !!session.busy || !!session.continuingElsewhere,
     cwd: session.cwd,
     local: !remote,
     hasMessages,
@@ -1687,6 +1739,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       data-session-visible={visible}
       data-session-empty={isEmpty}
       data-session-streaming={streamingReplyLength(session) >= 0 ? "true" : undefined}
+      data-transcript-glass={FLAT_TRANSCRIPT_GLASS ? "flat" : undefined}
       data-project-chat-background={!!projectBackground}
       data-project-background-effect={projectBackground?.effect}
       data-project-background-scope={projectBackground?.scope}
@@ -1958,6 +2011,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                               projectCwd: session.cwd,
                               native: !remote,
                               openTerminal: onRunCode,
+                              openRemoteTerminal: onRunRemoteCode,
                             }
                           : undefined
                       }
@@ -1975,16 +2029,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onRetryHistory={
                         onRetrySessionHistory ? () => onRetrySessionHistory(session.id) : undefined
                       }
-                      remoteHistoryHasMore={
-                        remoteHistoryHasMore || session.storedHistory?.before != null
-                      }
+                      remoteHistoryHasMore={hasEarlierHistory}
                       remoteHistoryLoading={remoteHistoryLoading}
                       remoteHistoryError={remoteHistoryError}
-                      onLoadRemoteHistory={
-                        session.storedHistory && onLoadSessionHistory
-                          ? () => onLoadSessionHistory(session.id)
-                          : onLoadRemoteHistory
-                      }
+                      onLoadRemoteHistory={readEarlierHistory}
                       onLoadRemoteBlock={onLoadRemoteBlock}
                       inlineVisualHost={inlineVisualHost}
                       canRewindMessage={canRewindMessage}
@@ -2048,9 +2096,29 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 >
                   {(findBlocks) => (
                     <TranscriptFind
+                      key={session.id}
                       sessionId={session.id}
                       onTriggerChange={setFindAction}
                       blocks={findBlocks}
+                      historyPage={
+                        session.storedHistory?.before != null
+                          ? `local:${session.storedHistory.revision}:${session.storedHistory.before}`
+                          : remoteHistoryHasMore
+                            ? `remote:${findBlocks[0]?.id ?? ""}`
+                            : undefined
+                      }
+                      historyLoading={
+                        remoteHistoryLoading ||
+                        (!!session.historyLoading &&
+                          !session.storedHistory &&
+                          !remoteHistoryHasMore)
+                      }
+                      historyLoadError={session.historyLoadError}
+                      retryHistory={
+                        onRetrySessionHistory ? () => onRetrySessionHistory(session.id) : undefined
+                      }
+                      loadHistory={readEarlierHistory}
+                      loadBlock={onLoadRemoteBlock}
                       visible={visible}
                       focused={focused}
                       onNavigate={navigateBlock}
@@ -2132,6 +2200,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           cwd={workCwd}
           native={{
             block: subagentSheet.block,
+            liveSessionId: remote ? undefined : session.id,
             relay: subagentRelay,
             blockedReason: subagentRelayBlockedReason,
             close: closeSubagentSheet,

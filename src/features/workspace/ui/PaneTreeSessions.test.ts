@@ -9,14 +9,30 @@ import { PaneTree } from "./PaneTree";
 
 vi.mock("../../files/ui/FilePane", () => ({ FilePane: () => null }));
 vi.mock("../../sessions/ui/SessionPane", async () => {
-  const { createElement } = await import("react");
+  const { createElement, useLayoutEffect, useRef } = await import("react");
   return {
-    SessionPane: ({ session, reviewUndoLocked }: { session: Session; reviewUndoLocked: boolean }) =>
-      createElement("div", {
-        "data-session": session.id,
-        "data-title": session.title,
-        "data-undo-locked": String(reviewUndoLocked),
-      }),
+    SessionPane: ({
+      session,
+      reviewUndoLocked,
+    }: {
+      session: Session;
+      reviewUndoLocked: boolean;
+    }) => {
+      const pane = useRef<HTMLDivElement>(null);
+      useLayoutEffect(() => {
+        if (pane.current) pane.current.dataset.connectedAtMount = String(pane.current.isConnected);
+      }, []);
+      return createElement(
+        "div",
+        {
+          ref: pane,
+          "data-session": session.id,
+          "data-title": session.title,
+          "data-undo-locked": String(reviewUndoLocked),
+        },
+        createElement("input", { defaultValue: "Existing draft" }),
+      );
+    },
   };
 });
 
@@ -43,10 +59,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(visible = true) {
+function render(visible = true, sessionOutlet?: ComponentProps<typeof PaneTree>["sessionOutlet"]) {
   const noop = () => {};
   const props = {
     visible,
+    sessionOutlet,
     layout: splitPane(leaf("a"), "a", "right", "b"),
     editorPanes: [],
     dirtyFileIds: new Set<string>(),
@@ -87,6 +104,42 @@ it("reads each pane's session from the store without a sessions prop", () => {
       node.getAttribute("data-title"),
     ),
   ).toEqual(["a", "b"]);
+});
+
+it("moves only the exact session to the outlet and keeps its existing content mounted", () => {
+  const outlet = document.createElement("div");
+  document.body.append(outlet);
+  try {
+    render();
+    const pane = container.querySelector<HTMLElement>('[data-session="a"]')!;
+    expect(pane.dataset.connectedAtMount).toBe("true");
+    const input = pane.querySelector("input")!;
+    input.focus();
+    input.setSelectionRange(1, 4);
+    pane.scrollTop = 96;
+    const destination = {
+      element: outlet,
+      overlay: null,
+      sessionId: "a",
+      projectPath: "/elsewhere",
+    };
+    render(true, destination);
+    expect(outlet.childElementCount).toBe(0);
+    render(true, { ...destination, projectPath: "/repo" });
+    expect(outlet.querySelector('[data-session="a"]')).toBe(pane);
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(1);
+    expect(input.selectionEnd).toBe(4);
+    expect(pane.scrollTop).toBe(96);
+    expect(container.querySelector('[data-session="b"]')).not.toBeNull();
+    render();
+    expect(container.querySelector('[data-session="a"]')).toBe(pane);
+    expect(document.activeElement).toBe(input);
+    expect(pane.scrollTop).toBe(96);
+    expect(outlet.childElementCount).toBe(0);
+  } finally {
+    outlet.remove();
+  }
 });
 
 it("does not re-render for a status change in a session it does not show", () => {

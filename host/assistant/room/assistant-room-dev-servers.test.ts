@@ -53,7 +53,7 @@ function fixture() {
     service.call(
       action,
       input,
-      principal,
+      { ...principal, projectCwd: cwd },
       async () => allowed,
       async (effect) => {
         physical = true;
@@ -144,4 +144,43 @@ it("rechecks revocation after native review and refuses foreign stop targets", a
     await moved.call("devServers.start", { requestId: "moved", command: "node fixture.mjs" }),
   ).toMatchObject({ state: "uncertain" });
   expect(moved.handle).not.toHaveBeenCalled();
+});
+
+it("acknowledges a long start and resolves its original operation without dispatching twice", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture();
+    let finishStart!: (value: { state: string }) => void;
+    const effect = new Promise<{ state: string }>((resolve) => {
+      finishStart = resolve;
+    });
+    f.handle.mockImplementationOnce(async (_action, input, _projects, authorized) => {
+      expect(input).toMatchObject({ projectId: "project", cwd: "/real/project" });
+      await authorized();
+      return { ...(await effect), output: "", available: true as const };
+    });
+    const originalInput = { command: "node fixture.mjs", expectedPort: 4173 };
+    const input = { ...originalInput, requestId: "slow" };
+    const start = f.call("devServers.start", input);
+    const status = () =>
+      f.call("devServers.operation.status", {
+        operationId: "slow",
+        action: "devServers.start",
+        originalInput,
+      });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await start).toMatchObject({ operationId: "slow", state: "pending" });
+    // Even beyond the native voice RPC deadline, status follows the original receipt.
+    await vi.advanceTimersByTimeAsync(262000);
+    expect(await status()).toMatchObject({ state: "pending" });
+    expect(await f.call("devServers.start", input)).toMatchObject({ state: "pending" });
+    finishStart({ state: "started" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await status()).toMatchObject({ state: "completed", result: { state: "started" } });
+    expect(f.handle).toHaveBeenCalledOnce();
+    f.move();
+    await expect(status()).rejects.toThrow("Original dev server project identity changed");
+  } finally {
+    vi.useRealTimers();
+  }
 });

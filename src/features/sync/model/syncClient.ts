@@ -36,6 +36,7 @@ import {
 import { syncOwnerFailureText } from "./nativeSyncCompletion";
 import { ROOM_PRIVACY_NOT_CONFIRMED } from "../../connections/model/syncSummary";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import { parseSyncRecord, syncPushBatches } from "./syncProtocol";
 import type { SyncPushResult, SyncRecord } from "./syncProtocol";
 
@@ -314,6 +315,8 @@ async function pullAndApply(
 ): Promise<void> {
   let untilRev: number | undefined;
   let initial = !hasPulled(machineId);
+  const previouslySupportedLayout = loadPeerState(machineId).supportsWorkspaceLayout === true;
+  let learnedWorkspaceLayout = false;
   let restarted = false;
   for (;;) {
     const sinceRev = peerRev(machineId);
@@ -326,6 +329,7 @@ async function pullAndApply(
       "sync.pull",
     );
     requireCurrent(current);
+    learnedWorkspaceLayout ||= !previouslySupportedLayout && pullRaw.workspaceLayout === true;
     if (!Number.isSafeInteger(pullRaw.rev))
       throw new Error("sync.pull returned an invalid revision");
     if (Number(pullRaw.rev) < sinceRev) {
@@ -365,6 +369,7 @@ async function pullAndApply(
       !markPulled(machineId, records, {
         rev: Number(pullRaw.rev),
         complete: false,
+        supportsWorkspaceLayout: pullRaw.workspaceLayout === true,
       })
     )
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
@@ -374,17 +379,17 @@ async function pullAndApply(
   // A layout/assignment can arrive before the groups or folders it references.
   // Reapply dependency records from the durable peer cache after all pages,
   // including when an earlier pass stopped between pages.
-  if (initial || untilRev !== undefined) {
+  if (initial || untilRev !== undefined || learnedWorkspaceLayout) {
     const state = loadPeerState(machineId);
     const pending = new Set(state.outbox.map((op) => `${op.table}:${op.id}`));
+    const replayTables =
+      initial || untilRev !== undefined
+        ? new Set(["groupOrder", "railLayout", "assignment", "appearance", "workspaceLayout"])
+        : new Set(["assignment"]);
     const dependencies = Object.entries(state.recordValues).flatMap(([key, json]) => {
       const split = key.indexOf(":");
       const table = key.slice(0, split);
-      if (
-        !["groupOrder", "railLayout", "assignment", "appearance"].includes(table) ||
-        pending.has(key)
-      )
-        return [];
+      if (!replayTables.has(table) || pending.has(key)) return [];
       try {
         const record = parseSyncRecord({
           table,
@@ -411,6 +416,7 @@ async function runSyncCycleInner(
   current: () => boolean,
 ): Promise<void> {
   if (!hasPulled(machineId)) await pullAndApply(machineId, request, current);
+  const supportsWorkspaceLayout = loadPeerState(machineId).supportsWorkspaceLayout === true;
 
   await withRoomPrivacyMutation(() =>
     duringSyncWrite(() =>
@@ -418,14 +424,16 @@ async function runSyncCycleInner(
         requireCurrent(current);
         captureLocalProjectChanges(machineId);
         const projectIds = localProjectIdsByPath();
-        captureLocalGroupChanges(machineId, projectIds);
+        captureLocalGroupChanges(machineId, projectIds, supportsWorkspaceLayout);
         captureLocalAppearanceChanges(machineId, projectIds);
         captureLocalLockChanges(machineId);
       }),
     ),
   );
 
-  const outbox = takeOutbox(machineId);
+  const outbox = takeOutbox(machineId).filter(
+    (op) => supportsWorkspaceLayout || op.table !== "workspaceLayout",
+  );
   const { batches, invalid } = syncPushBatches(outbox);
   let invalidOps = invalid.length;
   for (const batch of batches) {
@@ -453,12 +461,6 @@ async function runSyncCycleInner(
 }
 
 export const CYCLE_INTERVAL_MS = 30_000;
-
-/** True while the window is minimized or hidden to the tray. Periodic polling
- * pauses then; ownership, explicit syncs and local-change nudges do not. */
-export function isDocumentHidden(): boolean {
-  return typeof document !== "undefined" && document.hidden;
-}
 
 /** Rounds never start closer together than this; requests inside the window collapse into one trailing round. */
 export const MIN_CYCLE_SPACING_MS = 3_000;
@@ -823,18 +825,15 @@ export function startSyncLoop(
     const targets = only ? eligible.filter((id) => id === only) : eligible;
     return Promise.all(targets.map((id) => request(id, true))).then(() => undefined);
   };
-  // Nobody sees a hidden window's result; the app's wake on return nudges an immediate catch-up round.
-  const timer = setInterval(() => {
-    if (!isDocumentHidden()) requestRun();
-  }, CYCLE_INTERVAL_MS);
-  requestRun();
+  // Ownership, explicit syncs and local-change nudges are independent of the periodic fallback.
+  const polling = startForegroundPolling(requestRun, CYCLE_INTERVAL_MS);
   activeSyncNow = runNow;
   return {
     stop: () => {
       if (stoppedResult) return stoppedResult;
       stopped = true;
       stopSignal.abort();
-      clearInterval(timer);
+      polling.stop();
       if (trailing !== undefined) clearTimeout(trailing);
       trailing = undefined;
       if (activeSyncNow === runNow) activeSyncNow = undefined;

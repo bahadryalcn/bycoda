@@ -187,6 +187,7 @@ const consentFixture = new Map<
   string,
   {
     revision: number;
+    active: boolean;
     environmentId: string;
     permissionLevel: string;
     projectIds: string[];
@@ -364,13 +365,14 @@ mockIPC(
       if (args.expectedRevision !== (previous?.revision ?? 0))
         throw new Error("Native consent revision changed");
       if (
-        !["watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
+        !["ask", "watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
         !Array.isArray(args.projectIds) ||
         !Array.isArray(args.criticalExclusions)
       )
         throw new Error("Invalid assistant consent");
       const consent = {
         revision: (previous?.revision ?? 0) + 1,
+        active: true,
         environmentId,
         permissionLevel: String(args.permissionLevel),
         projectIds: args.projectIds as string[],
@@ -808,12 +810,20 @@ mockIPC(
             devices:
               machine.id === "fixture-local"
                 ? [
-                    { id: "d-self", name: "Desktop", isCurrent: true, kind: "desktop" },
+                    {
+                      id: "d-self",
+                      name: "Desktop",
+                      isCurrent: true,
+                      kind: "desktop",
+                      canManageDevices: true,
+                      isLocalDesktop: true,
+                    },
                     {
                       id: "d-pixel",
                       name: "Bahadır'ın Pixel 9 Pro",
                       isCurrent: false,
                       kind: "phone",
+                      canManageDevices: true,
                       pairedAt: now - 9 * 86_400_000,
                       lastSeenAt: now - 4 * 60_000,
                     },
@@ -822,22 +832,39 @@ mockIPC(
                       name: "iPhone 16",
                       isCurrent: false,
                       kind: "phone",
+                      canManageDevices: false,
                       pairedAt: now - 30 * 86_400_000,
                     },
                   ]
                 : [
-                    { id: "r-self", name: "Desktop", isCurrent: true, kind: "desktop" },
+                    {
+                      id: "r-self",
+                      name: "Desktop",
+                      isCurrent: true,
+                      kind: "desktop",
+                      canManageDevices: false,
+                    },
+                    {
+                      id: "r-local",
+                      name: "Studio Mac desktop",
+                      isCurrent: false,
+                      kind: "desktop",
+                      canManageDevices: true,
+                      isLocalDesktop: true,
+                    },
                     {
                       id: "r-pixel",
                       name: "Bahadır'ın Pixel 9 Pro",
                       isCurrent: false,
                       kind: "phone",
+                      canManageDevices: false,
                       lastSeenAt: now - 2 * 3_600_000,
                     },
                   ],
           };
         }
         if (args.method === "devices.revokeOther") return { revoked: true };
+        if (args.method === "devices.setManagement") return { updated: true };
         if (args.method === "mobile.pairing.status") return { state: "pending" };
         if (args.method === "mobile.pairing.cancel") return {};
         if (args.method === "environment.describe") {
@@ -864,6 +891,7 @@ mockIPC(
                     "tunnels.manage",
                     "devices.paired",
                     "devices.revokeOther",
+                    "devices.setManagement",
                   ],
             ...(statusFixture
               ? { buildIdentity: { buildId: machine.id === "fixture-lab" ? "0.7.8" : "0.7.9" } }
@@ -893,7 +921,30 @@ mockIPC(
                     publicUrl: "https://fixture.trycloudflare.com",
                   },
                 ]
-              : [],
+              : machine.id === "fixture-local" &&
+                  new URLSearchParams(location.search).has("sharing-history")
+                ? [
+                    {
+                      id: "00000000-0000-0000-0000-000000000001",
+                      provider: "cloudflare",
+                      target: "host",
+                      localUrl: "http://127.0.0.1:3776",
+                      state: "stopped",
+                      startedAt: 1,
+                      canStop: false,
+                    },
+                    {
+                      id: "00000000-0000-0000-0000-000000000002",
+                      provider: "ngrok",
+                      target: "dev-server",
+                      localUrl: "http://127.0.0.1:3000",
+                      state: "ready",
+                      startedAt: 2,
+                      canStop: true,
+                      publicUrl: "https://fixture.ngrok-free.app",
+                    },
+                  ]
+                : [],
           };
         if (args.method === "tunnels.start" && args.params.automatic === true) {
           fixtureAutomaticHostAccess = true;

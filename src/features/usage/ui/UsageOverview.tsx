@@ -1,7 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
+  Activity,
   useContext,
   useDeferredValue,
   useEffect,
@@ -11,7 +12,6 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -32,11 +32,12 @@ import {
 } from "../../providers/model/providerAccounts";
 import {
   createUsagePricing,
-  fetchModelPrices,
-  fetchProviderUsage,
   type AccountUsage,
   type ModelPrices,
 } from "../../providers/model/providerUsage";
+import { loadUsageSources } from "../data/usageSources";
+import { usagePresetWindow } from "../model/usageWindows";
+import { subscribeUsageViewIntent, takeUsageViewIntent } from "../model/usageViewIntent";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { RevealedSetting } from "../../../shared/ui/settings";
@@ -93,6 +94,7 @@ const presetLabels: Record<Preset, string> = {
 };
 type Load = {
   queryKey: string;
+  prices?: ModelPrices | null;
   usage: AccountUsage[];
   turns: UsageTurnReport | null;
   failed: number;
@@ -111,17 +113,23 @@ const initialLoad: Load = {
   refreshedAt: 0,
   error: null,
 };
-function presetWindow(preset: Preset, now: number): UsageWindow {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  if (preset === "yesterday") {
-    const end = start.getTime();
-    start.setDate(start.getDate() - 1);
-    return { start: start.getTime(), end };
+// A custom range keeps its own window; relative presets share their calendar math with the voice report.
+const presetWindow = (preset: Preset, now: number): UsageWindow =>
+  usagePresetWindow(preset === "custom" ? "today" : preset, now);
+
+function viewForSetting(revealed: string | null, fallback: string) {
+  switch (revealed) {
+    case "account-limits":
+    case "usage-budgets":
+    case "show-remaining-usage":
+      return "limits";
+    case "provider-usage":
+      return "projects";
+    case "cost-overview":
+      return "overview";
+    default:
+      return fallback;
   }
-  if (["7d", "30d", "90d"].includes(preset))
-    start.setDate(start.getDate() - Number(preset.slice(0, -1)) + 1);
-  return { start: preset === "all" ? 0 : start.getTime(), end: Math.ceil(now / 900_000) * 900_000 };
 }
 
 export function UsageOverview({
@@ -135,25 +143,18 @@ export function UsageOverview({
 }) {
   const locale = useLocale();
   const revealed = useContext(RevealedSetting);
-  const [selection, setSelection] = useState({ view: "overview", revealed });
+  const [selection, setSelection] = useState(() => ({
+    view: viewForSetting(revealed, "overview"),
+    revealed,
+  }));
   const view = limitsOnly ? "limits" : selection.view;
+  const [limitsVisited, setLimitsVisited] = useState(view === "limits");
+  if (view === "limits" && !limitsVisited) setLimitsVisited(true);
   const setView = (next: string) => {
     setSelection({ view: next, revealed });
   };
   if (selection.revealed !== revealed) {
-    setSelection({
-      revealed,
-      view:
-        revealed === "account-limits" ||
-        revealed === "usage-budgets" ||
-        revealed === "show-remaining-usage"
-          ? "limits"
-          : revealed === "provider-usage"
-            ? "projects"
-            : revealed === "cost-overview"
-              ? "overview"
-              : view,
-    });
+    setSelection({ revealed, view: viewForSetting(revealed, view) });
   }
   const [preset, setPreset] = useState<Preset>("30d");
   const [interval, setInterval] = useState<UsageWindow>(() => presetWindow("30d", Date.now()));
@@ -181,13 +182,31 @@ export function UsageOverview({
   const [version, setVersion] = useState(0);
   const [load, setLoad] = useState<Load>(() => recallUsageLoad(interval, initialLoad));
   useEffect(() => rememberUsageLoad(load), [load]);
-  const [prices, setPrices] = useState<ModelPrices | null | undefined>();
+  const { prices } = load;
   const [search, setSearch] = useState("");
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const filterAnchor = useRef<HTMLButtonElement>(null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
+  // A requested view (for example from a voice report) applies the report's exact window, filters and metric.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- listens to the usage view request store while the dashboard is mounted
+  useEffect(() => {
+    if (limitsOnly) return;
+    const apply = () => {
+      const intent = takeUsageViewIntent();
+      if (!intent) return;
+      setPreset(intent.preset);
+      setInterval(intent.window);
+      setFilters(intent.filters);
+      setMetric(intent.metric);
+      setResolution(intent.resolution);
+      setSelectedSession(null);
+      setSelection({ view: "overview", revealed });
+    };
+    apply();
+    return subscribeUsageViewIntent(apply);
+  }, [limitsOnly, revealed]);
   const accounts = useMemo(() => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts), [version]);
-  const quotaHistory = useRateLimitHistory();
+  const quotaHistory = useRateLimitHistory(view === "limits" && preset === "all");
   const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
   const since = preset === "all" ? 0 : Math.max(0, previousUsageWindow(interval).start);
   const queryKey = `${since}:${interval.end}:${reload}:${refresh}:${version}`;
@@ -195,31 +214,16 @@ export function UsageOverview({
   useEffect(() => {
     if (limitsOnly) return;
     let cancelled = false;
-    void Promise.all([
-      Promise.all(
-        accounts.map(async (account) => {
-          try {
-            const report = await fetchProviderUsage(
-              account.provider,
-              account.id,
-              Math.floor(since / 900_000) * 900_000,
-            );
-            return { account, rows: report.rows, failed: false };
-          } catch {
-            return { account, rows: [], failed: true };
-          }
-        }),
-      ),
-      invoke<UsageTurnReport>("session_usage_report", {
-        sinceMs: since,
-        untilMs: interval.end,
-      }).catch(() => null),
-      fetchModelPrices().catch(() => null),
-    ]).then(([reports, turns, nextPrices]) => {
+    const sources = loadUsageSources(accounts, since, interval.end);
+    void sources.prices.then((nextPrices) => {
+      if (!cancelled) setLoad((previous) => ({ ...previous, prices: nextPrices }));
+    });
+    void Promise.all([sources.reports, sources.turns]).then(([reports, turns]) => {
       if (cancelled) return;
       const failed = reports.filter((r) => r.failed).length;
       setLoad((previousLoad) => ({
         queryKey,
+        prices: previousLoad.prices,
         usage: reports.map(({ account, rows, failed: unavailable }) => ({
           account,
           rows: unavailable
@@ -249,7 +253,6 @@ export function UsageOverview({
             ? "Usage could not be read for the selected accounts. Reload usage to try again."
             : null,
       }));
-      setPrices(nextPrices);
     });
     return () => {
       cancelled = true;
@@ -582,11 +585,11 @@ export function UsageOverview({
             )}
           </InfoPopover>
           {view === "limits" ? (
-            <InfoPopover label={t("About limit filters")}>
+            <InfoTooltip label={t("About limit filters")}>
               {t(
                 "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           ) : null}
         </div>
         <div className="usage-analytics-actions">
@@ -772,6 +775,11 @@ export function UsageOverview({
       )}
       {view !== "limits" && showAnalytics && (
         <>
+          {prices === undefined && (
+            <Text as="p" size="caption" tone="secondary" leading="inherit">
+              {t("Using built-in prices while model prices load.")}
+            </Text>
+          )}
           {refreshing && load.refreshedAt > 0 && (
             <LoadingText size="caption" tone="secondary" leading="inherit" className="usage-muted">
               {t("Refreshing usage… Previous results remain visible.")}
@@ -1092,10 +1100,14 @@ export function UsageOverview({
           />
         </>
       )}
-      <div hidden={view !== "limits"} className="usage-limits-view">
-        {limits?.(quotaFilters)}
-        {limits && <QuotaHistory window={window} filters={quotaFilters} accounts={accounts} />}
-      </div>
+      {limits && limitsVisited && (
+        <Activity mode={view === "limits" ? "visible" : "hidden"}>
+          <div hidden={view !== "limits"} className="usage-limits-view">
+            {limits(quotaFilters)}
+            <QuotaHistory window={window} filters={quotaFilters} accounts={accounts} />
+          </div>
+        </Activity>
+      )}
     </section>
   );
 }

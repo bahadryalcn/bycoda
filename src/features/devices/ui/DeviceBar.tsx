@@ -20,6 +20,7 @@ export function DeviceBar({
   hostLabel,
   disabled,
   loading,
+  discoveryFailed,
   refreshing,
   refreshDisabled,
   onSelect,
@@ -31,6 +32,7 @@ export function DeviceBar({
   hostLabel?: string;
   disabled: boolean;
   loading: boolean;
+  discoveryFailed: boolean;
   refreshing: boolean;
   refreshDisabled: boolean;
   onSelect: (id: string, booted: boolean) => void;
@@ -96,7 +98,7 @@ export function DeviceBar({
           className="device-panel-bar-text"
           role="status"
         >
-          {loading ? t("Loading devices…") : t("No devices")}
+          {loading ? t("Loading devices…") : discoveryFailed ? t("Unknown") : t("No devices")}
         </Text>
       )}
       <span className="device-panel-bar-actions">

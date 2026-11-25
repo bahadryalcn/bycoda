@@ -17,7 +17,7 @@ import { compactingText, isRunningCompaction } from "./compactionStatus";
 import { isStartupStatusBlock } from "./startupStatus";
 import type { AgentStep, Block, ToolPreview } from "./session";
 import { bycodaWorkSummary } from "./bycodaToolCall";
-import { streamingTextUpdate } from "./stableBlocks";
+import { streamingBlockUpdate } from "./stableBlocks";
 const groupedSources = new WeakMap<Block[][], { blocks: Block[]; managed: boolean }>();
 const groupedPositions = new WeakMap<Block[][], Map<string, number>>();
 function rememberGrouping(turns: Block[][], blocks: Block[], managed: boolean): void {
@@ -428,9 +428,8 @@ export function lastTurn(blocks: Block[], managed = false): Block[] {
 
 /**
  * `groupTurns`, reusing the previous result's turn arrays where a turn holds
- * the same block objects in the same order. While the agent streams only the
- * last block changes, so every earlier turn keeps its array identity and a
- * memoized turn can skip rendering on a plain reference check.
+ * the same block objects in the same order. Streamed content changes one
+ * block, so only its containing turn needs a new array.
  */
 export function groupTurnsStable(
   blocks: Block[],
@@ -439,7 +438,7 @@ export function groupTurnsStable(
 ): Block[][] {
   const source = groupedSources.get(previous);
   if (source?.blocks === blocks && source.managed === managed) return previous;
-  const updateIndex = source ? streamingTextUpdate(source.blocks, blocks) : undefined;
+  const updateIndex = source ? streamingBlockUpdate(source.blocks, blocks)?.index : undefined;
   if (source?.managed === managed && updateIndex !== undefined) {
     const oldBlock = source.blocks[updateIndex];
     const turnIndex = groupedPositions.get(previous)?.get(oldBlock.id);

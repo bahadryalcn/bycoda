@@ -1,5 +1,6 @@
 import { focusManager, onlineManager } from "@tanstack/react-query";
 import { isTauri } from "@tauri-apps/api/core";
+import { setNativePollingWindow } from "../../shared/lib/foregroundPolling";
 import {
   getWindowState,
   refreshWindowState,
@@ -15,15 +16,24 @@ export function installQueryLifecycle() {
     let refreshNative: (() => Promise<void>) | undefined;
     // Native reads started up to here are older than what focus or DOM visibility said since.
     let ignoreThrough = -1;
+    let focusedWhileDomHidden = false;
     let disposed = false;
     const fromNative = () => {
       const state = getWindowState();
       if (disposed || !state || windowStateReads().applied <= ignoreThrough) return;
-      setFocused(state.visible && !state.minimized && state.focused);
+      const shown =
+        state.visible &&
+        !state.minimized &&
+        (document.visibilityState !== "hidden" || (focusedWhileDomHidden && state.focused));
+      setNativePollingWindow({ shown, focused: state.focused });
+      setFocused(shown && state.focused);
     };
-    const visible = () => {
+    const visible = (event?: Event) => {
       if (document.visibilityState === "hidden") {
+        if (event?.type === "focus" && focusedWhileDomHidden) return;
         ignoreThrough = windowStateReads().started;
+        focusedWhileDomHidden = false;
+        if (refreshNative) setNativePollingWindow({ shown: false, focused: false });
         setFocused(false);
       } else if (refreshNative) void refreshNative().catch(report);
       else setFocused(true);
@@ -40,8 +50,11 @@ export function installQueryLifecycle() {
           report(error);
           // No native read succeeded; DOM focus is the only signal left, unless a hide
           // or native focus payload arrived meanwhile and already decided.
-          if (!disposed && ignoreThrough === hiddenAt && document.visibilityState !== "hidden")
-            setFocused(document.hasFocus());
+          if (!disposed && ignoreThrough === hiddenAt && document.visibilityState !== "hidden") {
+            const focused = document.hasFocus();
+            setNativePollingWindow({ shown: true, focused });
+            setFocused(focused);
+          }
           return;
         }
         fromNative();
@@ -52,6 +65,15 @@ export function installQueryLifecycle() {
         subscribeWindowFocus((focused) => {
           if (disposed) return;
           ignoreThrough = windowStateReads().started;
+          focusedWhileDomHidden = focused && document.visibilityState === "hidden";
+          if (focused) setNativePollingWindow({ shown: true, focused: true });
+          else {
+            const state = getWindowState();
+            setNativePollingWindow({
+              shown: document.visibilityState !== "hidden" && !!state?.visible && !state.minimized,
+              focused: false,
+            });
+          }
           // Native focus is authoritative even if WebKit's DOM visibility is stale.
           setFocused(focused);
         }),
@@ -63,6 +85,7 @@ export function installQueryLifecycle() {
       document.removeEventListener("visibilitychange", visible);
       window.removeEventListener("focus", visible);
       releases.forEach((release) => release());
+      if (refreshNative) setNativePollingWindow();
     };
   });
   onlineManager.setEventListener((setOnline) => {

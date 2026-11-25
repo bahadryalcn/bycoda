@@ -1,5 +1,6 @@
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
 import { syncSessionWindowOwnership } from "../../model/sessionWindowOwnership";
 import { openSessionIds } from "../helpers/sessionHelpers";
@@ -263,8 +264,9 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
               if (!known.has(id)) return [];
               const session = merged.sessions.find((entry) => entry.id === id);
               const remoteId = remoteSessionFor(id);
-              return session && remoteId && parseRemotePath(session.cwd)
-                ? [id, remoteSessionOwnershipKey(session.cwd, remoteId)]
+              const project = session ? remoteSessionProjectKey(session) : "";
+              return remoteId && parseRemotePath(project)
+                ? [id, remoteSessionOwnershipKey(project, remoteId)]
                 : [id];
             }),
           ).catch((error) => {

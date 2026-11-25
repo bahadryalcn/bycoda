@@ -17,6 +17,21 @@
   background: transparent;
   filter: var(--crew-figure-rim);
 }
+/* While typing, a still of the live canvas with the rim baked in replaces it: the CSS rim filter is
+   re-run by software compositing on every page frame, an unfiltered canvas costs nothing. */
+.crew-scene .crew-scene__still {
+  display: none;
+  position: absolute;
+  inset: 0;
+  block-size: 100%;
+  filter: none;
+}
+.crew-scene[data-still] .crew-scene__still {
+  display: block;
+}
+.crew-scene[data-still] canvas:not(.crew-scene__still) {
+  visibility: hidden;
+}
 .crew-scene__stage {
   position: relative;
   container-type: inline-size;
@@ -40,7 +55,7 @@
   font-size: var(--ui-font-scene-label);
   line-height: 1.2;
   letter-spacing: 0.02em;
-  /* Idle captions are secondary text at full opacity: dimming the text itself drops below 4.5:1. */
+  /* Secondary text keeps idle captions legible in the hero scene. */
   color: var(--ui-text-secondary);
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -61,11 +76,12 @@
 .crew-scene--hero {
   opacity: 1;
 }
-/* The backdrop dims only its artwork, so the labels keep full text contrast. */
 .crew-scene--background {
   max-inline-size: 1280px;
 }
-.crew-scene--background canvas {
+/* Backdrop captions are decorative and should recede behind the conversation. */
+.crew-scene--background canvas,
+.crew-scene--background .crew-scene__labels {
   opacity: 0.28;
 }
 .crew-scene:is([data-theme="star-wars"], [data-theme="lotr"]) .crew-scene__label {

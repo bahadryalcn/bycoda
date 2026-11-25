@@ -23,8 +23,11 @@
 :global(html[data-control-density="touch"]) .dockedWakeTrigger[data-button-size="xs"] {
   inline-size: var(--ui-control-height-xs);
 }
-:global(html[data-control-density="touch"]) .launcherSlot[data-compact] .dockedLauncherGroup {
+.launcherSlot[data-compact] .dockedLauncherGroup {
   flex-direction: column;
+}
+.launcherSlot[data-compact] .dockedLauncherGroup > * {
+  margin-inline: auto;
 }
 .wakeMenu {
   display: grid;
@@ -81,8 +84,8 @@
     animation: none;
   }
 }
-/* The launcher pulse stops its clock while the window is behind another app or decorative motion is off; the dot stays on screen. */
-:global(html:is([data-decorative-motion="off"], [data-window-focus="off"]))
+/* The launcher pulse stops its clock while the window is hidden or minimized or decorative motion is off; the dot stays on screen. */
+:global(html:is([data-decorative-motion="off"], [data-window-visible="off"]))
   .launcherAvatar
   .launcherDot {
   animation-play-state: paused;
@@ -119,6 +122,9 @@
   inline-size: 100%;
   block-size: 100%;
   pointer-events: none;
+}
+.panel:has(> .body[data-call-chat]) > .stageLight {
+  opacity: 0.62;
 }
 @media (forced-colors: active) {
   .stageLight {
@@ -170,28 +176,83 @@
   block-size: 100%;
   max-inline-size: none;
   max-block-size: none;
-  grid-template:
-    "header header" auto
-    "voice work" fit-content(55dvh)
-    "controls work" auto
-    ". work" minmax(0, 1fr)
-    / clamp(12rem, 20vw, 17rem) minmax(0, 1fr);
+  isolation: isolate;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+.panel[data-full-screen]:has(> .workDrawer:not([hidden])) {
+  grid-template-columns: minmax(18rem, 1fr) clamp(18rem, 40vw, 32rem);
+}
+@media (width >= 42rem) {
+  .panel[data-full-screen]:has(> .workDrawer:not([hidden]) > .liveWorkspace[data-expanded]) {
+    grid-template-columns: 18rem minmax(0, 1fr);
+  }
+}
+.panel[data-full-screen]:has(> .chatDrawer:not([hidden])) {
+  grid-template-columns: minmax(18rem, 1fr) clamp(16rem, 32vw, 28rem);
 }
 .panel[data-full-screen] > .header {
-  grid-area: header;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  padding-inline: var(--space-4);
   cursor: default;
 }
 .panel[data-full-screen] > .body {
-  grid-area: voice;
-  overflow: auto;
-  padding-block-start: var(--space-5);
-  --voice-core-stage-size: clamp(76px, 12vw, 140px);
+  grid-area: 2 / 1;
+  container-type: inline-size;
+  inline-size: min(100%, 52rem);
+  justify-self: center;
+  padding: var(--space-2) var(--space-4);
+  --voice-core-stage-size: clamp(5.5rem, min(51dvh, 86cqi), 33rem);
+}
+.panel[data-full-screen] > .body:has(> .decision) {
+  --voice-core-stage-size: clamp(5.5rem, min(29dvh, 65cqi), 16rem);
+}
+.decision {
+  inline-size: min(100%, 42rem);
+  align-self: center;
+  margin-block-start: var(--space-2);
+}
+/* Auto margins center the stage when there is room and collapse before the body needs to scroll. */
+.panel[data-full-screen] > .body > :first-child {
+  margin-block-start: auto;
+}
+.panel[data-full-screen] > .body > :last-child {
+  margin-block-end: auto;
 }
 .panel[data-full-screen] > .actions {
-  grid-area: controls;
+  grid-area: 3 / 1;
+  inline-size: min(100%, 42rem);
+  justify-self: center;
+  display: grid;
+  align-content: end;
+  min-block-size: calc(2 * var(--ui-control-height-lg) + var(--space-3) + var(--space-6));
+  padding-block-end: clamp(var(--space-3), 2.5dvh, var(--space-6));
 }
-.panel[data-full-screen] > .liveWorkspace {
-  grid-area: work;
+.workDrawer,
+.chatDrawer {
+  grid-area: 2 / 2 / -1;
+  display: flex;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+.workDrawer[hidden],
+.chatDrawer[hidden] {
+  display: none;
+}
+.chatDrawer {
+  flex-direction: column;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.chatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex: none;
+}
+.workDrawer > .liveWorkspace {
+  flex: 1;
   container-type: inline-size;
   display: flex;
   flex-direction: column;
@@ -200,130 +261,23 @@
   min-block-size: 0;
   padding: clamp(var(--space-4), 2.5vw, var(--space-8));
 }
-.liveWorkHeader,
-.liveWorkTools {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.liveWorkTools {
-  align-items: start;
-  flex-wrap: wrap;
-}
-.liveWorkActions,
-.liveWorkCounts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-.liveWorkSplit {
-  display: grid;
-  grid-template-columns: minmax(10rem, 1fr) minmax(0, 2fr);
-  flex: 1;
-  min-block-size: 0;
-}
-.liveWorkTab {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-inline-size: 0;
-  min-block-size: 0;
-  gap: var(--space-4);
-  overflow: auto;
-}
-.liveWorkCompare {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: var(--space-4);
-  min-inline-size: 0;
-}
-.liveWorkCompare > * {
-  padding-inline-start: 0;
-}
-.liveWorkList,
-.liveWorkDetail {
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-  min-block-size: 0;
-  gap: var(--space-3);
-}
-.liveWorkList {
-  padding-inline-end: var(--space-3);
-}
-.liveWorkRows,
-.liveWorkDetail {
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.liveWorkRows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-1);
-}
-.liveWorkRows .liveWorkRow {
-  padding-block: var(--space-2);
-  min-block-size: 44px;
-  inline-size: 100%;
-}
-.liveWorkRowText {
-  display: grid;
-  min-inline-size: 0;
-}
-.liveWorkState {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.liveWorkDetail {
-  padding-inline-start: var(--space-4);
-  overflow-wrap: anywhere;
-}
-.liveWorkDetail > * {
-  flex-shrink: 0;
-}
-@container (width < 30rem) {
-  .liveWorkSplit {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--space-3);
-  }
-  .liveWorkList {
-    padding-inline-end: 0;
-    max-block-size: 11rem;
-  }
-  .liveWorkDetail {
-    --surface-frame-stacked: 1;
-    padding-inline-start: 0;
-    padding-block-start: var(--space-3);
-  }
-}
-.workSuggestion {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: end;
-  flex-basis: 100%;
-  order: 1;
-}
-.header[data-work-suggestion] {
-  flex-wrap: wrap;
-}
 @media (width < 42rem) {
-  .panel[data-full-screen] {
-    grid-template:
-      "header" auto
-      "work" minmax(0, 1fr)
-      "voice" fit-content(21dvh)
-      "controls" auto
-      / minmax(0, 1fr);
+  .liveWorkspace .resultsSizeToggle {
+    display: none;
   }
-  .panel[data-full-screen] > .body {
-    --voice-core-stage-size: 48px;
-    padding-block-start: var(--space-2);
+  .panel[data-full-screen]:has(> :is(.workDrawer, .chatDrawer):not([hidden])) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .panel[data-full-screen] > :is(.workDrawer, .chatDrawer) {
+    grid-area: 2 / 1;
+    inline-size: 100%;
+    --surface-frame-stacked: 1;
+  }
+  .panel[data-full-screen]:has(> :is(.workDrawer, .chatDrawer):not([hidden])) > .body {
+    visibility: hidden;
+  }
+  .panel[data-full-screen] > .header {
+    padding-inline: var(--space-2);
   }
 }
 .header {
@@ -372,6 +326,13 @@
   padding: 8px 10px;
   min-width: 0;
 }
+.actions[data-scope-dock] {
+  display: grid;
+  gap: var(--space-2);
+}
+.actions[data-scope-dock] > :first-child {
+  justify-self: center;
+}
 .actions[hidden] {
   display: none;
 }
@@ -388,13 +349,14 @@
   min-inline-size: 0;
 }
 .panel[data-compact] {
-  inline-size: min(380px, calc(100vw - 16px));
+  inline-size: min(25rem, calc(100dvw - 2 * var(--space-2)));
   block-size: auto;
   grid-template-rows: auto;
+  overflow: clip;
 }
 .panel[data-compact] .header {
-  gap: 6px;
-  padding: 4px 6px 4px 4px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
 }
 .panel[data-compact] .drag {
   block-size: auto;
@@ -402,8 +364,8 @@
   flex-shrink: 0;
 }
 .panel[data-compact] .drag [data-small] {
-  inline-size: 40px;
-  block-size: 32px;
+  inline-size: var(--ui-control-height-sm);
+  block-size: var(--ui-control-height-sm);
 }
 @media (pointer: coarse) {
   .header {

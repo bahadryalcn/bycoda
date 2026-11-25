@@ -58,7 +58,14 @@ function fileCitationNodes(value: string, cwd?: string): MarkdownNode[] {
 }
 
 /** Normalize local file links before URL sanitizing; keep all other URLs intact. */
-export function remarkWorkspaceFileLinks({ cwd }: { cwd?: string }) {
+export function remarkWorkspaceFileLinks({
+  cwd,
+  isProseLine,
+}: {
+  cwd?: string;
+  /** Leave application-specific prose tokens for the caller to render. */
+  isProseLine?: (line: string) => boolean;
+}) {
   function visit(node: MarkdownNode) {
     if (node.type !== "link" && node.type !== "linkReference" && node.children) {
       node.children = node.children.flatMap((child) => {
@@ -73,6 +80,7 @@ export function remarkWorkspaceFileLinks({ cwd }: { cwd?: string }) {
               /^(?:[A-Za-z]:[\\/]|~[\\/]|%[A-Za-z_][A-Za-z0-9_]*(?:\(x86\))?%[\\/]|\/(?!\/))/i.test(
                 candidate,
               ) &&
+              !isProseLine?.(candidate) &&
               resolveWorkspaceFileReference(candidate, cwd)
             ) {
               return {

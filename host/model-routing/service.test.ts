@@ -269,3 +269,47 @@ it("persists calendar caps and rejects invalid values without changing the docum
   await expect(setup().service.save(1, invalid)).rejects.toThrow();
   expect((await readModelRouting(store)).version).toBe(1);
 });
+
+it("saves unrelated edits over a persisted target on a removed account without rebinding it", async () => {
+  const STALE = "account-gone";
+  const stale = {
+    ...structuredClone(EMPTY_MODEL_ROUTING),
+    version: 4,
+    updatedAt: 1,
+    entries: [
+      {
+        id: "a",
+        harness: "codex",
+        model: "x",
+        providerAccountId: STALE,
+        modelSettings: {},
+        unknownLimit: "use",
+      },
+    ],
+  };
+  await store.db.exec(
+    "CREATE TABLE IF NOT EXISTS host_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  );
+  await store.db
+    .prepare("INSERT INTO host_settings VALUES (?, ?)")
+    .run("modelRouting", JSON.stringify(stale));
+  const { service } = setup();
+  const { version: _v, updatedAt: _u, ...storedDraft } = stale;
+  const edit = structuredClone(storedDraft) as ModelRoutingDraft;
+  edit.entries[0]!.minRemainingPercent = 15;
+  const saved = await service.save(4, edit);
+  expect(saved.version).toBe(5);
+  expect(saved.entries[0]).toMatchObject({ providerAccountId: STALE, minRemainingPercent: 15 });
+  const { version: _sv, updatedAt: _su, ...savedDraft } = saved;
+  const invalid = structuredClone(savedDraft) as ModelRoutingDraft;
+  invalid.entries.push({
+    id: "b",
+    harness: "codex",
+    model: "x",
+    providerAccountId: "account-new",
+    modelSettings: {},
+    unknownLimit: "use",
+  });
+  await expect(service.save(5, invalid)).rejects.toThrow('Unknown codex account "account-new"');
+  expect((await readModelRouting(store)).version).toBe(5);
+});

@@ -65,9 +65,6 @@
     "src/features/settings/model/themePalettes.ts": {
       "theme-palette-literal": 6
     },
-    "src/features/settings/ui/ArchiveSettings.tsx": {
-      "nested-surface": 2
-    },
     "src/features/settings/ui/TerminalSettings.tsx": {
       "nested-surface": 1
     },
@@ -97,9 +94,6 @@
     },
     "src/shared/ui/ControlBehaviorMatrix.tsx": {
       "one-primary-per-view": 1
-    },
-    "src/shared/ui/DateRangePicker.tsx": {
-      "component-orphan": 1
     },
     "src/shared/ui/arc/activity-heatmap/activity-heatmap.module.css": {
       "motion-literal": 2,

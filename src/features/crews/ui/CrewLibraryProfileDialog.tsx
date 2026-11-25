@@ -3,7 +3,7 @@ import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import type { CrewAgent, SavedCrewAgent } from "../model/crew";
@@ -75,11 +75,11 @@ export function CrewLibraryProfileDialog({
       footer={
         <>
           <span className="min-w-0 flex-1">
-            <InfoPopover>
+            <InfoTooltip>
               {t(
                 "Crews that use this profile unchanged follow it; customized members keep their own edits.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           </span>
           <Button variant="ghost" disabled={pending} onClick={requestClose}>
             {t("Cancel")}

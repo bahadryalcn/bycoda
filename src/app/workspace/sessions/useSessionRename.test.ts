@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../../features/sessions/model/session";
+import { summaryFromSession } from "../../../features/sessions/data/sessionHistory";
 import { useSessionRename, type SessionRenameDeps } from "./useSessionRename";
 
 const storage = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
@@ -26,6 +27,7 @@ beforeEach(async () => {
       deps.sessionsRef.current =
         typeof update === "function" ? update(deps.sessionsRef.current) : update;
     },
+    setHistory: vi.fn(),
     loadedSessionCache: { current: new Map() },
     lastPersisted: { current: new Map() },
     invalidateLoadedSession: vi.fn(),
@@ -61,6 +63,22 @@ it.each(["open", "history"])(
     expect(deps.lastPersisted.current.get(session.id)).toBe("saved-fingerprint");
   },
 );
+
+it("updates cached Last sessions titles for the selected project only", async () => {
+  const localSummary = { ...summaryFromSession(session), cwd: "/other-project" };
+  const projectSummary = summaryFromSession(session);
+  storage.get.mockResolvedValueOnce({ ...session, cwd: "/other-project" });
+  await actions.onRenameHistorySession(session.id, "New title", "/other-project");
+  const update = vi.mocked(deps.setHistory!).mock.calls[0][0];
+  const rows = typeof update === "function" ? update([localSummary, projectSummary]) : update;
+  expect(rows[0].title).toContain("New title");
+  expect(rows[1]).toBe(projectSummary);
+  expect(deps.refreshHistory).not.toHaveBeenCalled();
+  await expect(
+    actions.onRenameHistorySession(session.id, "Wrong owner", "/other-project"),
+  ).rejects.toThrow("This project is no longer available.");
+  expect(storage.save).toHaveBeenCalledTimes(1);
+});
 
 it("keeps concurrent open-session updates when rename persistence finishes", async () => {
   deps.sessionsRef.current = [session];

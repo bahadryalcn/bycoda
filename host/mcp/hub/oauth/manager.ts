@@ -207,6 +207,14 @@ export class McpOAuth {
     this.pending.delete(id);
   }
 
+  /** Cancel only the requested attempt, leaving any saved credentials untouched. */
+  cancelSignIn(server: OAuthServerRef, state: string): boolean {
+    const id = idFor(server);
+    if (this.pending.get(id)?.flow.state !== state) return false;
+    this.cancel(id);
+    return true;
+  }
+
   private async callback(
     flow: OAuthFlow,
     port: number,

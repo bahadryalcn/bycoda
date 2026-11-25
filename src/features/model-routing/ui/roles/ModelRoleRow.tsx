@@ -5,8 +5,7 @@ import type {
   ModelRoutingRole,
   ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { TriangleAlert } from "../../../../shared/ui/icons";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../../shared/ui/settings";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
@@ -109,18 +108,36 @@ export function ModelRoleRow({
           role={role}
           choice={choice}
           revision={version}
+          compact
         />
       )
     ) : null;
   return (
     <Row
-      label={t(label)}
+      label={
+        preview ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <span>{t(label)}</span>
+            {preview}
+          </div>
+        ) : (
+          t(label)
+        )
+      }
       disabled={disabled}
       stacked={choice?.kind === "fixed"}
-      feedback={choice?.kind === "fixed" ? undefined : preview}
+      feedback={
+        choice?.kind === "fixed" ? (
+          <InlineMessage tone="warning">
+            {t(
+              "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
+            )}
+          </InlineMessage>
+        ) : null
+      }
     >
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <div className="w-56 max-w-full shrink-0">
+      <div className="flex min-w-0 w-full flex-wrap items-center gap-2">
+        <div className="w-48 max-w-full shrink-0">
           <Select
             label={t("Model for {p0}", { p0: t(label) })}
             hideLabel
@@ -138,13 +155,15 @@ export function ModelRoleRow({
           />
         </div>
         {choice?.kind === "fixed" ? (
-          <div className="min-w-56 flex-1">
+          <div className="min-w-0 flex-1 basis-52">
             <ModelPicker
               harness={choice.target.harness}
               model={choice.target.model}
               values={choice.target.modelSettings}
               presentation="field"
               hideAgentSettings
+              accountChoices
+              accountId={choice.target.providerAccountId}
               showExtras
               extrasDisabled={disabled}
               onChange={(harness, model, providerAccountId) => {
@@ -173,20 +192,6 @@ export function ModelRoleRow({
               }
             />
           </div>
-        ) : null}
-        {choice?.kind === "fixed" ? (
-          <InfoPopover
-            label={t("No fallback")}
-            width={280}
-            className="shrink-0"
-            icon={
-              <TriangleAlert aria-hidden className="icon-sm" tone="warning" strokeWidth={1.75} />
-            }
-          >
-            {t(
-              "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
-            )}
-          </InfoPopover>
         ) : null}
       </div>
     </Row>

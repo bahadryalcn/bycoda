@@ -3,15 +3,17 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { newSession } from "../../../features/sessions/model/session";
+import { useSessionComposerDraft } from "../../../features/sessions/ui/useSessionComposerDraft";
 import { useSessionLoading, type SessionLoadingDeps } from "./useSessionLoading";
 
-const mocks = vi.hoisted(() => ({ reserve: vi.fn(), get: vi.fn() }));
+const mocks = vi.hoisted(() => ({ reserve: vi.fn(), get: vi.fn(), page: vi.fn() }));
 vi.mock("../../model/sessionWindowOwnership", () => ({
   reserveSessionWindow: mocks.reserve,
   remoteSessionOwnershipKey: (cwd: string, id: string) => `${cwd}:${id}`,
 }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({
   getSession: mocks.get,
+  getEarlierStoredHistory: mocks.page,
   persistFingerprint: () => "fingerprint",
 }));
 
@@ -86,18 +88,63 @@ function retryHarness(initial: ReturnType<typeof newSession>) {
     refreshHistory: async () => {},
   };
   let actions!: ReturnType<typeof useSessionLoading>;
+  let draft!: ReturnType<typeof useSessionComposerDraft>;
   function Harness() {
     actions = useSessionLoading(deps);
+    draft = useSessionComposerDraft(
+      initial.id,
+      initial.storedHistory?.revision,
+      actions.ensureSessionHistoryForExecution,
+    );
     return null;
   }
   const root = createRoot(document.createElement("div"));
   return {
     refs,
+    publications: deps.setSessions,
+    loadHistory: (signal: AbortSignal) => actions.onLoadSessionHistory(initial.id, signal),
     mount: () => act(async () => root.render(createElement(Harness))),
     retry: (id: string) => act(async () => actions.onRetrySessionHistory(id)),
+    edit: (text: string) => act(async () => draft.change(text)),
+    prepareSend: () => actions.ensureSessionHistoryForExecution(initial.id),
     unmount: () => act(async () => root.unmount()),
   };
 }
+
+it.each([false, true])(
+  "reads all Find pages without intermediate publication or execution hydration; abort %s",
+  async (abort) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const session = {
+      ...newSession("codex", "/repo"),
+      storedHistory: { before: 400, revision: 2 },
+      historyLoading: true,
+    };
+    const h = retryHarness(session);
+    const controller = new AbortController();
+    const block = (id: string) => ({ id, role: "user", text: id });
+    mocks.page
+      .mockReset()
+      .mockImplementationOnce(() => {
+        if (abort) controller.abort();
+        return { blocks: [block("middle")], cursor: { revision: 2, before: 200 } };
+      })
+      .mockResolvedValueOnce({ blocks: [block("first")], cursor: { revision: 2 } });
+    mocks.get.mockClear();
+    try {
+      await h.mount();
+      expect(await h.loadHistory(controller.signal)).toBe(abort ? 0 : 2);
+      expect(mocks.page).toHaveBeenCalledTimes(abort ? 1 : 2);
+      expect(h.publications).toHaveBeenCalledTimes(abort ? 0 : 1);
+      expect(h.refs.current[0].blocks.map((b) => b.id)).toEqual(abort ? [] : ["first", "middle"]);
+      expect(h.refs.current[0].historyLoading).toBe(true);
+      expect(mocks.get).not.toHaveBeenCalled();
+    } finally {
+      await h.unmount();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 const failedTail = () => ({
   ...newSession("codex", "/repo"),
@@ -105,6 +152,74 @@ const failedTail = () => ({
   historyLoading: true,
   historyLoadError: "Earlier messages could not be loaded. Reopen this chat to retry.",
 });
+
+it.each([true, false])(
+  "reads on edit, publishes only on send, and reuses the read (immediate: %s)",
+  async (immediate) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const tail = {
+      ...failedTail(),
+      historyLoadError: undefined,
+      storedHistory: { before: 27, revision: 1 },
+    };
+    const complete = {
+      ...tail,
+      historyLoading: false,
+      storedHistory: undefined,
+      blocks: [{ id: "old", role: "assistant" as const, text: "Earlier" }, ...tail.blocks],
+    };
+    const read = Promise.withResolvers<typeof complete>();
+    mocks.get.mockReset().mockReturnValueOnce(read.promise);
+    const view = retryHarness(tail);
+    try {
+      await view.mount();
+      expect(mocks.get).not.toHaveBeenCalled();
+      await view.edit("reply");
+      expect(mocks.get).toHaveBeenCalledExactlyOnceWith(tail.id);
+      const waitingSend = immediate ? view.prepareSend() : undefined;
+      expect(view.refs.current[0].blocks).toBe(tail.blocks);
+      read.resolve(complete);
+      await act(async () => {});
+      if (!immediate) expect(view.refs.current[0].blocks).toBe(tail.blocks);
+      await expect(waitingSend ?? view.prepareSend()).resolves.toBe(true);
+      expect(view.refs.current[0].blocks).toEqual(complete.blocks);
+      await expect(view.prepareSend()).resolves.toBe(true);
+      expect(mocks.get).toHaveBeenCalledTimes(1);
+    } finally {
+      await view.unmount();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each(["read failed", "tail replaced"])(
+  "reads again on send when the draft warm-up cannot be used: %s",
+  async (reason) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const tail = {
+      ...failedTail(),
+      historyLoadError: undefined,
+      storedHistory: { before: 27, revision: 1 },
+    };
+    const complete = { ...tail, historyLoading: false, storedHistory: undefined };
+    mocks.get.mockReset();
+    if (reason === "read failed") mocks.get.mockRejectedValueOnce(new Error("offline"));
+    else mocks.get.mockResolvedValueOnce(complete);
+    mocks.get.mockResolvedValueOnce(complete);
+    const view = retryHarness(tail);
+    try {
+      await view.mount();
+      await view.edit("reply");
+      if (reason === "tail replaced") view.refs.current = [{ ...tail, blocks: [...tail.blocks] }];
+      expect(view.refs.current[0].historyLoading).toBe(true);
+      await expect(view.prepareSend()).resolves.toBe(true);
+      expect(mocks.get).toHaveBeenCalledTimes(2);
+    } finally {
+      await view.unmount();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("retries a failed history read in place and keeps the loaded turns until the pages arrive", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

@@ -80,6 +80,8 @@ export interface DropdownMenuProps {
   search?: DropdownMenuSearch;
   /** Row to focus (or highlight, with `search`) on open. Defaults to the first enabled row. */
   initialActiveId?: string;
+  /** Bound mounted rows for long, flat lists of leaf actions. Keyboard navigation spans all items. */
+  windowed?: boolean;
   /** Do not dismiss on a press matching this selector (a control that owns the menu). */
   ignore?: string;
   /** Called instead of `onClose` for Escape when it returns true (a nested editor handled it). */

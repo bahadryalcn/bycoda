@@ -198,7 +198,7 @@ it("dismisses a popup without resolving it and retrieves it from the center", ()
   expect(visibleRequests()).toHaveLength(0);
   expect(onApproval).not.toHaveBeenCalled();
   expect(onFocusSession).not.toHaveBeenCalled();
-  expect(button("Notifications").textContent).toBe("1");
+  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe("1");
   act(() => button("Notifications").click());
   expect(visibleRequests()[0]).toContain("Request work");
   act(() => render([]));
@@ -210,7 +210,9 @@ it("dismisses a popup without resolving it and retrieves it from the center", ()
 it("limits a backlog of twenty requests to three popups and lists all in the center", () => {
   act(() => render(Array.from({ length: 20 }, (_, i) => notice(`work-${i}`, "question"))));
   expect(visibleRequests()).toHaveLength(3);
-  expect(button("Notifications").textContent).toBe("20");
+  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe(
+    "20",
+  );
   act(() => button("View all pending requests (20)").click());
   expect(visibleRequests()).toHaveLength(20);
   act(() => button("Notification options").click());
@@ -777,7 +779,7 @@ it("badges new log entries on the trigger and resets once the sheet was opened",
     ]),
   );
   act(() => render([]));
-  const badge = () => button("Notifications").querySelector(".notification-trigger-count");
+  const badge = () => button("Notifications").querySelector("[data-notification-badge]");
   expect(badge()?.textContent).toBe("2");
   expect(badge()?.getAttribute("data-tone")).toBe("accent");
   act(() => button("Notifications").click());
@@ -791,9 +793,17 @@ it("adds waiting requests to the new count and uses the warning tone", () => {
   localStorage.setItem(NOTIFICATION_SEEN_KEY, "1000");
   localStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify([logEntry({ occurredAt: 2000 })]));
   act(() => render([notice("work", "question")]));
-  const badge = button("Notifications").querySelector(".notification-trigger-count");
+  const badge = button("Notifications").querySelector("[data-notification-badge]");
   expect(badge?.textContent).toBe("2");
   expect(badge?.getAttribute("data-tone")).toBe("warning");
+});
+
+it("caps the visible count and describes the full number", () => {
+  const notices = Array.from({ length: 100 }, (_, index) => notice(`pending-${index}`));
+  act(() => renderWith(notices, { popupNotices: [] }));
+  const bell = button("Notifications");
+  expect(bell.querySelector("[data-notification-badge]")?.textContent).toBe("99+");
+  expect(document.getElementById(bell.getAttribute("aria-describedby")!)?.textContent).toBe("100");
 });
 
 it("marks a row that arrived after the last look as new while the sheet is open", () => {
@@ -875,9 +885,7 @@ afterEach(() => {
 it("lists a live owner approval in the pending card with its time left and counts it", () => {
   act(() => render([]));
   act(() => void ownerApproval("p1"));
-  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe(
-    "1",
-  );
+  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe("1");
   openHistory();
   const card = document.querySelector<HTMLElement>(".notification-pending-card")!;
   expect(card.textContent).toContain("Approve p1");

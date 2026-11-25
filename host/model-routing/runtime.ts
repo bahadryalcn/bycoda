@@ -10,7 +10,7 @@ import {
   type HostProviderAccountCatalog,
 } from "../providers/provider-accounts";
 import { providerAuthStatus } from "../providers/provider-auth";
-import type { UsageLimitsReport } from "../usage/limits-report";
+import type { QuotaTarget, UsageLimitsReport } from "../usage/limits-report";
 import { providerAccountKind } from "./account-kind";
 import { createModelRoutingService, type ModelRoutingService } from "./service";
 import type { ModelRoutingStore } from "./storage";
@@ -47,7 +47,7 @@ export function hostModelRoutingService(store: ModelRoutingStore): ModelRoutingS
 export function createHostModelRoutingService(ports: {
   store: ModelRoutingStore;
   catalog(): Promise<ModelRoutingCatalog>;
-  readLimits(): Promise<UsageLimitsReport>;
+  readLimits(target: QuotaTarget): Promise<UsageLimitsReport>;
   command(provider: "claude" | "codex"): Promise<string>;
 }): ModelRoutingService {
   const quota = new AssistantQuotaReader({ readLimits: ports.readLimits });
@@ -70,13 +70,18 @@ export function createHostModelRoutingService(ports: {
         // Settings status only: run-start resolution stays non-blocking.
         options?.awaitQuota
           ? (async () => {
-              // Sequential: one report fills every provider, so later warms return at once.
-              // One shared budget: a hanging limits read must not add a wait per provider.
+              // One shared budget across the accounts actually named by the routing list.
               const started = monotonicNow();
-              for (const harness of new Set(state.entries.map((entry) => entry.harness))) {
+              const targets = new Map(
+                state.entries.map((entry) => [
+                  `${entry.harness}:${entry.providerAccountId ?? "default"}`,
+                  entry,
+                ]),
+              );
+              for (const { harness, providerAccountId } of targets.values()) {
                 const left = QUOTA_WARM_TIMEOUT_MS - elapsedSince(started);
                 if (left <= 0) break;
-                await quota.warm(harness, left);
+                await quota.warm(harness, left, providerAccountId);
               }
             })()
           : undefined,

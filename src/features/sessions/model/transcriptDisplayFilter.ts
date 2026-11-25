@@ -3,7 +3,11 @@ import {
   supportsHarnessLogin,
 } from "../../../integrations/harness/core/authSupport";
 import type { Block, HarnessId } from "./session";
-import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
+import {
+  registerStreamingBlockUpdate,
+  streamingBlockUpdate,
+  type StreamingBlockUpdate,
+} from "./stableBlocks";
 import { collapseTranscriptErrors } from "./transcriptErrors";
 
 /** One committed filtering: its input and what it displayed. */
@@ -15,7 +19,7 @@ export type DisplayFilterFrame = {
 
 /**
  * The transcript as displayed: login prompts hidden where the app offers login,
- * repeated errors collapsed. A text-only streaming frame reuses the previous
+ * repeated errors collapsed. A frame containing only streamed content reuses the previous
  * frame's result with the streamed block swapped in, instead of rescanning.
  */
 export function filterDisplayedBlocks(
@@ -23,12 +27,11 @@ export function filterDisplayedBlocks(
   source: Block[],
   previous: DisplayFilterFrame | null | undefined,
 ): Block[] {
-  const index =
+  const update =
     previous && previous.harness === harness
-      ? streamingTextUpdate(previous.source, source)
+      ? streamingBlockUpdate(previous.source, source)
       : undefined;
-  const streamed =
-    previous && index !== undefined ? streamedFrame(previous, source, index) : undefined;
+  const streamed = previous && update ? streamedFrame(previous, source, update) : undefined;
   return streamed ?? collapseTranscriptErrors(filterAuthErrors(harness, source));
 }
 
@@ -42,10 +45,10 @@ function filterAuthErrors(harness: HarnessId | undefined, source: Block[]): Bloc
 function streamedFrame(
   previous: DisplayFilterFrame,
   next: Block[],
-  index: number,
+  update: StreamingBlockUpdate,
 ): Block[] | undefined {
-  const from = previous.source[index];
-  const to = next[index];
+  const from = previous.source[update.index];
+  const to = next[update.index];
   if (!from || !to || from.role !== to.role || to.role === "system" || isHarnessAuthBlock(to))
     return undefined;
   if (previous.result === previous.source) return next;
@@ -53,6 +56,6 @@ function streamedFrame(
   if (at < 0) return undefined;
   const result = previous.result.slice();
   result[at] = to;
-  registerStreamingTextUpdate(previous.result, result, at);
+  registerStreamingBlockUpdate(previous.result, result, at, update.kind);
   return result;
 }

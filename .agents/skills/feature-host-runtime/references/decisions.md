@@ -36,6 +36,27 @@ Host that has running sessions or shells. It grants no other install or stop aut
 A version difference prompts the owner app-wide rather than only in Settings. The stop
 still follows the owner's confirmation in that prompt.
 
+## Local Host lifecycle with the desktop app
+
+Apply when changing when the local Host starts, stops or switches between app-owned and
+login-service mode. Recorded 2026-11-22 from the owner's messages on the host lifecycle plan.
+
+> bycodayı tamamen kapatmıştım arka plan işlerinide durdur demiştim host neden çalışıyordu ki
+
+> Evet, T3 gibi
+
+> Sor, sonra düzgünce durdur
+
+> Boşta uygula
+
+> Kurulum anahtarı açsın
+
+The Host is owned by the desktop app by default and stops when the app quits. Quitting
+lists running work and asks first, then stops it gracefully with history kept. A mode
+switch waits for idle; "Switch now" interrupts after confirmation. SSH setup turns the
+machine's login service on and says so. Existing installs with a registered service stay
+in service mode.
+
 ## Free rotating Host access
 
 Recorded 2026-11-15 from the owner's machine-discovery implementation brief.

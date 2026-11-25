@@ -10,29 +10,3 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-
-.hint {
-  margin: 0;
-}
-
-.level {
-  flex: 1;
-  min-inline-size: 80px;
-  max-inline-size: 160px;
-}
-
-.details {
-  padding-block-start: 12px;
-  min-inline-size: 0;
-}
-
-.transcript {
-  margin: 0;
-  padding: 12px;
-  overflow-wrap: anywhere;
-}
-
-.error {
-  margin: 0;
-  overflow-wrap: anywhere;
-}

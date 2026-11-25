@@ -1,13 +1,15 @@
 import type { TranscriptVirtualization } from "./transcriptVirtualization";
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { innerScrollerTakes, useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   firstTurnBelow,
   isNearBottom,
   NEAR_BOTTOM_PX,
   pinToBottom,
-  isStaleFollowReplay,
   READER_INPUT_MS,
+  READER_MOTION_IDLE_FRAMES,
+  READER_MOTION_MAX_MS,
   scrollClampedToBottom,
   syncTranscriptViewport,
   WHEEL_HOLD_MS,
@@ -67,10 +69,16 @@ export function useTranscriptFollow({
   const distanceFromBottom = useRef(0);
   const wheelHold = useRef(0);
   // Reader input that can scroll the transcript: a held pointer or touch
-  // (scrollbar drag, swipe), or a recent key, wheel or released gesture.
-  const readerInput = useRef({ held: false, until: 0, downUntil: 0 });
-  // Recent offsets the transcript was pinned to while following the end.
-  const followedTops = useRef<{ top: number; at: number }[]>([]);
+  // (scrollbar drag, swipe), or a recent key, wheel or released gesture. `upTop` is the
+  // offset of an upward motion that input started, while it is still moving up.
+  const readerInput = useRef({
+    held: false,
+    until: 0,
+    upTop: -Infinity,
+    idleFrames: 0,
+    motionAt: 0,
+    motionEl: null as HTMLElement | null,
+  });
   const scrollGeometry = useRef<{
     el: HTMLElement;
     top: number;
@@ -114,16 +122,6 @@ export function useTranscriptFollow({
   const rememberScroll = useCallback(
     (el: HTMLElement) => {
       publishReading(el);
-      if (stickToBottom.current) {
-        const now = performance.now();
-        const tops = (followedTops.current = followedTops.current.filter(
-          (entry) => now - entry.at < 30_000,
-        ));
-        if (tops[tops.length - 1]?.top !== el.scrollTop) {
-          tops.push({ top: el.scrollTop, at: now });
-          if (tops.length > 8) tops.shift();
-        }
-      }
       scrollGeometry.current = {
         el,
         top: el.scrollTop,
@@ -162,6 +160,21 @@ export function useTranscriptFollow({
     [publishReading, retention, virtualization],
   );
 
+  const hasReaderInput = useStableCallback(() => {
+    const input = readerInput.current;
+    const now = performance.now();
+    if (input.held || input.until > now) return true;
+    // Use the live offset before or after the motion listener records this event.
+    const el = scroller.current;
+    return (
+      el !== null &&
+      el === input.motionEl &&
+      input.upTop !== -Infinity &&
+      now - input.motionAt < READER_MOTION_MAX_MS &&
+      el.scrollTop <= input.upTop
+    );
+  });
+
   const syncPinned = useCallback(
     (el: HTMLElement) => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -182,22 +195,9 @@ export function useTranscriptFollow({
         !!previous &&
         previous.el === el &&
         (previous.height !== el.scrollHeight || previous.viewport !== el.clientHeight);
-      const now = performance.now();
-      followedTops.current = followedTops.current.filter((entry) => now - entry.at < 30_000);
-      // WebKit can replay an older offset from the range the transcript just
-      // followed through, after newer pins and with no reader input behind it.
-      // That is not the reader leaving; a jump further up still is.
-      const staleFollowOffset = isStaleFollowReplay({
-        following: stickToBottom.current,
-        scrolledUp,
-        held: readerInput.current.held,
-        now,
-        inputUntil: readerInput.current.until,
-        downUntil: readerInput.current.downUntil,
-        top: el.scrollTop,
-        followedTops: followedTops.current,
-      });
-      if (staleFollowOffset) {
+      // A browser scroll event can report an earlier offset even in stable layout.
+      // Leave the latest message only when a reader gesture explains the movement.
+      if (stickToBottom.current && scrolledUp && !hasReaderInput()) {
         pinToBottom(el);
         distanceFromBottom.current = 0;
         rememberScroll(el);
@@ -231,7 +231,7 @@ export function useTranscriptFollow({
       rememberScroll(el);
       setShowJump(!near);
     },
-    [rememberScroll, setShowJump],
+    [hasReaderInput, rememberScroll, setShowJump],
   );
 
   const jumpToBottom = useCallback(() => {
@@ -273,29 +273,91 @@ export function useTranscriptFollow({
   }, [onScrollerChange, scrollerEl]);
 
   useEffect(() => {
-    if (!visible || !scrollerEl) return;
+    const input = readerInput.current;
+    if (!visible || !scrollerEl) {
+      input.upTop = -Infinity;
+      return;
+    }
     syncPinned(scrollerEl);
+    // An upward wheel, key or released drag can start an animated scroll that outlasts the
+    // input window: Linux WebKit painted no frame for seconds, then reached the top in one.
+    // The motion stays the reader's while it keeps moving up. It is bounded by painted
+    // frames, not time, so a stalled page keeps it; an absolute cap, a hidden page, a scroll
+    // that does not move up or any other input end it.
+    let motionFrame: number | undefined;
+    const endMotion = () => {
+      input.upTop = -Infinity;
+      if (motionFrame !== undefined) cancelAnimationFrame(motionFrame);
+      motionFrame = undefined;
+    };
+    const watchMotion = () => {
+      motionFrame = requestAnimationFrame(() => {
+        motionFrame = undefined;
+        if (++input.idleFrames >= READER_MOTION_IDLE_FRAMES || document.hidden) endMotion();
+        else if (input.upTop !== -Infinity) watchMotion();
+      });
+    };
+    // A reinstall (new callbacks) continues a motion already under way on this element.
+    if (input.motionEl !== scrollerEl) input.upTop = -Infinity;
+    else if (input.upTop !== -Infinity) watchMotion();
     const onScroll = () => {
+      const top = scrollerEl.scrollTop;
+      if (top < input.upTop && performance.now() - input.motionAt < READER_MOTION_MAX_MS) {
+        input.upTop = top;
+        input.idleFrames = 0;
+      } else if (top !== input.upTop) endMotion();
       if (scrollerEl.isConnected && scrollerEl.clientHeight > 0) syncPinned(scrollerEl);
     };
-    const input = readerInput.current;
+    const onVisibility = () => {
+      if (document.hidden) endMotion();
+    };
     const recentInput = () => {
       input.until = performance.now() + READER_INPUT_MS;
-      input.downUntil = 0;
+    };
+    const upwardMotion = () => {
+      input.upTop = scrollerEl.scrollTop;
+      input.motionEl = scrollerEl;
+      input.motionAt = performance.now();
+      input.idleFrames = 0;
+      if (motionFrame === undefined) watchMotion();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        (target.closest('input, textarea, [contenteditable="true"]') ||
+          (target !== document.body && !scrollerEl.contains(target)))
+      )
+        return;
+      if (
+        ["ArrowUp", "PageUp", "Home"].includes(event.key) ||
+        (event.key === " " && event.shiftKey)
+      ) {
+        recentInput();
+        upwardMotion();
+      } else endMotion();
     };
     const holdInput = () => {
       input.held = true;
     };
     const releaseInput = () => {
+      if (!input.held) return;
       input.held = false;
       recentInput();
+      // A released swipe or scrollbar drag on the transcript can keep moving (momentum).
+      upwardMotion();
     };
     let release: ReturnType<typeof setTimeout> | undefined;
     const onWheel = (e: WheelEvent) => {
-      // A wheel down never asks to move up; a wheel up stops following itself.
-      if (e.deltaY <= 0) recentInput();
-      if (innerScrollerTakes(scrollerEl, e)) return;
+      const inner = innerScrollerTakes(scrollerEl, e);
+      if (inner || e.ctrlKey || e.shiftKey || (e.deltaY === 0 && e.deltaX !== 0)) {
+        endMotion();
+        return;
+      }
+      if (e.deltaY < 0) upwardMotion();
+      else endMotion();
       if (e.deltaY < 0) {
+        recentInput();
         stickToBottom.current = false;
         setShowJump(true);
         publishReading(scrollerEl);
@@ -304,7 +366,6 @@ export function useTranscriptFollow({
         // While away, following stays paused until a scroll actually reaches
         // the end. Once there, an old programmatic offset is not a new retreat.
         input.until = 0;
-        input.downUntil = performance.now() + READER_INPUT_MS;
         // Already at the very end, there is no scroll event to say the reader
         // came back (a compact composer can leave the position clamped there).
         if (
@@ -319,6 +380,7 @@ export function useTranscriptFollow({
       } else {
         // A directionless trackpad event can precede an off-thread scroll.
         // Wait for its direction before following new output.
+        recentInput();
         wheelHold.current = performance.now() + WHEEL_HOLD_MS;
         clearTimeout(release);
         release = setTimeout(() => {
@@ -339,7 +401,8 @@ export function useTranscriptFollow({
     window.addEventListener("pointercancel", releaseInput, true);
     window.addEventListener("touchend", releaseInput, true);
     window.addEventListener("touchcancel", releaseInput, true);
-    window.addEventListener("keydown", recentInput, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       clearTimeout(release);
       scrollerEl.removeEventListener("scroll", onScroll);
@@ -350,7 +413,10 @@ export function useTranscriptFollow({
       window.removeEventListener("pointercancel", releaseInput, true);
       window.removeEventListener("touchend", releaseInput, true);
       window.removeEventListener("touchcancel", releaseInput, true);
-      window.removeEventListener("keydown", recentInput, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("visibilitychange", onVisibility);
+      // Stop watching only; a reinstall on the same element continues the motion.
+      if (motionFrame !== undefined) cancelAnimationFrame(motionFrame);
     };
   }, [publishReading, rememberScroll, scrollerEl, setShowJump, syncPinned, visible]);
 
@@ -473,7 +539,7 @@ export function useTranscriptFollow({
     setShowJump,
     restoreCheckpoint,
     restoringCheckpoint,
-    hasReaderInput: () => readerInput.current.held || readerInput.current.until > performance.now(),
+    hasReaderInput,
     virtualization,
   };
 }

@@ -16,7 +16,9 @@ it("does not repeat a row's description inside its info popover on Chat settings
 it("keeps one visible help channel for Delivery time on Notifications settings", () => {
   const notifications = read("NotificationsSettings.tsx");
   expect(notifications).not.toMatch(/description=\{t\("Uses this computer/);
-  expect(notifications).toMatch(/info=\{\s*<InfoPopover>[\s\S]*?local clock/);
+  expect(notifications).toMatch(
+    /info=\{\s*<InfoPopover label=\{t\("Daily summary"\)\}>[\s\S]*?local clock/,
+  );
 });
 
 // The Windows-only fact is the Taskbar row's disabled reason, shown whether or not notifications

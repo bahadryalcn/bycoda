@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import {
   useDecorativeMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import { loadCrewTheme, subscribeCrewTheme } from "../../settings/public/settings";
 import { drawPacingUncle } from "./pacingUncleArt";
@@ -25,8 +25,7 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const elapsed = useRef(0);
   const motion = useDecorativeMotionEnabled();
-  // Behind another application the walker holds its pose, like the other canvas loops.
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   const workerEnabled = useSyncExternalStore(
     subscribeCanvasWorkerEnabled,
@@ -34,13 +33,13 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
     workerSnapshot,
   );
   // The renderer outlives pauses: gates are read by the long-lived effect below, never its deps.
-  const gates = useRef({ motion, focused, visible, theme });
+  const gates = useRef({ motion, windowVisible, visible, theme });
   const sync = useRef<(() => void) | null>(null);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hands the latest motion, focus, visibility and crew theme to the live walker, which only re-arms its timer and repaints.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hands the latest motion, window and element visibility and crew theme to the live walker, which only re-arms its timer and repaints.
   useEffect(() => {
-    gates.current = { motion, focused, visible, theme };
+    gates.current = { motion, windowVisible, visible, theme };
     sync.current?.();
-  }, [motion, focused, visible, theme]);
+  }, [motion, windowVisible, visible, theme]);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Owns the canvas, worker host and observers for as long as the renderer kind stays the same; disposes them on change or unmount.
   useEffect(() => {
     const canvas = ref.current;
@@ -85,8 +84,8 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
         }
       }
       paint();
-      const { motion, focused, visible } = gates.current;
-      if (motion && focused && visible && intersects && width > 0) {
+      const { motion, windowVisible, visible } = gates.current;
+      if (motion && windowVisible && visible && intersects && width > 0) {
         last = performance.now();
         timer = setTimeout(tick, FRAME_MS);
       }

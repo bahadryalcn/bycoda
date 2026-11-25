@@ -49,7 +49,7 @@ export class VoiceActionRefusal extends Error {
 
 /** Default recovery hint for any rejected workspace action, so the assistant never goes silent. */
 export const VOICE_REJECTED_NEXT =
-  "Tell the owner in one short sentence what blocked this and ask how to continue. Do not silently try a different operation instead.";
+  "Tell the owner what blocked this. Reconcile with a read where possible and ask only if a necessary choice remains. Keep the requested operation and target.";
 
 /**
  * The project paths one accepted spoken turn may act on, after a tool returned.
@@ -129,6 +129,7 @@ export type VoiceWorkspaceActionsDeps = {
 const text = { type: "string", minLength: 1, maxLength: 4096 };
 const target = { sessionId: text, projectPath: text };
 const mutation = { ...target, requestId: text };
+export const voiceWorkspaceSurface = { type: "string", enum: ["auto", "project", "voice"] };
 
 export const voiceWorkspaceTools = [
   [
@@ -179,7 +180,7 @@ export const voiceWorkspaceTools = [
   ],
   [
     "workspace.sessions.create",
-    "Create a session in a listed project. Set submit only when the user explicitly requests starting the supplied work.",
+    "Create a normal coding session in a visible project. In Global voice scope, omit projectPath when the owner has not identified a unique project. The session action waits for their selection and preserves the original draft or execution request. To write a draft, pass prompt and leave submit false. Set submit true only when the owner asks to send or run it. Returns the exact sessionId for follow-up.",
     {
       projectPath: text,
       requestId: text,
@@ -188,12 +189,12 @@ export const voiceWorkspaceTools = [
       prompt: { type: "string", maxLength: 16000 },
       submit: { type: "boolean" },
     },
-    ["projectPath", "requestId"],
+    ["requestId"],
   ],
   [
     "workspace.sessions.open",
-    "Open or focus the exact session. Does not submit its draft.",
-    mutation,
+    "Open or focus the exact session. Use surface project for the normal project workspace, or voice when the owner requests the drawer beside the fullscreen call. Use auto only for the current mode when there is no requested destination. Does not submit the draft.",
+    { ...mutation, surface: voiceWorkspaceSurface },
     ["sessionId", "projectPath", "requestId"],
   ],
   [
@@ -222,7 +223,7 @@ export const voiceWorkspaceTools = [
   ],
   [
     "workspace.sessions.submit",
-    "Submit the user's exact requested work to an explicit session; acceptance is not completion.",
+    "Send the explicitly requested work into an exact normal coding session. Use the session ID returned by create or resolved by list, never the Assistant Room thread. Acceptance confirms handoff only.",
     { ...mutation, text: { type: "string", minLength: 1, maxLength: 16000 } },
     ["sessionId", "projectPath", "requestId", "text"],
   ],

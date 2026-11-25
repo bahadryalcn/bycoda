@@ -166,14 +166,11 @@ it("clears a stale denial when permission resets to prompt without claiming acce
   expect(mock.capture).toHaveBeenCalledOnce();
 });
 
-it("keeps routine microphone lifetime guidance in help without starting capture", async () => {
+it("shows routine microphone lifetime guidance without starting capture", async () => {
   await render();
-  expect(element.textContent).not.toContain("requested only when");
-  const help = element.querySelector<HTMLButtonElement>(
-    'button[aria-label="Microphone access: Help"]',
-  )!;
-  await act(async () => help.click());
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("requested only when");
+  expect(element.querySelector('[data-setting-id="speech-microphone"]')?.textContent).toContain(
+    "requested only when",
+  );
   expect(mock.capture).not.toHaveBeenCalled();
 });
 

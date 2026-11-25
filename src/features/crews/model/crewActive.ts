@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useForegroundQueryPolling, useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import type { ActiveCrewMember } from "../../../shared/model/host-contracts/crews";
 import { backgroundMachines } from "../../automations/public/hostMachines";
 import { HOST_CREW_ACTIVE } from "./crew";
@@ -35,9 +36,10 @@ export function mergeActiveCrewMembers(
 
 /** Crew members currently working on every connected host that supports `crews.active.v1`. */
 export function useActiveCrewMembers(enabled: boolean) {
-  return useQuery({
+  const visible = useQueryVisible();
+  const query = useQuery({
     queryKey: [HOST_CREW_ACTIVE],
-    enabled,
+    enabled: enabled && visible,
     queryFn: async (): Promise<ActiveCrewMembers> =>
       mergeActiveCrewMembers(
         await requestCrewHosts<{ items: ActiveCrewMember[]; truncated?: true }>(
@@ -47,9 +49,12 @@ export function useActiveCrewMembers(enabled: boolean) {
         ),
       ),
     staleTime: 1000,
-    refetchInterval: (query) => activeCrewPollInterval(query.state.data?.items),
+    refetchOnWindowFocus: false,
     retry: false,
   });
+  const items = query.data?.items;
+  useForegroundQueryPolling(query.refetch, activeCrewPollInterval(items), enabled, !!items?.length);
+  return query;
 }
 
 /** Whether any connected host reports `crews.active.v1`; the Active tab and rail strip need it. */

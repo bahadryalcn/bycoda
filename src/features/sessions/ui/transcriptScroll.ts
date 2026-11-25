@@ -2,6 +2,14 @@ export const NEAR_BOTTOM_PX = 16;
 export const WHEEL_HOLD_MS = 150;
 /** How long after a key, wheel, pointer or touch a scroll still counts as the reader's. */
 export const READER_INPUT_MS = 1000;
+/**
+ * Painted frames without movement that end an upward motion the reader started. On Linux
+ * WebKit every painted frame of an animated wheel scroll moved it (the stalls painted no
+ * frames at all); one spare frame covers the frame between the wheel and its first move.
+ */
+export const READER_MOTION_IDLE_FRAMES = 3;
+/** Absolute cap on one upward motion; CI frames stalled for up to 3.3s, locally 4.4s. */
+export const READER_MOTION_MAX_MS = 10_000;
 
 export function isNearBottom(el: HTMLElement): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX;
@@ -44,36 +52,6 @@ export function syncTranscriptViewport(el: HTMLElement | null, refreshPadding = 
     if (style.getPropertyValue("--transcript-viewport") !== next)
       style.setProperty("--transcript-viewport", next);
   }
-}
-
-/**
- * A scroll event that moved up while following the end, with no reader input
- * behind it, is a replayed offset rather than the reader leaving. WebKit replays
- * an offset the transcript passed through earlier: one it followed, or one a
- * downward wheel animation crossed on its way to the end (those were never
- * followed, so only the recent downward gesture identifies them).
- */
-export function isStaleFollowReplay(input: {
-  following: boolean;
-  scrolledUp: boolean;
-  held: boolean;
-  now: number;
-  /** Until when a key, wheel up or released gesture still counts as the reader's. */
-  inputUntil: number;
-  /** Until when a downward wheel gesture is still settling toward the end. */
-  downUntil: number;
-  top: number;
-  followedTops: readonly { top: number; at: number }[];
-}): boolean {
-  if (!input.following || !input.scrolledUp || input.held || input.now <= input.inputUntil)
-    return false;
-  if (input.now < input.downUntil) return true;
-  const latest = input.followedTops[input.followedTops.length - 1];
-  return (
-    !!latest &&
-    input.now - latest.at < READER_INPUT_MS &&
-    input.followedTops.some((entry) => entry.top <= input.top + 1)
-  );
 }
 
 /**

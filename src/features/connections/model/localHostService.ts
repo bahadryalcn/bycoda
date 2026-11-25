@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import type { RemoteMachine } from "./protocol";
 import { notifyRemoteRecovered } from "./remoteHealth";
 
 /** `stopped` requires evidence the host is down; failed health checks are `unknown`. */
-export type LocalHostState = "absent" | "running" | "stopped" | "updating" | "unknown";
+export type LocalHostState = "absent" | "running" | "starting" | "stopped" | "updating" | "unknown";
 
 const POLL_MS = 15_000;
 
@@ -34,10 +35,11 @@ type LocalHostListener = (state: LocalHostState | undefined) => void;
 const localHostListeners = new Set<LocalHostListener>();
 let localHostCurrent: LocalHostState | undefined;
 let localHostPrevious: LocalHostState | undefined;
-let localHostTimer: number | undefined;
+let stopLocalHostPolling: (() => void) | undefined;
 let localHostSession = 0;
 
 function publishLocalHost(next: LocalHostState | undefined) {
+  if (localHostCurrent === next) return;
   localHostCurrent = next;
   for (const listener of localHostListeners) listener(next);
 }
@@ -76,30 +78,14 @@ function publishLocalHostStarted() {
   void loadLocalHost().catch((error: unknown) => console.warn("Local host refresh failed", error));
 }
 
-function syncLocalHostPolling() {
-  if (!localHostListeners.size) return;
-  if (document.hidden) {
-    window.clearInterval(localHostTimer);
-    localHostTimer = undefined;
-    return;
-  }
-  if (localHostTimer !== undefined) return;
-  const load = () =>
-    void loadLocalHost().catch((error: unknown) => console.warn("Local host poll failed", error));
-  load();
-  localHostTimer = window.setInterval(load, POLL_MS);
-}
-
 function subscribeLocalHost(listener: LocalHostListener): () => void {
-  if (!localHostListeners.size) document.addEventListener("visibilitychange", syncLocalHostPolling);
   localHostListeners.add(listener);
   if (localHostCurrent !== undefined) listener(localHostCurrent);
-  syncLocalHostPolling();
+  stopLocalHostPolling ??= startForegroundPolling(loadLocalHost, POLL_MS, { urgent: true }).stop;
   return () => {
     if (!localHostListeners.delete(listener) || localHostListeners.size) return;
-    document.removeEventListener("visibilitychange", syncLocalHostPolling);
-    window.clearInterval(localHostTimer);
-    localHostTimer = undefined;
+    stopLocalHostPolling?.();
+    stopLocalHostPolling = undefined;
     // Results still in flight belong to the ended session and are ignored.
     localHostSession++;
     localHostCurrent = undefined;

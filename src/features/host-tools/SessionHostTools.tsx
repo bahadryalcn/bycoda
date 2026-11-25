@@ -10,6 +10,8 @@ import {
   hostFeatureRequest,
   hostToolRequest,
   listHostToolMachines,
+  subscribeDeviceVideo,
+  deviceTouchAvailable,
 } from "../connections/model/hostFeatureClient";
 import {
   hostToolTargetKey,
@@ -20,7 +22,7 @@ import { isLocalSyncMachine } from "../connections/model/localSync";
 import { parseRemotePath } from "../connections/model/remoteProjects";
 import type { RemoteMachine } from "../connections/model/protocol";
 import { lazySurface } from "../../shared/ui/lazySurface";
-import type { DevicePanelApi } from "../devices/types";
+import type { DeviceHostStatus, DevicePanelApi } from "../devices/types";
 import { attachDeviceToComposer } from "../devices/deviceComposer";
 import { attachDeviceImageAcrossWindows } from "../devices/deviceImageComposer";
 import {
@@ -250,7 +252,10 @@ function ConversationHostTools({
   const projectMachine = machines.find((machine) =>
     remote ? machine.environmentId === remote.environmentId : isLocalSyncMachine(machine),
   );
-  const ownerLabel = !remote ? t("This computer") : (projectMachine?.name ?? remote.environmentId);
+  const projectIsLocal = !remote || (!!projectMachine && isLocalSyncMachine(projectMachine));
+  const ownerLabel = projectIsLocal
+    ? t("This computer")
+    : (projectMachine?.name ?? remote.environmentId);
   const selectedMachine =
     target.kind === "machine"
       ? machines.find((machine) => machine.id === target.machineId)
@@ -270,15 +275,21 @@ function ConversationHostTools({
     return {
       environmentId:
         target.kind === "machine" ? target.machineId : parseRemotePath(cwd)?.environmentId,
-      status: () => request("status"),
-      setup: (agentAccess) => request("setup", { agentAccess }),
-      start: () => request("start"),
-      stop: () => request("stop"),
+      status: () => request<DeviceHostStatus>("status"),
+      setup: (agentAccess) => request<DeviceHostStatus>("setup", { agentAccess }),
+      start: () => request<DeviceHostStatus>("start"),
+      stop: () => request<DeviceHostStatus>("stop"),
       list: () => request("list"),
       boot: (deviceId) => request("boot", { deviceId }),
       capture: (deviceId) => request("capture", { deviceId }),
       stream: (deviceId, cursor) =>
         request("stream", cursor === undefined ? { deviceId } : { deviceId, cursor }),
+      touchAvailable: () => deviceTouchAvailable(cwd, target),
+      subscribeStream: (deviceId, onChunk, onError) =>
+        subscribeDeviceVideo(cwd, target, deviceId, onChunk, onError),
+      touch: async (deviceId, touch, leaseId) => {
+        await request("touch", { deviceId, touch, leaseId });
+      },
       controlStatus: (deviceId) => request("control.status", { deviceId }),
       claimControl: (deviceId, requestId) => request("control.claim", { deviceId, requestId }),
       releaseControl: (deviceId, leaseId) => request("control.release", { deviceId, leaseId }),
@@ -288,8 +299,13 @@ function ConversationHostTools({
         request("action", { deviceId, action, leaseId, requestId: crypto.randomUUID() }),
     };
   }, [cwd, target]);
-  // Keep an explicitly opened local view on its original target.
-  const explicitLocalProjectView = !remote && target.kind === "local";
+  // Keep explicitly opened views on their original route when the picker merges their rows.
+  const localRoute =
+    target.kind === "local" || (!!selectedMachine && isLocalSyncMachine(selectedMachine));
+  const explicitLocalProjectView = projectIsLocal && localRoute;
+  const explicitProjectMachine = projectMachine && selectedMachine === projectMachine;
+  const projectOptionValue =
+    explicitLocalProjectView || explicitProjectMachine ? targetValue : "project";
   const renderMachinePicker = (inSetup = false) => (
     <SearchableSelect
       hideLabel
@@ -307,7 +323,7 @@ function ConversationHostTools({
           className={inSetup ? undefined : "host-tools-machine-trigger"}
           expanded={open}
           startIcon={
-            target.kind === "local" || (target.kind === "project" && !remote) ? (
+            localRoute || (target.kind === "project" && projectIsLocal) ? (
               <Laptop className="icon-sm" aria-hidden />
             ) : (
               <Server className="icon-sm" aria-hidden />
@@ -333,13 +349,15 @@ function ConversationHostTools({
       }
       options={[
         {
-          value: explicitLocalProjectView ? "local" : "project",
+          value: projectOptionValue,
           label: ownerLabel,
           description: explicitLocalProjectView ? undefined : t("Project host"),
         },
-        ...(remote ? [{ value: "local", label: t("This computer") }] : []),
+        ...(!projectIsLocal
+          ? [{ value: localRoute ? targetValue : "local", label: t("This computer") }]
+          : []),
         ...machines
-          .filter((machine) => !isLocalSyncMachine(machine))
+          .filter((machine) => machine !== projectMachine && !isLocalSyncMachine(machine))
           .map((machine) => ({
             value: `machine:${machine.id}`,
             label: machine.name,
@@ -598,6 +616,14 @@ function ConversationHostTools({
                 composerSessionId={composerSessionId ?? sessionId}
                 composerWindow={composerWindow}
                 hostTarget={target}
+                localBrowserTarget={
+                  target.kind === "local" ||
+                  (target.kind === "project" && !!cwd.trim() && !cwd.startsWith("remote://")) ||
+                  (target.kind === "machine" &&
+                    machines.some(
+                      (machine) => machine.id === target.machineId && isLocalSyncMachine(machine),
+                    ))
+                }
                 annotationsAllowed={annotationsAllowed && !!sessionId}
                 hostLabel={hostLabel}
               />

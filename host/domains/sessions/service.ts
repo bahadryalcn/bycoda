@@ -67,11 +67,15 @@ export interface SessionReadPorts<
       parentSessionId?: string,
     ): Promise<{ list: Summary[]; etag: string }>;
     session(sessionId: string, signal?: AbortSignal): Promise<View>;
-    sync(
+    /** The view and its sync answer from one coherent read. */
+    sessionSync(
       sessionId: string,
       revision?: number,
       signal?: AbortSignal,
-    ): Promise<ReadSync<View, Delta, View["session"]["blocks"][number]>>;
+    ): Promise<{
+      current: View;
+      sync: ReadSync<View, Delta, View["session"]["blocks"][number]>;
+    }>;
     readView(sessionId: string): Promise<View>;
     catchUp(sessionId: string, signal?: AbortSignal): Promise<void>;
   };
@@ -203,12 +207,9 @@ export function createSessionReadService<
           ? ports.repository.catchUp(id, context.signal)
           : ports.repository.catchUp(id));
         context.signal?.throwIfAborted();
-        current = await (context.signal
-          ? ports.repository.session(id, context.signal)
-          : ports.repository.session(id));
-        sync = await (context.signal
-          ? ports.repository.sync(id, revision, context.signal)
-          : ports.repository.sync(id, revision));
+        ({ current, sync } = await (context.signal
+          ? ports.repository.sessionSync(id, revision, context.signal)
+          : ports.repository.sessionSync(id, revision)));
       }
       if (params.partial === true && (!epoch || params.sourceEpoch === epoch)) {
         const ids = params.loadedBlockIds ?? [];

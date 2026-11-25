@@ -1,6 +1,7 @@
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { t } from "../../../shared/i18n";
+import { retainAsyncSubscription } from "../../../shared/lib/asyncSubscription";
 import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
@@ -21,8 +22,43 @@ import {
 } from "../model/attachments";
 import { attachmentDropVerdict, type AttachmentDropBlock } from "../model/attachmentDrop";
 import type { Attachment } from "../model/session";
+import type { AttachmentReadCapacity } from "../model/attachmentReadCapacity";
 import { hasFiles } from "./composerTextareaEdit";
 import type { AttachmentSink } from "./useComposerAttachments";
+
+const nativeDropTargets = new Set<(event: DragDropEvent) => void>();
+let stopNativeDrops: (() => void) | undefined;
+let visibleComposerHint: (() => void) | undefined;
+
+function listenForNativeDrops(target: (event: DragDropEvent) => void) {
+  nativeDropTargets.add(target);
+  if (!stopNativeDrops) {
+    const stop: () => void = retainAsyncSubscription(
+      Promise.resolve().then(() =>
+        getCurrentWebview().onDragDropEvent(({ payload }) => {
+          if (stopNativeDrops === stop) {
+            for (const receive of nativeDropTargets) receive(payload);
+          }
+        }),
+      ),
+      (error) => {
+        if (stopNativeDrops === stop) stopNativeDrops = undefined;
+        console.warn("Composer operation failed", error);
+      },
+    );
+    stopNativeDrops = stop;
+  }
+  return () => {
+    nativeDropTargets.delete(target);
+    if (nativeDropTargets.size) return;
+    // Panel switches replace the target within one commit. Release after its effects settle.
+    queueMicrotask(() => {
+      if (nativeDropTargets.size) return;
+      stopNativeDrops?.();
+      stopNativeDrops = undefined;
+    });
+  };
+}
 
 type Options = {
   enabled: boolean;
@@ -35,7 +71,10 @@ type Options = {
   attachmentsRef?: RefObject<readonly unknown[]>;
   persistBlobs?: boolean;
   readDroppedAttachments: (
-    read: (onSkipped: (skipped: SkippedAttachment[]) => void) => Promise<Attachment[]>,
+    read: (
+      onSkipped: (skipped: SkippedAttachment[]) => void,
+      capacity?: AttachmentReadCapacity,
+    ) => Promise<Attachment[]>,
   ) => void;
   setPasteError: Dispatch<SetStateAction<string | null>>;
 };
@@ -60,17 +99,17 @@ export function useComposerFileDrop({
 }: Options): void {
   const hideRef = useRef<(() => void) | null>(null);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Register DOM and native drop targets only while this composer accepts input.
   useEffect(() => {
     // A disabled composer is not a drop target at all: no mark, no badge, no native listener.
     if (!enabled || disabled) return;
     const dropRoot = () => boxRef.current;
     let nativeDropAt = 0;
     let nativeCount = 0;
-    let showing = false;
 
     const hide = () => {
-      if (!showing) return;
-      showing = false;
+      if (visibleComposerHint !== hide) return;
+      visibleComposerHint = undefined;
       endExternalDrop();
     };
     hideRef.current = hide;
@@ -86,7 +125,7 @@ export function useComposerFileDrop({
       explorer: boolean,
       pointer: { clientX: number; clientY: number },
     ) => {
-      showing = true;
+      visibleComposerHint = hide;
       showExternalDrop(
         dropRoot(),
         attachmentDropVerdict(count, attachmentsRef?.current.length ?? 0, blockedBy(explorer)),
@@ -124,10 +163,8 @@ export function useComposerFileDrop({
       if (Date.now() - nativeDropAt < 250) return;
       const files = filesFromClipboard(data);
       if (files.length === 0) return;
-      readDroppedAttachments((onSkipped) =>
-        persistBlobs === undefined
-          ? attachmentsFromFiles(files, { onSkipped })
-          : attachmentsFromFiles(files, { persistBlobs, onSkipped }),
+      readDroppedAttachments((onSkipped, capacity) =>
+        attachmentsFromFiles(files, { persistBlobs, onSkipped, capacity }),
       );
     };
 
@@ -149,7 +186,9 @@ export function useComposerFileDrop({
       }
       hide();
       if (!over || blockedBy(true)) return;
-      readDroppedAttachments(() => attachmentsFromPaths(detail.paths ?? [detail.path]));
+      readDroppedAttachments((_onSkipped, capacity) =>
+        attachmentsFromPaths(detail.paths ?? [detail.path], capacity),
+      );
     };
 
     // Escape and losing the window end the gesture without a drop or a leave.
@@ -166,51 +205,37 @@ export function useComposerFileDrop({
     window.addEventListener("blur", hide);
     window.addEventListener("dragend", hide);
 
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    void Promise.resolve()
-      .then(() =>
-        getCurrentWebview().onDragDropEvent((event) => {
-          if (cancelled) return;
-          if (event.payload.type === "leave") {
-            nativeCount = 0;
-            hide();
-            return;
-          }
-          const { x, y } = event.payload.position;
-          const point = dragPointToClient(x, y);
-          const over = overTarget(point.x, point.y);
-          if (event.payload.type === "enter" || event.payload.type === "over") {
-            if (event.payload.type === "enter") nativeCount = event.payload.paths.length;
-            if (!over) hide();
-            else show(nativeCount, false, nativeDropPointer({ x, y }, pointerInside(dropRoot())));
-            return;
-          }
-          if (event.payload.type !== "drop") return;
-          nativeCount = 0;
-          hide();
-          if (!over || blockedBy(false)) return;
-          if (event.payload.paths.length === 0) {
-            setPasteError(
-              t("This drag did not provide a file. Save the image, then drag the saved file here."),
-            );
-            return;
-          }
-          nativeDropAt = Date.now();
-          const paths = event.payload.paths;
-          readDroppedAttachments(() => attachmentsFromPaths(paths));
-        }),
-      )
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((error) => {
-        console.warn("Composer operation failed", error);
-      });
+    const unlisten = listenForNativeDrops((event) => {
+      if (event.type === "leave") {
+        nativeCount = 0;
+        hide();
+        return;
+      }
+      const { x, y } = event.position;
+      const point = dragPointToClient(x, y);
+      const over = overTarget(point.x, point.y);
+      if (event.type === "enter" || event.type === "over") {
+        if (event.type === "enter") nativeCount = event.paths.length;
+        if (!over) hide();
+        else show(nativeCount, false, nativeDropPointer({ x, y }, pointerInside(dropRoot())));
+        return;
+      }
+      if (event.type !== "drop") return;
+      nativeCount = 0;
+      hide();
+      if (!over || blockedBy(false)) return;
+      if (event.paths.length === 0) {
+        setPasteError(
+          t("This drag did not provide a file. Save the image, then drag the saved file here."),
+        );
+        return;
+      }
+      nativeDropAt = Date.now();
+      const paths = event.paths;
+      readDroppedAttachments((_onSkipped, capacity) => attachmentsFromPaths(paths, capacity));
+    });
 
     return () => {
-      cancelled = true;
       hide();
       if (hideRef.current === hide) hideRef.current = null;
       root?.removeEventListener("dragover", onDragOver);
@@ -220,11 +245,20 @@ export function useComposerFileDrop({
       window.removeEventListener("keydown", onEscape);
       window.removeEventListener("blur", hide);
       window.removeEventListener("dragend", hide);
-      unlisten?.();
+      unlisten();
     };
-  }, [disabled, enabled, persistBlobs, readDroppedAttachments]);
+  }, [
+    attachmentsRef,
+    boxRef,
+    disabled,
+    enabled,
+    persistBlobs,
+    readDroppedAttachments,
+    setPasteError,
+    sinkRef,
+  ]);
 
-  // The verdict changes with the provider; the next drag event draws the new one.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Clear the external drop badge when its provider capability changes.
   useEffect(() => {
     hideRef.current?.();
   }, [attachmentsSupported]);

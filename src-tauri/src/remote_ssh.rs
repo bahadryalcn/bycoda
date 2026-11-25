@@ -218,6 +218,7 @@ pub struct JobView {
     pub done: bool,
     pub error: Option<String>,
     pub machine: Option<crate::remote::Machine>,
+    pub enabled_background_service: bool,
 }
 struct JobData {
     view: JobView,
@@ -238,6 +239,7 @@ impl Job {
                     done: false,
                     error: None,
                     machine: None,
+                    enabled_background_service: false,
                 },
                 answer: None,
             }),
@@ -258,6 +260,13 @@ impl Job {
             .view
             .message = text.into();
     }
+    pub fn background_service_enabled(&self) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .view
+            .enabled_background_service = true;
+    }
     pub fn complete(&self, action: impl FnOnce() -> Result<crate::remote::Machine, String>) {
         let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
         let result = if self.cancelled.load(Ordering::Relaxed) {
@@ -270,7 +279,12 @@ impl Job {
         inner.answer = None;
         match result {
             Ok(machine) => {
-                inner.view.message = "Connected".into();
+                inner.view.message = if inner.view.enabled_background_service {
+                    "Connected. This computer now stays reachable when bycoda is closed."
+                } else {
+                    "Connected"
+                }
+                .into();
                 inner.view.machine = Some(machine);
             }
             Err(error) => inner.view.error = Some(error),

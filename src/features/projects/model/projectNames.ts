@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { createObservedSnapshot } from "../../../shared/lib/store";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import {
   loadTabGroupLabels,
@@ -23,18 +24,19 @@ export function projectDisplayNameFrom(path: string, labels: Record<string, stri
 let labelsCache: { json: string; labels: Record<string, string> } | null = null;
 
 /** The labels, with one object identity for as long as their content is unchanged. */
-function labelsSnapshot(): Record<string, string> {
+function refreshLabels(): Record<string, string> {
   const labels = loadTabGroupLabels();
   const json = JSON.stringify(labels);
   if (labelsCache?.json !== json) labelsCache = { json, labels };
   return labelsCache.labels;
 }
 
+const labelsStore = createObservedSnapshot(refreshLabels, subscribeTabGroupLabels);
 const NO_LABELS: Record<string, string> = {};
 
 /** The project labels for render: re-renders the caller when any label changes. */
 export function useProjectLabels(): Record<string, string> {
-  return useSyncExternalStore(subscribeTabGroupLabels, labelsSnapshot, () => NO_LABELS);
+  return useSyncExternalStore(labelsStore.subscribe, labelsStore.getSnapshot, () => NO_LABELS);
 }
 
 const nameKey = (name: string) => name.trim().toLowerCase();

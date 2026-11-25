@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -109,8 +109,9 @@ it("uses the dedicated Host's verified checkout and repository for a reviewed re
   const f = await fixture(verify);
   try {
     const { token } = await f.review();
+    const [checkout, repository] = await Promise.all([realpath(f.path), realpath(f.cwd)]);
     await f.remove(token);
-    expect(verify).toHaveBeenCalledWith(f.path, f.cwd);
+    expect(verify).toHaveBeenCalledWith(checkout, repository);
     expect((await f.git("worktree", "list", "--porcelain")).stdout).not.toContain(
       "refs/heads/linked",
     );
@@ -277,7 +278,9 @@ it("refuses the main checkout and binds force to hidden, untracked and changed f
 it("checks linked sessions, terminals, unpublished commits and unknown usage", async () => {
   const f = await fixture();
   try {
-    f.startupStates.mockResolvedValue([{ id: "linked-session", cwd: f.path, running: true }]);
+    const alias = join(f.cwd, "..", "session-alias");
+    await symlink(f.path, alias, process.platform === "win32" ? "junction" : "dir");
+    f.startupStates.mockResolvedValue([{ id: "linked-session", cwd: alias, running: true }]);
     f.runningInWorkspace.mockReturnValue([{}]);
     const busy = await f.review();
     expect(busy).toMatchObject({

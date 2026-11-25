@@ -26,6 +26,7 @@ import {
   type AdoptedMirrorDeps,
   type AdoptedResolution,
 } from "./adoptedSessions";
+import { observeAdoptedStop } from "./adoptedSessionCommands";
 import { createHostMetadataMirror } from "./adoptedSessionMetadata";
 import { adoptedSyncingIds, setAdoptedSyncing } from "./adoptedSyncing";
 import {
@@ -198,12 +199,21 @@ export function useAdoptedSessions(
               )
             )
               throw new Error("This conversation belongs to another project.");
+            if (!stopped) {
+              for (const entry of entries) {
+                if (entry.status !== "running") observeAdoptedStop(entry.id, entry);
+              }
+            }
             return entries;
           },
           load: async (sessionId, known) => {
-            const host = await loadRemoteSession(machine.id, sessionId, known, { digests });
+            const host = await loadRemoteSession(machine.id, sessionId, known, {
+              digests,
+              deferPreviews: true,
+            });
             if (host.session.id !== sessionId || (target && host.projectId !== target.projectId))
               throw new Error("This conversation belongs to another project.");
+            if (!stopped) observeAdoptedStop(sessionId, host);
             await metadata.observe(host).catch(() => undefined);
             return host;
           },
@@ -288,7 +298,10 @@ export function useAdoptedSessions(
             )
               return false;
             if (declined.get(entry.id) === entry.revision) return false;
-            const host = await loadRemoteSession(machine.id, entry.id, undefined, { digests });
+            const host = await loadRemoteSession(machine.id, entry.id, undefined, {
+              digests,
+              deferPreviews: true,
+            });
             const copy = desktopCopyOf(host, project.cwd, sameProjectPath);
             if (stopped) return false;
             if (!(await upsertSession(copy, adoptedSessionTimes(host)))) {

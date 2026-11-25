@@ -1,16 +1,25 @@
 # Terminal appearance and reading tools
 
+## Open a remote project terminal
+
+Use **Terminal** in the project's footer to open an interactive shell in the
+selected checkout on its saved SSH machine. The dock supports new terminals and
+splits. Windows starts PowerShell; macOS and Linux start the account's login
+shell. A machine paired through a Host URL needs a saved SSH connection for
+this action. The project dock uses the paired machine's SSH host key.
+
 ## Run commands from chat
 
 Completed PowerShell (`powershell`, `pwsh`, `ps1`) and POSIX shell (`bash`, `sh`,
 `zsh`, `shell`) code blocks show **Run in terminal** (Play) beside the code-block
 actions. The command runs in a matching installed shell on the conversation's
-machine, using its working copy. On this computer it opens as a new terminal in the
-project's terminal dock. A remote conversation, or one outside the open project,
-uses the terminal dialog instead, which shows output, **Stop** and the exit code.
+machine, using its working copy. It opens in the current project's terminal dock
+and shows the command before the process produces output. Remote runs stream
+output from the conversation's machine and show **Stop** and the exit code in
+the dock. Conversations outside the open project use the terminal dialog.
 If completion cannot be confirmed, the status remains unknown.
 The output feed keeps its last lines during a brief connection interruption and
-checks again in the background. If the interruption lasts, the dialog reports
+checks again in the background. If the interruption lasts, the terminal reports
 that the command status is unknown.
 
 When the command finishes, its bounded output is added to the original
@@ -32,16 +41,16 @@ terminal's text size; ordinary wheel input continues to scroll. Open the termina
 **Terminal pane actions** menu to adjust its current size with − / + or **Reset**
 to the saved terminal size. Changing text size does not start another shell.
 
-The dock keeps one header for creating, splitting, choosing profiles and hiding
-terminals. **Terminal dock actions** applies to the dock. Each pane has compact
-controls at its upper right, visible on hover or keyboard focus (always available
-on touch). **Terminal pane actions** offers Scroll to bottom, Clear terminal and
-text size for that pane. The terminal list and split panes retain their layout.
+The dock header groups new terminal, profiles and split together. Find,
+Command suggestions and **Terminal pane actions** follow the selected terminal.
+The pane menu offers Scroll to bottom, Clear terminal and text size. **Move
+Terminal** opens the dock position menu.
 
 **Hide Terminal** (the collapse-panel icon, Ctrl/Cmd+J outside a focused terminal, or
-Ctrl+" on Turkish layouts) only hides the dock; every shell keeps running. The X beside it closes the
-active terminal. Closing asks first when a process is still running in that terminal,
-or when it is the last one, because closing the last terminal also closes the panel.
+Ctrl+" on Turkish layouts) hides the dock and keeps every shell running. The X at
+the right opens a dialog with **Cancel**, **Close Active Terminal**, **Close
+others** and **Close All Terminals**. Running processes still require confirmation.
+Closing the last terminal also closes the panel.
 Holding the toggle chord switches the dock once, not on every key repeat.
 
 Switching projects dismisses the previous dock's menus so their actions cannot

@@ -3,7 +3,7 @@ import type { RemoteShellState } from "../../workspace/model/remoteEmptyChats";
 import { remotePendingWorktree, remoteSessionFor, remoteTabBindingsReadable } from "./connections";
 import { remoteCreateIntent } from "./remoteCreateIntent";
 import { readDurableRemoteCommand } from "./remoteOutbox";
-import { remoteProjectFor } from "./remoteProjects";
+import { remoteSessionProject, remoteSessionProjectKey } from "./sessionMachineTarget";
 
 /**
  * Local facts about a remote shell, read from this app's own storage. A shell
@@ -13,13 +13,14 @@ import { remoteProjectFor } from "./remoteProjects";
  * is pending too, as is one with a command waiting in the outbox.
  */
 export async function remoteShellState(
-  shell: { id: string; cwd: string },
+  shell: { id: string; cwd: string; remoteExecutionEnvironmentId?: string },
   options: { bound?: boolean; hasDraft?: boolean } = {},
 ): Promise<RemoteShellState> {
   let bound = !!options.bound || !!remoteSessionFor(shell.id);
   const hasDraft = options.hasDraft ?? false;
-  if (!isRemoteProjectPath(shell.cwd)) return { bound, pending: false, hasDraft };
-  const project = remoteProjectFor(shell.cwd);
+  if (!isRemoteProjectPath(remoteSessionProjectKey(shell)))
+    return { bound, pending: false, hasDraft };
+  const project = remoteSessionProject(shell);
   let outboxPending = true;
   try {
     if (project)

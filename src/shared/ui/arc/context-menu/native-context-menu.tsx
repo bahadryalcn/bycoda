@@ -23,7 +23,7 @@ type MenuAction = {
   label: string;
   description?: string;
   shortcut?: string;
-  /** Native tooltip, useful to explain why an item is disabled. */
+  /** Tooltip, useful to explain why an item is disabled. */
   title?: string;
   disabled?: boolean;
   danger?: boolean;

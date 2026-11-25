@@ -83,6 +83,7 @@ type Chunk = { id: number; stream: "stdout" | "stderr"; bytes: Uint8Array };
 const WORKER_SOURCE = `
 const { parentPort } = require("node:worker_threads");
 const { execFile, execFileSync, spawn } = require("node:child_process");
+const { StringDecoder } = require("node:string_decoder");
 const active = new Map();
 const resumeOutput = new Map();
 let closing = false;
@@ -134,6 +135,35 @@ function report(id, error, stdout, stderr) {
   }, transfer);
 }
 
+// Bound raw pipe bytes before decoding. An overflow may split a UTF-8 character.
+function collectOutput(child, stream, outcome, encoding, maxBuffer) {
+  const chunks = [];
+  let bytes = 0;
+  let truncated = false;
+  const pipe = child[stream];
+  pipe.on("data", (chunk) => {
+    const remaining = maxBuffer - bytes;
+    if (chunk.length <= remaining) {
+      bytes += chunk.length;
+      chunks.push(chunk);
+      return;
+    }
+    chunks.push(chunk.subarray(0, remaining));
+    truncated = true;
+    outcome.error ??= Object.assign(new RangeError(stream + " maxBuffer length exceeded"), {
+      code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+    });
+    child.stdout.destroy();
+    child.stderr.destroy();
+    killTree(child, "SIGKILL", false);
+  });
+  child.once("close", () => {
+    const buffer = Buffer.concat(chunks);
+    outcome[stream] = encoding === "buffer" ? buffer
+      : truncated ? new StringDecoder(encoding).write(buffer) : buffer.toString(encoding);
+  });
+}
+
 function run({ id, file, args, options, deadline, cancelled }) {
   const { input, encoding = "utf8", env, cwd, maxBuffer, windowsHide = true, streaming, replaceEnv, nativeTimeout, timeout } = options;
   const empty = encoding === "buffer" ? Buffer.alloc(0) : "";
@@ -164,10 +194,11 @@ function run({ id, file, args, options, deadline, cancelled }) {
       // A POSIX process group lets cancellation reach grandchildren.
       detached: process.platform !== "win32",
     };
+    // execFile drops detached on POSIX and kills only the parent on a buffer overflow.
+    child = spawn(file, args, launch);
+    outcome = { stdout: empty, stderr: empty };
+    child.once("error", (error) => { outcome.error = error; });
     if (streaming) {
-      child = spawn(file, args, launch);
-      outcome = { stdout: empty, stderr: empty };
-      child.once("error", (error) => { outcome.error = error; });
       for (const stream of ["stdout", "stderr"]) {
         child[stream].on("data", (chunk) => {
           child[stream].pause();
@@ -177,12 +208,8 @@ function run({ id, file, args, options, deadline, cancelled }) {
         });
       }
     } else {
-      child = execFile(file, args, {
-        ...launch, encoding, maxBuffer: maxBuffer ?? 1024 * 1024,
-        timeout: nativeTimeout ? timeout : 0,
-      }, (error, stdout, stderr) => {
-        outcome = { error, stdout, stderr };
-      });
+      collectOutput(child, "stdout", outcome, encoding, maxBuffer ?? 1024 * 1024);
+      collectOutput(child, "stderr", outcome, encoding, maxBuffer ?? 1024 * 1024);
     }
   } catch (error) {
     report(id, error, empty, empty);
@@ -205,25 +232,32 @@ function run({ id, file, args, options, deadline, cancelled }) {
   child.once("close", (code, signal) => {
     clearTimeout(timer);
     clearTimeout(killTimer);
+    // A cooperative parent may exit on TERM while one of its helpers ignores it.
+    if (process.platform !== "win32" && stopped === "ETIMEDOUT") killTree(child, "SIGKILL", false);
     active.delete(id);
     resumeOutput.delete(id);
     const { error, stdout, stderr } = outcome;
     const failure = stopped
       // Windows tree kill ends the child without a signal; keep the signal contract.
       ? errorFor(stopped, true, signal ?? (stopped === "ETIMEDOUT" ? "SIGTERM" : "SIGKILL"))
-      : error || (streaming && code !== 0
-        ? Object.assign(new Error("Command failed: " + cmd), { code, signal, cmd })
+      : error || (code !== 0 || signal !== null
+        ? Object.assign(new Error("Command failed: " + cmd + (streaming ? "" : "\\n" + stderr)), { code, signal, cmd, killed: false })
         : inputError);
+    if (!streaming && failure) {
+      failure.cmd = cmd;
+      if (nativeTimeout && stopped === "ETIMEDOUT") failure.message = "Command failed: " + cmd + "\\n" + stderr;
+    }
     report(id, failure, stdout, stderr);
     if (closing && !active.size) parentPort.close();
   });
   child.stdin.on("error", (error) => { inputError = error; });
-  // execFile starts its timer after spawn. Charge synchronous process creation to this deadline.
+  // A total deadline includes process creation. Native timeouts start after spawn.
   const delay = remaining();
   const cancelledDuringLaunch = cancellation();
   if (cancelledDuringLaunch || (!nativeTimeout && delay <= 0)) stop(cancelledDuringLaunch ?? "ETIMEDOUT");
   else {
     if (!nativeTimeout) timer = setTimeout(() => stop("ETIMEDOUT"), delay);
+    else if (timeout > 0) timer = setTimeout(() => stop("ETIMEDOUT"), timeout);
     if (Array.isArray(input)) {
       for (const piece of input) child.stdin.write(piece);
       child.stdin.end();
@@ -246,9 +280,11 @@ parentPort.on("message", (message) => {
     if (!active.size) parentPort.close();
   }
 });
-process.on("exit", () => {
+function stopActive() {
   for (const stop of active.values()) stop("ECANCELED", true);
-});
+}
+process.on("uncaughtExceptionMonitor", stopActive);
+process.on("exit", stopActive);
 `;
 
 type Job = {
@@ -337,7 +373,18 @@ export class GitExecPool {
         reject(new RangeError("Git command timeout must be a positive timer duration"));
         return;
       }
-      // Native execFile owns the runtime timer. Bound admission separately.
+      if (!onOutput && options.maxBuffer !== undefined && !(options.maxBuffer >= 0)) {
+        reject(
+          Object.assign(
+            new RangeError(
+              `The value of "options.maxBuffer" is out of range. It must be a positive number. Received ${options.maxBuffer}`,
+            ),
+            { code: "ERR_OUT_OF_RANGE" },
+          ),
+        );
+        return;
+      }
+      // Callers requesting native execFile timing get the full timeout after spawn.
       const queueTimeout = options.nativeTimeout ? 30_000 : options.timeout;
       const command = {
         id: ++this.nextId,

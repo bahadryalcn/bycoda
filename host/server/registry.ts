@@ -70,7 +70,8 @@ export function createRegistryRuntime(
   const modelRouting = createHostModelRoutingService({
     store: dependencies.engine.store,
     catalog: () => dependencies.models(),
-    readLimits: () => readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    readLimits: (target) =>
+      readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId), target),
     command: async (provider) => (await resolveBinary[provider]()).path,
   });
   const modelRoutingService = createModelRoutingDomainService(modelRouting);

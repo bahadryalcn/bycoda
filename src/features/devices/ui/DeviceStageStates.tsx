@@ -3,7 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Smartphone } from "../../../shared/ui/icons";
 import type { DeviceSummary } from "../types";
@@ -44,13 +44,13 @@ export function DeviceConnectState({
         >
           {t("Connect a device")}
         </Text>
-        <InfoPopover label={t("How to connect")}>
+        <InfoTooltip label={t("How to connect")}>
           <Text as="p" size="caption" tone="secondary" leading="relaxed">
             {t(
               "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
             )}
           </Text>
-        </InfoPopover>
+        </InfoTooltip>
       </div>
       <div className="device-panel-state-actions">
         <Button
@@ -164,13 +164,13 @@ function DeviceNoDevicesState({
         >
           {t("No devices found")}
         </Text>
-        <InfoPopover label={t("How to connect")}>
+        <InfoTooltip label={t("How to connect")}>
           <Text as="p" size="caption" tone="secondary" leading="relaxed">
             {t(
               "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
             )}
           </Text>
-        </InfoPopover>
+        </InfoTooltip>
       </div>
       <div className="device-panel-state-actions">
         <Button loading={refreshing} disabled={refreshDisabled} onClick={onRefresh}>
@@ -225,8 +225,9 @@ export function DeviceWaitingState({
   onSetup: (anchor: HTMLElement) => void;
   onSelect: (id: string, booted: boolean) => void;
 }) {
+  // With no observed devices, the header already shows the discovery progress.
   if (loadingDevices)
-    return (
+    return devices.length ? (
       <Text
         as="div"
         size="caption"
@@ -237,7 +238,7 @@ export function DeviceWaitingState({
       >
         <LoadingText>{t("Loading devices…")}</LoadingText>
       </Text>
-    );
+    ) : null;
   if (device && !device.booted)
     return (
       <Text

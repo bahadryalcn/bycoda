@@ -82,3 +82,24 @@ export function scopedMentionParts(text: string): { text: string; kind?: ScopedM
   if (offset < text.length) parts.push({ text: text.slice(offset) });
   return parts;
 }
+
+/** A completed mention and its adjacent separator are one deletion. */
+export function deleteScopedMentionAtCaret(
+  text: string,
+  caret: number,
+  direction: "back" | "forward",
+  searching = false,
+): { text: string; caret: number; end: number } | null {
+  if (searching && direction === "back" && text[caret - 1] !== " ") return null;
+  const hit = scopedMentionRanges(text).find(({ start, end }) =>
+    direction === "back"
+      ? end === caret || (end + 1 === caret && text[end] === " ")
+      : start === caret,
+  );
+  if (!hit) return null;
+  const removeSpace =
+    text[hit.end] === " " &&
+    (caret > hit.end || hit.start === 0 || /\s/.test(text[hit.start - 1] ?? ""));
+  const end = hit.end + Number(removeSpace);
+  return { text: text.slice(0, hit.start) + text.slice(end), caret: hit.start, end };
+}

@@ -158,11 +158,6 @@ it("follows the screen as video and stops still captures once the stream decodes
   await act(async () => vi.advanceTimersByTimeAsync(5000));
   expect(api.capture).toHaveBeenCalledTimes(captures);
   // Input no longer waits for a follow-up screenshot: the video shows the result.
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
-      .click(),
-  );
   await act(async () => button("Home").click());
   expect(api.action).toHaveBeenCalledTimes(1);
   expect(api.capture).toHaveBeenCalledTimes(captures);
@@ -188,6 +183,76 @@ it("falls back to still captures when the Host cannot stream this device", async
   expect(vi.mocked(api.capture).mock.calls.length).toBeGreaterThan(captures);
 });
 
+it("refreshes fallback stills between slow captures without overlapping them", async () => {
+  let frames = 0;
+  let pending = 0;
+  const api = makeApi(undefined);
+  vi.mocked(api.capture).mockImplementation(async () => {
+    expect(++pending).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    pending--;
+    return { mime: "image/png", base64: "frame", capturedAt: String(++frames) };
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await advance(2000);
+  expect(frames).toBe(6);
+});
+
+it("retains the last decoded picture while video reconnects and still capture is pending", async () => {
+  const { subscribe, subscriptions } = pushStream();
+  const api = { ...makeApi(undefined), subscribeStream: subscribe };
+  vi.mocked(api.capture).mockReturnValue(new Promise(() => {}));
+  using context = vi
+    .spyOn(HTMLCanvasElement.prototype, "getContext")
+    .mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  using encode = vi
+    .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+    .mockReturnValue("data:image/jpeg;base64,cGlj");
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  await act(async () =>
+    subscriptions[0]!.chunk(chunk({ cursor: 22, reset: true, base64: keyPicture })),
+  );
+  expect(encode).not.toHaveBeenCalled();
+  await act(async () => subscriptions[0]!.fail(transient()));
+  expect(context).toHaveBeenCalledWith("2d");
+  expect(encode).toHaveBeenCalledOnce();
+  expect(
+    container.querySelector(".device-panel-preview-control img")?.getAttribute("src"),
+  ).toContain("cGlj");
+  expect(container.querySelector(".device-panel-frame-state")).not.toBeNull();
+});
+
+it("shows and controls the video while the initial still capture is pending", async () => {
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockResolvedValueOnce(chunk({ cursor: 22, reset: true, base64: keyPicture }))
+    .mockReturnValue(new Promise(() => {}));
+  const api = makeApi(stream);
+  let finishCapture!: (value: Awaited<ReturnType<DevicePanelApi["capture"]>>) => void;
+  vi.mocked(api.capture).mockReturnValue(
+    new Promise((resolve) => {
+      finishCapture = resolve;
+    }),
+  );
+  const encode = vi.spyOn(HTMLCanvasElement.prototype, "toDataURL");
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  expect(container.querySelector("canvas.device-panel-live")).not.toBeNull();
+  expect(encode).not.toHaveBeenCalled();
+  await act(async () => finishCapture({ mime: "image/png", base64: "frame", capturedAt: "now" }));
+  const preview = container.querySelector(".device-panel-preview-control")!;
+  await act(async () =>
+    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(api.action).toHaveBeenCalledWith(
+    device.id,
+    { type: "press", x: 50, y: 100 },
+    "test-lease",
+  );
+  encode.mockRestore();
+});
+
 it("waits for a key picture after a reset and ignores a stream without WebCodecs", async () => {
   const delta = btoa(String.fromCharCode(0, 0, 0, 1, 0x41, 0x9a, 0x01));
   const stream = vi
@@ -209,6 +274,163 @@ it("waits for a key picture after a reset and ignores a stream without WebCodecs
 
 const advance = (ms: number) => act(async () => vi.advanceTimersByTimeAsync(ms));
 const transient = () => new Error("RPC_WS_DEADLINE: The Host did not answer in time.");
+
+function pushStream() {
+  const subscriptions: {
+    chunk: (value: DeviceStreamChunk) => void;
+    fail: (cause: unknown) => void;
+    close: ReturnType<typeof vi.fn>;
+  }[] = [];
+  const subscribe = vi.fn<NonNullable<DevicePanelApi["subscribeStream"]>>(
+    async (_, chunk, fail) => {
+      const close = vi.fn();
+      subscriptions.push({ chunk, fail, close });
+      return close;
+    },
+  );
+  return { subscribe, subscriptions };
+}
+
+it("retries an established push subscription and fences callbacks from the old subscription", async () => {
+  const { subscribe, subscriptions } = pushStream();
+  const stream = vi.fn<NonNullable<DevicePanelApi["stream"]>>();
+  const api = { ...makeApi(stream), subscribeStream: subscribe };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  const key = chunk({ cursor: 22, reset: true, base64: keyPicture });
+  await act(async () =>
+    subscriptions[0]!.chunk(
+      chunk({
+        cursor: 19,
+        reset: true,
+        boundary: false,
+        base64: btoa(String.fromCharCode(...keyBytes.slice(0, 19))),
+      }),
+    ),
+  );
+  expect(FakeVideoDecoder.decoded).toEqual([]);
+  await act(async () =>
+    subscriptions[0]!.chunk(
+      chunk({
+        cursor: 22,
+        boundary: true,
+        base64: btoa(String.fromCharCode(...keyBytes.slice(19))),
+      }),
+    ),
+  );
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+  await act(async () => subscriptions[0]!.fail(transient()));
+  expect(subscriptions[0]!.close).toHaveBeenCalledOnce();
+  expect(container.querySelector("canvas.device-panel-live")).toBeNull();
+  await advance(600);
+  expect(subscribe).toHaveBeenCalledTimes(2);
+  await act(async () => subscriptions[0]!.chunk(key));
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+  await act(async () => subscriptions[1]!.chunk(key));
+  expect(FakeVideoDecoder.decoded).toEqual(["key", "key"]);
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it("decodes one key picture delivered in a burst of network fragments", async () => {
+  const { subscribe, subscriptions } = pushStream();
+  const api = { ...makeApi(undefined), subscribeStream: subscribe };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  await act(async () => {
+    for (let i = 0; i < keyBytes.length; i += 2) {
+      const part = keyBytes.slice(i, i + 2);
+      subscriptions[0]!.chunk(
+        chunk({
+          cursor: i + part.length,
+          reset: i === 0,
+          boundary: i + part.length === keyBytes.length,
+          base64: btoa(String.fromCharCode(...part)),
+        }),
+      );
+    }
+  });
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+  expect(subscribe).toHaveBeenCalledOnce();
+});
+
+it.each(["gap", "backlog"])("opens a fresh push subscription after a %s", async (reason) => {
+  const { subscribe, subscriptions } = pushStream();
+  const api = { ...makeApi(undefined), subscribeStream: subscribe };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  const key = chunk({ cursor: 22, reset: true, base64: keyPicture });
+  const delta = btoa(String.fromCharCode(0, 0, 0, 1, 0x41, 0x9a, 0x01));
+  await act(async () => subscriptions[0]!.chunk(key));
+  await act(async () => {
+    if (reason === "gap") {
+      subscriptions[0]!.chunk(chunk({ cursor: 44, base64: delta }));
+    } else {
+      for (let index = 0; index < 20; index++) {
+        subscriptions[0]!.chunk(chunk({ cursor: 22 + (index + 1) * 7, base64: delta }));
+      }
+    }
+  });
+  expect(subscriptions[0]!.close).toHaveBeenCalledOnce();
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+  expect(container.querySelector("canvas.device-panel-live")).toBeNull();
+  await advance(0);
+  expect(subscribe).toHaveBeenCalledTimes(2);
+  await act(async () => subscriptions[1]!.chunk(key));
+  expect(FakeVideoDecoder.decoded).toEqual(["key", "key"]);
+});
+
+it.each([
+  "Unsupported host method",
+  "RPC_WS_UNSUPPORTED: Host video subscriptions are unavailable.",
+])("uses cursor polling when push setup fails with %s", async (message) => {
+  const subscribeStream = vi
+    .fn<NonNullable<DevicePanelApi["subscribeStream"]>>()
+    .mockRejectedValue(new Error(message));
+  const stream = vi
+    .fn<NonNullable<DevicePanelApi["stream"]>>()
+    .mockResolvedValueOnce(chunk({ cursor: 22, reset: true, base64: keyPicture }))
+    .mockReturnValue(new Promise(() => {}));
+  const api = { ...makeApi(stream), subscribeStream };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  expect(subscribeStream).toHaveBeenCalledOnce();
+  expect(stream.mock.calls).toEqual([
+    [device.id, undefined],
+    [device.id, 22],
+  ]);
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+});
+
+it("does not fall back to polling if push setup is denied", async () => {
+  const subscribeStream = vi
+    .fn<NonNullable<DevicePanelApi["subscribeStream"]>>()
+    .mockRejectedValue(new Error("Host rejected request [RPC_AUTHORIZATION]"));
+  const stream = vi.fn<NonNullable<DevicePanelApi["stream"]>>();
+  const api = { ...makeApi(stream), subscribeStream };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  await advance(5000);
+  expect(subscribeStream).toHaveBeenCalledOnce();
+  expect(stream).not.toHaveBeenCalled();
+});
+
+it("cleans up a subscription whose handle arrives after unmount", async () => {
+  const close = vi.fn();
+  let finish!: (cleanup: () => void) => void;
+  const subscribeStream = vi.fn<NonNullable<DevicePanelApi["subscribeStream"]>>(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const api = { ...makeApi(undefined), subscribeStream };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  act(() => root.unmount());
+  await act(async () => finish(close));
+  expect(close).toHaveBeenCalledOnce();
+  root = createRoot(container);
+});
 
 it("retries a transient stream failure from a fresh key picture and returns to video", async () => {
   const stream = vi

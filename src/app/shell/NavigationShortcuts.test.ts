@@ -6,7 +6,8 @@ import { MOD } from "../../platform/tauri/platform";
 import { saveKeybindingOverride } from "../../features/settings/model/settings";
 import { OverlayNav, TabVisitNav } from "./TitleBar";
 import { ToolNavigationContext } from "./ToolNavigation";
-import { RailAction, RailSearch } from "./RailAction";
+import { RailAction } from "./RailAction";
+import { TitleBarSearch } from "./TitleBarLead";
 import { Search } from "../../shared/ui/icons";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
@@ -101,12 +102,7 @@ it("shows live bindings on the projects toggle, history and rail actions without
             canGoBack: true,
             canGoForward: true,
           }),
-          createElement(RailSearch, {
-            label: "Search",
-            icon: Search,
-            command: "App: Search",
-            onClick: vi.fn(),
-          }),
+          createElement(TitleBarSearch, { active: false, onClick: vi.fn() }),
           createElement(RailAction, {
             label: "Settings",
             icon: Search,
@@ -123,7 +119,7 @@ it("shows live bindings on the projects toggle, history and rail actions without
     expect(await tooltipText(button("Toggle sidebar"))).toBe(`Toggle sidebar${CAPS}B`);
     expect(await tooltipText(button("Back"))).toBe(`Back${CAPS}[`);
     expect(await tooltipText(button("Forward"))).toBe(`Forward${CAPS}]`);
-    // The rail rows show their shortcut as visible text and in the shared tooltip, never a native title.
+    // Search and the rail rows show their shortcut as visible text and in the shared tooltip, never a native title.
     expect(button("Search").title).toBe("");
     expect(button("Search").textContent).toContain(`${MOD}K`);
     expect(button("Settings").title).toBe("");

@@ -131,4 +131,5 @@ export type McpOAuthServer = {
   state: McpOAuthState;
   error?: string;
   inherited?: boolean;
+  profile?: string;
 };

@@ -19,6 +19,7 @@ mod assistant_notification_owner;
 mod assistant_observation_publisher;
 mod delegation_readiness;
 mod management_actions;
+pub(crate) use management_actions::MANAGEMENT_APPROVAL_ACTIONS;
 mod owner_approval;
 #[path = "privacy_account_capture.rs"]
 mod privacy_account_capture;
@@ -699,7 +700,7 @@ fn management_approval_message(request: &Value) -> Result<(String, String), Stri
     let action = operation["action"]
         .as_str()
         .ok_or("Management action required")?;
-    if !management_actions::MANAGEMENT_APPROVAL_ACTIONS.contains(&action) {
+    if !MANAGEMENT_APPROVAL_ACTIONS.contains(&action) {
         return Err("Unsupported management approval action".into());
     }
     let operation_hash = operation["operationHash"]

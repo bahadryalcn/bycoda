@@ -38,7 +38,11 @@ async function sha(value: string) {
 const currentOwner = await sha(`${storeInstance}:${currentWindow}`);
 const sourceOwner = await sha(`${storeInstance}:${previousWindow}`);
 type Payload = NativeEditorDraftRecord["payload"];
-async function makeRecord(payload: Payload, previous = false): Promise<NativeEditorDraftRecord> {
+async function makeRecord(
+  payload: Payload,
+  previous = false,
+  label = previous ? "Earlier desktop window" : "editor-recovery-fixture",
+): Promise<NativeEditorDraftRecord> {
   // Explicit serde DraftPayload order; no caller property ordering assumption.
   const ordered = {
     documentId: payload.documentId,
@@ -49,7 +53,6 @@ async function makeRecord(payload: Payload, previous = false): Promise<NativeEdi
     revision: payload.revision,
   };
   const raw = JSON.stringify(ordered);
-  const label = previous ? "Earlier desktop window" : "editor-recovery-fixture";
   const serialized =
     ordered.eol === "lf"
       ? ordered.text
@@ -71,7 +74,7 @@ async function makeRecord(payload: Payload, previous = false): Promise<NativeEdi
       retainedBytes: encoder.encode(raw + ordered.documentId + ordered.path + label).length + 512,
       state: "retained",
       saveAckId: null,
-      updatedAt: 1,
+      updatedAt: query.has("catalog") ? Date.now() - 3_600_000 : 1,
     },
   };
 }
@@ -89,6 +92,16 @@ let source = await makeRecord(
 const originalSource = structuredClone(source);
 const key = (owner: string, document: string) => `${owner}:${document}`;
 const rows = new Map([[key(sourceOwner, source.payload.documentId), source]]);
+const hiddenDigests = new Map<string, string>();
+if (query.has("catalog")) {
+  for (const [documentId, path, text] of [
+    ["worktree-notes", "C:\\fixture\\worktrees\\docs-refresh\\README.md", sourceText],
+    ["disk-copy", "C:\\fixture\\project\\.gitignore", "Original disk text\nSecond line\n"],
+  ]) {
+    const copy = await makeRecord({ ...source.payload, documentId, path, text }, true, "main");
+    rows.set(key(sourceOwner, documentId), copy);
+  }
+}
 let disk: string | null =
   query.get("disk") === "missing"
     ? null
@@ -165,6 +178,9 @@ Object.assign(window, {
           throw new Error("NATIVE_EDITOR_DRAFT_INVALID_INVENTORY");
         const all = [...rows.values()]
           .map((row) => row.metadata)
+          .filter(
+            (row) => hiddenDigests.get(key(row.ownerId, row.documentId)) !== row.payloadDigest,
+          )
           .sort((a, b) =>
             a.ownerId < b.ownerId
               ? -1
@@ -191,6 +207,19 @@ Object.assign(window, {
               ? { ownerId: last.ownerId, documentId: last.documentId }
               : null,
         });
+      }
+      if (command === "native_editor_draft_hide_recovery") {
+        const source = args.source;
+        const id = key(source.ownerId, source.documentId);
+        const record = rows.get(id);
+        if (
+          !record ||
+          record.metadata.revision !== source.revision ||
+          record.metadata.payloadDigest !== source.payloadDigest
+        )
+          return Promise.reject("NATIVE_EDITOR_DRAFT_REVISION_CONFLICT");
+        hiddenDigests.set(id, source.payloadDigest);
+        return { version: 1 };
       }
       if (command.startsWith("native_editor_draft_")) {
         const input = args.request ?? args.capture ?? args.document ?? args.saved;

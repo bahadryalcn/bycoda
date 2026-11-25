@@ -19,10 +19,7 @@
 }
 /* Adjacent rows keep one shared hairline, including mixed semantic/interactive owners. */
 .surface[data-surface-focus-ring="inset"]:focus-visible,
-.appearance[data-surface-focus-ring="inset"]:focus-visible {
-  outline: 2px solid var(--ui-focus-ring-color);
-  outline-offset: -2px;
-}
+.appearance[data-surface-focus-ring="inset"]:focus-visible,
 .surface[data-surface-focus-ring="preview-inset"]:focus-visible,
 .appearance[data-surface-focus-ring="preview-inset"]:focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
@@ -218,6 +215,10 @@
 .surface[data-variant="canvas"],
 .appearance[data-surface-variant="canvas"] {
   background: var(--ui-workspace-canvas);
+}
+.surface[data-variant="opaque-canvas"],
+.appearance[data-surface-variant="opaque-canvas"] {
+  background: var(--ui-tint-base);
 }
 .surface[data-variant="workspace-panel"],
 .appearance[data-surface-variant="workspace-panel"] {

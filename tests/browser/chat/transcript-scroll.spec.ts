@@ -1,5 +1,29 @@
 import { expect, test } from "@playwright/test";
 
+test("keeps the latest visible until the reader scrolls up", async ({ page }) => {
+  await page.goto("/tests/browser/chat/transcript.html");
+  const scroller = page.locator(".agent-transcript");
+  const distanceFromBottom = () =>
+    scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  const paused = page.locator(".agent-transcript[data-jump-pill]");
+
+  await expect(scroller.locator(".transcript-turn")).toHaveCount(20);
+  await expect.poll(distanceFromBottom).toBeLessThanOrEqual(1);
+  const moved = await scroller.evaluate((el) => {
+    const previous = el.scrollTop;
+    el.scrollTop -= 400;
+    return previous - el.scrollTop;
+  });
+  expect(moved).toBeGreaterThan(300);
+  await expect.poll(distanceFromBottom).toBeLessThanOrEqual(1);
+  await expect(paused).toHaveCount(0);
+
+  await scroller.hover();
+  await page.mouse.wheel(0, -240);
+  await expect(paused).toHaveCount(1);
+  await expect.poll(distanceFromBottom).toBeGreaterThan(100);
+});
+
 test("finishing an anchored reply brings the latest turn back to the composer edge", async ({
   page,
 }) => {

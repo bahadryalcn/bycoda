@@ -1,11 +1,13 @@
 import { AnonymousPing, createAccountClient } from "@bycoda/account-contracts";
 import { isAccountMockMode } from "./accountClient";
 import type { AccountNative } from "./accountNative";
+import { dataTransfers, jsonSharingFile, sharingMode, type SharingMode } from "../../data-sharing";
 import {
   getLastPingDate,
   getStatsChoice,
   installationId,
   setLastPingDate,
+  setAnonymousStatsEnabled,
   subscribeAnonymousStats,
 } from "./accountPrivacy";
 
@@ -14,7 +16,17 @@ export type PingDeps = {
   native: Pick<AccountNative, "status" | "deviceInfo">;
   fetchImpl?: typeof fetch;
   now?: () => Date;
+  review?: boolean;
+  signal?: AbortSignal;
 };
+
+const statisticsMode = sharingMode("statistics", "ask");
+export const getStatisticsMode = (): SharingMode =>
+  getStatsChoice() === "on" ? (statisticsMode.load() === "auto" ? "auto" : "ask") : "off";
+export const subscribeStatisticsMode = subscribeAnonymousStats;
+export function setStatisticsMode(mode: SharingMode) {
+  if (statisticsMode.save(mode)) setAnonymousStatsEnabled(mode !== "off");
+}
 
 /** The local calendar day, `YYYY-MM-DD`. */
 export function localDay(now: Date): string {
@@ -53,7 +65,21 @@ export async function sendDailyPing(deps: PingDeps): Promise<PingResult> {
       getAccessToken: async () => null,
       fetch: deps.fetchImpl,
     });
-    await client.anonymousPing({ body: ping.data });
+    const send = () => client.anonymousPing({ body: ping.data }, { signal: deps.signal });
+    if (deps.review) {
+      const sent = await dataTransfers.run(
+        {
+          kind: "statistics",
+          destination: status.apiBaseUrl.replace(/\/+$/, "") + "/v1/anonymous/ping",
+          linkedToAccount: false,
+          files: [jsonSharingFile("anonymous-ping.json", ping.data)],
+        },
+        getStatisticsMode,
+        send,
+        deps.signal,
+      );
+      if (!sent) return "skipped";
+    } else await client.anonymousPing({ body: ping.data });
     setLastPingDate(date);
     return "sent";
   } catch {
@@ -72,12 +98,13 @@ export function startAnonymousStats(deps: PingDeps): () => void {
   const now = deps.now ?? (() => new Date());
   let attempted: string | null = null;
   let running = false;
+  const lifetime = new AbortController();
   const tick = () => {
     const day = localDay(now());
     if (running || attempted === day || getStatsChoice() !== "on") return;
     attempted = day;
     running = true;
-    void sendDailyPing(deps).finally(() => {
+    void sendDailyPing({ ...deps, signal: lifetime.signal }).finally(() => {
       running = false;
     });
   };
@@ -85,6 +112,7 @@ export function startAnonymousStats(deps: PingDeps): () => void {
   const timer = setInterval(tick, DAY_CHECK_MS);
   const unsubscribe = subscribeAnonymousStats(tick);
   return () => {
+    lifetime.abort();
     clearInterval(timer);
     unsubscribe();
   };

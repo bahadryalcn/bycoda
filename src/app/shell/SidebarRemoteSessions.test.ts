@@ -8,6 +8,11 @@ import { rememberRemoteProject } from "../../features/connections/model/remotePr
 import { refreshRemoteProjectSessions } from "../../features/connections/model/connections";
 import { LOADING_DELAY_MS } from "../../shared/hooks/useDelayedVisible";
 import {
+  setWorktreeFocus,
+  type WorktreeFocus,
+} from "../../features/source-control/model/worktreeFocus";
+import type { Worktrees } from "../../features/source-control/model/worktrees";
+import {
   recordRemoteConnection,
   resetRemoteHealth,
 } from "../../features/connections/model/remoteHealth";
@@ -21,7 +26,7 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectsDiffStats: vi.fn(() => []),
 }));
 vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
-  useProjectWorktrees: () => ({ data: undefined, refresh: async () => false }),
+  useProjectWorktrees: () => ({ data: worktrees.data, refresh: async () => false }),
 }));
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),
@@ -34,6 +39,7 @@ let container: HTMLDivElement;
 let root: Root;
 let answer: (value: unknown) => void;
 let refuse: (reason: unknown) => void;
+const worktrees = vi.hoisted(() => ({ data: undefined as Worktrees | undefined }));
 
 const machine = {
   id: "mac",
@@ -44,6 +50,7 @@ const machine = {
 };
 
 beforeEach(() => {
+  worktrees.data = undefined;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   resetRemoteHealth();
@@ -52,6 +59,9 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_machines") return [machine];
     const method = (args as { method?: string } | undefined)?.method;
+    // A cold SSH machine is discovered once before its first list read; the Host answers that at once.
+    if (command === "remote_request" && method === "environment.describe")
+      return { capabilities: [] };
     if (command === "remote_request" && method === "sessions.list")
       return new Promise((resolve, reject) => {
         answer = resolve;
@@ -103,11 +113,12 @@ it("shows one short line for an orphaned project, leaving the explanation to the
   // Crews read through the same machine; their failure would repeat the notice in red.
   expect(document.body.textContent).not.toContain("Crew");
   // The list shows the one shared notice for a machine this computer does not have, not a
-  // second load status beside it, and no illustration, reason or button the page already has.
+  // second load status beside it, and no reason or button the page already has.
   const notice = container.querySelector('[data-machine-unavailable="not-added"]');
   expect(notice?.textContent).toContain("isn’t available");
   expect(notice?.textContent).not.toContain("Add it in Connections");
-  expect(notice?.querySelector("button, img")).toBeNull();
+  expect(notice?.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
+  expect(notice?.querySelector("button")).toBeNull();
   expect(document.body.textContent).not.toContain("Can’t reach this machine");
   expect(document.body.textContent).not.toContain("Loading sessions");
 });
@@ -121,6 +132,13 @@ it("says it is loading a remote project's sessions until they arrive", async () 
   });
   expect(document.body.textContent).toContain("Loading sessions from MacBook…");
   expect(document.body.textContent).not.toContain("isn’t connected");
+  // The cold SSH route is discovered once, and only then is the first list read sent.
+  const methods = vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "remote_request")
+    .map(([, args]) => (args as { method: string }).method);
+  expect(methods.indexOf("environment.describe")).toBeGreaterThanOrEqual(0);
+  expect(methods.indexOf("environment.describe")).toBeLessThan(methods.indexOf("sessions.list"));
 
   await act(async () =>
     answer([
@@ -283,4 +301,45 @@ it("replaces a cached session list when the machine refuses this computer", asyn
 
   expect(document.body.textContent).not.toContain("Current conversation");
   expect(container.querySelector('[data-machine-unavailable="pairing-refused"]')).not.toBeNull();
+});
+
+it("puts the server control before the shared project and worktree picker", async () => {
+  const project = "remote://env-mac/Users/me/shop";
+  const main = { path: project, branch: "main" };
+  worktrees.data = {
+    defaultRoot: project,
+    worktrees: [main, { path: "remote://env-mac/Users/me/shop-feature", branch: "feature" }].map(
+      (tree) => ({
+        ...tree,
+        head: "abc",
+        isMain: tree === main,
+        locked: false,
+        missing: false,
+        prunable: false,
+        dirty: null,
+        unpushed: null,
+        sessionIds: [],
+      }),
+    ),
+  };
+  const onSelectWorkspace = vi.fn((focus?: WorktreeFocus) => setWorktreeFocus(project, focus));
+  try {
+    await renderRemoteProject("env-mac", { onSelectWorkspace });
+    const server = container.querySelector('button[aria-label="Refresh sessions from MacBook"]')!;
+    const picker = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Switch worktree"]',
+    )!;
+    expect(picker).not.toBeNull();
+    expect(server.compareDocumentPosition(picker)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(picker.textContent).toContain("All worktrees");
+    await act(async () => picker.click());
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+      row.textContent?.includes("main"),
+    )!;
+    await act(async () => option.click());
+    expect(onSelectWorkspace).toHaveBeenCalledWith(main);
+    expect(picker.textContent).toContain("main");
+  } finally {
+    await act(async () => setWorktreeFocus(project, undefined));
+  }
 });

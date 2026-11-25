@@ -10,6 +10,7 @@ import {
   promptText,
 } from "./attachments";
 import { attachmentTokens } from "./attachmentTokens";
+import { beginAttachmentRead } from "./attachmentReadCapacity";
 import { titleFromPrompt } from "./session";
 import type { Attachment } from "./session";
 
@@ -43,6 +44,27 @@ const tok = (kind: "Image" | "File", n: number, size: string) =>
   `[${kind}\u00a0${n}\u00a0·\u00a0${size.replace(" ", "\u00a0")}]`;
 
 describe("mergeAttachments", () => {
+  it("reserves a local path once even when another drop arrives before its thumbnail", () => {
+    const existing = [
+      attachment({
+        id: "remote",
+        name: "shot.png",
+        path: "/shot.png",
+        hostEnvironmentId: "other-host",
+      }),
+    ];
+    const slots = new Set<string | symbol>();
+    const first = beginAttachmentRead(() => existing, slots);
+    const second = beginAttachmentRead(() => existing, slots);
+    expect(first.reserve("/shot.png")).toBe("/shot.png");
+    expect(second.reserve("/shot.png")).toBeNull();
+    expect(second.matchedPendingPath).toBe(true);
+    expect(second.notice()).toBeNull();
+    second.finish();
+    expect(first.remaining()).toBe(MAX_ATTACHMENTS - 2);
+    first.finish();
+    expect(second.reserve("/shot.png")).toBe("/shot.png");
+  });
   it.each([undefined, "other-host"])(
     "keeps same-spelling paths from different hosts (%s)",
     (hostEnvironmentId) => {

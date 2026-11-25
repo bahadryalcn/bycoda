@@ -3,6 +3,42 @@ import { expect, test, type Page } from "@playwright/test";
 
 const fixture = "/tests/browser/host-tools/host-tools.html";
 const captures = "temp/verification/2026-10-26-device-panel";
+const recoveryCaptures = "temp/verification/device-failure-grace";
+
+test("opening discovery silently recovers from one failed read", async ({ page }) => {
+  await page.goto(`${fixture}?detached=1&devicesReady=1&deviceListFailures=1`);
+  const panel = page.getByRole("region", { name: "Devices", exact: true });
+  await expect(panel.getByText("Loading devices…", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("img", { name: "Current device screen" })).toBeVisible();
+  await expect(panel.getByRole("alert")).toHaveCount(0);
+  await expect(
+    panel.getByText("The device connection is unavailable", { exact: false }),
+  ).toHaveCount(0);
+});
+
+for (const detached of [0, 1])
+  for (const theme of ["light", "dark"]) {
+    test(`discovery interruption grace ${detached ? "detached" : "docked"} ${theme}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`${fixture}?detached=${detached}&theme=${theme}&deviceListFailures=2`);
+      const panel = page.getByRole("region", { name: "Devices", exact: true });
+      const error = panel.getByRole("alert");
+      const path = `${recoveryCaptures}/${detached ? "detached" : "docked"}-${theme}`;
+      await expect(panel.getByText("Loading devices…", { exact: true })).toBeVisible();
+      await expect(error).toHaveCount(0);
+      await page.screenshot({ path: `${path}-retrying.png` });
+      await expect(error).toContainText("Could not load devices");
+      await expect(panel.getByText("Unknown", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${path}-persistent.png` });
+      await panel.getByRole("button", { name: "Refresh devices", exact: true }).click();
+      await expect(error).toHaveCount(0);
+      await expect(
+        panel.getByRole("button", { name: "Start emulator", exact: true }),
+      ).toBeVisible();
+    });
+  }
 
 test("selects a remote Mac from device setup without starting it", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 800, height: 980 });
@@ -32,12 +68,9 @@ for (const width of [1280, 800])
       await page.setViewportSize({ width, height: 980 });
       await page.goto(`${fixture}?detached=1&devicesReady=1&duo=1&theme=${theme}`);
       await page.getByRole("button", { name: "Connect devices", exact: true }).click();
+      await expect(page.getByRole("img", { name: "Current device screen" })).toBeVisible();
       await page.getByRole("button", { name: "Device options", exact: true }).click();
       const fold = page.getByRole("button", { name: "Fold device", exact: true });
-      await expect(fold).toBeDisabled();
-      await page.keyboard.press("Escape");
-      await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
-      await page.getByRole("button", { name: "Device options", exact: true }).click();
       await expect(fold).toBeEnabled();
       await expect(
         page.getByRole("button", { name: "Half-open device", exact: true }),
@@ -108,6 +141,36 @@ async function ready(page: Page, detached = true, theme = "dark") {
   await expect(page.getByRole("img", { name: "Current device screen", exact: true })).toBeVisible();
 }
 
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`device preview keeps its press target on the screen ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 980 });
+      await ready(page, true, theme);
+      const preview = page.getByRole("button", { name: /^Device screen\./ });
+      await expect(preview).toBeEnabled();
+      const image = page.getByRole("img", { name: "Current device screen" });
+      const screen = (await image.boundingBox())!;
+      const background = () => preview.evaluate((node) => getComputedStyle(node).backgroundColor);
+      const idleBackground = await background();
+      await mkdir("temp/verification/devices-response", { recursive: true });
+      const capture = (state: string) =>
+        page.screenshot({
+          path: `temp/verification/devices-response/${theme}-${width}-${state}.png`,
+        });
+      await capture("idle");
+      await page.mouse.move(screen.x + screen.width / 2, screen.y + screen.height / 2);
+      await page.mouse.down();
+      await capture("pressed");
+      expect(await background()).toBe(idleBackground);
+      await page.mouse.up();
+      const target = (await preview.boundingBox())!;
+      expect(target.width).toBeCloseTo(screen.width, 0);
+      expect(target.height).toBeCloseTo(screen.height, 0);
+    });
+  }
+
 async function draw(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
   const layer = page.locator(".image-annotation-canvas-layer");
   const bounds = (await layer.boundingBox())!;
@@ -150,7 +213,7 @@ test("device screen occupies the pane and controls stay compact in both themes a
       ).toBeInViewport();
       await expect(
         page.getByRole("switch", { name: "Allow device control", exact: true }),
-      ).not.toBeChecked();
+      ).toHaveCount(0);
       await expect(
         page.getByRole("textbox", { name: "App name or bundle ID", exact: true }),
       ).toHaveCount(0);
@@ -169,7 +232,6 @@ test("frozen-frame drawing supports all tools and history without sending device
 }) => {
   await page.setViewportSize({ width: 480, height: 980 });
   await ready(page);
-  await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
   await page.getByRole("button", { name: "Mark device screen", exact: true }).click();
   await expect(page.getByText(/^Marking · Frozen frame( · .+)?$/)).toBeVisible();
   const frozenAt = await page.locator(".device-panel-frame-state").getAttribute("title");

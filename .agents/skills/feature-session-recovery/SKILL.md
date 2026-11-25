@@ -26,7 +26,8 @@ Own interrupted-conversation recovery, previous chat splits, attention/verificat
 - Native contributions bind exact page/window and durable journal receipts. Recovery requires proven process/page retirement; live, pending and unknown owners stay protected.
 - SSE teardown does not prove provider retirement or authorize local interruption/continuation; remote Host activity is independent of local page retirement.
 - Auto-resolution removes only references confirmed Done/Idle. Loading, unreadable, unverified and unavailable remain unresolved; boot opens only for attention work.
-- Recovered, dismissed and resolved IDs remain held from automatic continuation. Cleanup neither stops work nor deletes history.
+- Each interruption note gets one launch that may continue it automatically; journal membership does not block or grant it. Cleanup neither stops work nor deletes history.
+- A dead WebView2 browser process relaunches through native finalization with a crash-loop budget. A native dialog asks first when an owned Host, desktop agent or terminal would stop; only a dead main renderer reloads. Session-store open waits out WAL-index I/O failures for a bounded time; corruption and permission errors fail at once.
 - Owner Stop is terminal idle, including legacy interrupt notices and adjacent quit markers; retain transcript bytes and consistent native/list/recovery classification.
 - Attention includes unknown/unavailable. Failed reads never prove absence; keep retry available.
 - Open all/Restore includes eligible filter-hidden rows; selected actions intersect shown rows while retaining hidden selections.

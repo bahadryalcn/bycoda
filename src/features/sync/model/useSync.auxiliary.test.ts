@@ -112,7 +112,8 @@ it("clears the uncertainty when a later refresh succeeds", async () => {
   mocks.invoke.mockImplementation(async (command: string) =>
     command === "remote_machines" ? [machine] : machine,
   );
-  await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
+  window.dispatchEvent(new Event("focus"));
+  await flush();
   stop();
   stop = undefined;
   await expect(mocks.drain).resolves.toBe(true);

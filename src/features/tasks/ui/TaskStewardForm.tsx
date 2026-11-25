@@ -24,7 +24,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n";
 import { AUTOMATION_WEEKDAYS, automationScheduleLabel } from "../../automations/public/automations";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
@@ -104,6 +104,7 @@ export function StewardForm({
   onSubmit: (event: FormEvent, draft: StewardDraft) => void;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
   let draft = inputDraft;
   const update = <K extends keyof StewardDraft>(key: K, value: StewardDraft[K]) =>
     onChange({ ...draft, [key]: value });
@@ -158,7 +159,7 @@ export function StewardForm({
                     leading="inherit"
                     className="task-ops-caption"
                   >
-                    {projectDisplayName(draft.cwd)}
+                    {projectDisplayNameFrom(draft.cwd, projectLabels)}
                   </Text>
                 ) : (
                   <SearchableProjectPicker

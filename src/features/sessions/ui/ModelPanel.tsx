@@ -35,6 +35,7 @@ import { useModelSource } from "./modelSource";
 import { accountSwitcherKind } from "../model/modelPanelData";
 
 const PANEL_WIDTH = 600;
+const MODEL_LIST_WIDTH = 420;
 const PANEL_HEIGHT = 460;
 
 export type ModelPanelSettings = {
@@ -62,6 +63,7 @@ export function ModelPanel({
   accountListOpen,
   onAccountListOpen,
   onSelectAccount,
+  conversationSettings,
   settings,
   showProviderSettings = true,
   onDismiss,
@@ -79,6 +81,7 @@ export function ModelPanel({
   accountListOpen: boolean;
   onAccountListOpen: (open: boolean) => void;
   onSelectAccount: (accountId: string) => void;
+  conversationSettings?: ReactNode;
   /** Absent while an inherited choice has no model to configure. */
   settings?: ModelPanelSettings;
   showProviderSettings?: boolean;
@@ -155,7 +158,7 @@ export function ModelPanel({
     <Popover
       anchor={anchor}
       side={side}
-      width={PANEL_WIDTH}
+      width={settings || conversationSettings ? PANEL_WIDTH : MODEL_LIST_WIDTH}
       maxHeight={PANEL_HEIGHT}
       frosted
       dismissOnEscape={false}
@@ -228,6 +231,7 @@ export function ModelPanel({
           {settings ? (
             <ModelSettingsColumn
               {...settings}
+              conversationSettings={conversationSettings}
               onExplain={setExplained}
               onEditSubagents={() => setEditingSubagents(true)}
               editingSubagents={!!subagents}

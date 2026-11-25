@@ -202,7 +202,7 @@ afterEach(() => {
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
 async function setup(linkedAncestor = false) {
-  const root = mkdtempSync(join(tmpdir(), "workspace-cleanup-"));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "workspace-cleanup-")));
   roots.push(root);
   const parent = join(root, "parent");
   mkdirSync(parent);

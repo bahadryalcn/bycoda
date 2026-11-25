@@ -36,6 +36,7 @@ Object.assign(window, {
   },
 });
 let fail = false;
+let failStatusRefresh = false;
 const issue = (key: string, title: string, statusId: string): JiraBoardIssue => ({
   provider: "jira",
   kind: "jira",
@@ -65,6 +66,7 @@ const seedIssues = [
   issue("ENG-3", "Prepare the next release", "1"),
 ];
 const dense = new URLSearchParams(location.search).has("dense");
+const filterParity = new URLSearchParams(location.search).has("filterParity");
 const issues = dense
   ? Array.from({ length: 80 }, (_, index) =>
       issue(
@@ -76,6 +78,39 @@ const issues = dense
       ),
     )
   : seedIssues;
+if (filterParity) {
+  seedIssues[2]!.assignees = [];
+  seedIssues[1]!.updatedAt = new Date().toISOString();
+}
+
+function filterFixtureIssues(rows: JiraBoardIssue[], args: Record<string, unknown>) {
+  if (!filterParity) return rows;
+  const filters = args.filters as
+    | {
+        assignedToMe?: boolean;
+        assigneeIds?: string[];
+        unassigned?: boolean;
+        statuses?: string[];
+        open?: boolean;
+        closed?: boolean;
+      }
+    | undefined;
+  if (!filters) return rows;
+  const me = args.assignedToMe || filters.assignedToMe;
+  const ids = filters.assigneeIds ?? [];
+  return rows.filter((row) => {
+    if (filters.statuses?.length && !filters.statuses.includes(row.state)) return false;
+    if (filters.open && !filters.closed && row.stateType === "done") return false;
+    if (filters.closed && !filters.open && row.stateType !== "done") return false;
+    if (!me && !ids.length && !filters.unassigned) return true;
+    return (
+      (filters.unassigned && row.assignees.length === 0) ||
+      row.assignees.some(
+        ({ accountId }) => (me && accountId === "ada") || ids.includes(accountId ?? ""),
+      )
+    );
+  });
+}
 const pullRequest = {
   ...issues[0],
   provider: "github",
@@ -93,12 +128,24 @@ const membership = new Map([
   ["ENG-2", "sprint:21"],
   ["ENG-3", "backlog"],
 ]);
+let pauseBoardReads = new URLSearchParams(location.search).has("boardLoading");
+const pendingBoardReads: (() => void)[] = [];
 Object.assign(window, {
   jiraFixtureCalls: calls,
+  jiraFixturePauseBoard: () => {
+    pauseBoardReads = true;
+  },
+  jiraFixtureResumeBoard: () => {
+    pauseBoardReads = false;
+    for (const finish of pendingBoardReads.splice(0)) finish();
+  },
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   inboxFixtureFilterWrites: filterWrites,
   jiraFixtureFail: () => {
     fail = true;
+  },
+  jiraFixtureFailStatusRefresh: () => {
+    failStatusRefresh = true;
   },
   __TAURI_INTERNALS__: {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
@@ -138,11 +185,22 @@ Object.assign(window, {
       if (command === "linear_list_issues")
         return [{ ...issues[0], provider: "linear", kind: "linear" }];
       if (command === "jira_list_projects") return [{ id: "1", key: "ENG", name: "Engineering" }];
-      if (command === "jira_issue_details")
+      if (command === "jira_issue_details") {
+        if (failStatusRefresh) {
+          failStatusRefresh = false;
+          throw new Error("Jira detail unavailable");
+        }
+        const current = issues.find((issue) => issue.identifier === args.key);
         return {
           body: "## Bulgu\n\nTekrarlı Ödeme Oluştur penceresinde oluşturma işlemi yanıt vermiyor.\n\n| Alan | Değer |\n| --- | --- |\n| Modül | Ödeme İşlemleri |\n| Alt ekran | Tekrarlı Ödemeler |",
           author: "Fixture reporter",
+          status: current && {
+            statusId: current.statusId,
+            state: current.state,
+            stateType: current.stateType,
+          },
         };
+      }
       if (command === "jira_issue_thread")
         return {
           comments: [
@@ -165,10 +223,11 @@ Object.assign(window, {
         };
       if (command === "jira_list_issue_page") {
         const offset = args.nextPageToken ? 40 : 0;
+        const matching = filterFixtureIssues(issues, args);
         return {
-          issues: structuredClone(issues.slice(offset, offset + 40)),
+          issues: structuredClone(matching.slice(offset, offset + 40)),
           nextPageToken: offset === 0 && dense ? "second" : null,
-          total: issues.length,
+          total: matching.length,
         };
       }
       if (command === "jira_list_boards")
@@ -201,20 +260,35 @@ Object.assign(window, {
           ],
         };
       if (command === "jira_board_issues") {
+        if (pauseBoardReads) await new Promise<void>((resolve) => pendingBoardReads.push(resolve));
         const scope = args.scope === "sprint" ? `sprint:${args.sprintId}` : String(args.scope);
+        const matching = filterFixtureIssues(
+          issues.filter((issue) => scope === "board" || membership.get(issue.identifier) === scope),
+          args,
+        );
         return {
           issues: structuredClone(
-            issues
-              .filter((i) => scope === "board" || membership.get(i.identifier) === scope)
-              .slice(args.nextPageToken ? 40 : 0, args.nextPageToken ? 80 : dense ? 40 : undefined),
+            matching.slice(
+              args.nextPageToken ? 40 : 0,
+              args.nextPageToken ? 80 : dense ? 40 : undefined,
+            ),
           ),
           nextPageToken: dense && !args.nextPageToken && scope === "board" ? "second" : null,
         };
       }
       if (command === "jira_issue_transitions")
         return [
-          { id: "31", name: "Start work", statusId: "3", requiresFields: false },
+          {
+            id: "31",
+            name: "Start work",
+            statusId: "3",
+            statusName: "In Progress",
+            requiresFields: false,
+          },
           { id: "91", name: "Complete", statusId: "9", requiresFields: false },
+          ...(location.search.includes("statusRecovery")
+            ? [{ id: "92", name: "Resolve", statusId: "9", requiresFields: true }]
+            : []),
         ];
       if (command === "jira_issue_transition" || command === "jira_board_move") {
         if (fail) {
@@ -225,6 +299,7 @@ Object.assign(window, {
         if (command === "jira_issue_transition") {
           selected.statusId = args.transitionId === "31" ? "3" : "9";
           selected.state = selected.statusId === "3" ? "In Progress" : "Done";
+          selected.stateType = selected.statusId === "3" ? "indeterminate" : "done";
         } else if (args.target !== "rank")
           membership.set(
             selected.identifier,

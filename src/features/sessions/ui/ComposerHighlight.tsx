@@ -13,9 +13,10 @@ import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { fileMentionParts } from "../../files/public/fileMentions";
 import { isNoteMentionPath } from "../../notes";
 import type { Attachment } from "../model/session";
+import type { ComposerCitation } from "../model/chatCitation";
 import { mcpTagParts, type McpTag } from "../model/mcpPicker";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
-import { LinkRuns, useEditedLink, useLinkWrap } from "./ComposerLinkRuns";
+import { LinkRuns } from "./ComposerLinkRuns";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
 import { scopedMentionParts } from "../model/composerMentionScopes";
 import { ComposerWorkItemToken } from "./WorkItemMentionChip";
@@ -41,6 +42,7 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   mcpTags,
   attachments,
   citations,
+  citationSources,
   field,
   onOpenFile,
   modeIndent,
@@ -62,7 +64,8 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   attachments: Attachment[];
   /** Draft citation count; their `[quoteN]` tokens are painted as pills. */
   citations: number;
-  /** The textarea under the overlay; a link holding its caret shows in full. */
+  citationSources?: readonly ComposerCitation[];
+  /** The textarea under the overlay, used for reference actions and editing. */
   field?: RefObject<HTMLTextAreaElement | null>;
   onOpenFile?: (path: string) => void;
   modeIndent?: string;
@@ -87,8 +90,6 @@ export const ComposerHighlight = memo(function ComposerHighlight({
     input.addEventListener("beforeinput", beforeInput);
     return () => input.removeEventListener("beforeinput", beforeInput);
   }, [field, names, skillParts]);
-  const edited = useEditedLink(text, field);
-  const wrap = useLinkWrap(text, field);
   const rest = mode ? text.slice(mode.end) : text;
   const groups = new Map<string, ComposerSkillGroup>(
     skillGroups.map((group) => [group.invocation, group]),
@@ -98,11 +99,10 @@ export const ComposerHighlight = memo(function ComposerHighlight({
       text={text}
       attachments={attachments}
       citations={citations}
+      citationSources={citationSources}
       renderText={(text) => (
         <LinkRuns
           text={text}
-          edited={edited}
-          wrap={wrap}
           renderText={(plain) =>
             skillParts(plain, names).map((part, index) => {
               const name = part.text.slice(1);

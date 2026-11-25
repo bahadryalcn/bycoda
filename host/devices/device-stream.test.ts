@@ -141,12 +141,11 @@ class FakeChild extends EventEmitter {
 }
 
 function fixture(
-  overrides: Partial<DeviceStreamPorts> & { device?: Record<string, unknown> } = {},
+  overrides: Partial<DeviceStreamPorts> = {},
   timing: ConstructorParameters<typeof DeviceStreams>[1] = {},
 ) {
   const children: FakeChild[] = [];
   const state = { booted: true, platform: "android", closed: false };
-  const { device: _device, ...ports } = overrides;
   const streams = new DeviceStreams(
     {
       device: async (id) => ({
@@ -167,7 +166,7 @@ function fixture(
         children.push(child);
         return child as unknown as ChildProcess;
       }) as unknown as DeviceStreamPorts["spawn"],
-      ...ports,
+      ...overrides,
     },
     timing,
   );
@@ -213,6 +212,44 @@ describe("DeviceStreams", () => {
     expect(f.children).toHaveLength(1);
     await f.streams.stopAll();
   });
+
+  it.each(["subscription", "poll"])(
+    "serves a Mac simulator through %s until its last viewer stops",
+    async (mode) => {
+      let send!: Parameters<NonNullable<DeviceStreamPorts["iosVideo"]>>[2];
+      let source!: AbortSignal;
+      const iosVideo: DeviceStreamPorts["iosVideo"] = (_id, signal, publish) => {
+        source = signal;
+        send = publish;
+        return new Promise((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+      };
+      const f = fixture({ platform: () => "darwin", iosVideo });
+      f.state.platform = "ios";
+      const push = mode === "subscription" ? { signal: new AbortController().signal } : undefined;
+      const first = f.streams.read("sim-1", undefined, undefined, push);
+      await settle();
+      const display = { width: 390, height: 844 };
+      const key = Buffer.concat([SPS, PPS, idr(1)]);
+      send(key, display);
+      const chunk = await first;
+      expect(chunk).toMatchObject({
+        ...display,
+        reset: true,
+        base64: key.toString("base64"),
+        ...(push ? { boundary: true } : {}),
+      });
+      send(frame(2), display);
+      expect(await f.streams.read("sim-1", chunk.cursor, undefined, push)).toMatchObject({
+        reset: false,
+        base64: frame(2).toString("base64"),
+      });
+      expect(f.children).toHaveLength(0);
+      await f.streams.stopAll();
+      expect(source.aborted).toBe(true);
+    },
+  );
 
   it("continues by cursor and answers an idle second with an empty chunk", async () => {
     const f = fixture();
@@ -280,6 +317,42 @@ describe("DeviceStreams", () => {
     await f.streams.stopAll();
   });
 
+  it("delivers ready video bytes while the periodic device check is pending", async () => {
+    const device = vi.fn<DeviceStreamPorts["device"]>().mockImplementation(async (id) => ({
+      id,
+      name: "Pixel",
+      platform: "android",
+      version: "Android",
+      booted: true,
+      physical: false,
+    }));
+    const f = fixture({ device });
+    const opening = f.streams.read("emulator-5554", undefined);
+    await settle();
+    f.children[0].write(SPS, PPS, idr(1));
+    await settle(8);
+    const { cursor } = await opening;
+    await settle(2000);
+    let finishCheck!: (value: Awaited<ReturnType<typeof device>>) => void;
+    device.mockReturnValue(
+      new Promise((resolve) => {
+        finishCheck = resolve;
+      }),
+    );
+    f.children[0].write(frame(2));
+    const received = vi.fn();
+    const pending = f.streams.read("emulator-5554", cursor).then(received);
+    await settle(8);
+    expect(device).toHaveBeenCalledTimes(2);
+    expect(received).toHaveBeenCalledWith(
+      expect.objectContaining({ base64: frame(2).toString("base64") }),
+    );
+    finishCheck({ ...(await device.mock.results[0].value), booted: false });
+    await pending;
+    await settle();
+    expect(f.children[0].killed).toBe(true);
+  });
+
   it("returns a cap-sized chunk at once and the rest by cursor", async () => {
     const f = fixture();
     const opening = f.streams.read("emulator-5554", undefined);
@@ -294,6 +367,52 @@ describe("DeviceStreams", () => {
     expect(Buffer.concat([bytes(first.base64), bytes(rest.base64)])).toEqual(
       Buffer.concat([SPS, PPS, big]),
     );
+    await f.streams.stopAll();
+  });
+
+  it("pushes bounded slices, marks only the quiet tail, and aborts a waiting viewer", async () => {
+    const f = fixture();
+    const viewer = new AbortController();
+    const read = (cursor?: number) =>
+      f.streams.read("emulator-5554", cursor, undefined, { signal: viewer.signal });
+    const opening = read();
+    await settle();
+    const picture = Buffer.concat([SPS, PPS, idr(), Buffer.alloc(48 * 1024, 7)]);
+    f.children[0].write(picture);
+    await settle();
+    const first = await opening;
+    expect(first).toMatchObject({ reset: true, boundary: false });
+    expect(Buffer.byteLength(JSON.stringify(first))).toBeLessThan(64 * 1024 - 1024);
+    const tail = read(first.cursor);
+    await settle(8);
+    const rest = await tail;
+    expect(rest).toMatchObject({ reset: false, boundary: true });
+    expect(Buffer.concat([bytes(first.base64), bytes(rest.base64)])).toEqual(picture);
+    const waiting = expect(read(rest.cursor)).rejects.toThrow();
+    await settle();
+    viewer.abort();
+    await waiting;
+    // A paused viewer does not kill the recorder shared by another viewer.
+    expect(f.children[0].killed).toBe(false);
+    await f.streams.stopAll();
+  });
+
+  it("preserves the final quiet boundary when a push deadline splits a picture", async () => {
+    const f = fixture({}, { quietMs: 20, settleMs: 5 });
+    const signal = new AbortController().signal;
+    const read = (cursor?: number) =>
+      f.streams.read("emulator-5554", cursor, undefined, { signal });
+    const opening = read();
+    await settle();
+    const picture = Buffer.concat([SPS, PPS, idr()]);
+    f.children[0].write(picture);
+    await settle(5);
+    const first = await opening;
+    expect(first.boundary).toBe(false);
+    await settle(15);
+    const tail = await read(first.cursor);
+    expect(tail.boundary).toBe(true);
+    expect(Buffer.concat([bytes(first.base64), bytes(tail.base64)])).toEqual(picture);
     await f.streams.stopAll();
   });
 

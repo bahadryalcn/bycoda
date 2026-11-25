@@ -258,6 +258,12 @@ export type HarnessSessionInput = {
   model: string;
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
+  /** Host delegates whose durable transcript belongs to Bycoda. */
+  privateDelegateHistory?: boolean;
+  /** Private native session storage for providers that support a separate directory. */
+  delegateHistoryDirectory?: string;
+  /** Keep the provider session in its archive without losing native continuation. */
+  archiveDelegateHistory?: boolean;
   runtimeMode: RuntimeMode;
   intent?: TurnIntent;
   /**
@@ -275,6 +281,8 @@ export type SendTurnInput = HarnessSessionInput & {
   text: string;
   /** Bounded prior replies captured by the Host for a tool-free delegated turn. */
   chatOnlyHistory?: string;
+  /** Saved Bycoda context for a private provider process that cannot resume on disk. */
+  privateDelegateReplay?: string;
   /** Trusted runtime guidance kept separate from native command text until a model turn starts. */
   runtimeInstructions?: string;
   attachments?: Attachment[];

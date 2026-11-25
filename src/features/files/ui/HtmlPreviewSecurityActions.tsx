@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ExternalLink } from "../../../shared/ui/icons";
 
@@ -28,13 +28,11 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
   };
   return (
     <div className="flex min-w-0 items-center gap-1">
-      <InfoPopover label={t("Preview restrictions")}>
-        <p>
-          {t(
-            "This sandbox restricts external data requests and hidden files. Open a saved HTML file in its default app when it needs those resources.",
-          )}
-        </p>
-      </InfoPopover>
+      <InfoTooltip label={t("Preview restrictions")}>
+        {t(
+          "This sandbox restricts external data requests and hidden files. Open a saved HTML file in its default app when it needs those resources.",
+        )}
+      </InfoTooltip>
       {savedPath ? (
         <Button
           variant="ghost"

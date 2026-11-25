@@ -31,6 +31,11 @@ import {
 } from "../../../features/projects/model/projectOpenRun";
 import { OPEN_PROJECT_PATH_EVENT } from "../../../features/projects/model/contributeFlow";
 import { pickFolders } from "../../../platform/tauri/fs";
+import {
+  pickFolderOnMachine,
+  type MachineFolderTarget,
+} from "../../../features/connections/model/machineFolderPick";
+import { addProjectToMachine } from "../../../features/connections/model/addProjectToMachine";
 import { openSyncedProjectRemotely } from "../../../features/sync/model/syncRemoteProjects";
 import type { TabActivation } from "../tabs/useTabActivation";
 
@@ -218,6 +223,26 @@ export function useProjectOpen({
     await openProjects(await pickFolders());
   }, [openProjects]);
 
+  /**
+   * Pick a folder on one chosen machine and put it on the rail without opening it.
+   * Resolves its verified path (a local path, or the registered remote project key),
+   * or undefined when cancelled so the caller keeps its current view and draft.
+   */
+  const pickProjectOnMachine = useCallback(
+    async (target: MachineFolderTarget, sourceCwd?: string): Promise<string | undefined> => {
+      const knownBefore = loadRecents().map((item) => item.path);
+      // A project being added to another machine can be cloned there or located.
+      const path = sourceCwd
+        ? await addProjectToMachine(target, sourceCwd)
+        : await pickFolderOnMachine(target);
+      if (!path) return undefined;
+      setRecents(await rememberProject(path));
+      promptAddedProjectNames(knownBefore);
+      return path;
+    },
+    [promptAddedProjectNames, setRecents],
+  );
+
   const openSyncedProject = useCallback(
     async (projectId: string, name: string) => {
       // Opening it remotely puts it on the rail before it is selected.
@@ -242,6 +267,7 @@ export function useProjectOpen({
     openProjects,
     onSelectProject,
     pickProject,
+    pickProjectOnMachine,
     openSyncedProject,
   };
 }

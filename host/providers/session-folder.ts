@@ -9,6 +9,10 @@ export function isSessionScratchCwd(cwd: string): boolean {
   return cwd.startsWith(SCRATCH_PREFIX);
 }
 
+export function sessionScratchCwd(key: string): string {
+  return `${SCRATCH_PREFIX}${key}`;
+}
+
 /** Shared with the desktop app on this machine (`set_session_folder`). */
 export function sessionFolderPath(home = homedir()): string {
   return join(home, ".bycoda-host", "session-folder.json");

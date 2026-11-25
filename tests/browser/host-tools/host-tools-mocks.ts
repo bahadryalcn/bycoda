@@ -63,9 +63,12 @@ export const fixtureControl = {
   scanFailure: false,
   scanDelayMs: 0,
   deviceCaptureFailure: false,
+  deviceListFailures: Number(new URLSearchParams(location.search).get("deviceListFailures")),
   deviceControlBusy: new URLSearchParams(location.search).get("deviceState") === "busy",
-  deviceLeaseMs: 60_000,
-  deviceRenewDelayMs: 0,
+  deviceLeaseMs:
+    new URLSearchParams(location.search).get("deviceState") === "expires" ? 1500 : 60_000,
+  deviceRenewDelayMs:
+    new URLSearchParams(location.search).get("deviceState") === "expires" ? 2500 : 0,
   updateServer: () => {
     devServers = devServers.map((server) =>
       server.id === "fixture-server-23" ? { ...server, name: "Updated preview server" } : server,
@@ -92,7 +95,7 @@ let browser = {
   runtime: { installed: true, running: false },
 };
 let deviceStatus: DeviceHostStatus = {
-  running: false,
+  running: fixtureControl.deviceListFailures > 0,
   installed: true,
   agentInstalled: true,
   controlProtocol: 1,
@@ -167,6 +170,14 @@ const machineDevices = new Map([
 ]);
 export async function listHostToolMachines() {
   return toolMachines;
+}
+
+export async function deviceTouchAvailable() {
+  return new URLSearchParams(location.search).has("liveDeviceTouch");
+}
+
+export async function subscribeDeviceVideo() {
+  throw new Error("DEVICE_STREAM_UNSUPPORTED: Fixture devices have no live stream.");
 }
 
 export async function featureHost(cwd: string, capability: string) {
@@ -471,6 +482,10 @@ export async function hostFeatureRequest<T>(
       result = deviceStatus;
       break;
     case "devices.list":
+      if (fixtureControl.deviceListFailures > 0) {
+        fixtureControl.deviceListFailures -= 1;
+        throw new Error("RPC_HOST_UNAVAILABLE: Fixture device connection closed");
+      }
       result = {
         devices: new URLSearchParams(location.search).has("devicesReady")
           ? [device, { ...device, id: "second-emulator", name: "Second Android emulator" }]
@@ -490,7 +505,12 @@ export async function hostFeatureRequest<T>(
       // The fixture has no H.264 source; the panel falls back to screenshots.
       throw new Error("DEVICE_STREAM_UNSUPPORTED: Fixture devices have no live stream.");
     case "devices.control.status":
-      result = { deviceId: params.deviceId, busy: fixtureControl.deviceControlBusy };
+      result = {
+        deviceId: params.deviceId,
+        busy:
+          fixtureControl.deviceControlBusy ||
+          (deviceLease?.deviceId === params.deviceId && deviceLease.expiresAt > Date.now()),
+      };
       break;
     case "devices.control.claim":
       if (fixtureControl.deviceControlBusy)
@@ -511,8 +531,13 @@ export async function hostFeatureRequest<T>(
       result = deviceLease;
       break;
     case "devices.control.release":
-      deviceLease = undefined;
+      if (deviceLease?.leaseId === params.leaseId) deviceLease = undefined;
       result = { released: true };
+      break;
+    case "devices.touch":
+      if (deviceLease?.leaseId !== params.leaseId || deviceLease?.deviceId !== params.deviceId)
+        throw new Error("DEVICE_CONTROL_LEASE_INVALID");
+      result = { accepted: true };
       break;
     case "devices.inspect":
       result = {
@@ -638,4 +663,7 @@ export async function hostFeatureRequest<T>(
   machineBrowsers.set(browserKey, browser);
   machineDevices.set(machineId, { status: deviceStatus, device });
   return result as T;
+}
+export async function openBrowserFrameStream(): Promise<never> {
+  throw new Error("Native media is unavailable in this fixture");
 }

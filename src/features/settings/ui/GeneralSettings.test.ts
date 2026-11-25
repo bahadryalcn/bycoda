@@ -132,9 +132,11 @@ it("keeps feedback privacy guidance without repeating the action as a descriptio
     await act(async () => root.render(createElement(GeneralPage, { onOpenWhatsNew: () => {} })));
     const row = container.querySelector('[data-setting-id="send-feedback"]')!;
     expect(row.textContent).not.toContain("Report a problem or suggest an improvement.");
-    const help = row.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;
-    await act(async () => help.click());
-    expect(document.body.textContent).toContain("Nothing from your sessions, code, logs");
+    const help = row.querySelector<HTMLElement>('[role="img"][aria-label="Help"]')!;
+    await act(async () => help.focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+      "Nothing from your sessions, code, logs",
+    );
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -78,6 +78,9 @@ export type ComposerTurnOptions = {
   draftBlockId?: string;
   /** Queue this message behind a running turn instead of following the follow-up setting. */
   followUpBehavior?: "queue" | "steer";
+  /** Overrides the session's card; undefined when an earlier send already carries it. */
+  noteCard?: NoteComposerCard;
+  handoffCard?: HandoffComposerCard;
 };
 
 export type PlanStatus = "streaming" | "ready" | "building" | "built";
@@ -491,6 +494,8 @@ export type Block = {
   shell?: ShellRun;
   /** An error or interruption row the reader must not miss; never folds into the trail. */
   notice?: "error" | "interrupt" | "info";
+  /** Interruption notes only: the next launch may still continue this turn on its own. */
+  autoContinueArmed?: boolean;
   statusKey?: string;
   /** Status rows only: when the work behind this row started, while it still runs. */
   statusRunningSince?: number;
@@ -570,6 +575,8 @@ export type Session = {
   cwd: string;
   /** New projectless chats have a machine-managed working directory of their own. */
   scratchWorkspace?: true;
+  /** Owning Host for a No project draft or conversation on another machine. */
+  remoteExecutionEnvironmentId?: string;
   blocks: Block[];
   /** True while a harness turn is in flight. */
   busy?: boolean;
@@ -876,7 +883,12 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
   return {
     ...session,
     cwd,
-    ...(cwd !== session.cwd ? { scratchWorkspace: cwd === "~" ? true : undefined } : {}),
+    ...(cwd !== session.cwd
+      ? {
+          scratchWorkspace: cwd === "~" ? true : undefined,
+          remoteExecutionEnvironmentId: undefined,
+        }
+      : {}),
     harness,
     model: resolved.id,
     modelSettings: settings,

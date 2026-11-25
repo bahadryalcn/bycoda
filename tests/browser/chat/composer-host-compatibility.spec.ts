@@ -39,6 +39,28 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const theme of ["light", "dark"] as const) {
+  test(`adopted Stop stays pending until the Host settles (${theme})`, async ({ page }) => {
+    await page.goto(`${fixture}?adopted-stop&bundle=current`);
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    const pending = page.getByRole("button", { name: "Stopping…" });
+    await expect(pending).toBeDisabled();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => window.c1Host.calls.filter((call) => call.method === "commands.dispatch").length,
+        ),
+      )
+      .toBe(1);
+    await page.screenshot({ path: `temp/verification/adopted-stop/${theme}.png` });
+    await page.getByRole("button", { name: "Settle Host turn" }).click();
+    await expect(pending).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  });
+
   test(`compact composer offers current checkout while the Host update waits (${theme})`, async ({
     page,
   }) => {

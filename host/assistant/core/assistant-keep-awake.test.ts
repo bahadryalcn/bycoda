@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { HostAssistantKeepAwake } from "./assistant-keep-awake";
+import { HostAssistantKeepAwake, KEEP_AWAKE_RETRY_MS } from "./assistant-keep-awake";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -123,6 +123,79 @@ it("releases a delayed acquisition when the owner disables it before acknowledge
   expect(release).toBe(1);
   await service.close();
 });
+it("answers demand before the helper acknowledges, without claiming it is active", async () => {
+  let acknowledge!: (handle: { release(): Promise<void> }) => void;
+  const onChange = vi.fn();
+  const service = new HostAssistantKeepAwake({
+    platform: "win32",
+    onChange,
+    acquire: () =>
+      new Promise((done) => {
+        acknowledge = done;
+      }),
+  });
+  expect(service.sync(true)).toMatchObject({ requested: true, active: false });
+  await vi.waitFor(() => expect(acknowledge).toBeTypeOf("function"));
+  acknowledge({ release: async () => {} });
+  await vi.waitFor(() => expect(service.status.active).toBe(true));
+  expect(onChange).toHaveBeenCalled();
+  await service.close();
+});
+
+it("shares one attempt across repeated demand and retries a failure only after the cooldown", async () => {
+  vi.useFakeTimers();
+  const helper = fakeHelper({ failing: () => true });
+  const service = new HostAssistantKeepAwake({ platform: "win32", acquire: helper.acquire });
+  service.sync(true);
+  service.sync(true);
+  await vi.advanceTimersByTimeAsync(0);
+  service.sync(true);
+  await vi.advanceTimersByTimeAsync(KEEP_AWAKE_RETRY_MS - 1);
+  service.sync(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(helper.acquired).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);
+  service.sync(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(helper.acquired).toBe(2);
+  await service.close();
+});
+
+it("keeps the restart budget and pending restart across repeated demand", async () => {
+  vi.useFakeTimers();
+  const helper = fakeHelper({ failing: () => false });
+  const service = new HostAssistantKeepAwake({ platform: "win32", acquire: helper.acquire });
+  service.sync(true);
+  await vi.advanceTimersByTimeAsync(0);
+  helper.exits[0]();
+  await vi.advanceTimersByTimeAsync(0);
+  service.sync(true);
+  await vi.advanceTimersByTimeAsync(999);
+  expect(helper.acquired).toBe(1);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(helper.acquired).toBe(2);
+  await service.close();
+});
+
+it("stops an unacknowledged helper as soon as demand ends or Host closes", async () => {
+  const signals: AbortSignal[] = [];
+  const acquire = (signal?: AbortSignal) =>
+    new Promise<never>((_, reject) => {
+      signals.push(signal!);
+      signal!.addEventListener("abort", () => reject(new Error("Stopped")), { once: true });
+    });
+  const service = new HostAssistantKeepAwake({ platform: "win32", acquire });
+  service.sync(true);
+  await vi.waitFor(() => expect(signals).toHaveLength(1));
+  service.sync(false);
+  await vi.waitFor(() => expect(signals[0].aborted).toBe(true));
+  service.sync(true);
+  await vi.waitFor(() => expect(signals).toHaveLength(2));
+  await service.close();
+  expect(signals[1].aborted).toBe(true);
+  expect(service.status).toMatchObject({ requested: false, active: false });
+});
+
 it("does not claim unsupported platforms or failed power requests are active", async () => {
   let acquired = 0;
   const unsupported = new HostAssistantKeepAwake({

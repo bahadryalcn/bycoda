@@ -79,6 +79,10 @@ button:global(.bycoda-arc):is(
   font-weight: 500;
   line-height: 1.35;
 }
+/* Keep the inter-group space inside the measured heading in a windowed menu. */
+.groupHeading[data-after-group] {
+  padding-block-start: 0.625rem;
+}
 .pinnedOption {
   position: sticky;
   inset-block-start: 0;

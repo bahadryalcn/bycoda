@@ -34,6 +34,8 @@ type ReadFailureOptions = {
   error: unknown;
   retry?: () => void | Promise<unknown>;
   graceMs?: number;
+  /** A self-recovering read may fail with a domain error as well as a transport error. */
+  defer?: boolean;
   /** Keep the interruption active when a caller clears its error during a new read. */
   loading?: boolean;
   /** Change when the data owner or read target changes. */
@@ -47,10 +49,11 @@ export function useGracedFailure({
   error,
   retry,
   graceMs,
+  defer = false,
   loading = false,
   scope,
 }: ReadFailureOptions): { visibleError?: string; pending: boolean } {
-  const transient = !!error && classifyFailureLifetime(error) === "transient";
+  const transient = !!error && (defer || classifyFailureLifetime(error) === "transient");
   const restart = transient && isHostRestartFailure(error);
   const permanent = !!error && !transient;
   const retryLatest = useStableCallback(retry);

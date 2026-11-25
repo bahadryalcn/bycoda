@@ -1,8 +1,17 @@
 import { expect, it, vi } from "vitest";
 import { NATIVE_SERVICES_RPC_SCHEMAS } from "../../src/shared/model/host-contracts/native-services";
-import { ConversationDesktopRelay, DESKTOP_RELAY_STALE_MS } from "./conversation-desktop-relay";
+import {
+  CAPTURE_REQUEST_MS,
+  ConversationDesktopRelay,
+  DESKTOP_RELAY_STALE_MS,
+} from "./conversation-desktop-relay";
 
-const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
+const principal = {
+  kind: "session" as const,
+  projectId: "p",
+  sessionId: "s",
+  provider: "codex",
+};
 const action = "servers.ssh.execute";
 const permission = "servers.ssh.execute.permission";
 
@@ -53,11 +62,17 @@ it("ends a held take when its caller aborts or its authority is revoked", async 
   const relay = new ConversationDesktopRelay("host");
   await relay.take("native");
   const controller = new AbortController();
-  const aborted = relay.take("native", { waitMs: 5_000, signal: controller.signal });
+  const aborted = relay.take("native", {
+    waitMs: 5_000,
+    signal: controller.signal,
+  });
   controller.abort();
   expect(await aborted).toEqual([]);
   let authorized = true;
-  const revoked = relay.take("native", { waitMs: 5_000, authorized: () => authorized });
+  const revoked = relay.take("native", {
+    waitMs: 5_000,
+    authorized: () => authorized,
+  });
   setTimeout(() => {
     authorized = false;
   }, 20);
@@ -80,7 +95,12 @@ it("Host critical exclusions can only narrow a Room native grant and revoke queu
     "management.write.authorize",
     { operation: { action: "social.send" } },
     "/project",
-    { kind: "assistant-thread", threadId: "thread", projectId: "p", provider: "assistant" },
+    {
+      kind: "assistant-thread",
+      threadId: "thread",
+      projectId: "p",
+      provider: "assistant",
+    },
   );
   void pending.catch(() => undefined);
   await Promise.resolve();
@@ -111,7 +131,9 @@ it.each(["supervised", "auto-accept-edits", "auto", "full-access"])(
     );
     const [request] = await relay.take("native");
     const id = String(request.id);
-    expect(await relay.authorize(id, action, "native")).toEqual({ authorized: true });
+    expect(await relay.authorize(id, action, "native")).toEqual({
+      authorized: true,
+    });
     expect(await relay.authorize(id, permission, "native")).toEqual({
       authorized: true,
       fullAccess: initialMode === "full-access",
@@ -130,9 +152,13 @@ it.each(["supervised", "auto-accept-edits", "auto", "full-access"])(
       [action, "other"],
       ["servers.ssh.cancel", "native"],
     ])
-      expect(await relay.authorize(id, requestedAction, owner)).toEqual({ authorized: false });
+      expect(await relay.authorize(id, requestedAction, owner)).toEqual({
+        authorized: false,
+      });
     authorized = false;
-    expect(await relay.authorize(id, permission, "native")).toEqual({ authorized: false });
+    expect(await relay.authorize(id, permission, "native")).toEqual({
+      authorized: false,
+    });
     await relay.finish(id, {}, undefined, "native");
     await expect(pending).rejects.toThrow("revoked");
     relay.close();
@@ -321,7 +347,12 @@ it("hands the desktop session and assistant Room requests that match the take co
     relay.callAssistantThread(
       "privacy.scope.capture",
       { action: "room.disclosure", requestId: "r", operationHash: "h" },
-      { threadId: "thread", environmentId: "host", projectId: "p", targetProjectCwd: "/project" },
+      {
+        threadId: "thread",
+        environmentId: "host",
+        projectId: "p",
+        targetProjectCwd: "/project",
+      },
       () => true,
     ),
     relay.callAssistantThread(
@@ -351,7 +382,10 @@ it("sends a Global thread's desktop approval with no project folder and refuses 
   );
   pending.catch(() => undefined);
   const [request] = await relay.take("native");
-  expect(request).toMatchObject({ action: "desktop.act.authorize", threadId: "room" });
+  expect(request).toMatchObject({
+    action: "desktop.act.authorize",
+    threadId: "room",
+  });
   expect(request).not.toHaveProperty("projectId");
   expect(request).not.toHaveProperty("cwd");
   expect(() =>
@@ -390,4 +424,103 @@ it("fails a claimed request once the desktop that claimed it goes silent, and fr
   } finally {
     vi.useRealTimers();
   }
+});
+
+const device = "c".repeat(64);
+const capture = (relay: ConversationDesktopRelay, signal?: AbortSignal) =>
+  relay.callAssistantThread(
+    "privacy.scope.capture",
+    {
+      action: "room.disclosure",
+      requestId: "r",
+      operationHash: "d".repeat(64),
+    },
+    {
+      threadId: "room",
+      environmentId: "host",
+      projectId: "project",
+      targetProjectCwd: "/project",
+      targetDeviceHash: device,
+    },
+    () => true,
+    { signal },
+  );
+
+it("gives a privacy capture the lifetime of the proof it asks for, not the relay's four minutes", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-07T10:00:00Z"));
+  try {
+    const relay = new ConversationDesktopRelay("host");
+    await relay.take(device);
+    const pending = capture(relay);
+    const settled = pending.then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    const [request] = await relay.take(device);
+    // The desktop claims it, keeps polling, and never answers: the claim must not outlive its proof.
+    expect(Number(request.deadline) - Date.now()).toBe(CAPTURE_REQUEST_MS);
+    for (let elapsed = 0; elapsed < CAPTURE_REQUEST_MS; elapsed += 10_000) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      await relay.take(device);
+    }
+    await expect(settled).resolves.toContain("timed out");
+    // The slot is free and a late answer from the desktop is refused.
+    await expect(relay.finish(String(request.id), {}, undefined, device)).rejects.toThrow(
+      "expired",
+    );
+    relay.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("drops a pending capture when its caller gives up, so no desktop claims it later", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take(device);
+  const abort = new AbortController();
+  const pending = capture(relay, abort.signal);
+  const settled = pending.then(
+    () => "resolved",
+    (error: Error) => error.message,
+  );
+  abort.abort();
+  await expect(settled).resolves.toContain("cancelled");
+  expect(await relay.take(device)).toEqual([]);
+  // A caller that is already gone never queues anything.
+  expect(() => capture(relay, abort.signal)).toThrow("cancelled");
+  expect(await relay.take(device)).toEqual([]);
+  relay.close();
+});
+
+it("cancels a capture the desktop already claimed and refuses its late answer", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take(device);
+  const abort = new AbortController();
+  const pending = capture(relay, abort.signal);
+  const settled = pending.catch((error: Error) => error.message);
+  const [request] = await relay.take(device);
+  abort.abort();
+  await expect(settled).resolves.toContain("cancelled");
+  expect(await relay.authorize(String(request.id), "privacy.scope.capture", device)).toEqual({
+    authorized: false,
+  });
+  await expect(relay.finish(String(request.id), {}, undefined, device)).rejects.toThrow("expired");
+  relay.close();
+});
+
+it("keeps an answered capture's result when its caller aborts afterwards", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take(device);
+  const abort = new AbortController();
+  const pending = capture(relay, abort.signal);
+  const [request] = await relay.take(device);
+  await relay.finish(String(request.id), { operationJson: "{}" }, undefined, device);
+  abort.abort();
+  await expect(pending).resolves.toMatchObject({
+    relayId: request.id,
+    envelope: { operationJson: "{}" },
+    deviceHash: device,
+  });
+  relay.close();
 });

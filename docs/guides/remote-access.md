@@ -1,9 +1,30 @@
 # Remote access (experimental)
 
+## Manage device access
+
+Open **Settings → Connections → Devices** and find the computer whose access
+you want to manage. **Manage devices** lets another paired device grant or remove
+device management and revoke access on that computer. New pairings start with
+standard access. Creating a pairing ticket and using it require the issuer to
+have management access. The computer's own local desktop retains management access.
+
+The list focuses on paired access. A Host's built-in desktop credential is hidden.
+Older remote local sync credentials may appear as **Local sync** when their Host
+still lists them as ordinary pairings.
+
+For recovery, enable **Manage this computer from my account** on each computer
+you want to manage, while signed in to your bycoda account. Then sign in at
+[account.bycoda.codes](https://account.bycoda.codes/) and open **Devices →
+Computer access**. The portal shows the latest synchronized device list. A
+permission change or revocation queues while the target computer cannot sync
+and takes effect when bycoda is open and signed in there.
+
 ## Work from both computers
 
-Before installing an update, the confirmation lists machines with running sessions
-and shows which of those machines restarts. Desktop activity appears immediately,
+Before an app update, the confirmation lists machines with running sessions
+and shows which machine restarts. A Host update checks only the selected Host.
+On this computer, the app reads the running session count directly from the local Host.
+Desktop activity appears immediately,
 and each Host's count appears as its check completes. Alternate routes to one
 environment count once. If the selected Host's activity cannot be checked, its
 update confirmation warns that work could be interrupted. Counts refresh while
@@ -64,12 +85,15 @@ When a continued Codex conversation is archived in Codex, sending a follow-up as
 ## Free access outside your network
 
 In **Settings → Connections → Sharing**, choose **Create link**, select the computer,
-then choose **bycoda host** and **Cloudflare**. Enable **Access from outside the network
-(Cloudflare Quick Tunnel)** for that Host. It is off by default.
+then choose **bycoda host** and **Cloudflare**. Select **Start sharing** to open the
+tunnel. Check **Restart tunnel automatically** before starting if you want the Host
+to keep the tunnel available. The option is off by default.
 No Cloudflare account, token or paid service is needed. bycoda uses an installed
 cloudflared or downloads a pinned, checksum-verified copy into its private data
 directory. The URL changes whenever the tunnel starts. The Host starts it again
-after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+after restart or verified unexpected exit if you enabled the option. Use **Stop tunnel**
+on the shared link or **Stop automatic Host access** in the Cloudflare Host form to
+stop automatic access.
 A running tunnel keeps its URL through isolated origin errors, such as the Host
 restarting, and through a single lost connection; it is retired and reported as a
 connection failure only when every connection stays down for 30 seconds or the
@@ -94,6 +118,9 @@ opens a dialog: **Found** combines computers signed in to your account, Tailscal
 devices, SSH config aliases and known hosts, each with its sources and online state,
 with a search by name or address. The same computer found by several sources is one
 row: an account computer joins the SSH entry on its Tailscale or home-network address.
+Saved computers are hidden from **Found**. If a saved SSH computer changes its address,
+discovery can also recognize it when both addresses have the same public host key in
+your SSH known hosts file.
 Choose **Add** to connect one. A machine with an
 SSH address is set up as in the SSH section below, without a form; for an account
 computer, setup stops if that address answers as a different computer. Its progress and
@@ -347,6 +374,7 @@ desktop catches up automatically. You can read the conversation while the latest
 messages arrive. Reopening a long conversation loads the older local pages needed
 to compare its history and bring in new Host messages. If the desktop cannot finish syncing, **Sync conversation**
 retries the read. If both copies changed, the desktop asks which version to keep.
+When a turn starts on this desktop, the working indicator takes over from the automatic sync spinner.
 Syncing preserves your draft and queued messages and does not resend a turn.
 
 ## Connect through SSH
@@ -381,6 +409,9 @@ The existing terminal close policy asks before closing foreground work or a term
 whose process status cannot be determined. Closing the active tab selects a surviving
 neighbor. Opening, running, failed and exited labels describe the terminal lifecycle;
 an opened terminal does not by itself verify remote SSH authentication.
+For a paired Host, **Connect via SSH** starts the machine's login shell. A
+custom shell integration can be selected from the terminal's tools. A Host's
+**Connected** badge reflects the Host service connection.
 
 While a terminal is open, **Saved SSH tabs** holds the restore preference and pending
 entries. Only saved connections can be remembered. Restoring an entry requires
@@ -465,9 +496,15 @@ progress. If every address is silent, SSH still tries the preferred address.
 2. Choose the machine, browse to an existing checkout (or type its absolute path, such as `/home/me/code/my-app`), and click **Open**.
 3. Send a message. The first message creates the session on the host with the model, reasoning effort, and permission mode shown in the composer.
 
+If the folder list fails to load, use **Retry loading folders** in the folder picker.
+
 Remote projects show a server icon in the project rail. Hover or focus the project to see its machine, folder path, and connection status. Remote sessions show the server icon beside the provider icons.
 The new session screen shows the saved machine name and the folder path on that machine. If the name is unavailable, it shows **Remote computer** beside the path.
 While a remote turn runs, the composer shows its working status and offers **Stop**.
+
+When you open a session started from a remote connection on the computer that runs it,
+the composer shows **This computer**. Hover or focus that label to see where the session
+started, followed by its current location.
 
 The composer's model picker lists models for the providers installed on the host. Model, provider-specific settings, and permission changes apply to the host session directly, and the next turn uses them; a change made during a running turn is applied when that turn finishes. If the host cannot load its model list, or no longer lists the session's model, the session's saved settings remain visible. The normal workspace and branch pickers use the host checkout through the shared file and Git commands. Choose an existing host worktree or create one from a branch before the first message; the session then runs in that working copy. Once the conversation starts, its worktree is fixed, as in a local session. Start a new session to use another worktree. The branch picker can search local and remote branches, create a local branch, and switch the current working copy when it is clean and the project's sessions are idle. Machine connection state appears on its project rail dot.
 
@@ -511,7 +548,17 @@ state; cancellation releases it after accepted storage work finishes. This check
 does not move an existing conversation to another computer or enable a new
 execution default. Installed multi-device migration still requires acceptance.
 
-HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
+HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. Device credentials in this file are encrypted with a key held by the operating system's credential store. Existing plaintext entries migrate when the desktop loads its saved connections. Backups made before migration can still contain the original keys.
+
+## Keep this computer reachable when bycoda is closed
+
+By default the local Host belongs to the desktop app: it starts when bycoda opens and stops when bycoda quits. While it is stopped, phones and other computers cannot reach this computer's projects, and automations do not run.
+
+To keep it reachable, open **Settings → Connections → Computers** and turn on **Keep this computer reachable when bycoda is closed** on the **This computer** row. The Host then runs as a login service and keeps running after bycoda closes. Turning the switch off hands the Host back to the app. Computers that already had a login service keep it.
+
+A change while sessions or shells are running waits until they finish, shown as "Turning on/off when running sessions finish". **Switch now** interrupts them after a confirmation; their history is kept. Quitting bycoda while sessions run lists them and asks first. Quitting then stops them gracefully and keeps their history.
+
+Setting up SSH access to a remote machine turns this switch on for that machine, and the success notice says so. To return it to app mode, turn the switch off on that computer.
 
 ## Manage the host
 
@@ -646,7 +693,7 @@ This remains development-source behavior pending installed-platform acceptance.
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. For interactive terminals, see [remote project terminals](terminal.md#open-a-remote-project-terminal). Worktree deletion, generated image output, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 

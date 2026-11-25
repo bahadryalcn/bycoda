@@ -214,7 +214,12 @@ describe("mcp.oauth owner RPCs", () => {
 
   it("requires the owner credential before any sign-in work", async () => {
     const s = oauthSetup();
-    for (const method of ["mcp.oauth.start", "mcp.oauth.status", "mcp.oauth.signOut"])
+    for (const method of [
+      "mcp.oauth.start",
+      "mcp.oauth.status",
+      "mcp.oauth.signOut",
+      "mcp.oauth.cancel",
+    ])
       await expect(s.call(method, { name: "remote" }, "nobody")).rejects.toThrow(/Owner device/);
     expect(s.start).not.toHaveBeenCalled();
     expect(s.signOut).not.toHaveBeenCalled();

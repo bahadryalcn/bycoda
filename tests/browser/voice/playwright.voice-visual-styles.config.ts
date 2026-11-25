@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "..",
   testMatch: [
+    "presented-catalog.e2e.ts",
     "voice-visual-styles.e2e.ts",
     "voice-overlay.e2e.ts",
     "voice-persona.e2e.ts",

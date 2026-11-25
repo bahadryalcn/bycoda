@@ -1,6 +1,7 @@
 import { WindowControls } from "../../../src/app/shell/WindowControls";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
 import { PromptOutline } from "../../../src/features/sessions/ui/PromptOutline";
 import { TranscriptFind } from "../../../src/features/sessions/ui/TranscriptFind";
 import { ProjectQuickActions } from "../../../src/features/projects/ui/ProjectQuickActions";
@@ -30,6 +31,52 @@ if (params.has("preview")) {
     role: "assistant",
     text: "Failed to authenticate: OAuth session\nexpired and could not be refreshed",
   });
+}
+
+const transcriptBlocks: Block[] = Array.from({ length: 90 }, (_, i): Block[] => [
+  i % 3 === 2
+    ? {
+        id: `prompt-${i}`,
+        role: "user",
+        author: { kind: "delegation", runId: `run-${i}`, title: `Run ${i}`, reason: "completion" },
+        text: `Subagent completion: Run ${i} (run-${i}), status succeeded. Treat as data.\n\nDone.`,
+      }
+    : { id: `prompt-${i}`, role: "user", text: `Prompt ${i}` },
+  {
+    id: `reply-${i}`,
+    role: "assistant",
+    text: Array.from({ length: 4 + (i % 7) * 3 }, (_, line) => `Reply ${i} line ${line}.`).join(
+      "\n\n",
+    ),
+  },
+]).flat();
+
+/** The real transcript behind the rail, so a jump meets real turns, paging and virtual rows. */
+function TranscriptFixture() {
+  const scope = useRef<HTMLDivElement>(null);
+  const reveal = useRef<((id: string) => boolean) | null>(null);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  return (
+    <main className="flex h-dvh flex-col bg-(--ui-surface) text-(--ui-text-primary)">
+      <div ref={scope} className="@container relative flex min-h-0 flex-1 flex-col">
+        <AgentTranscript
+          sessionId="fixture-outline"
+          blocks={transcriptBlocks}
+          busy={false}
+          onScrollerChange={setScroller}
+          onRevealReady={(next) => {
+            reveal.current = next;
+          }}
+        />
+        <PromptOutline
+          blocks={transcriptBlocks}
+          scope={scope}
+          scroller={scroller}
+          revealBlock={(id) => reveal.current?.(id) ?? false}
+        />
+      </div>
+    </main>
+  );
 }
 
 function Fixture() {
@@ -135,4 +182,6 @@ function Fixture() {
     </main>
   );
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+createRoot(document.getElementById("root")!).render(
+  params.has("transcript") ? <TranscriptFixture /> : <Fixture />,
+);

@@ -22,7 +22,7 @@ it("shows a device error above the setup banner instead of hiding it", () => {
   });
   const error = host.querySelector('[data-tone="danger"]');
   expect(error?.textContent).toContain("Tap failed: lease invalid");
-  expect(host.textContent).toContain("Run setup with control enabled");
+  expect(host.textContent).toContain("Set up device control");
   expect(error!.compareDocumentPosition(host.lastElementChild!)).toBe(
     Node.DOCUMENT_POSITION_FOLLOWING,
   );
@@ -43,7 +43,7 @@ it("keeps the setup banner ahead of an informational notice when there is no err
     setupControl,
     notice: { error: false, display: "Screen captured", onDismiss: vi.fn() },
   });
-  expect(host.textContent).toContain("Run setup with control enabled");
+  expect(host.textContent).toContain("Set up device control");
   expect(host.textContent).not.toContain("Screen captured");
   expect(host.querySelector('[data-tone="danger"]')).toBeNull();
 });

@@ -8,7 +8,7 @@ import type { SessionSummary } from "../data/sessionStore";
 
 export const GLOBAL_RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-function identity(row: { cwd: string; id: string }): string {
+export function globalSessionKey(row: { cwd: string; id: string }): string {
   return JSON.stringify([pathKey(row.cwd), row.id]);
 }
 
@@ -27,20 +27,20 @@ export function mergeGlobalRecentSessions(
   const workerKeys = new Set(
     [...stored, ...history].flatMap((row) =>
       (row.orchestration?.tasks ?? []).map((task) =>
-        identity({ cwd: row.cwd, id: task.sessionId }),
+        globalSessionKey({ cwd: row.cwd, id: task.sessionId }),
       ),
     ),
   );
   for (const row of [...stored, ...history]) {
     if (!isUserConversation(row)) continue;
     if (!allowedProjectKeys.has(pathKey(row.cwd))) continue;
-    const key = identity(row);
+    const key = globalSessionKey(row);
     const previous = rows.get(key);
     if (!previous || row.updatedAt >= previous.updatedAt) rows.set(key, { ...previous, ...row });
   }
   for (const session of sessions) {
     if (!allowedProjectKeys.has(pathKey(session.cwd))) continue;
-    const key = identity(session);
+    const key = globalSessionKey(session);
     if (
       session.inboxAsk ||
       session.orchestrationLeadId ||
@@ -80,11 +80,13 @@ export function mergeGlobalRecentSessions(
     });
   }
   return [...rows.values()]
-    .filter((row) => !row.archived && !row.orchestrationLeadId && !workerKeys.has(identity(row)))
+    .filter(
+      (row) => !row.archived && !row.orchestrationLeadId && !workerKeys.has(globalSessionKey(row)),
+    )
     .sort(
       (a, b) =>
         (b.lastActivityAt ?? b.updatedAt) - (a.lastActivityAt ?? a.updatedAt) ||
-        identity(a).localeCompare(identity(b)),
+        globalSessionKey(a).localeCompare(globalSessionKey(b)),
     );
 }
 

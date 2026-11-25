@@ -15,7 +15,11 @@ import { hostModelRoutingService } from "../model-routing/runtime";
 import { readModelRouting } from "../model-routing/storage";
 import { TEXT_HARNESSES } from "../../src/features/source-control/model/gitGenerationChoice";
 import type { GitStagedContext, GitRangeContext } from "../../src/platform/tauri/fs";
-import { createHostWorktree, hostWorktrees, resolveHostWorktreeAsync } from "../git/git-worktrees";
+import {
+  createHostWorktree,
+  hostWorktreesWithState,
+  resolveHostWorktreeAsync,
+} from "../git/git-worktrees";
 import { HostTasks } from "../tasks/tasks";
 import {
   createHostPath,
@@ -74,6 +78,7 @@ export function createGitRuntime(
     project: (id) => dependencies.engine.store.project(id),
     resolveWorktree: resolveHostWorktreeAsync,
     withIdleProject: (id, work) => dependencies.engine.withIdleProject(id, work),
+    withStableCheckout: (id, work) => dependencies.engine.withStableCheckout(id, work),
     serializeMutation: (cwd, work, scope) => withHostGitMutation(cwd, work, undefined, scope),
     startActivity: (cwd) => dependencies.startWorkspaceActivity(cwd, "mutation", "git.action"),
     invalidateRoots: () => dependencies.workspace.invalidateRoots(),
@@ -89,7 +94,7 @@ export function createGitRuntime(
     branches: (cwd) => hostBranches(cwd, (path) => dependencies.gitWatches.read(path)),
     switch: switchHostBranch,
     createBranch: createHostBranch,
-    worktrees: hostWorktrees,
+    worktrees: hostWorktreesWithState,
     worktreeCreate: createHostWorktree,
     index: hostGitIndex,
     generateText: async (cwd, params, authorize) => {

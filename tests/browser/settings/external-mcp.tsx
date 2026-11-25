@@ -64,7 +64,7 @@ mockIPC(
     if (args.method === "mcp.oauth.status") return { servers: oauth };
     if (args.method === "mcp.oauth.start") {
       document.body.dataset.oauthStart = (args.params as { name: string }).name;
-      return { authorizationUrl: "https://auth.example/authorize", expiresAt: Date.now() + 1000 };
+      return { authorizationUrl: "https://auth.example/authorize?state=fixture-state-123456" };
     }
     if (args.method === "mcp.oauth.signOut") {
       const row = oauth.find((item) => item.name === (args.params as { name: string }).name);

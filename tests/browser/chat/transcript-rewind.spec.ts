@@ -16,14 +16,17 @@ for (const width of [1280, 800])
         "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=retained",
       );
       await setTheme();
+      // The second read is the catalog poller's 1 s backoff after the first pending answer; slow WebKit starts need headroom.
       await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (
-                window as unknown as { rewindFixtureCalls: { method: string }[] }
-              ).rewindFixtureCalls.filter((call) => call.method === "models.list").length,
-          ),
+        .poll(
+          () =>
+            page.evaluate(
+              () =>
+                (
+                  window as unknown as { rewindFixtureCalls: { method: string }[] }
+                ).rewindFixtureCalls.filter((call) => call.method === "models.list").length,
+            ),
+          { timeout: 15_000 },
         )
         .toBeGreaterThan(1);
       const picker = page.locator("[data-model-picker-presentation]").first();
@@ -32,7 +35,10 @@ for (const width of [1280, 800])
       await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
       await page.screenshot({ path: `${captures}/retained-${width}-${theme}.png` });
 
-      await page.evaluate(() => localStorage.removeItem("bycoda.remote-models.v1"));
+      // The first page keeps polling and re-persists its retained catalog, which would seed the
+      // next page and hide the first failure. Leave it, then clear the store before the next page boots.
+      await page.goto("about:blank");
+      await page.addInitScript(() => localStorage.removeItem("bycoda.remote-models.v1"));
       await page.goto(
         "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=first-failure",
       );

@@ -1,4 +1,9 @@
-import type { CodeHighlighterPlugin, HighlightResult, ThemeInput } from "@streamdown/code";
+import type {
+  CodeHighlighterPlugin,
+  HighlightOptions,
+  HighlightResult,
+  ThemeInput,
+} from "@streamdown/code";
 import {
   bundledLanguages,
   bundledLanguagesInfo,
@@ -27,10 +32,7 @@ const MAX_CACHED_CHARS = 500_000;
 const TOKEN_WEIGHT_CHARS = 8;
 /** Streams resumed independently: replies, panes and subagents can stream fences at once. */
 const MAX_CHECKPOINTS = 8;
-/**
- * Larger blocks render as plain text: tokenizing runs on the main thread, and 2,000
- * lines already froze the window for about half a second.
- */
+/** Bound grammar work, retained token objects and fallback rendering for very large fences. */
 export const MAX_HIGHLIGHT_LINES = 2_000;
 export const MAX_HIGHLIGHT_CHARS = 200_000;
 /** Languages without a grammar; tokenizing them only splits lines. */
@@ -67,7 +69,7 @@ export function plainHighlightResult(code: string): HighlightResult {
   return { tokens } as HighlightResult;
 }
 
-/** Whether `code` is past the size Shiki may tokenize on the main thread. */
+/** Whether `code` exceeds the syntax highlight budget. */
 function exceedsHighlightLimit(code: string): boolean {
   if (code.length > MAX_HIGHLIGHT_CHARS) return true;
   let lines = 1;
@@ -92,6 +94,7 @@ export function createBoundedCodePlugin(
     maxEntries?: number;
     maxChars?: number;
   } = {},
+  highlightSettled?: (args: HighlightOptions) => Promise<HighlightResult>,
 ): BoundedCodePlugin {
   const themes = options.themes ?? DEFAULT_THEMES;
   const maxEntries = options.maxEntries ?? MAX_ENTRIES;
@@ -157,7 +160,8 @@ export function createBoundedCodePlugin(
     getSupportedLanguages: () => Array.from(supported) as BundledLanguage[],
     getThemes: () => themes,
     cachedResults: () => results.size,
-    highlight({ code, language, themes: pair }, callback) {
+    highlight(args, callback) {
+      const { code, language, themes: pair } = args;
       const lang = normalizeLanguage(language);
       if (PLAIN_LANGUAGES.has(lang) || exceedsHighlightLimit(code))
         return plainHighlightResult(code);
@@ -177,8 +181,8 @@ export function createBoundedCodePlugin(
         return null;
       }
       pending.set(key, new Set(callback ? [callback] : []));
-      void highlighterFor(pair)
-        .then(async (highlighter) => {
+      const tokenizeHere = () =>
+        highlighterFor(pair).then(async (highlighter) => {
           if (supported.has(lang) && !highlighter.getLoadedLanguages().includes(lang)) {
             await highlighter.loadLanguage(lang as BundledLanguage);
           }
@@ -236,7 +240,17 @@ export function createBoundedCodePlugin(
             while (checkpoints.length > MAX_CHECKPOINTS || checkpointChars() > maxChars)
               checkpoints.shift();
           }
-          remember(key, result);
+          return result;
+        });
+      // Both execution paths share the exact-result cache and in-flight subscribers.
+      const task =
+        highlightSettled && args.isIncomplete === false
+          ? highlightSettled(args).catch(tokenizeHere)
+          : tokenizeHere();
+      void task
+        .then((result) => {
+          // A worker can return the untinted source after a grammar fails. Retry that fence on remount.
+          if (result.themeName !== undefined) remember(key, result);
           const callbacks = pending.get(key);
           pending.delete(key);
           callbacks?.forEach((notify) => notify(result));

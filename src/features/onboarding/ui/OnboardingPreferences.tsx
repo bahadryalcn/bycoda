@@ -3,7 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -317,7 +317,9 @@ export function OnboardingAppearance() {
           title={t("Agent crew")}
           info={
             crewDetail ? (
-              <InfoPopover className="onboarding-section-info">{crewDetail}</InfoPopover>
+              <InfoTooltip className="onboarding-section-info" label={t("Agent crew")}>
+                {crewDetail}
+              </InfoTooltip>
             ) : (
               <span className="onboarding-section-info" aria-hidden="true" />
             )

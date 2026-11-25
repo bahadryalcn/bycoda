@@ -20,7 +20,7 @@ import {
 } from "../../shared/model/host-contracts/desktop-control";
 import { desktopControlRequest } from "./desktopControlClient";
 import { DesktopHelperSetup } from "./DesktopHelperSetup";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../shared/ui/InfoPopover";
 import { InlineError } from "../../shared/ui/InlineError";
 import styles from "./DesktopControlSettings.module.css";
 
@@ -346,11 +346,11 @@ export function DesktopControlSettings({
         <Row
           label={t("Driver")}
           info={
-            <InfoPopover>
+            <InfoTooltip>
               {t(
                 "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           }
         >
           <Select
@@ -413,9 +413,9 @@ export function DesktopControlSettings({
               <Row
                 label={t("Permission")}
                 info={
-                  <InfoPopover>
+                  <InfoTooltip>
                     {permissionModeLabels(draft.permissionMode).description}
-                  </InfoPopover>
+                  </InfoTooltip>
                 }
               >
                 <Select
@@ -450,11 +450,11 @@ export function DesktopControlSettings({
                     <Row
                       label={t("Approved apps")}
                       info={
-                        <InfoPopover>
+                        <InfoTooltip>
                           {t(
                             "Apps you allowed when asked. Remove one to be asked again before it is used.",
                           )}
-                        </InfoPopover>
+                        </InfoTooltip>
                       }
                       stacked
                     >
@@ -473,9 +473,9 @@ export function DesktopControlSettings({
                 <Row
                   label={t("Physical input")}
                   info={
-                    <InfoPopover>
+                    <InfoTooltip>
                       {t("Allows pointer and focus changes, only on your direct request.")}
-                    </InfoPopover>
+                    </InfoTooltip>
                   }
                 >
                   <Toggle

@@ -14,11 +14,7 @@ import {
 } from "../model/autoContinue";
 import { newTab } from "../../workspace/model/layout";
 import { collectWorkspaceSnapshot } from "../../workspace/model/workspaceSnapshot";
-import {
-  captureSessionRecovery,
-  isRecoverySessionHeld,
-  setSessionRecovery,
-} from "../../workspace/model/sessionRecovery";
+import { captureSessionRecovery, setSessionRecovery } from "../../workspace/model/sessionRecovery";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -67,7 +63,7 @@ async function render(extra: Partial<Parameters<typeof InterruptedNotice>[0]> = 
   });
 }
 
-it("offers manual continuation when recovery holds an automatic continuation", async () => {
+it("offers manual continuation while an automatic continuation is still pending", async () => {
   markAutoContinueDue(session.id);
   const tab = newTab(session.id);
   setSessionRecovery(
@@ -76,7 +72,6 @@ it("offers manual continuation when recovery holds an automatic continuation", a
       collectWorkspaceSnapshot([tab], [session], tab.id, session.cwd, new Map()),
     ),
   );
-  expect(isRecoverySessionHeld(session.id)).toBe(true);
   expect(isAutoContinueDue(session.id)).toBe(true);
 
   await render();

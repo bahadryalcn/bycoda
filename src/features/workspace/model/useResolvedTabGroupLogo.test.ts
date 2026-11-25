@@ -34,8 +34,11 @@ it("follows the shipped logo and each mascot writer, and keeps identity while no
   await act(async () => root.render(createElement(Probe)));
   await vi.waitFor(() => expect(logoSeen[logoSeen.length - 1]).toBe("/data/auto-p.svg"));
   const settled = mascotSeen[mascotSeen.length - 1];
+  const get = vi.spyOn(localStorage, "getItem");
   await act(async () => root.render(createElement(Probe)));
   expect(mascotSeen[mascotSeen.length - 1]).toBe(settled);
+  expect(get.mock.calls.filter(([key]) => key === "bycoda:tab-group:mascots")).toHaveLength(0);
+  get.mockRestore();
 
   act(() => groups.saveTabGroupMascot(project, "fox"));
   expect(logoSeen[logoSeen.length - 1]).toBeNull();
@@ -50,6 +53,17 @@ it("follows the shipped logo and each mascot writer, and keeps identity while no
   act(() => groups.rebaseProjectTabGroupSettings(project, "c:/work/q"));
   expect(mascotSeen[mascotSeen.length - 1]).toEqual({ "c:/work/q": "owl" });
   expect(logoSeen[logoSeen.length - 1]).toBe("/data/auto-p.svg");
+  const key = "bycoda:tab-group:mascots";
+  act(() => {
+    localStorage.setItem(key, JSON.stringify({ [project]: "fox" }));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  });
+  expect(logoSeen.at(-1)).toBeNull();
+  act(() => {
+    localStorage.clear();
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+  });
+  expect(logoSeen.at(-1)).toBe("/data/auto-p.svg");
   act(() => root.unmount());
 });
 

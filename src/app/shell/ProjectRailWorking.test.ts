@@ -14,7 +14,7 @@ it("keeps working decoration compositor-friendly and disables it with motion con
   );
   expect(css).not.toMatch(/animation:\s*project-row-working-sweep/);
   expect(css).toContain('[data-decorative-motion="off"]');
-  expect(css).toContain('[data-window-focus="off"]');
+  expect(css).toContain('[data-window-visible="off"]');
   expect(css).toContain("prefers-reduced-motion: reduce");
   expect(css).toContain("data-performance-no-shimmer");
   // Appearance > Motion: "steady" stops only the pulse, "off" also drops the tint.
@@ -50,7 +50,6 @@ it("places collapsed Activity below Projects and the recovery icon directly befo
           recents: [],
           onSelectProject,
           onOpenProject: vi.fn(),
-          onSearch: vi.fn(),
           onOpenInbox: vi.fn(),
           recoveryControl: createElement(SessionRecoveryControl, { count: 28, onOpen: vi.fn() }),
           liveAgents: [

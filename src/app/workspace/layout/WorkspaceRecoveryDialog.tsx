@@ -40,10 +40,9 @@ export function WorkspaceRecoveryDialog({
   if (!editorDraftRecovery?.available)
     return recovery ? <SessionRecoveryPanel {...props} recovery={recovery} /> : null;
   const draftPending = editorDraftRecovery.pendingKeys.size > 0;
-  // A tab exists only when it has something to show. File drafts are the dialog's home
-  // when there are no conversations.
+  // Keep an open file pane mounted through confirmation and its empty state.
   const hasSessions = !!recovery?.workspace.sessions.length;
-  const fileSide = editorDraftRecords.length > 0 || !hasSessions;
+  const fileSide = editorDraftRecords.length > 0 || !hasSessions || mode === "files";
   return (
     <SessionRecoveryPanel
       {...props}
@@ -72,6 +71,7 @@ export function WorkspaceRecoveryDialog({
             title={t("Recovered work")}
             onClose={props.onClose}
             closeDisabled={busy}
+            hideCloseTooltip
             size="md"
             fitViewport
           >

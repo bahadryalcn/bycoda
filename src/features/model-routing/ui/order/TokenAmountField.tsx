@@ -101,8 +101,7 @@ export function TokenAmountField({
   }));
 
   return (
-    // A floor that keeps "No limit" and a 9-digit amount readable; narrow tables scroll instead.
-    <div className="flex min-w-32 flex-col gap-1">
+    <div className="flex min-w-24 flex-col gap-1">
       <Combobox
         label={label}
         hideLabel={hideLabel}

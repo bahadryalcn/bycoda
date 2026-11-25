@@ -12,5 +12,5 @@ it("indexes hover nodes with an explicit dependency list, not on every commit", 
   const closing = source.indexOf("\n  }, [", start);
   expect(closing).toBeGreaterThan(start);
   const line = source.slice(closing + 1, source.indexOf("\n", closing + 1));
-  expect(line).toBe("  }, [commentTarget, near, range.end, range.start, rows, splitRows]);");
+  expect(line).toBe("  }, [commentTarget, mounted, near, rows, splitRows]);");
 });

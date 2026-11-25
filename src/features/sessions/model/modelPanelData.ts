@@ -2,7 +2,6 @@ import { isEffortSettingId, type ModelSetting } from "./models";
 import { settingGroupId } from "./modelPickerData";
 import { CROSS_SUBAGENTS_KEY } from "../../../shared/model/host-contracts/delegation";
 import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
-import type { ProviderRateLimits } from "../../providers/public/accountUsage";
 
 /**
  * How the account control looks for a given number of accounts: nothing to pick with one,
@@ -128,31 +127,4 @@ export function splitPanelSettings(settings: readonly ModelSetting[]): {
   };
 }
 
-export type AccountUsageSummary = {
-  /** Used share of the tightest window, or null without usage data. */
-  usedPercent: number | null;
-  /** When that window resets, if known and still ahead. */
-  resetsAt: number | null;
-};
-
-/**
- * Usage of the window with the least headroom. A window whose reset time has passed counts
- * as unused, matching `accountHeadroom`.
- */
-export function accountUsageSummary(
-  limits: ProviderRateLimits | undefined,
-  now: number,
-): AccountUsageSummary {
-  if (limits?.status !== "ok") return { usedPercent: null, resetsAt: null };
-  let tightest: { used: number; resetsAt: number | null } | null = null;
-  for (const window of [limits.session, limits.weekly, limits.monthly]) {
-    if (!window) continue;
-    const expired = window.resetsAt != null && window.resetsAt <= now;
-    const used = expired ? 0 : Math.min(100, Math.max(0, window.usedPercent || 0));
-    if (!tightest || used > tightest.used)
-      tightest = { used, resetsAt: expired ? null : window.resetsAt };
-  }
-  return tightest
-    ? { usedPercent: Math.round(tightest.used), resetsAt: tightest.resetsAt }
-    : { usedPercent: null, resetsAt: null };
-}
+export { accountUsageSummary } from "../../providers/public/accountUsage";

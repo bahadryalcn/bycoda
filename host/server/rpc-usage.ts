@@ -1,14 +1,20 @@
 import { join } from "node:path";
 import { costParams } from "../usage/cost-report";
 import { readUsageCost } from "../usage/cost-read";
-import { readUsageLimits } from "../usage/limits-report";
+import {
+  isQuotaProvider,
+  isQuotaSource,
+  readDesktopQuota,
+  readUsageLimits,
+} from "../usage/limits-report";
 import { readPlanShare } from "../usage/plan-share-read";
 import { HOST_USAGE_PLAN_SHARE_METHOD } from "../../src/shared/model/host-contracts/usage-plan-share";
 import {
   applyProviderAccountStyles,
   readProviderAccountStyles,
 } from "../providers/provider-account-styles";
-import { hostProviderAccounts } from "../providers/provider-accounts";
+import { hostProviderAccounts, providerAccountDir } from "../providers/provider-accounts";
+import { quotaBillingProvider, unavailableRateLimits } from "../../src/shared/model/provider-quota";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { hostUsageLimitsDeps, providerAccountConfigDir as accountDir } from "./usage-limits-deps";
@@ -20,6 +26,35 @@ export async function handleUsageRpc(
 ): Promise<void> {
   const environmentId = dependencies.engine.store.environmentId;
   switch (request.input.method) {
+    case "usage.quota.read": {
+      const { provider, accountId, intent, maxAgeMs } = request.params;
+      if (
+        !isQuotaSource(provider) ||
+        typeof accountId !== "string" ||
+        !/^[A-Za-z0-9_-]{1,80}$/.test(accountId) ||
+        ((!isQuotaProvider(provider) || provider === "opencode") && accountId !== "default") ||
+        (intent !== "read" &&
+          intent !== "refresh" &&
+          !(intent === "approved" && provider === "claude")) ||
+        (maxAgeMs !== undefined &&
+          (typeof maxAgeMs !== "number" ||
+            !Number.isSafeInteger(maxAgeMs) ||
+            maxAgeMs < 60_000 ||
+            maxAgeMs > 900_000))
+      ) {
+        throw new Error("Invalid quota account");
+      }
+      const limits = hostUsageLimitsDeps(environmentId);
+      if (accountId !== "default" && !(await providerAccountDir(provider, accountId))) {
+        request.result = unavailableRateLimits(
+          quotaBillingProvider(provider),
+          "Quota account is unavailable",
+        );
+        break;
+      }
+      request.result = await readDesktopQuota(limits, { provider, accountId }, intent, maxAgeMs);
+      break;
+    }
     case "usage.limits.read":
       const limits = hostUsageLimitsDeps(environmentId);
       request.result = await readUsageLimits({

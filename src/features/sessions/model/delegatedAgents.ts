@@ -1,3 +1,4 @@
+import { subagentStepStrip } from "./subagentStepStrip";
 import {
   CREW_MEMBER_KEY,
   DELEGATION_PARENT_KEY,
@@ -36,11 +37,23 @@ import {
  * `delegatedAgentBlock`.
  */
 
+const parentLinks = new WeakMap<
+  NonNullable<Session["modelSettings"]>,
+  { raw: string; link?: DelegationParent }
+>();
+
 /** The parent link the Host wrote into a child's settings; display only. */
 export function delegationParentOf(
   session: Pick<Session, "modelSettings">,
 ): DelegationParent | undefined {
-  return decodeDelegationParent(session.modelSettings?.[DELEGATION_PARENT_KEY]);
+  const settings = session.modelSettings;
+  const raw = settings?.[DELEGATION_PARENT_KEY];
+  if (!raw) return undefined;
+  const cached = parentLinks.get(settings);
+  if (cached?.raw === raw) return cached.link;
+  const link = decodeDelegationParent(raw);
+  parentLinks.set(settings, { raw, link });
+  return link;
 }
 
 /** The Crew member a delegated child runs (`crews.member.ask`); display only. */
@@ -177,18 +190,18 @@ export function isDelegatedDescendantOf(
 }
 
 /**
- * Dock rows include earlier children so their panels remain accessible. `nested`
- * are the children's own subagents: one waiting on the user marks its parent's
+ * Dock rows include earlier children so their panels remain accessible. A
+ * verified descendant waiting on the user marks its parent's
  * row, since the parent's sheet is where its request is answered.
  */
 export function delegatedDockAgents(
   children: readonly Session[],
   _turnStartedAt: number | undefined,
-  nested: readonly Session[] = [],
+  descendants?: ReadonlyMap<string, readonly Session[]>,
 ): DockAgent[] {
   return children.map((child) => {
     const agent = delegatedDockAgent(child);
-    const own = nested.filter((grandchild) => isDelegatedChildOf(grandchild, child));
+    const own = descendants?.get(child.id) ?? [];
     // A child whose subagent waits on the user is still in progress, even when
     // its own turn has yielded.
     const nestedNeedsInput = own.some(
@@ -235,6 +248,7 @@ function delegatedDockAgent(child: Session): DockAgent {
     model: subagentModelName(block),
     detailParts: subagentStatusParts(block, steps),
     detail: subagentStatusLine(block, steps),
+    stepStrip: subagentStepStrip(steps, status === "running" && !sessionNeedsInput(child)),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(endedAt !== undefined ? { endedAt } : {}),
     ...(block.agentRun?.round ? { round: block.agentRun.round } : {}),

@@ -39,6 +39,8 @@ export type RoomDevServerPorts = Pick<
   ): Promise<unknown>;
 };
 
+const targetDigest = (cwd: string) => createHash("sha256").update(cwd).digest("hex");
+
 /** Routes only to the existing process/port/guardian owner. No Room process pool. */
 export function createRoomDevServerTools(ports: RoomDevServerPorts) {
   const tools = new ConversationManagementTools<string, RoomDevServerPrincipal>(
@@ -46,7 +48,7 @@ export function createRoomDevServerTools(ports: RoomDevServerPorts) {
       receipt: ports.receipt,
       saveReceipt: ports.saveReceipt,
       approve: ports.approve,
-      execute: async (action, input, principal, authorized) => {
+      execute: async (action, input, principal, authorized): Promise<unknown> => {
         if (!isRoomDevServerAction(action))
           throw new Error("Unsupported Room dev server operation.");
         const project = await ports.project(principal.projectId);
@@ -86,7 +88,8 @@ export function createRoomDevServerTools(ports: RoomDevServerPorts) {
             )
           )
             throw new Error("Original dev server target must retain its source.");
-          const receipt = await ports.receipt(managementReceiptKey(principal, input.operationId));
+          const key = managementReceiptKey(principal, input.operationId);
+          const receipt = await ports.receipt(key);
           await check();
           if (!receipt) return { operationId: input.operationId, state: "unknown" };
           const signature = createHash("sha256")
@@ -94,10 +97,20 @@ export function createRoomDevServerTools(ports: RoomDevServerPorts) {
             .digest("hex");
           if (receipt.signature !== signature)
             throw new Error("Original dev server operation input changed.");
+          if (
+            receipt.targetDigest !== undefined &&
+            receipt.targetDigest !== targetDigest(project.cwd)
+          )
+            throw new Error("Original dev server project identity changed.");
           return {
             operationId: input.operationId,
             ...receipt,
-            state: receipt.state === "pending" ? "uncertain" : receipt.state,
+            state:
+              receipt.state === "pending"
+                ? tools.active(key)
+                  ? "pending"
+                  : "uncertain"
+                : receipt.state,
           };
         }
         if (action === "devServers.list") {
@@ -149,7 +162,7 @@ export function createRoomDevServerTools(ports: RoomDevServerPorts) {
     reads,
   );
   return {
-    call(
+    async call(
       action: string,
       input: Input,
       principal: RoomDevServerPrincipal,
@@ -162,13 +175,27 @@ export function createRoomDevServerTools(ports: RoomDevServerPorts) {
         (typeof input.requestId !== "string" || !input.requestId || input.requestId.length > 200)
       )
         throw new Error("Room dev server operation identity is required.");
-      return tools.call(
+      const result = await tools.call(
         action,
         reads.has(action) ? input : roomOperationInput(input, String(input.requestId)),
         principal,
         authorized,
         qualify,
+        {
+          targetDigest: targetDigest(principal.projectCwd),
+          ...(action === "devServers.start" ? { acknowledgeAfterMs: 1000 } : {}),
+        },
       );
+      if (
+        action === "devServers.start" &&
+        result &&
+        typeof result === "object" &&
+        "state" in result &&
+        result.state === "pending"
+      ) {
+        return { ...result, operationId: input.requestId, action };
+      }
+      return result;
     },
   };
 }

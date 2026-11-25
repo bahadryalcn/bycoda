@@ -234,11 +234,12 @@ it("retains uncertain outcomes and never automatically resends failures", async 
     .mockResolvedValueOnce(call)
     .mockResolvedValueOnce('{"type":"reply","text":"Sonucu henüz doğrulayamadım."}');
   const execute = vi.fn(async () => {
-    throw new Error("connection lost");
+    throw "Desktop helper is unavailable";
   });
   await converseWithAssistant(input({ execute }));
   expect(execute).toHaveBeenCalledOnce();
   expect(run.mock.calls[1][0].prompt).toContain("uncertain");
+  expect(run.mock.calls[1][0].prompt).toContain("Desktop helper is unavailable");
   expect(run.mock.calls[1][0].prompt).toContain("original");
 });
 

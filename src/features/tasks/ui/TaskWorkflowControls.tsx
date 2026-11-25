@@ -8,7 +8,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Badge } from "../../../shared/ui/Badge";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import {
   applyTaskWorkflow,
   BUILTIN_TASK_WORKFLOWS,
@@ -144,13 +144,13 @@ function ScopedTaskWorkflowControls({
               }}
             />
           </div>
-          <InfoPopover label={t("About workflows")} className="shrink-0">
+          <InfoTooltip label={t("About workflows")} className="shrink-0">
             <p>
               {t(
                 "Keeps your current objective. Applying a workflow does not start work or authorize publication.",
               )}
             </p>
-          </InfoPopover>
+          </InfoTooltip>
           <Button
             disabled={blocked || !chosen}
             loading={activeOperation === "apply"}

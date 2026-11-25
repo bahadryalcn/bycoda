@@ -18,6 +18,7 @@ export type * as storedBlockFormApi from "./public/storedBlockForm";
 export type * as modelHostFeatureClientApi from "./public/hostFeatureClient";
 export type * as modelLocalHostServiceApi from "./public/localHostService";
 export type * as modelLocalSyncApi from "./public/localSync";
+export type * as adoptedStoppingApi from "./public/adoptedStopping";
 export type * as modelLocalHostRetryApi from "./public/localHostRetry";
 export type * as modelProjectAppearanceApi from "./public/projectAppearance";
 export type * as modelProtocolApi from "./public/protocol";
@@ -48,6 +49,8 @@ export type * as uiRemoteActionErrorApi from "./public/RemoteActionError";
 export type * as uiRemoteLoadErrorApi from "./public/RemoteLoadError";
 export type * as uiMachineUnavailableApi from "./public/MachineUnavailable";
 export type * as uiRemoteSessionApi from "./public/RemoteSession";
+export type * as uiSessionMachinePickerApi from "./public/SessionMachinePicker";
+export type * as modelSessionMachineTargetApi from "./public/sessionMachineTarget";
 export type * as uiSharedQueueRecoveryNoticeApi from "./public/SharedQueueRecoveryNotice";
 export type * as uiUnreachableMachinesNoticeApi from "./public/UnreachableMachinesNotice";
 

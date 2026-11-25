@@ -2,12 +2,16 @@
 import { act, createElement, Fragment, useCallback, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { setLanguagePreference, t } from "../../../shared/i18n";
 import { ToastRegion, type ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import {
+  saveProviderAccount,
+  setDefaultProviderAccount,
+} from "../../providers/model/providerAccounts";
 import { PaneTree } from "../../workspace/ui/PaneTree";
 import { leaf } from "../../workspace/model/layout";
 import { TitleBar } from "../../../app/shell/TitleBar";
@@ -30,14 +34,19 @@ import { outputTest } from "./RemoteSession.output.test-support";
 import { outboxFixture } from "./remoteSessionOutboxFixture";
 import { effort, settle, tooltipText, typeText } from "./RemoteSession.test-support";
 import {
+  cachedDescriptors,
   preloadRemoteSession,
   resetRemoteSessionCachesForTests,
 } from "../model/remoteSessionSnapshotCache";
 import {
+  REMOTE_CAPABILITIES_TTL_MS,
+  adoptRemoteMachineInventory,
+  recordRemoteCapabilities,
   rememberRemoteSession,
   remoteSessionFor,
   resetRemoteSessionReadsForTests,
 } from "../model/connections";
+import { invalidateConnection } from "../model/remoteLifecycle";
 import "../model/remoteCommands";
 import { remoteCreateIntent, resetRemoteCreateIntentsForTests } from "../model/remoteCreateIntent";
 import {
@@ -73,7 +82,16 @@ import type {
 import { preloadModelPicker } from "../../sessions/ui/ModelPicker";
 import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
 import { newLocalHostSession } from "../model/newLocalHostSession";
-import { hostSessionBinding, restoreHostSessionShell } from "../model/sessionExecutionBinding";
+import {
+  prefetchLocalSessionPage,
+  localSessionPagePreview,
+} from "../model/localSessionPagePreview";
+import {
+  flushHostSessionBindings,
+  hostSessionBinding,
+  restoreHostSessionShell,
+  saveHostSessionBinding,
+} from "../model/sessionExecutionBinding";
 import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 
 const transportProbe = vi.hoisted(() => ({
@@ -117,6 +135,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   getAllWindows: async () => [{ label: "main" }],
 }));
 vi.mock("../model/remotePageCache", () => ({
+  remotePageDeletionRevision: 0,
   readRemotePageCache: vi.fn(),
   writeRemotePageCache: vi.fn(),
   flushRemotePageCache: vi.fn().mockResolvedValue(undefined),
@@ -1496,7 +1515,132 @@ it("shows a preloaded conversation's transcript on its first render", async () =
     ),
   );
   expect(document.body.textContent).toContain("Earlier message");
+  expect(flushHostSessionBindings).toHaveBeenCalledWith("shell");
   expect(document.body.textContent).not.toContain("Work on repo.");
+});
+
+describe("warm session open identity", () => {
+  const remoteCalls = () =>
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "remote_request")
+      .map(([, input]) => input as { method: string; params?: { supportedProviders?: unknown } });
+  // Only the session's own identity check asks with the provider list and blocks its read;
+  // the shared machine status watcher describes on its own schedule.
+  const sessionDescribes = () =>
+    remoteCalls().filter(
+      (call) => call.method === "environment.describe" && !!call.params?.supportedProviders,
+    ).length;
+  const transcriptReads = () =>
+    remoteCalls().filter((call) => call.method.startsWith("sessions.")).length;
+  const openExisting = async () => {
+    dispatch({
+      type: "create",
+      commandId: "existing-session",
+      projectId: "project",
+      harness: "codex",
+      model: gpt.id,
+      runtimeMode: "supervised",
+    });
+    rememberRemoteSession("shell", "host-session");
+    await renderRemoteProbe();
+  };
+  const reopen = async () => {
+    await act(async () => root.render(null));
+    await settle();
+    vi.mocked(invoke).mockClear();
+    await renderRemoteProbe();
+  };
+  const answerDescribeAs = (environmentId: string) => {
+    const answer = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, input) => {
+      const value = await answer(command, input);
+      return command === "remote_request" &&
+        (input as { method: string }).method === "environment.describe"
+        ? { ...(value as HostDescriptor), environmentId }
+        : value;
+    });
+  };
+
+  it("reads the transcript without describing again on a warm reopen", async () => {
+    await openExisting();
+    expect(sessionDescribes()).toBe(1);
+    // A describe that never answers cannot hold the first transcript read of a warm open.
+    describeDelay = new Promise<void>(() => {});
+    await reopen();
+    expect(sessionDescribes()).toBe(0);
+    expect(transcriptReads()).toBeGreaterThan(0);
+  });
+
+  it("describes again after the connection generation changes", async () => {
+    await openExisting();
+    await act(async () => root.render(null));
+    invalidateConnection("env");
+    await reopen();
+    expect(sessionDescribes()).toBe(1);
+  });
+
+  it("refreshes the provider descriptor on reopen after its freshness window", async () => {
+    await openExisting();
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + REMOTE_CAPABILITIES_TTL_MS + 1);
+    try {
+      await reopen();
+      expect(sessionDescribes()).toBe(1);
+      expect(transcriptReads()).toBeGreaterThan(0);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("describes again after a recovery", async () => {
+    await openExisting();
+    await act(async () => root.render(null));
+    await act(async () => notifyRemoteRecovered("env"));
+    await reopen();
+    expect(sessionDescribes()).toBe(1);
+  });
+
+  it("describes again after a failed read in the open session", async () => {
+    await openExisting();
+    machineDown = unreachable;
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    machineDown = undefined;
+    await reopen();
+    expect(sessionDescribes()).toBeGreaterThan(0);
+  });
+
+  it("describes again when the Host advertises different capabilities", async () => {
+    await openExisting();
+    await act(async () => root.render(null));
+    recordRemoteCapabilities("env", ["sessions.changed"]);
+    await reopen();
+    expect(sessionDescribes()).toBe(1);
+  });
+
+  it("refuses a changed Host identity before reading the transcript", async () => {
+    await openExisting();
+    await act(async () => root.render(null));
+    invalidateConnection("env");
+    answerDescribeAs("other-env");
+    await reopen();
+    expect(sessionDescribes()).toBe(1);
+    expect(transcriptReads()).toBe(0);
+    expect(readRemoteConnection("env").status).toBe("identity-mismatch");
+  });
+
+  it("does not trust a descriptor cached for another environment", async () => {
+    await openExisting();
+    await act(async () => root.render(null));
+    cachedDescriptors.set(machine.id, {
+      ...cachedDescriptors.get(machine.id)!,
+      environmentId: "other-env",
+    });
+    await reopen();
+    expect(sessionDescribes()).toBe(1);
+  });
 });
 
 it("shows an unavailable branch when Git lookup fails", async () => {
@@ -1687,6 +1831,48 @@ it("transport: creates the host session with the chosen settings on the first me
   });
   expect(remoteSessionFor("shell")).toBe("host-session");
   expect(document.body.textContent).toContain("Fix the tests");
+});
+
+it("keeps No project on the desktop and sends its first turn to the selected Host scratch scope", async () => {
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    if (command === "remote_machines") {
+      return [{ ...machine, id: "backup", environmentId: "backup", name: "Backup Host" }, machine];
+    }
+    const request = input as { method?: string } | undefined;
+    const result = await original(command, input);
+    if (command === "remote_request" && request?.method === "environment.describe") {
+      const descriptor = result as HostDescriptor;
+      return {
+        ...descriptor,
+        capabilities: [...descriptor.capabilities, "sessions.projectless.v1"],
+      };
+    }
+    return result;
+  });
+  await render({ ...shell(), cwd: "~", remoteExecutionEnvironmentId: machine.environmentId });
+  await sendTransport("Run in scratch");
+  expect(commands[0]).toMatchObject({ type: "create", projectId: "bycoda-projectless-sessions" });
+  expect(commands[0]).not.toHaveProperty("worktreeCwd");
+  expect(commands[1]).toMatchObject({ type: "send", text: "Run in scratch" });
+  const destinations = vi.mocked(invoke).mock.calls.flatMap(([command, input]) => {
+    const request = input as { method?: string; machineId?: string } | undefined;
+    return command === "remote_request" && request?.method === "commands.dispatch"
+      ? [request.machineId]
+      : [];
+  });
+  expect(destinations).toEqual([machine.id, machine.id]);
+  expect(remoteSessionFor("shell")).toBe("host-session");
+});
+
+it("keeps the projectless draft when its Host does not advertise projectless sessions", async () => {
+  await render({ ...shell(), cwd: "~", remoteExecutionEnvironmentId: machine.environmentId });
+  await sendTransport("Keep my draft");
+  expect(commands).toEqual([]);
+  expect(remoteSessionFor("shell")).toBeUndefined();
+  expect(document.body.textContent).toContain(
+    "This host cannot start sessions without a project. Update it and try again.",
+  );
 });
 
 it("transport: keeps a new session on its selected remote provider", async () => {
@@ -2335,9 +2521,9 @@ it("asks to connect the machine when it is not set up on this computer", async (
     command === "remote_machines" ? [] : undefined,
   );
   await render();
-  expect(document.body.textContent).toContain(
-    "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.",
-  );
+  // The reason sits behind the info button; the page states the status and offers Connections.
+  expect(document.body.textContent).toContain("Not added on this computer");
+  expect(container.querySelector('[data-machine-unavailable="not-added"]')).not.toBeNull();
   expect(container.querySelector("textarea")).toBeNull();
 });
 
@@ -2614,6 +2800,43 @@ function offerRemoteAccounts(includeDefault = true) {
     },
   };
 }
+
+it.each([false, true])(
+  "uses the remote Host account catalog for a new composer (projectless: %s)",
+  async (projectless) => {
+    saveProviderAccount({
+      id: "local-only",
+      provider: "codex",
+      label: "Windows account",
+    });
+    setDefaultProviderAccount("codex", "local-only");
+    offerRemoteAccounts();
+    const session = { ...shell(), providerAccountId: "local-only" };
+    await render(
+      projectless
+        ? { ...session, cwd: "~", remoteExecutionEnvironmentId: machine.environmentId }
+        : session,
+    );
+    const picker = container.querySelector<HTMLButtonElement>(
+      "[data-composer-model-controls] button[aria-haspopup]",
+    )!;
+    await act(async () => picker.click());
+    await vi.waitFor(() => {
+      const accounts = container.ownerDocument.querySelector(
+        '[role="radiogroup"][aria-label="Account"]',
+      );
+      expect(accounts?.textContent).toContain("Remote work");
+      expect(accounts?.textContent).not.toContain("Windows account");
+      expect(picker.getAttribute("aria-label")).not.toContain("Unavailable Host account");
+    });
+    const account = [
+      ...container.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ].find((button) => button.textContent?.includes("Remote work"))!;
+    await act(async () => account.click());
+    expect(picker.getAttribute("aria-label")).toContain("Remote work");
+    expect(commands).toHaveLength(0);
+  },
+);
 
 it.each([true, false])(
   "shows only named remote accounts in the composer when the Host includes its CLI profile: %s",
@@ -3876,13 +4099,12 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   };
   await render(session);
   expect(
-    container.querySelector(
-      '[role="img"][aria-label*="This conversation is running in the background"]',
+    Array.from(container.querySelectorAll('[role="status"]')).some((node) =>
+      node.textContent?.includes("This conversation is running in the background"),
     ),
-  ).not.toBeNull();
+  ).toBe(true);
   // Sending is not refused: the message waits in the shared queue instead.
   expect(container.querySelector('button[aria-label^="Send."]')).toBeNull();
-  expect(document.body.textContent).not.toContain("running in the background");
   expect(
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
@@ -5302,6 +5524,50 @@ it("local Host opt-in: real creation and first send preserve local cwd, account 
     sessionId: session.id,
     text: "Second local Host message",
   });
+});
+
+it("shows a prefetched local page once and holds sends until its owner verifies it", async () => {
+  localExecutionHost();
+  adoptRemoteMachineInventory(await invoke<RemoteMachine[]>("remote_machines"));
+  lazyHistorySupported = true;
+  const shell = await newLocalHostSession("/home/me/repo");
+  openExistingChat();
+  host!.session.id = shell.id;
+  const owner = { ...hostSessionBinding(shell)!, created: true };
+  const session = saveHostSessionBinding(shell, owner);
+  const saved = {
+    ...host!,
+    history: { totalBlocks: host!.session.blocks.length, revision: host!.revision },
+  };
+  vi.mocked(readRemotePageCache).mockResolvedValue(saved);
+  prefetchLocalSessionPage(session.id, owner, () => true);
+  expect(await localSessionPagePreview(session.id, owner)!.read).toBe(saved);
+  let release!: () => void;
+  tailReadDelay = new Promise<void>((done) => (release = done));
+  try {
+    await render(session);
+    expect(document.body.textContent).toContain("Earlier reply");
+    await send("Wait for the owner");
+    expect(commands.some((command) => command.type === "send")).toBe(false);
+    expect(container.querySelector("textarea")!.value).toBe("Wait for the owner");
+    expect(
+      vi.mocked(readRemotePageCache).mock.calls.filter(([key]) => key.sessionId === session.id),
+    ).toHaveLength(1);
+    const pages = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(
+          ([, args]) => (args as { method?: string } | undefined)?.method === "sessions.page",
+        );
+    expect(pages()).toHaveLength(1);
+    release();
+    await settle();
+    await act(async () => byLabel("Send")!.click());
+    await vi.waitFor(() => expect(commands.some((command) => command.type === "send")).toBe(true));
+    expect(pages()).toHaveLength(1);
+  } finally {
+    release();
+  }
 });
 
 it("local Host opt-in: lost atomic first-turn receipt survives restart and reconciles the same ID", async () => {

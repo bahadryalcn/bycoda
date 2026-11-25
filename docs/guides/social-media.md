@@ -117,6 +117,10 @@ window, select **Live video** and reveal the stream credentials before using
 read the Live status before starting. End the broadcast before closing the
 window from bycoda. The saved credentials can be removed in Accounts.
 
+## Inbox search
+
+The inbox filters loaded conversations as you type, then searches the selected account scope on the Host when you pause. If the selected conversation still matches, its history and reply draft stay in place. Adding or removing a tag updates the conversation after the Host confirms the change.
+
 ## Reply uncertainty
 
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.

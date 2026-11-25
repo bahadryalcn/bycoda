@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetGitIndexStore } from "../model/gitIndexStore";
 import { resetGitResourceCache } from "../hooks/useGitResource";
+import { useProjectsDiffStats } from "../hooks/useProjectDiffStats";
 import { resetGitPanelState, withGitOperation } from "../model/gitPanelState";
 
 vi.mock("../../../shared/model/appConfirm", async () => {
@@ -31,6 +32,7 @@ vi.mock("../../../platform/tauri/fs", () => ({
   saveGeneratedImage: vi.fn(),
   deleteGeneratedImages: vi.fn(),
   gitDiffIndex: vi.fn(),
+  gitDiffStats: vi.fn(async () => ({ files: 0, additions: 0, deletions: 0 })),
   gitTrustRepository: vi.fn(async () => {}),
   gitInit: vi.fn(async () => {}),
   gitHistory: vi.fn(async () => ({ head: null, commits: [] })),
@@ -106,6 +108,7 @@ import {
   gitStashList,
   gitStashAction,
   gitDiffIndex,
+  gitDiffStats,
   gitTrustRepository,
   gitInit,
   gitPrCreate,
@@ -294,7 +297,8 @@ beforeEach(() => {
     },
   );
   vi.mocked(gitDiffIndex).mockReset();
-  vi.mocked(gitPull).mockReset();
+  vi.mocked(gitPull).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitPush).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitFetch).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitSync).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitStash).mockReset().mockResolvedValue(undefined);
@@ -693,9 +697,31 @@ async function renderPanel(cwd = "/repo", expanded?: boolean) {
   await act(async () => {});
 }
 
-it("keeps Sync progress on its action through remount and prevents duplicate requests", async () => {
+it.each([
+  { label: "Push", upstream: "origin/feature/pull", ahead: 2, behind: 0, command: gitPush },
+  { label: "Publish Branch", upstream: null, ahead: 2, behind: 0, command: gitPush },
+  { label: "Pull", upstream: "origin/feature/pull", ahead: 0, behind: 2, command: gitPull },
+  { label: "Sync changes", upstream: "origin/feature/pull", ahead: 2, behind: 2, command: gitSync },
+])(
+  "runs only the advertised $label operation on the remote checkout",
+  async ({ label, upstream, ahead, behind, command }) => {
+    const cwd = "remote://test-host/projects/clinic";
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ remote: "origin", upstream, ahead, behind }));
+    await renderPanel(cwd);
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.startsWith(label),
+    )!;
+    await act(async () => button.click());
+    expect(command).toHaveBeenCalledExactlyOnceWith(cwd);
+    for (const other of [gitPush, gitPull, gitSync].filter((operation) => operation !== command)) {
+      expect(other).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it("keeps Push progress on its action through remount and prevents duplicate requests", async () => {
   let finish!: () => void;
-  vi.mocked(gitSync).mockImplementationOnce(
+  vi.mocked(gitPush).mockImplementationOnce(
     () =>
       new Promise<void>((resolve) => {
         finish = resolve;
@@ -713,7 +739,7 @@ it("keeps Sync progress on its action through remount and prevents duplicate req
     action().click();
     action().click();
   });
-  expect(gitSync).toHaveBeenCalledTimes(1);
+  expect(gitPush).toHaveBeenCalledTimes(1);
   expect(action().getAttribute("aria-busy")).toBe("true");
   expect(action().disabled).toBe(false);
   expect(container.querySelector('header [role="status"]')).toBeNull();
@@ -902,7 +928,7 @@ it("shows live detached HEAD instead of a stale worktree branch label", async ()
   const header = container.querySelector("header")!;
   expect(header.textContent).toContain("Detached HEAD · 1234567");
   expect(header.textContent).not.toContain("old-branch");
-  expect(header.textContent).toContain("This session");
+  expect(header.textContent).not.toContain("This session");
   expect(await tooltipText(header.querySelector("button")!)).toContain("/repo-detached");
 });
 
@@ -982,11 +1008,11 @@ describe("GitChangesPanel action feedback", () => {
     )!;
     expect(push.disabled).toBe(false);
     await act(async () => push.click());
-    expect(gitSync).toHaveBeenCalledWith(cwd);
+    expect(gitPush).toHaveBeenCalledExactlyOnceWith(cwd);
     expect(gitCommit).not.toHaveBeenCalled();
     await act(async () => primaryAction().click());
     expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit without pushing", false, false);
-    expect(gitPush).not.toHaveBeenCalled();
+    expect(gitPush).toHaveBeenCalledTimes(1);
   });
 
   it("commits every change from the primary action when nothing is staged", async () => {
@@ -1462,6 +1488,61 @@ describe("GitChangesPanel navigation", () => {
 });
 
 describe("GitChangesPanel loading and publication recovery", () => {
+  it("updates the Changes totals with the committed file list before the refresh finishes", async () => {
+    const cwd = "/repo-commit-totals";
+    const committedFile: GitChangedFile = {
+      path: `${cwd}/committed.ts`,
+      relative: "committed.ts",
+      status: "modified",
+      additions: 5,
+      deletions: 2,
+      staged: true,
+      unstaged: false,
+    };
+    const staleTotals = { files: 1, additions: 5, deletions: 2 };
+    const pendingTotals = Promise.withResolvers<typeof staleTotals>();
+    const refresh = Promise.withResolvers<GitDiffIndex>();
+    vi.mocked(gitDiffStats).mockImplementationOnce(() => pendingTotals.promise);
+    vi.mocked(gitDiffIndex)
+      .mockResolvedValueOnce(index({ files: [committedFile], additions: 5, deletions: 2 }))
+      .mockReturnValue(refresh.promise);
+    function ChangesTotals() {
+      const [stats] = useProjectsDiffStats([cwd], true);
+      return createElement("output", null, JSON.stringify(stats));
+    }
+    await act(async () =>
+      root.render([
+        createElement(ChangesTotals, { key: "totals" }),
+        createElement(GitChangesPanel, {
+          key: cwd,
+          cwd,
+          enabled: true,
+          onOpenFile: vi.fn(),
+          onOpenAllChanges: vi.fn(),
+          onOpenCommit: vi.fn(),
+        }),
+      ]),
+    );
+    const totals = () => JSON.parse(container.querySelector("output")!.textContent!);
+    expect(gitDiffStats).toHaveBeenCalledWith(cwd);
+    expect(totals()).toEqual(staleTotals);
+    await fillCommitMessage("Commit staged file");
+    await act(async () => primaryAction().click());
+    expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit staged file", false, false);
+    expect(container.textContent).toContain("No uncommitted changes");
+    expect(totals()).toEqual({ files: 0, additions: 0, deletions: 0 });
+
+    await act(async () => pendingTotals.resolve(staleTotals));
+    expect(totals()).toEqual({ files: 0, additions: 0, deletions: 0 });
+
+    const newEdit = changedFile("new-edit.ts");
+    await act(async () =>
+      refresh.resolve(index({ head: "new-head", files: [newEdit], additions: 1 })),
+    );
+    expect(container.textContent).toContain("new-edit.ts");
+    expect(totals()).toEqual({ files: 1, additions: 1, deletions: 0 });
+  });
+
   it("centers the clean working tree with an icon above its message", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index());
     await renderPanel("/repo-clean-empty-state");
@@ -1691,7 +1772,7 @@ describe("GitChangesPanel loading and publication recovery", () => {
     expect(create().disabled).toBe(false);
   });
 
-  it("drops the pushed count when Sync finishes, before the reload answers", async () => {
+  it("drops the pushed count when Push finishes, before the reload answers", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({ remote: "origin", upstream: "origin/feature/pull", ahead: 1 }),
     );
@@ -1702,7 +1783,7 @@ describe("GitChangesPanel loading and publication recovery", () => {
       );
     vi.mocked(gitDiffIndex).mockImplementation(() => new Promise(() => {}));
     await act(async () => push()!.click());
-    expect(gitSync).toHaveBeenCalledWith("/repo-sync-optimistic");
+    expect(gitPush).toHaveBeenCalledWith("/repo-sync-optimistic");
     expect(push()).toBeUndefined();
     expect(container.textContent).toContain("No uncommitted changes");
     expect(container.textContent).not.toContain("Loading changes…");
@@ -2667,7 +2748,7 @@ it("shows one header row for a worktree: its branch picker alone, with no worktr
   expect(picker.textContent).not.toContain("Worktrees");
 });
 
-it("titles an open worktree row once: the branch picker, with the title for assistive tech", async () => {
+it("titles an open worktree section once by its branch, with no picker, folder or text marker", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
   await act(async () =>
     root.render(
@@ -2699,19 +2780,20 @@ it("titles an open worktree row once: the branch picker, with the title for assi
     ),
   );
   const header = container.querySelector("header")!;
-  expect(header.querySelector('button[aria-label="Branch feature/row"]')).not.toBeNull();
-  // The folder name is the visible identity beside the picker; the path is only its hint.
+  // The branch is the visible identity; a worktree's branch is not switched here, so no picker.
+  expect(header.querySelector('button[aria-label="Branch feature/row"]')).toBeNull();
   const toggle = header.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-  expect(toggle.textContent).toContain("open-worktree");
+  expect(toggle.textContent).toMatch(/^feature\/row/);
+  expect(toggle.textContent).not.toContain("open-worktree");
   expect(await tooltipText(toggle)).toContain("/open-worktree");
-  // One leading icon (the picker's branch icon), and no "Worktree" label or path in the row.
+  // One leading icon, and no "Worktree" label or path in the row.
   expect(header.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
   expect(toggle.querySelector("svg.lucide-folder-tree")).toBeNull();
   expect(header.textContent).not.toContain("Worktree");
   expect(header.textContent).not.toContain("/open-worktree");
 });
 
-it("shows a collapsed worktree as one row: branch icon, bold branch, muted folder, session marker", async () => {
+it("shows a collapsed worktree as one row: branch icon and bold branch, no folder or text marker", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
   await act(async () =>
     root.render(
@@ -2744,13 +2826,15 @@ it("shows a collapsed worktree as one row: branch icon, bold branch, muted folde
     ),
   );
   const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
-  expect(toggle.textContent).toMatch(/feature\/row.*open-worktreeThis session$/);
+  expect(toggle.textContent).toMatch(/^feature\/row/);
+  expect(toggle.textContent).not.toContain("open-worktree");
+  expect(toggle.textContent).not.toContain("This session");
   expect(toggle.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
   expect(await tooltipText(toggle)).toContain("/work/open-worktree");
   expect(container.querySelector("header")!.textContent).not.toContain("/work");
 });
 
-it("shows a nested separate repository with the repository icon and its marker", async () => {
+it("shows a nested separate repository with the repository icon, muted branch and no text label", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "main" }));
   await act(async () =>
     root.render(
@@ -2766,7 +2850,9 @@ it("shows a nested separate repository with the repository icon and its marker",
     ),
   );
   const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
-  expect(toggle.textContent).toMatch(/mobile.*mainSeparate repository$/);
+  expect(toggle.textContent).toBe("mobilemain");
+  expect(toggle.textContent).not.toContain("Separate repository");
+  expect(await tooltipText(toggle)).toContain("Separate repository");
   expect(toggle.querySelector("svg.lucide-folder-git-2")).not.toBeNull();
   expect(toggle.querySelector("svg.lucide-git-branch")).toBeNull();
 });

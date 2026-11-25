@@ -7,6 +7,22 @@ export type BycodaToolCall = {
   command: string;
 };
 
+/** Delegation results can place, hide or replace transcript cards as their output arrives. */
+export function delegationToolKind(
+  block: Block,
+): "delegate" | "wait" | "reply" | "consult" | undefined {
+  if (block.role !== "tool") return undefined;
+  for (const value of [block.tool?.title, block.tool?.preview?.title, block.text]) {
+    const kind = value
+      ?.trim()
+      .match(/(?:^|[:_.])agents[_.](delegate|wait|reply|consult)$/i)?.[1]
+      .toLowerCase();
+    if (kind === "delegate" || kind === "wait" || kind === "reply" || kind === "consult")
+      return kind;
+  }
+  return undefined;
+}
+
 const ACTION_LABELS: Record<string, string> = {
   "models.list": "List models",
   "sessions.list": "List sessions",

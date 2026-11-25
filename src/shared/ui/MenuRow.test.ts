@@ -65,7 +65,17 @@ it("keeps disabled native rows discoverable without executing them", async () =>
   expect(row.disabled).toBe(true);
   await act(async () => row.click());
   expect(pick).not.toHaveBeenCalled();
-  expect(row.title).toBe("Save before transfer");
+  expect(row.hasAttribute("title")).toBe(false);
+  vi.useFakeTimers();
+  try {
+    act(() => {
+      row.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      vi.advanceTimersByTime(450);
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Save before transfer");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("marks destructive rows and keeps description rows in the same row primitive", async () => {

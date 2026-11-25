@@ -21,6 +21,8 @@ import {
 export type LiveAgent = {
   /** Set only for a summary owned by another app window. */
   ownerWindowLabel?: string;
+  /** The row uses the Host session id and its remote project as the open target. */
+  listedRemote?: true;
   id: string;
   cwd: string;
   title: string;
@@ -85,11 +87,6 @@ export function liveAgentsFromSessions(
     )
     .map(({ session, wait }) => toLiveAgent(session, unseenFinishedIds.has(session.id), wait))
     .sort(compareLiveAgents);
-}
-
-/** Activity shows work still in progress or waiting for input. */
-export function isLiveActivityAgent(agent: LiveAgent): boolean {
-  return agent.needsApproval || agent.issue === "retrying" || (!agent.done && !agent.issue);
 }
 
 /** Project activity includes host-owned turns, but excludes finished or waiting chats. */

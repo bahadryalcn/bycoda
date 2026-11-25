@@ -62,7 +62,12 @@ export function useWorkspaceNavigation(options: Options) {
   }, []);
 
   const select = useCallback((next: Request) => {
-    if (!next.project || next.project === "~" || isRemoteProjectPath(next.project)) return;
+    if (
+      !next.project ||
+      next.project === "~" ||
+      (next.kind === "project" && isRemoteProjectPath(next.project))
+    )
+      return;
     navigationEpoch.current++;
     request.current = next;
     setError(null);
@@ -127,6 +132,7 @@ export function useWorkspaceNavigation(options: Options) {
             tabId = target.id;
           } else if (
             session &&
+            !isRemoteProjectPath(next.project) &&
             isBlankSession(session) &&
             sameProjectPath(session.cwd, next.project)
           ) {

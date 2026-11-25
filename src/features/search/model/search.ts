@@ -28,6 +28,8 @@ export type ProjectSearchOptions = {
 export type EditorNavigation = {
   line: number;
   column?: number;
+  /** Reveal the location in Source when it is selected, keeping the current Markdown view. */
+  keepMarkdownView?: true;
 };
 
 export type EditorNavigationTarget = EditorNavigation & {

@@ -839,9 +839,10 @@ function conversationToolDescription(action: string) {
     describeProjectConversationTool(action) ??
     serverConversationDescription(action);
   if (extension) return extension;
+  if (action === "devServers.operation.status")
+    return "Read the existing dev server receipt in the same project. Use the operationId, original action and unchanged action arguments in originalInput. Set the project in the outer tool target and omit requestId from originalInput. Pending means the original operation is still active. Uncertain or unknown means the effect could not be confirmed. Check details and logs before taking any further action.";
   if (
     action === "files.operation.status" ||
-    action === "devServers.operation.status" ||
     action === "terminals.operation.status" ||
     action === "browser.operation.status"
   )
@@ -945,7 +946,7 @@ function conversationToolDescription(action: string) {
   if (action === "devServers.details")
     return "Inspect one project's dev server by id, including endpoints and process identity; tree=true includes the process tree and its impact. Use the returned identity/impact for stop or restart when required. Listening is not proof that the application is healthy; inspect logs and the page.";
   if (action === "devServers.start")
-    return "Start the exact command as a managed dev server in this project's working directory. expectedPort optionally identifies its intended port. This executes code; avoid duplicate launches by checking devServers.list first. Verify the resulting server, endpoint and logs with details/logs rather than assuming startup is complete.";
+    return "Start the exact command as a managed dev server in this project's working directory. expectedPort optionally identifies its intended port. Check devServers.list before starting. A pending response contains operationId. Poll devServers.operation.status with this ID, the action and the exact original tool input. If the request times out, use its original request ID for status. Verify the resulting endpoint and logs before reporting readiness.";
   if (action === "devServers.stop" || action === "devServers.restart")
     return "Stop or restart a verified dev server in this project. Read devServers.details first and pass the current identity/expectedImpact when requested, especially for tree=true. Restart may use the supplied command. Changed process identity or impact must be reviewed again; never broaden to unrelated processes. Verify completion through details/list and logs.";
   if (action === "resources.read")

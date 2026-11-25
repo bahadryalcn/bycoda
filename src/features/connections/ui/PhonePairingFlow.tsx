@@ -6,13 +6,14 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Divider } from "../../../shared/ui/Divider";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Field } from "../../../shared/ui/Field";
 import { Switch } from "../../../shared/ui/Switch";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { QRCodeSVG } from "qrcode.react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { watchPairingView } from "../../account";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
@@ -117,6 +118,8 @@ export function PhonePairingFlow({
   children,
 }: PhonePairingFlowProps) {
   useLocale();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps account mailbox discovery responsive while pairing controls are mounted.
+  useEffect(watchPairingView, []);
   const [confirmDisable, setConfirmDisable] = useState(false);
   const [address, setAddress] = useState("");
   const inline = variant === "inline";
@@ -323,13 +326,13 @@ export function PhonePairingFlow({
               <Badge size="sm" minWidth="8ch">
                 {t("{p0}s left", { p0: state.remainingSeconds })}
               </Badge>
-              <InfoPopover label={t("Connection help")}>
+              <InfoTooltip label={t("Connection help")}>
                 {localNetwork
                   ? t(
                       "Keep your phone on the same local network as this computer. Allow local network access when your phone asks.",
                     )
                   : t("Use the same Tailscale account on this machine and your phone.")}
-              </InfoPopover>
+              </InfoTooltip>
             </div>
           </Text>
           {state.statusError ? (
@@ -409,7 +412,9 @@ export function PhonePairingFlow({
                 ? t(
                     "This machine returned an invalid pairing response. Check its host and try again.",
                   )
-                : t("This machine could not be reached. Reconnect it and try again.")}
+                : state.error === "management-required"
+                  ? t("This desktop cannot manage devices on {p0}.", { p0: state.machine.name })
+                  : t("This machine could not be reached. Reconnect it and try again.")}
           </Alert>
           <Button stableWidth type="button" className="shrink-0" onClick={onRefresh}>
             {t("Check again")}

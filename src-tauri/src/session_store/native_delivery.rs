@@ -133,7 +133,7 @@ impl Original {
         self.phase == Phase::Prepared && self.created_instance == self.runtime.to_string()
     }
     /// Created by an earlier app runtime, so no consumer of this process waits for it.
-    pub(crate) fn from_earlier_runtime(&self) -> bool {
+    pub(crate) fn is_from_earlier_runtime(&self) -> bool {
         self.created_instance != self.runtime.to_string()
     }
 }

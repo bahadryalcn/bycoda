@@ -1051,10 +1051,7 @@ describe("orchestration composer and card", () => {
       ),
     );
 
-    await click(document.querySelector('button[aria-label="Help"]')!);
-    expect(document.querySelector('[role="dialog"][aria-label="Help"]')?.textContent).toContain(
-      "Resume continues interrupted workers from their checkouts",
-    );
+    expect(button("Resume").hasAttribute("data-tooltip-owner")).toBe(true);
     expect(container.textContent).toContain(
       "Investigating the failure is still running in this project.",
     );

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { AccountApiError, type PendingPairRequest } from "@bycoda/account-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generatePairKeypair, openPairTicket } from "../../../integrations/account-pair-crypto";
@@ -8,6 +9,7 @@ import {
   pairAad,
   pairRequestCode,
   startPhoneConnectInbox,
+  watchPairingView,
 } from "./phoneConnectInbox";
 import {
   buildConnectInfo,
@@ -174,25 +176,36 @@ describe("phone connect publisher", () => {
 });
 
 describe("phone connect inbox", () => {
-  it("polls fast while visible, slowly while hidden, and stops on 404", async () => {
-    let visible = true;
+  it("polls fast only with pairing UI or pending requests and pauses while hidden", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
     const listPairRequests = vi.fn().mockResolvedValue({ items: [] });
     const stop = startPhoneConnectInbox({
       api: { listPairRequests },
       onRequests: () => undefined,
-      isVisible: () => visible,
     });
+    await vi.advanceTimersByTimeAsync(11_999);
+    expect(listPairRequests).toHaveBeenCalledTimes(1);
+    const close = watchPairingView();
     await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(3_000);
     expect(listPairRequests).toHaveBeenCalledTimes(2);
-    visible = false;
-    await vi.advanceTimersByTimeAsync(3_000); // third call happens, then the slow interval starts
-    await vi.advanceTimersByTimeAsync(10_000);
+    listPairRequests.mockResolvedValue({ items: [request()] });
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(listPairRequests).toHaveBeenCalledTimes(3);
-    await vi.advanceTimersByTimeAsync(10_000);
+    close();
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(listPairRequests).toHaveBeenCalledTimes(4);
+    hidden.mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(listPairRequests).toHaveBeenCalledTimes(4);
+    hidden.mockReturnValue(false);
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("focus"));
+    expect(listPairRequests).toHaveBeenCalledTimes(5);
     stop();
-
+    hidden.mockRestore();
+  });
+  it("stops discovery on 404", async () => {
     const old = vi.fn().mockRejectedValue(new AccountApiError(404, "not_found", "no"));
     const onError = vi.fn();
     startPhoneConnectInbox({

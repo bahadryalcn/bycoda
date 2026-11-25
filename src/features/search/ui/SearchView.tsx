@@ -9,7 +9,6 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
@@ -23,7 +22,7 @@ import { motionAttributes } from "../../../shared/ui/Motion";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import { Search, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import {
@@ -40,6 +39,7 @@ import { rowCopy } from "./searchRowCopy";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   conversationRowsFrom,
   flattenGrouped,
@@ -58,10 +58,10 @@ import {
 import {
   loadProjectFiles,
   peekProjectFiles,
-  rankProjectFiles,
   recentOpenedFiles,
   subscribeProjectFiles,
-} from "../../files/model/fileIndex";
+  useFileRanking,
+} from "../../files/public/fileIndex";
 import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -135,6 +135,8 @@ type Props = {
   onOpenProject: (path: string) => void;
 };
 
+const NO_RECENT_PATHS: string[] = [];
+
 export function SearchView({
   open,
   presentation = "page",
@@ -155,6 +157,7 @@ export function SearchView({
   onOpenProject,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -274,13 +277,16 @@ export function SearchView({
     () => (localConversationsEnabled ? conversationRowsFrom(history, deferredSessions) : []),
     [localConversationsEnabled, history, deferredSessions],
   );
-  const fileHits = useMemo(
-    () =>
-      filesEnabled && deferredTrimmed && looksLikeProject(cwd)
-        ? hitsFromFileRanks(rankProjectFiles(files, deferredTrimmed, recentOpenedFiles(cwd), 40))
-        : [],
-    [filesEnabled, cwd, files, deferredTrimmed],
+  const recentPaths = recentOpenedFiles(cwd);
+  const { results: rankedFiles, pending: rankingPending } = useFileRanking(
+    filesEnabled && !!trimmed && looksLikeProject(cwd),
+    cwd,
+    files,
+    deferredTrimmed,
+    recentPaths.length ? recentPaths : NO_RECENT_PATHS,
+    { limit: 40, backgroundQuery: trimmed },
   );
+  const fileHits = useMemo(() => hitsFromFileRanks(rankedFiles), [rankedFiles]);
   const titleHits = useMemo(
     () =>
       localConversationsEnabled && deferredTrimmed
@@ -314,8 +320,8 @@ export function SearchView({
     deferredTrimmed,
   ]);
   const projectHits = useMemo(
-    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed) : []),
-    [projectsEnabled, recents, trimmed],
+    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed, projectLabels) : []),
+    [projectsEnabled, recents, trimmed, projectLabels],
   );
   const grouping = useMemo(
     () => {
@@ -371,6 +377,7 @@ export function SearchView({
   const showFileError = !!error && !fileShownCentrally;
   const showConversationError = !!conversationError && !conversationShownCentrally;
   const loading =
+    rankingPending ||
     (fileMode && projectSearch.loading) ||
     (conversationMode && conversation.loading) ||
     deferredTrimmed !== trimmed;
@@ -389,13 +396,14 @@ export function SearchView({
     [visibleChatSessions],
   );
   const chatGroups = useMemo(
-    () => groupChatSessions(visibleChatSessions, grouping),
-    [visibleChatSessions, grouping],
+    () => groupChatSessions(visibleChatSessions, grouping, projectLabels),
+    [visibleChatSessions, grouping, projectLabels],
   );
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
+  const hasQuery = !!trimmed;
   const grouped = useMemo(() => {
-    const eligible = trimmed
+    const eligible = hasQuery
       ? mergeHits(
           titleHits,
           liveMessageHits,
@@ -424,7 +432,7 @@ export function SearchView({
     remoteHits,
     scope,
     titleHits,
-    trimmed,
+    hasQuery,
     lock,
     cwd,
   ]);
@@ -434,7 +442,7 @@ export function SearchView({
   // through; every other tab steps through `hits`.
   const chatMode = scope === "conversations";
   const rowCount = chatMode ? chatRows.length : hits.length;
-  const resultsCurrent = deferredTrimmed === trimmed;
+  const resultsCurrent = deferredTrimmed === trimmed && !rankingPending;
   const rowIds = useMemo(
     () => (chatMode ? chatRows : hits).map((row) => row.id),
     [chatMode, chatRows, hits],
@@ -484,7 +492,7 @@ export function SearchView({
     onClose();
   };
 
-  const openHit = (hit: AppSearchHit | null) => {
+  const openHit = useStableCallback((hit: AppSearchHit | null) => {
     if (!resultsCurrent || !hit) return;
     if (hit.kind === "file") {
       onOpenFile(hit.path, undefined, { exact: true });
@@ -496,7 +504,11 @@ export function SearchView({
       onOpenSession(hit.sessionId, hit.blockId, trimmed);
     } else onOpenProject(hit.path);
     onClose();
-  };
+  });
+
+  const onActiveResult = useStableCallback((index: number) => {
+    if (resultsCurrent) setActive(index);
+  });
 
   const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
@@ -526,15 +538,13 @@ export function SearchView({
   const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
   const limitNotice =
-    !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
-      <InfoPopover label={t("Search result limits")}>
-        <p>
-          {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
-          {!chatMode && grouped.omitted > 0
-            ? ` · ${grouped.omitted} ${t("more loaded matches")}`
-            : ""}
-        </p>
-      </InfoPopover>
+    !empty && resultsCurrent && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
+        {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+        {!chatMode && grouped.omitted > 0
+          ? ` · ${grouped.omitted} ${t("more loaded matches")}`
+          : ""}
+      </Text>
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
@@ -634,10 +644,9 @@ export function SearchView({
           </div>
           {scope === "files" || (chatMode && filters.scope !== "everywhere") ? (
             <Text size="caption" tone="secondary" truncate>
-              {projectDisplayName(cwd)}
+              {projectDisplayNameFrom(cwd, projectLabels)}
             </Text>
           ) : null}
-          {limitNotice}
           {chatMode ? (
             <ChatFilterBar
               filters={chatFilters}
@@ -646,6 +655,7 @@ export function SearchView({
             />
           ) : null}
         </div>
+        {limitNotice}
       </div>
 
       {!empty && (showFileError || showConversationError) ? (
@@ -724,14 +734,13 @@ export function SearchView({
           <>
             {indexNotice}
             <ResultList
+              projectLabels={projectLabels}
               listId={listId}
               counts={grouped.counts}
               hits={hits}
               active={resultsCurrent ? active : -1}
-              query={trimmed}
-              onActive={(index) => {
-                if (resultsCurrent) setActive(index);
-              }}
+              query={deferredTrimmed}
+              onActive={onActiveResult}
               onOpen={openHit}
             />
           </>
@@ -784,6 +793,7 @@ export function SearchView({
 }
 
 function ResultList({
+  projectLabels,
   listId,
   counts,
   hits,
@@ -792,6 +802,7 @@ function ResultList({
   onActive,
   onOpen,
 }: {
+  projectLabels: Record<string, string>;
   listId: string;
   counts: GroupedHitCounts;
   hits: AppSearchHit[];
@@ -800,6 +811,7 @@ function ResultList({
   onActive: (index: number) => void;
   onOpen: (hit: AppSearchHit) => void;
 }) {
+  "use memo";
   useLocale();
   const activeRef = useRef<HTMLButtonElement>(null);
   const pointer = useRef({ x: Number.NaN, y: Number.NaN, allow: false });
@@ -835,7 +847,7 @@ function ResultList({
     <PickerListRoot id={listId} label={t("Search results")} onMouseMove={onListMouseMove}>
       {hits.map((hit, index) => {
         const highlighted = index === active;
-        const row = rowCopy(hit, query);
+        const row = rowCopy(hit, query, projectLabels);
         const heading =
           hit.kind === "conversation"
             ? t("Sessions")

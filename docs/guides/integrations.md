@@ -47,12 +47,19 @@ Jira issue details include the issue's full attachment collection, including fil
 mentioned only by filename in the description. Azure DevOps work item details include
 attached-file relations. GitLab upload links resolve against the current project.
 
-Jira Inbox list filters support multiple assignees, **Assigned to me**, **Unassigned**,
-and multiple actual workflow statuses under **Board status**. Assignees and statuses
-come from loaded issues in visible projects. Assignment choices are combined with OR;
-workflow statuses are combined with the existing Open/Closed, Time and Projects filters.
-Assignment and workflow selections narrow Jira's server query before its result limit.
-Selections persist with Inbox filters and **Clear filters** resets them.
+An Inbox row preview opens after the pointer stays on the row for 450 ms. Keyboard
+focus opens the preview immediately.
+
+In Jira Inbox, select the current status in an issue’s detail to change it from the
+list or board. The available actions follow the issue’s Jira workflow.
+
+Jira Inbox shares filters across the list, **Kanban** and **Backlog & sprints**.
+Assignment matches any selected person, **Assigned to me** or **Unassigned**.
+**Workflow status** matches exact Jira statuses. **Status category** selects open
+or closed issues. **Updated** filters loaded issues by update time. **Projects**
+sets the Jira project scope for Inbox. Jira applies assignment and workflow before
+paging. Click the filter count to inspect your choices or use **Reset filters** to clear them.
+Inbox discovers assignees and workflow statuses from loaded issues in visible projects.
 Selections that are temporarily absent from discovery remain selected when other
 scope choices change. A provider still loading does not show an empty collection
 because a different provider finished first. Jira boards keep **Load more issues**

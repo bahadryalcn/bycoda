@@ -3,21 +3,37 @@ import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
+import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { AgentTranscript } from "./AgentTranscript";
 import { PooledTranscript, TranscriptPool, TranscriptPoolOutlet } from "./TranscriptPool";
 
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 let rowHeight: number;
+// A native observer reports each target after it is observed; the stub reports on demand.
+const observers = new Set<{ report(): void }>();
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+      targets = new Set<Element>();
+      constructor(private callback: (entries: unknown[]) => void) {
+        observers.add(this);
+      }
+      observe(target: Element) {
+        this.targets.add(target);
+      }
+      unobserve(target: Element) {
+        this.targets.delete(target);
+      }
+      disconnect() {
+        this.targets.clear();
+      }
+      report() {
+        this.callback([...this.targets].map((target) => ({ target, contentRect: { width: 500, height: 0 } })));
+      }
     },
   );
   host = document.createElement("div");
@@ -76,6 +92,24 @@ const blocks: Block[] = Array.from({ length: 100 }, (_, i) => [
   { id: `u-${i}`, role: "user" as const, text: `Question ${i}` },
   { id: `a-${i}`, role: "assistant" as const, text: `Answer ${i}` },
 ]).flat();
+
+it("reuses settled turns on visibility changes and remeasures their prompt clamp on return", () => {
+  const history = blocks.slice(0, 8);
+  const render = (visible: boolean) =>
+    act(() => root.render(createElement(AgentTranscript, { blocks: history, visible })));
+  render(true);
+  const previousPrompt = () =>
+    host.querySelector<HTMLElement>('[data-selectable-agent-response="u-0"]')!;
+  expect(previousPrompt().parentElement?.querySelector("button[aria-expanded]")).toBeNull();
+  const turnItems = vi.spyOn(TranscriptTurnCache.prototype, "turnItems");
+  render(false);
+  Object.defineProperty(previousPrompt(), "scrollHeight", { value: 160 });
+  render(true);
+  // The returning tab keeps its last measurement until the observer reports the new layout.
+  act(() => observers.forEach((observer) => observer.report()));
+  expect(previousPrompt().parentElement?.querySelector("button[aria-expanded]")).toBeTruthy();
+  expect(turnItems.mock.calls.filter(([turn]) => turn[0]?.id === "u-0")).toHaveLength(0);
+});
 
 it("restores loaded history and a turn-relative offset after earlier rows change height", () => {
   const pool = new TranscriptPool(12, undefined, 100, 1);

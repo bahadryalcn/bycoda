@@ -62,6 +62,12 @@ describe("editDraftText", () => {
 });
 
 describe("deleteDraftTokenAtCaret", () => {
+  it("deletes one scoped reference and keeps the next queued reference", () => {
+    const draft = { text: "@crews:planner @notes:checklist", attachments: [] };
+    const edit = deleteDraftTokenAtCaret(draft, "@crews:planner ".length, "back");
+    expect(edit?.draft.text).toBe("@notes:checklist");
+    expect(edit?.caret).toBe(0);
+  });
   it("Backspace right after a token removes the token and its attachment", () => {
     const draft = { text: "look [file1]", attachments: [file("f", "file")] };
     const result = deleteDraftTokenAtCaret(draft, 12, "back")!;

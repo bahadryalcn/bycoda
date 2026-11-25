@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap, isolateHistory } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, isolateHistory, redo } from "@codemirror/commands";
 import {
   Annotation,
   Compartment,
@@ -8,9 +8,10 @@ import {
   type Extension,
 } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { changesBetween, transferHistory } from "./composerInlineHistory";
 
 const externalChange = Annotation.define<boolean>();
-const managedCut = Annotation.define<boolean>();
+const managedDeletion = Annotation.define<boolean>();
 const editors = new WeakMap<HTMLTextAreaElement, EditorView>();
 
 export function composerInputFocused(field: HTMLTextAreaElement) {
@@ -44,27 +45,20 @@ function fieldExtensions(settings: FieldSettings): Extension {
   ];
 }
 
-function changesBetween(before: string, after: string) {
-  let from = 0;
-  let to = before.length;
-  let end = after.length;
-  while (from < to && from < end && before[from] === after[from]) from++;
-  while (from < to && from < end && before[to - 1] === after[end - 1]) {
-    to--;
-    end--;
-  }
-  return { from, to, insert: after.slice(from, end) };
-}
-
-/** A Composer cut needs its own editor undo step because it also moves files. */
-export function applyComposerInlineCut(field: HTMLTextAreaElement, text: string, caret: number) {
+/** Composer-owned deletion is recorded in one isolated editor undo step. */
+export function applyComposerInlineDeletion(
+  field: HTMLTextAreaElement,
+  text: string,
+  caret: number,
+  userEvent = "delete.cut",
+) {
   const view = editors.get(field);
   if (!view) return false;
   view.dispatch({
     changes: changesBetween(view.state.doc.toString(), text),
     selection: EditorSelection.single(caret),
-    annotations: [managedCut.of(true), isolateHistory.of("full")],
-    userEvent: "delete.cut",
+    annotations: [managedDeletion.of(true), isolateHistory.of("full")],
+    userEvent,
   });
   return true;
 }
@@ -75,6 +69,8 @@ export function attachComposerInlineInput(
   parent: HTMLElement,
   initial: FieldSettings,
   extensions: Extension,
+  /** History carried over from an editor that left this draft; its text must equal the field. */
+  seed?: EditorState,
 ) {
   const selection = field.setSelectionRange.bind(field);
   const moveFocus = field.focus.bind(field);
@@ -83,112 +79,113 @@ export function attachComposerInlineInput(
   const settings = new Compartment();
   let disposed = false;
   let pendingInput: string | null = null;
+  const config = {
+    doc: field.value,
+    selection: EditorSelection.single(field.selectionStart, field.selectionEnd),
+    extensions: [
+      extensions,
+      history(),
+      EditorView.lineWrapping,
+      settings.of(fieldExtensions(initial)),
+      EditorView.domEventHandlers({
+        keydown(event) {
+          return relay(
+            event,
+            new KeyboardEvent("keydown", {
+              ...eventInit(event),
+              key: event.key,
+              code: event.code,
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              altKey: event.altKey,
+              shiftKey: event.shiftKey,
+              repeat: event.repeat,
+              isComposing: event.isComposing,
+            }),
+          );
+        },
+        keyup(event) {
+          return relay(
+            event,
+            new KeyboardEvent("keyup", {
+              ...eventInit(event),
+              key: event.key,
+              code: event.code,
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              altKey: event.altKey,
+              shiftKey: event.shiftKey,
+              isComposing: event.isComposing,
+            }),
+          );
+        },
+        paste(event) {
+          return relay(
+            event,
+            new ClipboardEvent("paste", {
+              ...eventInit(event),
+              clipboardData: event.clipboardData,
+            }),
+          );
+        },
+        copy(event) {
+          return relayClipboard(event);
+        },
+        cut(event) {
+          return relayClipboard(event);
+        },
+        focus(event) {
+          field.dispatchEvent(
+            new FocusEvent("focusin", { bubbles: true, relatedTarget: event.relatedTarget }),
+          );
+        },
+        click(event) {
+          if (!isWidget(event)) field.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        },
+        compositionstart(event) {
+          field.dispatchEvent(new CompositionEvent("compositionstart", { data: event.data }));
+        },
+        compositionend(event) {
+          queueMicrotask(() => {
+            if (!disposed)
+              field.dispatchEvent(new CompositionEvent("compositionend", { data: event.data }));
+          });
+        },
+      }),
+      keymap.of([...defaultKeymap, ...historyKeymap, { win: "Ctrl-Shift-z", run: redo }]),
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged && !update.selectionSet) return;
+        if (update.transactions.every((transaction) => transaction.annotation(externalChange)))
+          return;
+        if (update.docChanged) {
+          const inputType = update.transactions.some((transaction) =>
+            transaction.isUserEvent("undo"),
+          )
+            ? "historyUndo"
+            : update.transactions.some((transaction) => transaction.isUserEvent("redo"))
+              ? "historyRedo"
+              : "";
+          if (!update.transactions.some((transaction) => transaction.annotation(managedDeletion)))
+            field.dispatchEvent(new InputEvent("beforeinput", { inputType }));
+          field.value = update.state.doc.toString();
+          pendingInput = inputType;
+        }
+        const range = update.state.selection.main;
+        selection(range.from, range.to, range.anchor > range.head ? "backward" : "forward");
+        queueMicrotask(() => {
+          if (disposed) return;
+          if (pendingInput !== null) {
+            const inputType = pendingInput;
+            pendingInput = null;
+            field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType }));
+          } else field.dispatchEvent(new Event("select", { bubbles: true }));
+        });
+      }),
+    ],
+  };
   const view = new EditorView({
     parent,
-    state: EditorState.create({
-      doc: field.value,
-      selection: EditorSelection.single(field.selectionStart, field.selectionEnd),
-      extensions: [
-        extensions,
-        history(),
-        EditorView.lineWrapping,
-        settings.of(fieldExtensions(initial)),
-        EditorView.domEventHandlers({
-          keydown(event) {
-            return relay(
-              event,
-              new KeyboardEvent("keydown", {
-                ...eventInit(event),
-                key: event.key,
-                code: event.code,
-                ctrlKey: event.ctrlKey,
-                metaKey: event.metaKey,
-                altKey: event.altKey,
-                shiftKey: event.shiftKey,
-                repeat: event.repeat,
-                isComposing: event.isComposing,
-              }),
-            );
-          },
-          keyup(event) {
-            return relay(
-              event,
-              new KeyboardEvent("keyup", {
-                ...eventInit(event),
-                key: event.key,
-                code: event.code,
-                ctrlKey: event.ctrlKey,
-                metaKey: event.metaKey,
-                altKey: event.altKey,
-                shiftKey: event.shiftKey,
-                isComposing: event.isComposing,
-              }),
-            );
-          },
-          paste(event) {
-            return relay(
-              event,
-              new ClipboardEvent("paste", {
-                ...eventInit(event),
-                clipboardData: event.clipboardData,
-              }),
-            );
-          },
-          copy(event) {
-            return relayClipboard(event);
-          },
-          cut(event) {
-            return relayClipboard(event);
-          },
-          focus(event) {
-            field.dispatchEvent(
-              new FocusEvent("focusin", { bubbles: true, relatedTarget: event.relatedTarget }),
-            );
-          },
-          click(event) {
-            if (!isWidget(event)) field.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          },
-          compositionstart(event) {
-            field.dispatchEvent(new CompositionEvent("compositionstart", { data: event.data }));
-          },
-          compositionend(event) {
-            queueMicrotask(() => {
-              if (!disposed)
-                field.dispatchEvent(new CompositionEvent("compositionend", { data: event.data }));
-            });
-          },
-        }),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        EditorView.updateListener.of((update) => {
-          if (!update.docChanged && !update.selectionSet) return;
-          if (update.transactions.every((transaction) => transaction.annotation(externalChange)))
-            return;
-          if (update.docChanged) {
-            const inputType = update.transactions.some((transaction) =>
-              transaction.isUserEvent("undo"),
-            )
-              ? "historyUndo"
-              : update.transactions.some((transaction) => transaction.isUserEvent("redo"))
-                ? "historyRedo"
-                : "";
-            if (!update.transactions.some((transaction) => transaction.annotation(managedCut)))
-              field.dispatchEvent(new InputEvent("beforeinput", { inputType }));
-            field.value = update.state.doc.toString();
-            pendingInput = inputType;
-          }
-          const range = update.state.selection.main;
-          selection(range.from, range.to, range.anchor > range.head ? "backward" : "forward");
-          queueMicrotask(() => {
-            if (disposed) return;
-            if (pendingInput !== null) {
-              const inputType = pendingInput;
-              pendingInput = null;
-              field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType }));
-            } else field.dispatchEvent(new Event("select", { bubbles: true }));
-          });
-        }),
-      ],
-    }),
+    state: seed ? transferHistory(seed, config.extensions) : EditorState.create(config),
   });
 
   function isWidget(event: Event) {

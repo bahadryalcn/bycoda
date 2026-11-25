@@ -85,11 +85,17 @@ and releases the microphone and local engines without stopping coding work.
 Use the assistant button at the bottom of the sidebar, beside Settings, to set up
 voice and later open the companion. After setup it shows the assistant's avatar
 and name (the narrow rail shows the avatar alone). The avatar has no dot while
-voice is off; the dot pulses green while the assistant listens or speaks, turns
-yellow while connecting, red on an error and grey while the microphone is paused. When
-no sidebar is visible the button floats at the bottom right of the window. Before the first conversation,
-complete the assistant setup: choose its name, spoken language, provider and
-voice, verify playback and a microphone sentence, and review the autonomy budget.
+voice is off. The dot pulses green during a connected call, turns yellow while
+connecting, red on an error and grey in standby. Muting the microphone keeps the
+call connected. The microphone button stays selected while muted, and the call
+still shows when the assistant is preparing or playing a reply. When
+no sidebar is visible the button floats at the bottom right of the window. For a new
+assistant, set its name and language or use **Set up with AI** to draft its profile
+from a description. Review the proposed profile before applying it. An existing
+assistant goes directly to voice setup. Check the provider connection, then optionally
+preview the speaker and record a local microphone sample. The sample stays on this
+device. Continue to review and start even if you skipped either audio test. Work mode
+and presence settings can be reviewed separately during initial setup or changed later.
 Existing device settings prefill setup; the assistant has no default name.
 The microphone opens only after you choose **Test microphone**, **Start voice**
 or **Talk**. Closing voice never stops coding work.
@@ -102,6 +108,8 @@ minutes. It shows **Reconnecting…** with a **Stop** button, and retries at onc
 when the network comes back. A stable minute restores the quick attempts.
 If the connection dropped before your last request was answered, the assistant
 says so after reconnecting and asks whether to continue instead of repeating it.
+If what you were saying never reached the provider, it asks you to repeat only
+that sentence. A resumed call keeps recent turns and does not greet you again.
 When an action fails or its result is unknown, the assistant tells you what
 blocked it and asks how to continue; for example, a new project whose name is
 taken prompts a choice between continuing that project and picking another name.
@@ -226,6 +234,8 @@ even before you have spoken; rejected candidates must never start a reply.
 
 ## Conversation history and choices
 
+In spoken replies, the assistant uses project, folder and file names. Ask for the full path when you need it.
+
 Project scope is the default; **Global** switches to the cross-project thread.
 A selected session remains the captured focus for each accepted spoken turn.
 Transcript text is stored in Host threads; microphone recordings are not stored.
@@ -303,13 +313,16 @@ The expanded companion centers a particle orb, connection status, scope and roun
 call controls. The orb scales down in a shorter panel. Blue light and particles
 respond to the microphone. While waiting for a reply, the particles orbit against
 violet and pink light. During playback they move in waves over teal light. The
-scene settles when the call stops or the microphone is muted. Reduced motion shows
+scene settles when the call stops and moves slowly while connected with the microphone muted.
+Reduced motion shows
 a still frame for each state. Hover or focus the engine name to see where audio
 goes. **Conversation** opens the transcript and moves the status into a smaller row.
 
 Drag any edge or corner of the expanded companion to resize it. The opposite
 edge stays in place, and the panel stays inside the window. Size and position
-are saved on this device. Double-click an edge to return to automatic sizing.
+are saved on this device. In the windowed call view, **Global** and **Project**
+stay with the call controls while the conversation scrolls. Double-click an
+edge to return to automatic sizing.
 
 Choose **Settings → Voice assistant → Companion → Visual style** to select
 **bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
@@ -327,7 +340,8 @@ Live voice visuals animate gently while listening, even before sound is detected
 Their painting is capped at about 30 frames per second, so a high-refresh display's
 automatic decorative-motion fallback does not freeze them. Turning decorative motion
 off explicitly, or following the system's reduced-motion setting, still stops these
-animations. Hidden and offscreen visuals pause their frame work.
+animations. Visible voice visuals keep moving when another app takes focus.
+Minimized windows and hidden or offscreen visuals pause their frame work.
 
 The visual distinguishes disconnected, connecting, listening, your speech,
 preparing a reply, assistant playback, microphone paused and error states through
@@ -387,29 +401,45 @@ compositor.
 
 ### Push to talk and tool activity
 
-The expanded desktop companion offers **Full screen** in its header. Open it at any time
-to see the selected conversation's current tool output alongside the voice controls.
-Search or filter the activity list, then select a row to keep its details open.
-**Follow** returns to the latest visible entry. Copy the command or output from its details.
-The captured project's Tasks, Goals and active or paused Crew runs appear alongside the
-conversation and Assistant jobs when the owning Host supports them. Filter by **Source**
-and select **Open** to reveal a tracked record in its workspace view.
-**Results** groups the visible work by status. Filter by status in the chart, sort the
-table, or select a result to open its details. **Generate with AI** asks the configured
-decision model to choose a chart and table layout using aggregate counts. **Use default**
-restores the standard layout. **Compare** shows two retained command
-outputs side by side. In **Draft**, you can insert the selected result and edit the
-text before copying it.
-**Changes** shows the session's recorded diff. **Browser**, **Devices**, and
-**Logs** use the conversation's existing tool dock and its current access rules.
-When viewable work is active, **View live work** appears in the header. Bycoda displays
-the suggestion silently and waits for you to open it. Escape returns to the previous
-view while the voice session and work continue. Use **Open conversation** to inspect the
-source and its native panels, or open another available workspace view from the activity area.
-The conversation activity bar also offers **View live work** for work with tool output
-when the voice companion is available. In the transcript, open **Results** beneath a
-completed turn to search its retained output and inspect or copy the result. **Full screen** in the expanded floating window
-returns to the app and opens the same workspace.
+Choose **Full screen** to expand the call. Use **Chat** to read the conversation while
+keeping the voice controls visible. The call visual changes as the assistant connects,
+listens, works, speaks or reconnects.
+
+In the regular voice window, open **Conversation** to read the transcript. A
+small call visual and the connection status stay above the messages.
+
+During a call, say “Go full screen”, “Exit full screen” or “Switch to Mini” to
+change the view while the microphone stays connected. Asking to see a visual
+result can open full screen.
+
+**Live results** opens when the current voice turn has something to show. The assistant
+can compose a view from the app's own components: layouts and tabs, text, tables, charts,
+status and progress, timelines, usage meters and JSON trees, links that open in your browser (https only, with the address shown),
+text you can copy, form fields and choices (text, numbers, dates, date-times and periods,
+suggestions, lists, selections, switches), and buttons that act on what you entered. Edit a field and press the
+button and the action uses your values; what you typed is kept when the assistant updates
+the view. Ask for “a draft I can copy” and the panel shows the text exactly as written
+with a **Copy** button and reports whether copying succeeded. A button can run a tool
+available in the current call. Bycoda checks the target, locks and approvals when you press it.
+Background reads show their result in the panel. Ask a follow-up such as
+“make it shorter” and the assistant updates the same view in place. A presented view
+stays through follow-up turns until it is replaced or the call ends. The assistant
+says it is on screen only once the panel actually shows it. Recognized work outcomes can
+also appear as cards, such as test counts or a build result. On wide screens, use **Maximize panel**
+beside the Live results heading to give results more room. **Restore panel layout** returns to the
+previous width. On narrow screens the panel already fills the width. Select **Live results** to hide
+or reopen the panel. Escape closes the open panel first, then exits full screen.
+**Full screen** in the expanded floating window returns to the app.
+
+“Open a session and write this there” opens a regular coding session in the
+project workspace and leaves the text as a draft. If asked which project, say
+its name to continue the same request. Ask to send the prompt or start the
+work to submit it. Ask for Arif’s right panel to see a session beside the call.
+Closing the panel preserves its draft and running work. Conversation Tools can
+open beside the call or in the project workspace.
+
+Ask for token or cost usage to see a report. Ask to open the Usage page to go
+to its settings screen.
 
 Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
 While voice is connected and the microphone is paused, hold the shortcut to
@@ -817,16 +847,23 @@ the project's saved top-bar actions and the scripts in its `package.json` or
 that starts a dev server even when **Manage as development server** is off: for
 example, a saved `dev · pnpm run dev`. It checks whether that server already runs,
 then starts it as a managed dev server whose status and logs it can read. It asks
-only when several servers fit.
+only when several servers fit. A slow start returns a pending operation ID. The
+assistant can follow it with `devServers.operation.status` using the same project
+and original arguments, including after a voice reconnect.
 
-The companion can also move around the window and read a few summaries. "Open
-settings" or "ayarları aç" switches to a view or settings section; it only
-navigates and never changes a setting or sends anything. "Search" or "ara" returns
-at most 20 matching conversations, messages and projects, never from locked
-projects. "Today" or "bugün" reads the Today summary, at most 30 items, and says
-when it is partial. "MCP" lists the project's MCP servers with their enabled state
-and status, never commands, environment values, headers or tokens. These need an
-open conversation in an unlocked project and a visible desktop window.
+The companion can also move around the window. "Open settings" or "ayarları aç"
+opens Settings, or one of its sections such as "voice settings"; "close settings"
+returns to the conversation. The same applies to Servers, Crews, Notes, Inbox,
+Automations, Tasks, Social, Search, Assistant and Conversation tools. Closing a view
+that is not on screen changes nothing. Navigation only: it never changes a setting,
+sends anything or opens a locked project. Settings, Search, Inbox and Assistant also
+work with no conversation or unlocked project open. The other views need an unlocked
+project in this window. In a detached conversation window, Servers and Crews are
+unavailable. "Search" or "ara" returns at most 20 matching conversations, messages
+and projects, never from locked projects. "Today" or "bugün" reads the Today summary,
+at most 30 items, and says when it is partial. "MCP" lists the project's MCP servers
+with their enabled state and status, never commands, environment values, headers or
+tokens; it needs an unlocked project in view.
 
 Supported project tools use the verified assistant thread without creating a coding
 session. Working-copy operations still require an actual selected session.
@@ -920,8 +957,10 @@ it, the app joins **Approved apps** in the settings and the assistant continues;
 it there to be asked again. **Ask every time** (the default) also shows the native
 approval dialog for every action, launch and clipboard use, whether you are present or
 away. **Auto** asks once for each new app, then launches and acts on it without a
-dialog; it still asks for the clipboard and physical input. **Full access** asks
-nothing and covers every app, even while you are away. Each action approval names
+dialog. Clipboard and physical input still require approval. **Full access**
+covers every app, even while you are away. For a clear spoken request, the
+assistant uses the effective permission directly and verifies the result in the
+target app. Native approval dialogs, when required, name
 the exact app, window, element, action and text, and identifies the real coding
 session or assistant thread; no artificial coding session is created for global voice.
 In every mode a locked or unknown desktop, a disabled helper and a Stop block input.
@@ -931,6 +970,9 @@ work; the assistant cannot enable, resume or stop control itself.
 Input attempts and outcomes go to History and the daily note using a stable operation
 identity. These records contain app/action and delivery metadata, never snapshot trees
 or typed text. Notebook delivery retries cannot repeat the computer action.
+The Windows Cua Driver can reuse an existing Chrome window. A delivered click or
+keypress confirms input dispatch. The assistant checks the resulting page,
+game state or player before reporting that the requested action succeeded.
 
 ## Reading unsent messages and attachments
 
@@ -986,9 +1028,10 @@ default) let you open and close the conversation by voice. While no conversation
 open, the desktop is unlocked and you are not Away or on Do not disturb, the
 microphone listens on this computer only for your wake phrase. The assistant
 avatar shows a green dot while listening and an amber dot when listening needs
-attention. Select the assistant's avatar or name to open the companion. Select
-the arrow on the same control to see the status and switch **Wake and sleep
-phrases** on or off. Short sounds are recognized with the local
+attention. Select the assistant's avatar or name to open the companion. In the
+collapsed sidebar, the arrow below the avatar opens quick settings for **Wake
+and sleep phrases**. In the expanded sidebar, the arrow sits beside the name.
+Short sounds are recognized with the local
 voice pack (never a cloud provider), compared with the phrase and discarded;
 nothing is saved or sent. On a match the listener releases the microphone. The
 workspace comes forward and opens the voice companion, even when the keyboard

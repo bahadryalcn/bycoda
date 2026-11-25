@@ -48,6 +48,7 @@ vi.mock("../../../sessions/public/modelSource", () => ({
     available: () => false,
     probed: () => true,
     modelsFor: () => [],
+    resolve: (_harness: string, model: string) => ({ name: model }),
   }),
 }));
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));
@@ -98,6 +99,7 @@ vi.mock("../../../providers/public/providerAccounts", () => ({
   ],
   defaultProviderAccountId: () => "default",
   PROVIDER_ACCOUNT_PROVIDERS: ["claude", "codex", "grok"],
+  PROVIDER_ACCOUNT_COLORS: [],
   supportsProviderAccounts: (harness: string) => ["claude", "codex", "grok"].includes(harness),
 }));
 
@@ -177,7 +179,7 @@ it("uses the locale's complete agent-time fraction when usage is stale", async (
   }
 });
 
-it("shows one compact cap table with unlimited placeholders and saved provider rows only", async () => {
+it("shows one cap scope at a time and keeps saved provider caps available", async () => {
   const limits = {
     machineId: "host",
     machineName: "Workstation",
@@ -199,16 +201,15 @@ it("shows one compact cap table with unlimited placeholders and saved provider r
   await act(() =>
     root.render(createElement(ModelOrderLimits, { draft, usage: limits, onChange: vi.fn() })),
   );
-  expect(container.querySelectorAll("table")).toHaveLength(1);
   expect(container.textContent).toContain("All providers");
-  const inputs = [...container.querySelectorAll<HTMLInputElement>("table input")];
-  // Token cells say "No limit"; the plan-quota "Keep free" cell shows its default 0.
+  const tokenInputs = [
+    ...container.querySelectorAll<HTMLInputElement>('input[placeholder="No limit"]'),
+  ].filter((input) => input.getAttribute("role") === "combobox");
+  expect(tokenInputs.filter((input) => !input.closest("[hidden]"))).toHaveLength(3);
   expect(
-    inputs.every((input) => ["No limit", "0"].includes(input.placeholder) || input.value !== ""),
-  ).toBe(true);
-  // Cost columns stay hidden until the "Cost limits" toggle or a set cost value.
+    tokenInputs.filter((input) => input.closest("[hidden]")).map((input) => input.value),
+  ).toContain("500");
   expect(container.textContent).not.toContain("Daily cost");
-  expect(container.querySelectorAll("tbody tr").length).toBeLessThan(4);
 });
 
 function rowProps(): ComponentProps<typeof ModelOrderRow> {
@@ -271,6 +272,7 @@ it("passes the account to the picker and keeps rare settings in the overflow", a
   props.entry.providerAccountId = "work";
   await act(() => root.render(createElement(ModelOrderRow, props)));
   expect(picker.accountId).toBe("work");
+  expect(picker.accountChoices).toBe(true);
   await openMore();
   expect(document.body.textContent).toContain("Keep % for my own use");
   expect(document.body.textContent).toContain("If the limit is unknown");
@@ -301,19 +303,23 @@ it("strips delegation defaults on model selection, preserves picker account sele
   );
 });
 
-it("clears account when switching to a provider without accounts and hides account field", async () => {
+it("saves Grok accounts and clears the account for a provider without profiles", async () => {
   const props = rowProps();
   props.entry.providerAccountId = "work";
   await act(() => root.render(createElement(ModelOrderRow, props)));
   await act(() => picker.onChange("grok", "grok", "work"));
   expect(props.onChange).toHaveBeenCalledWith(
+    expect.objectContaining({ harness: "grok", providerAccountId: "work" }),
+  );
+  await act(() => picker.onChange("opencode", "model", "work"));
+  expect(props.onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({ providerAccountId: undefined }),
   );
   await act(() =>
     root.render(
       createElement(ModelOrderRow, {
         ...props,
-        entry: { ...props.entry, harness: "grok", providerAccountId: undefined },
+        entry: { ...props.entry, harness: "opencode", providerAccountId: undefined },
       }),
     ),
   );
@@ -515,6 +521,13 @@ it("shows the refused row from the save bar and highlights it", async () => {
   );
 });
 
+async function showAccountView() {
+  const account = [...container.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+    (item) => item.textContent === "By account",
+  )!;
+  await act(async () => account.click());
+}
+
 it("lists models by account with the real priority number, or flat by priority", async () => {
   await renderScreen([
     modelEntry("a1", "claude"),
@@ -522,6 +535,8 @@ it("lists models by account with the real priority number, or flat by priority",
     modelEntry("a2", "claude"),
   ]);
   await openTab("Models & order");
+  expect(container.querySelectorAll('[aria-label^="Reorder model"]')).toHaveLength(3);
+  await showAccountView();
   const group = (label: string) =>
     container.querySelector<HTMLElement>(`[role="group"][aria-label="${label}"]`)!;
   const claude = group("Default account");
@@ -548,6 +563,7 @@ it("removes every model of an account from its header menu", async () => {
     modelEntry("a2", "claude"),
   ]);
   await openTab("Models & order");
+  await showAccountView();
   await act(async () =>
     container.querySelector<HTMLElement>('button[aria-label^="More for Default account"]')!.click(),
   );

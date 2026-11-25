@@ -114,6 +114,7 @@ import {
   Strikethrough as LucideStrikethrough,
   Table as LucideTable,
   MoreHorizontal as LucideMoreHorizontal,
+  OctagonX as LucideOctagonX,
   Palette as LucidePalette,
   Pause as LucidePause,
   PanelBottom as LucidePanelBottom,
@@ -395,6 +396,14 @@ export const ListNumbered = wrap(LucideListNumbered, "ListNumbered");
 export const AiIdea = wrap(LucideAiIdea, "AiIdea");
 export const CaseSensitive = wrap(LucideCaseSensitive, "CaseSensitive");
 export const Chatting = wrap(LucideChatting, "Chatting");
+export const StandaloneChat = custom(
+  "StandaloneChat",
+  <>
+    <path d="M6 4.5h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9.5L4 21v-4.3a3 3 0 0 1-1-2.2v-7a3 3 0 0 1 3-3Z" />
+    <circle cx="9" cy="11" r="1" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="11" r="1" fill="currentColor" stroke="none" />
+  </>,
+);
 export const Check = wrap(LucideCheck, "Check");
 export const CheckCheck = wrap(LucideCheckCheck, "CheckCheck");
 export const CheckCircle = wrap(LucideCheckCircle, "CheckCircle");
@@ -482,10 +491,15 @@ export const Languages = wrap(LucideLanguages, "Languages");
 export const Volume2 = wrap(LucideVolume2, "Volume2");
 export const VolumeX = wrap(LucideVolumeX, "VolumeX");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");
+export const NewSession = custom(
+  "NewSession",
+  <path d="M18 14v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5l3 3h.5M18.5 3.5v7M15 7h7" />,
+);
 export const Minus = wrap(LucideMinus, "Minus");
 export const Strikethrough = wrap(LucideStrikethrough, "Strikethrough");
 export const Table = wrap(LucideTable, "Table");
 export const MoreHorizontal = wrap(LucideMoreHorizontal, "MoreHorizontal");
+export const OctagonX = wrap(LucideOctagonX, "OctagonX");
 export const Palette = wrap(LucidePalette, "Palette");
 export const Pause = wrap(LucidePause, "Pause");
 export const PanelBottom = wrap(LucidePanelBottom, "PanelBottom");

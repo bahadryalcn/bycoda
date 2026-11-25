@@ -104,6 +104,8 @@ static QUIT_COUNTER: AtomicU32 = AtomicU32::new(1);
 struct QuitConfirm {
     id: u32,
     in_flight: u32,
+    desktop_in_flight: u32,
+    host_activity: crate::host_lifecycle::Activity,
 }
 
 pub fn open_new_window(app: &AppHandle) -> Result<(), String> {
@@ -197,10 +199,14 @@ pub fn open_host_tools_window(
     let config = configure_host_tools_window(main, title, url);
     let creation = crate::native_window_lifecycle::admit_window(app, TOOLS_WINDOW_LABEL)?;
     crate::ssh_window_lifecycle::register(TOOLS_WINDOW_LABEL)?;
+    crate::webview_recovery::remember_config(&config);
     let window = WebviewWindowBuilder::from_config(app, &config)
         .map_err(|error| error.to_string())
         .and_then(|builder| builder.build().map_err(|error| error.to_string()))
-        .inspect_err(|_| crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL))?;
+        .inspect_err(|_| {
+            crate::webview_recovery::forget_config(TOOLS_WINDOW_LABEL);
+            crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL);
+        })?;
     creation.created(&window);
     let _ = ensure_window_reachable(&window);
     Ok(true)
@@ -538,6 +544,7 @@ fn build_session_window_with_url(
     };
 
     crate::ssh_window_lifecycle::register(&label)?;
+    crate::webview_recovery::remember_config(&config);
     let build = || {
         let builder =
             WebviewWindowBuilder::from_config(app, &config).map_err(|err| err.to_string())?;
@@ -552,6 +559,7 @@ fn build_session_window_with_url(
     #[cfg(not(target_os = "macos"))]
     let window = build();
     let window = window.inspect_err(|_| {
+        crate::webview_recovery::forget_config(&label);
         crate::ssh_window_lifecycle::close(&label);
         app.state::<crate::window_transfer::WindowTransferState>()
             .discard(&label);
@@ -725,6 +733,13 @@ pub fn ensure_launch_window_visible(app: &AppHandle) {
 
 pub fn allow_exit() -> bool {
     ALLOW_EXIT.load(Ordering::SeqCst)
+}
+
+pub(crate) fn quit_in_progress() -> bool {
+    QUIT_RUN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .is_some()
 }
 
 /// What the coordinator should do once a stage's bookkeeping is settled.
@@ -1018,7 +1033,25 @@ fn start_confirm(app: &AppHandle, id: u32) {
     ) else {
         return;
     };
-    if in_flight == 0 {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let host_activity = crate::host_lifecycle::quit_activity();
+        present_quit_confirmation(&app, id, in_flight, host_activity);
+    });
+}
+
+fn present_quit_confirmation(
+    app: &AppHandle,
+    id: u32,
+    in_flight: u32,
+    host_activity: crate::host_lifecycle::Activity,
+) {
+    #[cfg(windows)]
+    if crate::webview_recovery::is_rebuilding() {
+        clear_run(id);
+        return;
+    }
+    if in_flight == 0 && host_activity.count() == 0 && !host_activity.unknown {
         start_commit(app, id);
         return;
     }
@@ -1052,7 +1085,16 @@ fn start_confirm(app: &AppHandle, id: u32) {
             run.prompt = Some(label.clone());
         }
     }
-    let payload = QuitConfirm { id, in_flight };
+    let payload = QuitConfirm {
+        id,
+        desktop_in_flight: in_flight,
+        // Existing clients only know this total. S4 can show the Host subtotal
+        // separately using hostActivity.
+        in_flight: in_flight
+            .saturating_add(host_activity.count())
+            .saturating_add(u32::from(host_activity.unknown)),
+        host_activity,
+    };
     if app
         .emit_to(EventTarget::webview_window(&label), QUIT_CONFIRM, payload)
         .is_err()

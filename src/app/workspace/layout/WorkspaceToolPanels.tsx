@@ -1,5 +1,4 @@
 import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
-import type { OpenVoiceTrackedWork } from "../bridges/VoiceWorkspacePanels";
 import { CrewCoordinatorSession } from "../surfaces/CrewCoordinatorSession";
 import { OverlayNav } from "../../shell/TitleBar";
 import { AssistantView } from "../surfaces/lazySurfaces";
@@ -20,15 +19,11 @@ import { useHeldValue } from "../helpers/stableProps";
 import { WindowControls } from "../../shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
-import { memo, useEffect, useMemo, useState, type ContextType } from "react";
+import { memo, useMemo, useState, type ContextType } from "react";
 import { ServerAgentContext } from "../../../features/connections/public/serverAgent";
 import { useAssistantRoomRequests } from "./useAssistantRoomRequests";
 import { workspaceActiveTool } from "./workspaceActiveTool";
-import {
-  openCrewsPageAt,
-  setCrewsPageOpen,
-  useCrewsPageOpen,
-} from "../../../features/crews/model/crewsPage";
+import { setCrewsPageOpen, useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import {
   setLiveStreamPageOpen,
   useLiveStreamPageOpen,
@@ -108,7 +103,6 @@ export interface WorkspaceToolPanelsProps {
   onToggleSidebar: InboxProps["onToggleSidebar"];
   pickProject: InboxProps["onOpenProject"];
   onSelectAssistantProject?: (path: string) => void;
-  registerVoiceTrackedWork?: (open?: OpenVoiceTrackedWork) => void;
   // Inbox
   onLeaveInbox: InboxProps["onClose"];
   onStartInboxItem: InboxProps["onStart"];
@@ -174,7 +168,6 @@ function WorkspaceToolPanelsComponent({
   onToggleSidebar,
   pickProject,
   onSelectAssistantProject,
-  registerVoiceTrackedWork,
   onLeaveInbox: leaveInbox,
   onStartInboxItem,
   onAskInboxItem,
@@ -291,39 +284,6 @@ function WorkspaceToolPanelsComponent({
     setSocialBoardShown(tool === "social");
     setTaskBoardShown(tool === "tasks");
   });
-  const openVoiceTrackedWork = useStableCallback((work: Parameters<OpenVoiceTrackedWork>[0]) => {
-    if (toolWindow || detachedSessionWindow || !canOpenAssistantProject(work.projectPath))
-      return false;
-    if (work.kind === "crew") {
-      if (!work.definitionId || !onSelectAssistantProject) return false;
-      onSelectAssistantProject(work.projectPath);
-      openCrewsPageAt({ tab: "work", definitionId: work.definitionId, runId: work.id });
-      return true;
-    }
-    const token = Date.now();
-    if (work.kind === "task") {
-      setGoalReveal(undefined);
-      setTaskReveal({
-        machineId: work.machineId,
-        environmentId: work.environmentId,
-        projectId: work.projectId,
-        cwd: work.projectPath,
-        taskId: work.id,
-        token,
-      });
-    } else {
-      setTaskReveal(undefined);
-      setGoalReveal({ machineId: work.machineId, goalId: work.id, token });
-    }
-    onSelectTool("tasks");
-    return true;
-  });
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Registers the mounted tool panes as the owner of tracked record navigation.
-  useEffect(() => {
-    if (!registerVoiceTrackedWork) return;
-    registerVoiceTrackedWork(openVoiceTrackedWork);
-    return () => registerVoiceTrackedWork();
-  }, [openVoiceTrackedWork, registerVoiceTrackedWork]);
   const toolNavigation = useMemo(
     () => ({
       history,
@@ -645,7 +605,7 @@ function WorkspaceToolPanelsComponent({
             pullRequestsOnly={pullRequestsOnly}
             onPullRequestsOnlyChange={setPullRequestsOnly}
             onOpenProject={pickProject}
-            cwd={sidebarCwd}
+            cwd={projectCwd || sidebarCwd}
             recents={visibleRecents}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}

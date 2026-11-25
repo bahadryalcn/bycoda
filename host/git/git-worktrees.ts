@@ -208,6 +208,10 @@ export type HostWorktree = {
   isMain: boolean;
   missing: boolean;
   locked?: boolean;
+  /** Uncommitted files exist; `null` when Git could not say (never read as clean). Set by `hostWorktrees`. */
+  dirty?: boolean | null;
+  /** Commits on no remote; `null` when Git could not count them. Set by `hostWorktrees`. */
+  unpushed?: number | null;
 };
 export type HostWorktrees = { worktrees: HostWorktree[]; defaultRoot: string };
 
@@ -269,7 +273,9 @@ async function build(text: string): Promise<HostWorktrees> {
         (info) => info.isDirectory(),
         () => false,
       );
-      const path = present ? await canonicalWorkspacePath(tree.path).catch(() => undefined) : undefined;
+      const path = present
+        ? await canonicalWorkspacePath(tree.path).catch(() => undefined)
+        : undefined;
       return { ...tree, path: path ?? tree.path, missing: path === undefined };
     }),
   );
@@ -395,8 +401,85 @@ export async function resolveHostWorktreeAsync(
   throw new Error("Choose an available worktree of this project");
 }
 
-export function hostWorktrees(cwd: string, background = false): Promise<HostWorktrees> {
-  return listCached(cwd, false, background ? "background" : "default");
+const STATE_PARALLELISM = 4;
+const STATE_TTL_MS = 2_000;
+type CachedState = {
+  lane: CachedList["lane"];
+  completedAt?: number;
+  generation: number;
+  promise: Promise<HostWorktrees>;
+};
+const stateCache = new Map<string, CachedState>();
+
+/** Same read-only probe as the desktop listing: a failed Git read stays unknown, never clean. */
+async function probeWorktree(tree: HostWorktree, lane: CachedList["lane"]): Promise<HostWorktree> {
+  if (tree.missing) return { ...tree, dirty: null, unpushed: null };
+  const git = (args: string[]) =>
+    hostGitExec
+      .exec("git", args, { ...bufferedOptions(tree.path), lane })
+      .then(({ stdout }) => stdout)
+      .catch(() => undefined);
+  const [status, count] = await Promise.all([
+    git(["status", "--porcelain", "--untracked-files=normal", "--no-renames"]),
+    git(["rev-list", "--count", "HEAD", "--not", "--remotes"]),
+  ]);
+  const unpushed = count === undefined ? Number.NaN : Number.parseInt(count.trim(), 10);
+  return {
+    ...tree,
+    dirty: status === undefined ? null : status.length > 0,
+    unpushed: Number.isFinite(unpushed) ? unpushed : null,
+  };
+}
+
+async function withState(list: HostWorktrees, lane: CachedList["lane"]): Promise<HostWorktrees> {
+  const worktrees = list.worktrees.slice();
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(STATE_PARALLELISM, worktrees.length) }, async () => {
+      while (next < worktrees.length) {
+        const index = next++;
+        worktrees[index] = await probeWorktree(list.worktrees[index], lane);
+      }
+    }),
+  );
+  return { ...list, worktrees };
+}
+
+/**
+ * The client-facing worktree list with `dirty` and `unpushed` per checkout, so a connected machine's
+ * clients see what the desktop's own listing shows. Probing is bounded and cached briefly;
+ * path resolution keeps using the cheap list.
+ */
+export function hostWorktreesWithState(cwd: string, background = false): Promise<HostWorktrees> {
+  const lane = background ? "background" : "default";
+  const hit = stateCache.get(cwd);
+  if (hit?.generation === listGeneration) {
+    const reusable =
+      hit.completedAt === undefined
+        ? hit.lane === "default" || lane === "background"
+        : Date.now() - hit.completedAt < STATE_TTL_MS;
+    if (reusable) return hit.promise;
+  }
+  // Share pending probes with compatible callers, even if they spend longer
+  // in the queue than a completed snapshot stays fresh.
+  const entry: CachedState = {
+    lane,
+    generation: listGeneration,
+    promise: listCached(cwd, false, lane)
+      .then((list) => withState(list, lane))
+      .then((state) => {
+        entry.completedAt = Date.now();
+        return state;
+      }),
+  };
+  stateCache.set(cwd, entry);
+  while (stateCache.size > LIST_CACHE_LIMIT)
+    stateCache.delete(stateCache.keys().next().value as string);
+  // Failures are not cached.
+  entry.promise.catch(() => {
+    if (stateCache.get(cwd) === entry) stateCache.delete(cwd);
+  });
+  return entry.promise;
 }
 
 type RemovalUsage = Pick<WorktreeRemovalReview, "sessionIds" | "hasTerminals" | "hasAgents">;
@@ -720,4 +803,9 @@ export async function deleteHostWorktreeBranch(
   } finally {
     invalidateHostWorktrees();
   }
+}
+
+/** Cheap list for Host-internal callers: no per-checkout Git state. */
+export function hostWorktrees(cwd: string, background = false): Promise<HostWorktrees> {
+  return listCached(cwd, false, background ? "background" : "default");
 }

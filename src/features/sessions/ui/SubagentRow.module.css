@@ -1,0 +1,184 @@
+/* Placement of one delegated run's row. The row's own width picks the layout, so a split pane
+   and a full chat column each get the arrangement that fits them. */
+.row {
+  --subagent-row-action: var(--ui-control-height-compact);
+  position: relative;
+  min-inline-size: 0;
+  container: subagent-row / inline-size;
+}
+
+.content {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+  grid-template-columns:
+    auto minmax(0, 1fr) 10.25rem var(--ui-icon-sm)
+    calc(2 * var(--subagent-row-action));
+  grid-template-areas: "mark identity status chevron actions";
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+.content[data-layout="dock"] {
+  grid-template-columns: auto minmax(0, 1fr) 10.25rem;
+  grid-template-areas: "mark identity status";
+}
+
+.mark {
+  grid-area: mark;
+  position: relative;
+  display: inline-flex;
+  margin-inline-end: var(--space-1);
+}
+
+.identity {
+  grid-area: identity;
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+}
+
+.titleLine,
+.meta {
+  display: flex;
+  min-inline-size: 0;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.status {
+  grid-area: status;
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.statusLine {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.state {
+  display: inline-flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.rail {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.strip {
+  flex: 1;
+}
+
+.count {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+}
+
+.chevron {
+  grid-area: chevron;
+  display: inline-flex;
+}
+
+/* The actions sit over the row's reserved column: buttons cannot nest inside its toggle. */
+.actions {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: grid;
+  grid-template-columns: repeat(2, var(--subagent-row-action));
+  align-items: center;
+  pointer-events: none;
+}
+
+.actions > * {
+  pointer-events: auto;
+}
+
+.openSlot {
+  grid-column: 1;
+}
+
+.stopSlot {
+  grid-column: 2;
+}
+
+@container subagent-row (inline-size < 35rem) {
+  .content {
+    grid-template-columns:
+      auto minmax(0, 1fr) 9.5rem var(--ui-icon-sm)
+      calc(2 * var(--subagent-row-action));
+  }
+
+  .content[data-layout="dock"] {
+    grid-template-columns: auto minmax(0, 1fr) 9.5rem;
+  }
+}
+
+/* Too narrow for two columns of text: the run's state takes its own line under the identity. */
+@container subagent-row (inline-size < 27.5rem) {
+  .content {
+    grid-template-columns: auto minmax(0, 1fr) var(--ui-icon-sm) calc(
+        2 * var(--subagent-row-action)
+      );
+    grid-template-areas:
+      "mark identity chevron actions"
+      ". status status status";
+    row-gap: var(--space-1);
+  }
+
+  .content[data-layout="dock"] {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "mark identity"
+      ". status";
+  }
+
+  .status {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .statusLine {
+    flex: none;
+    inline-size: 9.5rem;
+  }
+
+  .rail {
+    flex: 1;
+  }
+
+  .actions {
+    inset-block-end: auto;
+    block-size: calc(2lh + var(--space-2));
+  }
+}
+
+/* The narrowest panes cannot fit the state and strip on one line: the strip goes below the state. */
+@container subagent-row (inline-size < 20rem) {
+  .status {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+  }
+
+  .statusLine {
+    inline-size: auto;
+  }
+
+  .rail {
+    flex: none;
+  }
+}

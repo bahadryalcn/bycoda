@@ -68,6 +68,19 @@ export function shouldAutoContinue(input: {
   );
 }
 
+/** This interruption has not had its one launch that may continue it automatically. */
+export function isAutoContinueArmed(session: Session): boolean {
+  return session.blocks[session.blocks.length - 1]?.autoContinueArmed === true;
+}
+
+/** Later launches leave this interruption to the user's Continue. */
+export function disarmAutoContinue(session: Session): Session {
+  const last = session.blocks[session.blocks.length - 1];
+  if (!last?.autoContinueArmed) return session;
+  const { autoContinueArmed: _spent, ...note } = last;
+  return { ...session, blocks: [...session.blocks.slice(0, -1), note] };
+}
+
 /**
  * The transcript of a turn that finished while the app was closed: the quit
  * note goes (the turn was not cut off after all) and the final reply is added

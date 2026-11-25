@@ -65,11 +65,16 @@ it("routes actual DeviceHost inventory, preflight, boot, action and four-MiB cap
       method.endsWith("preflight") || method.endsWith("boot") ? { deviceId: "emulator-5554" } : {};
     expect(await ws.call(method, params)).toEqual(await f.callHttp(method, params));
   }
-  const frame = await ws.call("devices.capture", { deviceId: "emulator-5554" });
-  const image = Buffer.from(frame.base64, "base64");
-  expect(image.length).toBe(f.png.length);
-  expect(sha(image)).toBe(sha(f.png));
-  expect(await f.callHttp("devices.capture", { deviceId: "emulator-5554" })).toEqual(frame);
+  const capture = { deviceId: "emulator-5554" };
+  const wsFrame = await ws.call("devices.capture", capture);
+  const httpFrame = await f.callHttp("devices.capture", capture);
+  for (const frame of [wsFrame, httpFrame]) {
+    expect(frame.mime).toBe("image/png");
+    expect(Number.isFinite(Date.parse(frame.capturedAt))).toBe(true);
+    const image = Buffer.from(frame.base64, "base64");
+    expect(image.length).toBe(f.png.length);
+    expect(sha(image)).toBe(sha(f.png));
+  }
   const lease = await ws.call("devices.control.claim", {
     deviceId: "emulator-5554",
     requestId: "claim-one",
@@ -364,5 +369,105 @@ it("routes live stream reads to the recorder and keeps its refusal text", async 
   expect(failed.error.data).toMatchObject({ delivery: "not-sent" });
   expect((await f.http("devices.stream", { deviceId })).error).toContain(
     "DEVICE_STREAM_UNSUPPORTED: fixture",
+  );
+});
+
+it("pushes successive device video chunks from one authenticated subscription", async () => {
+  const f = await fixture("device-video-subscription");
+  const ws = await f.connect();
+  const deviceId = "emulator-5554";
+  const first = {
+    cursor: 5,
+    reset: true,
+    base64: "AAAAAWc=",
+    width: 100,
+    height: 200,
+    boundary: true,
+  };
+  const next = { ...first, cursor: 10, reset: false, base64: "AAAAAWE=" };
+  const read = vi
+    .spyOn(DeviceStreams.prototype, "read")
+    .mockResolvedValueOnce(first)
+    .mockResolvedValueOnce(next)
+    .mockImplementation(
+      (_id, _cursor, _effect, options) =>
+        new Promise((_, reject) => {
+          if (options?.signal?.aborted) reject(options.signal.reason);
+          else
+            options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+              once: true,
+            });
+        }),
+    );
+  const frames: { kind: string; data: unknown; cursor: { epoch: string; sequence: number } }[] = [];
+  ws.socket.on("message", (message) => {
+    const { method, params } = JSON.parse(message.toString());
+    if (method === "subscription.event" && params.subscriptionId === "fixture-video")
+      frames.push(params);
+  });
+  await ws.call("subscriptions.open", {
+    subscriptionId: "fixture-video",
+    target: { kind: "deviceVideo", deviceId, viewerId: "fixture-viewer" },
+  });
+  await vi.waitFor(() => expect(frames).toHaveLength(2));
+  expect(frames.map((frame) => [frame.kind, frame.data])).toEqual([
+    ["snapshot", first],
+    ["delta", next],
+  ]);
+  expect(read.mock.calls.slice(0, 2).map((call) => call.slice(0, 2))).toEqual([
+    [deviceId, undefined],
+    [deviceId, 5],
+  ]);
+  expect(
+    await ws.call("subscriptions.ack", {
+      subscriptionId: "fixture-video",
+      cursor: frames[1].cursor,
+    }),
+  ).toEqual({ accepted: true });
+  expect(await ws.call("subscriptions.close", { subscriptionId: "fixture-video" })).toEqual({
+    accepted: true,
+  });
+  expect(read.mock.calls[2]?.[3]?.signal?.aborted).toBe(true);
+});
+
+it("admits live touch only under the exact paired owner and device lease", async () => {
+  const f = await fixture("device-live-touch");
+  const owner = await f.connect();
+  const other = await f.connect(f.other.token);
+  const deviceId = "emulator-5554";
+  const prepare = vi
+    .spyOn(DeviceHost.prototype, "prepareTouch")
+    .mockImplementation(() => new Promise<void>(() => {}));
+  const { leaseId } = await owner.call("devices.control.claim", {
+    deviceId,
+    requestId: "touch-fixture",
+  });
+  expect(prepare).toHaveBeenCalledWith(deviceId, leaseId, expect.anything());
+  const send = vi
+    .spyOn(DeviceHost.prototype, "sendTouch")
+    .mockImplementation(async (_device, _lease, _touch, effect, admitted) => {
+      expect(await effect.authorized()).toBe(true);
+      admitted?.();
+    });
+  const release = vi.spyOn(DeviceHost.prototype, "releaseTouch").mockResolvedValue(undefined);
+  const down = { deviceId, leaseId, touch: { phase: "down", x: 0.25, y: 0.5 } };
+  expect((await other.request("devices.touch", down)).error?.message).toContain(
+    "DEVICE_CONTROL_LEASE_INVALID",
+  );
+  expect(
+    (await owner.request("devices.touch", { ...down, touch: { ...down.touch, y: 2 } })).error,
+  ).toBeTruthy();
+  expect(send).not.toHaveBeenCalled();
+  expect(await owner.call("devices.touch", down)).toEqual({ accepted: true });
+  const move = { ...down, touch: { phase: "move", x: 0.3, y: 0.6 } };
+  expect(await owner.call("devices.touch", move)).toEqual({ accepted: true });
+  expect(send.mock.calls.map((call) => call.slice(0, 3))).toEqual([
+    [deviceId, leaseId, down.touch],
+    [deviceId, leaseId, move.touch],
+  ]);
+  await owner.call("devices.control.release", { deviceId, leaseId });
+  expect(release).toHaveBeenCalledWith(deviceId, leaseId);
+  expect((await owner.request("devices.touch", move)).error?.message).toContain(
+    "DEVICE_CONTROL_LEASE_INVALID",
   );
 });

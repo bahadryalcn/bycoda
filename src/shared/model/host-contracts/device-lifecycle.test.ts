@@ -9,7 +9,7 @@ import {
 import { exportWireSchema, getHostRpcMethod, hostRpcHasEffect } from "./index";
 
 it("keeps lifecycle and mobile preview lists separate from Native device methods", () => {
-  expect(NATIVE_DEVICE_METHODS).toHaveLength(15);
+  expect(NATIVE_DEVICE_METHODS).toHaveLength(16);
   expect(DEVICE_LIFECYCLE_METHODS).toEqual(["devices.setup", "devices.stop"]);
   expect(MOBILE_DEVICE_PREVIEW_METHODS).toEqual([
     "devices.preview.mobile.start",
@@ -17,6 +17,7 @@ it("keeps lifecycle and mobile preview lists separate from Native device methods
     "devices.preview.impact",
   ]);
   for (const method of [...DEVICE_LIFECYCLE_METHODS, ...MOBILE_DEVICE_PREVIEW_METHODS]) {
+    expect(NATIVE_DEVICE_METHODS).not.toContain(method);
     const definition = getHostRpcMethod(method)!;
     const effect =
       method === "devices.setup" ||

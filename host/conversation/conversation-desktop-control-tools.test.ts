@@ -100,9 +100,12 @@ function fixture() {
       } satisfies DesktopControlResponse;
     },
   );
+  const actReceipt = vi.fn<ConversationDesktopControlPorts["desktop"]["actReceipt"]>(
+    async () => undefined,
+  );
   const tools = new ConversationDesktopControlTools({
     environmentId: "host",
-    desktop: { request, permission, appAllowed, allowApp },
+    desktop: { request, actReceipt, permission, appAllowed, allowApp },
     presence,
     approveOperation: approved,
     now: () => now,
@@ -120,6 +123,7 @@ function fixture() {
     call,
     observe,
     request,
+    actReceipt,
     presence,
     approved,
     permission,
@@ -156,6 +160,13 @@ describe("desktop conversation tool authority", () => {
     }));
     const response = await f.call("desktop.act", act);
     expect(response.refsExpired).toBe(true);
+    const reconciled = { ...response.operation!, delivery: "delivered_verified" as const };
+    f.actReceipt.mockResolvedValueOnce(reconciled);
+    expect(await f.call("desktop.act", act)).toEqual({
+      operation: reconciled,
+      refsExpired: true,
+    });
+    expect(f.approved).toHaveBeenCalledOnce();
     await expect(f.call("desktop.act", { ...act, requestId: "again" })).rejects.toThrow(
       "fresh desktop snapshot",
     );

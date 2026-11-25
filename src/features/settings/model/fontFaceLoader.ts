@@ -1,34 +1,44 @@
-import { BUNDLED_FONT_FACES } from "./fontFaceSources";
+import { BUNDLED_FONT_FACES, type BundledFontFace } from "./fontFaceSources";
 
-const loads = new Map<string, Promise<void>>();
+const registered = new Map<BundledFontFace, FontFace>();
 
-/**
- * Registers the bundled @font-face sources of one font family with the document, once. Callers
- * only request the font; a failed load is dropped and requested again later, and without FontFace
- * support the platform's fallback font stays in use.
- */
-export function preloadBundledFont(family: string | undefined): void {
+/** Register faces for CSS to fetch as visible text needs their weight, style and unicode range. */
+export function registerBundledFont(
+  family: string | undefined,
+  timing: "on-demand" | "preload" = "on-demand",
+): void {
   const faces = family ? BUNDLED_FONT_FACES[family] : undefined;
-  if (!family || !faces || loads.has(family)) return;
-  if (typeof FontFace !== "function" || typeof document === "undefined") return;
-  const forget = () => {
-    loads.delete(family);
-  };
+  if (!family || !faces || typeof FontFace !== "function" || typeof document === "undefined")
+    return;
   try {
-    const load = Promise.all(
-      faces.map((face) => {
-        const source = new FontFace(family, `url(${face.src})`, {
+    for (const face of faces) {
+      let source = registered.get(face);
+      if (source?.status === "error") {
+        document.fonts.delete(source);
+        registered.delete(face);
+        source = undefined;
+      }
+      if (!source) {
+        source = new FontFace(family, `url(${face.src})`, {
           style: face.style,
           weight: face.weight,
           unicodeRange: face.unicodeRange,
           display: "swap",
         });
         document.fonts.add(source);
-        return source.load();
-      }),
-    ).then(() => undefined, forget);
-    loads.set(family, load);
+        registered.set(face, source);
+      }
+      if (timing === "preload" && source.status === "unloaded") {
+        // CSS falls back while unavailable. A later request replaces an errored face.
+        void source.load().catch(() => undefined);
+      }
+    }
   } catch {
-    forget();
+    // An unavailable font API leaves the platform fallback active.
   }
+}
+
+/** Applied fonts preload all subsets, including faces previously registered for previews. */
+export function preloadBundledFont(family: string | undefined): void {
+  registerBundledFont(family, "preload");
 }

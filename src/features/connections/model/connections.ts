@@ -2,9 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { invokeHostRequest } from "./tracedInvoke";
 import { withAccountTunnelRecovery } from "./accountTunnelRecovery";
 import {
+  foregroundPollsVisible,
+  startForegroundPolling,
+} from "../../../shared/lib/foregroundPolling";
+import {
   assertDesktopControlReceipts,
   requiresDesktopControlReceipts,
 } from "./desktopControlCapability";
+import { isColdRouteRead, runColdRouteRead } from "./coldRouteReads";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RemoteDataState } from "./remoteDataState";
 import {
@@ -18,6 +23,11 @@ import {
 } from "./protocol";
 import { MachineChannelStreamError, subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
+import { projectlessMachineProject, remoteSessionProjectAtKey } from "./sessionMachineTarget";
+import {
+  PROJECTLESS_PROJECT_ID,
+  PROJECTLESS_SESSIONS_CAPABILITY,
+} from "../../../shared/model/host-contracts/projectless-sessions";
 import { resetSessionSyncGatesForTests, runSessionSync } from "./coldSyncGate";
 import {
   railEntryAfterFailure,
@@ -27,7 +37,7 @@ import {
   type RemoteRailSession,
 } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
-import { classifyRemoteError } from "./remoteFailure";
+import { classifyRemoteError, isMachineConnectingRefusal } from "./remoteFailure";
 import { isMachineEnabled, startNativeDisabledMachinesSync } from "./machineEnabled";
 import { subscribeMachineFocused } from "./machineFocus";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -186,6 +196,9 @@ const capabilityFetchedAt = new Map<string, number>();
 /** An `environment.describe` answer this young is reused; the machine status
  * watcher refreshes it every 15 s anyway. */
 export const REMOTE_CAPABILITIES_TTL_MS = 20_000;
+/** Waits before asking a machine for its capabilities again after the native slot refused a read
+ * because another dial was in progress (about 20 s in all, the native reconnect budget). */
+const CONNECTING_RETRY_MS = [250, 500, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000];
 
 /** Forces the next `loadRemoteCapabilities` to ask the machine again, for a
  * machine that was edited, reconnected or removed. The last answer stays
@@ -224,7 +237,8 @@ export function recordRemoteCapabilities(environmentId: string, advertised: unkn
   capabilityListeners.forEach((listener) => listener());
 }
 
-/** Asks a machine for its capabilities, to learn whether its host is new enough. */
+/** Asks a machine for its capabilities, to learn whether its host is new enough. One attempt:
+ * a refusal reaches every caller at once, so an explicit command never waits on a retry. */
 export function loadRemoteCapabilities(environmentId: string): Promise<string[] | undefined> {
   const fetchedAt = capabilityFetchedAt.get(environmentId);
   if (fetchedAt !== undefined && Date.now() - fetchedAt < REMOTE_CAPABILITIES_TTL_MS)
@@ -243,6 +257,47 @@ export function loadRemoteCapabilities(environmentId: string): Promise<string[] 
   })().finally(() => capabilityLookups.delete(environmentId));
   capabilityLookups.set(environmentId, lookup);
   return lookup;
+}
+
+const startupDiscoveries = new Map<string, Promise<string[] | undefined>>();
+/**
+ * The shared first discovery of startup reads only. When the native slot refuses the probe
+ * unsent because another dial is in progress, it asks again after a bounded backoff. The sleep
+ * lives here, outside `loadRemoteCapabilities`: an explicit command that checks capabilities can
+ * join an attempt in flight but never this wait, and fails at once on that refusal.
+ */
+function discoverStartupRoute(machine: {
+  id: string;
+  environmentId: string;
+}): Promise<string[] | undefined> {
+  const { id, environmentId } = machine;
+  const existing = startupDiscoveries.get(environmentId);
+  if (existing) return existing;
+  const generation = captureConnectionGeneration(environmentId);
+  const discovery = (async () => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await loadRemoteCapabilities(environmentId);
+      } catch (reason) {
+        // Only the unsent refusal of a describe is asked again; nothing that writes is replayed.
+        const wait = CONNECTING_RETRY_MS[attempt];
+        if (wait === undefined || !isMachineConnectingRefusal(reason)) throw reason;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        // The route may have changed, been paused or lost its automatic dialing while it waited.
+        const same = cachedMachines.some(
+          (entry) => entry.id === id && entry.environmentId === environmentId,
+        );
+        if (
+          !same ||
+          readRemoteLifecycle(environmentId).generation !== generation ||
+          !mayStartTunnel(id, false, false)
+        )
+          throw reason;
+      }
+    }
+  })().finally(() => startupDiscoveries.delete(environmentId));
+  startupDiscoveries.set(environmentId, discovery);
+  return discovery;
 }
 const TAB_KEY = "bycoda.remote-tabs.v2";
 export const REMOTE_TAB_BINDING_CHANGE = "bycoda:remote-tab-binding";
@@ -299,40 +354,44 @@ export function rememberRemotePendingWorktree(shellId: string, path?: string) {
   window.dispatchEvent(new Event(REMOTE_PENDING_WORKTREE_CHANGE));
 }
 
+let lastBindingJson: string | null = null;
+let parsedBindings: Record<string, unknown> | null = null;
+
+function readRemoteTabBindings(): Record<string, unknown> | null {
+  const raw = remoteTabBindingsRaw();
+  if (raw === lastBindingJson) return parsedBindings;
+  lastBindingJson = raw;
+  parsedBindings = null;
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (value && typeof value === "object" && !Array.isArray(value))
+      parsedBindings = value as Record<string, unknown>;
+  } catch {
+    // A malformed or missing binding table cannot prove a remote tab is unsent.
+  }
+  return parsedBindings;
+}
+
 /** False when the tab bindings are missing or unreadable (e.g. cleared storage):
  * then no remote tab can be proven unsent, since its binding may be lost. */
 export function remoteTabBindingsReadable(): boolean {
-  try {
-    const raw = localStorage.getItem(TAB_KEY);
-    if (raw === null) return false;
-    const value: unknown = JSON.parse(raw);
-    return !!value && typeof value === "object" && !Array.isArray(value);
-  } catch {
-    return false;
-  }
+  return readRemoteTabBindings() !== null;
 }
 
 /** The host session a tab in a remote project shows; none for a new session. */
 export function remoteSessionFor(shellId: string): string | undefined {
-  try {
-    const value = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}")[shellId];
-    return typeof value === "string" ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  const value = readRemoteTabBindings()?.[shellId];
+  return typeof value === "string" ? value : undefined;
 }
 
 /** Another shell (tab) bound to this host session, if any. */
 export function remoteShellBoundTo(sessionId: string, exceptShellId?: string): string | undefined {
-  try {
-    const all: unknown = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
-    if (!all || typeof all !== "object") return undefined;
-    return Object.entries(all).find(
-      ([shellId, value]) => value === sessionId && shellId !== exceptShellId,
-    )?.[0];
-  } catch {
-    return undefined;
-  }
+  const all = readRemoteTabBindings();
+  if (!all) return undefined;
+  return Object.entries(all).find(
+    ([shellId, value]) => value === sessionId && shellId !== exceptShellId,
+  )?.[0];
 }
 
 /** Binds a shell to a host session, or unbinds it. A host session id is unique
@@ -509,6 +568,33 @@ export function remoteRequest<T>(
       return send();
     });
   }
+  // Restored panes all need the same SSH tunnel. Discover the cold route once before their
+  // independent idempotent reads instead of racing the first dial (a request that meets a dial
+  // in progress is refused with SSH_CONNECTING). Writes, owner actions, recovery probes and a
+  // machine that may not be dialed automatically never wait here, so none is replayed or delayed.
+  if (
+    isColdRouteRead(method, params) &&
+    machine?.ssh &&
+    expectedEnvironment === machine.environmentId &&
+    !fresh &&
+    !userInitiated &&
+    !cachedRemoteCapabilities(machine.environmentId) &&
+    mayStartTunnel(machineId, fresh, userInitiated)
+  )
+    return discoverStartupRoute(machine).then(() =>
+      // The route is checked again when this read's turn comes, after discovery and the queue.
+      runColdRouteRead(machine.id, () => {
+        if (!current()) throw superseded();
+        return send();
+      }),
+    );
+  // Every project list starts again when a connection returns, and one machine admits only so
+  // many requests at once: past that the rest are refused as overload instead of waiting.
+  if (method === "sessions.list" && machine && !fresh && !userInitiated)
+    return runColdRouteRead(machine.id, () => {
+      if (!current()) throw superseded();
+      return send();
+    });
   return send();
 }
 
@@ -782,6 +868,8 @@ export async function loadRemoteSession(
   options: {
     waitMs?: number;
     onPreviews?: (snapshot: HostSession) => void;
+    /** Background mirrors and preloads keep readers but do not fetch image bytes. */
+    deferPreviews?: boolean;
     pages?: boolean;
     partialHistory?: boolean;
     onHistory?: (snapshot: HostSession) => void;
@@ -832,7 +920,7 @@ export async function loadRemoteSession(
         totalBlocks: page.totalBlocks,
       },
     };
-    if (options.onPreviews)
+    if (options.onPreviews && !options.deferPreviews)
       setTimeout(() => {
         if (!(options.isCurrent?.() ?? true)) return;
         void withRemoteAttachmentPreviews(machineId, snapshot, undefined, (params) =>
@@ -897,6 +985,7 @@ export async function loadRemoteSession(
       options.executionClient?.environmentId,
     ),
   );
+  if (options.deferPreviews) return snapshot;
   if (options.onPreviews) {
     void withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
       remoteRequest(
@@ -914,8 +1003,7 @@ export async function loadRemoteSession(
       });
     return snapshot;
   }
-  // Adopted-session and preload consumers receive one complete snapshot and
-  // have no callback through which independently downloaded images can arrive.
+  // Callers that ask for a complete snapshot also wait for its bounded previews.
   return withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
     remoteRequest(
       machineId,
@@ -1255,15 +1343,13 @@ const STATUS = "bycoda:remote-machine-status";
 const machineOnline = new Map<string, boolean>();
 type StatusWatcher = {
   count: number;
-  timer?: ReturnType<typeof setTimeout>;
   /** Checks now when the machine is down; a focus change is new demand, not new evidence. */
   wake?: () => void;
   /** Removes the window listeners that resume the checks. */
   dispose?: () => void;
 };
-// The status watcher only checks while the computer is online; it checks less while hidden.
+// Reconnection demand still wakes the watcher; hidden windows make no periodic status checks.
 const computerOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
-const windowHidden = () => typeof document !== "undefined" && document.hidden;
 const statusWatchers = new Map<string, StatusWatcher>();
 subscribeMachineFocused((environmentId) => {
   const machineId = cachedMachines.find((entry) => entry.environmentId === environmentId)?.id;
@@ -1306,34 +1392,8 @@ function watchMachineStatus(machineId: string): () => void {
     const watcher: StatusWatcher = { count: 1 };
     statusWatchers.set(machineId, watcher);
     let failures = 0;
-    let polling = false;
-    const schedule = (delay: number) => {
-      clearTimeout(watcher.timer);
-      if (computerOnline() && statusWatchers.get(machineId) === watcher)
-        watcher.timer = setTimeout(() => void poll(), delay);
-    };
-    // Coming back online or to a visible window resumes a check that was held back.
-    const resume = () => void poll();
-    watcher.wake = () => {
-      if (failures) resume();
-    };
-    const visibilityChanged = () => {
-      if (!windowHidden()) resume();
-      else if (!polling) {
-        const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
-        schedule(machineStatusPollDelay(failures, environmentId, true));
-      }
-    };
-    window.addEventListener("online", resume);
-    document.addEventListener("visibilitychange", visibilityChanged);
-    watcher.dispose = () => {
-      window.removeEventListener("online", resume);
-      document.removeEventListener("visibilitychange", visibilityChanged);
-    };
     const poll = async () => {
-      if (polling || !computerOnline() || statusWatchers.get(machineId) !== watcher) return;
-      clearTimeout(watcher.timer);
-      polling = true;
+      if (!computerOnline() || statusWatchers.get(machineId) !== watcher) return;
       const machine = cachedMachines.find((entry) => entry.id === machineId);
       const generation = machine ? captureConnectionGeneration(machine.environmentId) : undefined;
       const current = () =>
@@ -1360,19 +1420,33 @@ function watchMachineStatus(machineId: string): () => void {
           if (machineOnline.get(machineId) === false) failures = Math.min(4, failures + 1);
         }
       }
-      polling = false;
-      // Offline: no timer until `online` resumes the check, so nothing is sent to a machine
-      // while the computer cannot reach it.
-      schedule(
-        !current() ? 0 : machineStatusPollDelay(failures, machine?.environmentId, windowHidden()),
+      if (statusWatchers.get(machineId) !== watcher) return;
+      polling.setPeriod(
+        computerOnline() ? machineStatusPollDelay(failures, machine?.environmentId) : 0,
+        failures > 0,
       );
+      if (!current() && foregroundPollsVisible()) polling.refresh();
     };
-    void poll();
+    const polling = startForegroundPolling(poll, computerOnline() ? 15_000 : 0, {
+      immediate: false,
+    });
+    const resume = () => polling.refresh();
+    const pauseOffline = () => polling.setPeriod(0);
+    watcher.wake = () => {
+      if (failures) resume();
+    };
+    window.addEventListener("online", resume);
+    window.addEventListener("offline", pauseOffline);
+    watcher.dispose = () => {
+      polling.stop();
+      window.removeEventListener("online", resume);
+      window.removeEventListener("offline", pauseOffline);
+    };
+    resume();
   }
   return () => {
     const watcher = statusWatchers.get(machineId);
     if (!watcher || --watcher.count > 0) return;
-    clearTimeout(watcher.timer);
     watcher.dispose?.();
     statusWatchers.delete(machineId);
   };
@@ -1457,6 +1531,7 @@ export type RemoteProjectSessions = {
   failed: boolean;
   dataState: RemoteDataState;
   refresh: () => void;
+  confirmPin: (sessionId: string, pinned: boolean) => void;
 };
 
 /** Lists a remote project's host sessions, keeping the last list visible
@@ -1676,6 +1751,23 @@ export function useRemoteProjectSessions(
           ? { phase: "loading" }
           : dataState,
     refresh: machine ? refreshList : refreshMachines,
+    confirmPin: (sessionId, pinned) => {
+      setSessionList((current) => {
+        if (
+          current.project !== project ||
+          !current.sessions.some(
+            (session) => session.id === sessionId && !!session.pinned !== pinned,
+          )
+        )
+          return current;
+        return {
+          project,
+          sessions: current.sessions.map((session) =>
+            session.id === sessionId ? { ...session, pinned } : session,
+          ),
+        };
+      });
+    },
   };
 }
 
@@ -1689,16 +1781,41 @@ function useRouteStableMachines(machines: RemoteMachine[]): RemoteMachine[] {
 /** Lists the host sessions of every remote project on the rail, so one that
  * runs on its machine shows up without its project being opened here. A
  * project whose machine does not answer keeps its last list. */
-export function useRemoteRailSessions(projects: readonly string[]): {
+export function useRemoteRailSessions(
+  projects: readonly string[],
+  includeProjectless = false,
+): {
   sessions: RemoteRailSession[];
   freshProjects: readonly string[];
 } {
-  const key = projects.join("\n");
-  const { machines: inventory } = useRemoteMachines(projects.length > 0);
+  const { machines: inventory } = useRemoteMachines(projects.length > 0 || includeProjectless);
+  const projectlessMachines = includeProjectless
+    ? inventory.filter(
+        (machine) => !isLocalSyncMachine(machine) && isMachineEnabled(machine.environmentId),
+      )
+    : [];
+  const projectlessEnvironmentIds = projectlessMachines
+    .map((machine) => machine.environmentId)
+    .join("\n");
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep advertised Host capabilities current as the list gains machine connections.
+  useEffect(() => {
+    for (const environment of projectlessEnvironmentIds.split("\n").filter(Boolean)) {
+      void loadRemoteCapabilities(environment).catch(() => {});
+    }
+  }, [projectlessEnvironmentIds]);
+  const listedProjects = [
+    ...projects,
+    ...projectlessMachines.flatMap((machine) =>
+      cachedRemoteCapabilities(machine.environmentId)?.includes(PROJECTLESS_SESSIONS_CAPABILITY)
+        ? [projectlessMachineProject(machine.environmentId).key]
+        : [],
+    ),
+  ];
+  const key = listedProjects.join("\n");
   // Pollers and machine channels restart only when a machine they reach changes its identity
   // or route, not when the inventory is re-read, renamed or gains an unrelated machine.
   const railEnvironments = new Set(
-    projects.map((project) => remoteProjectFor(project)?.environmentId),
+    listedProjects.map((project) => remoteSessionProjectAtKey(project)?.environmentId),
   );
   const machines = useRouteStableMachines(
     inventory.filter((entry) => railEnvironments.has(entry.environmentId)),
@@ -1711,7 +1828,7 @@ export function useRemoteRailSessions(projects: readonly string[]): {
   useEffect(() => subscribeRemoteCapabilities(() => setCapabilityVersion((v) => v + 1)), []);
   useEffect(() => {
     const targets = (key ? key.split("\n") : []).flatMap((project) => {
-      const remote = remoteProjectFor(project);
+      const remote = remoteSessionProjectAtKey(project);
       const machine =
         remote && machines.find((entry) => entry.environmentId === remote.environmentId);
       return remote && machine ? [{ project, remote, machine }] : [];
@@ -1759,8 +1876,10 @@ export function useRemoteRailSessions(projects: readonly string[]): {
       lists.set(project, railEntryAfterFailure(entry, reason));
       publish();
     };
-    const capable = targets.filter(({ machine }) =>
-      cachedRemoteCapabilities(machine.environmentId)?.includes("machine.changes"),
+    const capable = targets.filter(
+      ({ machine, remote }) =>
+        remote.projectId !== PROJECTLESS_PROJECT_ID &&
+        cachedRemoteCapabilities(machine.environmentId)?.includes("machine.changes"),
     );
     const fallback = targets.filter((target) => !capable.includes(target));
     const cleanups: (() => void)[] = [];

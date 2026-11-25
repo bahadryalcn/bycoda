@@ -26,6 +26,7 @@ import {
 } from "../../providers/model/rateLimits";
 import { UsageProviderIdentity } from "./UsageProviderIdentity";
 import { UsageOverview } from "./UsageOverview";
+import type { UsageFilters } from "../model/usageAnalytics";
 import { usageLabel } from "./UsageVisualizations";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -47,77 +48,91 @@ import { GrokLimits } from "./GrokLimits";
 
 export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
-  const [version, setVersion] = useState(0);
   const [refresh, setRefresh] = useState(0);
-  const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
-  const identities = useProviderAccountIdentities(accounts, refresh);
-  useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
   useEffect(() => {
     const reload = () => setRefresh((v) => v + 1);
     window.addEventListener(WORKSPACE_REFRESH_EVENT, reload);
     return () => window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
   }, []);
   return (
-    <div
-      id="setting-account-limits"
-      data-setting-id="account-limits"
-      data-accounts-version={version}
-      className="usage-page"
-    >
+    <div id="setting-account-limits" data-setting-id="account-limits" className="usage-page">
       {limitsOnly ? null : <UsageActiveTime />}
       <UsageOverview
         limitsOnly={limitsOnly}
         refresh={refresh}
         limits={(filters) => (
-          <div className="usage-limits-content">
-            <div className="usage-toolbar">
-              <Heading size="section">{t("Provider account limit")}</Heading>
-              <UsageDisplaySettings />
-              <Button
-                className="shrink-0"
-                variant="ghost"
-                iconOnly
-                label={t("Refresh usage")}
-                onClick={() => setRefresh((v) => v + 1)}
-              >
-                <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
-              </Button>
-            </div>
-            <Surface variant="card" padding="none" dividers="card" className="usage-accounts">
-              {accounts
-                .filter(
-                  (account) =>
-                    (!filters.provider.length || filters.provider.includes(account.provider)) &&
-                    (!filters.account.length ||
-                      filters.account.includes(`${account.provider}:${account.id}`)),
-                )
-                .map((account) => (
-                  <AccountLimits
-                    key={identityKey(account)}
-                    provider={account.provider as RateLimitProvider}
-                    account={account}
-                    refresh={refresh}
-                    identity={identities[identityKey(account)]}
-                  />
-                ))}
-              {(!filters.provider.length || filters.provider.includes("grok")) &&
-              (!filters.account.length || filters.account.includes("grok:default")) ? (
-                <GrokLimits refresh={refresh} />
-              ) : null}
-              {!accounts.length ? (
-                <EmptyState
-                  size="inline"
-                  kind="empty"
-                  description={t(
-                    "No Claude or Codex accounts on this machine. Add an account in Providers settings.",
-                  )}
-                />
-              ) : null}
-            </Surface>
-            <UsageBudgets refresh={refresh} />
-          </div>
+          <UsageLimits
+            filters={filters}
+            refresh={refresh}
+            onRefresh={() => setRefresh((v) => v + 1)}
+          />
         )}
       />
+    </div>
+  );
+}
+
+function UsageLimits({
+  filters,
+  refresh,
+  onRefresh,
+}: {
+  filters: UsageFilters;
+  refresh: number;
+  onRefresh: () => void;
+}) {
+  const [version, setVersion] = useState(0);
+  const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
+  const identities = useProviderAccountIdentities(accounts, refresh);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- refresh account rows on provider profile changes
+  useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
+  return (
+    <div className="usage-limits-content" data-accounts-version={version}>
+      <div className="usage-toolbar">
+        <Heading size="section">{t("Provider account limit")}</Heading>
+        <UsageDisplaySettings />
+        <Button
+          className="shrink-0"
+          variant="ghost"
+          iconOnly
+          label={t("Refresh usage")}
+          onClick={onRefresh}
+        >
+          <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+        </Button>
+      </div>
+      <Surface variant="card" padding="none" dividers="card" className="usage-accounts">
+        {accounts
+          .filter(
+            (account) =>
+              (!filters.provider.length || filters.provider.includes(account.provider)) &&
+              (!filters.account.length ||
+                filters.account.includes(`${account.provider}:${account.id}`)),
+          )
+          .map((account) => (
+            <AccountLimits
+              key={identityKey(account)}
+              provider={account.provider as RateLimitProvider}
+              account={account}
+              refresh={refresh}
+              identity={identities[identityKey(account)]}
+            />
+          ))}
+        {(!filters.provider.length || filters.provider.includes("grok")) &&
+        (!filters.account.length || filters.account.includes("grok:default")) ? (
+          <GrokLimits refresh={refresh} />
+        ) : null}
+        {!accounts.length ? (
+          <EmptyState
+            size="inline"
+            kind="empty"
+            description={t(
+              "No Claude or Codex accounts on this machine. Add an account in Providers settings.",
+            )}
+          />
+        ) : null}
+      </Surface>
+      <UsageBudgets refresh={refresh} />
     </div>
   );
 }

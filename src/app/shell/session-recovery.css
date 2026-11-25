@@ -46,6 +46,33 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
+.file-recovery-body {
+  min-block-size: min(5rem, 26dvh);
+}
+.file-recovery-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding-block: 0.5rem;
+}
+.file-recovery-detail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.625rem;
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+.file-recovery-icon {
+  margin-block-start: 0.125rem;
+  color: var(--ui-text-secondary);
+}
+.file-recovery-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
 /* A short window keeps the footer actions on screen even while a result alert is shown: the list
    gives up its reserved height first. */
 @media (max-height: 560px) {
@@ -72,7 +99,7 @@
 .recovery-list {
   flex: 0 1 auto;
   min-block-size: 0;
-  scrollbar-gutter: stable;
+  padding-inline-end: var(--ui-scrollbar-size);
 }
 
 .recovery-row > .bycoda-arc {

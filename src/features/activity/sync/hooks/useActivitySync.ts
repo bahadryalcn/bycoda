@@ -1,6 +1,7 @@
 import type { AccountClient } from "@bycoda/account-contracts";
 import { useEffect } from "react";
-import { useAccountState } from "../../../account";
+import { accountIdentity, accountSharingDestination, useAccountState } from "../../../account";
+import { activitySharing, dataTransfers, jsonSharingFile } from "../../../data-sharing";
 import { activityClient } from "../../model/activityClient";
 import { createActivitySyncer } from "../model/activitySyncer";
 
@@ -20,14 +21,34 @@ export function useActivitySync(
   const userId = state.phase === "signed-in" ? state.context.user.id : null;
   const deviceId = state.phase === "signed-in" ? state.deviceId : null;
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Owns the sync timer, review lifetime and network listeners for this registered account device.
   useEffect(() => {
     if (!machineId || !userId || !deviceId) return;
+    const lifetime = new AbortController();
     const local = activityClient(machineId);
     const syncer = createActivitySyncer({
       identity: () => ({ userId, deviceId }),
       listDays: async (range) => (await local.days(range)).days,
       upload: async (days) => {
-        await getApi().uploadActivityDays({ body: { days } });
+        if (activitySharing.load() === "off") return false;
+        const base = await accountSharingDestination();
+        if (!base) return false;
+        const body = { days };
+        return dataTransfers.run(
+          {
+            kind: "activity",
+            destination: base.replace(/\/+$/, "") + "/v1/activity/days",
+            linkedToAccount: true,
+            files: [jsonSharingFile("activity-days.json", body)],
+          },
+          activitySharing.load,
+          () => {
+            if (accountIdentity().accountId !== userId)
+              throw new Error("Activity account changed before upload");
+            return getApi().uploadActivityDays({ body }, { signal: lifetime.signal });
+          },
+          lifetime.signal,
+        );
       },
       onError: onApiError,
     });
@@ -44,9 +65,12 @@ export function useActivitySync(
       cycle().catch(() => undefined);
     };
     window.addEventListener("online", onOnline);
+    const unsubscribe = activitySharing.subscribe(onOnline);
     cycle().catch(() => undefined);
     return () => {
       disposed = true;
+      lifetime.abort();
+      unsubscribe();
       clearTimeout(timer);
       window.removeEventListener("online", onOnline);
     };

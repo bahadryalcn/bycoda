@@ -883,6 +883,7 @@ export function invalidateHostGitIndex(root?: string): void {
   } else {
     gitIndexInflight.delete(root);
     gitIndexInflight.delete(`${root}\0files`);
+    gitIndexInflight.delete(`${root}\0stats`);
     const repository = currentHostGitRepository();
     if (repository) {
       for (const [key, entry] of gitIndexInflight) {
@@ -897,10 +898,18 @@ export function invalidateHostGitIndex(root?: string): void {
 }
 
 /** Concurrent callers share a refresh when it supplies all requested fields. */
-export function hostGitIndex(root: string, full = true): Promise<GitDiffIndex> {
+export function hostGitIndex(
+  root: string,
+  full = true,
+  includeOperation = true,
+): Promise<GitDiffIndex> {
   const fullRead = gitIndexInflight.get(root);
   if (fullRead?.generation === gitIndexGeneration) return fullRead.value;
-  const key = full ? root : `${root}\0files`;
+  if (!full && !includeOperation) {
+    const fileRead = gitIndexInflight.get(`${root}\0files`);
+    if (fileRead?.generation === gitIndexGeneration) return fileRead.value;
+  }
+  const key = full ? root : `${root}\0${includeOperation ? "files" : "stats"}`;
   const running = gitIndexInflight.get(key);
   if (running?.generation === gitIndexGeneration) return running.value;
   const entry: HostGitIndexFlight = {
@@ -909,7 +918,7 @@ export function hostGitIndex(root: string, full = true): Promise<GitDiffIndex> {
       .catch(() => undefined)
       .then((repository) => {
         entry.repository = repository;
-        return readHostGitIndex(root, full);
+        return readHostGitIndex(root, full, full || includeOperation);
       }),
   };
   gitIndexInflight.set(key, entry);
@@ -979,23 +988,33 @@ async function countLines(path: string): Promise<number> {
   return lines + Number(bytes[bytes.length - 1] !== 10);
 }
 
-async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffIndex> {
+async function readHostGitIndex(
+  root: string,
+  full: boolean,
+  includeOperation: boolean,
+): Promise<GitDiffIndex> {
   // An ordinary folder has an empty Changes view, just as it does locally.
+  // Git emits the worktree flag first and the verified HEAD last. Preserve the
+  // intervening prefix verbatim, including spaces and embedded newlines.
+  const worktreeProbe = /^true(\r?\n)((?:[\s\S]*\/)?)\1(?:([a-f0-9]{40}|[a-f0-9]{64})\1)?$/;
   const probe = await git(root, [
     "rev-parse",
     "--is-inside-work-tree",
+    "--show-prefix",
     "--verify",
     "--quiet",
     "HEAD",
   ]).catch((error: Error & { code?: number; stdout?: string }) => {
     if (error.message.includes("not a git repository")) return "";
-    // An unborn HEAD exits 1 after printing the worktree flag.
-    if (error.code === 1 && error.stdout && /^(?:true|false)\s*$/.test(error.stdout))
-      return error.stdout;
+    // An unborn HEAD exits 1 after printing the worktree flag and prefix.
+    if (error.code === 1 && error.stdout) {
+      if (/^false\r?\n/.test(error.stdout)) return "";
+      const unborn = worktreeProbe.exec(error.stdout);
+      if (unborn && !unborn[3]) return error.stdout;
+    }
     throw error;
   });
-  const [repository, headText = ""] = probe.trim().split(/\r?\n/);
-  if (repository !== "true") {
+  if (!probe || /^false\r?\n/.test(probe)) {
     return {
       repository: false,
       branch: null,
@@ -1014,6 +1033,9 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
       operation: null,
     };
   }
+  const worktree = worktreeProbe.exec(probe);
+  if (!worktree) throw new Error("Could not read Git worktree prefix or HEAD.");
+  const [, , prefix, headText = ""] = worktree;
   const branchStatusRead = git(root, [
     "status",
     "--porcelain=v1",
@@ -1022,7 +1044,6 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
     "--untracked-files=all",
   ]).then(parseHostBranchStatus);
   const statusRead = branchStatusRead.then((value) => value.status);
-  const prefixRead = git(root, ["rev-parse", "--show-prefix"]);
   const [
     branchText,
     statusText,
@@ -1034,7 +1055,6 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
     conflicts,
     operation,
     pushedText,
-    prefixText,
   ] = await Promise.all([
     branchStatusRead.then((value) => value.branch),
     statusRead,
@@ -1052,13 +1072,12 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
         ? hostUnmerged(root)
         : [],
     ),
-    hostOperationState(root),
+    includeOperation ? hostOperationState(root) : null,
     full
       ? git(root, ["for-each-ref", "--count=1", "--contains", "HEAD", "refs/remotes"]).catch(
           () => "",
         )
       : "",
-    prefixRead,
   ]);
   let [behind, ahead] = countsText.trim().split(/\s+/).map(Number);
   let defaultBranch = defaultText.trim().replace(/^origin\//, "");
@@ -1107,7 +1126,6 @@ async function readHostGitIndex(root: string, full: boolean): Promise<GitDiffInd
       });
     }
   }
-  const prefix = prefixText.trim();
   const parts = statusText.split("\0");
   const files: GitChangedFile[] = [];
   const untracked: GitChangedFile[] = [];
@@ -1286,15 +1304,17 @@ async function cachedHostNumstat(root: string, head: string, status: string): Pr
   }
 }
 
-async function gitBlob(root: string, spec: string) {
+async function gitBlob(root: string, spec: string, required = false) {
   try {
     const text = await git(root, ["show", spec], MAX_FILE + 1024);
     return { text, binary: text.includes("\0"), tooLarge: false };
   } catch (error) {
+    const tooLarge = (error as NodeJS.ErrnoException).code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+    if (required && !tooLarge) throw error;
     return {
       text: "",
       binary: false,
-      tooLarge: String(error).includes("maxBuffer"),
+      tooLarge,
     };
   }
 }
@@ -1309,7 +1329,27 @@ export async function hostFileDiff(
   const file = (await hostChangedEntries(root, [relativePath])).find(
     (entry) => entry.relative === relativePath,
   );
-  if (!file) throw new Error("File has no uncommitted changes");
+  if (!file) {
+    // A status row can disappear between opening Changes and reading the diff.
+    // Use the index blob for both sides so a draft still has its real baseline.
+    const entries = await git(root, ["ls-files", "--stage", "-z", "--", relativePath]);
+    const entry = entries
+      .split("\0")
+      .find((row) => row.slice(row.indexOf("\t") + 1) === relativePath);
+    const base = entry?.match(/^([0-7]{6}) ([\da-f]+) (\d)\t/);
+    if (base && base[3] !== "0") throw new Error("File has unresolved Git conflicts");
+    const blob = base && base[1] !== "160000" ? await gitBlob(root, base[2], true) : undefined;
+    const text = blob && !blob.binary ? blob.text : "";
+    return {
+      path: relativePath,
+      relative: relativePath,
+      status: blob ? "unchanged" : "unlisted",
+      original: text,
+      current: text,
+      binary: blob?.binary ?? false,
+      tooLarge: blob?.tooLarge ?? false,
+    };
+  }
   const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
   const repositoryPath = `${prefix}${relativePath}`;
   const originalPath = staged

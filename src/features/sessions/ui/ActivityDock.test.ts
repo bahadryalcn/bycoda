@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import { ActivityDock } from "./ActivityDock";
+import { STOP_ALL_CONFIRM_MS } from "./ActivityDockStopAll";
 import { SubagentStateLine } from "./SubagentAnatomy";
 import { HARNESS_ICONS } from "./HarnessIcon";
 
@@ -175,14 +176,12 @@ describe("ActivityDock", () => {
     const row = container.querySelector<HTMLButtonElement>('[data-dock-agent="a1"]')!;
     expect(row.getAttribute("data-dock-agent-state")).toBe("done");
     expect(row.getAttribute("aria-label")).toContain("Done");
-    expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
+    expect(row.querySelector("[data-subagent-identity]")?.textContent).toContain(
       "Completed review",
     );
-    expect(row.querySelector(".activity-dock-agent-identity")?.textContent).toContain(
-      "GPT-6.1-Sol",
-    );
-    expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1 failed");
-    expect(row.querySelector(".activity-dock-agent-metrics")?.textContent).toContain("1m 2s");
+    expect(row.querySelector("[data-subagent-identity]")?.textContent).toContain("GPT-6.1-Sol");
+    expect(row.querySelector("[data-subagent-state]")?.textContent).toContain("×1");
+    expect(row.querySelector("[data-subagent-state]")?.textContent).toContain("1m 2s");
     act(() => row.click());
     expect(onOpenAgent).toHaveBeenCalledWith(
       expect.objectContaining({ blockId: "a1", status: "done" }),
@@ -199,11 +198,8 @@ describe("ActivityDock", () => {
     act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
     const row = dock()!.querySelector('[data-dock-agent="a1"]')!;
     expect(row.getAttribute("aria-label")).toContain("Running");
-    const failed = [...row.querySelectorAll("span")].find(
-      (span) => span.textContent === "1 failed" && span.getAttribute("data-tone") === "danger",
-    );
-    expect(failed?.getAttribute("data-tone")).toBe("danger");
-    expect(row.textContent).toContain("2 steps, 1 failed");
+    expect(row.querySelector("[data-subagent-state]")?.textContent).toContain("×1");
+    expect(row.getAttribute("aria-label")).toContain("2 steps, 1 failed");
 
     act(() =>
       root.render(
@@ -237,7 +233,7 @@ describe("ActivityDock", () => {
         ?.querySelector('[data-pacing-track="reserved"]')
         ?.closest("[data-activity-status-row]"),
     ).toBe(dock()?.querySelector("[data-activity-status-row]"));
-    // A narrow dock gives the summary its own row; the walker stays on it, not below.
+    // The walker stays on the summary's row, not below it.
     expect(
       dock()?.querySelector('[data-pacing-track="reserved"]')?.closest(".activity-dock-summary"),
     ).not.toBeNull();
@@ -348,8 +344,8 @@ describe("ActivityDock", () => {
 
   describe("stopping", () => {
     const stopButtons = () =>
-      [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) =>
-        /^Stop(ping)? /.test(button.getAttribute("aria-label") ?? ""),
+      [...container.querySelectorAll<HTMLButtonElement>("button:not([data-dock-stop-all])")].filter(
+        (button) => /^Stop(ping)? /.test(button.getAttribute("aria-label") ?? ""),
       );
     const expand = () =>
       act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
@@ -417,25 +413,86 @@ describe("ActivityDock", () => {
       expect(all?.querySelector('[data-reserve="Stop all"]')).not.toBeNull();
       expect(all?.querySelector('[data-reserve="Retry stop"]')).not.toBeNull();
       act(() => all?.click());
-      expect(onStopAll).toHaveBeenCalled();
+      expect(onStopAll).not.toHaveBeenCalled();
+      expect(visibleSessionTestText(all!)).toBe("Confirm stop?");
+      await act(async () => all?.click());
+      expect(onStopAll).toHaveBeenCalledOnce();
     });
 
-    it("offers Stop all background work in the expanded list where tasks stop one by one", async () => {
-      const onStopAll = vi.fn(async () => {});
-      render({
-        busy: true,
-        blocks: [user, agent],
-        sessionId: "s-stop-all",
-        perItemStop: true,
-        onStopAgent: async () => {},
-        onStopAll,
+    describe("stop all confirmation", () => {
+      const renderStopAll = (onStopAll: () => Promise<void>, sessionId: string) => {
+        render({
+          busy: true,
+          blocks: [user, agent],
+          sessionId,
+          perItemStop: true,
+          onStopAgent: async () => {},
+          onStopAll,
+        });
+        return container.querySelector<HTMLButtonElement>("[data-dock-stop-all]")!;
+      };
+
+      it("sits in the header while collapsed and stops only on the second press", async () => {
+        const onStopAll = vi.fn(async () => {});
+        const stopAll = renderStopAll(onStopAll, "s-stop-all");
+        expect(stopAll.closest("[data-activity-status-row]")).not.toBeNull();
+        expect(container.querySelector("[data-dock-agent]")).toBeNull();
+        expect(visibleSessionTestText(stopAll)).toBe("Stop all");
+        expect(stopAll.getAttribute("aria-label")).toBe("Stop all background work");
+        act(() => stopAll.click());
+        expect(onStopAll).not.toHaveBeenCalled();
+        expect(visibleSessionTestText(stopAll)).toBe("Confirm stop 1?");
+        expect(stopAll.getAttribute("aria-label")).toBeNull();
+        await act(async () => stopAll.click());
+        expect(onStopAll).toHaveBeenCalledOnce();
       });
-      expect(container.querySelector("[data-dock-stop-all]")).toBeNull();
-      expand();
-      const stopAll = container.querySelector<HTMLButtonElement>("[data-dock-stop-all]")!;
-      expect(visibleSessionTestText(stopAll)).toBe("Stop all background work");
-      await act(async () => stopAll.click());
-      expect(onStopAll).toHaveBeenCalledOnce();
+
+      it("disarms when the confirmation window passes", () => {
+        vi.useFakeTimers();
+        try {
+          const onStopAll = vi.fn(async () => {});
+          const stopAll = renderStopAll(onStopAll, "s-stop-all-timeout");
+          act(() => stopAll.click());
+          act(() => vi.advanceTimersByTime(STOP_ALL_CONFIRM_MS));
+          expect(visibleSessionTestText(stopAll)).toBe("Stop all");
+          act(() => stopAll.click());
+          expect(onStopAll).not.toHaveBeenCalled();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("does not let a double click pass the confirmation", () => {
+        const onStopAll = vi.fn(async () => {});
+        const stopAll = renderStopAll(onStopAll, "s-stop-all-double");
+        const press = (detail: number) =>
+          act(() => {
+            stopAll.dispatchEvent(new MouseEvent("click", { bubbles: true, detail }));
+          });
+        press(1);
+        press(2);
+        expect(onStopAll).not.toHaveBeenCalled();
+        expect(visibleSessionTestText(stopAll)).toBe("Confirm stop 1?");
+      });
+
+      it("disarms when focus leaves the button", () => {
+        const onStopAll = vi.fn(async () => {});
+        const stopAll = renderStopAll(onStopAll, "s-stop-all-blur");
+        act(() => stopAll.focus());
+        act(() => stopAll.click());
+        act(() => stopAll.blur());
+        expect(visibleSessionTestText(stopAll)).toBe("Stop all");
+      });
+
+      it("retries a failed stop on one press", async () => {
+        const onStopAll = vi.fn(() => Promise.reject(new Error("no")));
+        const stopAll = renderStopAll(onStopAll, "s-stop-all-retry");
+        act(() => stopAll.click());
+        await act(async () => stopAll.click());
+        expect(visibleSessionTestText(stopAll)).toBe("Retry stop");
+        await act(async () => stopAll.click());
+        expect(onStopAll).toHaveBeenCalledTimes(2);
+      });
     });
 
     it("shows a stopped agent as stopped by you, with nothing left to stop", () => {
@@ -454,9 +511,9 @@ describe("ActivityDock", () => {
       expand();
       expect(stopButtons()).toHaveLength(0);
       expect(visibleSessionTestText(container)).not.toContain("Stop all");
-      expect(container.querySelector("[data-dock-agent='a1']")?.textContent).toContain(
-        "stopped by you",
-      );
+      const row = container.querySelector("[data-dock-agent='a1']");
+      expect(row?.textContent).toContain("Stopped");
+      expect(row?.getAttribute("aria-label")).toContain("Stopped by you");
     });
   });
 });

@@ -7,8 +7,8 @@ export type LoopGate = {
   /** False while the element has no size (hidden tab, display: none). */
   sized: boolean;
   reducedMotion?: boolean;
-  /** False while the window is behind another application; the last frame holds. */
-  focused?: boolean;
+  /** False while the native window is hidden or minimized. */
+  windowVisible?: boolean;
 };
 
 /**
@@ -19,7 +19,7 @@ export type LoopGate = {
 export function shouldRunLoop(gate: LoopGate): boolean {
   if (gate.enabled === false) return false;
   if (gate.reducedMotion) return false;
-  if (gate.focused === false) return false;
+  if (gate.windowVisible === false) return false;
   return !gate.documentHidden && gate.visible && gate.sized;
 }
 

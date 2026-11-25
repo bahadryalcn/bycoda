@@ -36,14 +36,13 @@ export function VoiceChatTranscript({ turns }: { turns: readonly VoiceChatTurn[]
         <div className={styles.row} data-role={turn.role} key={turn.id} role="listitem">
           <Text
             as="div"
-            size="secondary"
+            size="body"
             tone="inherit"
             leading="normal"
             {...surfaceAttributes(
               {
                 radius: "popup",
                 tone: turn.role === "owner" ? "accent" : undefined,
-                variant: turn.role === "assistant" ? "neutral-hover" : undefined,
               },
               styles.bubble,
             )}

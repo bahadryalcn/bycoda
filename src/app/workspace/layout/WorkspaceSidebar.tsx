@@ -46,8 +46,6 @@ export interface WorkspaceSidebarProps extends Omit<SidebarProps, DerivedSidebar
   socialBoardShown: boolean;
   /** Assistant, terminal and conversation tools share the automations surface. */
   auxiliaryTool?: AuxiliaryToolId | null;
-  tabVisitNav: { canBack: boolean; canForward: boolean };
-  surfaceForward: { canForward: boolean };
   activeTab: WorkspaceTab | undefined;
   activeHarness: Parameters<typeof pickTextHarness>[0];
   onOpenNotes: NonNullable<SidebarProps["onOpenNotes"]>;
@@ -65,8 +63,6 @@ export const WorkspaceSidebar = memo(
     taskBoardShown,
     socialBoardShown,
     auxiliaryTool,
-    tabVisitNav,
-    surfaceForward,
     activeTab,
     activeHarness,
     onOpenNotes,
@@ -87,8 +83,6 @@ export const WorkspaceSidebar = memo(
             : undefined
         }
         status={historyFailed ? "error" : "idle"}
-        canGoBack={tabVisitNav.canBack}
-        canGoForward={surfaceForward.canForward || tabVisitNav.canForward}
         selectedDiffPath={activeTab ? selectedChangePath(activeTab, props.gitCwd) : undefined}
         selectedDiffKind={activeTab ? selectedChangeKind(activeTab) : undefined}
         selectedCommitSha={activeTab ? selectedCommitSha(activeTab) : undefined}
@@ -104,7 +98,7 @@ export const WorkspaceSidebar = memo(
     );
   },
   (a, b) => {
-    const ignored = new Set(["workspaceNavigation", "tabVisitNav", "surfaceForward"]);
+    const ignored = new Set(["workspaceNavigation"]);
     if (Object.keys(a).length !== Object.keys(b).length) return false;
     for (const key of Object.keys(a) as Array<keyof WorkspaceSidebarProps>) {
       if (!ignored.has(key) && !Object.is(a[key], b[key])) return false;
@@ -112,10 +106,7 @@ export const WorkspaceSidebar = memo(
     return (
       a.workspaceNavigation.pending?.project === b.workspaceNavigation.pending?.project &&
       a.workspaceNavigation.error?.project === b.workspaceNavigation.error?.project &&
-      a.workspaceNavigation.error?.message === b.workspaceNavigation.error?.message &&
-      a.tabVisitNav.canBack === b.tabVisitNav.canBack &&
-      a.tabVisitNav.canForward === b.tabVisitNav.canForward &&
-      a.surfaceForward.canForward === b.surfaceForward.canForward
+      a.workspaceNavigation.error?.message === b.workspaceNavigation.error?.message
     );
   },
 );

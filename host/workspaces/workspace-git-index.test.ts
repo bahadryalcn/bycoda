@@ -10,11 +10,10 @@ beforeEach(() => {
   processApi.exec.mockReset();
   processApi.exec.mockImplementation(async (_exe: string, args: string[]) => {
     let stdout = "";
-    if (args.includes("--is-inside-work-tree")) stdout = `true\n${"a".repeat(40)}\n`;
+    if (args.includes("--is-inside-work-tree")) stdout = `true\n\n${"a".repeat(40)}\n`;
     else if (args.includes("status"))
       stdout = "## feature...origin/feature [ahead 1]\0 M file.txt\0";
     else if (args.includes("--numstat")) stdout = "2\t1\tfile.txt\0";
-    else if (args.includes("--show-prefix")) stdout = "";
     else if (args.includes("symbolic-ref") && args.includes("HEAD")) stdout = "feature\n";
     else if (args.includes("get-url")) stdout = "https://example.test/repo\n";
     else if (args.includes("@{upstream}")) stdout = "origin/feature\n";
@@ -36,8 +35,15 @@ it("reads file counts and branch identity without querying remote/ref synchroniz
   });
   expect(result.files).toEqual([expect.objectContaining({ relative: "file.txt", unstaged: true })]);
   const commands = processApi.exec.mock.calls.map((call) => call[1] as string[]);
-  expect(commands.filter((args) => args.includes("--verify") && args.includes("HEAD"))).toEqual([
-    expect.arrayContaining(["rev-parse", "--is-inside-work-tree", "--verify", "--quiet", "HEAD"]),
+  expect(commands.filter((args) => args.includes("--show-prefix"))).toEqual([
+    expect.arrayContaining([
+      "rev-parse",
+      "--is-inside-work-tree",
+      "--show-prefix",
+      "--verify",
+      "--quiet",
+      "HEAD",
+    ]),
   ]);
   expect(
     commands.some(
@@ -62,6 +68,27 @@ it("shares a full refresh with concurrent lightweight callers while retaining fu
     defaultBranch: "main",
     ahead: 1,
   });
+});
+
+it("omits the operation-state probe only for stats-initiated index reads", async () => {
+  const operationProbes = () =>
+    processApi.exec.mock.calls.filter(
+      ([, args]) => args.includes("--git-path") && args.includes("MERGE_HEAD"),
+    );
+  const stats = hostGitIndex("/repo", false, false);
+  expect(hostGitIndex("/repo", false, false)).toBe(stats);
+  expect(await stats).toMatchObject({ additions: 2, deletions: 1 });
+  expect(operationProbes()).toHaveLength(0);
+
+  const nextStats = hostGitIndex("/repo", false, false);
+  const files = hostGitIndex("/repo", false);
+  expect(files).not.toBe(nextStats);
+  expect(hostGitIndex("/repo", false, false)).toBe(files);
+  await Promise.all([nextStats, files]);
+  expect(operationProbes()).toHaveLength(1);
+
+  await hostGitIndex("/repo");
+  expect(operationProbes()).toHaveLength(2);
 });
 
 it("does not use a pending lightweight response to satisfy a full refresh", async () => {
@@ -105,13 +132,40 @@ it("retains the worktree and an empty HEAD when the quiet probe reports an unbor
   processApi.exec.mockRejectedValueOnce(
     Object.assign(new Error("Command failed"), {
       code: 1,
-      stdout: "true\r\n",
+      stdout: "true\r\n\r\n",
       stderr: "",
     }),
   );
   await expect(hostGitIndex("/repo", false)).resolves.toMatchObject({
     repository: true,
     head: null,
+  });
+});
+
+it.each([false, true])("uses the exact subdirectory prefix with unborn HEAD %s", async (unborn) => {
+  const prefix = " [nested] ü /path\nline/";
+  const oid = "a".repeat(40);
+  const stdout = `true\n${prefix}\n${unborn ? "" : `${oid}\n`}`;
+  const execute = processApi.exec.getMockImplementation()!;
+  processApi.exec.mockImplementation(async (command, args: string[]) => {
+    if (args.includes("--is-inside-work-tree")) {
+      if (unborn) throw Object.assign(new Error("Command failed"), { code: 1, stdout });
+      return { stdout, stderr: "" };
+    }
+    if (args.includes("status")) {
+      return { stdout: `## feature\0 M ${prefix}file.txt\0 M outside.txt\0`, stderr: "" };
+    }
+    if (args.includes("--numstat")) {
+      expect(args).toContain("--relative");
+      if (unborn && args.includes("HEAD")) throw new Error("No HEAD yet");
+      return { stdout: "2\t1\tfile.txt\0", stderr: "" };
+    }
+    return execute(command, args);
+  });
+  await expect(hostGitIndex("/repo", false, false)).resolves.toMatchObject({
+    repository: true,
+    head: unborn ? null : oid,
+    files: [expect.objectContaining({ relative: "file.txt", additions: 2, deletions: 1 })],
   });
 });
 

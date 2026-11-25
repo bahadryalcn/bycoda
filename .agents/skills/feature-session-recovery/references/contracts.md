@@ -14,7 +14,7 @@ Read only the section needed for the change. Source owners remain in [the surfac
 
 - `useRecoveryAutoResolve` resolves entries confirmed Done/Idle (references only, never history or running work), skips loading/unreadable/unverified/unavailable ones, and opens the dialog after boot only when attention work remains. The rail count is then the attention count.
 
-- Recovered/dismissed/resolved IDs remain held from automatic continuation; list cleanup does not stop work or erase conversation history.
+- A new interruption note is armed for one automatic continuation. The next launch spends it whatever the outcome (setting off, uncertain transcript, queued messages), so an interruption the owner left alone is never sent later and notes without the flag stay manual. Recovery journal membership neither blocks nor grants continuation, and a chat continuing on its own does not open the dialog. List cleanup does not stop work or erase conversation history.
 
 - Explicit owner Stop is terminal idle for recovery, even when older history uses `notice: "interrupt"`. Never auto-continue that stop or remove its history note; retain actual app/Host interruptions and unknown/unverified read handling.
 
@@ -35,12 +35,14 @@ Read only the section needed for the change. Source owners remain in [the surfac
 - Explicit conversation deletion is durable across restart. Native and Host deletion markers reject late saves/adoption; boot removes confirmed deleted IDs from saved layouts, in-flight references and recovery entries before claiming them. A failed deletion lookup remains unknown and retains the restore retry. Never expire renderer deletion guards on a timer.
 
 - Retain serialized journal writes/rollback, pending duplicate guards and lock/privacy rechecks. Conversation maintenance cannot clear original file copies; unknown file-open/save outcomes retain their original identity.
+- Hiding a file copy requires confirmation and a Native match on the exact owner, document, revision and digest. Store visibility independently of the recovery payload and apply it before inventory pagination. New revisions can appear again.
 
 - Native editor copies may carry exact `serializedText` for mixed line endings. Validate its normalized text, digest and byte charge through capture, recovery and checkpoint proof; missing legacy values retain their original uniform-EOL interpretation. Existing record limits still apply, and rejected captures cannot claim durable recovery or a completed save.
 
 ## Presentation
 
-Show tabs only for non-empty content; conversations alone need no strip. Reports
+Show tabs for non-empty content. Keep the selected file view open if its last copy
+is hidden. Conversations alone need no strip. Reports
 share file copies because manual listing establishes their count. Search appears
 above eight rows and the list menu above one row, containing only applicable
 actions. Put scope/consequence copy in `InfoPopover`, not a footer paragraph.

@@ -349,19 +349,12 @@ it("acknowledges mounted destination and follows A/B/empty/A without borrowing i
   await snapshot(one);
   expect(active()).toBe(first);
 });
-it("keeps explicit pin choice while new registration and stale replies never hijack selection", async () => {
-  await snapshot(one);
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('[aria-label="Follow active conversation"]')!
-      .click(),
-  );
-  expect(localStorage.getItem("bycoda.tools-hub.follow.v1")).toBe("false");
+it("follows focused sessions without a mode button and ignores stale snapshots", async () => {
+  await snapshot(one, [one]);
+  expect(container.querySelector(".tools-hub-identity button")).toBeNull();
+  expect(container.querySelector(".tools-hub-identity")?.textContent).toContain(one.title);
+  expect(container.querySelector('[aria-label="Follow active conversation"]')).toBeNull();
   await snapshot(two);
-  expect(active()?.getAttribute("data-session")).toBe("one");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Keep this conversation"]')!.click(),
-  );
   expect(active()?.getAttribute("data-session")).toBe("two");
   const previous = revision;
   await snapshot(one, [one, two], previous);

@@ -3,6 +3,7 @@ import { CoherenceFixture } from "./coherence-fixture";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../../src/shared/ui/Button";
+import { Surface } from "../../../src/shared/ui/Surface";
 import { Checkbox } from "../../../src/shared/ui/Checkbox";
 import { ControlSpecimen } from "../../../src/shared/ui/ControlSpecimen";
 import { Badge } from "../../../src/shared/ui/Badge";
@@ -358,6 +359,24 @@ function Fixture() {
           <TextareaField label="Invalid focus textarea" error="Required" />
           <TextareaField label="Disabled focus textarea" disabled />
           <Button>After focus fields</Button>
+          <Surface
+            variant="card"
+            frame="card"
+            focusRing="inset"
+            tabIndex={0}
+            aria-label="Focus card"
+          >
+            Focus card
+          </Surface>
+          <RadioGroup
+            variant="inline"
+            label="Fixture connection"
+            defaultValue="remote"
+            options={[
+              { value: "wifi", label: "Same Wi-Fi" },
+              { value: "remote", label: "Anywhere (Tailscale)" },
+            ]}
+          />
         </section>
         <div className="my-4 flex gap-2">
           <Button

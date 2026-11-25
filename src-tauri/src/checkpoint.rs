@@ -466,6 +466,9 @@ impl CheckpointStore {
             return Ok(CheckpointStatus { files: Vec::new() });
         };
         let root = project_root(cwd)?;
+        if manifest.touched.is_disjoint(&manifest.prepared) {
+            return Ok(CheckpointStatus { files: Vec::new() });
+        }
         let mut foreign_touched = self.foreign_touched_paths(cwd, session_id);
         if !self.turn_undo_safe(session_id, cwd)? {
             foreign_touched.extend(manifest.touched.iter().cloned());
@@ -2257,6 +2260,24 @@ mod tests {
             .iter()
             .map(|file| file.relative.as_str())
             .collect()
+    }
+
+    #[test]
+    fn status_only_checks_foreign_undo_state_for_reviewable_paths() {
+        let repo = tmp("empty-status");
+        let cwd = repo.0.to_string_lossy().into_owned();
+        let (_root, store) = store();
+        store.ensure("s1", &cwd).unwrap();
+        // Foreign lease data gates undoability, which only exists for a reviewable file.
+        std::fs::create_dir_all(&store.leases).unwrap();
+        std::fs::write(store.leases.join("foreign.json"), b"{").unwrap();
+        assert!(store.status("s1", &cwd).unwrap().files.is_empty());
+
+        std::fs::write(repo.0.join("a.txt"), "changed").unwrap();
+        store.capture("s1", &cwd, &["a.txt".into()]).unwrap();
+        assert!(store.status("s1", &cwd).unwrap().files.is_empty());
+        record(&store, "s1", &cwd, &["a.txt"]);
+        assert!(store.status("s1", &cwd).is_err());
     }
 
     fn record(store: &CheckpointStore, id: &str, cwd: &str, paths: &[&str]) {

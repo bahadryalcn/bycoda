@@ -171,7 +171,8 @@ it("groups Jira view and read/refresh icons beside search and retains the select
   }
   await act(async () => button("Board").click());
   expect(container.querySelector("[data-jira-board-fixture]")).not.toBeNull();
-  expect(group().querySelectorAll("button")).toHaveLength(4);
+  expect(group().querySelectorAll("button")).toHaveLength(3);
+  expect(button("Refresh")).toBeNull();
   await act(async () => root.unmount());
   root = createRoot(container);
   await show();

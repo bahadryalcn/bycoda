@@ -147,6 +147,58 @@ for (const theme of ["light", "dark"])
       });
     });
 
+test("composer activity scrolls back to its first running row", async ({ page }, info) => {
+  await page.goto(
+    "/tests/browser/chat/transcript.html?chat-layout&background-work&dock-in-notices",
+  );
+  const notices = page.locator("[data-composer-notices]");
+  const dock = notices.getByRole("region", { name: "Turn activity", exact: true });
+  await dock.locator("button[data-dock-toggle]").click();
+  const first = dock.locator('[data-dock-agent="layout-command-9"]');
+  const last = dock.locator("[data-dock-agent]").last();
+  await expect(first).toBeInViewport({ ratio: 1 });
+  await notices.evaluate((node) => (node.scrollTop = 100));
+  await expect(first).not.toBeInViewport();
+  const box = (await notices.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -1000);
+  await expect(first).toBeInViewport({ ratio: 1, timeout: 3000 });
+  await page.mouse.wheel(0, 5000);
+  await expect(last).toBeInViewport({ ratio: 1 });
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await notices.evaluate((node) => (node.scrollTop = 0));
+      await expect(first).toBeInViewport({ ratio: 1 });
+      await notices.screenshot({
+        path: `temp/verification/activity-dock-scroll/${info.project.name}-${theme}-${width}.png`,
+      });
+    }
+  }
+});
+
+test("a narrow dock keeps its list toggle beside the status when both fit", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 440, height: 800 });
+  await page.goto("/tests/browser/chat/transcript.html?chat-layout&background-work");
+  // The fixture's long status and Stop all cannot share a row with the toggle at this width.
+  await page.addStyleTag({ content: "[data-dock-stop-all] { display: none; }" });
+  const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+  const toggle = dock.locator("button[data-dock-toggle]");
+  await expect(toggle).toBeVisible();
+  expect((await dock.boundingBox())!.width).toBeLessThanOrEqual(28 * 16);
+  const toggleBox = (await toggle.boundingBox())!;
+  const summaryBox = (await dock.locator(".activity-dock-summary").boundingBox())!;
+  expect(
+    Math.abs(toggleBox.y + toggleBox.height / 2 - (summaryBox.y + summaryBox.height / 2)),
+  ).toBeLessThan(6);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 test("background commands wrap without losing their start and remain separate", async ({
   page,
 }, info) => {

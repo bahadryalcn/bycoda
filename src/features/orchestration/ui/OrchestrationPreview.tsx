@@ -36,8 +36,8 @@ import {
 } from "../../sessions/model/models";
 import { OrchestrationActions } from "./OrchestrationActions";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, MessageMultiple, Play } from "../../../shared/ui/icons";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { MessageMultiple, Play } from "../../../shared/ui/icons";
 
 function AssignmentModel({
   task,
@@ -178,49 +178,12 @@ function AssignmentModel({
 
 function WorkerHelp() {
   useLocale();
-  const [hovered, setHovered] = useState(false);
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
   return (
-    <>
-      <Button
-        iconOnly
-        label={t("What parallel workers means")}
-        variant="ghost"
-        type="button"
-        ref={anchor}
-        aria-label={t("What parallel workers means")}
-        selected={open}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onFocus={() => setHovered(true)}
-        onBlur={() => setHovered(false)}
-        className="shrink-0"
-      >
-        <CircleHelp className="icon-sm" strokeWidth={1.75} />
-      </Button>
-      {(hovered || open) && (
-        <Popover
-          anchor={anchor}
-          side="top"
-          align="start"
-          width={250}
-          onDismiss={() => setOpen(false)}
-          className={`px-2.5 py-2 ${open ? "" : "pointer-events-none"}`}
-        >
-          <Text as="div" size="caption" tone="neutral">
-            {t("How many workers run at once")}
-          </Text>
-          <Text as="div" size="micro" tone="secondary" className="mt-1">
-            {t(
-              "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
-            )}
-          </Text>
-        </Popover>
+    <InfoTooltip label={t("What parallel workers means")} className="shrink-0">
+      {t(
+        "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
       )}
-    </>
+    </InfoTooltip>
   );
 }
 

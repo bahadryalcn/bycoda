@@ -1,4 +1,5 @@
 import { useQuery, type QueryKey } from "@tanstack/react-query";
+import { useForegroundQueryPolling, useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { withTimeout } from "../../../shared/lib/withTimeout";
 import { resolveModelRouting } from "./modelRoutingClient";
 
@@ -14,12 +15,16 @@ export function useModelRoutingPreview(
   queryKey: QueryKey,
   input: Parameters<typeof resolveModelRouting>[1],
 ) {
-  return useQuery({
+  const visible = useQueryVisible();
+  const query = useQuery({
     queryKey,
+    enabled: visible,
     queryFn: () =>
       withTimeout(resolveModelRouting(machineId, input), PREVIEW_DEADLINE_MS, "Model preview"),
     retry: false,
-    staleTime: 3000,
-    refetchInterval: 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
+  useForegroundQueryPolling(query.refetch, 60_000, true);
+  return query;
 }

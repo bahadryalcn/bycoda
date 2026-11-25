@@ -9,7 +9,8 @@ const appVersion = (
 
 const route = "/tests/browser/app-shell/update-footer.html";
 const captureRoot = "temp/verification/2026-10-27-update-footer";
-const nextVersion = "0.6.93";
+const [major, minor, patch] = appVersion.split("-")[0].split(".");
+const nextVersion = `${major}.${minor}.${Number(patch) + 1}`;
 const accountCaptureRoot = "temp/verification/2026-11-11-rail-size-reset";
 const toolsCaptureRoot = "temp/verification/2026-11-13-rail-tools-selection";
 
@@ -91,7 +92,18 @@ test.beforeEach(async ({ page }) => {
                 rid: 1,
                 currentVersion,
                 version: availableVersion,
-                body: "Fixture release notes",
+                body: location.search.includes("long-notes")
+                  ? [
+                      "- The model picker keeps its selection when the list changes size.",
+                      "- Escape closes the Access or Mode menu without closing the model panel.",
+                      "- The app recovers when the Host closes during startup.",
+                      "- Activity labels keep their separators and ellipses.",
+                      "- On Windows, the app relaunches if the WebView2 browser process exits.",
+                      "- Reconnecting restores the selected workspace and its open tabs.",
+                      "- Draft messages stay in the composer when switching conversations.",
+                      "- Keyboard focus returns to the sidebar after closing a dialog.",
+                    ].join("\n")
+                  : "Fixture release notes",
                 rawJson: {},
               };
             if (command === "plugin:opener|open_url") {
@@ -415,6 +427,45 @@ async function openUpdatePrompt(page: Page) {
     close: dialog.getByRole("button", { name: "Dismiss GitHub repository prompt", exact: true }),
   };
 }
+
+test("update dialog shows the start of the notes and a high-contrast download icon", async ({
+  page,
+}) => {
+  await page.addInitScript((version) => {
+    localStorage.removeItem(`bycoda.githubStarPrompt.dismissed.${version}`);
+  }, appVersion);
+  const capture = "temp/verification/update-dialog-refined";
+  mkdirSync(capture, { recursive: true });
+  writeFileSync(
+    `${capture}/README.md`,
+    "# Update dialog\n\nBrowser fixture with mocked native updates.\n",
+  );
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 560 });
+      await page.goto(`${route}?account&long-notes`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const { dialog, github } = await openUpdatePrompt(page);
+      await dialog.screenshot({ path: `${capture}/${theme}-${width}.png` });
+      const install = dialog.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
+      await expect(install).toBeInViewport();
+      await expect(github).toBeInViewport();
+      await expect(
+        dialog.getByText("The model picker keeps its selection when the list changes size.", {
+          exact: true,
+        }),
+      ).toBeInViewport();
+      const icon = install.locator("svg");
+      await expect(icon).toBeVisible();
+      expect(await icon.evaluate((element) => getComputedStyle(element).stroke)).toBe(
+        await install.evaluate((element) => getComputedStyle(element).color),
+      );
+    }
+  }
+});
 
 test("update dialog star and dismiss retain separate pointer targets", async ({ page }) => {
   await page.goto(`${route}?account&compact`);

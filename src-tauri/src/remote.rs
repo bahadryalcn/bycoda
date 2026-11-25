@@ -17,9 +17,12 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
+pub(crate) mod browser_frames;
+mod credential_store;
 pub(crate) mod host_proof;
 pub(crate) mod protocol;
 pub(crate) mod response_limit;
+mod window_lists;
 
 #[path = "remote_changes.rs"]
 mod changes;
@@ -65,12 +68,14 @@ struct WsCapability {
 
 #[derive(Default)]
 pub struct RemoteConnections {
+    browser_frames: browser_frames::Streams,
     changes: changes::Changes,
     reads: changes::Reads,
     pub(crate) store: Arc<Mutex<()>>,
     pub(crate) tunnels: Tunnels,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     ws: HostWsBroker,
+    window_lists: window_lists::WindowLists,
     native_profile_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_service_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_service_channel: Mutex<Option<Arc<NativeServiceChannel>>>,
@@ -175,7 +180,9 @@ impl RemoteConnections {
         self.tunnels.clear();
     }
     pub fn detach_window(&self, label: &str) {
+        self.browser_frames.detach(label);
         self.ws.detach(label);
+        self.ws.detach(&window_lists::owner(label));
     }
 
     pub(crate) fn invalidate_ws(&self, machine_id: &str) {
@@ -408,7 +415,9 @@ pub(crate) fn read_store_values(path: &Path) -> Result<Vec<Value>, String> {
 }
 
 fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
-    let machines: Vec<StoredMachine> = read_store_values(path)?
+    let mut records = read_store_values(path)?;
+    credential_store::open(path, &mut records)?;
+    let machines: Vec<StoredMachine> = records
         .into_iter()
         .filter(|record| record.get("kind").and_then(Value::as_str) != Some("ssh"))
         .map(|record| {
@@ -448,9 +457,30 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
 }
 
 pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), String> {
+    write_protected_store(path, Some(records))
+}
+
+fn write_protected_store(path: &Path, records: Option<&[Value]>) -> Result<(), String> {
     let parent = path.parent().ok_or("Missing connection directory")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(parent.join("remote-machines.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
     let before = read_store_values(path)?;
+    if records.is_none() && !credential_store::has_legacy_tokens(&before) {
+        return Ok(());
+    }
+    let mut protected = records.unwrap_or(&before).to_vec();
+    credential_store::seal(
+        path,
+        &mut protected,
+        !credential_store::has_sealed_tokens(&before),
+    )?;
+    let records = protected.as_slice();
     let prepared = match crate::assistant_server_observation::prepare(path, &before, records) {
         Ok(()) => true,
         Err(_) => {
@@ -643,6 +673,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
+        "devices.touch" => std::time::Duration::from_secs(35),
         // Contract deadline 180 s for a device screenshot.
         "devices.capture" => std::time::Duration::from_secs(190),
         // Contract deadline 600 s: sync may queue, pull and push on top of the 120 s limits.
@@ -924,6 +955,7 @@ fn device_http_effect(method: &str) -> bool {
             | "devices.control.release"
             | "devices.control.renew"
             | "devices.action"
+            | "devices.touch"
             | "devices.preview"
             | "devices.preview.mobile.start"
     ) && HostWsBroker::method_has_effect(method)
@@ -1358,7 +1390,12 @@ pub fn remote_machines(
         .store
         .lock()
         .map_err(|_| "Connection store is locked")?;
-    Ok(read_shared(&store_path(&app)?)?
+    let path = store_path(&app)?;
+    let records = read_store_values(&path)?;
+    if credential_store::has_legacy_tokens(&records) {
+        write_protected_store(&path, None)?;
+    }
+    Ok(read_shared(&path)?
         .iter()
         .map(StoredMachine::public)
         .collect())
@@ -1681,7 +1718,22 @@ pub(crate) fn probe_local_link_token(
             .ok_or("This connection is not the local host")?;
         (machine.endpoint.clone(), machine.token.clone())
     };
-    rpc(&endpoint, &token, None, "environment.describe", json!({})).map(|_| ())
+    let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
+    let supports_management = descriptor["capabilities"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item == "devices.setManagement"));
+    if supports_management {
+        let paired = rpc(&endpoint, &token, None, "devices.paired", json!({}))?;
+        let local = paired["devices"].as_array().is_some_and(|devices| {
+            devices
+                .iter()
+                .any(|device| device["isCurrent"] == true && device["isLocalDesktop"] == true)
+        });
+        if !local {
+            return Err("[RPC_AUTHORIZATION] Local desktop pairing needs to be renewed".into());
+        }
+    }
+    Ok(())
 }
 
 /// Swaps in a fresh token for the saved local link, in place: the machine id
@@ -1754,6 +1806,15 @@ pub(crate) fn replace_local_pairing(
         .map_err(|_| "Connection store is locked")?;
     let path = store_path(app)?;
     let mut machines = read(&path)?;
+    let previous_token = machines
+        .iter()
+        .find(|machine| {
+            machine.id == machine_id
+                && machine.environment_id == environment_id
+                && is_local_sync(machine, &local_name)
+                && machine.token != token
+        })
+        .map(|machine| machine.token.clone());
     let machine = apply_local_repair(
         &mut machines,
         machine_id,
@@ -1765,6 +1826,16 @@ pub(crate) fn replace_local_pairing(
     state.invalidate_ws(machine_id);
     state.invalidate_ws(&machine.id);
     state.observe_ws_capability(&machine, &descriptor);
+    drop(_guard);
+    if let Some(previous_token) = previous_token {
+        let _ = rpc(
+            &endpoint,
+            &previous_token,
+            Some(&environment_id),
+            "devices.revokeSelf",
+            json!({}),
+        );
+    }
     Ok(machine.public())
 }
 
@@ -2303,6 +2374,12 @@ fn remote_request_blocking(
     // Background polling must respect the owner's automatic reconnect setting.
     let allow = fresh == Some(true) || allow_connect != Some(false);
     let disclosure = Mutex::new(None);
+    let list_read = state
+        .window_lists
+        .begin(&state.ws, &machine.id, window.label(), &method);
+    let consumer = list_read
+        .as_ref()
+        .map_or(window.label(), |read| read.owner.as_str());
     let send = |params| {
         machine_rpc_for_consumer(
             state,
@@ -2310,7 +2387,7 @@ fn remote_request_blocking(
             &method,
             params,
             allow,
-            Some((app, window.label())),
+            Some((app, consumer)),
             Some(&disclosure),
         )
     };
@@ -2519,7 +2596,9 @@ pub fn host_connection_detach(
     state: State<'_, RemoteConnections>,
     machine_id: String,
 ) {
-    state.ws.detach_machine(&machine_id, window.label());
+    state
+        .window_lists
+        .detach_stream(&state.ws, &machine_id, window.label());
 }
 
 #[tauri::command]
@@ -2821,6 +2900,21 @@ fn machine_for_request(
     Ok(machine)
 }
 
+pub(crate) fn project_terminal_ssh_target(
+    app: &AppHandle,
+    machine_id: &str,
+    environment_id: &str,
+) -> Result<SshTarget, String> {
+    account_routes::require_environment_enabled(environment_id)?;
+    let state = app.state::<RemoteConnections>();
+    let machine = machine_for_request(&state, &store_path(app)?, machine_id, Some(environment_id))?;
+    let saved = machine
+        .ssh
+        .ok_or("This project's machine has no saved SSH connection")?;
+    // Reuse the current Host tunnel's route, including the known-host alias for its alternate.
+    Ok(state.tunnels.dialed(machine_id).unwrap_or(saved))
+}
+
 pub(crate) struct NativeRecoveryReply {
     value: Value,
     guard: Option<crate::host_ws::native_profile::NativeProfileGuard>,
@@ -2968,6 +3062,7 @@ pub(crate) fn conversation_machine_call_pinned(
             | "devices.control.renew"
             | "devices.inspect"
             | "devices.action"
+            | "devices.touch"
     ) {
         return Err("Unsupported paired device operation".into());
     }

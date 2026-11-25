@@ -5,7 +5,6 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
@@ -55,13 +54,24 @@ function CandidateRow({
   return (
     <div className="flex items-center gap-3 px-3 py-2">
       <MachineIcon machine={machine} />
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <Text truncate weight="medium" tone="primary">
-          {machine.name}
-        </Text>
-        <Text truncate size="caption" tone="muted">
-          {sources.join(" · ")}
-        </Text>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <Text truncate weight="medium" tone="primary">
+            {machine.name}
+          </Text>
+          <Text truncate size="caption" tone="muted">
+            {sources.join(" · ")}
+          </Text>
+        </div>
+        {plan || pair ? null : (
+          <Text as="div" size="caption" tone="muted">
+            {machine.sources.includes("account")
+              ? t(
+                  "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
+                )
+              : t("This computer has no SSH address to set it up from here yet.")}
+          </Text>
+        )}
       </div>
       {machine.online !== undefined ? (
         <Badge variant="dot" size="sm" tone={machine.online ? "success" : "neutral"}>
@@ -69,17 +79,6 @@ function CandidateRow({
         </Badge>
       ) : null}
       <div className="flex shrink-0 items-center gap-1">
-        {plan || pair ? null : (
-          <InfoPopover label={t("Why Add is unavailable")} width={280}>
-            <p>
-              {machine.sources.includes("account")
-                ? t(
-                    "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
-                  )
-                : t("This computer has no SSH address to set it up from here yet.")}
-            </p>
-          </InfoPopover>
-        )}
         <Button
           stableWidth
           variant="secondary"

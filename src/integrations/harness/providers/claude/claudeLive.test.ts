@@ -101,6 +101,8 @@ async function startTurn(
     providerAccountId?: string;
     modelSettings?: Record<string, string>;
     providerSessionId?: string;
+    privateDelegateHistory?: boolean;
+    privateDelegateReplay?: string;
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -114,6 +116,8 @@ async function startTurn(
     runtimeMode: options.runtimeMode ?? "supervised",
     intent: options.intent,
     providerAccountId: options.providerAccountId,
+    privateDelegateHistory: options.privateDelegateHistory,
+    privateDelegateReplay: options.privateDelegateReplay,
     text: "explore the codebase",
     attachments: [],
     onEvent: (event) => {
@@ -312,6 +316,79 @@ beforeEach(() => {
 afterEach(async () => {
   await stopClaudeSession("s1");
   __claudeTestReset();
+});
+
+describe("Claude private delegated history", () => {
+  it("replays Bycoda context only on the first turn of each fresh private process", async () => {
+    const history = 'User: inspect the cache\nAssistant: found a "stale" entry';
+    bindClaudeSession("s1", "old-provider-session", "/repo");
+    const first = await startTurn("s1", {
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+    });
+    expect(spawned[0]).toContain("--no-session-persistence");
+    expect(spawned[0]).not.toContain("--resume");
+    expect(spawned[0]).not.toContain("--strict-mcp-config");
+    expect(spawned[0]).toEqual(expect.arrayContaining(["--permission-mode"]));
+    expect(parse().find((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [
+        { type: "text", text: expect.stringContaining(JSON.stringify(history)) },
+        { type: "text", text: "explore the codebase" },
+      ],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await first.turn;
+    expect(first.events.some((event) => event.type === "session.providerBound")).toBe(false);
+
+    const warmTurn = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+      text: "continue in the same process",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    await waitFor(() => parse().filter((entry) => entry.type === "user").length === 2, "warm user");
+    expect(spawned).toHaveLength(1);
+    expect(parse().findLast((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [{ type: "text", text: "continue in the same process" }],
+    });
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await warmTurn;
+
+    await stopClaudeSession("s1");
+    const restarted = await startTurn("s1", {
+      providerSessionId: "new-private-session",
+      privateDelegateHistory: true,
+      privateDelegateReplay: history,
+    });
+    expect(spawned[1]).toContain("--no-session-persistence");
+    expect(spawned[1]).not.toContain("--resume");
+    expect(parse().findLast((entry) => entry.type === "user")?.message).toMatchObject({
+      content: [
+        { type: "text", text: expect.stringContaining(JSON.stringify(history)) },
+        { type: "text", text: "explore the codebase" },
+      ],
+    });
+    emit({ type: "result", subtype: "success", session_id: "new-private-session" });
+    await restarted.turn;
+    expect(restarted.events.some((event) => event.type === "session.providerBound")).toBe(false);
+
+    await stopClaudeSession("s1");
+    const persistent = await startTurn("s1", { providerSessionId: "new-persistent-session" });
+    expect(spawned[2]).not.toContain("--no-session-persistence");
+    expect(spawned[2]).not.toContain("--resume");
+    expect(persistent.events).toContainEqual({
+      type: "session.providerBound",
+      providerSessionId: "new-persistent-session",
+    });
+    emit({ type: "result", subtype: "success", session_id: "new-persistent-session" });
+    await persistent.turn;
+  });
 });
 
 describe("claude streamed tool inputs", () => {
@@ -2491,6 +2568,58 @@ describe("claude subagents", () => {
       ["toolu_sub_read", "tool", "", "completed"],
     ]);
   });
+
+  it.each(["before", "after"] as const)(
+    "reports context capacity when the CLI replies %s the first usage",
+    async (order) => {
+      const { turn, events } = await startTurn("s1");
+      const request = parse().find(
+        (msg) => (msg.request as { subtype?: string } | undefined)?.subtype === "get_context_usage",
+      );
+      expect(request).toBeDefined();
+      const firstUsage = {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { model: "claude-sonnet-5", usage: { cache_read_input_tokens: 426_000 } },
+        },
+      };
+      const capacity = {
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: request!.request_id,
+          response: {
+            model: "claude-sonnet-5",
+            totalTokens: 20_000,
+            maxTokens: 800_000,
+            rawMaxTokens: 1_000_000,
+          },
+        },
+      };
+      if (order === "before") emit(capacity);
+      emit(firstUsage);
+      if (order === "after") emit(capacity);
+      expect(events.filter((event) => event.type === "context")).toEqual(
+        order === "before"
+          ? [{ type: "context", used: 426_000, window: 1_000_000 }]
+          : [
+              { type: "context", used: 426_000 },
+              { type: "context", window: 1_000_000 },
+            ],
+      );
+      emit({
+        type: "result",
+        subtype: "success",
+        modelUsage: {
+          "claude-sonnet-5": { contextWindow: 200_000 },
+          "claude-opus-5-5": { contextWindow: 1_000_000 },
+        },
+      });
+      await turn;
+      expect(events.filter((event) => event.type === "context").at(-1)?.window).toBe(200_000);
+    },
+  );
 
   it("reports subagent context to its parent without touching the main context", async () => {
     const { events, turn } = await startTurn("s1");

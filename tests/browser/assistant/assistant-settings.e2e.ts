@@ -157,7 +157,9 @@ for (const [theme, width] of [
         await dialog.locator("summary").filter({ hasText: "All checks" }).click();
       } else {
         await dialog.getByRole("button", { name: "Supervisor limits", exact: true }).click();
-        await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
+        await dialog
+          .getByRole("button", { name: "Advanced worker context limits", exact: true })
+          .click();
       }
       await assertSettingsGeometry(dialog, region);
       await capture("expanded-bottom");

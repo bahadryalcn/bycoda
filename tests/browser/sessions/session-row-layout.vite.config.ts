@@ -4,7 +4,6 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   root: fileURLToPath(new URL("..", import.meta.url)),
-  publicDir: fileURLToPath(new URL("../../../public", import.meta.url)),
   base: "/tests/browser/",
   plugins: [react(), tailwindcss()],
   optimizeDeps: { entries: ["sessions/session-row-layout.html"] },

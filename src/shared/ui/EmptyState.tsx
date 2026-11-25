@@ -29,7 +29,7 @@ export type SharedEmptyStateProps = Omit<ArcEmptyStateProps, "action" | "help"> 
   size?: "block" | "inline";
   /** Distinguishes no data from a filter with no match for assistive tech and styling. */
   kind?: EmptyStateKind;
-  /** The one next step, rendered by the component (secondary button in a block, text link inline). */
+  /** The one next step, rendered as a button in a block or a text link inline. */
   action?: NoticeAction;
   /** A second next step, rendered after `action`. */
   secondaryAction?: NoticeAction;

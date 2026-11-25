@@ -47,7 +47,8 @@ vi.mock("../../../../shared/ui/settings", () => ({
     children: ReactNode;
     feedback?: ReactNode;
   }) => (
-    <section aria-label={String(label)}>
+    <section data-role-row>
+      <div data-role-label>{label}</div>
       {children}
       {feedback}
     </section>
@@ -305,7 +306,10 @@ const entry = {
   modelSettings: {},
   unknownLimit: "use",
 } as const;
-const rowOf = (label: string) => container.querySelector(`section[aria-label="${label}"]`)!;
+const rowOf = (label: string) =>
+  Array.from(container.querySelectorAll("[data-role-row]")).find((row) =>
+    row.querySelector("[data-role-label]")?.textContent?.startsWith(label),
+  )!;
 
 it("groups all roles and stores fixed targets in the draft without delegation keys", async () => {
   await render(<Groups initial={draftOf()} />);
@@ -331,12 +335,12 @@ it("groups all roles and stores fixed targets in the draft without delegation ke
 
 it("shows the no-fallback hint only while a job is Fixed", async () => {
   await render(<Groups initial={draftOf()} />);
-  const noFallback = () => rowOf("Task worker").querySelector('button[aria-label="No fallback"]');
-  expect(noFallback()).toBeNull();
+  const noFallback = () => rowOf("Task worker").textContent?.includes("No fallback:");
+  expect(noFallback()).toBe(false);
   await choose(rowOf("Task worker"), "fixed");
-  expect(noFallback()).toBeTruthy();
+  expect(noFallback()).toBe(true);
   await choose(rowOf("Task worker"), "order");
-  expect(noFallback()).toBeNull();
+  expect(noFallback()).toBe(false);
 });
 
 it("deletes a non-helper role switched to Any model, in order", async () => {

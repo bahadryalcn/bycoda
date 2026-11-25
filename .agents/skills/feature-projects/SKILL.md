@@ -20,6 +20,7 @@ Use for project rail/pickers, groups, add/rename/remove/archive, remote project 
 
 - Mounted rail snapshots observe cross-window project and tab-group appearance storage keys, including removal/reset. Reuse unchanged collection identities while refreshing labels, colors and mascots.
 - Project identity, selected workspace and actual execution directory are different. Preserve worktree/remote identity, full paths and duplicate-name context.
+- Checkouts of one repository on different machines fold into one rail row (`model/projectRepositories.ts`, identity is the normalized `origin` remote read on the owning machine). Every copy stays its own entry in recents with its own sessions; the fold is a rail view, and same-machine clones never fold. The session machine picker switches between the copies.
 - Retain groups, ordering/pinning, selection, drafts, keyboard/context menus, drag/drop and compact/wide navigation capabilities.
 - Pins belong only to ungrouped projects. Groups and linked workspaces have no pin action; a grouped project is never pinned and its old pin is pruned.
 - Removing a project counts and deletes exactly the conversations its list shows (one native filter in `session_store/project_sessions.rs`): ids only, Native rows in bounded bulk calls, Host-owned or owner-fenced ones through their owner, stopping at the first failure with progress reported.

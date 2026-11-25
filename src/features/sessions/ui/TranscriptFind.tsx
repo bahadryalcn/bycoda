@@ -13,19 +13,26 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChevronDown, ChevronUp, Search, X } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronUp, RefreshCw, Search, X } from "../../../shared/ui/icons";
 import type { Block } from "../model/session";
 import { findTranscriptBlocks } from "../model/transcriptFind";
 import { peekTranscriptJump, subscribeTranscriptJump } from "../model/transcriptJump";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
+import { useTranscriptFindHistory } from "./useTranscriptFindHistory";
 
 type Props = {
   blocks: Block[];
   visible: boolean;
   focused: boolean;
   onNavigate: (blockId: string | null, query?: string) => boolean;
+  historyPage?: string;
+  historyLoading?: boolean;
+  historyLoadError?: string;
+  retryHistory?: () => void;
+  loadHistory?: (signal: AbortSignal) => Promise<number | void> | void;
+  loadBlock?: (id: string, revision: number) => Promise<void> | void;
   /** Lets a jump from cross-session search open this find with its query. */
   sessionId?: string;
   side?: "left" | "right";
@@ -42,6 +49,12 @@ export const TranscriptFind = memo(function TranscriptFind({
   visible,
   focused,
   onNavigate,
+  historyPage,
+  historyLoading = false,
+  historyLoadError,
+  retryHistory,
+  loadHistory,
+  loadBlock,
   sessionId,
   side = "right",
   triggerContainer,
@@ -54,14 +67,28 @@ export const TranscriptFind = memo(function TranscriptFind({
   const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
-  const matches = findTranscriptBlocks(blocks, query);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const searching = visible && open && query.trim() !== "";
+  const preview =
+    searching && historyPage === undefined
+      ? blocks.find((block) => block.remoteContent)
+      : undefined;
+  let cursor = searching ? historyPage : undefined;
+  let read = loadHistory;
+  if (preview?.remoteContent) {
+    const { id, remoteContent } = preview;
+    cursor = `block:${id}:${remoteContent.revision}`;
+    read = loadBlock && (() => loadBlock(id, remoteContent.revision));
+  }
+  const history = useTranscriptFindHistory(cursor, read, historyLoading);
+  const incomplete = cursor !== undefined || historyLoading || !!historyLoadError;
+  const matches = searching && !incomplete ? findTranscriptBlocks(blocks, query) : [];
+  const active = activeId === null ? 0 : Math.max(0, matches.indexOf(activeId));
   useEffect(() => {
     onSearchingChange?.(searching);
     return () => onSearchingChange?.(false);
   }, [searching, onSearchingChange]);
-  const selected = matches[Math.min(active, matches.length - 1)] ?? null;
+  const selected = matches[active] ?? null;
   const jump = useSyncExternalStore(
     subscribeTranscriptJump,
     () => peekTranscriptJump(sessionId ?? ""),
@@ -102,7 +129,7 @@ export const TranscriptFind = memo(function TranscriptFind({
   };
   const step = (direction: number) => {
     if (!matches.length) return;
-    setActive((index) => (index + direction + matches.length) % matches.length);
+    setActiveId(matches[(active + direction + matches.length) % matches.length]);
   };
 
   // A result opened from the cross-session search arrives as a jump carrying
@@ -115,15 +142,15 @@ export const TranscriptFind = memo(function TranscriptFind({
       setAdoptedJump(jump.token);
       setQuery(jump.query);
       setOpen(true);
-      setActive(index);
+      setActiveId(jump.blockId);
     }
   }
 
   useEffect(() => {
-    if (!open || !visible) return;
+    if (!open || !visible || incomplete) return;
     const frame = requestAnimationFrame(() => onNavigate(selected, query));
     return () => cancelAnimationFrame(frame);
-  }, [open, visible, selected, query, onNavigate]);
+  }, [open, visible, selected, query, onNavigate, incomplete]);
 
   const onFindKey = useEffectEvent((event: KeyboardEvent) => {
     if (event.isComposing) return;
@@ -194,6 +221,17 @@ export const TranscriptFind = memo(function TranscriptFind({
     );
   }
 
+  let countLabel = "";
+  let retry: (() => void) | undefined;
+  if (searching) {
+    if (historyLoadError || history.failed) {
+      countLabel = t("Search failed");
+      retry = historyLoadError ? retryHistory : read && history.retry;
+    } else if (incomplete) countLabel = t("Searching…");
+    else if (matches.length) countLabel = t("{p0} of {p1}", { p0: active + 1, p1: matches.length });
+    else countLabel = t("No results");
+  }
+
   return (
     <>
       {headerTrigger}
@@ -218,7 +256,7 @@ export const TranscriptFind = memo(function TranscriptFind({
             autoCapitalize="off"
             onValueChange={(value) => {
               setQuery(value);
-              setActive(0);
+              setActiveId(null);
             }}
             onSubmit={(event) => step("shiftKey" in event && event.shiftKey ? -1 : 1)}
             className="w-44"
@@ -231,15 +269,13 @@ export const TranscriptFind = memo(function TranscriptFind({
                   tone="secondary"
                   className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono tabular-nums"
                 >
-                  {query.trim()
-                    ? matches.length
-                      ? t("{p0} of {p1}", {
-                          p0: Math.min(active, matches.length - 1) + 1,
-                          p1: matches.length,
-                        })
-                      : t("No results")
-                    : ""}
+                  {countLabel}
                 </Text>
+                {retry && (
+                  <FindButton label={t("Retry")} onClick={retry}>
+                    <RefreshCw className="icon-sm" strokeWidth={1.75} />
+                  </FindButton>
+                )}
                 <FindButton
                   label={t("Previous match")}
                   shortcut="Shift+Enter / Shift+F3"
@@ -276,7 +312,7 @@ function FindButton({
   children,
 }: {
   label: string;
-  shortcut: string;
+  shortcut?: string;
   onClick: () => void;
   disabled?: boolean;
   children: React.ReactNode;

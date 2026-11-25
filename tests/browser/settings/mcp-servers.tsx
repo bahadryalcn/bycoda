@@ -73,6 +73,7 @@ const oauth = [
   { name: "stripe", state: "expired" },
   { name: "notion", state: "none" },
 ];
+const search = new URLSearchParams(location.search);
 const configs = new Map<string, string>();
 const configKey = (args: Record<string, unknown>) =>
   `${args.provider}:${args.scope}:${args.configPath}:${args.name}`;
@@ -82,6 +83,7 @@ mockIPC(
   async (command, args) => {
     const params = (args ?? {}) as Record<string, unknown>;
     if (command.startsWith("plugin:event|")) return;
+    if (command === "plugin:opener|open_url") return;
     if (command === "mcp_discover") return discovered;
     if (command === "claude_mcp_list")
       return {
@@ -122,9 +124,17 @@ mockIPC(
       policy = { version: 1, mode: String(body.mode), direct: body.direct as string[] };
       return { policy, corrupt: false };
     }
-    if (method === "mcp.oauth.status") return { servers: oauth };
+    if (method === "mcp.oauth.status")
+      return {
+        servers: oauth.map((entry) =>
+          entry.state === "signed-in" && entry.name === body.profileFor && !search.has("noProfile")
+            ? { ...entry, profile: "workspace-owner@example.test" }
+            : entry,
+        ),
+      };
     if (method === "mcp.oauth.start")
-      return { authorizationUrl: "https://auth.example/authorize", expiresAt: Date.now() + 1000 };
+      return { authorizationUrl: "https://auth.example/authorize?state=fixture-state-123456" };
+    if (method === "mcp.oauth.cancel") return { cancelled: true };
     if (method === "mcp.oauth.signOut") {
       const entry = oauth.find((item) => item.name === body.name);
       if (entry) entry.state = "none";
@@ -136,7 +146,6 @@ mockIPC(
   },
   { shouldMockEvents: true },
 );
-const search = new URLSearchParams(location.search);
 const theme = search.get("theme") === "light" ? "light" : "dark";
 saveThemePreference(theme);
 applyThemePreference(theme);

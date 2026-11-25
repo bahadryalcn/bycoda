@@ -4,7 +4,6 @@ import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Check, Download, Play, RefreshCw, Square, TriangleAlert } from "../../../shared/ui/icons";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { DEVICE_HUB_VERSION } from "../../../shared/model/host-contracts/native-devices";
@@ -16,8 +15,7 @@ type Action = { loading: boolean; disabled: boolean; onClick: () => void };
 
 /**
  * Setup and access sheet: the device host's state at a glance, one row per platform with
- * what its SDK check found, and the setup and start/stop actions. Background details sit
- * behind the help button instead of a paragraph.
+ * what its SDK check found, and the setup and start/stop actions.
  */
 export function DeviceSetupPanel({
   status,
@@ -53,15 +51,13 @@ export function DeviceSetupPanel({
             {hostLabel}
           </Text>
         )}
-        <InfoPopover>
-          <p>
-            {t(
-              "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub {p0} and optional control tools into the host cache, and Stop ends the owned tool processes.",
-              { p0: DEVICE_HUB_VERSION },
-            )}
-          </p>
-        </InfoPopover>
       </div>
+      <Text as="p" size="caption" tone="muted">
+        {t(
+          "Viewing never enables control. Live view follows the screen while this panel is visible; closing it pauses viewing. Setup downloads pinned expo-device-hub {p0} and optional control tools into the host cache, and Stop ends the owned tool processes.",
+          { p0: DEVICE_HUB_VERSION },
+        )}
+      </Text>
       <div className="device-panel-setup-head">
         <div className="device-panel-setup-summary">
           <div className="device-panel-setup-state">

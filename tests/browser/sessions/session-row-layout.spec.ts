@@ -168,7 +168,7 @@ for (const light of [false, true])
       }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(
-          `/tests/browser/sessions/session-row-layout.html?remote-header&${light ? "light" : "dark"}${rail === "wide" ? "&wide" : rail === "hidden" ? "&no-rail" : ""}`,
+          `/tests/browser/sessions/session-row-layout.html?remote-header&remote-settle&worktree-picker&wide-workspace&${light ? "light" : "dark"}${rail === "wide" ? "&wide" : rail === "hidden" ? "&no-rail" : ""}`,
         );
         const header = page.locator("[data-workspace-header]");
         await expect(header).toContainText("bycoda-cloud");
@@ -181,13 +181,27 @@ for (const light of [false, true])
         await expect(machine).toBeEnabled();
         await machine.hover();
         await expect(page.getByRole("tooltip")).toContainText("Office Mac");
-        const directory = path.resolve("temp/verification/2026-11-16-remote-workspace");
+        await machine.click();
+        await expect(machine).toBeEnabled();
+        const picker = header.getByRole("button", { name: "Switch worktree" });
+        await expect(picker).toContainText("All worktrees");
+        await expect(
+          machine.locator("xpath=following::button[@aria-label='Switch worktree'][1]"),
+        ).toBeVisible();
+        await picker.click();
+        const worktrees = page.getByRole("dialog", { name: "Worktrees" });
+        await expect(worktrees.getByRole("option", { name: "All worktrees" })).toBeVisible();
+        const directory = path.resolve("temp/verification/remote-worktree-picker");
         await mkdir(directory, { recursive: true });
+        await writeFile(
+          path.join(directory, "README.md"),
+          "# Remote worktree picker\n\nIsolated Chromium fixture with two server worktrees.\n",
+        );
         await page.screenshot({
           path: path.join(directory, `${light ? "light" : "dark"}-${width}-${rail}.png`),
         });
-        await machine.click();
-        await expect(machine).toBeEnabled();
+        await worktrees.getByRole("option", { name: "main" }).click();
+        await expect(picker).toContainText("main");
       });
 for (const light of [true, false])
   for (const width of [800, 1280])
@@ -779,23 +793,48 @@ for (const light of [false, true]) {
       const header = page.locator("[data-workspace-header]");
       const create = header.getByRole("button", { name: "New session", exact: true });
       const choose = header.getByRole("button", { name: "Choose project", exact: true });
-      await expect(choose).toBeVisible();
+      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      await choose.click();
+      await expect(dialog).toBeVisible();
+      await expect(page.getByRole("menu", { name: "Session actions" })).toHaveCount(0);
+      const search = dialog.getByRole("combobox", { name: "Search projects" });
+      await expect(search).toBeFocused();
+      const evidence = path.resolve("temp/verification/new-session-theme");
+      await mkdir(evidence, { recursive: true });
+      const label = `${light ? "light" : "dark"}-${width}`;
+      await page.screenshot({ path: path.join(evidence, `${label}-workspace-project-picker.png`) });
+      await search.press("Escape");
+      await expect(choose).toBeFocused();
       const labelText = create.getByText("New session", { exact: true });
       if (width === 1280) await expect(labelText).toBeVisible();
       else await expect(labelText).toBeHidden();
-      await expect
-        .poll(() =>
-          create.locator("img").evaluate((icon) => (icon as HTMLImageElement).naturalWidth),
-        )
-        .toBe(48);
-      const evidence = path.resolve("temp/verification/new-session-button");
-      await mkdir(evidence, { recursive: true });
-      const label = `${light ? "light" : "dark"}-${width}`;
+      const icon = create.locator("svg");
+      await expect(icon).toBeVisible();
+      await expect(icon).toHaveAttribute("stroke", "currentColor");
+      await expect(icon).toHaveCSS(
+        "stroke",
+        await create.evaluate((button) => getComputedStyle(button).color),
+      );
+      const expectTrailing = async () => {
+        const headerBounds = (await header.boundingBox())!;
+        const disclosureBounds = (await choose.boundingBox())!;
+        const endGap =
+          headerBounds.x + headerBounds.width - disclosureBounds.x - disclosureBounds.width;
+        expect(endGap).toBeGreaterThanOrEqual(0);
+        expect(endGap).toBeLessThanOrEqual(8);
+      };
+      await expectTrailing();
+      await expect(create).toHaveAttribute("data-button-hierarchy", "primary");
+      await expect(choose).toHaveAttribute("data-button-hierarchy", "primary");
+      await expect(create).toHaveAttribute("data-button-tone", "neutral");
+      await expect(choose).toHaveAttribute("data-button-tone", "neutral");
+      await expect(create).not.toHaveCSS("border-start-start-radius", "0px");
+      await expect(choose).not.toHaveCSS("border-start-end-radius", "0px");
+      await choose.blur();
+      await page.mouse.move(0, 0);
       await header.screenshot({ path: path.join(evidence, `${label}-workspace-header.png`) });
       await choose.focus();
       await choose.press("Enter");
-      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
-      const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
       await search.press("Escape");
       await expect(choose).toBeFocused();
@@ -810,6 +849,11 @@ for (const light of [false, true]) {
       await expect(page.getByRole("status", { name: "Selected Git checkout" })).toHaveText(
         "/fixture/demo-repo",
       );
+      await page.getByRole("tab", { name: "Explorer", exact: true }).click();
+      await expect(header.locator("[data-session-tools]")).toHaveCount(0);
+      await expectTrailing();
+      await page.mouse.move(0, 0);
+      await header.screenshot({ path: path.join(evidence, `${label}-explorer-header.png`) });
     });
   }
 }
@@ -1070,6 +1114,49 @@ for (const light of [false, true]) {
 }
 
 const settleEvidence = path.resolve("temp/verification/2026-11-08-session-settle");
+test("local Settle moves the row with the Host reply held and restores it on refusal", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/sessions/session-row-layout.html?local-bulk-settle");
+  const row = page.locator('[data-session-card="row-multi"]');
+  await row.locator("[data-session-select]").hover();
+  const button = row.getByRole("button", { name: /^Settle / });
+  await expect(button).toBeVisible();
+  await page.evaluate(() => {
+    const host = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: { method?: string },
+            options?: unknown,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const invoke = host.invoke.bind(host);
+    host.invoke = (command, args, options) => {
+      if (command !== "remote_request" || args?.method !== "sessions.lifecycle.settle")
+        return invoke(command, args, options);
+      document.documentElement.dataset.settlePending = "true";
+      return new Promise((_, reject) => {
+        document.addEventListener(
+          "refuse-settle-in-fixture",
+          () => reject(new Error("Host refused")),
+          { once: true },
+        );
+      });
+    };
+  });
+  await button.click();
+  await expect(page.locator("html")).toHaveAttribute("data-settle-pending", "true");
+  await expect(row).toHaveCount(0);
+  await expect(page.locator("[data-settled-sessions]")).toBeVisible();
+  await expect(page.getByText("Saving…", { exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.dispatchEvent(new Event("refuse-settle-in-fixture")));
+  await expect(row).toBeVisible();
+  await expect(page.locator("[data-settled-sessions]")).toHaveCount(0);
+});
 test("bulk Settle includes all 258 selected remote conversations", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(
@@ -1212,6 +1299,55 @@ for (const light of [false, true]) {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`Last sessions grouping and sort ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?global&${theme}${width === 1280 ? "&wide-workspace" : ""}`,
+      );
+      const list = page.locator("[data-session-list]");
+      const rows = list.locator("[data-session-card]");
+      const menu = page.getByRole("menu", { name: "Filter sessions" });
+      const project = menu.getByRole("menuitemcheckbox", { name: "Group by project" });
+      const state = menu.getByRole("menuitemcheckbox", { name: "Group by state" });
+      const screenshot = (mode: string) =>
+        page.screenshot({
+          path: `temp/verification/last-sessions-organization/${theme}-${width}-${mode}.png`,
+          animations: "disabled",
+        });
+
+      await expect(rows.first()).toHaveAttribute("data-session-card", "row-demo");
+      if (width === 1280) {
+        await page.getByRole("button", { name: "Filter sessions", exact: true }).click();
+      } else {
+        await page.getByRole("button", { name: "More actions", exact: true }).click();
+        await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
+      }
+      await expect(menu.getByRole("menuitemcheckbox").first()).toHaveText("Group by project");
+      await project.click();
+      await expect(project).toBeChecked();
+      await expect(list.getByRole("heading")).toHaveText(["demo-repo", "bycoda"]);
+      await screenshot("project-menu");
+
+      await state.click();
+      await expect(project).not.toBeChecked();
+      await expect(state).toBeChecked();
+      await expect(list.getByRole("heading")).toHaveText(["Idle", "Working", "Interrupted"]);
+      await menu.getByRole("menuitem", { name: "Sort", exact: true }).click();
+      await expect(page.getByRole("menuitemradio", { name: "Newest first" })).toBeChecked();
+      await screenshot("state-sort");
+      await page.getByRole("menuitemradio", { name: "Oldest first" }).click();
+      await expect(rows.first()).toHaveAttribute("data-session-card", "row-long");
+      await state.click();
+      await expect(list.getByRole("heading")).toHaveCount(0);
+      await expect(rows.first()).toHaveAttribute("data-session-card", "row-long");
+      await expect(rows.last()).toHaveAttribute("data-session-card", "row-demo");
+      await page.getByRole("heading", { name: "Last sessions", exact: true }).click();
+      await expect(menu).toBeHidden();
+      await rows.last().locator("[data-session-select]").click();
+      await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
+    });
+
     test(`global Last sessions row actions ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -1239,6 +1375,17 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("Escape");
       await open.click({ button: "right" });
       await expect(menu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
+      for (const label of [
+        /^Pin$/,
+        /^Rename/,
+        /^Regenerate title$/,
+        /^Copy$/,
+        /^Link GitHub issue or PR/,
+        /^Remind me$/,
+        /^Select$/,
+      ]) {
+        await expect(menu.getByRole("menuitem", { name: label })).toBeVisible({ timeout: 3000 });
+      }
       await page.screenshot({
         path: `temp/verification/last-sessions-actions/${theme}-${width}-menu.png`,
         animations: "disabled",
@@ -1247,6 +1394,58 @@ for (const theme of ["light", "dark"]) {
       await open.click();
       await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
       await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("0");
+      if (theme === "dark" && width === 1280) {
+        const otherRow = page.locator('[data-session-card="row-multi"]');
+        // Return to the other project while keeping the global list open.
+        await otherRow.locator("[data-session-select]").click();
+        expect(await page.getByRole("status", { name: "Selected session" }).textContent()).toBe(
+          "row-multi",
+        );
+        const openMenu = () => open.click({ button: "right" });
+        const item = (name: string | RegExp) => menu.getByRole("menuitem", { name });
+        await openMenu();
+        await item(/^Pin$/).click();
+        await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("1");
+        await openMenu();
+        await expect(item(/^Unpin$/)).toBeVisible();
+        await item(/^Rename/).click();
+        const title = row.getByRole("textbox", { name: "Name" });
+        await title.fill("Renamed from Last sessions");
+        await title.press("Enter");
+        await expect(row).toContainText("Renamed from Last sessions");
+        await openMenu();
+        await item(/^Regenerate title$/).click();
+        await expect(row).toContainText("Restore Draft Editing in Recovered Sessions");
+        await openMenu();
+        await item(/^Copy$/).click();
+        await expect(page.getByRole("menuitem", { name: "Copy session link" })).toBeVisible();
+        await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+        await page.getByRole("menuitem", { name: /^Bycoda session ID$/i }).click();
+        await expect
+          .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+          .toBe("row-demo");
+        await openMenu();
+        await item(/^Link GitHub issue or PR/).click();
+        const dialog = page.getByRole("dialog", { name: "Link GitHub issue or PR" });
+        await dialog.getByRole("combobox").fill("https://github.com/example/demo/issues/42");
+        await dialog.getByRole("button", { name: "Link", exact: true }).click();
+        await expect(row).toContainText("#42");
+        await openMenu();
+        await item(/^Remind me$/).click();
+        await page.getByRole("menuitem", { name: /^In 1 hour/ }).click();
+        await expect(page.getByRole("status", { name: "Reminder target" })).toHaveText("row-demo");
+        await openMenu();
+        await item(/^Select$/).click();
+        await expect(row).toHaveAttribute("data-session-selected", "true");
+        await otherRow.locator("[data-session-select]").click();
+        await expect(page.getByRole("toolbar", { name: "Selected sessions" })).toContainText(
+          "2 selected",
+        );
+        await expect(page.getByRole("status", { name: "Selected session" })).toHaveText(
+          "row-multi",
+        );
+        await page.getByRole("button", { name: "Clear", exact: true }).click();
+      }
       await open.click({ button: "right" });
       await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
       await expect(row).toHaveCount(0);

@@ -1,18 +1,22 @@
 # Source control review
 
 A clean working tree shows a centered check icon above its empty-state message.
+If a file is committed or restored while its diff is open, the comparison clears
+and the editor keeps any unsaved text.
 If the branch has diverged, the panel keeps the divergence message and uses a branch icon.
 
-The sidebar's **Changes** tab opens source control. **Generate commit message**
+The sidebar's **Changes** tab opens source control. Its caption hides when the
+icon and change counts need the available space. **Generate commit message**
 and pull request text generation run on the Host that owns the selected remote
 repository, using that Host's Git model routing and provider accounts. They never
 fall back to a local provider when the remote Host is unavailable. Stopping
 generation dismisses the pending result; the Host call retains its 90-second
 provider deadline. Edited drafts and changed staged content remain protected.
-The arrow beside **Generate commit message** opens the model picker with the
-selected model's supported effort and speed controls. The choice is saved per
-checkout and applies to commit messages. **Automatic** clears the commit-specific
-choice. Remote checkouts list models from their own Host.
+The arrow beside **Generate commit message** opens the account and model picker
+with **Reasoning** and **Fast** where the model supports them. Choosing an
+account for the current provider or editing a model setting saves the model and
+its options for the selected checkout. **Automatic** clears the commit-specific
+choice. Remote checkouts list accounts and models from their own Host.
 
 Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories
@@ -23,21 +27,37 @@ the only worktree selector. Its folder name, branch and full-path tooltip identi
 that target. When checkout discovery fails, the current panel remains available with local
 **Retry** and diagnostic details; a failed read does not establish an empty list.
 
-A folder that is not a Git repository shows no failure: the panel offers
-**Initialize Repository**, which runs `git init` there and is refused inside an
-existing repository. A project opened on an empty folder outside any repository,
+A folder without Git metadata shows **Initialize Repository** in place of Git
+actions, Stashes and Graph. The button runs `git init` there and is refused inside
+an existing repository. In an overview, use a child repository row to see that
+repository's Graph. A project opened on an empty folder outside any repository,
 including one created by the assistant, a crew or a remote machine, is
 initialized automatically.
 
-**All worktrees** (the default when a project has several worktrees) shows the project
-folder and every worktree as expandable changes panels. The session's worktree and the
-project folder open first, worktrees with changes come next, and clean ones collapse
-into a **Clean · N** row. A row's changes load when you expand it. Folder names lead
-with the branch on the same line; when the panel narrows the branch label shortens
-before the name. Child repositories are indented beneath their checkout. A workspace
-with only one repository shows its full panel, named in the header, instead of a single
-row. Each panel keeps its own expanded state and commit draft when collapsed or when you
-review another target.
+**All worktrees** (the default when a project has several worktrees) lists a section
+for each worktree that has uncommitted changes, and for each separate repository inside
+it (such as `mobile`), all on the same level with no indentation. A section header
+shows the repository icon, the bold name (the project name for the project folder, the
+branch for another worktree), the muted branch, sync arrows, the change count, and refresh
+and a menu on hover. Clean, ahead-only and unknown worktrees are not listed here; they are
+in the header picker. With none changed, the session's worktree is shown. The first
+section opens; the rest open on click. Each section's menu offers **Show only this
+repository** (remembered per project) and **Show all repositories**. Rows carry no text
+markers such as "This session" or "Separate repository"; hover for the path. The Changes
+tab badge is the sum of the section counts.
+
+Remote projects use the same picker, with a server icon before the project icon.
+
+The header picker is the repository list: **All worktrees** with the total count, worktrees
+with uncommitted changes first, then the project folder and other worktrees, and last
+**Agent worktrees** (shown with an agent icon, no folder name), collapsed to **… N more**
+after five rows. A worktree whose state could not be read shows no change count and is
+never counted as clean. A panel keeps its own expanded state and commit draft when
+collapsed or when you review another target.
+
+Change totals update when the changed-file, added-line or deleted-line count changes.
+Each machine loads a few summaries at a time, giving the selected checkout priority
+over background summaries.
 
 With one worktree selected, the Changes header is a single row: a `folder · branch`
 picker leads, with refresh, worktree management and the Git menu at the end. The panel
@@ -118,12 +138,16 @@ list instead, only when you choose it; provider error text is not shown.
 
 While there are changes, the main button is **Commit**: it commits what is staged,
 or every change when nothing is staged (amending never adds unstaged files). It
-never pushes. After a successful regular commit, a tracked branch shows the
-updated outgoing commit count while Git refreshes the full status.
+never pushes. After a successful commit, the file list and Changes tab totals update
+together while Git refreshes the full status. A regular commit on a tracked branch
+also updates the outgoing commit count.
 **Commit & Push** and **Commit, Push & Create PR** are in its menu.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
 Create PR or View PR action leads instead.
+**Push** and **Publish Branch** send commits while sessions are running on a remote
+Host. **Pull** and **Sync Changes** can update working files, so the remote Host
+requires the project's sessions to be idle.
 
 On mobile, **Changes** shows a short status when the working folder is clean.
 Search and filters appear with changed files. An existing commit message is still
@@ -142,6 +166,10 @@ hidden zero-width surfaces retain their previous mode. Editor constraints can st
 prevent a saved split choice from being rendered. A failed preference save keeps the
 persisted selection and offers local retry. Diff consumers listen for changes from
 other windows without creating another preference store.
+
+Use **Add to chat** on a file or diff line comment to insert an inline reference
+such as `build.mjs L20`. Select it in the draft to view or edit the comment.
+Sent references open the saved comment, file path and source line.
 
 ## GitHub CLI
 

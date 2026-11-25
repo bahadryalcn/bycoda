@@ -23,6 +23,7 @@ Own inspection of an existing tool call, not a new execution surface. Provider a
 ## Preserve
 
 - Parse each complete saved JSON section once per source update and reuse its value for eligibility and rendering. Clipboard/wrap feedback must not repeatedly parse retained output; commands, diffs, truncated and invalid JSON keep exact text.
+- Streamed output grows its rendered text in place (`AnsiText` appends or drops the head on the live text node); replacing the node collapses the reader's selection.
 - Retain exact command/output bytes, selection, horizontal reading and legacy/summary/full distinctions; never globally append snapshot updates.
 - Transcript subagent rows keep lifecycle, elapsed time and step summary inline before the disclosure control, including runs without steps. Failed-step counts use the danger role without changing the run lifecycle; the detached sheet retains its own state line.
 - Stop is gated by capability and call identity; acknowledgement does not prove process termination. Never rerun or kill work to populate an inspector.

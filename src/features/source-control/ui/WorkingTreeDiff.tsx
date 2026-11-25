@@ -565,6 +565,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       {stale && error ? <StaleReviewNotice error={error} onRetry={reload} /> : null}
       {mutationError && <InlineError className="shrink-0 px-3 py-2">{mutationError}</InlineError>}
       <UnifiedDiffView
+        deferFileChrome
         files={reviewModels}
         fileCount={focusKind ? entries.length : files.length}
         focusId={focusId}

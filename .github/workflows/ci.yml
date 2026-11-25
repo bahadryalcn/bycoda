@@ -177,6 +177,19 @@ jobs:
           pnpm run test:host --shard=${{ matrix.shard }}/${{ matrix.shard-count }}
           --reporter=default --reporter=json
           --outputFile.json=temp/test-results/host-ci/results.json
+      - name: Report runner resources and native crash frames after a macOS Host failure
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          vm_stat
+          shopt -s nullglob
+          for report in "$HOME"/Library/Logs/DiagnosticReports/node-*.ips; do
+            jq -s '.[-1] | {
+              signal: .exception.signal, type: .exception.type, codes: .exception.codes,
+              frames: [.threads[.faultingThread // 0].frames[:12][]? | {symbol, imageIndex, imageOffset}]
+            }' "$report" || echo "Could not read Node crash summary"
+          done
       # test:host's pretest hook already typechecks and builds the host.
       - run: node host/package.mjs
         if: matrix.shard == 1

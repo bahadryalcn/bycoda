@@ -47,7 +47,34 @@ import {
 } from "../../../src/features/sessions/model/sessionsStore";
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
+import { recordRemoteConnection } from "../../../src/features/connections/model/remoteHealth";
 import "../../../src/styles/index.css";
+
+const machineFixture = new URLSearchParams(location.search).get("machineFixture");
+if (machineFixture) {
+  mockIPC(
+    (command) =>
+      command === "remote_machines"
+        ? [
+            {
+              id: "office",
+              environmentId: "office",
+              name: "Office Mac",
+              endpoint: "http://127.0.0.1:1",
+            },
+            {
+              id: "build",
+              environmentId: "build",
+              name: "Build PC",
+              endpoint: "http://127.0.0.1:2",
+            },
+          ]
+        : null,
+    { shouldMockEvents: true },
+  );
+  recordRemoteConnection("office");
+  recordRemoteConnection("build", new Error("Machine is unreachable"));
+}
 
 const removeProjectParam = new URLSearchParams(location.search).get("removeProject");
 if (removeProjectParam) {
@@ -244,14 +271,16 @@ const baseBlocks: Block[] = [
   },
 ];
 const initial: Session = {
-  ...newSession("claude", "/fixture", modelId),
+  ...newSession("claude", machineFixture === "projectless" ? "~" : "/fixture", modelId),
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
-  blocks: historyFixture
-    ? historyBlocks.slice(12)
-    : new URLSearchParams(location.search).has("socialDiscussion")
-      ? []
-      : baseBlocks,
+  blocks: machineFixture
+    ? []
+    : historyFixture
+      ? historyBlocks.slice(12)
+      : new URLSearchParams(location.search).has("socialDiscussion")
+        ? []
+        : baseBlocks,
   ...(historyFixture ? { historyLoading: true, storedHistory: { before: 12, revision: 1 } } : {}),
   rewindHistory: new URLSearchParams(location.search).has("rewindFixture")
     ? [
@@ -276,7 +305,7 @@ setComposerAttachments(sessionId, [
     data: btoa("context"),
   },
 ]);
-const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0, historyPages: 0 };
+const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0, historyPages: 0, machine: "" };
 // The real pane resolves approval identity from the canonical session store.
 setSessions([initial]);
 type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";
@@ -396,6 +425,11 @@ function Fixture() {
     onFocus: noop,
     onClose: noop,
     onCwdChange: noop,
+    onSessionMachineChange: machineFixture
+      ? (_, environmentId) => {
+          events.machine = environmentId ?? "";
+        }
+      : undefined,
     onBranchChange: noop,
     onWorkspaceModeChange: noop,
     onWorktreeBaseChange: noop,
@@ -510,9 +544,8 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
           group
           onChange={() => {}}
         />
-      ) : new URLSearchParams(location.search).get("projectVisual") === "mascot" ? (
+      ) : new URLSearchParams(location.search).get("projectVisual") === "usage" ? (
         <UsageProviderChip
-          project="/fixture/project"
           now={1790000000000}
           onRefresh={async () => {}}
           limits={{

@@ -1,5 +1,6 @@
 export { formatChatDate } from "../../../shared/i18n/format";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../../projects/model/projectNames";
+import { loadTabGroupLabels } from "../../workspace/public/tabGroups";
 import { pathKey } from "../../../shared/lib/paths";
 import { projectGroupIdForPath, type ProjectGroup } from "../../projects/model/projectGroups";
 import type { RecentProject } from "../../projects/model/recents";
@@ -97,6 +98,7 @@ export type ChatProjectGroup = {
 export function groupChatSessions(
   sessions: SessionContentSession[],
   grouping: ProjectGrouping,
+  labels: Record<string, string> = loadTabGroupLabels(),
 ): ChatProjectGroup[] {
   const byProject = new Map<string, ChatProjectGroup>();
   for (const session of sessions) {
@@ -106,7 +108,7 @@ export function groupChatSessions(
       group = {
         key,
         cwd: session.cwd,
-        name: projectDisplayName(session.cwd),
+        name: projectDisplayNameFrom(session.cwd, labels),
         groupName: chatGroupFor(session.cwd, grouping)?.name,
         sessions: [],
       };

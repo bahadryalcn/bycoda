@@ -1,7 +1,7 @@
 /** Different job: Account rows combine live quota meters and account status; RadioGroup owns selection and keyboard focus. */
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Divider } from "../../../shared/ui/Divider";
@@ -13,6 +13,7 @@ import { Check } from "../../../shared/ui/icons";
 import {
   accountUsageKey,
   providerAccountSignedOut,
+  updatedLabel,
   useProviderAccountUsage,
 } from "../../providers/public/accountUsage";
 import {
@@ -27,6 +28,7 @@ import { ModelAccountNumber, type ModelAccountIdentity } from "./ModelAccountIde
 import { accountSwitcherKind, accountUsageSummary } from "../model/modelPanelData";
 import type { HarnessId } from "../model/session";
 import { useModelSource } from "./modelSource";
+import { useShowRemainingUsage } from "../../settings/public/settings";
 
 /** Usage at or above these shares reads as running low, then nearly exhausted. */
 const USAGE_WARNING = 75;
@@ -76,13 +78,17 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
     // Fixed wording only: a provider's raw error text never reaches the list.
     const status = !profile
       ? undefined
-      : !limits || limits.status === "idle" || limits.status === "fetching"
+      : !limits ||
+          limits.status === "idle" ||
+          (limits.status === "fetching" && summary.usedPercent == null)
         ? t("Checking…")
         : providerAccountSignedOut(limits)
           ? t("Not signed in")
-          : limits.status === "error" || limits.status === "unavailable"
-            ? t("Usage unavailable")
-            : undefined;
+          : limits.status === "error" && summary.usedPercent != null
+            ? t("Refresh failed. {p0}", { p0: updatedLabel(limits, usage.now, t) })
+            : limits.status === "error" || limits.status === "unavailable"
+              ? t("Usage unavailable")
+              : undefined;
     return {
       ...identities[index],
       id: account.id,
@@ -98,11 +104,15 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
 function Percent({ value }: { value: number | null }) {
   const { formatNumber } = useFormat();
   const t = useT();
+  const remaining = useShowRemainingUsage();
   if (value == null) return null;
-  const percent = formatNumber(value / 100, { style: "percent", maximumFractionDigits: 0 });
+  const percent = formatNumber((remaining ? 100 - value : value) / 100, {
+    style: "percent",
+    maximumFractionDigits: 0,
+  });
   return (
     <span className="shrink-0 tabular-nums ui-caption-text">
-      {percent} {t("used")}
+      {percent} {remaining ? t("remaining") : t("used")}
     </span>
   );
 }
@@ -134,6 +144,7 @@ export function ModelAccountControl({
 }) {
   const t = useT();
   const { formatNumber } = useFormat();
+  const remaining = useShowRemainingUsage();
   const current = accounts.find((account) => account.id === accountId);
   const implicitAccount = !current && accountId === DEFAULT_PROVIDER_ACCOUNT_ID;
   const label = current?.label ?? t("Unavailable Host account");
@@ -142,13 +153,13 @@ export function ModelAccountControl({
     defaultAccountId && defaultAccountId !== accountId
       ? accounts.find((account) => account.id === defaultAccountId)
       : undefined;
-  const used =
+  const quota =
     current?.usedPercent != null
-      ? ` · ${formatNumber(current.usedPercent / 100, { style: "percent", maximumFractionDigits: 0 })} ${t("used")}`
+      ? ` · ${formatNumber((remaining ? 100 - current.usedPercent : current.usedPercent) / 100, { style: "percent", maximumFractionDigits: 0 })} ${remaining ? t("remaining") : t("used")}`
       : "";
   const name = elsewhere
-    ? `${t("Account: {p0}", { p0: label })}${used} · ${t("Default: {p0}", { p0: elsewhere.label })}`
-    : `${t("Account: {p0}", { p0: label })}${used}`;
+    ? `${t("Account: {p0}", { p0: label })}${quota} · ${t("Default: {p0}", { p0: elsewhere.label })}`
+    : `${t("Account: {p0}", { p0: label })}${quota}`;
   return (
     <Button
       variant="ghost"
@@ -169,7 +180,6 @@ export function ModelAccountControl({
       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-start">
         {listOpen || implicitAccount ? t("Accounts") : label}
       </Text>
-      {!listOpen && current && current.id === defaultAccountId ? <DefaultMark /> : null}
       {!listOpen && elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
     </Button>
@@ -194,14 +204,20 @@ export function ModelAccountList({
 }) {
   const t = useT();
   const { formatResetDuration } = useFormat();
+  const showRemaining = useShowRemainingUsage();
   const [query, setQuery] = useState("");
+  const list = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reveal the opened account controls even when models are scrolled to the bottom.
+  useLayoutEffect(() => {
+    if (!inline) list.current?.scrollIntoView?.({ block: "nearest" });
+  }, [inline]);
   const searchable = accountSwitcherKind(accounts.length) === "search";
   const needle = query.trim().toLocaleLowerCase();
   const shown = needle
     ? accounts.filter((account) => account.label.toLocaleLowerCase().includes(needle))
     : accounts;
   return (
-    <div className="shrink-0" data-model-account-list>
+    <div ref={list} className="shrink-0" data-model-account-list>
       {searchable ? (
         <div className="px-2 pt-1 pb-1.5">
           <SearchInput
@@ -291,6 +307,7 @@ export function ModelAccountList({
                       <UsageMeter
                         compact
                         showLegend={false}
+                        showRemaining={showRemaining}
                         decimals={0}
                         className="w-full"
                         segments={[

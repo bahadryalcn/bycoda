@@ -7,11 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.22]
+
+### Added
+
+- Link a project across machines and open terminals on a paired SSH machine at the project's folder.
+- Pasting 8,000 or more characters into a chat saves the text as a **Pasted text** attachment instead of filling the draft.
+- Remote conversations open matching HTTP development links in your system browser through a private forward, labeled with the computer's saved name.
+- **Settings > Chat > Advanced conversation settings > At usage limit, continue on** chooses what a conversation does when its provider stops it at a usage limit.
+- Jira Inbox changes an issue's status from its detail and shares filters across the list, Kanban and backlog views.
+- MCP sign-in can be cancelled while the browser step is pending.
+- Local video and audio files play inline in conversations, above the reply that links them or the sent message that attaches them.
+
 ### Improved
 
+- The queued message editor uses the same controls as the chat composer.
+- In narrow chat panes, Access and Mode move to the model panel's **Settings** tab, and Queue and Steer take priority over Stop while you have a draft.
+- Activity lists failed and unseen completed sessions with a count per state in its header.
+- Long messages expand in place; **Expand** opens them in a dialog with the same formatting.
+- Markdown previews zoom with Ctrl and the mouse wheel, and chat links open Markdown files in Preview.
+- Device and Browser panels obtain control automatically and stream live frames where the Host supports it.
+- Assistant access presets apply one permission level and show **Custom** whenever grants differ.
+- Remote sessions load faster, and workspace file navigation follows the project on each machine.
+- The notification bell sits beside Settings at the bottom of the left sidebar, and moves to the workspace footer when the sidebar is hidden.
+
+### Fixed
+
+- Pressing End in a long model list scrolls to the last model in WebKit after the list was filtered or resized.
+- Escape right after opening the Access or Mode menu in the model panel closes only that menu.
+- A Host closing during startup no longer stops with an unhandled error.
+- Transcript activity labels show their separators and ellipses correctly.
+- WebView2 recovery on Windows relaunches the app when the browser process exits.
+
+## [0.7.20]
+
+### Changed
+
+- The local Host now runs with the desktop app and stops when you quit, after listing running sessions and stopping them gracefully. Turn on "Keep this computer reachable when bycoda is closed" under Settings → Connections → Computers to keep it running as a login service.
+
+### Improved
+
+- Remote session synchronization uses fewer database write-queue admissions, and large sync responses reuse their encoded payload.
+- Long referenced message drafts keep their selection and undo history when a very long wrapped line switches to the native text field.
+- Windows login-service Hosts use normal scheduling priority.
+- Starting local voice reuses a recent successful runtime check. Compatible speech and recognition workers can start together.
+- Typing in a long draft pauses background scene rendering and keeps the current frame visible.
 - Native buffer reads reuse one long-lived git reader instead of starting three git processes per read.
 - The Host no longer checks the desktop database files with blocking disk calls, so a stalled disk (a restore point, an antivirus scan) cannot freeze it.
 - Social audit records are kept for 30 days, and the notification poller's old read records are removed.
+
+### Fixed
+
+- Refreshing an open Git review after a file becomes clean clears the diff and preserves the baseline needed to stage subsequent edits.
+- Restoring projects waits for the initial Host connection before listing sessions. Background session discovery no longer fetches attachment previews before they are needed.
+- Restored workspace panels share SSH discovery and stagger their initial file and Git reads. A connection already in progress no longer triggers account route recovery. Cancel and approval actions keep their own timing during discovery retries.
+- The Send button stays on the model row in a narrow composer, including when the selected model has a long name.
+- Scrolling up through a long conversation continues to load earlier messages while the wheel gesture is still moving.
+- On Linux WebKit, message bubbles keep their translucent backgrounds and borders without a separate blur layer per message, making long conversations faster to scroll.
+- Worktree removal detects unsaved files opened through alternate paths, including Windows short directory names.
+- Switching streams preserves pending project and session lists. Browser annotations retain their details beside inline images.
+- Reopened sessions can use their original desktop attachment when a Host copy is unavailable. A temporary Codex catalog failure keeps previously loaded models available.
+- On macOS and Linux, cancelling a Git operation also stops its helper processes. Worktree removal recognizes active sessions opened through an alternate path.
 
 ## [0.7.15]
 

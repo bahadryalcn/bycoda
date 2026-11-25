@@ -6,7 +6,7 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 
 const state = vi.hoisted(() => ({
   enabled: true,
-  focused: true,
+  windowVisible: true,
   awake: false,
   listeners: new Set<() => void>(),
   draw: vi.fn(),
@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../model/decorativeMotion", () => ({
   decorativeMotionEnabled: () => state.enabled,
-  windowHasFocus: () => state.focused,
+  motionWindowVisible: () => state.windowVisible,
   subscribeDecorativeMotion: (fn: () => void) => {
     state.listeners.add(fn);
     return () => state.listeners.delete(fn);
@@ -36,7 +36,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.enabled = true;
-  state.focused = true;
+  state.windowVisible = true;
   state.listeners.clear();
   vi.clearAllMocks();
   raf = vi.fn(() => 42);
@@ -161,24 +161,24 @@ it("caps painting at 30 fps even on a faster display", () => {
   expect(state.draw).toHaveBeenCalledTimes(2);
 });
 
-it("pauses while another application has focus and resumes with it, keeping the scene", () => {
+it("pauses while minimized and resumes on restore, keeping the scene", () => {
   render();
   intersect(true);
   expect(raf).toHaveBeenCalledOnce();
   const paints = state.draw.mock.calls.length;
-  state.focused = false;
+  state.windowVisible = false;
   act(() => state.listeners.forEach((fn) => fn()));
   expect(cancel).toHaveBeenCalledWith(42);
   expect(state.draw).toHaveBeenCalledTimes(paints);
   expect(state.dispose).not.toHaveBeenCalled();
-  state.focused = true;
+  state.windowVisible = true;
   act(() => state.listeners.forEach((fn) => fn()));
   expect(raf).toHaveBeenCalledTimes(2);
   expect(state.create).toHaveBeenCalledOnce();
 });
 
-it("does not start a loop in a window that is already behind another application", () => {
-  state.focused = false;
+it("does not start a loop in a window that is already hidden or minimized", () => {
+  state.windowVisible = false;
   render();
   intersect(true);
   expect(raf).not.toHaveBeenCalled();

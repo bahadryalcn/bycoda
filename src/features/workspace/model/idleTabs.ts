@@ -190,7 +190,12 @@ export function emptyForeignTabIds(
         tabIsIdle(tab, input, sessions) &&
         leafIds(tab.layout).every((id) => {
           const session = sessions.get(id);
-          if (session === undefined || !isEmptyNewChat(session)) return false;
+          if (
+            session === undefined ||
+            session.remoteExecutionEnvironmentId ||
+            !isEmptyNewChat(session)
+          )
+            return false;
           return !isRemoteProjectPath(project) || remoteUnsent!(session);
         })
       );

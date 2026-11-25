@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
@@ -6,10 +6,12 @@ import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { assistantPolicy } from "../../../../shared/model/assistantPolicy";
 import {
+  DEFAULT_WORKER_CONTEXT_SETTINGS,
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../../shared/model/assistantContext";
-import { AdvancedSettings } from "../../../../shared/ui/settings";
+import { AdvancedSettings, Row } from "../../../../shared/ui/settings";
+import { Button } from "../../../../shared/ui/Button";
 import { ProfileNumber } from "./ProfileControls";
 import { useProfileRows } from "./SettingsProfileRow";
 import styles from "./costUsage.module.css";
@@ -48,7 +50,26 @@ export function AssistantCostFields({
 }) {
   const rows = useProfileRows();
   const [advancedWorkerContext, setAdvancedWorkerContext] = useState(false);
+  const [workerReset, setWorkerReset] = useState(0);
   const workerContext = workerContextSettings(value);
+  const automatic = Object.entries(DEFAULT_WORKER_CONTEXT_SETTINGS).every(
+    ([key, limit]) => workerContext[key as keyof typeof workerContext] === limit,
+  );
+  const restoreDefaults = () => {
+    onChange({ ...DEFAULT_WORKER_CONTEXT_SETTINGS });
+    // Number fields keep raw draft text across disclosure toggles.
+    setWorkerReset((current) => current + 1);
+  };
+  const contextMode = (
+    <Row
+      label={t("Worker context limits")}
+      modified={!automatic}
+      onReset={restoreDefaults}
+      resetLabel={t("Restore defaults")}
+    >
+      <Text size="secondary">{t(automatic ? "Automatic" : "Custom")}</Text>
+    </Row>
+  );
   const policy = assistantPolicy(value);
   const number = (
     key: keyof AssistantProfilePatch,
@@ -92,7 +113,7 @@ export function AssistantCostFields({
     </>
   );
   const workerLimits = (
-    <>
+    <Fragment key={workerReset}>
       {number(
         "workerSoftContext",
         "Compact by token count",
@@ -125,7 +146,7 @@ export function AssistantCostFields({
         workerContext.workerHandoffPercent,
         "%",
       )}
-    </>
+    </Fragment>
   );
   const contextError = !validWorkerContextSettings(value) && (
     <InlineError>{t("Worker context limits must increase from compact to handoff.")}</InlineError>
@@ -133,11 +154,12 @@ export function AssistantCostFields({
   if (rows)
     return (
       <>
+        {contextMode}
         <AdvancedSettings title={t("Supervisor limits")} keepMounted>
           {limits}
         </AdvancedSettings>
         <AdvancedSettings
-          title={t("Worker context limits")}
+          title={t("Advanced worker context limits")}
           defaultOpen={!validWorkerContextSettings(value)}
           keepMounted
         >
@@ -156,6 +178,11 @@ export function AssistantCostFields({
         onOpenChange={setAdvancedWorkerContext}
       >
         <div className={styles.fieldGrid}>{workerLimits}</div>
+        {!automatic && (
+          <Button type="button" onClick={restoreDefaults}>
+            {t("Restore defaults")}
+          </Button>
+        )}
       </Disclosure>
       {contextError}
     </div>

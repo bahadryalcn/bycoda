@@ -62,9 +62,14 @@ export class TranscriptVirtualization {
   }
   readonly rowScroll = new WeakMap<HTMLElement, HTMLElement>();
   adjusted?: (element: HTMLElement) => void;
-  /** Registers who learns that anchoring moved a scroller; `undefined` unregisters. */
-  setAdjusted(handler: ((element: HTMLElement) => void) | undefined): void {
+  private shouldAdjust?: (element: HTMLElement) => boolean;
+  /** Registers the follow owner's anchoring policy and adjustment notification. */
+  setAdjusted(
+    handler: ((element: HTMLElement) => void) | undefined,
+    shouldAdjust?: (element: HTMLElement) => boolean,
+  ): void {
     this.adjusted = handler;
+    this.shouldAdjust = shouldAdjust;
   }
   constructor(target: string | null = null) {
     this.target = target;
@@ -115,6 +120,7 @@ export class TranscriptVirtualization {
           scroll,
           () => this.adjusted?.(scroll),
           (node) => this.rowScroll.get(node),
+          () => this.shouldAdjust?.(scroll) ?? true,
         ),
       };
       this.scrolls.set(scroll, entry);
@@ -170,12 +176,13 @@ const emptySubscribe = () => () => {};
 /** One compensation owner per physical scroller, shared by nested virtual lists.
  * Virtualizer size correction and whole-turn correction never run in parallel. */
 class ScrollAnchor {
-  private anchor: { node: HTMLElement; top: number } | null = null;
+  private anchor: { node: HTMLElement; top: number; scrollTop: number } | null = null;
   private frame = 0;
   constructor(
     private scroll: HTMLElement,
     private adjusted: () => void,
     private ownerOf: (node: HTMLElement) => HTMLElement | undefined,
+    private shouldAdjust: () => boolean,
   ) {
     scroll.addEventListener("scroll", this.remember, { passive: true });
     this.remember();
@@ -185,7 +192,11 @@ class ScrollAnchor {
     const top = this.scroll.getBoundingClientRect().top;
     const candidate = firstVisibleRow(this.scroll, this.ownerOf);
     this.anchor = candidate
-      ? { node: candidate, top: candidate.getBoundingClientRect().top - top }
+      ? {
+          node: candidate,
+          top: candidate.getBoundingClientRect().top - top,
+          scrollTop: this.scroll.scrollTop,
+        }
       : null;
   };
   blockId(): string | undefined {
@@ -206,16 +217,33 @@ class ScrollAnchor {
       this.frame = 0;
       if (!this.scroll.isConnected || !this.scroll.clientHeight) return;
       const anchor = this.anchor;
-      if (anchor?.node.isConnected && this.scroll.contains(anchor.node)) {
-        const delta =
-          anchor.node.getBoundingClientRect().top -
-          this.scroll.getBoundingClientRect().top -
-          anchor.top;
+      const scrollTop = this.scroll.scrollTop;
+      // The offset can move before the browser delivers its scroll event.
+      if (
+        this.shouldAdjust() &&
+        anchor?.scrollTop === scrollTop &&
+        anchor.node.isConnected &&
+        this.scroll.contains(anchor.node)
+      ) {
+        const top =
+          anchor.node.getBoundingClientRect().top - this.scroll.getBoundingClientRect().top;
+        const delta = top - anchor.top;
         if (Math.abs(delta) > 0.5) {
-          // The write already places the stored anchor at its remembered offset; the
-          // scroll event refreshes the candidate later, so no layout read follows the write.
-          this.scroll.scrollTop += delta;
-          this.adjusted();
+          // A live phase can become a nested scroller while its rows stay mounted.
+          // Its own scroll does not move the surrounding transcript's layout.
+          if (closestScroll(anchor.node) !== this.scroll) {
+            this.reset();
+            return;
+          }
+          this.scroll.scrollTop = scrollTop + delta;
+          const appliedTop = this.scroll.scrollTop;
+          // Consume this change even if the browser rounded or clamped the write.
+          this.anchor = {
+            node: anchor.node,
+            top: top - (appliedTop - scrollTop),
+            scrollTop: appliedTop,
+          };
+          if (appliedTop !== scrollTop) this.adjusted();
           return;
         }
       }

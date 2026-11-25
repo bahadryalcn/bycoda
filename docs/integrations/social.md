@@ -681,6 +681,10 @@ The Inbox screen shows conversations and comments from every connected account a
 platform in one list. Each thread has a status, a timeline of inbound and outbound items,
 and reply options that respect the account's permission and the platform window.
 
+As you type, search shows matching loaded conversations in the current account and status
+filter while the Host checks the complete inbox. Saving a tag updates loaded rows from the
+Host's receipt. Text searches refresh to include conversations that gained or lost a match.
+
 - `inbox.unified` lists threads across accounts. `inbox.timeline` reads one person's events across channels a page at a time: the newest 200, then older pages by the returned `next` cursor (`<at>|<eventId>`, the same format as `inbox.unified`), until `next` is absent at the start of the conversation. `inbox.setStatus` changes the status and tags. Each field is optional and an unsent one keeps the stored value: the screen sends only the status, or `addTags`/`removeTags` for one tag, never the list snapshot, and the Host merges in one store transaction after the conversation-visibility check. `tags` still replaces the whole list and cannot be combined with the tag deltas. `inbox.replyOptions` lists allowed reply
   types for the thread.
 - **Auto-refresh is on by default.** Only an explicitly stored "false" turns it off. The
@@ -690,7 +694,7 @@ and reply options that respect the account's permission and the platform window.
   platform's cursor is durable, so a restart resumes from the last read item. The Inbox and
   Content screens refresh by re-reading only their newest page and merging it into the pages
   already loaded; rows deleted far down a long list disappear on the next full reload
-  (Check now or any change you save).
+  (for example, Check now).
 - Polling is bounded. Each platform reads a fixed page per cycle, and backlog continues
   on the next cycle. Coverage is reported per channel. A partial or blocked channel never
   reports an empty inbox.

@@ -30,10 +30,9 @@ export function createModelRoutingService(ports: ModelRoutingPorts): ModelRoutin
     get: () => readModelRouting(ports.store),
     async save(expectedVersion, raw, authorize) {
       const [accounts, catalog] = await Promise.all([ports.accounts(), ports.catalog()]);
-      const draft = validateModelRoutingDraft(raw, accounts, catalog);
       return saveModelRouting(
         ports.store,
-        draft,
+        (persisted) => validateModelRoutingDraft(raw, accounts, catalog, persisted),
         expectedVersion,
         (ports.now ?? Date.now)(),
         authorize,

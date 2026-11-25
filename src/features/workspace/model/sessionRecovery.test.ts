@@ -9,7 +9,6 @@ import {
   beginRecoveryRemoval,
   rollbackRecoveryRemoval,
   getSessionRecovery,
-  isRecoverySessionHeld,
   mergeRecoveryTabs,
   parseSessionRecovery,
   recoveryStatus,
@@ -160,8 +159,6 @@ describe("durable session recovery", () => {
     const parsed = parseSessionRecovery(JSON.parse(JSON.stringify(removed)))!;
     const next = captureSessionRecovery(parsed, snapshot(["a", "b", "c"]), 200)!;
     expect(next.workspace.sessions.map((s) => s.id)).toEqual(["b", "c"]);
-    setSessionRecovery(next);
-    expect(isRecoverySessionHeld("a")).toBe(true);
     expect(initial.workspace.sessions).toHaveLength(2);
     const empty = removeRecoverySessions(next, ["b", "c"]);
     expect(empty.workspace.tabs).toEqual([]);
@@ -334,13 +331,5 @@ describe("durable session recovery", () => {
       text: "Turn interrupted when bycoda quit.",
     });
     expect(recoveryStatus(stopped, false, true)).toBe("interrupted");
-  });
-  it("holds recovered conversations from automatic sends even after acknowledgment", () => {
-    const recovery = captureSessionRecovery(null, snapshot(["a"]), 100)!;
-    setSessionRecovery(recovery);
-    expect(isRecoverySessionHeld("a")).toBe(true);
-    setSessionRecovery({ ...recovery, dismissed: true });
-    expect(isRecoverySessionHeld("a")).toBe(true);
-    expect(isRecoverySessionHeld("new-chat")).toBe(false);
   });
 });

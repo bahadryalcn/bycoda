@@ -53,5 +53,6 @@ describe.each([4, 64])("inline reference update on a %i KiB draft", (kib) => {
       `[inline references ${kib} KiB, ${scan.references.length} refs] full reparse: ${format(before)}; incremental: ${format(after)}`,
     );
     expect(after.median).toBeLessThan(before.median / 2);
-  });
+    // The oracle reparse of a 64 KiB draft took ~107 ms per edit on the CI runner (~10 s for 90 edits).
+  }, 60_000);
 });

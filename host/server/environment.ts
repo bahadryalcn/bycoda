@@ -3,6 +3,7 @@ import {
   HOST_PROTOCOL_VERSION,
   providerSteerCapability,
 } from "../../src/features/connections/model/protocol";
+import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
 import { defaultRouteAddress } from "../mobile/mobile-network";
@@ -81,10 +82,13 @@ export function createEnvironmentRuntime(
         "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
+        "transport.ws.devices.video.v1",
+        "devices.touch.v1",
         "transport.ws.sessions.tail.v1",
         "transport.ws.projects.delta.v1",
         "sessions.approvalOccurrence.v1",
         "sessions.desktopControlReceipts.v1",
+        PROJECTLESS_SESSIONS_CAPABILITY,
         "transport.ws.queue.v2",
         "transport.ws.files.v2",
         "transport.ws.terminals.v2",
@@ -288,6 +292,7 @@ export function createEnvironmentRuntime(
         GITHUB_WORK_ITEMS,
         "usage.sessions.read",
         "usage.limits.read",
+        "usage.quota.read",
         "usage.cost.read",
         "usage.planShare.v1",
         "pullRequests.link.v1",
@@ -302,6 +307,8 @@ export function createEnvironmentRuntime(
         "host.access.read",
         "devices.paired",
         "devices.revokeOther",
+        "devices.setManagement",
+        "devices.applyRecovery",
         "dev.servers.reviewed-impact",
         "inbox.attention",
         "inbox.providers.desktop",
@@ -315,6 +322,7 @@ export function createEnvironmentRuntime(
         "resources.diagnostics",
         "browser.shared.setup",
         "browser.shared",
+        "browser.frames.binary.v1",
         "browser.shared.viewport.v1",
         "conversation.tools.management.v1",
         "runtime.logs",

@@ -10,7 +10,7 @@ import { useTooltip } from "../Tooltip";
 import { Button } from "../Button";
 import { Heading } from "../Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
-import { InfoPopover } from "../InfoPopover";
+import { InfoTooltip } from "../InfoPopover";
 import { RotateCcw } from "../icons";
 
 import { useT } from "../../i18n";
@@ -113,33 +113,29 @@ export function SettingsFeedback(props: SettingsFeedbackProps) {
   );
 }
 
-/** One info (ⓘ) affordance per title: a hidden description and a plain-string `info` share one popover. */
+/** A hidden description and a plain-string `info` share one tooltip. */
 function HelpSlot({ description, info }: { description?: ReactNode; info: ReactNode }) {
   if (description == null || description === "") return <InfoSlot info={info} />;
   if (info != null && typeof info !== "string") {
     return (
       <>
-        <InfoPopover className="shrink-0">
-          <p>{description}</p>
-        </InfoPopover>
+        <InfoTooltip className="shrink-0">{description}</InfoTooltip>
         <InfoSlot info={info} />
       </>
     );
   }
   return (
-    <InfoPopover className="shrink-0">
-      <p>{description}</p>
-      {info ? <p>{info}</p> : null}
-    </InfoPopover>
+    <InfoTooltip className="shrink-0">
+      {description}
+      {info && info !== description ? ` ${info}` : null}
+    </InfoTooltip>
   );
 }
 
-/** A plain-string `info` becomes the standard info popover; custom nodes render as given. */
+/** A plain-string `info` becomes a tooltip. Custom nodes render as given. */
 function InfoSlot({ info }: { info: ReactNode }) {
   return typeof info === "string" ? (
-    <InfoPopover className="shrink-0">
-      <p>{info}</p>
-    </InfoPopover>
+    <InfoTooltip className="shrink-0">{info}</InfoTooltip>
   ) : (
     <>{info}</>
   );
@@ -394,7 +390,7 @@ export function Group({
   /** Kept for existing callers; the frame no longer changes with it. */
   layout?: "columns" | "full";
   variant?: "open" | "box";
-  /** Show `description` as a muted subline (default `false`: behind the info popover). */
+  /** Show `description` as a muted subline (default `false`: in a tooltip). */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the title. */
   info?: ReactNode;
@@ -492,7 +488,7 @@ export function Group({
  * One setting: title + one short muted `description` on the left, control on the right at one
  * compact height and one right edge. Put long or rare detail in `info` (ⓘ), not in `description`.
  *
- * - `description` sits behind the info (ⓘ) popover; `descriptionVisible` opts into a visible muted
+ * - `description` sits in the info (ⓘ) tooltip. `descriptionVisible` opts into a visible muted
  *   subline, only for scope, dependency or consequence.
  * - `modified` + `onReset`: small reset icon next to the title while the value differs from its
  *   default, e.g. `<Row modified={size !== 14} onReset={() => setSize(14)} …>`.
@@ -518,6 +514,7 @@ export function Row({
   controlId,
   stacked = false,
   descriptionVisible = false,
+  descriptionTone = "secondary",
   info,
   dependsOn,
   disabled = false,
@@ -536,8 +533,10 @@ export function Row({
   controlId?: string;
   /** Wide controls (text fields, editors, lists) sit under the label at full width. */
   stacked?: boolean;
-  /** Show `description` as a muted subline (default `false`: behind the info popover). */
+  /** Show `description` as a muted subline (default `false`: in a tooltip). */
   descriptionVisible?: boolean;
+  /** Use `muted` for metadata such as a timestamp. */
+  descriptionTone?: "secondary" | "muted";
   /** Longer explanation for an information popover beside the label. */
   info?: ReactNode;
   /** Dependent sub-row: indented; `false` (the parent is off) disables it. Omit for a normal row. */
@@ -628,7 +627,7 @@ export function Row({
             <Text
               as="p"
               size="caption"
-              tone="secondary"
+              tone={descriptionTone}
               leading="normal"
               className="settings-description settings-help-text"
             >

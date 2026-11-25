@@ -3,11 +3,53 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { recordRemoteCapabilities, useRemoteProjectSessions } from "./connections";
+import {
+  adoptRemoteMachineInventory,
+  recordRemoteCapabilities,
+  remoteRequest,
+  useRemoteProjectSessions,
+} from "./connections";
 import type { RemoteDataState } from "./remoteDataState";
 import { rememberRemoteProject } from "./remoteProjects";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
+
+it("waits for one authenticated discovery before listing separate projects on a cold SSH machine", async () => {
+  const machine = {
+    id: "cold-ssh",
+    name: "Mac",
+    environmentId: "cold-env",
+    endpoint: "",
+    ssh: { target: "owner@mac", remotePort: 7000 },
+  };
+  adoptRemoteMachineInventory([machine]);
+  const discovery = Promise.withResolvers<{ capabilities: string[] }>();
+  const methods: string[] = [];
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command !== "remote_request") return;
+    const { method } = args as { method: string };
+    methods.push(method);
+    return method === "environment.describe" ? discovery.promise : [];
+  });
+  const reads = ["a", "b", "c"].map((projectId) =>
+    remoteRequest(machine.id, "sessions.list", { projectId }),
+  );
+  reads.push(remoteRequest(machine.id, "projects.list"));
+  try {
+    await vi.waitFor(() => expect(methods).toEqual(["environment.describe"]));
+  } finally {
+    discovery.resolve({ capabilities: [] });
+    await Promise.all(reads);
+    adoptRemoteMachineInventory([]);
+  }
+  expect(methods).toEqual([
+    "environment.describe",
+    "sessions.list",
+    "sessions.list",
+    "sessions.list",
+    "projects.list",
+  ]);
+});
 
 it("never renders the previous project's session cards under the new project", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -85,6 +127,37 @@ it("re-reads the list over HTTP when only its machine-channel stream fails", asy
   } finally {
     await act(async () => root.unmount());
     subscribe.mockRestore();
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps a confirmed pin on its project when both projects contain the same session id", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const projects = ["first", "second"].map((id) =>
+    rememberRemoteProject("pin-env", { id, cwd: "/" + id, name: id }),
+  );
+  for (const project of projects)
+    localStorage.setItem(
+      `bycoda.remote-history.v2:${project.key}`,
+      JSON.stringify([{ id: "shared", pinned: false }]),
+    );
+  let list!: ReturnType<typeof useRemoteProjectSessions>;
+  function View({ project }: { project: string }) {
+    list = useRemoteProjectSessions(project);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(View, { project: projects[0].key })));
+    const confirmFirst = list.confirmPin;
+    act(() => confirmFirst("shared", true));
+    expect(list.sessions[0]?.pinned).toBe(true);
+    await act(async () => root.render(createElement(View, { project: projects[1].key })));
+    act(() => confirmFirst("shared", true));
+    expect(list.sessions[0]?.pinned).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
     localStorage.clear();
     vi.unstubAllGlobals();
   }

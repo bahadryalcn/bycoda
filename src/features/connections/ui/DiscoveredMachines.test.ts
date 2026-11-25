@@ -12,7 +12,8 @@ const account = vi.hoisted(() => ({
   state: { phase: "signed-out" } as { phase: string; deviceId?: string },
   request: (async () => undefined) as (...args: unknown[]) => Promise<unknown>,
 }));
-vi.mock("../../account", () => ({
+vi.mock("../../account", async () => ({
+  watchPairingView: (await import("../../account/model/phoneConnectInbox")).watchPairingView,
   useAccountState: () => account.state,
   useAccount: () => ({ signIn: async () => undefined }),
   isSignedIn: (state: { phase: string }) => state.phase === "signed-in",

@@ -1,4 +1,4 @@
-//! Additional list filters are values, never caller-supplied JQL.
+//! Issue filters are values, never caller-supplied JQL.
 use serde::Deserialize;
 
 #[derive(Default, Deserialize)]
@@ -19,6 +19,25 @@ impl JiraIssueFilters {
         state: &str,
         project_ids: &[String],
     ) -> Result<String, String> {
+        let mut clauses = self.assignment_and_workflow(assigned_to_me)?;
+        if !self.issue_picker && !self.search.trim().is_empty() {
+            clauses.insert(0, super::mention_search::search_clause(&self.search)?);
+        }
+        if clauses.is_empty() {
+            return Ok(super::issue_jql(false, state, project_ids));
+        }
+        let base = super::issue_jql(false, state, project_ids);
+        let base = base.strip_suffix(" ORDER BY updated DESC").unwrap_or(&base);
+        if base != "updated >= -365d" {
+            clauses.push(base.to_string());
+        }
+        Ok(format!("{} ORDER BY updated DESC", clauses.join(" AND ")))
+    }
+
+    pub(super) fn assignment_and_workflow(
+        &self,
+        assigned_to_me: bool,
+    ) -> Result<Vec<String>, String> {
         if self.assignee_ids.len() > 100 || self.statuses.len() > 100 {
             return Err("Too many Jira filters".into());
         }
@@ -47,9 +66,6 @@ impl JiraIssueFilters {
             assignees.push(format!("assignee in ({})", ids.join(", ")));
         }
         let mut clauses = Vec::new();
-        if !self.issue_picker && !self.search.trim().is_empty() {
-            clauses.push(super::mention_search::search_clause(&self.search)?);
-        }
         if !assignees.is_empty() {
             clauses.push(format!("({})", assignees.join(" OR ")));
         }
@@ -61,15 +77,7 @@ impl JiraIssueFilters {
                 .collect::<Result<Vec<_>, _>>()?;
             clauses.push(format!("status in ({})", statuses.join(", ")));
         }
-        if clauses.is_empty() {
-            return Ok(super::issue_jql(false, state, project_ids));
-        }
-        let base = super::issue_jql(false, state, project_ids);
-        let base = base.strip_suffix(" ORDER BY updated DESC").unwrap_or(&base);
-        if base != "updated >= -365d" {
-            clauses.push(base.to_string());
-        }
-        Ok(format!("{} ORDER BY updated DESC", clauses.join(" AND ")))
+        Ok(clauses)
     }
 }
 

@@ -1,5 +1,58 @@
 import { expect, test } from "@playwright/test";
 
+test("normal coding session has no voice results launcher", async ({ page }) => {
+  await page.goto("/tests/browser/sessions/session-usability.html?historyFixture");
+  const session = page.locator("[data-session-drop]");
+  await expect(session.getByText("Response 16", { exact: true })).toBeVisible();
+  await expect(session.locator("[data-composer-box] textarea")).toBeEditable();
+  await expect(
+    session.getByRole("button", { name: /live (results|work)/i, includeHidden: true }),
+  ).toHaveCount(0);
+  await expect(
+    session.locator("[data-work-panel], button:has(svg.lucide-chart-no-axes-combined)"),
+  ).toHaveCount(0);
+});
+
+for (const kind of ["projectless", "project"])
+  for (const light of [true, false])
+    for (const width of [800, 1280])
+      test(`session machine picker ${kind} ${light ? "light" : "dark"} ${width}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 850 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(
+          `/tests/browser/sessions/session-usability.html?machineFixture=${kind}${light ? "&light" : ""}`,
+        );
+        const picker = page.getByRole("button", { name: /^Run on:/ });
+        await expect(picker).toContainText("This computer");
+        await picker.click();
+        await expect(page.getByRole("option", { name: /Office Mac/ })).toBeVisible();
+        await expect(page.getByRole("option", { name: /Build PC.*Offline/ })).toBeDisabled();
+        if (width === 1280) await expect(page.locator(".crew-scene")).toBeVisible();
+        const choices = page.getByRole("listbox", { name: "Run on" });
+        await expect
+          .poll(async () => {
+            const trigger = (await picker.boundingBox())!;
+            const list = (await choices.boundingBox())!;
+            return Math.min(
+              Math.abs(list.y - trigger.y - trigger.height),
+              Math.abs(trigger.y - list.y - list.height),
+            );
+          })
+          .toBeLessThan(18);
+        await page.screenshot({
+          path: `temp/verification/session-machine-selection/${kind}-${light ? "light" : "dark"}-${width}.png`,
+        });
+        await page.getByRole("option", { name: /Office Mac/ }).click();
+        await expect
+          .poll(() => page.evaluate(() => window.sessionUsability.events.machine))
+          .toBe("office");
+        await expect(page.locator("[data-composer-box] textarea")).toHaveValue(
+          "Keep this integrated draft",
+        );
+      });
+
 for (const light of [true, false])
   for (const width of [800, 1280])
     test(`earlier history scroll ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
@@ -17,6 +70,9 @@ for (const light of [true, false])
       const folder = "temp/verification/prompt-outline-prepend";
       const name = `${light ? "light" : "dark"}-${width}`;
       await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+      // The tail paints first. Until the first local turn is mounted, scrolling
+      // reveals more local turns before it can request the stored history page.
+      await expect(firstRecent).toBeAttached();
       await expect(firstOld).toHaveCount(0);
       expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
       await transcript.hover();
@@ -48,6 +104,94 @@ for (const light of [true, false])
         await page.screenshot({ path: `${folder}/earlier-${name}.png` });
       } else await expect(rail).toBeHidden();
     });
+
+for (const light of [true, false])
+  test(`earlier history loads after a slow animated wheel scroll ${light ? "light" : "dark"} 1280`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+    );
+    const transcript = page.locator(".agent-transcript");
+    await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+    await expect(transcript.locator('[data-transcript-turn="history-12"]')).toBeAttached();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+    await transcript.hover();
+    // One upward wheel event starts the motion, then the engine animates it: WebKit on CI took
+    // over a second, so the top was only reached after the wheel's input window. The wheel is
+    // dispatched in the page so no second, engine-owned wheel animation competes with this one.
+    const animatedFrom = await transcript.evaluate(
+      (element) =>
+        new Promise<number>((resolve) => {
+          element.dispatchEvent(
+            new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+          );
+          // From the end (about 760px) the 320px load threshold is crossed after about 1.7s,
+          // well past the 1s input window; the CI screencast was still near the end at 1s.
+          const from = element.scrollTop;
+          const started = performance.now();
+          const step = () => {
+            const progress = Math.min(1, (performance.now() - started) / 3000);
+            element.scrollTop = Math.round(from * (1 - progress));
+            if (progress < 1) requestAnimationFrame(step);
+            else resolve(from);
+          };
+          requestAnimationFrame(step);
+        }),
+    );
+    // The motion starts from the end, far above the load threshold.
+    expect(animatedFrom).toBeGreaterThan(600);
+    await expect(transcript.getByText("Loading earlier messages…")).toBeVisible();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+    await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+    await expect(transcript.locator('[data-transcript-turn="history-0"]')).toHaveCount(1);
+  });
+
+for (const light of [true, false])
+  test(`earlier history loads when a wheel scroll paints no frame for seconds ${light ? "light" : "dark"} 1280`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+    );
+    const transcript = page.locator(".agent-transcript");
+    await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+    await expect(transcript.locator('[data-transcript-turn="history-12"]')).toBeAttached();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+    // CI Linux WebKit under load: after the wheel no frame was painted for 1-3s, then one
+    // frame moved a little, then none for seconds again until a frame landed on the top. A
+    // busy main thread stalls frames the same way in every engine.
+    const offsets = await transcript.evaluate(
+      (element) =>
+        new Promise<number[]>((resolve) => {
+          const stall = (ms: number) => {
+            const until = performance.now() + ms;
+            while (performance.now() < until);
+          };
+          const from = element.scrollTop;
+          element.dispatchEvent(
+            new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+          );
+          stall(1500);
+          element.scrollTop = from - 40;
+          requestAnimationFrame(() => {
+            const middle = element.scrollTop;
+            stall(1500);
+            element.scrollTop = 0;
+            requestAnimationFrame(() => resolve([from, middle, element.scrollTop]));
+          });
+        }),
+    );
+    expect(offsets[0]).toBeGreaterThan(600);
+    expect(offsets[1]).toBeGreaterThan(320);
+    expect(offsets[2]).toBe(0);
+    await expect(transcript.getByText("Loading earlier messages…")).toBeVisible();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+    await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+    await expect(transcript.locator('[data-transcript-turn="history-0"]')).toHaveCount(1);
+  });
 
 for (const light of [true, false])
   for (const width of [800, 1280])
@@ -193,6 +337,11 @@ for (const light of [false, true]) {
       await page.keyboard.press("Escape");
       await expect(addMenu).toHaveCount(0);
       await expect(addTrigger).toBeFocused();
+      // A narrow composer moves Mode into the model panel's Settings tab.
+      if (width < 1000) {
+        await expect(trigger).toHaveCount(0);
+        continue;
+      }
 
       await trigger.focus();
       await trigger.press("ArrowDown");
@@ -230,7 +379,8 @@ for (const light of [false, true]) {
     page,
   }, info) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 390, height: 800 });
+    // The narrowest pane that still keeps Mode in the composer toolbar.
+    await page.setViewportSize({ width: 520, height: 800 });
     await page.goto(
       `/tests/browser/sessions/session-usability.html?lang=tr${light ? "&light" : ""}`,
     );
@@ -258,7 +408,7 @@ for (const light of [false, true]) {
     });
     expect(fits).toBe(true);
     await page.screenshot({
-      path: info.outputPath("composer-menu-tr-390.png"),
+      path: info.outputPath("composer-menu-tr-520.png"),
     });
     await menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }).click();
     await expect(page.getByRole("textbox")).toHaveValue("Keep this integrated draft");
@@ -302,12 +452,13 @@ for (const light of [false, true]) {
     expect(await page.evaluate(() => window.sessionUsability.events.sends)).toBe(1);
     await page.evaluate(() => window.sessionUsability.mode("working"));
     await page.setViewportSize({ width: 320, height: 800 });
-    const stop = page.getByRole("button", { name: "Stop", exact: true });
-    await expect(stop).toBeInViewport();
+    // With a draft, a narrow pane shows Queue and Send; the Stop shortcut still interrupts.
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Queue message", exact: true })).toBeInViewport();
     await page.screenshot({
       path: info.outputPath("integrated-working-320.png"),
     });
-    await stop.press("Enter");
+    await input.press("Escape");
     expect(await page.evaluate(() => window.sessionUsability.events.stops)).toBe(1);
     await expect(input).toHaveValue("Keep this changed draft");
     await page.evaluate(() => window.sessionUsability.remount());
@@ -328,19 +479,25 @@ for (const light of [false, true]) {
       "data-delivery-progress",
       "unknown",
     );
-    await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
+    // An unconfirmed row is settled by the owner's explicit choice on that row, never by a blind
+    // header Resume: Resume is absent, and "Send again" is the only way to resend it.
+    await expect(page.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
     await expect(input).toHaveValue("Keep this changed draft");
-    // The unconfirmed message stays visible in the queue and in the delivery notice that settles it.
+    // The unconfirmed message stays visible in its queue row, which carries the settling control (the pane banner steps aside).
     const retained = "Retained follow-up with unknown delivery";
     const queueRows = page.locator("[data-message-queue-rows]");
+    await expect(queueRows.getByRole("button", { name: "Send again", exact: true })).toHaveCount(1);
     const queuedMessage = queueRows.getByText(retained, { exact: true });
     await expect(queuedMessage).toHaveCount(1);
     await expect(queuedMessage).toBeVisible();
     await expect(
       queueRows.getByRole("button", { name: "Remove queued message", exact: true }),
     ).toHaveCount(1);
+    // The row's own delivery control is where the owner settles it; nothing was resent meanwhile.
     await expect(
-      page.locator("[data-delivery-progress]").getByText(retained, { exact: true }),
+      page
+        .locator("[data-delivery-progress]")
+        .getByRole("button", { name: "Send again", exact: true }),
     ).toBeVisible();
     expect(await page.evaluate(() => window.sessionUsability.events.queueAttempts)).toBe(0);
     await page.screenshot({
@@ -499,7 +656,7 @@ for (const light of [true, false])
     });
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`project background and mascot ${light ? "light" : "dark"} ${width}`, async ({
+    test(`project background and Codex usage ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
@@ -524,13 +681,13 @@ for (const light of [true, false])
       await expect(swatch).toHaveCSS("background-color", "rgb(18, 52, 86)");
       await swatch.screenshot({ path: info.outputPath(`project-swatch-${light}-${width}.png`) });
       await page.goto(
-        `/tests/browser/sessions/session-usability.html?projectVisual=mascot${suffix}`,
+        `/tests/browser/sessions/session-usability.html?projectVisual=usage${suffix}`,
       );
       await page.getByRole("button", { name: "Codex usage details" }).click();
-      const mascot = page.locator('[data-reset-mascot-mood="happy"] svg');
-      await expect(mascot).toBeVisible();
-      await mascot.screenshot({ path: info.outputPath(`project-mascot-${light}-${width}.png`) });
       const usage = page.getByRole("dialog", { name: "Codex usage details" });
+      const resetIcon = usage.locator("[data-quota-reset-icon]");
+      await expect(resetIcon).toBeVisible();
+      await expect(resetIcon).toHaveCSS("mask-image", /quota-reset\.png/);
       const heading = usage.getByRole("heading", { name: "Codex usage", exact: true });
       const refresh = usage.getByRole("button", { name: "Refresh usage" });
       await expect(refresh).toBeVisible();
@@ -577,3 +734,62 @@ for (const width of [800, 1280]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("a referenced draft with one very long wrapped line keeps its caret in view and its undo", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await page.goto("/tests/browser/sessions/session-usability.html?machineFixture=project");
+  const field = page.locator("[data-composer-box] textarea");
+  const editor = page.locator("[data-composer-box] .cm-editor");
+  const link = "https://example.com/fixture ";
+  await field.fill(link);
+  await expect(editor).toHaveCount(1);
+  // Cross the long-line limit inside the editor, then undo and redo the insertion.
+  const rest = "a b ".repeat(16384).slice(0, 65536 - link.length);
+  const draft = link + rest;
+  await page.locator("[data-composer-box] .cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.insertText(rest);
+  await expect(editor).toHaveCount(0);
+  await expect(field).toBeVisible();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(draft);
+  // The caret line counts as in view when at least half of it is: its glyphs sit centred in the
+  // line box, so the scroll offset beside the padding depends on the font (about 1px on Windows,
+  // 3px with the Linux fallback font), never on the layout under test.
+  const atBottom = () =>
+    field.evaluate(
+      (input) =>
+        input.scrollHeight - input.scrollTop - input.clientHeight <=
+        parseFloat(getComputedStyle(input).paddingBottom) +
+          parseFloat(getComputedStyle(input).lineHeight) / 2,
+    );
+  await expect.poll(atBottom).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect(field).toHaveValue(link);
+  await page.keyboard.press("Control+Shift+z");
+  await expect(field).toHaveValue(draft);
+  await field.focus();
+  await page.keyboard.press("Control+Home");
+  await expect
+    .poll(() =>
+      field.evaluate(
+        (input: HTMLTextAreaElement) =>
+          input.selectionEnd === 0 &&
+          input.scrollTop <=
+            parseFloat(getComputedStyle(input).paddingTop) +
+              parseFloat(getComputedStyle(input).lineHeight) / 2,
+      ),
+    )
+    .toBe(true);
+  await page.keyboard.press("Control+End");
+  await expect.poll(atBottom).toBe(true);
+  expect(await field.evaluate((input: HTMLTextAreaElement) => input.selectionEnd)).toBe(
+    draft.length,
+  );
+  await page.keyboard.type("xy");
+  await expect(field).toHaveValue(draft + "xy");
+  await expect.poll(atBottom).toBe(true);
+  await expect(editor).toHaveCount(0);
+});

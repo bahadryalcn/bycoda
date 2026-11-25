@@ -6,6 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
+import {
+  runWithRequestTrace,
+  slowRequestFields,
+  startRequestTrace,
+} from "./diagnostics/request-trace";
 import { HostStore } from "./store";
 import { monotonicNow } from "../src/shared/lib/time/timestamps";
 import { RequestAuthorizationError, StoreDatabase } from "./store-db";
@@ -254,6 +259,8 @@ it("keeps the next transaction's state when an abandoned transaction resumes and
       throw new Error("late failure");
     });
     await expect(first).rejects.toThrow(/exceeded its deadline/);
+    // Only the abandoned holder is meant to expire; a slow runner must not expire the next one.
+    store.db.scopeDeadlineMs = 5_000;
     let during = false;
     await store.transaction(async () => {
       await store.db.exec("INSERT INTO epoch_probe VALUES ('b')");
@@ -1192,6 +1199,32 @@ it("logs bounded stage timings: queue wait, guard, worker execution, round trip 
   expect(Number(/worker=(\d+)ms/.exec(line!)?.[1])).toBeLessThanOrEqual(roundTrip);
   // Numbers only: no SQL text, bound parameters or payloads.
   expect(line).not.toMatch(/stage_probe|secret-payload-value|INSERT|BEGIN/);
+});
+
+it("ties writer stages to the request without changing the warning's dedupe identity", async () => {
+  const { store } = await fixture();
+  store.db.slowScopeMs = 0;
+  const warnings: Array<{ message: string; detail: string }> = [];
+  store.db.scopeWarn = (message, detail) => warnings.push({ message, detail: detail ?? "" });
+  const traced = async () => {
+    const trace = startRequestTrace("http");
+    await runWithRequestTrace(trace, () => stageTimingProbe(store));
+    return trace;
+  };
+  const first = await traced();
+  const firstWarnings = warnings.splice(0);
+  const second = await traced();
+  const line = firstWarnings.find(({ detail }) => detail.includes(`traceId=${first.id}`));
+  const repeat = warnings.find(({ detail }) => detail.includes(`traceId=${second.id}`));
+  expect(line).toBeDefined();
+  expect(line!.message).not.toContain("traceId");
+  expect(repeat!.message).toBe(line!.message);
+  const fields = slowRequestFields(first, { thresholdMs: 0, heldWaitMs: 0 });
+  expect(fields.writerRequests).toBeGreaterThanOrEqual(3);
+  expect(fields.writerRoundTripMs).toBeGreaterThanOrEqual(fields.writerWorkerMs as number);
+  expect(fields).not.toHaveProperty("writerHoldingMs");
+  expect(first.hold.open.size).toBe(0);
+  expect(JSON.stringify([fields, line])).not.toMatch(/stage_probe|secret-payload-value|INSERT/);
 });
 
 async function walDatabase(options: { readers?: number } = {}) {

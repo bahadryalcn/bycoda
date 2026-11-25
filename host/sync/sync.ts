@@ -1,6 +1,7 @@
 import { StoreDatabase } from "../store-db";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { syncDbTiming } from "../diagnostics/perf-metrics";
+import { rememberSerializedResponse } from "./sync-transfer";
 type SyncDatabase = DatabaseSync | StoreDatabase;
 import type { DatabaseSync } from "node:sqlite";
 import { canonicalJson } from "../../src/features/sync/model/canonicalJson";
@@ -32,17 +33,14 @@ async function bumpRev(db: SyncDatabase): Promise<number> {
 
 type SyncRow = Record<string, unknown>;
 
-/** Maps a stored row to a record; a row whose JSON is corrupt reads as a
- * tombstone (value: null) so a push over it can still proceed. Returns
- * undefined only when `skipCorrupt` is set and the row is corrupt. */
-function rowToRecord(row: SyncRow): SyncRecord & { corrupt: boolean } {
+/** Pulls skip corrupt rows. A push can replace one at its existing revision. */
+function rowToRecord(row: SyncRow, corruptAsTombstone = false): SyncRecord | undefined {
   let value: SyncRecordValue | null = null;
-  let corrupt = false;
   if (row.value !== null) {
     try {
       value = JSON.parse(String(row.value)) as SyncRecordValue;
     } catch {
-      corrupt = true;
+      if (!corruptAsTombstone) return undefined;
     }
   }
   return {
@@ -50,7 +48,6 @@ function rowToRecord(row: SyncRow): SyncRecord & { corrupt: boolean } {
     id: String(row.id),
     rev: Number(row.rev),
     value,
-    corrupt,
   };
 }
 
@@ -62,9 +59,7 @@ async function readRecord(
   const row = await db
     .prepare("SELECT table_name, id, value, rev FROM sync_records WHERE table_name=? AND id=?")
     .get(table, id);
-  if (!row) return undefined;
-  const { corrupt: _corrupt, ...record } = rowToRecord(row);
-  return record;
+  return row && rowToRecord(row, true);
 }
 
 /** Every record the host has accepted since `sinceRev`, oldest first. */
@@ -81,22 +76,43 @@ export async function syncPull(
     const untilRev = Math.min(page?.untilRev ?? latest, latest);
     const maxBytes = Math.max(128 * 1024, Math.min(page?.maxBytes ?? 1024 * 1024, 8 * 1024 * 1024));
     const records: SyncRecord[] = [];
+    const encodedRecords: string[] = [];
     let bytes = 256;
-    let cursor = sinceRev;
-    for await (const row of pulledRows(db, sinceRev, untilRev)) {
-      const { corrupt, ...record } = rowToRecord(row);
-      if (!corrupt) {
-        const size = Buffer.byteLength(JSON.stringify(record), "utf8") + 1;
-        if (page && size + 256 > 8 * 1024 * 1024)
-          throw new Error("Sync record exceeds the transfer limit");
-        if (page && records.length && bytes + size > maxBytes)
-          return { rev: cursor, records, more: true, untilRev };
-        records.push(record);
-        bytes += size;
-      }
-      cursor = record.rev;
+    let revisionStart = 0;
+    function finishPage(rev: number, more: boolean): SyncPullResult {
+      const result = { rev, records, more, untilRev, workspaceLayout: true };
+      rememberSerializedResponse(
+        result,
+        `{"rev":${JSON.stringify(rev)},"records":[${encodedRecords.join(",")}],"more":${more},"untilRev":${JSON.stringify(untilRev)},"workspaceLayout":true}`,
+      );
+      return result;
     }
-    return page ? { rev: untilRev, records, more: false, untilRev } : { rev: untilRev, records };
+    for await (const batch of pullBatches(db, sinceRev, untilRev)) {
+      for (const row of batch) {
+        const record = rowToRecord(row);
+        if (!record) continue;
+        if (page) {
+          const text = JSON.stringify(record);
+          const size = Buffer.byteLength(text) + 1;
+          if (size + 256 > 8 * 1024 * 1024)
+            throw new Error("Sync record exceeds the transfer limit");
+          if (records.at(-1)?.rev !== record.rev) revisionStart = records.length;
+          if (bytes + size > maxBytes && revisionStart > 0) {
+            // Clients resume after a revision. Move a shared legacy revision to
+            // the next page in full, even if some of its rows fit here.
+            records.length = revisionStart;
+            encodedRecords.length = revisionStart;
+            return finishPage(records[revisionStart - 1].rev, true);
+          }
+          if (bytes + size > 8 * 1024 * 1024)
+            throw new Error("Sync revision exceeds the transfer limit");
+          encodedRecords.push(text);
+          bytes += size;
+        }
+        records.push(record);
+      }
+    }
+    return page ? finishPage(untilRev, false) : { rev: untilRev, records };
   };
   // A pull only reads committed records: it runs on one read snapshot beside the writer queue.
   return db instanceof StoreDatabase ? db.readScope(work) : work();
@@ -104,19 +120,25 @@ export async function syncPull(
 
 const PULL_BATCH_ROWS = 256;
 /** Rows in `(sinceRev, untilRev]`, oldest first, read in bounded keyset batches. */
-async function* pulledRows(db: SyncDatabase, sinceRev: number, untilRev: number) {
+async function* pullBatches(db: SyncDatabase, sinceRev: number, untilRev: number) {
+  if (sinceRev >= untilRev) return;
   // Every accepted write gets its own rev; rowid keeps a shared legacy rev from being skipped.
   const first = db.prepare(
-    `SELECT rowid AS row_key, table_name, id, value, rev FROM sync_records WHERE rev > ? AND rev <= ? ORDER BY rev, rowid LIMIT ${PULL_BATCH_ROWS}`,
+    `SELECT rowid AS row_key, table_name, id, value, rev FROM sync_records WHERE rev > ? AND rev <= ? ORDER BY rev, rowid LIMIT ${PULL_BATCH_ROWS + 1}`,
   );
   const next = db.prepare(
-    `SELECT rowid AS row_key, table_name, id, value, rev FROM sync_records WHERE (rev, rowid) > (?, ?) AND rev <= ? ORDER BY rev, rowid LIMIT ${PULL_BATCH_ROWS}`,
+    `SELECT rowid AS row_key, table_name, id, value, rev FROM sync_records WHERE (rev, rowid) > (?, ?) AND rev <= ? ORDER BY rev, rowid LIMIT ${PULL_BATCH_ROWS + 1}`,
   );
   let rows = await first.all(sinceRev, untilRev);
   for (;;) {
-    yield* rows;
-    if (rows.length < PULL_BATCH_ROWS) return;
-    const last = rows[rows.length - 1];
+    if (rows.length <= PULL_BATCH_ROWS) {
+      yield rows;
+      return;
+    }
+    // The lookahead proves another batch exists, including rows sharing a revision.
+    rows.pop();
+    yield rows;
+    const last = rows[PULL_BATCH_ROWS - 1];
     rows = await next.all(last.rev, last.row_key, untilRev);
   }
 }

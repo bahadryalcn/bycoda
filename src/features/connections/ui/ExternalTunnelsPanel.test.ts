@@ -162,14 +162,24 @@ async function choose(label: string, value: string) {
   await act(async () => option.click());
 }
 
-it("defaults automatic Host access off and saves both switch changes to the selected Host", async () => {
+it("only enables automatic Host access when Start sharing is submitted", async () => {
   await render();
   await openShare();
-  expect(container.querySelector('[role="switch"]')).toBeNull();
+  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   await choose("Tunnel target", "bycoda host");
-  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  const toggle = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(toggle.checked).toBe(false);
   await act(async () => toggle.click());
+  expect(toggle.checked).toBe(true);
+  expect(vi.mocked(remoteRequest).mock.calls.some(([, method]) => method === "tunnels.start")).toBe(
+    false,
+  );
+  await act(async () => button("Cancel").click());
+  await openShare();
+  const reopened = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(reopened.checked).toBe(false);
+  await act(async () => reopened.click());
+  await act(async () => button("Start sharing").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "local",
     "tunnels.start",
@@ -181,16 +191,9 @@ it("defaults automatic Host access off and saves both switch changes to the sele
     false,
     true,
   );
-  expect(toggle.getAttribute("aria-checked")).toBe("true");
-  await act(async () => toggle.click());
-  expect(remoteRequest).toHaveBeenCalledWith(
-    "local",
-    "tunnels.stop",
-    { automatic: true },
-    false,
-    true,
-  );
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(
+    vi.mocked(remoteRequest).mock.calls.filter(([, method]) => method === "tunnels.start"),
+  ).toHaveLength(1);
 });
 
 it("hides automatic access for an older Host that cannot persist the setting", async () => {
@@ -198,7 +201,7 @@ it("hides automatic access for an older Host that cannot persist the setting", a
   await render();
   await openShare();
   await choose("Tunnel target", "bycoda host");
-  expect(container.querySelector('[role="switch"]')).toBeNull();
+  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   expect(remoteRequest).not.toHaveBeenCalledWith(
     "local",
     "tunnels.start",
@@ -206,6 +209,36 @@ it("hides automatic access for an older Host that cannot persist the setting", a
     false,
     true,
   );
+});
+
+it("starts a one-time Cloudflare Host tunnel when automatic restart is unchecked", async () => {
+  await render();
+  await openShare();
+  await choose("Tunnel target", "bycoda host");
+  await act(async () => button("Start sharing").click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.start",
+    { provider: "cloudflare", target: "host" },
+    false,
+    true,
+  );
+});
+
+it("can explicitly stop automatic Host access even without an active link", async () => {
+  current = { ...current, automaticHostAccess: true, tunnels: [] };
+  await render();
+  await openShare();
+  await choose("Tunnel target", "bycoda host");
+  await act(async () => button("Stop automatic Host access").click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.stop",
+    { automatic: true },
+    false,
+    true,
+  );
+  expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
 });
 
 it("keeps a rejected token for retry and clears it only after acknowledged save", async () => {
@@ -303,13 +336,8 @@ it("separates dev and host targets and routes host start to the selected compute
   await choose("Tunnel target", "bycoda host");
   const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
   expect(field.value).toBe("http://127.0.0.1:3777");
-  // The full public-access text sits behind the info affordance.
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Public access"]')!.click(),
-  );
-  expect(document.body.textContent).toContain(
-    "Host access keeps device authentication and pairing.",
-  );
+  // Public access guidance is visible alongside the target before starting the tunnel.
+  expect(container.textContent).toContain("Devices still need to pair.");
   await act(async () => button("Start sharing").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "remote",

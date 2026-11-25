@@ -10,7 +10,6 @@ import { type AgentModel, type ModelPickerTab } from "../model/models";
 import { harnessUnavailableHint } from "../../../integrations/harness/core/availability";
 import { useModelSource } from "./modelSource";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelAccountNumber, type ModelAccountIdentity } from "./ModelAccountIdentity";
 import { modelGroups } from "../model/modelPickerData";
@@ -19,6 +18,9 @@ import {
   modelChoiceKey,
   type AccountModelChoice,
 } from "../model/accountModelChoices";
+
+// Each model row mounts favorite and default actions; bound that work for medium catalogs too.
+const MODEL_WINDOW_THRESHOLD = 24;
 
 /** Where new conversations start, marked on the rail and the rows. */
 export type ModelDefaultMark = {
@@ -87,7 +89,6 @@ export function ModelBrowser({
   const t = useT();
   const listId = useId();
   const source = useModelSource();
-  const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const groups = modelGroups(tab, models);
   // A passing pointer previews a provider only while it cannot discard anything: a typed
   // search or the open account list must survive pointer drift across the rail. Click and
@@ -104,9 +105,12 @@ export function ModelBrowser({
     return () => cancelAnimationFrame(frame);
   }, [autoFocusSearch, searchRef]);
 
+  const keys = models.map(modelChoiceKey);
+  const indexByKey = new Map(keys.map((key, index) => [key, index]));
+  const favoriteIds = new Set(favorites);
   const options = groups.flatMap((group) =>
-    group.models.map(({ item }) => ({
-      value: modelChoiceKey(item),
+    group.models.map(({ item, index }) => ({
+      value: keys[index]!,
       title: modelChoiceBaseName(item as AccountModelChoice),
       accessibleLabel:
         tab === "favorites" || (item as AccountModelChoice).accountNumber !== undefined
@@ -139,12 +143,11 @@ export function ModelBrowser({
     id: listId,
     options,
     value: currentId,
-    activeValue: models[active] ? modelChoiceKey(models[active]!) : null,
-    onActiveValueChange: (value) =>
-      onActive(models.findIndex((item) => modelChoiceKey(item) === value)),
+    activeValue: keys[active] ?? null,
+    onActiveValueChange: (value) => onActive(value == null ? -1 : (indexByKey.get(value) ?? -1)),
     onChange: (value) => {
-      const item = models.find((item) => modelChoiceKey(item) === value);
-      if (item) onPick(item);
+      const index = indexByKey.get(value);
+      if (index !== undefined) onPick(models[index]!);
     },
     inputRef: searchRef,
   });
@@ -225,36 +228,39 @@ export function ModelBrowser({
               onValueChange={onQuery}
             />
             {header}
-            <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
-              {body}
-              {leading}
-              <PickerList
-                label={t("Models")}
-                controller={list}
-                query={query}
-                selectionIndicator="start"
-                emptyLabel={
-                  tab === "favorites" && !query.trim()
-                    ? t("No favorite models")
-                    : tab !== "favorites" && !source.available(tab)
-                      ? harnessUnavailableHint(tab)
-                      : tab === "codex" && !query.trim()
-                        ? t("Loading Codex models…")
-                        : t("No matching models")
-                }
-                renderOptionActions={(option) => {
-                  const item = models.find((item) => modelChoiceKey(item) === option.value)!;
-                  return (
-                    <ModelActions
-                      item={item}
-                      favorited={favorites.includes(item.id)}
-                      defaultMark={defaultMark}
-                      onToggleFavorite={() => onToggleFavorite(item.id)}
-                    />
-                  );
-                }}
-              />
-            </div>
+            <PickerList
+              scrollHeader={
+                <>
+                  {body}
+                  {leading}
+                </>
+              }
+              label={t("Models")}
+              controller={list}
+              query={query}
+              windowed={models.length > MODEL_WINDOW_THRESHOLD}
+              selectionIndicator="start"
+              emptyLabel={
+                tab === "favorites" && !query.trim()
+                  ? t("No favorite models")
+                  : tab !== "favorites" && !source.available(tab)
+                    ? harnessUnavailableHint(tab)
+                    : tab === "codex" && !query.trim()
+                      ? t("Loading Codex models…")
+                      : t("No matching models")
+              }
+              renderOptionActions={(option) => {
+                const item = models[indexByKey.get(option.value)!]!;
+                return (
+                  <ModelActions
+                    item={item}
+                    favorited={favoriteIds.has(item.id)}
+                    defaultMark={defaultMark}
+                    onToggleFavorite={() => onToggleFavorite(item.id)}
+                  />
+                );
+              }}
+            />
             {footer}
           </>
         )}

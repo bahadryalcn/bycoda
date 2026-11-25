@@ -58,6 +58,17 @@ vi.mock("../../../shared/ui/Popover", async () => ({
 }));
 
 import { ModelPicker, preloadModelPicker } from "./ModelPicker";
+const settingsReads = vi.hoisted(() => vi.fn());
+vi.mock("./modelStoreReaders", async (original) => {
+  const actual = await original<typeof import("./modelStoreReaders")>();
+  return {
+    ...actual,
+    menuSettingsAtRevision(...args: Parameters<typeof actual.menuSettingsAtRevision>) {
+      settingsReads();
+      return actual.menuSettingsAtRevision(...args);
+    },
+  };
+});
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
 import { resetDisabledModels, resetHarnessModelOverlays, setHarnessModels } from "../model/models";
 import { KEYBINDINGS, saveKeybindingOverride } from "../../settings/model/settings";
@@ -112,6 +123,14 @@ async function openPanel() {
   await act(async () => trigger().click());
   return panel()!;
 }
+
+it("derives model settings only when their panel is open", async () => {
+  settingsReads.mockClear();
+  await render({ harness: "codex", model: "gpt-5" });
+  expect(settingsReads).not.toHaveBeenCalled();
+  await openPanel();
+  expect(settingsReads).toHaveBeenCalled();
+});
 
 async function click(element: Element) {
   await act(async () => (element as HTMLElement).click());
@@ -231,6 +250,21 @@ describe("model panel", () => {
     await key(window, "Escape");
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(trigger());
+  });
+  it("leaves Escape to an open Access menu that has not taken focus yet", async () => {
+    await render({ harness: "claude", model: "claude:opus-5" });
+    await openPanel();
+    const menu = document.createElement("div");
+    menu.setAttribute("data-access-picker", "");
+    document.body.append(menu);
+    try {
+      await key(window, "Escape");
+      expect(panel()).not.toBeNull();
+    } finally {
+      menu.remove();
+    }
+    await key(window, "Escape");
+    expect(panel()).toBeNull();
   });
   it("toggles the full panel with the registered shortcut and returns focus", async () => {
     const binding = KEYBINDINGS.find((row) => row.command === "App: Switch Model")!;
@@ -989,13 +1023,13 @@ describe("model panel settings column", () => {
     await openOrdered({});
     const footer = container.querySelector("[data-model-setting-help]")!;
     expect(footer.textContent).not.toContain("Help");
-    expect(footer.querySelectorAll('button[aria-label="Help"]')).toHaveLength(1);
+    expect(footer.querySelectorAll('button[aria-label="Model settings"]')).toHaveLength(1);
   });
 
   it("opens complete settings help without hovering and retains it when focus moves into help", async () => {
     await openOrdered({});
     const footer = container.querySelector("[data-model-setting-help]")!;
-    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;
+    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Model settings"]')!;
     expect(help).not.toBeNull();
     await act(async () => help.focus());
     await click(help);

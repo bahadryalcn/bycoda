@@ -78,7 +78,8 @@ import {
 } from "./registry";
 import type { HarnessEvent, HarnessOperationContext, SendTurnInput, SteerTurnInput } from "./types";
 import { createChildProcessHandle, spawnChild, killChild, type ChildProcessHandle } from "./child";
-import { nativeControlTurnReceipt } from "./controlTurn";
+import { nativeControlTurnReceipt, nativeSessionCapability } from "./controlTurn";
+import { resolveOpenCodeV2Service } from "../providers/opencode/opencodeService";
 import { claudeAdapter } from "../providers/claude/claudeAdapter";
 import { codexAdapter } from "../providers/codex/codexAdapter";
 import { genericAcpAdapter } from "../providers/generic-acp/genericAcpAdapter";
@@ -1268,6 +1269,54 @@ describe("harness registry", () => {
     expect(retainedHarnessWriters()).not.toContain("lightweight-transfer");
   });
 
+  it("releases a parked OpenCode service reference and reacquires on the next turn", async () => {
+    vi.useFakeTimers();
+    nativeReceipts();
+    const fixture = nativeInvoke.getMockImplementation()!;
+    let acquired = 0;
+    nativeInvoke.mockImplementation(async (command, raw) => {
+      if (command === "owned_opencode_acquire")
+        return {
+          serviceId: "service",
+          referenceId: `reference-${++acquired}`,
+          endpoint: "http://127.0.0.1:1",
+        };
+      if (command === "owned_opencode_release") return true;
+      return fixture(command, raw);
+    });
+    const sendTurn = vi.fn(async (turn: SendTurnInput) => {
+      await resolveOpenCodeV2Service(
+        "opencode",
+        turn.cwd,
+        nativeSessionCapability(turn.nativeControlTurn!),
+      );
+    });
+    const stopSession = vi.fn(async () => {});
+    registerHarness(stub("opencode", { sendTurn, stopSession }));
+    const input = {
+      harness: "opencode" as const,
+      sessionId: "opencode-park",
+      cwd: "/tmp",
+      model: "opencode:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: vi.fn(),
+    };
+    const releases = () =>
+      nativeInvoke.mock.calls.filter(([command]) => command === "owned_opencode_release");
+
+    await sendHarnessTurn(input);
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS - 1);
+    expect(releases()).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stopSession).toHaveBeenCalledOnce();
+    expect(releases()).toHaveLength(1);
+    expect(releases()[0][1]).toMatchObject({ referenceId: "reference-1" });
+
+    await sendHarnessTurn(input);
+    expect(acquired).toBe(2);
+  });
+
   it("retains the writer record when stop and native retire both fail", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const stopSession = vi.fn(async (): Promise<void> => {
@@ -1795,6 +1844,18 @@ describe("harness registry", () => {
       });
     },
   );
+
+  it("gives ACP text helpers the provider's own model ID", async () => {
+    const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => "done");
+    registerHarness(stub("cursor", { runTextPrompt }));
+    await runHarnessTextPrompt({
+      harness: "cursor",
+      cwd: "/tmp",
+      prompt: "question",
+      model: "cursor:composer-2.5",
+    });
+    expect(runTextPrompt.mock.calls[0]?.[0].model).toBe("composer-2.5");
+  });
 
   it("keeps foreign model remapping and never fabricates no-dispatch proof after adapter entry", async () => {
     const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => {

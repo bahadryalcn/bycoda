@@ -7,7 +7,7 @@
  * isolated Host/Vite/native run. Ctrl+C stops only this supervisor's children.
  * No services or installers are used. Node 24+, pinned pnpm and Rust are required.
  */
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { access, cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
@@ -366,6 +366,46 @@ export async function frozenSourceIdentity(root) {
   return { repositoryId, branch, head, sourceFingerprint, dirtyPaths };
 }
 
+const commitWarnBytes = 16 * 1024 ** 3;
+
+/** Parse `FreeVirtualMemory TotalVirtualMemorySize` (KB) output and decide whether to warn. */
+export function commitHeadroomWarning(output, thresholdBytes = commitWarnBytes) {
+  const [free, total] = String(output)
+    .trim()
+    .split(/\s+/)
+    .map((value) => Number(value) * 1024);
+  if (!Number.isFinite(free) || !Number.isFinite(total) || free < 0 || total <= 0) return null;
+  if (free >= thresholdBytes) return null;
+  const gb = (bytes) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  return `Low Windows commit headroom: ${gb(free)} free of ${gb(total)}. A native dev run (cargo, Vite, a second Host and WebView) can exhaust it; other WebView2 apps, including the installed bycoda, can then crash (error 1455).`;
+}
+
+/** Warn only: never blocks, delays beyond the deadline, or fails a dev run. */
+async function warnOnLowCommitHeadroom(platform = process.platform) {
+  if (platform !== "win32") return;
+  try {
+    const output = await new Promise((done, fail) =>
+      execFile(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-WindowStyle",
+          "Hidden",
+          "-Command",
+          '$o = Get-CimInstance Win32_OperatingSystem; "$($o.FreeVirtualMemory) $($o.TotalVirtualMemorySize)"',
+        ],
+        { timeout: 5000, windowsHide: true, encoding: "utf8" },
+        (error, stdout) => (error ? fail(error) : done(stdout)),
+      ),
+    );
+    const warning = commitHeadroomWarning(output);
+    if (warning) console.warn(warning);
+  } catch (error) {
+    if (process.env.DEBUG) console.debug("Commit headroom check skipped:", error);
+  }
+}
+
 export async function runNativeDev(args = process.argv.slice(2)) {
   const frozenRoot = option(args, "--frozen-source");
   const root = await realpath(
@@ -408,6 +448,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
   const leases = new DevPortLeases();
   let lease;
   try {
+    await warnOnLowCommitHeadroom();
     const toolchain = await completed(launch("rustc", ["-vV"]));
     const bootstrap = new WorkspaceBootstrapService({
       resolveWorkspace: async () => root,

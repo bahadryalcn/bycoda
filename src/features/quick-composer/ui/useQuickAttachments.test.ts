@@ -103,6 +103,50 @@ it("pastes an image into a portable file while retaining its thumbnail", async (
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });
 
+it("writes just the available slot when several files are pasted into an almost full draft", async () => {
+  vi.mocked(pickFiles).mockResolvedValue(Array.from({ length: 19 }, (_, i) => `/tmp/${i}.txt`));
+  await act(async () => {
+    await api.chooseFiles();
+  });
+  expect(api.files).toHaveLength(19);
+  await act(async () => {
+    api.onPaste({
+      clipboardData: { files: ["a.txt", "b.txt", "c.txt"].map((name) => new File(["a"], name)) },
+      preventDefault: vi.fn(),
+    } as never);
+    await vi.waitFor(() =>
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining("20") }),
+      ),
+    );
+  });
+  expect(api.files).toHaveLength(20);
+  expect(vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(
+    1,
+  );
+});
+
+it("replaces a long plain paste at its selection after saving it", async () => {
+  const field = document.createElement("textarea");
+  container.append(field);
+  field.value = "before replace after";
+  field.setSelectionRange(7, 14);
+  const text = "pasted source ".repeat(800);
+  const preventDefault = vi.fn();
+  await act(async () => {
+    api.onPaste({
+      target: field,
+      clipboardData: { files: [], getData: (type: string) => (type === "text/plain" ? text : "") },
+      preventDefault,
+    } as never);
+    expect(field.value).toBe(`before ${text} after`);
+    await vi.waitFor(() => expect(field.value).not.toContain(text));
+  });
+  expect(preventDefault).toHaveBeenCalled();
+  expect(field.value).toMatch(/^before \[.+\] after$/);
+  expect(api.files).toMatchObject([{ name: "Pasted text.txt", size: text.length }]);
+});
+
 it("attaches a copied file instead of leaving its URI in the prompt", async () => {
   clipboardPaths = ["/tmp/image.png"];
   const preventDefault = vi.fn();

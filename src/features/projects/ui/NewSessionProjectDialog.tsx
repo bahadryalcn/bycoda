@@ -2,19 +2,17 @@ import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { projectKey, projectName } from "../../../shared/lib/paths";
-import { Chatting } from "../../../shared/ui/icons";
+import { StandaloneChat } from "../../../shared/ui/icons";
 import { Modal } from "../../../shared/ui/Modal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { PickerList, filterPickerOptions, usePickerList } from "../../../shared/ui/picker";
 import { useTabGroupLogos } from "../hooks/useTabGroupLogos";
 import { isRemoteProjectPath, type RecentProject } from "../model/recents";
 import { projectDisplayNameFrom, useProjectLabels } from "../model/projectNames";
-import { ProjectLogoIcon } from "./ProjectLogoIcon";
-import { ProjectMascot } from "./ProjectMascot";
+import { PROJECT_WINDOW_THRESHOLD, ProjectOptionIcon } from "./ProjectOptionIcon";
 import {
   resolveTabGroupColor,
   resolveTabGroupMascot,
-  useResolvedTabGroupLogos,
   useTabGroupColors,
   useTabGroupCustomColors,
   useTabGroupMascots,
@@ -60,45 +58,36 @@ export function NewSessionProjectDialog({
   const colors = useTabGroupColors();
   const customColors = useTabGroupCustomColors();
   const mascots = useTabGroupMascots();
-  const resolvedLogos = useResolvedTabGroupLogos(
-    projects.map(({ path }) => projectKey(path)),
-    logos,
-  );
-  const options = filterPickerOptions(
-    [
-      {
-        value: NO_PROJECT_CWD,
-        title: t("No project"),
-        description: t("Runs in your default folder for sessions without a project"),
-        group: t("Without a project"),
-        icon: <Chatting className="icon-sm" />,
+  const choices = [
+    {
+      value: NO_PROJECT_CWD,
+      title: t("No project"),
+      description: t("Runs in your default folder for sessions without a project"),
+      group: t("Without a project"),
+      icon: <StandaloneChat className="icon-sm" />,
+      disabled: busy,
+    },
+    ...projects.map(({ path }) => {
+      const key = projectKey(path);
+      const seed = projectName(path);
+      return {
+        value: path,
+        title: projectDisplayNameFrom(path, labels),
+        description: `${t(isRemoteProjectPath(path) ? "Remote" : "Local")} · ${path}`,
+        group: t("Projects"),
+        icon: (
+          <ProjectOptionIcon
+            project={key}
+            seed={seed}
+            logos={logos}
+            mascot={resolveTabGroupMascot(key, mascots)}
+            color={resolveTabGroupColor(key, colors, customColors, seed)}
+          />
+        ),
         disabled: busy,
-      },
-      ...projects.map(({ path }) => {
-        const key = projectKey(path);
-        const seed = projectName(path);
-        const logo = resolvedLogos[key];
-        return {
-          value: path,
-          title: projectDisplayNameFrom(path, labels),
-          description: `${t(isRemoteProjectPath(path) ? "Remote" : "Local")} · ${path}`,
-          group: t("Projects"),
-          icon: logo ? (
-            <ProjectLogoIcon path={logo} className="icon-sm rounded-sm" imageClassName="icon-sm" />
-          ) : (
-            <ProjectMascot
-              project={seed}
-              name={resolveTabGroupMascot(key, mascots)}
-              color={resolveTabGroupColor(key, colors, customColors, seed)}
-              className="icon-sm"
-            />
-          ),
-          disabled: busy,
-        };
-      }),
-    ],
-    query,
-  );
+      };
+    }),
+  ];
   const pick = async (path: string) => {
     if (pending.current) return;
     pending.current = true;
@@ -110,7 +99,7 @@ export function NewSessionProjectDialog({
     });
   };
   const picker = usePickerList({
-    options,
+    options: filterPickerOptions(choices, query),
     value: null,
     onChange: (path) => void pick(path),
     loop: true,
@@ -147,6 +136,7 @@ export function NewSessionProjectDialog({
           loadingLabel={t("Creating session…")}
           error={error}
           emptyLabel={t("No projects found")}
+          windowed={projects.length > PROJECT_WINDOW_THRESHOLD}
           className="max-h-[min(360px,50vh)]"
         />
       </div>

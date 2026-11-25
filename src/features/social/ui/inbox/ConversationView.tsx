@@ -31,6 +31,7 @@ import {
   useInboxInvalidate,
   useInboxThread,
   useInboxTimeline,
+  useSavedInboxTags,
 } from "./useInboxData";
 import "./inbox.css";
 import { isImeComposition } from "../../../../shared/lib/keyboard";
@@ -56,6 +57,7 @@ export function ConversationView({
   const timeline = useInboxTimeline(client, item?.person?.id);
   const snapshot = useInboxAccounts(client, false);
   const invalidate = useInboxInvalidate(client);
+  const applyTags = useSavedInboxTags(client);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [tagDraft, setTagDraft] = useState("");
@@ -118,7 +120,6 @@ export function ConversationView({
     setError("");
     try {
       await task();
-      await invalidate();
       return true;
     } catch {
       setError(t("Could not save this change. Try again."));
@@ -128,7 +129,11 @@ export function ConversationView({
     }
   };
 
-  const setStatus = (status: InboxStatus) => run(() => api.setStatus(conversation.id, status));
+  const setStatus = (status: InboxStatus) =>
+    run(async () => {
+      await api.setStatus(conversation.id, status);
+      await invalidate();
+    });
 
   // Secondary status changes live in one menu; the current status is not offered.
   const statusItems = INBOX_STATUSES.filter((status) => status !== item?.status).map((status) => ({
@@ -152,12 +157,13 @@ export function ConversationView({
       setTagDraft("");
       return;
     }
-    if (await run(() => api.addTag(conversation.id, tag))) setTagDraft("");
+    if (await run(async () => applyTags(item, await api.addTag(conversation.id, tag))))
+      setTagDraft("");
   };
 
   const removeTag = (tag: string) => {
     if (!item || saving) return;
-    void run(() => api.removeTag(conversation.id, tag));
+    void run(async () => applyTags(item, await api.removeTag(conversation.id, tag)));
   };
 
   const title = item?.person?.name ?? item?.title ?? conversation.platformThreadId;

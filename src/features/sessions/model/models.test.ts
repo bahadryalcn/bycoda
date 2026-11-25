@@ -688,6 +688,29 @@ describe("live catalog overlays", () => {
     expect(nativeModelId("claude:opus")).toBe("opus");
     expect(nativeModelId("claude:sonnet")).toBe("sonnet");
     expect(nativeModelId("codex:gpt-5.6-unreleased")).toBe("gpt-5.6-unreleased");
+    expect(nativeModelId("openrouter:vendor/custom-model")).toBe("openrouter:vendor/custom-model");
+    expect(nativeModelId("opencode:openrouter/vendor/model:free")).toBe(
+      "openrouter/vendor/model:free",
+    );
+    expect(nativeModelId("openrouter/vendor/model:free")).toBe("openrouter/vendor/model:free");
+  });
+
+  it("resolves a catalog model by a native ID containing a colon", () => {
+    const model = {
+      id: "opencode:openrouter/vendor/model:free",
+      harness: "opencode" as const,
+      name: "Model Free",
+      nativeId: "openrouter/vendor/model:free",
+    };
+    setHarnessModels("opencode", [
+      { id: "opencode:other/model", harness: "opencode", name: "Other", nativeId: "other/model" },
+      model,
+    ]);
+
+    expect(resolveModel("opencode", model.nativeId)).toEqual(model);
+    expect(resolveModel("codex", "openrouter:vendor/custom-model").nativeId).toBe(
+      "openrouter:vendor/custom-model",
+    );
   });
 
   it("keeps a lone fuzzy match for a versioned id", () => {

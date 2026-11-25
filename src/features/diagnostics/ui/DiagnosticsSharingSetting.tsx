@@ -36,7 +36,7 @@ export function DiagnosticsSharingSetting() {
     const ok = await confirm({
       title: t("Send logs now"),
       message: t("Help us fix crashes by sending redacted app logs."),
-      confirmLabel: t("Send logs now"),
+      confirmLabel: t("Review report"),
       tone: "neutral",
       body: (
         <TextField
@@ -67,15 +67,16 @@ export function DiagnosticsSharingSetting() {
           value={mode}
           onValueChange={(value) => setDiagnosticsMode(value as DiagnosticsMode)}
           options={[
-            { value: "off", label: t("Off") },
-            { value: "ask", label: t("Ask me") },
-            { value: "auto", label: t("Send automatically") },
+            { value: "off", label: t("Do not send") },
+            { value: "ask", label: t("Ask every time") },
+            { value: "auto", label: t("Send every time") },
           ]}
         />
         <Button
           variant="ghost"
           size="sm"
           loading={busy}
+          disabled={mode === "off"}
           onClick={() => send().catch(() => undefined)}
         >
           {t("Send logs now")}
@@ -84,12 +85,14 @@ export function DiagnosticsSharingSetting() {
       {mode !== "off" ? (
         <Text as="p" size="caption" tone="muted">
           {mode === "auto"
-            ? t("After a crash they are sent automatically, and once a week.")
-            : t("After a crash you are asked whether to send them.")}
+            ? t("Review a crash report or weekly logs before they are sent automatically.")
+            : t("Every report requires approval.")}
         </Text>
       ) : null}
       {result ? (
-        <InlineMessage tone={result === "sent" ? "success" : "danger"}>
+        <InlineMessage
+          tone={result === "sent" ? "success" : result === "declined" ? "info" : "danger"}
+        >
           {diagnosticResultText(result)}
         </InlineMessage>
       ) : null}

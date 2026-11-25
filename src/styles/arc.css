@@ -3,7 +3,7 @@
    - Modality: html[data-input-modality] is "pointer" or "keyboard" (shared/ui/inputModality.ts).
      Before any input and under pointer every focus visual resolves to none (width 0, transparent
      colour, field focus border equal to the resting border: the caret is the only cue). Under
-     keyboard the cue is a 2px inset neutral outline (>= 3:1 on its host) and fields step their
+     keyboard the cue is a 1px inset neutral outline (>= 3:1 on its host) and fields step their
      border up. Forced-colors keeps a real system outline in every modality.
    - Outline focus (buttons, rows, tabs, sliders): --ui-focus-width solid
      --ui-focus-ring-color at --ui-focus-offset. A quiet neutral tone, never the accent ink.
@@ -22,7 +22,7 @@ html:root {
   --ui-field-height-sm: var(--ui-control-height-compact);
   --ui-field-height-md: var(--ui-control-height);
   --ui-field-radius: var(--ui-radius-control);
-  /* Fields rest with a faint frame (about 1.5:1 against the field ground, T3 Code) and a muted
+  /* Fields rest with a faint frame (about 1.5:1 against the field ground) and a muted
      ground (--ui-field-surface) so they stay findable without a focus frame. Check boxes and other
      non-field controls keep the stronger --ui-control-border. */
   --ui-field-surface: var(--ui-surface-muted);
@@ -42,11 +42,12 @@ html.theme-light:root {
 }
 html[data-input-modality="keyboard"]:root {
   --ui-focus-ring-color: color-mix(in oklab, var(--color-content) 62%, transparent);
-  --ui-focus-width: 2px;
-  --ui-focus-offset: -2px;
+  --ui-focus-width: 1px;
+  --ui-focus-offset: -1px;
   --ui-field-border-focus: color-mix(in oklab, var(--color-content) 68%, var(--ui-field-surface));
   --ui-focus-ring: inset 0 0 0 1px var(--ui-field-border-focus);
-  --ui-focus-ring-invalid: 0 0 0 2px color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
+  --ui-focus-ring-invalid: 0 0 0 var(--ui-focus-width)
+    color-mix(in oklab, var(--ui-tone-danger-fg) 26%, transparent);
 }
 
 /* Arc roles are scoped to control roots. The upstream arc/foundation.css is a token

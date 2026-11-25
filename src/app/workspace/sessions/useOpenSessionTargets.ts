@@ -51,7 +51,12 @@ export function useOpenSessionTargets({
       setTabs((prev) =>
         prev.map((entry) =>
           entry.id === tab.id
-            ? { ...entry, layout: selectPaneTab(entry.layout, sessionId), focusedId: sessionId }
+            ? {
+                ...entry,
+                layout: selectPaneTab(entry.layout, sessionId),
+                focusedId: sessionId,
+                diffFocused: false,
+              }
             : entry,
         ),
       );

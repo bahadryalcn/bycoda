@@ -17,9 +17,9 @@ describe("shouldRunLoop", () => {
     expect(shouldRunLoop({ ...base, reducedMotion: true })).toBe(false);
   });
 
-  it("holds while the window is behind another application, runs when focus is unknown", () => {
-    expect(shouldRunLoop({ ...base, focused: false })).toBe(false);
-    expect(shouldRunLoop({ ...base, focused: true })).toBe(true);
+  it("holds when the native window is hidden or minimized", () => {
+    expect(shouldRunLoop({ ...base, windowVisible: false })).toBe(false);
+    expect(shouldRunLoop({ ...base, windowVisible: true })).toBe(true);
     expect(shouldRunLoop(base)).toBe(true);
   });
 });

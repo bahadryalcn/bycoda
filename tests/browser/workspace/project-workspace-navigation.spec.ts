@@ -1,12 +1,54 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-test("No project is selectable under Projects in light and dark layouts", async ({
+test("opens a synced Windows workspace from its parent group", async ({ page }, testInfo) => {
+  await page.goto(
+    "/tests/browser/workspace/project-workspace-navigation.html?layout=1&synced-workspace",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const rail = page.locator('[data-side-pane="rail"]');
+  const workspace = rail.locator('[data-project-group="team"] [data-project-group="wallet"]');
+  const open = workspace.getByRole("button", { name: "Open Wallet", exact: true });
+  await open.click();
+  await expect(page.getByLabel("Selected live session")).toHaveText("remote://windows/G:/wallet");
+  await expect(
+    workspace.locator('[data-project-path="remote://windows/G:/wallet/mobile"]'),
+  ).toBeVisible();
+  await expect(rail.locator('[data-project-path="remote://windows/G:/wallet"]')).toHaveCount(0);
+
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(open).toBeInViewport();
+      await rail.screenshot({ path: testInfo.outputPath(`workspace-${theme}-${width}.png`) });
+    }
+  }
+});
+
+test("No project stays beside Last sessions when Projects collapses", async ({
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?layout=1");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const row = page.getByRole("button", { name: "No project", exact: true });
+  const rail = page.locator('[data-side-pane="rail"]');
+  const row = rail.getByRole("button", { name: "No project", exact: true });
+  const projects = rail.getByRole("button", { name: "Projects", exact: true });
+  const lastSessions = rail
+    .locator("[data-rail-section-header]")
+    .filter({ hasText: "Last sessions" });
   await expect(row).toBeVisible();
+  await expect(lastSessions.or(row).or(projects)).toHaveText([
+    /Last sessions/,
+    "No project",
+    "Projects",
+  ]);
+  await projects.click();
+  await expect(projects).toHaveAttribute("aria-expanded", "false");
+  await expect(row).toBeVisible();
+  await projects.click();
   await row.click();
   await expect(page.getByLabel("Selected live session")).toHaveText("~");
   await expect(row).toHaveAttribute("aria-current", "page");
@@ -18,7 +60,7 @@ test("No project is selectable under Projects in light and dark layouts", async 
     for (const width of [1280, 800]) {
       await page.setViewportSize({ width, height: 800 });
       await expect(row).toBeInViewport();
-      await page.screenshot({
+      await rail.screenshot({
         path: testInfo.outputPath(`rail-${theme}-${width}.png`),
       });
     }
@@ -89,6 +131,7 @@ test("session preview replaces browsing tabs and keeps drafts across themes and 
 test("working sessions and usage meters stay contained in narrow and short workspaces", async ({
   page,
 }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?layout=1");
   await page.emulateMedia({ reducedMotion: "reduce" });
   const rail = page.locator('[data-side-pane="rail"]');
@@ -171,10 +214,8 @@ test("working sessions and usage meters stay contained in narrow and short works
     }
   }
   const firstCard = rail.locator("[data-live-agent-card]").first();
-  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(6);
-  await expect(
-    rail.locator('[data-live-agent-card="live-6"], [data-live-agent-card="live-7"]'),
-  ).toHaveCount(0);
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
+  await expect(rail.locator('[data-live-agent-state="done"]')).toHaveCount(2);
   // The expanded list must scroll, never squeeze record rows until their text overlaps.
   for (const height of [560, 800]) {
     await page.setViewportSize({ width: 390, height });
@@ -209,14 +250,14 @@ test("working sessions and usage meters stay contained in narrow and short works
   }
   await firstCard.focus();
   await firstCard.press("Enter");
-  await expect(page.getByLabel("Selected live session")).toHaveText("live-1");
+  await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
   const activity = rail.getByRole("region", { name: "Activity", exact: true });
   const activityToggle = activity.getByRole("button", { name: /^Activity/ });
   await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
+  await expect(activity.getByLabel("Needs input: 1", { exact: true })).toHaveText("1");
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
+  await expect(activity.getByLabel("Needs input: 1", { exact: true })).toHaveText("1");
   await expect(firstCard).toBeHidden();
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
@@ -240,6 +281,75 @@ test("working sessions and usage meters stay contained in narrow and short works
   await expect(
     rail.getByRole("button", { name: /Improve the shared interface/ }).first(),
   ).toBeVisible();
+});
+
+test("Claude usage meters show saved data and leave every reset action visible", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(
+    "/tests/browser/workspace/project-workspace-navigation.html?layout=1&usage-resets=1",
+  );
+  await page.getByRole("button", { name: "Claude Code usage details", exact: true }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Claude Code usage details", exact: true });
+  await expect(dialog.getByRole("button", { name: "Personal", pressed: true })).toBeVisible();
+  await expect(dialog.getByText(/^Refresh failed\. Updated \d+m ago$/)).toBeVisible();
+  await expect(dialog.locator("[data-quota-reset-icon]")).toHaveCSS(
+    "mask-image",
+    /quota-reset\.png/,
+  );
+  await expect(await page.request.get("/quota-reset.png")).toBeOK();
+
+  const resets = dialog.getByRole("list", { name: "Available banked resets" });
+  const buttons = resets.getByRole("button", { name: "Use reset", exact: true });
+  await expect(resets.getByRole("heading", { level: 4 })).toHaveCount(4);
+  await expect(buttons).toHaveCount(4);
+  for (const button of await buttons.all()) {
+    await expect(button).toBeInViewport({ ratio: 1 });
+    await expect(button).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  }
+  await buttons.last().focus();
+  await page.keyboard.press("Enter");
+  await expect(resets.getByRole("button", { name: "Confirm", exact: true })).toBeInViewport();
+  await resets.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(buttons).toHaveCount(4);
+});
+
+test("usage meters share a solid popover and show reset actions only with credits", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(
+    "/tests/browser/workspace/project-workspace-navigation.html?layout=1&usage-resets=1",
+  );
+  for (const [provider, resetCount] of [
+    ["Codex", 2],
+    ["OpenCode", 0],
+    ["Grok Build", 0],
+    ["Pi · OpenAI Codex", 0],
+  ] as const) {
+    if (provider.startsWith("Pi")) {
+      await page.goto(
+        "/tests/browser/workspace/project-workspace-navigation.html?layout=1&pi-usage=1",
+      );
+    }
+    const name = provider + " usage details";
+    await page.getByRole("button", { name, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name, exact: true });
+    await expect(dialog.locator("..").locator(".popover-solid")).toHaveCount(1);
+    await expect(dialog.getByRole("meter").first()).toBeVisible();
+    const icon = dialog.locator("[data-quota-reset-icon]");
+    if (resetCount > 0) await expect(icon).toHaveCSS("mask-image", /quota-reset\.png/);
+    else await expect(icon).toHaveCount(0);
+    const actions = dialog.getByRole("button", { name: "Use reset", exact: true });
+    await expect(actions).toHaveCount(resetCount);
+    for (const action of await actions.all()) await expect(action).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  }
 });
 
 test("Inbox keeps long issue titles readable and list actions available", async ({
@@ -591,6 +701,19 @@ test.beforeEach(async ({ page }) => {
         },
         transformCallback: () => 1,
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
+          if (command === "fetch_pi_usage") {
+            return {
+              status: "ok",
+              windows: {
+                session: { usedPercent: 24, windowMinutes: 300, resetsAt: Date.now() + 3_600_000 },
+                weekly: {
+                  usedPercent: 39,
+                  windowMinutes: 10080,
+                  resetsAt: Date.now() + 86_400_000,
+                },
+              },
+            };
+          }
           const cwd = String(args.cwd ?? "G:/wallet/api");
           if (new URL(location.href).searchParams.has("inbox-review")) {
             const calls = ((window as any).inboxReviewCalls ??= []) as string[];
@@ -836,7 +959,8 @@ async function chooseHeaderWorktree(page: Page, option: string) {
   const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
   await (
     option === "All worktrees"
-      ? list.getByRole("option", { name: "All worktrees", exact: true })
+      ? // The option also carries the total change count.
+        list.getByRole("option", { name: /^All worktrees\b/ })
       : list.getByRole("option").filter({ hasText: option })
   )
     .first()
@@ -849,34 +973,39 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?worktrees=1");
   const panel = page.locator('[data-workspace-source-control="G:/wallet/api"]');
   await expect(panel).toBeVisible();
-  // The default scope is All worktrees: the session's worktree is open, the other one is a
-  // collapsed row that mounts its panel only when expanded.
+  // The default scope is All worktrees: every worktree with uncommitted changes is a
+  // same-level section, the session's worktree first and open, the others collapsed.
   await expect(page.getByRole("button", { name: "Switch worktree", exact: true })).toContainText(
     "All worktrees",
   );
   const overview = panel.locator("[data-checkout-overview]");
-  await expect(overview.locator("[data-git-repository]")).toHaveCount(1);
-  await expect(overview.locator('[data-git-repository="G:/wallet/api"]')).toBeVisible();
-  const taskRow = overview.locator('[data-worktree-row="G:/wallet-worktrees/task"]');
-  await expect(taskRow).toBeVisible();
+  await expect(overview.locator("[data-git-repository]")).toHaveCount(2);
+  const main = overview.locator('[data-git-repository="G:/wallet/api"]');
+  await expect(main).toBeVisible();
+  await expect(main.locator("header button[aria-expanded]").first()).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  const task = overview.locator('[data-git-repository="G:/wallet-worktrees/task"]');
+  const taskToggle = task.locator("header button[aria-expanded]").first();
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(task.getByText("same.ts", { exact: true })).not.toBeVisible();
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 800 });
     await expect
       .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
       .toBe(true);
   }
-  const task = overview.locator('[data-git-repository="G:/wallet-worktrees/task"]');
-  await taskRow.getByRole("button").first().focus();
+  await taskToggle.focus();
   await page.keyboard.press("Enter");
-  await expect(taskRow).toHaveCount(0);
-  const taskToggle = task.locator("header button[aria-expanded]").first();
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await task.getByText("same.ts", { exact: true }).click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet-worktrees/task:G:/wallet-worktrees/task/same.ts",
   );
   // Focusing the worktree in the header leaves one panel with its own branch picker.
-  await chooseHeaderWorktree(page, "G:/wallet-worktrees/task".replace("G:", "").replace(/^\//, ""));
+  // Header options name a worktree by its branch.
+  await chooseHeaderWorktree(page, "mc/task");
   await expect(overview).toHaveCount(0);
   await expect(panel.getByRole("button", { name: "Branch mc/task", exact: true })).toBeVisible();
   await chooseHeaderWorktree(page, "All worktrees");

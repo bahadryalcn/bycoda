@@ -10,7 +10,7 @@ import { taskInstructionsSummary } from "../model/taskInstructions";
 import { taskStatusLine, type TaskStatusKind, type TaskStatusLine } from "../model/taskStatusLine";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
 
 const RUNNING_KINDS: ReadonlySet<TaskStatusKind> = new Set(["running", "verifying", "correcting"]);
@@ -62,6 +62,7 @@ export function TaskList({
   planningLabel?: (task: BoardTask) => string;
 }) {
   const t = useT();
+  const projectLabels = useProjectLabels();
   const activeTask = tasks.find((task) => `${task.machineId}:${task.id}` === activeKey);
   return (
     <div className="grid content-start">
@@ -87,7 +88,7 @@ export function TaskList({
           const key = bulkTaskKey(task);
           const isActive = activeKey === `${task.machineId}:${task.id}`;
           const secondary = [
-            projectDisplayName(task.cwd),
+            projectDisplayNameFrom(task.cwd, projectLabels),
             task.machineName,
             task.stale && !task.pendingRefresh ? t("Offline") : "",
             planning,

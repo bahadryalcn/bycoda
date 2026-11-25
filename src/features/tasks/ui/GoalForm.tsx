@@ -19,7 +19,7 @@ import { X } from "../../../shared/ui/icons";
 import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import type { RemoteMachine } from "../../connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import type { RecentProject } from "../../projects/public/recents";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import { ModelPicker } from "../../sessions/public/ModelPicker";
@@ -75,6 +75,7 @@ export function GoalForm({
   onChangeLimits: (machineId: string, settings: Partial<HostSettings>) => void;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
   let draft = inputDraft;
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [crewValid, setCrewValid] = useState(true);
@@ -273,13 +274,13 @@ export function GoalForm({
                         )}
                       >
                         <Text truncate size="inherit" tone="inherit" className="min-w-0">
-                          {projectDisplayName(cwd)}
+                          {projectDisplayNameFrom(cwd, projectLabels)}
                         </Text>
                         {cwd === lead ? <span className="shrink-0">{t("lead")}</span> : null}
                         <InlineAction
                           reveal="always"
                           label={t("Remove {p0}", {
-                            p0: projectDisplayName(cwd),
+                            p0: projectDisplayNameFrom(cwd, projectLabels),
                           })}
                           onClick={() => onChange(toggleGoalProject(draft, cwd))}
                         >
@@ -296,7 +297,7 @@ export function GoalForm({
                         value=""
                         options={choices.map((entry) => ({
                           value: entry.path,
-                          label: projectDisplayName(entry.path),
+                          label: projectDisplayNameFrom(entry.path, projectLabels),
                           keywords: entry.path,
                         }))}
                         onChange={(cwd) => onChange(toggleGoalProject(draft, cwd))}
@@ -314,7 +315,7 @@ export function GoalForm({
                           value={lead}
                           options={draft.cwds.map((cwd) => ({
                             value: cwd,
-                            label: projectDisplayName(cwd),
+                            label: projectDisplayNameFrom(cwd, projectLabels),
                           }))}
                           onChange={(cwd) => update("leadCwd", cwd)}
                         />
@@ -357,7 +358,7 @@ export function GoalForm({
                   {draft.cwds.map((cwd) => (
                     <div key={cwd}>
                       <Text as="p" size="caption" tone="inherit" weight="medium">
-                        {projectDisplayName(cwd)}
+                        {projectDisplayNameFrom(cwd, projectLabels)}
                       </Text>
                       <TaskWorkspacePicker
                         headingHidden

@@ -755,7 +755,7 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/assistant/ui/room/useAssistantRoomState.ts": {
-      "bycoda/effect-names-its-sync": 8
+      "bycoda/effect-names-its-sync": 6
     },
     "src/features/assistant/ui/room/useConversationPanelMessages.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -899,9 +899,6 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/ServerItem.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
-    "src/features/connections/ui/ServerSnippets.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/connections/ui/ServerTerminalSession.tsx": {
@@ -1976,9 +1973,6 @@
     "src/features/settings/ui/appearance/controls/BackgroundLibrary.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/settings/ui/appearance/controls/FontPicker.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
     "src/features/settings/ui/appearance/controls/GradientStrip.tsx": {
       "bycoda/effect-names-its-sync": 2
     },
@@ -1989,9 +1983,6 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/settings/ui/appearance/controls/ThemeGenerator.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
-    "src/features/settings/ui/appearance/controls/TypographyPairings.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/settings/ui/appearance/sections/BackgroundSection.tsx": {

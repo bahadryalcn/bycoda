@@ -108,6 +108,8 @@ export async function startTurn(
     intent?: TurnIntent;
     resume?: boolean;
     providerAccountId?: string;
+    privateDelegateHistory?: boolean;
+    privateDelegateReplay?: string;
     resumeProviderAccountId?: string;
     expectResume?: boolean;
     beforeThreadReply?: () => Promise<void>;
@@ -135,6 +137,8 @@ export async function startTurn(
     modelSettings: options.modelSettings ?? {},
     skillPolicy: options.skillPolicy,
     providerAccountId: options.providerAccountId,
+    privateDelegateHistory: options.privateDelegateHistory,
+    privateDelegateReplay: options.privateDelegateReplay,
     runtimeMode: options.runtimeMode ?? "supervised",
     controlsAgents: options.controlsAgents,
     intent: options.intent,
@@ -179,7 +183,7 @@ export async function startTurn(
   await waitFor(() => parse().some((m) => m.method === threadMethod), threadMethod);
   await options.beforeThreadReply?.();
   reply(parse().find((m) => m.method === threadMethod)!.id as number, {
-    thread: { id: "thr_1" },
+    thread: { id: "thr_1", ...(options.privateDelegateHistory ? { ephemeral: true } : {}) },
     model: options.resolvedModel,
   });
 

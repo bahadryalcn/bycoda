@@ -12,7 +12,10 @@ import { NoteEditablePreview } from "../../notes/ui/NoteEditablePreview";
 import { TranscriptSessionId } from "./TranscriptSessionId";
 
 const openWeb = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock("../../connections/model/workspaceUrls", () => ({ openWorkspaceUrl: openWeb }));
+vi.mock("../../connections/model/workspaceUrls", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/model/workspaceUrls")>()),
+  openWorkspaceUrl: openWeb,
+}));
 vi.mock("../../notes/ui/NoteMarkdownEditor", async () => {
   const { createElement } = await import("react");
   return { NoteMarkdownEditor: () => createElement("textarea") };

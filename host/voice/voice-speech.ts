@@ -37,6 +37,11 @@ export class VoiceSpeechService {
 
   constructor(private readonly dependencies: VoiceSpeechDependencies = {}) {}
 
+  /** Whether a synthesizer is loaded or loading, so `start` would do no new work. */
+  get started() {
+    return Boolean(this.loading);
+  }
+
   start(config: VoiceRuntimeConfig) {
     if (this.loading) return this.loading;
     if (config.engine === "elevenlabs") {

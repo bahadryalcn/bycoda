@@ -312,12 +312,18 @@ for (const theme of ["light", "dark"]) {
         path: `temp/verification/2026-11-06-worktrees/workspace-policy-${theme}-${width}.png`,
       });
       const retention = surface.locator('[data-setting-id="workspace-retention"]');
-      // The exclusion rule lives behind the section's info icon, not inline.
-      await retention.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toContainText(
-        "Active and pinned workspaces are excluded",
-      );
-      await page.keyboard.press("Escape");
+      const hint = retention.getByRole("img", { name: "Automatic cleanup", exact: true });
+      const explanation = page
+        .getByRole("tooltip")
+        .filter({ hasText: "Active and pinned workspaces are excluded" });
+      await hint.hover();
+      await expect(explanation).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-06-worktrees/workspace-policy-tooltip-${theme}-${width}.png`,
+      });
+      await hint.click();
+      await expect(explanation).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toHaveCount(0);
       await retention.getByRole("button", { name: /^Idle retention:/ }).click();
       await page.getByRole("option", { name: "Never", exact: true }).click();
       await surface.getByRole("switch", { name: "Pin workspaces", exact: true }).click();
@@ -851,11 +857,12 @@ test("populated source control for a remote project keeps restrictions visible",
   await page.goto("/tests/browser/source-control/worktrees.html?populated&remote&theme=light");
   const repo = page.locator('[data-setting-id="project-worktrees"]');
   await expect(
-    repo.getByText("Creating and deleting worktrees runs on this computer", {
+    repo.getByText("Deleting worktrees runs on this computer", {
       exact: false,
     }),
   ).toBeVisible();
-  await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeDisabled();
+  // Creation routes through the connected machine's Host; only deletion stays restricted.
+  await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeEnabled();
   const remoteTrees = repo.getByRole("list", {
     name: "Worktrees",
     exact: true,

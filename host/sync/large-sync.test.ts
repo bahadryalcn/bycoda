@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -100,7 +100,11 @@ async function setup() {
     },
   });
   await engine.ready;
-  const project = await engine.openProject(directory);
+  // The project folder sits beside the Host data, not around it: Host storage inside a
+  // workspace is covered by the turn-history tests.
+  const workspace = join(directory, "project");
+  mkdirSync(workspace);
+  const project = await engine.openProject(workspace);
   const server = await createHostServer(engine, ["codex"]);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

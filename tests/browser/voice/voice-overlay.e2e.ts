@@ -676,7 +676,7 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`voice choice and setup controls: ${theme} ${width}`, async ({ page }) => {
+    test(`voice choice and job review controls: ${theme} ${width}`, async ({ page }) => {
       const output = join(process.cwd(), "temp/verification/arif-assistant");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
@@ -717,13 +717,6 @@ for (const theme of ["light", "dark"])
         { title: "Review recovery carefully" },
         { title: "Improve the help page" },
       ]);
-      for (const step of ["provider", "voice", "microphone"]) {
-        await page.goto(
-          `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&setup-step=${step}`,
-        );
-        await expect(page.getByRole("heading", { name: `Assistant Arif · ${step}` })).toBeVisible();
-        await page.screenshot({ path: join(output, `${theme}-${width}-setup-${step}.png`) });
-      }
     });
 
 for (const theme of ["light", "dark"])

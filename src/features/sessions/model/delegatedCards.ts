@@ -5,11 +5,12 @@ import {
   delegatedStatus,
   delegationParentOf,
 } from "./delegatedAgents";
+import { delegationToolKind } from "./bycodaToolCall";
 import { delegatedChildIdOf } from "./delegatedBlockId";
 import { failedAskCard } from "./delegatedFailedCalls";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import type { Block, Session } from "./session";
-import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
+import { registerStreamingBlockUpdate, streamingBlockUpdate } from "./stableBlocks";
 
 /**
  * Delegated runs as inline transcript cards. Each child session becomes one
@@ -25,9 +26,6 @@ type DelegateCall = {
   kind: "delegate" | "wait" | "reply";
   sessionIds: string[];
 };
-
-/** `agents.delegate` / `wait` / `reply` however the provider names the Host tool. */
-const DELEGATE_TOOL = /(?:^|[:_.])agents[_.](delegate|wait|reply)$/i;
 
 const delegateCalls = new WeakMap<Block, DelegateCall | null>();
 const failedCards = new WeakMap<Block, Block | null>();
@@ -61,10 +59,7 @@ function failedCardOf(block: Block): Block | undefined {
 function parseDelegateCall(block: Block): DelegateCall | undefined {
   // A path-shaped argument (a model ref like `grok:grok-4.6`) can turn the title into
   // "Read …"; the preview keeps the tool's own name.
-  const name = [block.tool?.title, block.tool?.preview?.title, block.text].find(
-    (value) => value && DELEGATE_TOOL.test(value.trim()),
-  );
-  const kind = name ? DELEGATE_TOOL.exec(name.trim())?.[1]?.toLowerCase() : undefined;
+  const kind = delegationToolKind(block);
   if (kind !== "delegate" && kind !== "wait" && kind !== "reply") return undefined;
   const sessionIds: string[] = [];
   try {
@@ -247,17 +242,17 @@ function planCards(blocks: Block[], children: readonly Session[]): CardPlan {
 }
 
 /**
- * Hands a text-only frame the plan of the frame before it: every index, call and ask
- * is unchanged, so the dock's read of the new `blocks` is a lookup. A tool block's text
- * is part of what names its child, so a frame on one re-plans.
+ * Reuse the plan when the frame keeps every call and ask. Changing a tool's
+ * label can name another child; output-only frames exclude delegation calls.
  */
 function carryPlan(
   previous: Block[],
   next: Block[],
   children: readonly Session[],
   changed: Block,
+  outputOnly: boolean,
 ): void {
-  if (changed.role === "tool") return;
+  if (changed.role === "tool" && !outputOnly) return;
   const plan = plans.get(previous)?.get(children);
   if (!plan) return;
   let byChildren = plans.get(next);
@@ -270,8 +265,8 @@ function carryPlan(
 
 /**
  * `placeDelegatedCards` for a stream of frames. When the children are unchanged and
- * `blocks` differs from the previous input only by the streamed text of a non-user
- * block, the previous result is copied with that block swapped and the text-only
+ * `blocks` differs only by streamed prose or tool output, the previous result
+ * is copied with that block swapped and the same kind of incremental
  * update is registered on it, so the transcript keeps its fast path and every card
  * and older block keeps its identity.
  */
@@ -279,13 +274,13 @@ export function createCardPlacer(): (blocks: Block[], children: readonly Session
   let last: { blocks: Block[]; children: readonly Session[]; output: Block[] } | undefined;
   return (blocks, children) => {
     if (last && last.children === children) {
-      const index = streamingTextUpdate(last.blocks, blocks);
-      const from = index === undefined ? undefined : last.blocks[index];
-      const to = index === undefined ? undefined : blocks[index];
+      const update = streamingBlockUpdate(last.blocks, blocks);
+      const from = update && last.blocks[update.index];
+      const to = update && blocks[update.index];
       // A user block's text can change which turn a card belongs to, so it re-places.
-      if (from && to && from.role !== "user" && to.role !== "user") {
+      if (update && from && to && from.role !== "user" && to.role !== "user") {
         if (last.output === last.blocks) {
-          carryPlan(last.blocks, blocks, children, to);
+          carryPlan(last.blocks, blocks, children, to, update.kind === "tool-output");
           last = { blocks, children, output: blocks };
           return blocks;
         }
@@ -293,8 +288,8 @@ export function createCardPlacer(): (blocks: Block[], children: readonly Session
         if (at >= 0) {
           const output = last.output.slice();
           output[at] = to;
-          registerStreamingTextUpdate(last.output, output, at);
-          carryPlan(last.blocks, blocks, children, to);
+          registerStreamingBlockUpdate(last.output, output, at, update.kind);
+          carryPlan(last.blocks, blocks, children, to, update.kind === "tool-output");
           last = { blocks, children, output };
           return output;
         }

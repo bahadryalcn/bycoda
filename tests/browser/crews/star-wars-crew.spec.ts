@@ -311,7 +311,7 @@ test("the live scene honors reduced motion and the stored decorative-motion pref
   await page.getByLabel("Context preview", { exact: true }).fill("100");
   await expect(scene).toHaveAttribute("data-motion", "running");
   const frame = () =>
-    scene.locator("canvas").evaluate((canvas) => {
+    scene.locator("canvas:not(.crew-scene__still)").evaluate((canvas) => {
       const pixels = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
       return pixels.reduce((hash, value) => Math.imul(hash ^ value, 16777619), 2166136261) >>> 0;
     });
@@ -364,6 +364,67 @@ test("the live scene honors reduced motion and the stored decorative-motion pref
   await advancedFrame().not.toBe(disabled);
 });
 
+for (const reducedMotion of ["no-preference", "reduce"] as const) {
+  test(`typing swaps the live canvas for its still and back (${reducedMotion})`, async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await page.emulateMedia({ reducedMotion });
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem("bycoda.language", "en");
+      localStorage.setItem("bycoda.crewTheme", "star-wars");
+      localStorage.setItem("bycoda.decorativeMotion.v1", "true");
+    });
+    await page.goto("/tests/browser/crews/crew-scene.html");
+    const scene = page.locator("[data-live-scene] .crew-scene");
+    const live = scene.locator("canvas:not(.crew-scene__still)");
+    const still = scene.locator(".crew-scene__still");
+    await expect(scene).toHaveAttribute("data-art-status", "ready");
+    const motion = reducedMotion === "reduce" ? "still" : "running";
+    await expect(scene).toHaveAttribute("data-motion", motion);
+    const hash = () =>
+      live.evaluate((canvas: HTMLCanvasElement) => {
+        const pixels = canvas
+          .getContext("2d")!
+          .getImageData(0, 0, canvas.width, canvas.height).data;
+        return pixels.reduce((value, byte) => Math.imul(value ^ byte, 16777619), 2166136261) >>> 0;
+      });
+    const labels = await scene.locator(".crew-scene__label").count();
+    expect(labels).toBeGreaterThan(0);
+    // Idle: the live canvas shows, the still is out of the layout, nothing is held.
+    await expect(live).toBeVisible();
+    await expect(still).toBeHidden();
+    await expect(scene).not.toHaveAttribute("data-still", /.*/);
+    const before = await hash();
+    const field = page.getByLabel("Name", { exact: true });
+    await field.focus();
+    // One lone edit does not hold; a second inside the window does.
+    await page.keyboard.type("a");
+    await expect(still).toBeHidden();
+    await page.keyboard.type("b");
+    await expect(scene).toHaveAttribute("data-still", "true");
+    await expect(still).toBeVisible();
+    await expect(live).toBeHidden();
+    // Presence and semantics survive: motion state, labels and the accessible group are unchanged.
+    await expect(scene).toHaveAttribute("data-motion", motion);
+    await expect(scene.locator(".crew-scene__label")).toHaveCount(labels);
+    await expect(scene.locator("canvas[aria-hidden=true]")).toHaveCount(2);
+    // Caret and selection keys are not edits: they neither start nor extend a hold.
+    await page.clock.fastForward(800);
+    await expect(scene).not.toHaveAttribute("data-still", /.*/);
+    await expect(live).toBeVisible();
+    await expect(still).toBeHidden();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Control+c");
+    await expect(still).toBeHidden();
+    await expect(live).toBeVisible();
+    // The held frame is the same picture: the live canvas was never repainted or cleared.
+    if (reducedMotion === "reduce") expect(await hash()).toBe(before);
+  });
+}
+
 test("the live crew keeps labels and footprints on one deep crescent as helpers arrive", async ({
   page,
 }, testInfo) => {
@@ -379,7 +440,7 @@ test("the live crew keeps labels and footprints on one deep crescent as helpers 
   const geometry = () =>
     scene.evaluate((element) => {
       const labels = [...element.querySelectorAll<HTMLElement>(".crew-scene__label")];
-      const canvas = element.querySelector("canvas")!;
+      const canvas = element.querySelector("canvas:not(.crew-scene__still)")!;
       const places = window.starWarsFixtureLayout(
         labels.length,
         canvas.getBoundingClientRect().width,
@@ -463,7 +524,7 @@ test("settings switch crew themes and color fills track context through compacti
     page.locator('[data-live-scene] .crew-scene__label[data-charge="unknown"]'),
   ).toHaveCount(6);
   const sample = () =>
-    scene.locator("canvas").evaluate((canvas) => {
+    scene.locator("canvas:not(.crew-scene__still)").evaluate((canvas) => {
       const c = canvas.getContext("2d")!;
       const scale = canvas.width / 760;
       const place = window

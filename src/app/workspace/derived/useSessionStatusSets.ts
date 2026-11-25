@@ -22,6 +22,8 @@ import type { useLockSnapshot } from "../../../features/group-lock/hooks/useGrou
 import { liveAgentsEqual } from "../../model/sidebarEquality";
 import { useWindowLiveAgents } from "../../model/useWindowLiveAgents";
 import { setsEqual } from "../helpers/appHelpers";
+import type { WorkspaceTab } from "../../../features/workspace/model/layout";
+import { openSessionIds } from "../helpers/sessionHelpers";
 
 /**
  * Keeps the previous reference while `equal` says the rebuilt value has the same content.
@@ -125,7 +127,7 @@ export function useSessionWaits(
     [sessions, listedRemote, now],
   );
   const expiry = nextWakeExpiry(listedRemote, now);
-  // `now` in deps re-arms the capped timer on each tick until the expiry is near.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Re-arm the timer until the next wake source expires so Activity updates even without session events.
   useEffect(() => {
     if (expiry === undefined) return;
     const timer = setTimeout(() => setNow(Date.now()), wakeRecheckDelay(expiry, Date.now()));
@@ -160,6 +162,7 @@ export function useUnseenFinishedIds(
 
 export interface LiveAgentStatusDeps {
   sessions: Session[];
+  tabs: WorkspaceTab[];
   /** Every listed host session of the rail's remote projects, opened here or not. */
   listedRemoteSessions: readonly RemoteRailSession[];
   unseenFinishedIds: Set<string>;
@@ -173,6 +176,7 @@ export interface LiveAgentStatusDeps {
  * Also returns the waiting map that session rows read, so both agree. */
 export function useLiveAgentStatus({
   sessions,
+  tabs,
   listedRemoteSessions,
   unseenFinishedIds,
   unopenedRemote,
@@ -189,13 +193,14 @@ export function useLiveAgentStatus({
     [sessions, unseenFinishedIds, sessionWaits, unopenedRemote, remoteUnseenFinishedIds],
   );
   const stableLiveAgents = useStableState(nextLiveAgents, liveAgentsEqual);
-  const ownedLiveSessionKeys = useMemo(
-    () =>
-      Object.fromEntries(
-        sessions.map((session) => [session.id, remoteSessionFor(session.id) ?? session.id]),
-      ),
-    [sessions],
-  );
+  const ownedLiveSessionKeys = useMemo(() => {
+    const mounted = new Set(sessions.map((session) => session.id));
+    return Object.fromEntries(
+      [...openSessionIds(tabs)]
+        .filter((id) => mounted.has(id))
+        .map((id) => [id, remoteSessionFor(id) ?? id]),
+    );
+  }, [sessions, tabs]);
   const windowLiveAgents = useWindowLiveAgents(stableLiveAgents, ownedLiveSessionKeys);
   const liveAgents = useMemo(
     () =>

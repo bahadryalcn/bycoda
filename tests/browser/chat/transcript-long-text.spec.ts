@@ -2,6 +2,65 @@ import { expect, test } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+for (const theme of ["light", "dark"])
+  test(`sent skill group shows its members (${theme})`, async ({ page }) => {
+    await page.goto("/tests/browser/chat/transcript.html?skill-group");
+    await page.evaluate((theme) => {
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      document.documentElement.classList.toggle("theme-light", theme === "light");
+    }, theme);
+    const group = page.locator("[data-skill-group-token]");
+    await expect(group.getByText("Video", { exact: true })).toBeVisible();
+    await expect(group.locator("small")).toHaveText("5");
+    await expect(group.locator("svg")).toHaveCount(2);
+    await expect(group.locator('[data-inline-reference="group"]')).toHaveCSS(
+      "padding-inline",
+      "5px",
+    );
+    await group.hover();
+    const details = page.getByRole("dialog", { name: "Video" });
+    await expect(details).toBeVisible();
+    await expect(
+      page.locator('[data-popover-appearance="composer"]').filter({ has: details }),
+    ).toBeVisible();
+    await expect(details.getByText("Video", { exact: true })).toBeVisible();
+    for (const name of [
+      "brag",
+      "brag-slim",
+      "product-launch-video",
+      "video-shotcraft",
+      "motion-graphics",
+    ])
+      await expect(
+        details.getByRole("listitem").filter({ hasText: name }).getByText(name, { exact: true }),
+      ).toBeVisible();
+    await expect(details.getByRole("listitem").locator("svg")).toHaveCount(5);
+    await page.screenshot({
+      path: `temp/verification/sent-skill-group/${theme}.png`,
+      animations: "disabled",
+    });
+    await page.mouse.move(0, 0);
+    await expect(details).toBeHidden();
+    await group.focus();
+    await expect(details).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(details).toBeHidden();
+    await group.press("Enter");
+    await page.mouse.move(0, 0);
+    await expect(details).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(details).toBeHidden();
+  });
+
+test("sent skill group stays interactive when a long message is expanded", async ({ page }) => {
+  await page.goto("/tests/browser/chat/transcript.html?skill-group&longText");
+  await page.getByRole("button", { name: "Show full long text" }).click();
+  await page.locator("[data-skill-group-token]").hover();
+  await expect(
+    page.getByRole("dialog", { name: "Video" }).getByText("video-shotcraft"),
+  ).toBeVisible();
+});
+
 test("long text opens only on demand and its rendered Markdown can be selected and copied", async ({
   page,
   context,
@@ -11,7 +70,7 @@ test("long text opens only on demand and its rendered Markdown can be selected a
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   }
   await page.goto("/tests/browser/chat/transcript.html?longText");
-  const trigger = page.getByRole("button", { name: "Show full long text" });
+  const trigger = page.getByRole("button", { name: "Expand", exact: true });
   await trigger.hover();
   await trigger.focus();
   await expect(page.locator("[data-hover-card]")).toHaveCount(0);
@@ -78,6 +137,36 @@ test("long text opens only on demand and its rendered Markdown can be selected a
   }
 });
 
+test("pressing a long message reads it in the chat and Expand keeps the dialog", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/chat/transcript.html?longText");
+  const bubble = page.locator(".user-message-bubble");
+  await page.getByRole("button", { name: "Show full long text" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(bubble).toContainText("Long content ".repeat(200).trim());
+  await bubble.getByRole("button", { name: "Show less" }).click();
+  await expect(page.getByRole("button", { name: "Show full long text" })).toBeVisible();
+  // The bubble's own padding opens it too, on every side.
+  const box = (await bubble.boundingBox())!;
+  for (const position of [
+    { x: 3, y: box.height / 2 },
+    { x: box.width - 3, y: box.height / 2 },
+    { x: box.width / 2, y: 2 },
+    { x: box.width / 2, y: box.height - 2 },
+  ]) {
+    await bubble.click({ position });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await bubble.getByRole("button", { name: "Show less" }).click();
+  }
+  await page.getByRole("button", { name: "Expand", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.locator("footer").getByRole("button", { name: "Copy message" }),
+  ).toBeVisible();
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+});
+
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     test(`long message Markdown (${theme}, ${width}px)`, async ({ page }) => {
@@ -97,7 +186,7 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: `${captures}/card-${theme}-${width}.png`,
       });
-      await page.getByRole("button", { name: "Show full long text" }).click();
+      await page.getByRole("button", { name: "Expand", exact: true }).click();
       await expect(
         page.getByRole("dialog").getByRole("heading", { name: "Selectable excerpt" }),
       ).toBeVisible();

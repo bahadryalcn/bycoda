@@ -3,7 +3,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
@@ -262,18 +261,16 @@ export function OrchestrationSidebarAgents({
               })}
             </Text>
           )}
-          <div className="-mr-1.5 flex items-center justify-end gap-1">
-            <InfoPopover>
+          {stopping || leadBusy ? (
+            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
               {stopping
                 ? t("Stopping interrupted work before this run can resume.")
-                : leadBusy
-                  ? t(
-                      "Waiting for the lead's interrupted turn to finish before this run can resume.",
-                    )
-                  : t(
-                      "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
-                    )}
-            </InfoPopover>
+                : t(
+                    "Waiting for the lead's interrupted turn to finish before this run can resume.",
+                  )}
+            </Text>
+          ) : null}
+          <div className="-mr-1.5 flex items-center justify-end gap-1">
             {resumeBlocker && actions && (
               <Button
                 variant="ghost"
@@ -300,7 +297,9 @@ export function OrchestrationSidebarAgents({
                       ? t("Stop {p0} before resuming", {
                           p0: resumeBlocker.title || t("Another conversation"),
                         })
-                      : t("Continue interrupted and queued work")
+                      : t(
+                          "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                        )
               }
               onClick={() =>
                 void perform("resume", () =>

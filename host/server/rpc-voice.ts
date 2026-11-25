@@ -106,6 +106,7 @@ export async function handleVoiceRpc(
         if (dependencies.localVoice.isActive)
           throw new Error("Disconnect voice before installing.");
         // Unload a recognizer kept warm after dictation before replacing it.
+        dependencies.localVoice.forgetRuntime();
         dependencies.localVoice.close();
       }
       request.result =
@@ -134,6 +135,7 @@ export async function handleVoiceRpc(
           throw new Error("Voice setup is still running.");
         if (dependencies.localVoice.isActive)
           throw new Error("Disconnect voice before managing models.");
+        dependencies.localVoice.forgetRuntime();
         dependencies.localVoice.close();
         request.result = voiceModels.start(
           request.params.action,

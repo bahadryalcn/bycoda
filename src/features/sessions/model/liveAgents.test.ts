@@ -3,8 +3,6 @@ import {
   formatLiveElapsed,
   formatLiveMinutes,
   liveAgentsFromSessions,
-  isLiveActivityAgent,
-  type LiveAgent,
   workingProjectPaths,
 } from "./liveAgents";
 import { newSession, type Block, type Session } from "./session";
@@ -226,25 +224,6 @@ describe("liveAgentsFromSessions", () => {
       liveAgentsFromSessions([finished, working], new Set([finished.id])).map((row) => row.cwd),
     ).toEqual(["/tmp/a", "/tmp/b"]);
   });
-});
-
-it("keeps Activity for ongoing work and input", () => {
-  const agent: LiveAgent = {
-    id: "worker",
-    cwd: "/project",
-    title: "Build",
-    harness: "codex",
-    activity: "Working",
-    done: false,
-    needsApproval: false,
-  };
-  expect(isLiveActivityAgent(agent)).toBe(true);
-  expect(isLiveActivityAgent({ ...agent, done: true })).toBe(false);
-  expect(isLiveActivityAgent({ ...agent, issue: "failed" })).toBe(false);
-  expect(isLiveActivityAgent({ ...agent, done: true, issue: "failed" })).toBe(false);
-  expect(isLiveActivityAgent({ ...agent, issue: "retrying" })).toBe(true);
-  expect(isLiveActivityAgent({ ...agent, needsApproval: true })).toBe(true);
-  expect(isLiveActivityAgent({ ...agent, waiting: { kind: "commands", count: 1 } })).toBe(true);
 });
 
 describe("formatLiveMinutes", () => {

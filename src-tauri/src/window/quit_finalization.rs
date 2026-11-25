@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 /// Whether the run that finalizes relaunches instead of exiting. Each started run
 /// stores its own kind, so an aborted restart cannot turn a later quit into one.
 static RESTART: AtomicBool = AtomicBool::new(false);
+/// Set once the app has committed to exiting or relaunching.
+static FINALIZING: AtomicBool = AtomicBool::new(false);
 
 fn begin_finalization(finalizing: &AtomicBool) -> bool {
     !finalizing.swap(true, Ordering::SeqCst)
@@ -30,8 +32,34 @@ pub fn request_app_restart(app: AppHandle) {
     start_run(&app, true);
 }
 
+/// Relaunch without polling the windows, for a dead webview that cannot answer.
+/// The caller owns asking the user. A quit already finalizing stays a quit.
+#[cfg(windows)]
+pub fn restart_now(app: AppHandle) {
+    if begin_finalization(&FINALIZING) {
+        RESTART.store(true, Ordering::SeqCst);
+        finalize(app);
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn is_finalizing() -> bool {
+    FINALIZING.load(Ordering::SeqCst)
+}
+
 fn start_run(app: &AppHandle, restart: bool) {
-    let labels = workspace_labels(app);
+    #[cfg(windows)]
+    if crate::webview_recovery::is_rebuilding() {
+        // The native windows still own work while their webviews are replaced.
+        log::info!("quit request skipped during WebView2 recovery");
+        return;
+    }
+    let mut labels = workspace_labels(app);
+    if labels.is_empty() && crate::host_lifecycle::owned_pid().is_some() {
+        // A dock-only app must still be able to ask before interrupting its Host.
+        let _ = super::show_hidden_or_open_new(app);
+        labels = workspace_labels(app);
+    }
     if labels.is_empty() {
         RESTART.store(restart, Ordering::SeqCst);
         confirm_quit(app.clone());
@@ -57,23 +85,32 @@ fn start_run(app: &AppHandle, restart: bool) {
 
 /// Persist already happened in JS. Show windows so window-state doesn't save hidden.
 pub fn confirm_quit(app: AppHandle) {
-    static FINALIZING: AtomicBool = AtomicBool::new(false);
-    if !begin_finalization(&FINALIZING) {
-        return;
+    if begin_finalization(&FINALIZING) {
+        finalize(app);
     }
+}
+
+fn finalize(app: AppHandle) {
+    crate::host_lifecycle::begin_quit();
     *QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()) = None;
-    for window in workspace_windows(&app) {
-        let _ = window.show();
+    if crate::host_lifecycle::owned_pid().is_some() {
+        for window in workspace_windows(&app) {
+            let _ = window.hide();
+        }
     }
     // Belt and braces. `RunEvent::Exit` reaps too, and it also runs before the
     // process is gone, but a macOS terminate that skips the run loop would not
     // reach it — and `kill_all`'s SIGKILL wait only works while we're alive.
     std::thread::spawn(move || {
+        crate::host_lifecycle::finish_quit();
         if let Some(host) = app.try_state::<crate::harness::HarnessHost>() {
             host.kill_all();
         }
         if let Some(host) = app.try_state::<crate::pty::PtyHost>() {
             host.kill_all();
+        }
+        for window in workspace_windows(&app) {
+            let _ = window.show();
         }
         ALLOW_EXIT.store(true, Ordering::SeqCst);
         if RESTART.load(Ordering::SeqCst) {

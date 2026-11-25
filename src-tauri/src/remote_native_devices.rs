@@ -52,6 +52,7 @@ fn wire_method(method: &str) -> Option<String> {
             | "devices.boot"
             | "devices.capture"
             | "devices.stream"
+            | "devices.touch"
             | "devices.control.status"
             | "devices.control.claim"
             | "devices.control.release"

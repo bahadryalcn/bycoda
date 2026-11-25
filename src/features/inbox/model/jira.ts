@@ -32,10 +32,13 @@ export type JiraIssue = {
   projectPath: string;
 };
 
+export type JiraIssueStatus = Pick<JiraIssue, "state" | "stateType"> & { statusId: string };
+
 export type JiraIssueDetails = {
   body: string;
   author: string;
   authorAvatarUrl?: string;
+  status?: JiraIssueStatus;
 };
 
 export type JiraIssueComment = {

@@ -11,6 +11,7 @@ import {
 import type { HostSettings } from "../../../tasks/public/hostSettings";
 import {
   listMachineLimits,
+  parseHostSettings,
   saveMachineLimits,
   settingsMachine,
 } from "../../../tasks/public/hostSettings";
@@ -49,7 +50,11 @@ function routingWithoutRoles(state: ModelRoutingState): string {
 }
 
 type Settings = ReturnType<typeof useOrderSettings>;
-type Baseline = { routing: ModelRoutingState; limits: HostSettings };
+type Baseline = { routing: ModelRoutingState; limits?: HostSettings };
+const defaultLimits = parseHostSettings({});
+
+const baselineDraft = ({ routing, limits }: Baseline) =>
+  orderDraft(routing, limits ?? defaultLimits);
 
 /** One editing transaction; each separate Host acknowledgement becomes its own baseline. */
 export function useOrderDraft(settings: Settings, initial: Baseline, machineId: string) {
@@ -58,7 +63,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
   const [baseline, setBaseline] = useRetainedTransaction(`order:${machineId}:baseline`, initial);
   const [draft, setDraft] = useRetainedTransaction(
     `order:${machineId}:draft`,
-    orderDraft(initial.routing, initial.limits),
+    baselineDraft(initial),
   );
   const [pending, setPending] = useRetainedTransaction(`order:${machineId}:pending`, false);
   const [error, setError] = useRetainedTransaction(`order:${machineId}:error`, "");
@@ -76,7 +81,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
       setPending(value);
     },
   };
-  const base = orderDraft(baseline.routing, baseline.limits);
+  const base = baselineDraft(baseline);
   const dirty = !sameOrderDraft(draft, base);
   // Query notifications can lag a mutation's acknowledgement by one render.
   const observedRouting = settings.routing.state;
@@ -90,12 +95,19 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     baseline.limits;
   const changedElsewhere =
     latestRouting.version !== baseline.routing.version ||
-    latestLimits.maxRunningTasks !== baseline.limits.maxRunningTasks ||
-    latestLimits.dailyAgentMinutes !== baseline.limits.dailyAgentMinutes;
+    (baseline.limits !== undefined &&
+      (latestLimits?.maxRunningTasks !== baseline.limits.maxRunningTasks ||
+        latestLimits?.dailyAgentMinutes !== baseline.limits.dailyAgentMinutes));
+  // The first successful limits read fills only fields the editor could not previously edit.
+  if (!pending && !baseline.limits && latestLimits) {
+    const limits = orderDraft(baseline.routing, latestLimits).limits;
+    setBaseline({ ...baseline, limits: latestLimits });
+    setDraft({ ...draft, limits });
+  }
   // Refresh clean forms during render; background reads must never replace unsaved edits.
-  if (!pending && !dirty && changedElsewhere) {
+  else if (!pending && !dirty && changedElsewhere) {
     setBaseline({ routing: latestRouting, limits: latestLimits });
-    setDraft(orderDraft(latestRouting, latestLimits));
+    setDraft(baselineDraft({ routing: latestRouting, limits: latestLimits }));
     setSaved(false);
   }
   // Who uses what saves the same document from the same screen. When only its job choices
@@ -105,8 +117,8 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     dirty &&
     !saveConflict &&
     latestRouting.version !== baseline.routing.version &&
-    latestLimits.maxRunningTasks === baseline.limits.maxRunningTasks &&
-    latestLimits.dailyAgentMinutes === baseline.limits.dailyAgentMinutes &&
+    latestLimits?.maxRunningTasks === baseline.limits?.maxRunningTasks &&
+    latestLimits?.dailyAgentMinutes === baseline.limits?.dailyAgentMinutes &&
     routingWithoutRoles(latestRouting) === routingWithoutRoles(baseline.routing) &&
     JSON.stringify(draft.routing.roles) === JSON.stringify(baseline.routing.roles)
   ) {
@@ -166,7 +178,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
   function revert() {
     if (submitting.current) return;
     setBaseline({ routing: latestRouting, limits: latestLimits });
-    setDraft(orderDraft(latestRouting, latestLimits));
+    setDraft(baselineDraft({ routing: latestRouting, limits: latestLimits }));
     setError("");
     setSaveConflict(false);
     setSaved(false);
@@ -184,11 +196,12 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
         ),
         settings.limits.refetch(),
       ]);
-      if (result.error) throw result.error;
+      if (result.error && baseline.limits) throw result.error;
       const routing = client.getQueryData<ModelRoutingState>([HOST_MODEL_ROUTING, machineId]);
-      if (!routing || !result.data) throw new Error("Models and limits could not be read.");
-      setBaseline({ routing, limits: result.data.state });
-      setDraft(orderDraft(routing, result.data.state));
+      if (!routing) throw new Error("Models could not be read.");
+      const next = { routing, limits: result.data?.state };
+      setBaseline(next);
+      setDraft(baselineDraft(next));
       setError("");
       setSaveConflict(false);
       setSaved(false);
@@ -204,7 +217,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
   async function save(): Promise<boolean> {
     if (submitting.current || !dirty || conflict || validation) return false;
     const input = prepareOrderSave(draft);
-    const before = prepareOrderSave(orderDraft(baseline.routing, baseline.limits));
+    const before = prepareOrderSave(base);
     submitting.current = true;
     setPending(true);
     setError("");
@@ -235,7 +248,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
         });
       }
       setBaseline(acknowledged);
-      setDraft(orderDraft(acknowledged.routing, acknowledged.limits));
+      setDraft(baselineDraft(acknowledged));
       setSaved(true);
       return true;
     } catch (cause) {

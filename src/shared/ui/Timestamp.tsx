@@ -5,6 +5,7 @@ import { dateTimeFormat } from "../lib/intl";
 import { useMinuteNow } from "../hooks/useMinuteNow";
 import { useToday } from "./arc/lib/use-today";
 import { parseTimestamp } from "../lib/time/timestamps";
+import { Tooltip } from "./Tooltip";
 import { optionalTextAttributes, type TextRoles, type TextSize, type TextTone } from "./Text";
 
 export type TimestampFormat =
@@ -20,7 +21,7 @@ export type TimestampFormat =
  * "Yesterday 09:30" or a full date and follows midnight, focus and resume through the shared day clock;
  * `relative` ("5 minutes ago") follows the shared minute clock and pauses while the window is hidden;
  * `time` (clock), `time-seconds` (24-hour log clock), `date` (no year in the current year) and
- * `datetime-seconds` are computed on render. The full date is the title by default.
+ * `datetime-seconds` are computed on render. The tooltip shows the full date by default.
  * @group text
  * @use Show a past or scheduled point in time (last run, created, updated) as a date, clock or age.
  * @avoid Event history list: Timeline. Durations or numbers: format with src/shared/i18n helpers. Already formatted date text without time semantics: Text.
@@ -36,6 +37,7 @@ export function Timestamp({
   tone,
   leading,
   className,
+  title,
   ...props
 }: Omit<ComponentProps<"time">, "dateTime" | "children"> & {
   value: number;
@@ -119,16 +121,20 @@ export function Timestamp({
                   second: "numeric",
                 }).format(date);
   return (
-    <time
-      title={showTitle ? (prefix ? `${prefix}: ${full}` : full) : undefined}
-      {...props}
-      {...optionalTextAttributes(
-        { size, tone, leading },
-        className ? `tabular-nums ${className}` : "tabular-nums",
-      )}
-      dateTime={date.toISOString()}
+    <Tooltip
+      asChild
+      label={title ?? (showTitle ? (prefix ? `${prefix}: ${full}` : full) : undefined)}
     >
-      {prefix ? `${prefix} ${text}` : text}
-    </time>
+      <time
+        {...props}
+        {...optionalTextAttributes(
+          { size, tone, leading },
+          className ? `tabular-nums ${className}` : "tabular-nums",
+        )}
+        dateTime={date.toISOString()}
+      >
+        {prefix ? `${prefix} ${text}` : text}
+      </time>
+    </Tooltip>
   );
 }

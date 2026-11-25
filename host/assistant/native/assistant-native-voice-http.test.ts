@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +12,39 @@ import {
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
 import { createHostServer } from "../../server";
+
+// Windows PowerShell adapters outside this contract. Each costs seconds on a loaded runner, and
+// Host close waits for them. An unreadable presence is the documented "away" reading.
+vi.mock("../../desktop/desktop-presence", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../desktop/desktop-presence")>()),
+  readDesktopPresence: async () => ({ supported: false, locked: true }),
+}));
+vi.mock("../../secrets/secret-file", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../secrets/secret-file")>()),
+  restrictSecretDirectory: async () => undefined,
+}));
+// Away demand starts the keep-awake helper. It never acknowledges here: an optional power request
+// must not hold the Assistant queue that every request below goes through.
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  const { EventEmitter } = await import("node:events");
+  const { PassThrough } = await import("node:stream");
+  const spawn = (file: string, args: readonly string[], options: object) => {
+    if (!args.some((arg) => arg.includes("bycoda-power-ready")))
+      return actual.spawn(file, args, options);
+    const helper = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: () => {
+        queueMicrotask(() => helper.emit("close", 1));
+        return true;
+      },
+    });
+    return helper;
+  };
+  return { ...actual, spawn };
+});
 
 // Fixture Native relay signs with a temporary key; it is not device or acoustic acceptance.
 it("registers a Native-seeded generation through HTTP and fences privacy until its exact retirement", async () => {

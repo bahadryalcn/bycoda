@@ -1,9 +1,18 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { createInterface } from "node:readline";
+import { measure } from "../diagnostics/perf-metrics";
+import { createLogger } from "../diagnostics/logger";
+import { currentRequestTrace } from "../diagnostics/request-trace";
 import { localVoicePython } from "./voice-python";
-import { inspectVoiceRuntime, voiceRuntimeConfig, type VoiceRuntimeConfig } from "./voice-runtime";
+import {
+  inspectVoiceRuntime,
+  voiceRuntimeConfig,
+  type VoiceRuntimeConfig,
+  type VoiceRuntimeStatus,
+} from "./voice-runtime";
 import { VoiceSpeechService, type VoiceSpeechDependencies } from "./voice-speech";
 
 /** `turn`: the recognizer can judge from a pause whether the sentence is finished. */
@@ -12,6 +21,27 @@ export type LocalVoiceInfo = { lease: string; model: string; device: string; tur
 export type LocalVoiceTranscript =
   | { text: string; language: string; inferenceMs: number; complete?: true }
   | { complete: false };
+
+const voiceStartLog = createLogger("host.voice");
+const SLOW_VOICE_START_MS = 5_000;
+type StartPhase = { at: number; outcome: "ready" | "failed" | "cached" | "not-ready"; ms?: number };
+type StartPhases = Partial<Record<"probe" | "recognizer" | "speech", StartPhase>>;
+
+async function timeStartPhase<T>(
+  phases: StartPhases,
+  name: keyof StartPhases,
+  work: () => Promise<T>,
+): Promise<T> {
+  const phase: StartPhase = { at: monotonicNow(), outcome: "failed" };
+  phases[name] = phase;
+  try {
+    const value = await work();
+    phase.outcome = "ready";
+    return value;
+  } finally {
+    phase.ms = elapsedSince(phase.at);
+  }
+}
 
 export function validateVoiceAudio(audio: unknown, language: unknown) {
   if (
@@ -49,6 +79,8 @@ export const LOCAL_REQUEST_TIMEOUT_MS = 30_000;
 export const LOCAL_WORKER_UNRESPONSIVE_MS = 120_000;
 /** Requests the worker may owe at once, including timed-out ones it has not answered yet. */
 const MAX_OUTSTANDING_REQUESTS = 2;
+/** How long a ready installation probe is trusted; startup failure discards it sooner. */
+export const VOICE_PROBE_REUSE_MS = 10 * 60_000;
 
 function busyError() {
   return new Error("Speech recognition is busy. Please speak again after transcription.");
@@ -83,6 +115,8 @@ export class LocalVoiceService {
   private dictation = new Set<string>();
   /** Set while an unused recognizer is kept loaded for the next dictation. */
   private warm?: ReturnType<typeof setTimeout>;
+  /** Last ready probe; survives `close` so reconnecting skips the Python scan. */
+  private probe?: { key: string; at: number; found: VoiceRuntimeStatus };
 
   /** `cloudKey` (Host vault) enables the ElevenLabs reply voice; omitted, it reports no key. */
   constructor(private readonly dependencies: VoiceSpeechDependencies = {}) {
@@ -104,15 +138,48 @@ export class LocalVoiceService {
 
   /** `recognitionOnly` (dictation) shares the recognizer without loading natural speech. */
   async start(value?: unknown, recognitionOnly = false): Promise<LocalVoiceInfo> {
+    const startedAt = monotonicNow();
+    const phases: StartPhases = {};
+    const trace = currentRequestTrace();
+    const recognizerPresentAtStart = this.loading !== undefined;
+    const speechStartedAtStart = this.speech.started;
+    let outcome = "failed";
     this.starting++;
     try {
-      return await this.startRuntime(value, recognitionOnly);
+      const info = await this.startRuntime(value, recognitionOnly, phases);
+      outcome = "ready";
+      return info;
     } finally {
       this.starting--;
+      const totalMs = Math.round(elapsedSince(startedAt));
+      if (outcome === "failed" || totalMs >= SLOW_VOICE_START_MS) {
+        const fields: Record<string, DiagnosticLogFields[string]> = {
+          traceId: trace?.id,
+          outcome,
+          totalMs,
+          recognitionOnly,
+          recognizerPresentAtStart,
+          speechStartedAtStart,
+        };
+        for (const name of ["probe", "recognizer", "speech"] as const) {
+          const phase = phases[name];
+          fields[`${name}Outcome`] = phase
+            ? phase.ms === undefined
+              ? "pending"
+              : phase.outcome
+            : "skipped";
+          if (phase) fields[`${name}Ms`] = Math.round(phase.ms ?? elapsedSince(phase.at));
+        }
+        voiceStartLog.warn("local voice startup", fields);
+      }
     }
   }
 
-  private async startRuntime(value: unknown, recognitionOnly: boolean): Promise<LocalVoiceInfo> {
+  private async startRuntime(
+    value: unknown,
+    recognitionOnly: boolean,
+    phases: StartPhases,
+  ): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
     const { idleUnloadMinutes, ...workerConfig } = config;
     const key = JSON.stringify(workerConfig);
@@ -128,10 +195,7 @@ export class LocalVoiceService {
       );
     if (!this.loading) {
       if (value !== undefined) {
-        const cloudKey = this.dependencies.cloudKey;
-        const found = await inspectVoiceRuntime(config, {
-          cloudKey: async (provider) => Boolean(await cloudKey?.(provider)),
-        });
+        const found = await this.inspectInstallation(key, config, phases);
         if (!found.ready)
           throw new Error(
             `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Voice assistant. Choose Locate existing to find installed voice files, or Install to get missing files.`,
@@ -150,15 +214,7 @@ export class LocalVoiceService {
       this.runtimeKey = key;
     }
     if (recognitionOnly) this.runtime.idleUnloadMinutes = idleUnloadMinutes;
-    const info = await this.ensureWorker();
-    if (this.runtime.natural && !recognitionOnly) {
-      try {
-        await this.speech.start(this.runtime);
-      } catch (error) {
-        if (!this.leases.size) this.close();
-        throw error;
-      }
-    }
+    const info = await this.loadModels(recognitionOnly, phases);
     const lease = randomUUID();
     this.leases.set(lease, monotonicNow());
     if (recognitionOnly) this.dictation.add(lease);
@@ -175,6 +231,63 @@ export class LocalVoiceService {
       this.idle.unref();
     }
     return { ...info, lease };
+  }
+
+  private async inspectInstallation(key: string, config: VoiceRuntimeConfig, phases: StartPhases) {
+    const known = this.probe;
+    if (known?.key === key && elapsedSince(known.at) < VOICE_PROBE_REUSE_MS) {
+      phases.probe = { at: monotonicNow(), outcome: "cached", ms: 0 };
+      return known.found;
+    }
+    const cloudKey = this.dependencies.cloudKey;
+    const found = await timeStartPhase(phases, "probe", () =>
+      measure("voice.local.start.inspect", () =>
+        inspectVoiceRuntime(config, {
+          readinessOnly: true,
+          cloudKey: async (provider) => Boolean(await cloudKey?.(provider)),
+        }),
+      ),
+    );
+    if (!found.ready && phases.probe) phases.probe.outcome = "not-ready";
+    this.probe = found.ready ? { key, at: monotonicNow(), found } : undefined;
+    return found;
+  }
+
+  /**
+   * Resolves only when every model this start needs is ready. CPU and cloud speech load beside
+   * the recognizer; VoxCPM2 waits for it so two models never claim GPU memory at the same time.
+   */
+  private async loadModels(recognitionOnly: boolean, phases: StartPhases) {
+    const worker = timeStartPhase(phases, "recognizer", () =>
+      this.loading
+        ? this.ensureWorker()
+        : measure("voice.local.start.worker", () => this.ensureWorker()),
+    );
+    const loadSpeech = () =>
+      timeStartPhase(phases, "speech", () =>
+        this.speech.started
+          ? this.speech.start(this.runtime)
+          : measure("voice.local.start.speech", () => this.speech.start(this.runtime)),
+      );
+    const needsSpeech = this.runtime.natural && !recognitionOnly;
+    try {
+      if (needsSpeech && this.runtime.engine !== "voxcpm2") {
+        const [info] = await Promise.all([worker, loadSpeech()]);
+        return info;
+      }
+      const info = await worker;
+      if (needsSpeech) await loadSpeech();
+      return info;
+    } catch (error) {
+      this.forgetRuntime();
+      if (!this.leases.size) this.close();
+      throw error;
+    }
+  }
+
+  /** The installation changed or failed to start: the next start probes it again. */
+  forgetRuntime() {
+    this.probe = undefined;
   }
 
   keepAlive(lease: unknown) {

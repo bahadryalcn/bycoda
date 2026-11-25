@@ -45,8 +45,10 @@ backlog, or an active/future sprint. **Backlog & sprints** shows active and plan
 sprints above the backlog; Kanban boards show their board and backlog sections.
 Select allowed boards in **Settings → Inbox → Jira → Boards** first. No board is
 enabled by default. The board roster is restricted to selected projects, and board
-issue requests also apply the project scope. Assignee filters remain specific to
-the list view. Search filters the loaded cards by key, title, or assignee.
+issue requests also apply the project scope. The list, Kanban and Backlog & sprints
+share assignment, workflow status, open/closed, update time and project filters.
+Jira applies assignment and workflow to board, sprint and backlog queries before
+paging. Search and update time filter loaded issues.
 If Jira reports that a backlog is unsupported, available sections remain visible
 with guidance to enable the backlog in Jira; this does not create a synthetic backlog.
 
@@ -54,10 +56,14 @@ Drag a card onto a column to change its status, onto another sprint/backlog sect
 to move it, or onto another card to rank it before that card. Dropping into empty
 space ranks it after the last card when every page has loaded. **Move** provides
 a keyboard-accessible alternative for status, sprint and ranking changes. Open a card to
-use the existing issue details and agent actions. Ranking is disabled while searching
+use the existing issue details and agent actions. In list and board details, select
+the current status to see available Jira transitions. Complete transitions that need
+additional fields in Jira. Ranking is disabled while the board is filtered
 or while any section has more pages. Scroll near the end of a column or planning
 section to fetch its next page. Middle-button dragging pans the board horizontally
-and the column vertically. Failed reads retain existing cards and offer **Retry**.
+and the column vertically. The first load shows placeholders under the column or
+group headings. Refresh keeps loaded cards visible while Jira returns updates.
+Failed reads retain existing cards and offer **Retry**.
 
 Moves are written to Jira using the connected account's permissions. Available
 workflow transitions are checked again before writing. Multiple transitions into

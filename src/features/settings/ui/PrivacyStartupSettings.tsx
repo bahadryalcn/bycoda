@@ -3,11 +3,16 @@ import { t, useLocale } from "../../../shared/i18n";
 import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import {
   AnonymousUsageSetting,
-  isAnonymousStatsEnabled,
-  setAnonymousStatsEnabled,
+  getStatisticsMode,
+  setStatisticsMode,
   statsDisclosure,
-  subscribeAnonymousStats,
+  subscribeStatisticsMode,
 } from "../../account";
+import {
+  ActivitySharingSetting,
+  SharingModeSelect,
+  SharingNoticeSetting,
+} from "../../data-sharing";
 import { DiagnosticsSharingSetting } from "../../diagnostics";
 import {
   useGroupLock,
@@ -25,7 +30,7 @@ export function PrivacyStartupSettings() {
   const privacy = useGroupLock();
   const maskEmails = useMaskEmails();
   const maskSaved = useMaskEmailsSaved();
-  const statsOn = useSyncExternalStore(subscribeAnonymousStats, isAnonymousStatsEnabled);
+  const statisticsMode = useSyncExternalStore(subscribeStatisticsMode, getStatisticsMode);
   // The choice applies now; the next-launch promise holds only once it is stored.
   const startSaved = !privacy.unsavedOptions?.includes("startInPrivacyMode");
   const saveStart = (on: boolean) => {
@@ -90,13 +95,15 @@ export function PrivacyStartupSettings() {
           descriptionVisible
           description={statsDisclosure()}
         >
-          <Toggle
+          <SharingModeSelect
             label={t("Share anonymous usage statistics")}
-            on={statsOn}
-            onChange={setAnonymousStatsEnabled}
+            value={statisticsMode}
+            change={setStatisticsMode}
           />
         </Row>
         <AnonymousUsageSetting />
+        <ActivitySharingSetting />
+        <SharingNoticeSetting />
         <Row
           label={t("Share diagnostic logs")}
           description={t(

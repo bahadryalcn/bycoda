@@ -10,6 +10,8 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
+import { useChangeTotals } from "../hooks/useChangeTotals";
+import { changeSectionRoots } from "../model/worktreeScope";
 import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createProjectWorktree } from "../model/remoteWorktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
@@ -24,6 +26,7 @@ export function SidebarWorktreeSwitcher({
   cwd,
   projectLabel,
   projectIcon,
+  showProjectIdentity = true,
   tabStats,
   onSelect,
   pending = false,
@@ -34,6 +37,8 @@ export function SidebarWorktreeSwitcher({
   projectLabel?: string;
   /** The project's saved identity (logo or mascot), shown before its name. */
   projectIcon?: ReactNode;
+  /** The project picker already supplies the icon and name in a shared header. */
+  showProjectIdentity?: boolean;
   onSelect?: (focus?: WorktreeFocus) => void;
   pending?: boolean;
   switchError?: string;
@@ -45,6 +50,7 @@ export function SidebarWorktreeSwitcher({
   const [query, setQuery] = useState("");
   const [activePath, setActivePath] = useState<string | null>(null);
   const [reportedSwitchError, setReportedSwitchError] = useState<string | undefined>(undefined);
+  const [agentsExpanded, setAgentsExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>();
   const creatingRef = useRef(false);
@@ -71,10 +77,14 @@ export function SidebarWorktreeSwitcher({
   const showAll = hasAll && !query.trim();
   const allSelected = hasAll && !focus;
 
+  // Counts of the worktrees that have uncommitted changes: the same sections the Changes panel
+  // and its tab badge add up, so the chips and "All worktrees" agree with them.
+  const totals = useChangeTotals(changeSectionRoots(data?.worktrees, cwd), open);
   const canCreate = !!data && !error && !!createName && rows.length === 0;
 
   const closePicker = () => {
     setOpen(false);
+    setAgentsExpanded(false);
     setQuery("");
     setActivePath(null);
     setCreationError(undefined);
@@ -148,9 +158,13 @@ export function SidebarWorktreeSwitcher({
     value: focus?.path ?? main?.path ?? cwd,
     activePath:
       activePath ?? (showAll && allSelected ? ALL_WORKTREES_ACTIVE : null) ?? rows[0]?.path ?? null,
+    counts: totals.byRoot,
+    agentsExpanded: agentsExpanded || !!query.trim(),
+    onExpandAgents: () => setAgentsExpanded(true),
     all: showAll
       ? {
           selected: allSelected,
+          changes: totals.ready ? totals.total : undefined,
           onPick: () => {
             if (creating) return;
             onSelect?.(undefined);
@@ -214,17 +228,31 @@ export function SidebarWorktreeSwitcher({
         }}
         className="flex w-fit min-w-0 max-w-full items-center gap-2 @max-[280px]/workspace-pane:gap-1"
       >
-        {projectIcon ? (
+        {showProjectIdentity && projectIcon ? (
           <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
         ) : null}
-        <MiddleTruncate mode="text" className="min-w-0">
-          {project}
-        </MiddleTruncate>
+        {showProjectIdentity ? (
+          <MiddleTruncate mode="text" className="min-w-0">
+            {project}
+          </MiddleTruncate>
+        ) : null}
         {copyName ? (
           <>
-            <ChevronRight aria-hidden className="icon-xs shrink-0" tone="secondary" />
+            {showProjectIdentity ? (
+              <ChevronRight
+                aria-hidden
+                data-workspace-copy-decoration
+                className="icon-xs shrink-0"
+                tone="secondary"
+              />
+            ) : null}
             {focus || !hasAll ? (
-              <GitBranch aria-hidden className="icon-xs -ms-1 shrink-0" tone="secondary" />
+              <GitBranch
+                aria-hidden
+                data-workspace-copy-decoration
+                className="icon-xs -ms-1 shrink-0"
+                tone="secondary"
+              />
             ) : null}
             <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
               {copyName}

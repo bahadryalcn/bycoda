@@ -210,6 +210,10 @@ impl ProcessOwner {
             changed: Condvar::new(),
         }
     }
+    /// Live pins; an unreadable owner reports the maximum so callers keep it running.
+    pub(crate) fn pin_count(&self) -> usize {
+        self.state.lock().map_or(usize::MAX, |state| state.pins)
+    }
     pub(crate) fn pin(self: &Arc<Self>) -> io::Result<ProcessPin> {
         let mut state = self
             .state

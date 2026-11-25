@@ -111,6 +111,8 @@ describe("bounded discovery and birth-safe signals", () => {
     expect(executable).toBe("powershell.exe");
     expect(args).toContain("-NonInteractive");
     expect(script(args)).toContain("Get-NetTCPConnection -State Listen");
+    expect(script(args)).toContain("[System.Diagnostics.Process]::GetProcesses()");
+    expect(script(args)).not.toContain("::GetProcessById(");
     expect(options.windowsHide).toBe(true);
     expect(options.timeout).toBeLessThanOrEqual(10_000);
     expect(options.maxBuffer).toBeLessThanOrEqual(2 * 1024 * 1024);
@@ -531,9 +533,7 @@ it("discovers the owned real test listener and refuses its stale identity", asyn
         resolve(JSON.parse(data.toString()));
       });
     });
-    // Real PowerShell/CIM scans can exceed the 8 s product budget on a loaded
-    // shared Windows runner; this test checks identity, not scan latency.
-    const discovery = new DevServerDiscovery({ cacheMs: 0, commandTimeoutMs: 30_000 });
+    const discovery = new DevServerDiscovery({ cacheMs: 0 });
     const found = (await discovery.listeners()).find((item) => item.process.pid === child.pid);
     expect(found).toBeDefined();
     expect(found!.endpoints.map((item) => item.port)).toEqual(expect.arrayContaining(ports));

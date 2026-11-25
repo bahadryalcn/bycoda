@@ -105,6 +105,8 @@ export function DictationOptions({
         variant="ghost"
         motion="none"
         iconOnly
+        stretch
+        touchTarget="control"
         className={styles.options}
         label={t("Dictation options")}
         tooltip={t("Recognition, model and language")}

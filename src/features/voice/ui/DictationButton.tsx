@@ -184,11 +184,13 @@ export function DictationButton({
           ? t("Stop dictation")
           : t("Dictate");
   return (
-    <ButtonGroup aria-label={t("Dictation")} surface="transparent">
+    <ButtonGroup aria-label={t("Dictation")} surface="navigation">
       <Button
         variant="ghost"
         motion="none"
         iconOnly
+        stretch
+        touchTarget="control"
         label={label}
         shortcut={shortcut ?? undefined}
         tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
@@ -204,7 +206,7 @@ export function DictationButton({
       >
         <span ref={visual} className={styles.visual} data-state={state} aria-hidden="true">
           {state === "idle" ? (
-            <Mic className="icon-sm" strokeWidth={2} />
+            <Mic className="icon-sm" />
           ) : state === "listening" ? (
             <span className={styles.wave}>
               {[0, 1, 2, 3, 4].map((index) => (

@@ -146,7 +146,10 @@ it("waits out start-up, runs hourly collection, then removes its timers on close
   expect(existsSync(attachmentPath(store, ids[0]))).toBe(false);
   await upload(ids[1], "partial", false);
   clock.now += ATTACHMENT_GRACE_MS + 10000;
-  await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+  // Advance only to the hourly tick (start-up + 5 min + 55 min), then join that sweep. The
+  // database scope deadline is a faked timer too, so jumping further while the sweep still
+  // waits on the real worker would fire the deadline without real time passing.
+  await vi.advanceTimersByTimeAsync(55 * 60 * 1000);
   await ownership.collect();
   expect(existsSync(attachmentPath(store, ids[1]))).toBe(false);
   await ownership.close();
@@ -346,6 +349,86 @@ it("pins legacy queue exports instead of guessing whether their offline editor s
   await ownership.release("device-A", { ids: [ids[0]], ownerId: "draft-A" });
   clock.now += ATTACHMENT_GRACE_MS * 100;
   expect(await ownership.collect()).toEqual([]);
+});
+it("exposes an empty attachment list without a writer transaction", async () => {
+  const { store, ownership } = setup();
+  await ownership.ready;
+  const execute = vi.spyOn(store.db, "exec");
+  const prepare = vi.spyOn(store.db, "prepare");
+  await ownership.expose("legacy-reader", [], {});
+  await ownership.expose("device-B", [], { ownerId: "queue-view", claimId: "generation" });
+  expect(execute.mock.calls.map(([sql]) => sql)).toEqual([]);
+  expect(prepare).not.toHaveBeenCalled();
+});
+it("still rejects an empty exposure with an invalid owner, claim or revoked authority", async () => {
+  const { store, ownership } = setup();
+  await ownership.ready;
+  const execute = vi.spyOn(store.db, "exec");
+  await expect(ownership.expose("device-B", [], { ownerId: " " })).rejects.toThrow(
+    "Invalid attachment owner ID",
+  );
+  await expect(ownership.expose("device-B", [], { claimId: "generation" })).rejects.toThrow(
+    "Invalid attachment owner ID",
+  );
+  await expect(
+    ownership.expose("device-B", [], { ownerId: "queue-view", claimId: "line\nbreak" }),
+  ).rejects.toThrow("Invalid attachment claim ID");
+  const granted = vi.fn(() => true);
+  await store.db.withAuthorization(granted, () => ownership.expose("device-B", [], {}));
+  expect(granted).toHaveBeenCalledTimes(1);
+  const revoked = vi.fn(() => false);
+  await expect(
+    store.db.withAuthorization(revoked, () =>
+      ownership.expose("device-B", [], { ownerId: "queue-view" }),
+    ),
+  ).rejects.toThrow("Request authorization was revoked.");
+  expect(revoked).toHaveBeenCalledTimes(1);
+  expect(execute.mock.calls.map(([sql]) => sql)).toEqual([]);
+});
+it("never turns a failed start or a closed store into a successful empty exposure", async () => {
+  const { store } = setup();
+  await store.db.scope(() => undefined);
+  const execute = vi
+    .spyOn(store.db, "exec")
+    .mockRejectedValueOnce(new Error("Synthetic ownership schema failure"));
+  const failed = new AttachmentOwnership(store);
+  await expect(failed.ready).rejects.toThrow("Synthetic ownership schema failure");
+  await expect(failed.expose("device-B", [], {})).rejects.toThrow(
+    "Synthetic ownership schema failure",
+  );
+  execute.mockRestore();
+  const working = new AttachmentOwnership(store);
+  await working.ready;
+  await store.close();
+  await expect(working.expose("device-B", [], {})).rejects.toThrow();
+});
+it("keeps one writer transaction and exact ownership for a non-empty exposure", async () => {
+  const { store, ownership, upload } = setup();
+  await upload();
+  await upload(ids[1]);
+  const execute = vi.spyOn(store.db, "exec");
+  const transactions = () => execute.mock.calls.map(([sql]) => sql);
+  await ownership.expose("device-B", [ids[0], ids[0]], { ownerId: "queue-view", claimId: "one" });
+  expect(transactions()).toEqual(["BEGIN IMMEDIATE", "COMMIT"]);
+  expect(await ownership.claims("device-B", { ownerId: "queue-view" })).toEqual({
+    claims: [{ id: ids[0], claimId: "one" }],
+  });
+  expect(await ownership.claims("device-A", { ownerId: "queue-view" })).toEqual({ claims: [] });
+  execute.mockClear();
+  await expect(ownership.expose("device-B", [ids[1]], { ownerId: " " })).rejects.toThrow(
+    "Invalid attachment owner ID",
+  );
+  expect(transactions()).toEqual([]);
+  expect(await ownership.claims("device-B", { ownerId: "queue-view" })).toEqual({
+    claims: [{ id: ids[0], claimId: "one" }],
+  });
+  const legacy = async () =>
+    (await store.db.prepare("SELECT legacy FROM attachment_ownership_files WHERE id=?").get(ids[1]))
+      ?.legacy;
+  expect(await legacy()).toBe(0);
+  await ownership.expose("legacy-reader", [ids[1]], {});
+  expect(transactions()).toEqual(["BEGIN IMMEDIATE", "COMMIT"]);
+  expect(await legacy()).toBe(1);
 });
 it("requires canonical IDs for managed claims while preserving legacy uppercase upload compatibility", async () => {
   const { ownership, upload } = setup();

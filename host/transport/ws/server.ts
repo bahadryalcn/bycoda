@@ -32,6 +32,14 @@ import {
 } from "../../../src/shared/model/host-contracts";
 import { HostDispatchError, type HostDispatchContext } from "../dispatch";
 import { createLogger } from "../../diagnostics/logger";
+import {
+  heldPollWaitMs,
+  runWithRequestTrace,
+  slowRequestFields,
+  startRequestTrace,
+  type RequestOutcome,
+  type RequestTrace,
+} from "../../diagnostics/request-trace";
 import { elapsedSince, monotonicNow, wallClockGap } from "../../../src/shared/lib/time/timestamps";
 import { effectFailureDelivery } from "./effect-failure-delivery";
 import { HostReadWorkBudget } from "../read-budget";
@@ -48,6 +56,7 @@ import {
   waitFor,
 } from "./server-helpers";
 import { isTunnelUpgradeUrl } from "../../dev-servers/dev-server-tunnel";
+import { isBrowserMediaUpgrade } from "../../browser/browser-media";
 import {
   authorizeWith,
   invalidRequestMessage,
@@ -58,6 +67,7 @@ import {
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
 const resultLog = createLogger("host.ws");
+const SLOW_REQUEST_MS = 5_000;
 
 export type HostWsPrincipal = {
   id: string;
@@ -197,6 +207,23 @@ function retiredSocketFor(
 
 /** A finished result that cannot fit one frame; only this request fails, never the socket. */
 class ResultTooLarge extends Error {}
+
+/** Classifies by type only, so no error text or request content can reach the log. */
+function requestOutcome(error: unknown, signal: AbortSignal, closed: boolean): RequestOutcome {
+  if (closed) return "disconnected";
+  if (signal.reason instanceof RequestExpired) return "deadline";
+  if (signal.aborted) return "cancelled";
+  if (error instanceof ControlLaneBusy) return "overloaded";
+  if (error instanceof ResultTooLarge) return "too-large";
+  if (error instanceof HostDispatchError)
+    return error.code === "unauthorized"
+      ? "unauthorized"
+      : error.code === "overloaded"
+        ? "overloaded"
+        : "rejected";
+  if (error instanceof HostStreamError || error instanceof HostBulkError) return "rejected";
+  return "failed";
+}
 
 /**
  * Authenticated native read pilot. This is not the full WS session transport:
@@ -389,7 +416,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     }
   }
 
-  async function handle(peer: Peer, request: RpcRequest): Promise<void> {
+  async function handle(peer: Peer, request: RpcRequest, trace: RequestTrace): Promise<void> {
     if (!peer.ready) {
       if (request.method !== "connection.hello" || peer.initializing) {
         failure(
@@ -509,6 +536,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           Math.min(definition.admissionTimeoutMs, responseTimeoutMs),
         );
       if (!(await waitFor(authorized(peer, "shared"), controller.signal))) {
+        trace.outcome = "unauthorized";
         failure(
           peer,
           request.id,
@@ -587,6 +615,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         const lease = options.bulk?.begin(peer.principal.id, resource, dependencies);
         try {
           dispatchStarted = true;
+          trace.handlerStartedAt = monotonicNow();
           const result = await options.dispatch(request.method, request.params, {
             environmentId: options.environmentId,
             requestId: request.id,
@@ -609,6 +638,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
                 ? controller.signal
                 : undefined,
           });
+          trace.handlerEndedAt = monotonicNow();
           for (const check of resultAuthorities)
             if (!(await check())) throw new HostBulkError(409, "Result authority expired.");
           const initial = normalizeJsonWire(result);
@@ -642,14 +672,19 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
                 : capture,
           };
         } finally {
+          if (dispatchStarted) trace.handlerEndedAt ??= monotonicNow();
           if (lease) options.bulk!.release(lease);
         }
       };
+      // A queued budget slot may start this from another request's async context.
+      const tracedAction: typeof action = (track) =>
+        runWithRequestTrace(trace, () => action(track));
       const result = await waitFor(
-        workBudget.runScoped(peer.principal.id, action, control ? "control" : "read"),
+        workBudget.runScoped(peer.principal.id, tracedAction, control ? "control" : "read"),
         controller.signal,
       );
       if (!(await waitFor(authorized(peer, "shared"), controller.signal))) {
+        trace.outcome = "unauthorized";
         failure(
           peer,
           request.id,
@@ -683,10 +718,13 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           }
           // send still validates the complete actual wire envelope/schema and
           // enforces frame/backpressure limits after the final authority awaits.
-          send(peer, undefined, response);
+          const written = send(peer, undefined, response);
+          trace.responseEndedAt = monotonicNow();
+          trace.outcome = written === true ? "sent" : "not-sent";
         }
       }
     } catch (error) {
+      trace.outcome = requestOutcome(error, controller.signal, peer.closed);
       if (peer.closed) return;
       if (controller.signal.reason instanceof RequestExpired)
         failure(peer, request.id, RPC_ERROR_CODES.deadlineExceeded, "Request deadline exceeded.", {
@@ -809,17 +847,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       clearTimeout(deadline);
       const started = peer.inflight.get(request.id);
       // A slow request explains a later client deadline or interruption. `*.wait`
-      // methods, and requests that ask to be held (`waitMs`, such as the desktop
-      // command take), are long polls: only time past their own wait is slow. Logging
-      // every held take buried the real stalls in the Host log.
-      const heldMs =
-        typeof request.params?.waitMs === "number" && request.params.waitMs > 0
-          ? request.params.waitMs
-          : 0;
+      // methods, and requests the Host holds (`waitMs`, such as the desktop command
+      // take), are long polls: only time past the wait the Host really grants is slow.
+      // Logging every held take buried the real stalls in the Host log.
+      const heldWaitMs = heldPollWaitMs(request.method, request.params ?? {});
+      const thresholdMs = SLOW_REQUEST_MS + heldWaitMs;
+      trace.outcome ??= controller.signal.aborted
+        ? requestOutcome(undefined, controller.signal, peer.closed)
+        : "completed";
       if (
         started &&
         !request.method.endsWith(".wait") &&
-        elapsedSince(started.startedAt) >= 5_000 + heldMs
+        elapsedSince(trace.receivedAt) >= thresholdMs
       )
         resultLog.warn("slow request", {
           method: request.method,
@@ -829,6 +868,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             ? { op: request.params.op }
             : {}),
           ms: Math.round(elapsedSince(started.startedAt)),
+          ...slowRequestFields(trace, { thresholdMs, heldWaitMs }),
         });
       peer.inflight.delete(request.id);
       peer.pending.delete(request.id);
@@ -880,6 +920,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     );
     socket.on("message", (data, binary) => {
       if (peer.closed) return;
+      const receivedAt = monotonicNow();
       markInbound(peer);
       // Charged before parsing so refused floods cost no JSON, Zod or error-reply work.
       const size = Array.isArray(data)
@@ -941,7 +982,8 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         );
         return;
       }
-      void handle(peer, request).catch(() => {
+      const trace = startRequestTrace("ws", receivedAt);
+      void runWithRequestTrace(trace, () => handle(peer, request, trace)).catch(() => {
         failure(peer, request.id, RPC_ERROR_CODES.internalError, "Host request failed.");
       });
     });
@@ -953,7 +995,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     // `/ws-tunnel` has its own upgrade listener (dev-server-tunnel.ts).
-    if (isTunnelUpgradeUrl(request.url)) return;
+    if (isTunnelUpgradeUrl(request.url) || isBrowserMediaUpgrade(request.url)) return;
     const remoteSource =
       socket instanceof Object && "remoteAddress" in socket
         ? String(socket.remoteAddress ?? "unknown")

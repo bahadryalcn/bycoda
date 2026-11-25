@@ -7,6 +7,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "modelRouting.resolve"
             | "modelRouting.save"
             | "modelRouting.status"
+            | "usage.planShare.read"
+            | "usage.quota.read"
             | "assistant.request"
             | "assistant.ownerActive"
             | "approvals.mirror"
@@ -160,10 +162,13 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "devices.list"
             | "devices.paired"
             | "devices.revokeOther"
+            | "devices.setManagement"
+            | "devices.applyRecovery"
             | "host.access.read"
             | "devices.boot"
             | "devices.capture"
             | "devices.stream"
+            | "devices.touch"
             | "devices.control.status"
             | "devices.control.claim"
             | "devices.control.release"
@@ -195,6 +200,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "mcp.hub.loading.set"
             | "mcp.oauth.start"
             | "mcp.oauth.complete"
+            | "mcp.oauth.cancel"
             | "mcp.oauth.status"
             | "mcp.oauth.signOut"
             | "mcp.tokens.create"
@@ -460,6 +466,13 @@ mod tests {
         }
         assert!(!supported_remote_method("liveStream.anything"));
         assert!(!supported_remote_method("liveStream.live.anything"));
+    }
+
+    #[test]
+    fn plan_share_read_is_allowed_by_the_native_bridge() {
+        assert!(supported_remote_method("usage.planShare.read"));
+        assert!(supported_remote_method("usage.quota.read"));
+        assert!(!supported_remote_method("usage.planShare.write"));
     }
 
     #[test]

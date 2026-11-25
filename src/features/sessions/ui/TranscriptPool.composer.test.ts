@@ -111,7 +111,7 @@ it("keeps real composer text, attachment, edit mode and queued content while its
     textarea.value = "unfinished edit plus unsent changes";
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const attachment = host.querySelector('[aria-label="Remove review.png"]');
+  const attachment = host.querySelector('[data-attachment-name="review.png"]');
   expect(attachment).not.toBeNull();
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Edit queued message"]')!.click(),
@@ -132,7 +132,7 @@ it("keeps real composer text, attachment, edit mode and queued content while its
   await render(true);
   expect(host.querySelector("textarea")).toBe(textarea);
   expect(textarea.value).toBe("unfinished edit plus unsent changes");
-  expect(host.querySelector('[aria-label="Remove review.png"]')).toBe(attachment);
+  expect(host.querySelector('[data-attachment-name="review.png"]')).toBe(attachment);
   expect(editing).toHaveBeenLastCalledWith(true);
   expect(document.querySelector('[aria-label="Queued message text"]')).toBe(queueEditor);
   expect(queueEditor.value).toBe("unsaved queue edit");

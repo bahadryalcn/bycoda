@@ -1,4 +1,5 @@
 import {
+  voiceDesktopInputAction,
   voiceGlobalToolAllowed,
   voiceThreadToolAllowed,
 } from "../../src/shared/model/voiceToolScope";
@@ -12,13 +13,19 @@ export type VoiceToolScope = { projectId?: string; threadId?: string; sessionId?
 /** Mirrors the call path of each scope so a listed tool is never rejected at call time:
  * global thread -> `voiceGlobalToolAllowed`; project thread without a session -> the Room
  * management gate (`desktop.status` goes through the thread grant allowlist); a focused
- * session keeps its own gates except Room-only conversation actions. */
+ * session keeps its own gates except Room-only conversation actions. With both
+ * identities present, discovery follows the same source selection as voice calls. */
 export function voiceToolAllowedInScope(
   tool: { family: string; action: string },
   scope: VoiceToolScope,
 ) {
   if (!scope.projectId) return voiceGlobalToolAllowed(tool.family, tool.action);
-  if (scope.sessionId === undefined)
+  if (
+    scope.sessionId === undefined ||
+    (scope.threadId !== undefined &&
+      voiceThreadToolAllowed(tool.family, tool.action) &&
+      !(tool.family === "conversation" && voiceDesktopInputAction(tool.action)))
+  )
     return scope.threadId === undefined
       ? true
       : tool.family === "conversation" && tool.action === "desktop.status"

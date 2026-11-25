@@ -7,6 +7,9 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
+import { COLLECTION_WINDOW_THRESHOLD } from "../hooks/useCollectionVirtualizer";
+import { DropdownMenuWindow } from "./dropdownMenuWindow";
 import { contextMenuSlotClassName as slot } from "./arc/context-menu/context-menu";
 import { MenuRow } from "./MenuRow";
 import { LAYER } from "../lib/layers";
@@ -108,6 +111,7 @@ export function DropdownMenu({
   closeOnSelect,
   search,
   initialActiveId,
+  windowed,
   ignore,
   onEscape,
   ...dataAttributes
@@ -159,6 +163,7 @@ export function DropdownMenu({
       frosted={frosted}
       search={search}
       initialActiveId={initialActiveId}
+      windowed={windowed}
       ignore={ignore}
       onEscape={onEscape}
     />
@@ -180,6 +185,7 @@ type SurfaceProps = {
   frosted?: boolean;
   search?: DropdownMenuSearch;
   initialActiveId?: string;
+  windowed?: boolean;
   ignore?: string;
   onEscape?: () => boolean;
   /** Closes this flyout only; the parent row regains focus. */
@@ -206,6 +212,7 @@ function MenuSurface({
   frosted,
   search,
   initialActiveId,
+  windowed,
   ignore,
   onEscape,
   back,
@@ -235,6 +242,11 @@ function MenuSurface({
   }, [anchor, width]);
   const actions = actionsOf(items);
   const enabled = actions.filter((action) => !action.disabled);
+  const virtual =
+    windowed &&
+    !search &&
+    items.length > COLLECTION_WINDOW_THRESHOLD &&
+    items.every((item) => item.kind === "item" && !item.submenu && !item.panel);
   // With a search field the highlight is state (aria-activedescendant); otherwise it is DOM focus.
   const highlighted = search ? (enabled.find((a) => a.id === activeId) ?? enabled[0]) : undefined;
   const rowId = (id: string) => `${uid}-${id}`;
@@ -278,7 +290,10 @@ function MenuSurface({
       if (closed.current || !menu || search) return;
       if (active === menu || !menu.contains(active))
         (first() ?? menu).focus({ preventScroll: true });
-      first()?.scrollIntoView?.({ block: "nearest" });
+      (virtual && menu.contains(document.activeElement)
+        ? document.activeElement
+        : first()
+      )?.scrollIntoView?.({ block: "nearest" });
     });
     return () => cancelAnimationFrame(frame);
   }, []);
@@ -323,10 +338,15 @@ function MenuSurface({
     const id = action instanceof HTMLElement ? action.dataset.menuId : action.id;
     if (branch && branch.id !== id) setBranch(null);
     if (action instanceof HTMLElement) focusRow(action);
-    else setActiveId(action.id);
+    else if (virtual) {
+      // Keyboard jumps may target a row outside the mounted window. Pin it before focusing.
+      flushSync(() => setActiveId(action.id));
+      focusRow(rowOf(action.id));
+    } else setActiveId(action.id);
   };
   const step = (key: string, index: number) => {
-    const count = search ? enabled.length : rows().length;
+    const options = search || virtual ? enabled : rows();
+    const count = options.length;
     if (!count) return undefined;
     const next =
       key === "Home"
@@ -338,7 +358,7 @@ function MenuSurface({
             : index <= 0
               ? count - 1
               : index - 1;
-    return search ? enabled[next] : rows()[next];
+    return options[next];
   };
   const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229) return;
@@ -353,7 +373,11 @@ function MenuSurface({
     }
     if (target === searchField.current) return;
     if (inContent && !(field && (event.key === "ArrowDown" || event.key === "ArrowUp"))) return;
-    const current = rows().indexOf(document.activeElement as HTMLButtonElement);
+    const current = virtual
+      ? enabled.findIndex(
+          (action) => action.id === (document.activeElement as HTMLElement)?.dataset.menuId,
+        )
+      : rows().indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === "ArrowLeft" && depth > 0) {
       event.preventDefault();
       back?.();
@@ -384,7 +408,7 @@ function MenuSurface({
       !event.metaKey &&
       !field
     ) {
-      const list = rows();
+      const list = virtual ? enabled : rows();
       const now = performance.now();
       const letter = event.key.toLocaleLowerCase();
       const previous = now - query.current.at < 700 ? query.current.value : "";
@@ -393,7 +417,9 @@ function MenuSurface({
       query.current = { value, at: now };
       const ordered = [...list.slice(current + 1), ...list.slice(0, current + 1)];
       const match = ordered.find((row) =>
-        row.dataset.menuLabel?.toLocaleLowerCase().startsWith(value),
+        (row instanceof HTMLElement ? row.dataset.menuLabel : row.label)
+          ?.toLocaleLowerCase()
+          .startsWith(value),
       );
       if (match) {
         event.preventDefault();
@@ -415,7 +441,7 @@ function MenuSurface({
 
   // One leading icon slot for the whole menu, so rows without an icon keep the label column.
   const hasIcons = actions.some((action) => action.icon != null);
-  const renderAction = (item: DropdownMenuAction) => {
+  const renderAction = (item: DropdownMenuAction, windowIndex?: number) => {
     const hasBranch = Boolean(item.submenu || item.panel);
     const isHighlighted = highlighted?.id === item.id;
     return (
@@ -431,6 +457,9 @@ function MenuSurface({
               : "menuitemcheckbox"
         }
         aria-checked={item.checked}
+        aria-posinset={windowIndex === undefined ? undefined : windowIndex + 1}
+        aria-setsize={windowIndex === undefined ? undefined : actions.length}
+        onFocus={virtual ? () => setActiveId(item.id) : undefined}
         aria-label={item.label}
         aria-description={item.description}
         aria-haspopup={hasBranch ? "menu" : undefined}
@@ -494,25 +523,29 @@ function MenuSurface({
     );
   };
   const open = branch ? actions.find((action) => action.id === branch.id) : undefined;
-  const rowsMarkup = items.map((item, index) =>
-    item.kind === "sep" ? (
-      <div role="separator" key={`sep-${index}`} className={slot.separator} />
-    ) : item.kind === "content" ? (
-      <div key={item.id} data-menu-content className={styles.content}>
-        {item.node}
-      </div>
-    ) : item.kind === "group" ? (
-      item.items.length ? (
-        <div key={item.id} role="group" aria-label={item.label} className={styles.group}>
-          <div className={slot.heading} aria-hidden="true">
-            {item.label}
-          </div>
-          {item.items.map(renderAction)}
+  const rowsMarkup = virtual ? (
+    <DropdownMenuWindow actions={actions} focusedId={activeId} renderAction={renderAction} />
+  ) : (
+    items.map((item, index) =>
+      item.kind === "sep" ? (
+        <div role="separator" key={`sep-${index}`} className={slot.separator} />
+      ) : item.kind === "content" ? (
+        <div key={item.id} data-menu-content className={styles.content}>
+          {item.node}
         </div>
-      ) : null
-    ) : (
-      renderAction(item)
-    ),
+      ) : item.kind === "group" ? (
+        item.items.length ? (
+          <div key={item.id} role="group" aria-label={item.label} className={styles.group}>
+            <div className={slot.heading} aria-hidden="true">
+              {item.label}
+            </div>
+            {item.items.map((action) => renderAction(action))}
+          </div>
+        ) : null
+      ) : (
+        renderAction(item)
+      ),
+    )
   );
   const flyout =
     open && branch ? (

@@ -100,6 +100,7 @@ import {
   parseBackgroundTasks,
   parseControlCancelId,
   parseControlRequest,
+  parseControlResponse,
   parseJsonLine,
   parseTaskNotification,
   parseTaskProgress,
@@ -221,12 +222,18 @@ type Live = {
   runtimeMode: RuntimeMode;
   planning: boolean;
   settingsKey: string;
+  privateDelegateHistory: boolean;
+  privateDelegateReplayPending: boolean;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, PendingApproval>;
   questions: Map<number, PendingQuestion>;
   visibleQuestionId: number | null;
   nextApprovalUiId: number;
   nextControlId: number;
+  /** Undefined before the first request, null after it settles. */
+  contextWindowRequestId?: string | null;
+  contextModel?: string;
+  contextCapacity?: { model: string; window: number };
   toolsByIndex: Map<number, InFlightTool>;
   toolsById: Map<string, InFlightTool>;
   agentTasks: Map<string, LiveAgentTask>;
@@ -824,6 +831,7 @@ function newLiveState(input: {
   runtimeMode: RuntimeMode;
   planning: boolean;
   settingsKey: string;
+  privateDelegateHistory?: boolean;
   onEvent: (event: HarnessEvent) => void;
   claudeTasks?: Map<string, TaskListItem>;
 }): Live {
@@ -836,6 +844,8 @@ function newLiveState(input: {
     runtimeMode: input.runtimeMode,
     planning: input.planning,
     settingsKey: input.settingsKey,
+    privateDelegateHistory: input.privateDelegateHistory === true,
+    privateDelegateReplayPending: input.privateDelegateHistory === true,
     onEvent: input.onEvent,
     approvals: new Map(),
     questions: new Map(),
@@ -926,12 +936,14 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const resume = resumeByThread.get(input.sessionId);
     const canResume =
+      !input.privateDelegateHistory &&
       resume != null &&
       resume.cwd === input.cwd &&
       sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
     if (
       resume &&
-      (resume.cwd !== input.cwd ||
+      (input.privateDelegateHistory ||
+        resume.cwd !== input.cwd ||
         !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
     ) {
       resumeByThread.delete(input.sessionId);
@@ -961,6 +973,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       runtimeMode: input.runtimeMode,
       planning,
       settingsKey,
+      privateDelegateHistory: input.privateDelegateHistory,
       onEvent: input.onEvent,
       claudeTasks,
     });
@@ -1091,6 +1104,14 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   });
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
+  if (live.privateDelegateReplayPending && input.privateDelegateReplay) {
+    content.unshift({
+      type: "text",
+      text:
+        "Prior Bycoda conversation, quoted for context. The current request follows.\n" +
+        JSON.stringify(input.privateDelegateReplay),
+    });
+  }
   // Claude reports a command lifecycle only for a message with its own uuid; Steer needs it.
   message.uuid = crypto.randomUUID();
   const queryGeneration = live.queryFence.begin();
@@ -1126,11 +1147,24 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   try {
     try {
       await writeJson(live, message, writer);
+      live.privateDelegateReplayPending = false;
     } catch (error) {
       live.queryFence.writeFailed(queryGeneration);
       throw error;
     }
     input.onAccepted?.();
+    // Capacity is optional metadata. Keep it outside prompt admission and turn completion.
+    if (live.contextWindowRequestId === undefined) {
+      const requestId = nextControlId(live);
+      live.contextWindowRequestId = requestId;
+      void writeJson(
+        live,
+        buildControlRequest(requestId, { subtype: "get_context_usage" }),
+        writer,
+      ).catch(() => {
+        live.contextWindowRequestId = null;
+      });
+    }
     settlePendingTurn(live);
     await turnPromise;
   } catch (error) {
@@ -1217,9 +1251,9 @@ function handleLine(sessionId: string, live: Live, line: string): void {
   const sessionIdFromLine = sessionIdFromMessage(rec);
   if (sessionIdFromLine) {
     const changed = sessionIdFromLine !== live.claudeSessionId;
-    const unbound = resumeByThread.get(sessionId)?.sessionId !== sessionIdFromLine;
     if (changed) {
       live.claudeSessionId = sessionIdFromLine;
+      live.contextModel = undefined;
       // A different conversation starts with its own task ids.
       live.claudeTasks = new Map();
     }
@@ -1227,16 +1261,19 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       providerSessionId: sessionIdFromLine,
       tasks: live.claudeTasks,
     });
-    resumeByThread.set(sessionId, {
-      sessionId: sessionIdFromLine,
-      cwd: live.cwd,
-      providerAccountId: live.providerAccountId,
-    });
-    if (changed || unbound) {
-      live.onEvent({
-        type: "session.providerBound",
-        providerSessionId: sessionIdFromLine,
+    if (!live.privateDelegateHistory) {
+      const unbound = resumeByThread.get(sessionId)?.sessionId !== sessionIdFromLine;
+      resumeByThread.set(sessionId, {
+        sessionId: sessionIdFromLine,
+        cwd: live.cwd,
+        providerAccountId: live.providerAccountId,
       });
+      if (changed || unbound) {
+        live.onEvent({
+          type: "session.providerBound",
+          providerSessionId: sessionIdFromLine,
+        });
+      }
     }
   }
 
@@ -1253,6 +1290,23 @@ function handleLine(sessionId: string, live: Live, line: string): void {
 
   if (type === "control_response") {
     markInitialized(live);
+    const response = parseControlResponse(rec);
+    if (response && response.requestId === live.contextWindowRequestId) {
+      live.contextWindowRequestId = null;
+      const model = stringField(response.payload, "model");
+      // maxTokens can reflect the configured compaction budget instead of model capacity.
+      const window = response.payload?.rawMaxTokens;
+      if (
+        response.ok &&
+        model &&
+        typeof window === "number" &&
+        Number.isSafeInteger(window) &&
+        window > 0
+      ) {
+        live.contextCapacity = { model, window };
+        if (model === live.contextModel) live.onEvent({ type: "context", window });
+      }
+    }
     return;
   }
 
@@ -1314,7 +1368,10 @@ function handleLine(sessionId: string, live: Live, line: string): void {
     const text = statusTextFromSystem(rec);
     if (text) {
       const compact = (stringField(rec, "subtype") ?? "").startsWith("compact");
-      if (compact) live.compactionConfirmed = true;
+      if (compact) {
+        live.compactionConfirmed = true;
+        live.contextModel = undefined;
+      }
       live.onEvent(
         compact
           ? { type: "status", key: COMPACTION_STATUS_KEY, running: false, text }
@@ -1326,6 +1383,10 @@ function handleLine(sessionId: string, live: Live, line: string): void {
 
 function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
   const subagent = isSubagentMessage(rec);
+  const event = asRecord(rec.event);
+  if (event?.type === "message_start" && !subagent) {
+    reportAssistantContext(live, event);
+  }
   const delta = streamDeltaFromEvent(rec);
   if (delta) {
     if (subagent) return;
@@ -1398,6 +1459,19 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
   }
 }
 
+function reportAssistantContext(live: Live, rec: Record<string, unknown>): void {
+  const used = contextUsedFromAssistant(rec);
+  if (used === undefined) return;
+  const model = stringField(asRecord(rec.message), "model");
+  live.contextModel = model;
+  const capacity = live.contextCapacity;
+  live.onEvent({
+    type: "context",
+    used,
+    ...(capacity && capacity.model === model ? { window: capacity.window } : {}),
+  });
+}
+
 function handleAssistant(live: Live, rec: Record<string, unknown>): void {
   if (isSubagentMessage(rec)) {
     noteSubagentNarration(live, rec);
@@ -1412,8 +1486,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
     return;
   }
 
-  const used = contextUsedFromAssistant(rec);
-  if (used !== undefined) live.onEvent({ type: "context", used });
+  reportAssistantContext(live, rec);
 
   const snapshot = assistantTextBlocks(rec).join("");
   const failure = errorFromAssistant(rec);
@@ -1670,8 +1743,15 @@ function handleResult(live: Live, rec: Record<string, unknown>): void {
   // A /compact result reports the summarizer call's usage, not the rebuilt
   // conversation level. The next real turn will provide the fresh reading.
   if (!live.manualCompaction) {
-    const context = contextFromResult(rec);
-    if (context) live.onEvent({ type: "context", ...context });
+    const context = contextFromResult(rec, live.contextModel);
+    if (context) {
+      if (context.window !== undefined) {
+        live.contextWindowRequestId = null;
+        if (live.contextModel)
+          live.contextCapacity = { model: live.contextModel, window: context.window };
+      }
+      live.onEvent({ type: "context", ...context });
+    }
   }
   // Compaction is billed too, so its result counts.
   const usage = usageFromResult(rec);
@@ -2631,7 +2711,9 @@ function writeJson(
 }
 
 function settingsKeyFor(input: HarnessSessionInput): string {
-  return `${input.providerAccountId ?? "default"}:${claudeSettingsKey({
+  const account = input.providerAccountId ?? "default";
+  const historyScope = input.privateDelegateHistory ? ":private" : "";
+  return `${account}${historyScope}:${claudeSettingsKey({
     model: nativeModelId(input.model),
     effort: input.modelSettings?.effort,
     fast: input.modelSettings?.fast,
@@ -2663,6 +2745,7 @@ function launchOptions(
   settings?: ClaudeCliSettings;
   additionalDirs: string[];
   leanContext?: boolean;
+  privateDelegateHistory?: boolean;
 } & ReturnType<typeof claudeNativeLaunch> {
   const native = nativeModelId(input.model);
   const effortRaw = input.modelSettings?.effort;
@@ -2693,6 +2776,7 @@ function launchOptions(
     settings: Object.keys(settings).length > 0 ? settings : undefined,
     additionalDirs: additionalDirsFor(input.sessionId),
     ...(leanContext(input.modelSettings) ? { leanContext: true } : {}),
+    ...(input.privateDelegateHistory ? { privateDelegateHistory: true } : {}),
   };
 }
 

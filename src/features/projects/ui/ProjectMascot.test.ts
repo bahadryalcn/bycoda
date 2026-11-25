@@ -4,12 +4,13 @@ import { describe, expect, it } from "vitest";
 import { ProjectMascot } from "./ProjectMascot";
 
 describe("code-art project icon", () => {
-  it("renders actual text with semantic metadata and its own color", () => {
+  it("reuses the code glyph artwork with semantic metadata and its own color", () => {
     const html = renderToStaticMarkup(
       createElement(ProjectMascot, { project: "web", name: "weave" }),
     );
     expect(html).toContain('data-project-icon-label="Web / Frontend"');
-    expect(html).toContain("<text");
+    expect(html).toContain("<use");
+    expect(html).not.toContain("<text");
     expect(html).toContain("clipPath");
     expect(html).toContain("#60a5fa");
     expect(html).not.toContain("bycoda-sigil-active");

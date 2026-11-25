@@ -21,6 +21,7 @@ import { initWorkingIndicator } from "./features/settings/model/workingIndicator
 import { initScrollbarStyle } from "./features/settings/model/scrollbarStyle";
 import { initSounds, playCue } from "./features/settings/model/sounds";
 import { setToggleCue } from "./shared/ui/settings";
+import type { QuitConfirmPayload } from "./app/model/quitConfirmMessage";
 import {
   abortQuit,
   askQuitConfirmation,
@@ -144,8 +145,9 @@ void listen<number>("quit_poll", (event) => {
 // Scoped to this window on purpose: a global `listen` is registered as `Any`,
 // which Tauri matches for every event regardless of the emitter's target, so
 // one dialog would become one per window.
-void getCurrentWebviewWindow().listen<{ id: number; inFlight: number }>("quit_confirm", (event) => {
-  void askQuitConfirmation(event.payload.id, event.payload.inFlight);
+void getCurrentWebviewWindow().listen<QuitConfirmPayload>("quit_confirm", (event) => {
+  const { id, inFlight, ...host } = event.payload;
+  void askQuitConfirmation(id, inFlight, host);
 });
 void listen<number>("quit_commit", (event) => {
   void commitQuit(event.payload);

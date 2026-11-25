@@ -79,3 +79,19 @@ it("keeps saved microphone on failed selection and retries without requesting ca
   expect(loadVoiceSettings().microphoneId).toBe("");
   expect(capture).not.toHaveBeenCalled();
 });
+
+it("lets the owner grant capture when browsers hide microphone ids before permission", async () => {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      enumerateDevices: vi.fn(async () => [{ kind: "audioinput", deviceId: "", label: "" }]),
+    },
+  });
+  saveVoiceSettings({ ...loadVoiceSettings(), microphoneId: "saved-usb-mic" });
+  await render();
+  expect(container.textContent).not.toContain("Selected microphone unavailable");
+  const record = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "Record test",
+  )!;
+  expect(record.disabled).toBe(false);
+});

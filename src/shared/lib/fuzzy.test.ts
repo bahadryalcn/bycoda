@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyMatch, prepareFuzzyQuery, scorePath } from "./fuzzy";
+import { fuzzyIncludes, fuzzyMatch, prepareFuzzyQuery, scorePath } from "./fuzzy";
+
+it("accepts the same texts for filtering as for ranked fuzzy matching", () => {
+  const texts = ["", "a_x_ab", "İ😀𐐀File", "İΟΣ", "Fix sidebar search"];
+  for (const query of ["", " ", "aa ab", "ab ab", "file İ", "😀𐐨", "ος", "srh fix", "absent"]) {
+    const needle = prepareFuzzyQuery(query);
+    for (const text of texts) {
+      expect(fuzzyIncludes(needle, text)).toBe(fuzzyMatch(needle, text) !== null);
+    }
+  }
+});
 
 describe("fuzzy highlight offsets", () => {
   it("maps lowercase expansions back to original UTF-16 positions", () => {

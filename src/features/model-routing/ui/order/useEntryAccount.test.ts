@@ -7,6 +7,7 @@ import {
   saveProviderAccount,
 } from "../../../providers/model/providerAccounts";
 import { useEntryAccount, type EntryAccount } from "./useEntryAccount";
+import { LOCAL_MODEL_SOURCE, ModelSourceContext } from "../../../sessions/public/modelSource";
 
 /**
  * Regression for #1230: each order row used to JSON.parse a fresh copy of the provider
@@ -63,4 +64,30 @@ it("returns no account for shared harnesses", () => {
   expect(renders.at(-1)!.supported).toBe(false);
   expect(renders.at(-1)!.accounts).toEqual([]);
   expect(renders.at(-1)!.account).toBeUndefined();
+});
+
+it("uses the selected Host's account identity and leaves unreported accounts unknown", () => {
+  act(() => void saveProviderAccount({ id: "work", provider: "claude", label: "Local" }));
+  const entry: Entry = { harness: "claude", providerAccountId: "work" };
+  const renderWithAccounts = (known: boolean) =>
+    act(() =>
+      root.render(
+        createElement(
+          ModelSourceContext.Provider,
+          {
+            value: {
+              ...LOCAL_MODEL_SOURCE,
+              id: "remote",
+              accounts: known ? { claude: [{ id: "work", label: "Remote", kind: "work" }] } : {},
+              accountsKnown: () => known,
+            },
+          },
+          createElement(Probe, { entry }),
+        ),
+      ),
+    );
+  renderWithAccounts(false);
+  expect(renders.at(-1)).toMatchObject({ known: false, account: undefined, accounts: [] });
+  renderWithAccounts(true);
+  expect(renders.at(-1)).toMatchObject({ known: true, kind: "work", account: { label: "Remote" } });
 });

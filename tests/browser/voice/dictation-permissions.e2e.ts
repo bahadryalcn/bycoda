@@ -417,7 +417,7 @@ for (const platform of ["macOS", "Windows", "Linux"])
               `/tests/browser/voice/dictation-permissions.html?theme=${theme}&surface=${surface}&companion=1&voice-denied=1`,
             );
             if (surface === "setup")
-              await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+              await page.getByRole("button", { name: "Record test", exact: true }).click();
             else {
               await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
               await page.getByRole("button", { name: "Start voice", exact: true }).click();
@@ -474,13 +474,9 @@ test("live permission denial returning to prompt clears stale denial without gra
     status.dispatchEvent(new Event("change"));
   });
   await expect(permission).toContainText("Not checked");
-  const help = permission.getByRole("button", { name: "Microphone access: Help", exact: true });
-  await help.focus();
-  await help.press("Enter");
   await expect(
-    page.getByText("Microphone permission is requested only", { exact: false }),
+    permission.getByText("Microphone permission is requested only", { exact: false }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
   await expect(permission).not.toContainText("Microphone access is blocked.");
   await expect(permission).not.toContainText("Microphone allowed");
   expect(await page.evaluate(() => (window as any).fixtureDictation.microphoneRequests)).toBe(1);

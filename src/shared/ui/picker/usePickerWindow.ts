@@ -1,5 +1,5 @@
 import type { VirtualItem } from "@tanstack/react-virtual";
-import { useCollectionVirtualizer } from "../../hooks/useCollectionVirtualizer";
+import { useCollectionWindow } from "../../hooks/useCollectionVirtualizer";
 
 /** Lists longer than this render only the rows near the viewport; shorter ones mount every row. */
 export const PICKER_WINDOW_THRESHOLD = 120;
@@ -8,8 +8,8 @@ const OPTION_HEIGHT = 32;
 const HEADING_HEIGHT = 24;
 
 export type PickerWindowEntry =
-  | { kind: "heading"; key: string; group: string }
-  | { kind: "option"; key: string; index: number };
+  | { kind: "heading"; key: string; group: string; groupKey: string }
+  | { kind: "option"; key: string; groupKey?: string; index: number };
 
 export type PickerWindow = {
   items: VirtualItem[];
@@ -21,26 +21,30 @@ export type PickerWindow = {
 
 /**
  * Windowing model of a long picker list. `entries` are the flattened group headings and options in
- * display order; the scrolling element is the listbox. Rows are measured, so descriptions may grow.
+ * display order; paddingStart reserves any controls above the listbox in the same viewport.
  */
 export function usePickerWindow(
   entries: readonly PickerWindowEntry[],
   getScrollElement: () => HTMLElement | null,
   enabled: boolean,
+  paddingStart = 0,
 ): PickerWindow {
-  const virtual = useCollectionVirtualizer<HTMLElement, HTMLElement>({
+  const { items, totalSize, measureElement, scrollToIndex } = useCollectionWindow<
+    HTMLElement,
+    HTMLElement
+  >({
     count: enabled ? entries.length : 0,
     getScrollElement,
+    paddingStart,
     estimateSize: (index) => (entries[index]?.kind === "heading" ? HEADING_HEIGHT : OPTION_HEIGHT),
     getItemKey: (index) => entries[index]?.key ?? index,
     overscan: 8,
-    initialRect: undefined,
     enabled,
   });
   return {
-    items: enabled ? virtual.getVirtualItems() : [],
-    totalSize: enabled ? virtual.getTotalSize() : 0,
-    measureElement: virtual.measureElement,
-    scrollToEntry: (entry) => virtual.scrollToIndex(entry, { align: "auto" }),
+    items,
+    totalSize,
+    measureElement,
+    scrollToEntry: (entry) => scrollToIndex(entry, { align: "auto" }),
   };
 }

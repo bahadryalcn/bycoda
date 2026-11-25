@@ -5,15 +5,8 @@ import { Select } from "../../../../shared/ui/Select";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Row } from "../../../../shared/ui/settings";
 import styles from "./settings.module.css";
+import { DEFAULT_CRITICAL_EXCLUSIONS } from "./assistantAccess";
 
-export const DEFAULT_CRITICAL_EXCLUSIONS = [
-  "pushMain",
-  "deleteProject",
-  "deleteSession",
-  "sendMessages",
-  "computerUse",
-  "spend",
-] as const;
 const exclusions = [
   ["pushMain", "Push to main"],
   ["deleteProject", "Delete projects"],
@@ -58,7 +51,8 @@ export function AssistantStandingConsentFields({
             })
           }
           options={[
-            { value: "legacy", label: t("Ask for each operation"), disabled: true },
+            { value: "legacy", label: t("Not set"), disabled: true },
+            { value: "ask", label: t("Ask for each operation") },
             { value: "watch", label: t("Watch") },
             { value: "projects", label: t("Selected projects") },
             { value: "everything", label: t("Everything") },

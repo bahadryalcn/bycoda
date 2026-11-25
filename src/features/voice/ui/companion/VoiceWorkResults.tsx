@@ -1,245 +1,232 @@
 import { createLibrary, defineComponent, Renderer } from "@openuidev/react-lang";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { z } from "zod";
 import { formatNumber, useT } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
-import { BarChart, DonutChart, type BarChartDatum } from "../../../../shared/ui/Charts";
-import { SortableDataTable } from "../../../../shared/ui/SortableDataTable";
+import { DiffStat } from "../../../../shared/ui/DiffStat";
+import { Heading } from "../../../../shared/ui/Heading";
+import { StatRow, StatTile } from "../../../../shared/ui/StatTile";
+import { StatusText } from "../../../../shared/ui/StatusText";
 import { Text } from "../../../../shared/ui/Text";
-import type { VoiceWorkLayout, VoiceWorkLayoutContext } from "../../model/voiceWorkLayout";
-import { useVoiceWorkLayout } from "./useVoiceWorkLayout";
-import { voiceWorkFilterLabel, voiceWorkStatuses, type VoiceWorkFilter } from "./VoiceWorkSummary";
+import type {
+  VoiceLiveAction,
+  VoiceLiveResult,
+  VoiceLiveResultStatus,
+} from "../../model/voiceLiveWork";
+import { voiceActionLabel } from "../VoiceToolActivityPanel";
 
-type VoiceWorkStatus = Exclude<VoiceWorkFilter, "all">;
+const status = z.enum(["done", "failed", "interrupted"]);
+const count = z.number().int().nonnegative();
+const statusView = {
+  done: ["done", "Completed"],
+  failed: ["failed", "Failed"],
+  interrupted: ["needs-you", "Unknown"],
+} as const;
 
-export type VoiceWorkResultRow = {
-  id: string;
+const ActionsContext = createContext<readonly VoiceLiveAction[]>([]);
+
+function ResultStatus({ value }: { value: VoiceLiveResultStatus }) {
+  const t = useT();
+  const [tone, label] = statusView[value];
+  return <StatusText tone={tone}>{t(label)}</StatusText>;
+}
+
+function ResultSection({
+  title,
+  value,
+  children,
+}: {
   title: string;
-  status: VoiceWorkStatus;
-  statusLabel: string;
-  source: string;
-};
+  value: VoiceLiveResultStatus;
+  children?: ReactNode;
+}) {
+  return (
+    <section aria-label={title} className="grid min-w-0 content-start gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <Heading as="h3" size="heading" lines={1}>
+          {title}
+        </Heading>
+        <ResultStatus value={value} />
+      </div>
+      {children}
+    </section>
+  );
+}
 
-type VoiceWorkResultsProps = {
-  rows: readonly VoiceWorkResultRow[];
-  selectedId?: string;
-  onSelect: (id: string) => void;
-  modelLayout?: VoiceWorkLayoutContext;
-};
+/** The result views are shared with the presented answer, which draws the observed result itself. */
+export function TestResultBody(props: {
+  status: VoiceLiveResultStatus;
+  passed: number;
+  failed: number;
+  skipped: number;
+}) {
+  const t = useT();
+  const title = t("Test run");
+  return (
+    <ResultSection title={title} value={props.status}>
+      {props.passed + props.failed + props.skipped > 0 ? (
+        <StatRow label={title}>
+          <StatTile label={t("Passed")} value={formatNumber(props.passed)} />
+          <StatTile label={t("Failed")} value={formatNumber(props.failed)} />
+          {props.skipped > 0 ? (
+            <StatTile label={t("Skipped")} value={formatNumber(props.skipped)} />
+          ) : null}
+        </StatRow>
+      ) : null}
+    </ResultSection>
+  );
+}
 
-type DistributionSegment = { key: VoiceWorkStatus; label: string; value: number; color: string };
-const statusColors = {
-  running: "var(--ui-tone-info-fg)",
-  done: "var(--ui-tone-success-fg)",
-  failed: "var(--ui-tone-danger-fg)",
-  stopped: "var(--ui-text-muted)",
-  interrupted: "var(--ui-tone-warning-fg)",
-} satisfies Record<VoiceWorkStatus, string>;
+const TestResult = defineComponent({
+  name: "TestResult",
+  description: "Latest test run with its reported counts.",
+  props: z.object({ status, passed: count, failed: count, skipped: count }),
+  component: ({ props }) => <TestResultBody {...props} />,
+});
 
-const ResultsContext = createContext<
-  | (VoiceWorkResultsProps & {
-      distribution: DistributionSegment[];
-      sourceDistribution: BarChartDatum[];
-      activeStatus: VoiceWorkStatus | null;
-      onStatusChange: (status: string | null) => void;
-      initialSort: VoiceWorkLayout["sort"];
-    })
-  | null
->(null);
+export function CheckResultBody(props: {
+  kind: "build" | "checks";
+  status: VoiceLiveResultStatus;
+}) {
+  const t = useT();
+  return (
+    <ResultSection title={t(props.kind === "build" ? "Build" : "Checks")} value={props.status} />
+  );
+}
 
-const WorkResultDistribution = defineComponent({
-  name: "WorkResultDistribution",
-  description: "Show the count of visible work records in each reported status.",
-  props: z.object({}),
-  component: function WorkResultDistributionView() {
-    const t = useT();
-    const results = useContext(ResultsContext);
-    if (!results?.distribution.length) return null;
-    return (
-      <DonutChart
-        data={results.distribution}
-        label={t("Status")}
-        size={120}
-        groupBelow={0}
-        legendAction="select"
-        activeKey={results.activeStatus}
-        onActiveChange={results.onStatusChange}
-        formatValue={formatNumber}
-      />
-    );
+const CheckResult = defineComponent({
+  name: "CheckResult",
+  description: "Latest build or check outcome.",
+  props: z.object({ kind: z.enum(["build", "checks"]), status }),
+  component: ({ props }) => <CheckResultBody {...props} />,
+});
+
+export function ChangeResultBody(props: { files: number; additions: number; deletions: number }) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Changes")} value="done">
+      <Text as="div" className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+        <span>
+          {t("Files")} · {formatNumber(props.files)}
+        </span>
+        <DiffStat additions={props.additions} deletions={props.deletions} />
+      </Text>
+    </ResultSection>
+  );
+}
+
+const ChangeResult = defineComponent({
+  name: "ChangeResult",
+  description: "Size of the latest reported Git change.",
+  props: z.object({ files: count, additions: count, deletions: count }),
+  component: ({ props }) => <ChangeResultBody {...props} />,
+});
+
+export function FailedCommandsBody(props: { count: number }) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Commands")} value="failed">
+      <Text tone="secondary">
+        {t("Failed")} · {formatNumber(props.count)}
+      </Text>
+    </ResultSection>
+  );
+}
+
+const FailedCommands = defineComponent({
+  name: "FailedCommands",
+  description: "Number of unrecognized commands still failed in this turn.",
+  props: z.object({ count }),
+  component: ({ props }) => <FailedCommandsBody {...props} />,
+});
+
+export function VoiceActionsBody({
+  status: value,
+  actions,
+}: {
+  status: VoiceLiveResultStatus;
+  actions: readonly VoiceLiveAction[];
+}) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Voice actions")} value={value}>
+      <ul className="grid min-w-0 gap-1">
+        {actions.map((action) => (
+          <li key={action.id} className="flex min-w-0 items-center justify-between gap-2">
+            <Text as="span" truncate>
+              {voiceActionLabel(action.name)}
+            </Text>
+            <ResultStatus value={action.status} />
+          </li>
+        ))}
+      </ul>
+    </ResultSection>
+  );
+}
+
+const VoiceActions = defineComponent({
+  name: "VoiceActions",
+  description: "Settled voice tool calls, newest first.",
+  props: z.object({ status }),
+  component: function VoiceActionsView({ props }) {
+    const actions = useContext(ActionsContext);
+    return <VoiceActionsBody status={props.status} actions={actions} />;
   },
 });
 
-const WorkResultSourceComparison = defineComponent({
-  name: "WorkResultSourceComparison",
-  description: "Compare actual work counts by source.",
-  props: z.object({}),
-  component: function WorkResultSourceComparisonView() {
-    const t = useT();
-    const results = useContext(ResultsContext);
-    if (!results || results.sourceDistribution.length < 2) return null;
-    return (
-      <BarChart
-        data={results.sourceDistribution}
-        label={t("Results")}
-        period={t("Source")}
-        categoryLabel={t("Source")}
-        showAverage={false}
-        height={120}
-        formatValue={formatNumber}
-      />
-    );
-  },
-});
-
-const sortKeys = { activity: undefined, status: "statusLabel", source: "source" } as const;
-
-const WorkResultTable = defineComponent({
-  name: "WorkResultTable",
-  description: "Sort work records and open a record in the workspace.",
-  props: z.object({}),
-  component: function WorkResultTableView() {
-    const t = useT();
-    const results = useContext(ResultsContext);
-    if (!results) return null;
-    const rows = results.activeStatus
-      ? results.rows.filter((row) => row.status === results.activeStatus)
-      : [...results.rows];
-    const sortKey = sortKeys[results.initialSort];
-    return (
-      <SortableDataTable
-        key={sortKey ?? "activity"}
-        rows={rows}
-        defaultSort={sortKey ? { key: sortKey, direction: "asc" } : undefined}
-        rowKey="id"
-        caption={t("Results")}
-        activeKey={results.selectedId}
-        onRowActivate={results.onSelect}
-        columns={[
-          {
-            key: "title",
-            label: t("Name"),
-            sizing: "flex",
-            render: (_, row) => (
-              <Text as="span" truncate>
-                {row.title}
-              </Text>
-            ),
-          },
-          { key: "statusLabel", label: t("Status"), sizing: "content" },
-          { key: "source", label: t("Source"), hideBelow: "sm", sizing: "content" },
-        ]}
-      />
-    );
-  },
-});
-
-const WorkResults = defineComponent({
-  name: "WorkResults",
-  description: "Show the work table with optional charts.",
+const LiveResults = defineComponent({
+  name: "LiveResults",
+  description: "Responsive grid of observed results.",
   props: z.object({
-    sections: z
+    results: z
       .array(
-        z.union([WorkResultDistribution.ref, WorkResultSourceComparison.ref, WorkResultTable.ref]),
+        z.union([
+          TestResult.ref,
+          CheckResult.ref,
+          ChangeResult.ref,
+          FailedCommands.ref,
+          VoiceActions.ref,
+        ]),
       )
-      .min(1)
-      .max(2),
+      .min(1),
   }),
   component: ({ props, renderNode }) => (
-    <div className="grid min-w-0 gap-4">{renderNode(props.sections)}</div>
+    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-6">
+      {renderNode(props.results)}
+    </div>
   ),
 });
 
 const library = createLibrary({
-  components: [WorkResults, WorkResultDistribution, WorkResultSourceComparison, WorkResultTable],
-  root: "WorkResults",
+  components: [LiveResults, TestResult, CheckResult, ChangeResult, FailedCommands, VoiceActions],
+  root: "LiveResults",
 });
 
-// Only a validated layout enum selects these programs. All work data stays in React.
-const programs = {
-  status_ring:
-    "chart = WorkResultDistribution()\ntable = WorkResultTable()\nroot = WorkResults([chart, table])",
-  table_first:
-    "chart = WorkResultDistribution()\ntable = WorkResultTable()\nroot = WorkResults([table, chart])",
-  source_bars:
-    "chart = WorkResultSourceComparison()\ntable = WorkResultTable()\nroot = WorkResults([chart, table])",
-  table_only: "table = WorkResultTable()\nroot = WorkResults([table])",
-} satisfies Record<VoiceWorkLayout["layout"], string>;
-
-export function VoiceWorkResults({
-  rows,
-  selectedId,
-  onSelect,
-  modelLayout,
-}: VoiceWorkResultsProps) {
-  const t = useT();
-  const [status, setStatus] = useState<VoiceWorkStatus | null>(null);
-  const counts = { running: 0, done: 0, failed: 0, stopped: 0, interrupted: 0 };
-  const sources = new Map<string, number>();
-  for (const row of rows) {
-    counts[row.status]++;
-    sources.set(row.source, (sources.get(row.source) ?? 0) + 1);
+function statement(result: VoiceLiveResult) {
+  switch (result.kind) {
+    case "tests":
+      return `TestResult("${status.parse(result.status)}", ${count.parse(result.passed)}, ${count.parse(result.failed)}, ${count.parse(result.skipped)})`;
+    case "build":
+    case "checks":
+      return `CheckResult("${result.kind}", "${status.parse(result.status)}")`;
+    case "changes":
+      return `ChangeResult(${count.parse(result.files)}, ${count.parse(result.additions)}, ${count.parse(result.deletions)})`;
+    case "commands":
+      return `FailedCommands(${count.parse(result.count)})`;
+    case "actions":
+      return `VoiceActions("${status.parse(result.status)}")`;
   }
-  const sourceDistribution = Array.from(sources, ([label, value]) => ({
-    key: label,
-    label,
-    axisLabel: label,
-    value,
-  }));
-  const layout = useVoiceWorkLayout(modelLayout, {
-    statuses: counts,
-    sourceCounts: Array.from(sources.values()).sort((a, b) => b - a),
-  });
-  const distribution = voiceWorkStatuses
-    .filter((key) => counts[key] > 0)
-    .map((key) => ({
-      key,
-      label: voiceWorkFilterLabel(key),
-      value: counts[key],
-      color: statusColors[key],
-    }));
-  const chosen = layout.plan?.layout;
-  const view =
-    chosen === "source_bars" && sources.size < 2 ? "status_ring" : (chosen ?? "status_ring");
-  const statusVisible = view === "status_ring" || view === "table_first";
-  const activeStatus = statusVisible && status && counts[status] > 0 ? status : null;
+}
+
+/** Only enums and integers enter the OpenUI program. Action names stay in React context. */
+export function VoiceWorkResults({ results }: { results: readonly VoiceLiveResult[] }) {
+  if (!results.length) return null;
+  const actions = results.find((result) => result.kind === "actions")?.actions ?? [];
   return (
-    <ResultsContext.Provider
-      value={{
-        rows,
-        selectedId,
-        onSelect,
-        distribution,
-        sourceDistribution,
-        activeStatus,
-        initialSort: layout.plan?.sort ?? "activity",
-        onStatusChange: (key) =>
-          setStatus(distribution.find((segment) => segment.key === key)?.key ?? null),
-      }}
-    >
-      {modelLayout && rows.length > 0 ? (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={layout.generate} loading={layout.loading}>
-            {t("Generate with AI")}
-          </Button>
-          {layout.loading ? (
-            <Button size="sm" variant="ghost" onClick={layout.stopWaiting}>
-              {t("Stop waiting")}
-            </Button>
-          ) : null}
-          {layout.plan ? (
-            <Button size="sm" variant="ghost" onClick={layout.useDefault}>
-              {t("Use default")}
-            </Button>
-          ) : null}
-          {layout.error ? (
-            <Text tone="muted" size="secondary">
-              {t("Unavailable")}
-            </Text>
-          ) : null}
-        </div>
-      ) : null}
-      <Renderer library={library} response={programs[view]} />
-    </ResultsContext.Provider>
+    <ActionsContext.Provider value={actions}>
+      <Renderer
+        library={library}
+        response={`root = LiveResults([${results.map(statement).join(", ")}])`}
+      />
+    </ActionsContext.Provider>
   );
 }

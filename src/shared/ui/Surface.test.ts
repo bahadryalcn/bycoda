@@ -294,7 +294,7 @@ it("supports the 1.5px base cutout frame", () => {
 it("supports an inset keyboard focus ring on a scrollable surface", () => {
   expect(surfaceAttributes({ focusRing: "inset" })["data-surface-focus-ring"]).toBe("inset");
   expect(css).toMatch(
-    /\[data-surface-focus-ring="inset"\]:focus-visible[^{}]*\{[^}]*outline: 2px solid var\(--ui-focus-ring-color\);[^}]*outline-offset: -2px/s,
+    /\[data-surface-focus-ring="inset"\]:focus-visible[^{}]*\{[^}]*outline: var\(--ui-focus-width\) solid var\(--ui-focus-ring-color\);[^}]*outline-offset: var\(--ui-focus-offset\);/s,
   );
 });
 

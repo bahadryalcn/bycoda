@@ -7,6 +7,7 @@ import { syncDbTiming } from "../diagnostics/perf-metrics";
 import { handleSessionsRpc } from "../server/rpc-sessions";
 import { setTimeout as delay } from "node:timers/promises";
 import { syncPull, syncPush } from "./sync";
+import { serializedResponse } from "./sync-transfer";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -24,6 +25,56 @@ function setup() {
 }
 
 describe("syncPush / syncPull", () => {
+  it("reuses the exact paginated wire records, including escapes, tombstones and the final cursor", async () => {
+    const store = setup();
+    const id = 'quote"\\漢';
+    await syncPush(store.db, [
+      { table: "group", id, baseRev: 0, value: { id, name: 'quote"\\\n😀' } },
+      { table: "group", id: "deleted", baseRev: 0, value: { id: "deleted", name: "Gone" } },
+      ...Array.from({ length: 3 }, (_, i) => ({
+        table: "group" as const,
+        id: String(i),
+        baseRev: 0,
+        value: { id: String(i), name: "漢".repeat(20_000) },
+      })),
+    ]);
+    await syncPush(store.db, [{ table: "group", id: "deleted", baseRev: 2, value: null }]);
+    const first = await syncPull(store.db, 0, { maxBytes: 128 * 1024 });
+    expect(first.more).toBe(true);
+    const last = await syncPull(store.db, first.rev, {
+      untilRev: first.untilRev,
+      maxBytes: 128 * 1024,
+    });
+    expect(last.more).toBe(false);
+    expect(last.records.at(-1)?.value).toBeNull();
+    for (const page of [first, last, await syncPull(store.db, last.rev, {})]) {
+      expect(JSON.parse(serializedResponse(page)!)).toEqual(page);
+    }
+    expect(serializedResponse(await syncPull(store.db, 0))).toBeUndefined();
+  });
+  it("resumes a paginated pull without splitting a shared legacy revision", async () => {
+    const store = setup();
+    await syncPush(
+      store.db,
+      ["first", "left", "right"].map((id) => ({
+        table: "group" as const,
+        id,
+        baseRev: 0,
+        value: { id, name: "x".repeat(60_000) },
+      })),
+    );
+    await store.db.prepare("UPDATE sync_records SET rev = 2 WHERE id = 'right'").run();
+    const first = await syncPull(store.db, 0, { maxBytes: 128 * 1024 });
+    expect(first).toMatchObject({ rev: 1, untilRev: 3, more: true });
+    expect(first.records.map((r) => r.id)).toEqual(["first"]);
+    const next = await syncPull(store.db, first.rev, {
+      maxBytes: 128 * 1024,
+      untilRev: first.untilRev,
+    });
+    expect(next.records.map((r) => r.id)).toEqual(["left", "right"]);
+    expect(next.more).toBe(false);
+  });
+
   it("attributes a blocked push to the writer queue", async () => {
     const store = setup();
     const entered = Promise.withResolvers<void>();
@@ -127,6 +178,18 @@ describe("syncPush / syncPull", () => {
         value: { id: `small${i}`, name: "n" },
       })),
     );
+    const queries = vi.spyOn(store.db, "query");
+    try {
+      const exactBatch = await syncPull(store.db, 0, { untilRev: 256 });
+      expect(exactBatch.records).toHaveLength(256);
+      expect(
+        queries.mock.calls.filter(
+          ([method, sql]) => method === "all" && sql.includes("FROM sync_records"),
+        ),
+      ).toHaveLength(1);
+    } finally {
+      queries.mockRestore();
+    }
     // Two legacy rows sharing one rev straddle the 256-row batch boundary.
     await store.db
       .prepare("UPDATE sync_records SET rev=256 WHERE id IN ('small255','small256')")

@@ -6,7 +6,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Link, linkContentAttributes } from "../../../shared/ui/Link";
-import { HOVER_CARD_OPEN_MS, Tooltip } from "../../../shared/ui/Tooltip";
+import { TOOLTIP_DELAY_MS, Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -24,7 +24,11 @@ import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { FileActionError } from "../../files/public/FileActionError";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { isHostDevelopmentUrl, openWorkspaceUrl } from "../../connections/public/workspaceUrls";
+import {
+  isHostDevelopmentUrl,
+  openWorkspaceUrl,
+  useDevelopmentLinkMachine,
+} from "../../connections/public/workspaceUrls";
 import { UserLinkIcon } from "./UserLinkIcon";
 import { TranscriptSessionId } from "./TranscriptSessionId";
 import {
@@ -75,6 +79,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
   const [openError, setOpenError] = useState<string>();
   const sessionId = useContext(TranscriptSessionId);
   const development = isHostDevelopmentUrl(link.url);
+  const machine = useDevelopmentLinkMachine(cwd, link.url);
 
   const mounted = useRef(true);
   const requested = useRef(false);
@@ -118,7 +123,9 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
     });
   };
 
-  const title = metadata?.title?.trim() || link.host;
+  const title = machine
+    ? `${machine} · ${link.url.replace(/^https?:\/\//i, "")}`
+    : metadata?.title?.trim() || link.host;
   const favicon = faviconFailed ? null : metadata?.faviconDataUrl;
 
   const preview = (
@@ -135,7 +142,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
           restTimer.current = window.setTimeout(() => {
             restTimer.current = null;
             load();
-          }, HOVER_CARD_OPEN_MS);
+          }, TOOLTIP_DELAY_MS);
         }}
         onPointerLeave={cancelRest}
         onFocus={(event) => {

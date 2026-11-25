@@ -11,7 +11,6 @@ import {
   withDockSize,
   type DockSide,
 } from "../../../features/projects/model/projectTerminal";
-import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import {
   confirmCloseTerminal,
   confirmCloseTerminals,
@@ -24,6 +23,14 @@ import {
 } from "../../../features/workspace/model/layout";
 import { orderByIds } from "../../../shared/lib/reorder";
 import { type ProjectTerminalDockState } from "./useProjectTerminalDockState";
+import type { RemoteCodeRun } from "../../../features/terminal/public/codeExecution";
+
+async function settleRemoteRun(run?: RemoteCodeRun): Promise<boolean> {
+  if (!run || run.controller.canDismiss()) return true;
+  if (run.controller.snapshot().phase === "starting") return false;
+  await run.controller.stop();
+  return run.controller.canDismiss();
+}
 
 export interface ProjectTerminalDockActionDeps {
   dock: ProjectTerminalDockState;
@@ -65,7 +72,6 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
     dock;
 
   const onToggleProjectTerminal = useCallback(() => {
-    if (!canOpenTerminalIn(projectCwd)) return;
     const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
     if (!dock) {
       openProjectTerminal(terminalCwd);
@@ -157,7 +163,11 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
       };
       // The last terminal takes the panel with it, so it asks even when idle.
       const last = dock?.pane.files.length === 1;
-      void confirmCloseTerminal(file, { last }).then((ok) => ok && finishClose());
+      void confirmCloseTerminal(file, { last, remoteRuns: dock?.remoteRuns })
+        .then(async (ok) => {
+          if (ok && (await settleRemoteRun(dock?.remoteRuns?.[fileId]))) finishClose();
+        })
+        .catch(() => {});
     },
     [setProjectTerminals, projectCwdRef, projectTerminalsRef],
   );
@@ -171,9 +181,7 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
       if (keepId !== undefined && !dock.pane.files.some((file) => file.id === keepId)) return;
       const closingFiles = dock.pane.files.filter((file) => file.id !== keepId);
       if (closingFiles.length === 0) return;
-      const closingIds = new Set(closingFiles.map((file) => file.id));
-
-      const finishClose = () => {
+      const finishClose = (closingIds: string[]) => {
         setProjectTerminals((prev) =>
           mapProjectTerminal(prev, projectPath, (entry) => {
             if (keepId !== undefined && !entry.pane.files.some((file) => file.id === keepId)) {
@@ -182,12 +190,23 @@ export function useProjectTerminalDockActions(deps: ProjectTerminalDockActionDep
             // A terminal opened while the dialog was up stays.
             let next: typeof entry | null = entry;
             for (const id of closingIds) next = next && closeTerminalInDock(next, id);
-            return next && keepId !== undefined ? selectDockTerminal(next, keepId) : next;
+            return next && keepId !== undefined && closingIds.length === closingFiles.length
+              ? selectDockTerminal(next, keepId)
+              : next;
           }),
         );
       };
 
-      void confirmCloseTerminals(closingFiles).then((ok) => ok && finishClose());
+      void confirmCloseTerminals(closingFiles, undefined, dock.remoteRuns)
+        .then(async (ok) => {
+          if (!ok) return;
+          const resolved = await Promise.all(
+            closingFiles.map((file) => settleRemoteRun(dock.remoteRuns?.[file.id])),
+          );
+          const ids = closingFiles.filter((_, index) => resolved[index]).map((file) => file.id);
+          if (ids.length > 0) finishClose(ids);
+        })
+        .catch(() => {});
     },
     [setProjectTerminals, projectCwdRef, projectTerminalsRef],
   );

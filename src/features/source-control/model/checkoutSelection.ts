@@ -6,15 +6,6 @@ import type { Worktree } from "./worktrees";
 /** Prefix of the per-session review-target choice that the sidebar header replaced. */
 const LEGACY_KEY = "bycoda.sourceControl.checkout.v1:";
 
-export type CheckoutGroups = {
-  /** The session's checkout, then the main folder (deduplicated). */
-  primary: Worktree[];
-  /** Other checkouts with changes, unpushed commits or sessions. */
-  active: Worktree[];
-  /** Clean checkouts with nothing unpushed and no sessions. */
-  idle: Worktree[];
-};
-
 export const folderName = (path: string) =>
   path
     .replace(/[\\/]+$/, "")
@@ -54,24 +45,6 @@ export function checkoutRepositoryPaths(
       seen.add(key);
       return true;
     });
-}
-
-export const isIdleCheckout = (tree: Worktree) =>
-  !tree.dirty && !(tree.unpushed && tree.unpushed > 0) && tree.sessionIds.length === 0;
-
-export function groupCheckouts(trees: readonly Worktree[], cwd: string): CheckoutGroups {
-  const current = sessionCheckout(
-    cwd,
-    trees.map((tree) => tree.path),
-  );
-  const rank = (tree: Worktree) => (current && same(tree.path, current) ? 0 : tree.isMain ? 1 : 2);
-  const primary = trees.filter((tree) => rank(tree) < 2).sort((a, b) => rank(a) - rank(b));
-  const rest = trees.filter((tree) => rank(tree) === 2);
-  return {
-    primary,
-    active: rest.filter((tree) => !isIdleCheckout(tree)),
-    idle: rest.filter(isIdleCheckout),
-  };
 }
 
 export function checkoutTitle(tree: Worktree): string {

@@ -99,9 +99,10 @@ releases; see [releases and updates](docs/reference/fork.md#releases-and-updates
 
 ## Privacy
 
-bycoda collects no telemetry. Workspace data stays on your machines and on the
-services you connect. Provider subscriptions, quotas and charges are governed by
-each provider's terms.
+Sharing installation statistics or daily token totals and estimated costs is
+off by default. Diagnostic reports ask for approval by default. Workspace data
+stays on your machines and on the services you connect. Provider subscriptions,
+quotas and charges are governed by each provider's terms.
 
 - [Privacy policy](docs/guides/privacy-policy.md)
 - [Terms of use](docs/guides/terms-of-use.md)
@@ -118,8 +119,7 @@ in [SECURITY.md](SECURITY.md).
 
 ## Credits
 
-bycoda began as a fork of an MIT-licensed open source project created by Nick and
-has since been developed independently by
+bycoda began as a fork of an MIT-licensed open source project and is independently developed by
 [Bahadır Halil Yalçın](https://github.com/bahadryalcn). Original and imported
 contributions keep their authorship; see [CREDITS.md](CREDITS.md) and
 [NOTICE](NOTICE).

@@ -18,6 +18,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SshSetupPromptForm } from "./SshSetupPromptForm";
 import { useConnectionRequestInbox } from "./useConnectionRequestInbox";
 import { useSshSetupJob } from "./useSshSetupJob";
+import { sshSetupSuccessNotice } from "../model/hostLifecycleMode";
 import { useMachineProbes } from "./useMachineProbes";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
@@ -143,18 +144,22 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         if (submitted)
           setAddDraft((current) => (current === submitted ? EMPTY_SSH_DRAFT : current));
         setNotice(
-          afterEdit.current
-            ? t("{p0} is connected through its new address.", {
-                p0: next.machine.name,
-              })
-            : updatingMachine
-              ? t("{p0} was updated and reconnected.", {
+          sshSetupSuccessNotice(
+            afterEdit.current
+              ? t("{p0} is connected through its new address.", {
                   p0: next.machine.name,
                 })
-              : t(
-                  "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
-                  { p0: next.machine.name },
-                ),
+              : updatingMachine
+                ? t("{p0} was updated and reconnected.", {
+                    p0: next.machine.name,
+                  })
+                : t(
+                    "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
+                    { p0: next.machine.name },
+                  ),
+            next,
+            next.machine.name,
+          ),
         );
         setUpdatingMachine(undefined);
         setStatus((current) => ({

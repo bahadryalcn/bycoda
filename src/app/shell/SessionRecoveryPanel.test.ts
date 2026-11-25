@@ -382,21 +382,17 @@ describe("session recovery navigation", () => {
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["Clear recovery list (2)"]);
     expect(rows[0].getAttribute("aria-description")).toContain("history is kept");
   });
-  it("states the Open all scope in the info popover, including entries hidden by the filter", async () => {
-    const info = async () => {
-      await act(async () => {
-        container.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click();
-      });
-      return document.body.textContent ?? "";
-    };
-    expect(container.textContent).not.toContain("Open all opens all");
-    expect(await info()).toContain("Open all opens all 2 recovered sessions.");
-    expect(await info()).not.toContain("Open all opens all");
+  it("counts every recovery entry in Open all without a tooltip when the filter hides some", async () => {
+    const openAll = () =>
+      [...container.querySelectorAll("button")].find((button) =>
+        button.textContent?.trim().startsWith("Open all"),
+      )!;
     const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
     render([], recovery, [{ ...sessions[0], busy: false, blocks: finished }, sessions[1]]);
-    expect(await info()).toContain(
-      "Open all opens all 2 recovered sessions, including 1 not shown here.",
-    );
+    await act(async () => openAll().focus());
+    expect(openAll().textContent?.trim()).toBe("Open all (2)");
+    expect(openAll().hasAttribute("data-tooltip-owner")).toBe(false);
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
   it("hides the filter when it would not separate anything and defaults to every entry", async () => {
     const finished = {

@@ -43,6 +43,22 @@ export type RowLayout = {
   totalHeight: number;
 };
 
+type RowSpan = Pick<RowWindow, "start" | "end">;
+
+/** Keep disjoint interaction rows in their original lanes without mounting the gap. */
+export function retainedDiffRows(layout: RowLayout, spans: (RowSpan | null)[]) {
+  const items: { index: number; gap: number }[] = [];
+  let end = 0;
+  const count = layout.offsets.length - 1;
+  for (const span of spans.filter((s): s is RowSpan => !!s).sort((a, b) => a.start - b.start)) {
+    for (let index = Math.max(end, span.start); index < Math.min(span.end, count); index++) {
+      items.push({ index, gap: layout.offsets[index] - layout.offsets[end] });
+      end = index + 1;
+    }
+  }
+  return { items, padBottom: layout.totalHeight - layout.offsets[end] };
+}
+
 export function flattenVisibleRows(
   blocks: readonly UnifiedBlock[],
   revealFor: (foldId: string) => FoldReveal | undefined,

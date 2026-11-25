@@ -23,6 +23,7 @@ type PeerState = {
   outbox: OutboxEntry[];
   /** The host environment these revisions came from. */
   environmentId?: string;
+  supportsWorkspaceLayout?: boolean;
 };
 
 // Versioned: everything cached for the older name-based project ids is dropped,
@@ -76,6 +77,7 @@ function load(machineId: string): PeerState {
         raw.recordValues && typeof raw.recordValues === "object" ? raw.recordValues : {},
       outbox: Array.isArray(raw.outbox) ? raw.outbox : [],
       ...(typeof raw.environmentId === "string" ? { environmentId: raw.environmentId } : {}),
+      ...(raw.supportsWorkspaceLayout === true ? { supportsWorkspaceLayout: true } : {}),
     };
   } catch {
     return emptyState();
@@ -227,19 +229,27 @@ export function takeOutbox(machineId: string): SyncOp[] {
 export function markPulled(
   machineId: string,
   records: readonly SyncRecord[],
-  page?: { rev: number; complete: boolean },
+  page?: { rev: number; complete: boolean; supportsWorkspaceLayout?: boolean },
 ): boolean {
   const state = load(machineId);
   const previousRev = state.rev;
   const previouslyPulled = state.pulled;
+  const previouslySupportedLayout = state.supportsWorkspaceLayout === true;
   for (const record of records) {
     state.recordRevs[recordKey(record.table, record.id)] = record.rev;
     state.recordValues[recordKey(record.table, record.id)] = canonicalJson(record.value);
     state.rev = Math.max(state.rev, record.rev);
   }
   if (page) state.rev = Math.max(state.rev, page.rev);
+  if (page?.supportsWorkspaceLayout === true) state.supportsWorkspaceLayout = true;
+  if (page?.supportsWorkspaceLayout === false) delete state.supportsWorkspaceLayout;
   state.pulled ||= page?.complete !== false;
-  if (!records.length && state.rev === previousRev && state.pulled === previouslyPulled)
+  if (
+    !records.length &&
+    state.rev === previousRev &&
+    state.pulled === previouslyPulled &&
+    (state.supportsWorkspaceLayout === true) === previouslySupportedLayout
+  )
     return true;
   return save(machineId, state);
 }

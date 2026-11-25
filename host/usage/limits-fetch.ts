@@ -6,14 +6,32 @@ import { providerLaunch } from "../process";
 import { providerAccountEnvironment } from "../providers/provider-accounts";
 import { readClaudeKeychain, type KeychainRunner } from "./limits-keychain";
 import { parseClaudeUsage, parseCodexLimits, type ParsedLimits } from "./limits-parse";
+import {
+  parseClaudeOAuthUsage,
+  parseCodexRateLimits,
+  type ProviderRateLimits,
+} from "../../src/shared/model/provider-quota";
 
 /** Reads one account's provider quota. The Claude token and Codex session never leave this process. */
 
 export type LimitsFetch =
-  | { status: "ok"; limits: ParsedLimits }
-  | { status: "unavailable" | "error"; error: string };
+  | { status: "ok"; limits: ParsedLimits; desktop?: ProviderRateLimits }
+  | {
+      status: "unavailable" | "error";
+      error: string;
+      retryAfterMs?: number;
+      reason?: "signedOut" | "cliMissing";
+      renewalPending?: boolean;
+    };
 
-const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+/** A provider can give Retry-After as seconds or an HTTP date. */
+export function quotaRetryAfterMs(value: string | null, now = Date.now()): number | undefined {
+  if (!value?.trim()) return undefined;
+  const delay = /^\d+$/.test(value.trim()) ? Number(value) * 1_000 : Date.parse(value) - now;
+  return Number.isFinite(delay) && delay > 0 ? delay : undefined;
+}
+
+const USAGE_URL = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1";
 const REQUEST_MS = 10_000;
 const CODEX_MS = 15_000;
 const MAX_BODY_BYTES = 256 * 1024;
@@ -44,35 +62,48 @@ export async function fetchClaudeLimits(
 ): Promise<LimitsFetch> {
   const selected = configDir ?? process.env.CLAUDE_CONFIG_DIR ?? null;
   const dir = selected ?? join(homedir(), ".claude");
-  // On macOS the Keychain is the primary store (like the desktop); the credentials file is the fallback.
-  const stored = await readClaudeKeychain(selected, keychain).catch(() => null);
-  const raw =
-    (stored && claudeCredentials(stored) ? stored : null) ??
-    (await readFile(join(dir, ".credentials.json"), "utf8").catch(() => null));
-  const credentials = raw ? claudeCredentials(raw) : null;
+  const readCredentials = async () => {
+    // On macOS the Keychain is primary and the credentials file is the fallback.
+    const stored = await readClaudeKeychain(selected, keychain).catch(() => null);
+    const fromKeychain = stored ? claudeCredentials(stored) : null;
+    if (fromKeychain) return fromKeychain;
+    const raw = await readFile(join(dir, ".credentials.json"), "utf8").catch(() => null);
+    return raw ? claudeCredentials(raw) : null;
+  };
+  const credentials = await readCredentials();
   if (!credentials)
     return {
       status: "unavailable",
       error: "Claude not signed in on this computer",
+      reason: "signedOut",
     };
   // Claude Code owns token renewal; refreshing here could race it and spend the refresh token.
   if (credentials.expiresAt !== null && now >= credentials.expiresAt)
     return {
       status: "error",
       error: "Claude usage will update when this account is used again",
+      renewalPending: true,
     };
   try {
     const response = await fetch(USAGE_URL, {
       headers: {
         Authorization: `Bearer ${credentials.token}`,
         "anthropic-beta": "oauth-2025-04-20",
-        "User-Agent": "claude-code/2.1.0",
+        "User-Agent": "claude-cli/2.1.322 (external, cli)",
       },
       signal: AbortSignal.timeout(REQUEST_MS),
+      redirect: "error",
     });
-    if (!response.ok)
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       return {
         status: "error",
+        ...(response.status === 429
+          ? {
+              retryAfterMs: quotaRetryAfterMs(response.headers.get("Retry-After"), now),
+            }
+          : {}),
+        ...(response.status === 401 ? { reason: "signedOut" as const } : {}),
         error:
           response.status === 401
             ? "Claude sign-in expired"
@@ -80,12 +111,18 @@ export async function fetchClaudeLimits(
               ? "Claude usage is unavailable for this account"
               : `Claude usage request failed (${response.status})`,
       };
+    }
     const text = await response.text();
     if (text.length > MAX_BODY_BYTES)
       return { status: "error", error: "Claude usage response was too large" };
     const limits = parseClaudeUsage(JSON.parse(text));
-    return limits.windows.length
-      ? { status: "ok", limits }
+    const desktop = parseClaudeOAuthUsage(text);
+    limits.resetCredits = desktop.resetCredits?.availableCount ?? null;
+    const current = await readCredentials();
+    if (current?.token !== credentials.token || current.expiresAt !== credentials.expiresAt)
+      return { status: "unavailable", error: "Claude account changed during the usage read" };
+    return limits.windows.length || desktop.resetCredits
+      ? { status: "ok", limits, desktop }
       : { status: "error", error: "Claude usage response was unexpected" };
   } catch {
     return { status: "error", error: "Claude usage request failed" };
@@ -166,18 +203,24 @@ export async function fetchCodexLimits(
           send({ id: 2, method: "account/rateLimits/read", params: {} });
         } else if (message.id === 2) {
           if (message.error) {
-            const text = String(message.error.message ?? "");
-            return finish(
-              /not signed in|authentication required|not authenticated/i.test(text)
-                ? { status: "unavailable", error: "Codex not signed in" }
-                : { status: "error", error: "Codex usage unavailable" },
-            );
+            send({ id: 3, method: "account/read", params: { refreshToken: false } });
+            continue;
           }
           const limits = parseCodexLimits(message.result);
           return finish(
             limits.windows.length || limits.resetCredits !== null
-              ? { status: "ok", limits }
+              ? { status: "ok", limits, desktop: parseCodexRateLimits(message.result) }
               : { status: "unavailable", error: "No Codex usage data" },
+          );
+        } else if (message.id === 3) {
+          const auth = message.result as
+            | { requiresOpenaiAuth?: unknown; account?: unknown }
+            | null
+            | undefined;
+          return finish(
+            auth?.requiresOpenaiAuth === true && !auth.account
+              ? { status: "unavailable", error: "Codex not signed in", reason: "signedOut" }
+              : { status: "error", error: "Codex usage unavailable" },
           );
         } else if (message.id === 1) {
           return finish({ status: "error", error: "Codex usage unavailable" });

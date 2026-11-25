@@ -76,7 +76,7 @@ if (hub) {
   );
 }
 const tools = {
-  cwd: "G:/demo/example",
+  cwd: query.has("remote-machine-picker") ? "remote://fixture-mac-env/repo" : "G:/demo/example",
   sessionId: "fixture-session",
   title: locale === "tr" ? "Örnek konuşma" : "Example conversation",
   ...(hub ? { composerWindow: owner } : {}),

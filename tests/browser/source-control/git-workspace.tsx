@@ -24,6 +24,8 @@ void GitGraphWorkspace;
 // No user repository or remote is changed by these scenarios.
 const sha = (n: number) => n.toString(16).padStart(40, "0");
 const large = new URLSearchParams(location.search).has("large");
+const plainFolder = new URLSearchParams(location.search).has("plain-folder");
+let folderInitialized = false;
 const checkouts = new URLSearchParams(location.search).has("checkouts");
 const allRepositories = checkouts && new URLSearchParams(location.search).has("all-repositories");
 const diffUsability = new URLSearchParams(location.search).has("diff-usability");
@@ -223,8 +225,17 @@ Object.assign(window, {
         );
         return;
       }
-      if (command === "git_history")
+      if (command === "git_init" && plainFolder && args.cwd === "/fixture") {
+        folderInitialized = true;
+        return;
+      }
+      if (command === "git_history") {
+        if (plainFolder && args.cwd === "/fixture") {
+          if (!folderInitialized) throw new Error("fatal: not a git repository");
+          return { head: null, commits: [] };
+        }
         return { head: commits[0].sha, commits: commits.slice(0, Number(args.limit ?? 200)) };
+      }
       if (command === "git_branches")
         return {
           current: branches.find((b) => b.current)?.name,
@@ -232,6 +243,8 @@ Object.assign(window, {
           branches,
         };
       if (command === "git_diff_index" || command === "git_diff_files") {
+        if (plainFolder && args.cwd === "/fixture")
+          return { repository: folderInitialized, files: [], additions: 0, deletions: 0 };
         if (commitTransition && committed)
           await new Promise<void>((resolve) => pendingActions.set(command, resolve));
         return {
@@ -404,7 +417,7 @@ const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
         "/fixture",
         "/trees/audit/very-long-worktree-folder-name",
         "/trees/detached",
-        // `?idle` adds a worktree with no work, listed under the collapsed "Clean" group.
+        // `?idle` adds a worktree with no work: only the header picker lists it.
         ...(new URLSearchParams(location.search).has("idle") ? ["/trees/clean-one"] : []),
       ]
   ).map((path, index) => [

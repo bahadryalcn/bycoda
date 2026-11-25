@@ -9,6 +9,7 @@ import {
   type DiagnosticsScheduler,
   type PendingCrash,
 } from "./diagnosticsScheduler";
+import { getDiagnosticsMode } from "./diagnosticsConsent";
 
 let deps: DiagnosticsDeps | null = null;
 let scheduler: DiagnosticsScheduler | null = null;
@@ -52,5 +53,7 @@ export const dismissPendingCrash = async (): Promise<void> => scheduler?.dismiss
 export async function sendDiagnosticLogs(
   request: DiagnosticRequest,
 ): Promise<DiagnosticSendStatus> {
-  return deps ? sendDiagnosticReport(deps, request) : "not-configured";
+  if (!deps) return "not-configured";
+  if (deps.review && getDiagnosticsMode() === "off") return "declined";
+  return sendDiagnosticReport(deps, request);
 }

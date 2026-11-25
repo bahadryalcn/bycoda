@@ -3,7 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { openFeedbackDialog } from "../../account";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
   installPendingUpdate,
@@ -201,9 +201,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           feedback={powerFeedback("keep-awake")}
           label={t("Prevent sleep while agents work")}
           info={
-            <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
-              <p>{sleepBehavior}</p>
-            </InfoPopover>
+            <InfoTooltip className="shrink-0" label={t("Sleep behavior")}>
+              {sleepBehavior}
+            </InfoTooltip>
           }
         >
           <Toggle

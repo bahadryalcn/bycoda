@@ -94,7 +94,7 @@ export function HostModelSource({
     queryFn: async () => {
       const [descriptor, projects] = await Promise.all([
         remoteRequest<HostDescriptor>(machine!.id, "environment.describe"),
-        machineProjects(machine!),
+        cwd ? machineProjects(machine!) : [],
       ]);
       const hostPath = parseRemotePath(cwd)?.hostPath ?? cwd;
       const project = projects.find((entry) => pathKey(entry.cwd) === pathKey(hostPath));

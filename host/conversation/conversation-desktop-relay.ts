@@ -6,6 +6,12 @@ import { isRoomWorkspaceAction } from "../assistant/room/assistant-room-workspac
 import { AwakeClock } from "../../src/shared/lib/time/awakeClock";
 import { DESKTOP_TAKE_WAIT_MS } from "../../src/shared/model/host-contracts/native-services";
 import { ChangeSignal } from "../changeSignal";
+import { createLogger } from "../diagnostics/logger";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+
+const log = createLogger("host.desktop-relay");
+/** A capture that took longer than this end to end is reported with where the time went. */
+const SLOW_CAPTURE_MS = 1_000;
 
 /**
  * How long the desktop may stay silent before the relay counts as offline. A desktop that holds
@@ -14,6 +20,16 @@ import { ChangeSignal } from "../changeSignal";
  */
 export const DESKTOP_RELAY_STALE_MS = 45_000;
 const CLAIM_SWEEP_MS = 5_000;
+/** Every other request may take this long end to end. */
+const REQUEST_TIMEOUT_MS = 240_000;
+/**
+ * A privacy capture is only worth its proof: the desktop asks the Host for a challenge that lives
+ * 30 s, so an answer later than that is refused anyway. A capture that is not answered by then
+ * fails here instead of holding its caller, and a relay slot, for the full request timeout.
+ */
+export const CAPTURE_REQUEST_MS = 30_000;
+const CANCELLED = "Desktop relay request was cancelled by its caller.";
+const CAPTURE_ACTIONS = new Set(["privacy.scope.capture", "privacy.account.capture"]);
 
 type TakeOptions = {
   /** Hold an empty claim open for up to this long; clamped to `DESKTOP_TAKE_WAIT_MS`. */
@@ -42,6 +58,9 @@ export class ConversationDesktopRelay {
     {
       request: Record<string, unknown>;
       claimed: string | false;
+      /** Monotonic stamps for the stage timing of a slow privacy capture. */
+      queuedAt: number;
+      claimedAt?: number;
       expectedOwner?: string;
       authorized: () => boolean | Promise<boolean>;
       fullAccess?: () => boolean | Promise<boolean>;
@@ -89,6 +108,7 @@ export class ConversationDesktopRelay {
       targetDeviceHash?: string;
     },
     authorized: () => boolean | Promise<boolean>,
+    options: { signal?: AbortSignal } = {},
   ): Promise<unknown> {
     if (action === "assistant.background.effect") {
       if (
@@ -204,6 +224,9 @@ export class ConversationDesktopRelay {
         },
         authorized,
         source.targetDeviceHash,
+        undefined,
+        false,
+        options.signal,
       );
     }
     if (
@@ -264,7 +287,9 @@ export class ConversationDesktopRelay {
     expectedOwner?: string,
     fullAccess?: () => boolean | Promise<boolean>,
     policyPrepared = false,
+    signal?: AbortSignal,
   ): Promise<unknown> {
+    if (signal?.aborted) throw new Error(CANCELLED);
     // A request aimed at one device is only reachable while that device polls; an untargeted one
     // can be claimed by any desktop, so any poll counts.
     const seen = expectedOwner ? (this.ownerSeen.get(expectedOwner) ?? 0) : this.lastSeen;
@@ -295,16 +320,28 @@ export class ConversationDesktopRelay {
       );
     }
     const id = randomUUID();
+    const timeoutMs = CAPTURE_ACTIONS.has(action) ? CAPTURE_REQUEST_MS : REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
-      const deadline = Date.now() + 240000;
+      const deadline = Date.now() + timeoutMs;
+      // The caller giving up ends the request wherever it is: still queued, or already claimed.
+      // A claimed one then fails the desktop's own authority check instead of finishing.
+      const onAbort = () => {
+        const entry = this.pending.get(id);
+        if (!entry) return;
+        clearTimeout(entry.timer);
+        this.pending.delete(id);
+        entry.reject(new Error(CANCELLED));
+      };
+      const detach = () => signal?.removeEventListener("abort", onAbort);
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        detach();
         reject(
           new Error(
             "Desktop relay timed out. Check the desktop connection; inspect state before retrying mutations.",
           ),
         );
-      }, 240000);
+      }, timeoutMs);
       this.pending.set(id, {
         request: {
           id,
@@ -315,10 +352,12 @@ export class ConversationDesktopRelay {
           deadline,
         },
         claimed: false,
+        queuedAt: monotonicNow(),
         expectedOwner,
         authorized: AsyncResource.bind(authorized),
         fullAccess: fullAccess && AsyncResource.bind(fullAccess),
-        resolve: (value, owner) =>
+        resolve: (value, owner) => {
+          detach();
           resolve(
             action === "observations.native.complete" ||
               action === "observations.native.baseline" ||
@@ -341,13 +380,18 @@ export class ConversationDesktopRelay {
                     : {}),
                 }
               : value,
-          ),
-        reject,
+          );
+        },
+        reject: (error) => {
+          detach();
+          reject(error);
+        },
         timer,
         ...(action === "secrets.input.authorize"
           ? { secretSignature: randomBytes(32).toString("hex") }
           : {}),
       });
+      signal?.addEventListener("abort", onAbort, { once: true });
       this.arrivals.notify();
     });
   }
@@ -483,6 +527,7 @@ export class ConversationDesktopRelay {
           continue;
         }
         entry.claimed = owner;
+        entry.claimedAt = monotonicNow();
         requests.push(entry.request);
       }
     if (requests.length && !this.sweeper) this.failStaleClaims();
@@ -571,6 +616,16 @@ export class ConversationDesktopRelay {
       throw new Error("Desktop request expired, unknown or owned by another device.");
     clearTimeout(entry.timer);
     this.pending.delete(id);
+    const totalMs = elapsedSince(entry.queuedAt);
+    if (CAPTURE_ACTIONS.has(String(entry.request.action)) && totalMs >= SLOW_CAPTURE_MS)
+      log.warn("slow privacy capture", {
+        action: String(entry.request.action),
+        totalMs,
+        // Waiting for the desktop to pick the request up, versus the desktop working on it.
+        queuedMs: entry.claimedAt === undefined ? totalMs : entry.claimedAt - entry.queuedAt,
+        desktopMs: entry.claimedAt === undefined ? 0 : elapsedSince(entry.claimedAt),
+        failed: !!error,
+      });
     if (!authorized) entry.reject(new Error("Session authority revoked."));
     else if (error) entry.reject(new Error(error));
     else entry.resolve(value, owner);

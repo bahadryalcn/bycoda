@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import { assistantPresenceRecheckDelay, assistantPresenceState } from "../model/assistantBriefing";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { Text } from "../../../shared/ui/Text";
 import { AssistantPresenceIndicator } from "./AssistantPresenceIndicator";
 import styles from "./AssistantPresenceIndicator.module.css";
 
@@ -68,16 +67,12 @@ export function AssistantPresenceStatus({
         {announcement}
       </span>
       {details && (
-        <InfoPopover label={t("About computer presence")}>
-          <Text as="p" tone="muted" leading="inherit">
-            {t("Computer presence: {p0}", { p0: label(state.detected) })}
-          </Text>
-          <Text as="p" tone="muted" leading="inherit">
-            {t(
-              "Automatic activity comes from this computer. Your Away or Do not disturb choice takes priority.",
-            )}
-          </Text>
-        </InfoPopover>
+        <InfoTooltip label={t("About computer presence")}>
+          {t("Computer presence: {p0}", { p0: label(state.detected) })} ·{" "}
+          {t(
+            "Automatic activity comes from this computer. Your Away or Do not disturb choice takes priority.",
+          )}
+        </InfoTooltip>
       )}
     </div>
   );

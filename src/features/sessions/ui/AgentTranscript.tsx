@@ -23,7 +23,6 @@ import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAutho
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
-import { TranscriptWorkResults } from "./TranscriptWorkResults";
 import { InlineVisualHost, type InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
 import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -78,6 +77,7 @@ import {
 } from "react";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
+import { inlineMediaAttachmentPath, LocalMedia } from "./LocalMedia";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { TranscriptSessionId } from "./TranscriptSessionId";
 import { ChatCitationList } from "./ChatCitationText";
@@ -86,7 +86,8 @@ import { TranscriptSkills } from "./SkillTokenText";
 import { RunHarness } from "./SubagentAnatomy";
 import { UserMessageMarkdown, UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
-import { findTokens } from "../model/attachmentTokens";
+import { findTokens, stripAttachmentTokens } from "../model/attachmentTokens";
+import { isPastedTextAttachment } from "../model/attachmentPresentation";
 import { GeneratedImage } from "./GeneratedImage";
 import { BycodaSparkles } from "./BycodaSparkles";
 import { OrchestratorConstellation } from "./OrchestratorConstellation";
@@ -470,23 +471,24 @@ function AgentTranscriptComponent({
   const anchorAdjusted = useStableCallback((element: HTMLElement) => {
     if (element === scroller.current) follow.rememberScroll(element);
   });
-  // The virtualization owner outlives renders and calls back when anchoring moves the scroller.
+  // At the latest message the follow hook alone positions the transcript.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the anchoring callback with the external virtualization owner and unregisters it on unmount
   useLayoutEffect(() => {
-    virtualization.setAdjusted(anchorAdjusted);
+    virtualization.setAdjusted(
+      anchorAdjusted,
+      (element) => element !== scroller.current || !follow.stickToBottom.current,
+    );
     return () => virtualization.setAdjusted(undefined);
-  }, [virtualization, anchorAdjusted]);
-  const revealBlock = useCallback(
-    (blockId: string) => {
-      if (!findTurn(blockId)) return false;
-      flushSync(() => virtualization.reveal(blockId));
-      // Callers align the block now and once more on the next frame; after
-      // that the reveal must not keep forcing its rows mounted or groups open.
-      virtualization.settleRevealAfterAlignment(blockId);
-      return pagingRevealBlock(blockId);
-    },
-    [findTurn, pagingRevealBlock, virtualization],
-  );
+  }, [virtualization, anchorAdjusted, scroller, follow.stickToBottom]);
+  const prepareReveal = (blockId: string, forSearch = false) => {
+    if (!pagingRevealBlock(blockId, forSearch)) return false;
+    virtualization.reveal(blockId);
+    // Callers align the block now and once more on the next frame; after
+    // that the reveal must not keep forcing its rows mounted or groups open.
+    virtualization.settleRevealAfterAlignment(blockId);
+    return true;
+  };
+  const revealBlock = useStableCallback((id: string) => flushSync(() => prepareReveal(id)));
   useEffect(() => {
     onRevealReady?.(revealBlock);
     return () => onRevealReady?.(null);
@@ -531,6 +533,10 @@ function AgentTranscriptComponent({
   )
     renderedTurns.push({ turn: turns[latestIndex], index: latestIndex });
   renderedTurns.sort((a, b) => a.index - b.index);
+  const hasHiddenNewerTurns =
+    lastVisibleTurn < turns.length &&
+    renderedTurns.filter(({ index }) => index >= lastVisibleTurn).length <
+      turns.length - lastVisibleTurn;
   const renderTurns = renderedTurns.map((entry) => entry.turn);
   const { searchCurrent } = useTranscriptSearch({
     scroller,
@@ -542,7 +548,7 @@ function AgentTranscriptComponent({
     visibleTurnCount,
     openWork,
     setOpenWork,
-    revealBlock,
+    prepareReveal,
     findTurn,
     onNavigateReady: registerNavigate,
   });
@@ -776,12 +782,16 @@ function AgentTranscriptComponent({
                 turn={turn}
                 seenOutput={seenOutput}
                 allowMountReveal={
-                  visible && wasVisible.current && !historyLoading && !remoteHistoryLoading
+                  isLastTurn &&
+                  visible &&
+                  wasVisible.current &&
+                  !historyLoading &&
+                  !remoteHistoryLoading
                 }
                 managed={managed}
                 settled={settled}
                 live={live}
-                visible={visible}
+                activeTurnVisible={visible && !settled}
                 isLastTurn={isLastTurn}
                 turnHarness={turnHarnesses?.[turnIndex]}
                 clockStart={
@@ -838,9 +848,11 @@ function AgentTranscriptComponent({
         </div>
         {lastVisibleTurn < turns.length ? (
           <div className="flex justify-center gap-2 px-4 py-3">
-            <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
-              {t("Load newer messages")}
-            </Button>
+            {hasHiddenNewerTurns ? (
+              <Button motion="none" variant="ghost" type="button" onClick={loadNewer}>
+                {t("Load newer messages")}
+              </Button>
+            ) : null}
             <Button motion="none" variant="ghost" type="button" onClick={jumpToLatest}>
               {t("Jump to latest")}
             </Button>
@@ -972,7 +984,7 @@ type TurnProps = {
   managed: boolean;
   settled: boolean;
   live: boolean;
-  visible: boolean;
+  activeTurnVisible: boolean;
   isLastTurn: boolean;
   /** One-based position in the whole transcript, not in the visible window. */
   /** The provider that produced the turn, resolved for the whole transcript. */
@@ -1046,7 +1058,7 @@ const Turn = memo(function Turn({
   managed,
   settled,
   live,
-  visible,
+  activeTurnVisible,
   isLastTurn,
   turnHarness,
   clockStart,
@@ -1175,13 +1187,13 @@ const Turn = memo(function Turn({
       />
     ) : item.type === "activity" ? (
       itemIndex === initialThinkingAt ? (
-        <InitialThinking key={item.blocks[0].id} live={visible && !settled} />
+        <InitialThinking key={item.blocks[0].id} live={activeTurnVisible} />
       ) : (
         <ActivityPhases
           key={item.blocks[0].id}
           blocks={item.blocks}
           cwd={cwd}
-          done={!visible || settled || itemIndex < foldedAt || (answering && !workStillRunning)}
+          done={!activeTurnVisible || itemIndex < foldedAt || (answering && !workStillRunning)}
           onApproval={onApproval}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
@@ -1201,9 +1213,8 @@ const Turn = memo(function Turn({
         ) : null}
         <TranscriptBlock
           block={item.block}
-          revealOnMount={allowMountReveal && isLastTurn && !seenOutput.has(item.block.id)}
+          revealOnMount={allowMountReveal && !seenOutput.has(item.block.id)}
           layout={transcriptLayout}
-          visible={item.block.role === "user" ? visible : undefined}
           // Prose reads the same wherever it lands: under the fold
           // line at the top of the turn, or under the work it follows.
           underLine={
@@ -1292,10 +1303,10 @@ const Turn = memo(function Turn({
       // List every value the row factory/renderItem reads here, or the row goes stale.
       [
         item, index, rail, tail, pinnedItem(item, index), isCurrentItem(item),
-        cwd, live, visible, settled,
+        cwd, live, activeTurnVisible, settled,
         index === initialThinkingAt,
-        !visible || settled || index < foldedAt || (answering && !workStillRunning),
-        allowMountReveal && isLastTurn && item.type === "block" && !seenOutput.has(item.block.id),
+        !activeTurnVisible || index < foldedAt || (answering && !workStillRunning),
+        allowMountReveal && item.type === "block" && !seenOutput.has(item.block.id),
         transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine,
         busy, planHarness, planModel, planModelSettings, editableUserBlockId, editingLastTurn,
         onApproval, onSaveNote, onSendDraft, onEditDraft, onRemoveDraft, onOpenFile, onOpenDiff,
@@ -1393,29 +1404,6 @@ const Turn = memo(function Turn({
       ) : null}
       {/* The accessory keeps the pane's props, which go stale once parked. */}
       {latestTurnAccessory ? latestTurnAccessory : null}
-      {settled && userBlock && !userBlock.draft && !userBlock.internal ? (
-        <TranscriptWorkResults
-          turnId={turnId}
-          turn={turn}
-          cwd={cwd}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-          renderRemoteLoad={
-            onLoadRemoteBlock
-              ? (block) =>
-                  block.remoteContent && (
-                    <RemoteBlockLoad
-                      key={block.remoteContent.revision}
-                      blockId={block.id}
-                      revision={block.remoteContent.revision}
-                      bytes={block.remoteContent.bytes}
-                      onLoad={onLoadRemoteBlock}
-                    />
-                  )
-              : undefined
-          }
-        />
-      ) : null}
       {durationMs != null && settled ? (
         <TurnDuration
           elapsedMs={durationMs}
@@ -2023,7 +2011,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
   block,
   revealOnMount,
   layout,
-  visible,
   underLine = false,
   embedded = false,
   cwd,
@@ -2048,7 +2035,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
   block: Block;
   layout: TranscriptLayout;
   revealOnMount?: boolean;
-  visible?: boolean;
   /** True when something already sits directly above this in the turn. */
   underLine?: boolean;
   /** True when the parent surface already provides the horizontal gutter. */
@@ -2103,7 +2089,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
                   questionAnswer
                   block={{ ...block, text: answers.join("\n"), questionAnswers: undefined }}
                   layout={layout}
-                  visible={visible ?? true}
                   cwd={cwd}
                   onOpenFile={onOpenFile}
                   onSaveNote={onSaveNote}
@@ -2123,7 +2108,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
         block={block}
         layout={layout}
         busy={planBusy}
-        visible={visible ?? true}
         cwd={cwd}
         onOpenFile={onOpenFile}
         onEdit={onEditLastTurn}
@@ -2323,7 +2307,6 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
 function UserMessageBlock({
   block,
   layout,
-  visible,
   onEdit,
   canRewind = false,
   onRewind,
@@ -2339,7 +2322,6 @@ function UserMessageBlock({
 }: {
   block: Block;
   layout: TranscriptLayout;
-  visible: boolean;
   onEdit?: () => void;
   canRewind?: boolean;
   onRewind?: (action: "edit" | "return") => void;
@@ -2388,7 +2370,16 @@ function UserMessageBlock({
     card && card.kind !== "handoff"
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
-  const { text, citations } = extractChatCitations(rawText);
+  const { text: messageText, citations } = extractChatCitations(rawText);
+  const attachmentFiles = block.attachments ?? [];
+  const pastedTextOnly =
+    !card &&
+    !note &&
+    !citations.length &&
+    attachmentFiles.length > 0 &&
+    attachmentFiles.every(isPastedTextAttachment) &&
+    !stripAttachmentTokens(messageText, attachmentFiles).trim();
+  const text = pastedTextOnly ? "" : messageText;
   const firstLink = text ? parseUserMessageLink(text) : null;
   // Keep the compact URL card for plain prose. Splitting a formatted message
   // at a URL would break its links, code spans, or enclosing Markdown blocks.
@@ -2401,18 +2392,17 @@ function UserMessageBlock({
   const compactText = previewParts.some((part) => part.compact);
   // A chip carries its token's label only when the message mentions it, so
   // messages sent before tokens existed look as they always did.
-  const attachmentFiles = block.attachments ?? [];
   const usedTokens = new Map(
     findTokens(text, attachmentFiles).map((match) => [match.index, match.token]),
   );
   const referencedTokens = attachmentFiles.map((_, index) => usedTokens.get(index));
-  const overflows = useClampOverflow(
-    textRef,
-    Boolean(text),
-    expanded,
-    text,
-    (visible ? 1 : 0) + (compactText ? 2 : 0),
-  );
+  // Local video and audio play in the bubble; their chip stays below the player for its actions.
+  const mediaAttachments = attachmentFiles.flatMap((file, index) => {
+    const path = inlineMediaAttachmentPath(file);
+    return path ? [{ file, path, index }] : [];
+  });
+  const chipAttachments = attachmentFiles.length > mediaAttachments.length;
+  const overflows = useClampOverflow(textRef, Boolean(text), expanded, text, compactText ? 1 : 0);
 
   const toggle = () => {
     if (overflows) setExpanded((value) => !value);
@@ -2422,7 +2412,7 @@ function UserMessageBlock({
     <>
       {text || block.attachments?.length ? (
         <CopyTurnButton
-          text={text}
+          text={messageText}
           attachments={block.attachments}
           label={t("Copy message")}
           showLabel={showLabels}
@@ -2454,7 +2444,7 @@ function UserMessageBlock({
       {block.startedAt != null ? (
         <Timestamp
           value={block.startedAt}
-          className="ms-1 whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--ui-text-muted)"
+          className={`${showLabels ? "ms-auto" : "ms-1"} whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--ui-text-muted)`}
         />
       ) : null}
     </>
@@ -2495,7 +2485,7 @@ function UserMessageBlock({
           data-chat-message-surface={block.draft ? undefined : "user"}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 bg-(--ui-message-bubble) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
+          className={`user-message-bubble relative min-w-0 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "bg-(--ui-message-bubble) px-(--message-bubble-inset-x) py-(--message-bubble-inset-y) [--message-bubble-inset-x:--spacing(3)] [--message-bubble-inset-y:--spacing(2)]"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (
@@ -2503,15 +2493,31 @@ function UserMessageBlock({
               {t("Stopped by you")}
             </Badge>
           ) : null}
-          {block.attachments?.length ? (
+          {mediaAttachments.length ? (
+            <div
+              className={`flex w-[30rem] min-w-0 max-w-full flex-col items-start ${chipAttachments || text || card || note ? "mbe-2" : ""}`}
+            >
+              {mediaAttachments.map(({ file, path, index }) => (
+                <LocalMedia
+                  key={file.id}
+                  path={path}
+                  label={file.name}
+                  fallback={<AttachmentChip attachment={file} token={referencedTokens[index]} />}
+                />
+              ))}
+            </div>
+          ) : null}
+          {chipAttachments ? (
             <div
               role="group"
               aria-label={t("Attachments")}
               className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
             >
-              {block.attachments.map((file, index) => (
-                <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
-              ))}
+              {attachmentFiles.map((file, index) =>
+                inlineMediaAttachmentPath(file) ? null : (
+                  <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
+                ),
+              )}
             </div>
           ) : null}
           {note ? (

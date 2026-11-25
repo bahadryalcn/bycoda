@@ -1,9 +1,9 @@
 import { memo } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps } from "react";
-import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
+import { parseRemotePath } from "../../../features/connections/public/remoteProjects";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
 import { LocalHostVersionPrompt } from "../../../features/connections/public/LocalHostDownNotice";
@@ -31,7 +31,6 @@ export interface WorkspaceFooterProps {
   settingsSection: SettingsSectionId;
   openSettings: WorkspaceNoticesProps["openSettings"];
   // Usage and project terminal
-  active: Session | undefined;
   projectCwd: string;
   usageProviders: UsageFooterProps["providers"];
   usageSession: UsageFooterProps["session"];
@@ -40,12 +39,14 @@ export interface WorkspaceFooterProps {
   runningTerminalOpen: UsageFooterProps["terminalOpen"];
   onToggleRunningTerminal: UsageFooterProps["onToggleTerminal"];
   onNewTerminal: UsageFooterProps["onNewTerminal"];
+  remoteTerminalAvailable?: boolean;
   onShowProjectTerminal: UsageFooterProps["onShowTerminal"];
   currentProjectDock: ComponentProps<typeof ProjectTerminalDock>["dock"] | undefined;
   dockVisible: boolean;
   conversationTools: Omit<UsageFooterTools, "onOpenFile"> | null | undefined;
   onOpenFile: UsageFooterTools["onOpenFile"];
   // Approval toasts
+  notificationTriggerTarget: HTMLSpanElement | null;
   pendingNotifications: ApprovalProps["notices"];
   hiddenApprovalToasts: ApprovalProps["popupNotices"];
   onOpenApprovalSession: (sessionId: string) => void | Promise<boolean>;
@@ -61,7 +62,6 @@ function WorkspaceFooterComponent({
   settingsOpen,
   settingsSection,
   openSettings,
-  active,
   projectCwd,
   usageProviders,
   usageSession,
@@ -70,11 +70,13 @@ function WorkspaceFooterComponent({
   runningTerminalOpen,
   onToggleRunningTerminal,
   onNewTerminal,
+  remoteTerminalAvailable,
   onShowProjectTerminal,
   currentProjectDock,
   dockVisible,
   conversationTools,
   onOpenFile,
+  notificationTriggerTarget,
   pendingNotifications,
   hiddenApprovalToasts,
   onOpenApprovalSession,
@@ -90,6 +92,16 @@ function WorkspaceFooterComponent({
         "@container/footer flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
       )}
     >
+      <ApprovalToasts
+        triggerTarget={notificationTriggerTarget}
+        notices={pendingNotifications}
+        popupNotices={hiddenApprovalToasts}
+        onFocusSession={onOpenApprovalSession}
+        onOpenHistorySession={onOpenApprovalSession}
+        onOpenBackground={requestBackgroundTarget}
+        onOpenSettings={() => openSettings("notifications", "notifications")}
+        onApproval={onApproval}
+      />
       {searchViewOpen ||
       inboxViewOpen ||
       notesViewOpen ||
@@ -100,20 +112,27 @@ function WorkspaceFooterComponent({
           embedded
           providers={usageProviders}
           session={usageSession}
-          project={active?.cwd ?? projectCwd}
           onSelectAccount={onSelectProviderAccount}
           onManageAccounts={() => openSettings("providers", "provider-accounts")}
           terminals={runningTerminals}
           terminalOpen={runningTerminalOpen}
           onToggleTerminal={onToggleRunningTerminal}
-          onNewTerminal={canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined}
-          onShowTerminal={canOpenTerminalIn(projectCwd) ? onShowProjectTerminal : undefined}
+          onNewTerminal={
+            remoteTerminalAvailable || canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined
+          }
+          onShowTerminal={
+            currentProjectDock || remoteTerminalAvailable || canOpenTerminalIn(projectCwd)
+              ? onShowProjectTerminal
+              : undefined
+          }
           terminalUnavailableReason={
-            canOpenTerminalIn(projectCwd)
+            currentProjectDock || remoteTerminalAvailable || canOpenTerminalIn(projectCwd)
               ? undefined
-              : t(
-                  "The terminal panel is available for local folders. Open this project on its machine to use it.",
-                )
+              : parseRemotePath(projectCwd)
+                ? t("Set up an SSH connection to this project's machine to open a terminal.")
+                : t(
+                    "The terminal panel is available for local folders. Open this project on its machine to use it.",
+                  )
           }
           projectTerminalActive={!!currentProjectDock && currentProjectDock.pane.files.length > 0}
           projectTerminalVisible={dockVisible}
@@ -131,15 +150,6 @@ function WorkspaceFooterComponent({
       <div className="flex shrink-0 items-center gap-1">
         <LocalHostVersionPrompt onUpdateApp={updateApp} />
         <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
-        <ApprovalToasts
-          notices={pendingNotifications}
-          popupNotices={hiddenApprovalToasts}
-          onFocusSession={onOpenApprovalSession}
-          onOpenHistorySession={onOpenApprovalSession}
-          onOpenBackground={requestBackgroundTarget}
-          onOpenSettings={() => openSettings("notifications", "notifications")}
-          onApproval={onApproval}
-        />
       </div>
     </div>
   );

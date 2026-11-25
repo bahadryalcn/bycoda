@@ -1,4 +1,6 @@
 import type { Block } from "../../sessions";
+import { bytesToBase64 } from "../../../shared/lib/base64";
+import { isRemoteProjectPath } from "../../../shared/lib/paths";
 
 /**
  * The wire form of a transcript block (`host/sessions/transcriptPage.ts previewBlock`).
@@ -93,13 +95,36 @@ export function restoreLocalFiles(local: Block, host: Block): Block {
   let restored = false;
   const attachments = host.attachments.map((file) => {
     const mine = files.find((candidate) => candidate.id === file.id);
-    if (!mine) return file;
+    if (!mine || mine.hostEnvironmentId !== file.hostEnvironmentId) return file;
     const missing = LOCAL_ONLY_ATTACHMENT_KEYS.filter(
       (key) => !(key in file) && key in mine,
     ) as Array<keyof typeof mine>;
     if (missing.length === 0) return file;
     restored = true;
-    return { ...file, ...Object.fromEntries(missing.map((key) => [key, mine[key]])) };
+    const merged = { ...file, ...Object.fromEntries(missing.map((key) => [key, mine[key]])) };
+    const path = mine.path;
+    const hostReader = file.loadPreview;
+    // The local copy of this same attachment can still exist when the Host never had its bytes.
+    if (
+      path &&
+      !file.path &&
+      hostReader &&
+      !mine.hostEnvironmentId &&
+      !file.hostEnvironmentId &&
+      !isRemoteProjectPath(path) &&
+      mine.size === file.size &&
+      mine.mimeType === file.mimeType
+    ) {
+      merged.loadPreview =
+        mine.loadPreview ??
+        (async () => {
+          // Transcript comparison also runs on the headless Host. Only the desktop opens this reader.
+          const { readBinaryFile } = await import("../../../platform/tauri/fs");
+          const bytes = await readBinaryFile(path).catch(() => undefined);
+          return bytes?.byteLength === file.size ? bytesToBase64(bytes) : hostReader();
+        });
+    }
+    return merged;
   });
   return restored ? { ...host, attachments } : host;
 }

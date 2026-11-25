@@ -207,7 +207,13 @@ pub(crate) fn repair_local_pairing(app: &AppHandle, machine_id: &str) -> Result<
     let pair = run_launcher(
         &program,
         &base_args,
-        &["pair", "--name", &local_device_name(), "--json"],
+        &[
+            "pair",
+            "--name",
+            &local_device_name(),
+            "--local-sync",
+            "--json",
+        ],
         Duration::from_secs(45),
     )
     .ok_or("The local Host did not issue a new pairing")?;
@@ -322,6 +328,23 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
     let Some((program, base_args)) = launcher_command(&data_dir) else {
         return Ok(None);
     };
+    if app.config().identifier == crate::bundled_host::RELEASE_IDENTIFIER
+        && crate::debug_profile::profile_id().is_none()
+        && crate::host_lifecycle::mode(&data_dir)? == crate::host_lifecycle::Mode::App
+    {
+        crate::host_lifecycle::ensure_child(&data_dir, false, false)?;
+        let owned = crate::host_lifecycle::owned_pid().is_some();
+        if owned || owner_state(&data_dir).starting() {
+            let _ = wait_for_host(
+                &data_dir,
+                if owned {
+                    Duration::from_secs(2)
+                } else {
+                    Duration::ZERO
+                },
+            );
+        }
+    }
     let Some(port) = connection_port(&data_dir, &program, &base_args) else {
         return Ok(None);
     };
@@ -342,7 +365,13 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
     let Some(pair) = run_launcher(
         &program,
         &base_args,
-        &["pair", "--name", &local_device_name(), "--json"],
+        &[
+            "pair",
+            "--name",
+            &local_device_name(),
+            "--local-sync",
+            "--json",
+        ],
         Duration::from_secs(45),
     ) else {
         return Ok(None);
@@ -365,7 +394,7 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalHostStatus {
-    /// absent | running | stopped | updating | unknown
+    /// absent | running | starting | stopped | updating | unknown
     pub state: &'static str,
 }
 
@@ -414,6 +443,14 @@ fn local_host_status_blocking() -> LocalHostStatus {
     let probe = probe_with_retry(&data_dir);
     let responding = probe.is_ok();
     let updating = !responding && updating(&data_dir);
+    if !responding
+        && !updating
+        && crate::debug_profile::profile_id().is_none()
+        && crate::host_lifecycle::mode(&data_dir).ok() == Some(crate::host_lifecycle::Mode::App)
+        && owner_state(&data_dir).starting()
+    {
+        return LocalHostStatus { state: "starting" };
+    }
     if matches!(probe, Err(LifecycleProbeError::Unconfirmed)) && !updating {
         return LocalHostStatus { state: "unknown" };
     }
@@ -468,10 +505,8 @@ const INSTALL_SETTLE: Duration = Duration::from_secs(10);
 
 static STARTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Starts this computer's stopped host from the app, then links the desktop to
-/// it again. Falls back to the host's own `service install`, which starts an
-/// existing service and only (re)creates a missing one; it also returns early
-/// when a host already answers.
+/// Starts this computer's stopped Host in its configured lifecycle mode, then
+/// links the desktop to it again.
 #[tauri::command]
 pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String> {
     crate::harness::run_blocking("local_host_start", move || {
@@ -479,6 +514,21 @@ pub async fn local_host_start(app: AppHandle) -> Result<Option<Machine>, String>
             .try_lock()
             .map_err(|_| "This computer's host is already starting.".to_string())?;
         let data_dir = host_data_dir().ok_or("Could not find this computer's host folder.")?;
+        if crate::debug_profile::profile_id().is_none()
+            && crate::host_lifecycle::mode(&data_dir)? == crate::host_lifecycle::Mode::App
+        {
+            if updating(&data_dir) {
+                return Err("The host on this computer is being updated. Try again when it finishes.".into());
+            }
+            if !data_dir.join("runtime-path").is_file() {
+                return Err("bycoda Host is not installed on this computer.".into());
+            }
+            crate::host_lifecycle::ensure_child(&data_dir, true, false)?;
+            if wait_for_host(&data_dir, SERVICE_LAUNCH_SETTLE) != HostWait::Ready {
+                return Err(format!("The local Host has not answered. Check {}.", data_dir.join("host.log").display()));
+            }
+            return local_host_connect_blocking(app);
+        }
         let (program, base_args) =
             launcher_command(&data_dir).ok_or("bycoda Host is not installed on this computer.")?;
         // One bounded probe, no retry: a host that answers needs no restart. A

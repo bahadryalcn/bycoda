@@ -253,7 +253,7 @@ async function runTurn(
         result = observedResult(
           await voiceRuntimeDeadline(
             (wait) =>
-              voiceToolWaitsForOwner(decision.name)
+              voiceToolWaitsForOwner(decision.name, decision.args)
                 ? input.execute(decision.name, decision.args, input.signal, wait)
                 : input.execute(decision.name, decision.args, input.signal),
             input.signal,
@@ -267,9 +267,11 @@ async function runTurn(
         result = {
           status: "uncertain",
           error:
-            error instanceof Error
-              ? error.message
-              : "The application tool did not return a verified result.",
+            typeof error === "string"
+              ? error
+              : error instanceof Error
+                ? error.message
+                : "The application tool did not return a verified result.",
           requestId: decision.args.requestId,
           retry: "Read the operation state before retrying. No automatic resend was made.",
         };

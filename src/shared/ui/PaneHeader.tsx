@@ -1,7 +1,16 @@
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import { createContext, useContext, type ComponentPropsWithRef, type ReactNode } from "react";
 import { IS_MAC } from "../../platform/tauri/platform";
 import styles from "./PaneHeader.module.css";
 import { Heading } from "./Heading";
+
+/**
+ * True below a window title bar that spans the window and already holds the macOS window
+ * buttons: headers in that subtree reserve no traffic-light inset.
+ * @group layout
+ * @use Provide `true` once, around everything below a title bar that spans the window.
+ * @avoid Reading it to place window chrome by hand: PaneHeader `chromeInset` and WindowChromeInset already do.
+ */
+export const WindowTitleBarAbove = createContext(false);
 
 export type WindowChromeInsetProps = {
   /** Reserve the space only when this is true (e.g. `!besideRail`). Default true. */
@@ -30,7 +39,8 @@ export function WindowChromeInset({
   size = "traffic-lights",
   className,
 }: WindowChromeInsetProps) {
-  if (!IS_MAC || !active) return null;
+  const titleBarAbove = useContext(WindowTitleBarAbove);
+  if (!IS_MAC || !active || titleBarAbove) return null;
   return (
     <span
       aria-hidden="true"
@@ -110,7 +120,8 @@ export function PaneHeader({
 }: PaneHeaderProps) {
   const drag = dragRegion === true ? "deep" : dragRegion === "self" ? "" : dragRegion || undefined;
   const noDrag = drag !== undefined ? "false" : undefined;
-  const inset = chromeInset !== false && IS_MAC;
+  const titleBarAbove = useContext(WindowTitleBarAbove);
+  const inset = chromeInset !== false && IS_MAC && !titleBarAbove;
   const row = (
     <Root
       {...props}

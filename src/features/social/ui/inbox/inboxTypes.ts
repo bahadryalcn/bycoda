@@ -32,6 +32,8 @@ export type UnreadableAccount = {
   reason: string;
 };
 
+export type InboxTagReceipt = Pick<InboxItem, "threadId" | "status" | "tags">;
+
 export type InboxUnifiedResult = {
   items: InboxItem[];
   unreadable: UnreadableAccount[];

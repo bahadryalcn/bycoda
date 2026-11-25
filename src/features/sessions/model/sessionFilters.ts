@@ -1,8 +1,14 @@
 import type { HarnessId } from "./session";
 import { HARNESSES } from "./session";
 import type { SessionSummary } from "../data/sessionStore";
+import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 
 export type SessionTimeFilter = "all" | "today" | "7d" | "30d";
+
+export type GlobalSessionListView = {
+  groupBy: "none" | "project" | "state";
+  sort: "newest" | "oldest";
+};
 
 export type SessionStatusFilter = {
   working: boolean;
@@ -36,6 +42,12 @@ export const DEFAULT_SESSION_SIDEBAR_FILTERS: SessionSidebarFilters = {
 };
 
 const FILTERS_KEY = "bycoda.sessionSidebarFilters";
+const LEGACY_ARCHIVED_KEY = "bycoda.sessionsShowArchived";
+
+/** Archive follows filters changed in sibling windows and refreshes them when it regains focus. */
+export function subscribeSessionSidebarFilters(onChange: () => void): () => void {
+  return subscribePreferenceChanges([FILTERS_KEY, LEGACY_ARCHIVED_KEY], "focus", onChange);
+}
 
 export function harnessesInSessions(rows: SessionSummary[]): HarnessId[] {
   const seen = new Set<HarnessId>();
@@ -47,7 +59,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
   try {
     const raw = localStorage.getItem(FILTERS_KEY);
     if (!raw) {
-      const legacyArchived = localStorage.getItem("bycoda.sessionsShowArchived") === "1";
+      const legacyArchived = localStorage.getItem(LEGACY_ARCHIVED_KEY) === "1";
       return legacyArchived
         ? { ...DEFAULT_SESSION_SIDEBAR_FILTERS, showArchived: true }
         : DEFAULT_SESSION_SIDEBAR_FILTERS;

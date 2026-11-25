@@ -79,7 +79,6 @@ export function UsageFooter({
   embedded = false,
   providers,
   session,
-  project,
   terminals = [],
   terminalOpen = false,
   onToggleTerminal,
@@ -95,7 +94,6 @@ export function UsageFooter({
   embedded?: boolean;
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
-  project?: string;
   terminals?: RunningTerminal[];
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
@@ -111,10 +109,11 @@ export function UsageFooter({
   const t = useT();
   // The live binding (user overrides included), so the hint matches what the shortcut does.
   const terminalShortcut = useKeybindingShortcut("Terminal: New");
-  const wantClaude = providers.includes("claude");
-  const wantCodex = providers.includes("codex");
-  const wantOpencode = providers.includes("opencode");
-  const wantGrok = providers.includes("grok");
+  const showStandardUsage = session?.harness !== "pi";
+  const wantClaude = showStandardUsage && providers.includes("claude");
+  const wantCodex = showStandardUsage && providers.includes("codex");
+  const wantOpencode = showStandardUsage && providers.includes("opencode");
+  const wantGrok = showStandardUsage && providers.includes("grok");
   // One shared minute clock (paused while hidden); countdowns show whole minutes.
   const now = useMinuteNow();
   const [refreshing, setRefreshing] = useState(false);
@@ -317,7 +316,7 @@ export function UsageFooter({
         className="flex min-w-0 flex-1 items-center gap-1 overscroll-x-contain"
       >
         {session?.harness === "pi" ? (
-          <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
+          <PiUsage model={session.model} now={now} />
         ) : showUsage ? (
           <>
             {wantClaude ? (
@@ -344,7 +343,6 @@ export function UsageFooter({
                 limits={codex}
                 usageOnly
                 now={now}
-                project={project}
                 accounts={codexAccounts}
                 accountId={codexAccountId}
                 onSelectUsageAccount={(accountId) => saveUsageDisplayAccount("codex", accountId)}
@@ -363,7 +361,6 @@ export function UsageFooter({
               <UsageProviderChip
                 limits={opencode}
                 now={now}
-                project={project}
                 refreshing={refreshing}
                 onRefresh={() => refresh("opencode")}
               />
@@ -372,7 +369,6 @@ export function UsageFooter({
               <UsageProviderChip
                 limits={grok}
                 now={now}
-                project={project}
                 refreshing={refreshing}
                 onRefresh={() => refresh("grok")}
               />

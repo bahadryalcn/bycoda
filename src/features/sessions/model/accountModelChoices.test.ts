@@ -10,6 +10,13 @@ import { t } from "../../../shared/i18n/core";
 import type { AgentModel } from "./models";
 import { providerAccounts } from "../../providers/model/providerAccounts";
 
+it("reads local accounts once per provider when expanding a model catalog", () => {
+  vi.mocked(providerAccounts).mockClear();
+  const choices = accountModelChoices([model, { ...model, id: "second" }], true);
+  expect(choices).toHaveLength(2);
+  expect(providerAccounts).toHaveBeenCalledTimes(1);
+});
+
 vi.mock("../../providers/model/providerAccounts", () => ({
   providerAccounts: vi.fn(() => [
     { id: "native-secret", label: "Native profile", provider: "codex", isDefault: true },

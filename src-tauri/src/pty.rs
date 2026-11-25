@@ -372,6 +372,15 @@ impl PtyHost {
         sessions.remove(id)
     }
 
+    #[cfg(windows)]
+    pub(crate) fn has_sessions(&self) -> bool {
+        !self
+            .sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
+    }
+
     pub(crate) fn kill_all(&self) {
         let kids: Vec<Arc<LivePty>> = {
             let mut map = self.sessions.lock().unwrap_or_else(|e| e.into_inner());

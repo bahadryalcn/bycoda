@@ -1,8 +1,8 @@
 # Personal assistant
 
 In Automations, instructions and scheduling settings share a bounded editor.
-Session options and Advanced limits use stacked fields so descriptions remain
-readable in narrow windows. Scheduled times use the shared time picker. The AI
+Hover over an info icon or focus it with Tab to read its explanation.
+Scheduled times use the shared time picker. The AI
 assistant keeps scope above its project and model controls; the automation review
 shows instructions before the schedule and execution details.
 
@@ -120,8 +120,8 @@ result clears them without changing your draft.
 Open **Set up** in the tool navigation to choose the assistant's name, language,
 execution provider, working permissions and daily token budget. The chosen name
 also appears in its Room and on messages it writes. Voice setup checks the
-provider, microphone and selected voice separately. Talking always requires an
-explicit microphone action.
+provider connection. Speaker preview and local microphone recording are optional.
+Talking always requires an explicit microphone action.
 
 Setup offers a daily token budget of one million for an unconfigured assistant.
 Choose a preset or enter an exact custom limit; existing chosen values are kept.
@@ -148,11 +148,13 @@ project supervision and computer use are never proposed and stay manual. The
 avatar picker also has **Generate with AI** for a portrait from your own
 description; generated avatars are stored on the Host.
 
-Quick setup has three steps: your name and how the assistant addresses you, a
-**Work mode**, and a review. Voice setup has five steps: Identity (including language and conversation behavior),
-Voice (provider, playback and microphone checks), Work mode, Presence and hours
-(including first rules), and Review. Existing drafts resume in the matching grouped step. The work mode answers one question, how freely the
-assistant may work, and sets the job controls together:
+Quick setup has three steps. Choose your name and how the assistant addresses you,
+choose a work mode, then review. Voice setup starts with identity for new profiles
+and continues through provider, speaker, microphone, and review. Applying an AI
+profile advances to provider selection. New assistants use report-only defaults
+unless you choose **Work mode** in the review. Voice setup preserves an existing
+assistant's profile and rules. The work mode determines how freely the assistant
+may work and sets the job controls together:
 
 - **Only watch** reports what happens and starts no work.
 - **Work and ask** runs jobs you assign and asks before commands, file changes
@@ -160,7 +162,7 @@ assistant may work, and sets the job controls together:
 - **Work freely** runs jobs without asking; commands and file changes run without
   confirmation.
 
-Nothing is selected until you choose one. Models are not asked for: the available
+In the detailed work-mode step, choose a mode explicitly. The available
 default model becomes the worker, and you manage the model list later in
 **Settings > Models > Background work**. If no default model is available, choose a work mode
 that starts no work, or add a model in Settings first. Rules you want the assistant
@@ -192,6 +194,15 @@ execution permissions, folders and commands, computer use, manual session
 supervision and the 24/7 readiness list. **Advanced** holds cost and context
 limits and conversation retention.
 
+Worker context is automatic by default. Arif compacts at 50% of the model's
+context window or 150,000 tokens and starts a fresh session at 80% or 300,000
+tokens, whichever threshold comes first for each action. Existing custom
+limits stay editable under **Advanced worker context limits**. Use **Restore
+defaults** on the worker context row and save to return to automatic settings.
+**Today's usage** shows usage against the saved daily budget. Open **Usage details** for the
+supervisor, worker and cache figures. Cache reads already count at one tenth
+in that budget total.
+
 The readiness list shows unresolved checks and their explanations immediately,
 including phone notifications and Host availability after sign-out. **All checks**
 also shows the ready items. Unknown status remains unknown; opening settings does
@@ -200,11 +211,20 @@ not grant permissions or make a check ready.
 Manual supervision shows the selected project names. Saving this project scope
 does not enroll conversations; choose each conversation in **Sessions**.
 
-**Access > Permission** applies one choice to jobs, commands and computer use.
-**Full access** also permits changes without another confirmation in the configured
-Assistant folders. **Custom** opens individual controls without changing grants;
-mixed existing grants show **Custom**, not Full access. Selecting a preset changes
-drafts; **Save** applies them through their existing versioned owners. Existing
+**Access > Permission** applies one choice to jobs, commands, computer use and the
+standing permission this computer keeps for the selected Host. **Full access** also
+permits changes without another confirmation in the configured Assistant folders and
+grants **Everything** with no critical exclusions; exclusions you tick afterwards are
+kept and the choice then shows **Custom**. **Work and ask** removes any broad
+standing permission and asks before every operation. **Computer access** states what
+this computer enforces: the saved level, no saved permission, a permission that
+belongs to other Host credentials (every operation asks until you renew it on
+**Save**), or that it could not be read. Presets stay unavailable until it is read.
+**Custom** opens individual controls without changing grants;
+mixed existing grants, or a Host profile that claims more than this computer grants,
+show **Custom**, not Full access. Selecting a preset changes
+drafts; **Save** applies them through their existing versioned owners. Opening
+settings or saving unrelated changes never grants or renews a permission. Existing
 command-only grants do not gain permission to write files automatically. Folder
 scope, operating-system permissions, account authorization and project privacy
 remain effective. Stop and revocation remain available.
@@ -434,7 +454,8 @@ sessions or both. Learned facts have separate provenance and cannot promote
 themselves into owner rules. Forbidden terms can be excluded from assistant
 text outputs. Review remembered facts and remove outdated information in
 **Memory**. Its search and **Add memory** action sit above grouped Rules, About me
-and Learned entries. Each entry keeps its scope, source and date beside the text;
+and Learned entries. Matching entries stay visible as you type while the Host searches
+the full memory collection. Each entry keeps its scope, source and date beside the text;
 enable, edit and delete controls stay with that entry. In the editor, write the
 memory first, then select its kind and scope and optional forbidden words. Deleting
 requires confirmation; **Undo** restores the deleted entry.

@@ -2,26 +2,6 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 const fixture = "/tests/browser/sessions/session-tools.html";
 const captures = "temp/verification/2026-11-04-session-tools/hub";
 
-for (const theme of ["light", "dark"])
-  for (const width of [1280, 800])
-    test(`transcript work results ${theme} ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto(`${fixture}?work-results&theme=${theme}`);
-      const results = page.locator("[data-transcript-work-results]");
-      await expect(results).toHaveCount(1);
-      await expect(results.locator("[data-tool-inspection]")).toHaveCount(0);
-      await results.locator("summary").click();
-      await expect(results.getByText("Filter regression:", { exact: false })).toBeVisible();
-      await results.getByRole("radio", { name: "Completed" }).click();
-      await expect(results.getByText("+return rows.filter(matchesQuery);")).toBeVisible();
-      await expect(results.getByText("Filter regression:", { exact: false })).toHaveCount(0);
-      await results.getByRole("button", { name: "Open changes", exact: true }).click();
-      await expect(page.getByText("G:/demo/Atlas/src/filters.ts", { exact: true })).toBeVisible();
-      await results.screenshot({
-        path: `temp/verification/transcript-work-results/${theme}-${width}.png`,
-      });
-    });
-
 async function previewNavigations(page: Page) {
   return page.evaluate(() => {
     const { sessionToolsCalls } = window as unknown as {
@@ -89,7 +69,7 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-test("two renderer windows follow focused sessions, retain pin, select manually, clear empty sessions and capture both themes", async ({
+test("two renderer windows follow focused sessions, select manually, clear empty sessions and capture both themes", async ({
   context,
 }) => {
   const source = await context.newPage();
@@ -103,19 +83,12 @@ test("two renderer windows follow focused sessions, retain pin, select manually,
   await source.getByRole("button", { name: "Studio", exact: true }).click();
   await expect(identity).toContainText("Studio");
   await hub.bringToFront();
-  await hub.getByRole("button", { name: "Follow active conversation", exact: true }).click();
-  await source.bringToFront();
+  await expect(hub.getByRole("button", { name: "Follow active conversation" })).toHaveCount(0);
   await source.getByRole("button", { name: "Atlas", exact: true }).click();
-  await expect(identity).toContainText("Studio");
-  await hub.bringToFront();
-  await hub.getByRole("button", { name: "Keep this conversation", exact: true }).click();
   await expect(identity).toContainText("Atlas");
   await identity.click();
   await hub.getByRole("option").filter({ hasText: "Studio" }).click();
   await expect(identity).toContainText("Studio");
-  await expect(
-    hub.getByRole("button", { name: "Follow active conversation", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
   await source.bringToFront();
   await source.getByRole("button", { name: "Notes", exact: true }).click();
   await expect(identity).toContainText("Notes");
@@ -192,7 +165,6 @@ test("actual renderer transfers device marks/comments and server/log drafts thro
     await dock.getByRole("button", { name: "Connect devices", exact: true }).click();
   await dock.getByRole("button", { name: "Start emulator", exact: true }).click();
   await expect(dock.getByRole("img", { name: "Current device screen", exact: true })).toBeVisible();
-  await dock.getByRole("switch", { name: "Allow device control", exact: true }).click();
   await dock.getByRole("button", { name: "Device text input", exact: true }).click();
   await source
     .getByRole("textbox", { name: "Text to type on device", exact: true })
@@ -242,9 +214,9 @@ test("actual renderer transfers device marks/comments and server/log drafts thro
     .getByRole("textbox", { name: "Server command", exact: true })
     .fill("pnpm dev -- --port 7007");
   await chooseTool(hub, pane, "Devices");
-  await expect(
-    pane.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).not.toBeChecked();
+  await expect(pane.getByRole("switch", { name: "Allow device control", exact: true })).toHaveCount(
+    0,
+  );
   await pane.getByRole("button", { name: "Mark device screen", exact: true }).click();
   await expect(pane.getByRole("button", { name: "Undo annotation", exact: true })).toBeEnabled();
   await pane.getByRole("button", { name: "Annotation note", exact: true }).click();

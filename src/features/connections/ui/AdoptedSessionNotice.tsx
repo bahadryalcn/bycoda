@@ -110,8 +110,8 @@ export function AdoptedSessionNotice({
     );
   };
   if (!session.adoptedSyncConflict && !feedback && !refreshing)
-    // The first comparison with the other computer's copy; a quick one shows nothing.
-    return syncing ? (
+    // The mirror's last pass may predate the start of this local turn.
+    return syncing && !session.busy ? (
       <div className="shrink-0 px-4 py-2">
         <LoadingText>{t("Syncing with the local Host…")}</LoadingText>
       </div>
@@ -206,6 +206,7 @@ export function AdoptedSessionNotice({
     <div className="shrink-0 px-4 py-2">
       <Alert
         tone={attention ? "warning" : "info"}
+        actionsAlign={choosing ? "center" : undefined}
         {...noticeActions}
         extra={noticeActions.extra ?? failureDetails}
       >

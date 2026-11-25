@@ -2,167 +2,15 @@ import { t } from "../../../shared/i18n/core";
 import { formatResetDuration } from "../../../shared/i18n/format";
 import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 export { formatResetDuration } from "../../../shared/i18n/format";
-import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
-
-export type RateLimitProvider = "claude" | "codex" | "opencode" | "grok";
-
-export type RateLimitStatus = "idle" | "fetching" | "ok" | "error" | "unavailable";
-
-/**
- * Why usage could not be read, set only from structured evidence at the fetch
- * layer (an HTTP status, an unauthenticated provider answer, a missing binary).
- * Absent means unclassified: the `error` text is for display, never for branching.
- */
-export type RateLimitFailureReason = "signedOut" | "cliMissing";
-
-export type RateLimitWindow = {
-  /** Percentage of the window consumed (0–100). */
-  usedPercent: number;
-  /** Window duration in minutes: 300 (5h) or 10080 (7d). */
-  windowMinutes: number;
-  /** Unix ms timestamp when the window resets, if known. */
-  resetsAt: number | null;
-};
-
-/** What a Claude reset refills; `fable` returns only Fable's share of the week. */
-export type RateLimitResetKind = "session" | "weekly" | "fable" | "full";
-
-export type RateLimitResetCredit = {
-  id: string;
-  /** Claude only: names the row instead of the long provider title. */
-  kind?: RateLimitResetKind;
-  resetType: "codexRateLimits" | "unknown";
-  status: "available" | "redeeming" | "redeemed" | "unknown";
-  grantedAt: number | null;
-  expiresAt: number | null;
-  title: string | null;
-  description: string | null;
-};
-
-export type RateLimitResetCredits = {
-  availableCount: number;
-  /** Optional detail rows; the backend can report only the aggregate count. */
-  credits: RateLimitResetCredit[] | null;
-};
-
-export type ProviderRateLimits = {
-  provider: RateLimitProvider;
-  session: RateLimitWindow | null;
-  weekly: RateLimitWindow | null;
-  monthly: RateLimitWindow | null;
-  /** Banked rate-limit resets (Codex app-server, Claude OAuth usage). */
-  resetCredits: RateLimitResetCredits | null;
-  updatedAt: number;
-  error: string | null;
-  status: RateLimitStatus;
-  /** Structured cause of an `error` or `unavailable` status, when the fetch layer knew it. */
-  reason?: RateLimitFailureReason;
-  /**
-   * Claude's local access token expired and awaits renewal by the CLI. Reading
-   * it again is local-only, so the cache checks back sooner than its backoff.
-   */
-  renewalPending?: boolean;
-};
-
-export const SESSION_WINDOW_MINUTES = 300;
-export const WEEKLY_WINDOW_MINUTES = 10_080;
-export const MONTHLY_WINDOW_MINUTES = 43_200;
-export const RATE_LIMIT_POLL_MS = 15 * 60_000;
-export const RATE_LIMIT_MIN_REFETCH_MS = 5 * 60_000;
-
-const WINDOW_DURATION_TOLERANCE_MINUTES = 1;
-
-export function idleRateLimits(provider: RateLimitProvider): ProviderRateLimits {
-  return {
-    provider,
-    session: null,
-    weekly: null,
-    monthly: null,
-    resetCredits: null,
-    updatedAt: 0,
-    error: null,
-    status: "idle",
-  };
-}
-
-export function fetchingRateLimits(
-  provider: RateLimitProvider,
-  previous?: ProviderRateLimits | null,
-): ProviderRateLimits {
-  if (
-    previous &&
-    (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
-  ) {
-    const { reason: _previousReason, ...retained } = previous;
-    return { ...retained, status: "fetching" };
-  }
-  return {
-    provider,
-    session: previous?.session ?? null,
-    weekly: previous?.weekly ?? null,
-    monthly: previous?.monthly ?? null,
-    resetCredits: previous?.resetCredits ?? null,
-    updatedAt: previous?.updatedAt ?? 0,
-    error: null,
-    status: "fetching",
-  };
-}
-
-export function unavailableRateLimits(
-  provider: RateLimitProvider,
-  error: string,
-  reason?: RateLimitFailureReason,
-): ProviderRateLimits {
-  return {
-    provider,
-    session: null,
-    weekly: null,
-    monthly: null,
-    resetCredits: null,
-    updatedAt: Date.now(),
-    error,
-    status: "unavailable",
-    ...(reason ? { reason } : {}),
-  };
-}
-
-/** `reason` replaces the retained snapshot's: a new failure never inherits an old cause. */
-export function errorRateLimits(
-  provider: RateLimitProvider,
-  error: string,
-  previous?: ProviderRateLimits | null,
-  reason?: RateLimitFailureReason,
-): ProviderRateLimits {
-  if (
-    previous &&
-    (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
-  ) {
-    const { reason: _previousReason, ...retained } = previous;
-    return {
-      ...retained,
-      error,
-      status: "error",
-      updatedAt: Date.now(),
-      ...(reason ? { reason } : {}),
-    };
-  }
-  return {
-    provider,
-    session: null,
-    weekly: null,
-    monthly: null,
-    resetCredits: null,
-    updatedAt: Date.now(),
-    error,
-    status: "error",
-    ...(reason ? { reason } : {}),
-  };
-}
-
-export function clampUsedPercent(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(100, Math.max(0, value));
-}
+import {
+  clampUsedPercent,
+  MONTHLY_WINDOW_MINUTES,
+  SESSION_WINDOW_MINUTES,
+  WEEKLY_WINDOW_MINUTES,
+  type ProviderRateLimits,
+  type RateLimitWindow,
+} from "../../../shared/model/provider-quota";
+export * from "../../../shared/model/provider-quota";
 
 export function formatUsagePercent(usedPercent: number): string {
   return `${Math.round(clampUsedPercent(usedPercent))}%`;
@@ -262,293 +110,58 @@ export function exhaustedWindowResetAt(limits: ProviderRateLimits): number | nul
   return latest;
 }
 
-export function parseResetTimestamp(value: unknown): number | null {
-  if (typeof value === "number") {
-    return normalizeEpochMs(value);
+export function updatedLabel(
+  limits: ProviderRateLimits,
+  now: number,
+  t: (message: string, values?: Record<string, unknown>) => string,
+): string {
+  if (limits.updatedAt <= 0) return t("Rate-limit details");
+  const elapsedMinutes = Math.max(0, Math.floor((now - limits.updatedAt) / 60_000));
+  // Without any windows, the time is the last check rather than data age.
+  if (!limits.session && !limits.weekly && !limits.monthly && !limits.resetCredits) {
+    if (elapsedMinutes === 0) return t("Checked just now");
+    if (elapsedMinutes < 60) return t("Checked {p0}m ago", { p0: elapsedMinutes });
+    return t("Checked {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
   }
-  if (typeof value !== "string" || value.trim() === "") return null;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && value.trim() !== "") {
-    return normalizeEpochMs(numeric);
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
+  if (elapsedMinutes === 0) return t("Updated just now");
+  if (elapsedMinutes < 60) return t("Updated {p0}m ago", { p0: elapsedMinutes });
+  return t("Updated {p0}h ago", { p0: Math.floor(elapsedMinutes / 60) });
 }
 
-function normalizeEpochMs(value: number): number | null {
-  if (!Number.isFinite(value) || value <= 0) return null;
-  // 1e10 sits between seconds-epoch (<2286) and millisecond-epoch (>2001).
-  return value > 10_000_000_000 ? value : value * 1000;
-}
-
-export function mapUsageWindow(raw: unknown, windowMinutes: number): RateLimitWindow | null {
-  const rec = asRecord(raw);
-  if (!rec) return null;
-  const usedPercent = usedPercentFrom(rec);
-  if (usedPercent == null) return null;
-  return {
-    usedPercent: clampUsedPercent(usedPercent),
-    windowMinutes,
-    resetsAt: parseResetTimestamp(rec.resets_at) ?? parseResetTimestamp(rec.resetsAt) ?? null,
-  };
-}
-
-function usedPercentFrom(rec: Record<string, unknown>): number | null {
-  const value =
-    numberField(rec, "used_percentage") ??
-    numberField(rec, "usedPercent") ??
-    numberField(rec, "utilization");
-  if (value == null) return null;
-  return value;
-}
-
-export function parseClaudeOAuthUsage(body: string): ProviderRateLimits {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return errorRateLimits("claude", "Claude usage response was not JSON");
-  }
-  const rec = asRecord(parsed);
-  if (!rec) {
-    return errorRateLimits("claude", "Claude usage response was empty");
-  }
-  return {
-    provider: "claude",
-    session: mapUsageWindow(rec.five_hour, SESSION_WINDOW_MINUTES),
-    weekly: mapUsageWindow(rec.seven_day, WEEKLY_WINDOW_MINUTES),
-    monthly: null,
-    resetCredits: parseClaudeResetGrants(rec.cedar_ember),
-    updatedAt: Date.now(),
-    error: null,
-    status: "ok",
-  };
-}
-
-/** Claude's banked limit resets: one row per reset still left in each grant. */
-function parseClaudeResetGrants(raw: unknown): RateLimitResetCredits | null {
-  const grants = asRecord(raw)?.grants;
-  if (!Array.isArray(grants)) return null;
-  const credits: RateLimitResetCredit[] = [];
-  for (const grant of grants.map(asRecord)) {
-    if (!grant || typeof grant.id !== "string" || grant.id.trim() === "") continue;
-    const left = Math.min(Math.max(0, Math.floor(numberField(grant, "resets_left") ?? 0)), 20);
-    for (let index = 0; index < left; index++) {
-      credits.push({
-        id: `${grant.id}:${index}`,
-        kind: claudeResetKind(grant),
-        resetType: "unknown",
-        status: grant.usable_now === true ? "available" : "unknown",
-        grantedAt: parseResetTimestamp(grant.starts_at),
-        expiresAt: parseResetTimestamp(grant.ends_at),
-        title: stringField(grant, "label"),
-        description: null,
-      });
-    }
-  }
-  return credits.length > 0 ? { availableCount: credits.length, credits } : null;
-}
-
-/** Same precedence as Claude Code's `/limit-reset` picker. */
-function claudeResetKind(grant: Record<string, unknown>): RateLimitResetKind {
-  if (grant.gives_back_weekly === true) return "fable";
-  if (grant.type === "session" || grant.type === "weekly" || grant.type === "full") {
-    return grant.type;
-  }
-  const clears = Array.isArray(grant.clears) ? grant.clears : [];
-  const session = clears.includes("five_hour");
-  const other = clears.some((limit) => limit !== "five_hour");
-  return session && !other ? "session" : other && !session ? "weekly" : "full";
-}
-
-type CodexWindowSnapshot = {
-  usedPercent: number;
-  windowDurationMins: number | null;
-  resetsAt: unknown;
+export type AccountUsageSummary = {
+  /** Used share of the tightest window, or null without usage data. */
+  usedPercent: number | null;
+  /** When that window resets, if known and still ahead. */
+  resetsAt: number | null;
 };
 
-export function parseCodexRateLimits(result: unknown): ProviderRateLimits {
-  const rec = asRecord(result);
-  const wrapper = asRecord(rec?.rateLimits) ?? rec;
-  const classified = classifyCodexWindows({
-    primary: snapshotFrom(asRecord(wrapper?.primary)),
-    secondary: snapshotFrom(asRecord(wrapper?.secondary)),
-  });
-  return {
-    provider: "codex",
-    session: mapCodexSnapshot(classified.session, SESSION_WINDOW_MINUTES),
-    weekly: mapCodexSnapshot(classified.weekly, WEEKLY_WINDOW_MINUTES),
-    monthly: mapCodexSnapshot(classified.monthly, MONTHLY_WINDOW_MINUTES),
-    resetCredits: parseResetCredits(rec?.rateLimitResetCredits ?? rec?.rate_limit_reset_credits),
-    updatedAt: Date.now(),
-    error: null,
-    status: "ok",
-  };
-}
-
 /**
- * Parse the official OpenCode Go usage payload:
- * { usage: { rolling: { status, percent, resetsAt },
- *            weekly: {...}, monthly: {...} } }
- * `percent` is percent used, matching the dashboard.
+ * Usage of the window with the least headroom. A window whose reset time has passed counts
+ * as unused, matching `accountHeadroom`.
  */
-export function parseOpencodeGoUsage(result: unknown): ProviderRateLimits {
-  const rec = asRecord(result);
-  const usage = asRecord(rec?.usage) ?? rec;
-  return {
-    provider: "opencode",
-    session: mapOpencodeGoWindow(usage?.rolling, SESSION_WINDOW_MINUTES),
-    weekly: mapOpencodeGoWindow(usage?.weekly, WEEKLY_WINDOW_MINUTES),
-    monthly: mapOpencodeGoWindow(usage?.monthly, MONTHLY_WINDOW_MINUTES),
-    resetCredits: null,
-    updatedAt: Date.now(),
-    error: null,
-    status: "ok",
-  };
-}
-
-function mapOpencodeGoWindow(raw: unknown, windowMinutes: number): RateLimitWindow | null {
-  const rec = asRecord(raw);
-  if (!rec) return null;
-  // Require an explicit valid status; unknown shapes are dropped so the
-  // caller can treat a fully empty payload as an error, not a snapshot.
-  const status = rec.status;
-  if (status !== "ok" && status !== "rate-limited") return null;
-  const usedPercent = numberField(rec, "percent") ?? numberField(rec, "usedPercent");
-  if (usedPercent == null) return null;
-  return {
-    usedPercent: clampUsedPercent(usedPercent),
-    windowMinutes,
-    resetsAt: parseResetTimestamp(rec.resetsAt) ?? parseResetTimestamp(rec.resets_at),
-  };
-}
-
-function parseResetCredits(raw: unknown): RateLimitResetCredits | null {
-  const rec = asRecord(raw);
-  if (!rec) return null;
-  const count = numberField(rec, "availableCount") ?? numberField(rec, "available_count");
-  if (count == null) return null;
-  const rawCredits = rec.credits;
-  const credits = Array.isArray(rawCredits)
-    ? rawCredits
-        .map(parseResetCredit)
-        .filter((credit): credit is RateLimitResetCredit => credit != null)
-    : null;
-  return {
-    availableCount: Math.max(0, Math.floor(count)),
-    credits,
-  };
-}
-
-function parseResetCredit(raw: unknown): RateLimitResetCredit | null {
-  const rec = asRecord(raw);
-  if (!rec || typeof rec.id !== "string" || rec.id.trim() === "") {
-    return null;
+export function accountUsageSummary(
+  limits: ProviderRateLimits | undefined,
+  now: number,
+): AccountUsageSummary {
+  if (
+    !limits ||
+    limits.status === "idle" ||
+    limits.status === "unavailable" ||
+    limits.reason === "signedOut" ||
+    limits.reason === "cliMissing"
+  ) {
+    return { usedPercent: null, resetsAt: null };
   }
-  const resetType = rec.resetType === "codexRateLimits" ? "codexRateLimits" : "unknown";
-  const status =
-    rec.status === "available" || rec.status === "redeeming" || rec.status === "redeemed"
-      ? rec.status
-      : "unknown";
-  return {
-    id: rec.id,
-    resetType,
-    status,
-    grantedAt: parseResetTimestamp(rec.grantedAt ?? rec.granted_at),
-    expiresAt: parseResetTimestamp(rec.expiresAt ?? rec.expires_at),
-    title: stringField(rec, "title"),
-    description: stringField(rec, "description"),
-  };
-}
-
-function snapshotFrom(rec: Record<string, unknown> | null): CodexWindowSnapshot | null {
-  if (!rec) return null;
-  const usedPercent =
-    numberField(rec, "usedPercent") ??
-    numberField(rec, "used_percent") ??
-    numberField(rec, "used_percentage");
-  if (usedPercent == null) return null;
-  return {
-    usedPercent,
-    windowDurationMins:
-      numberField(rec, "windowDurationMins") ?? numberField(rec, "window_duration_mins") ?? null,
-    resetsAt: rec.resetsAt ?? rec.resets_at,
-  };
-}
-
-function classifyCodexWindows(input: {
-  primary: CodexWindowSnapshot | null;
-  secondary: CodexWindowSnapshot | null;
-}): {
-  session: CodexWindowSnapshot | null;
-  weekly: CodexWindowSnapshot | null;
-  monthly: CodexWindowSnapshot | null;
-} {
-  let session: CodexWindowSnapshot | null = null;
-  let weekly: CodexWindowSnapshot | null = null;
-  let monthly: CodexWindowSnapshot | null = null;
-  for (const window of [input.primary, input.secondary]) {
+  let tightest: { used: number; resetsAt: number | null } | null = null;
+  for (const window of [limits.session, limits.weekly, limits.monthly]) {
     if (!window) continue;
-    const kind = classifyWindowDuration(window.windowDurationMins);
-    if (kind === "session" && !session) session = window;
-    else if (kind === "weekly" && !weekly) weekly = window;
-    else if (kind === "monthly" && !monthly) monthly = window;
+    const expired = window.resetsAt != null && window.resetsAt <= now;
+    if (expired && limits.status !== "ok") continue;
+    const used = expired ? 0 : Math.min(100, Math.max(0, window.usedPercent || 0));
+    if (!tightest || used > tightest.used)
+      tightest = { used, resetsAt: expired ? null : window.resetsAt };
   }
-  if (
-    !session &&
-    input.primary &&
-    classifyWindowDuration(input.primary.windowDurationMins) === null
-  ) {
-    session = input.primary;
-  }
-  if (
-    !weekly &&
-    input.secondary &&
-    classifyWindowDuration(input.secondary.windowDurationMins) === null
-  ) {
-    weekly = input.secondary;
-  }
-  return { session, weekly, monthly };
-}
-
-function classifyWindowDuration(duration: number | null): "session" | "weekly" | "monthly" | null {
-  if (duration == null || !Number.isFinite(duration)) return null;
-  if (Math.abs(duration - SESSION_WINDOW_MINUTES) <= WINDOW_DURATION_TOLERANCE_MINUTES) {
-    return "session";
-  }
-  if (Math.abs(duration - WEEKLY_WINDOW_MINUTES) <= WINDOW_DURATION_TOLERANCE_MINUTES) {
-    return "weekly";
-  }
-  // Free plans get a single 30-day window.
-  if (Math.abs(duration - MONTHLY_WINDOW_MINUTES) <= WINDOW_DURATION_TOLERANCE_MINUTES) {
-    return "monthly";
-  }
-  return null;
-}
-
-function mapCodexSnapshot(
-  raw: CodexWindowSnapshot | null,
-  windowMinutes: number,
-): RateLimitWindow | null {
-  if (!raw) return null;
-  return {
-    usedPercent: clampUsedPercent(raw.usedPercent),
-    windowMinutes,
-    resetsAt: parseResetTimestamp(raw.resetsAt),
-  };
-}
-
-function numberField(rec: Record<string, unknown>, key: string): number | null {
-  const value = rec[key];
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
-function stringField(rec: Record<string, unknown>, key: string): string | null {
-  const value = rec[key];
-  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+  return tightest
+    ? { usedPercent: Math.round(tightest.used), resetsAt: tightest.resetsAt }
+    : { usedPercent: null, resetsAt: null };
 }

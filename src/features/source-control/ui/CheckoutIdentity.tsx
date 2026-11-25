@@ -2,7 +2,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { useFormat } from "../../../shared/i18n";
-import { FolderGit2, GitBranch } from "../../../shared/ui/icons";
+import { Bot, FolderGit2, GitBranch } from "../../../shared/ui/icons";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import type { GitDiffIndex } from "../../../platform/tauri/fs";
 import type { Worktree } from "../model/worktrees";
@@ -20,14 +20,14 @@ export function checkoutBranch({ index, checkout }: CheckoutSource): string | nu
 }
 
 /**
- * The one row format of a worktree or repository: a single leading icon (branch for worktrees,
- * repository for separate repositories), the bold title, then muted folder or branch and an
- * optional muted marker. Paths never show here; they belong in the row's tooltip.
+ * The one row format of a worktree or repository: a single leading icon (branch, agent or
+ * repository), the bold title, then a muted folder or branch. It never carries a text marker
+ * (current session, separate repository) or a path; those belong in the row's tooltip.
  */
 export function CheckoutIdentity({
   title,
   detail,
-  marker,
+  agent = false,
   repository = false,
   icon = true,
 }: {
@@ -36,12 +36,12 @@ export function CheckoutIdentity({
   title: string;
   /** Muted text after the title, end-truncated. */
   detail?: string;
-  /** Muted marker after the detail, such as "This session". */
-  marker?: string;
   /** A separate repository rather than a worktree. */
   repository?: boolean;
+  /** A worktree an agent manages: the agent icon replaces the branch icon. */
+  agent?: boolean;
 }) {
-  const Icon = repository ? FolderGit2 : GitBranch;
+  const Icon = repository ? FolderGit2 : agent ? Bot : GitBranch;
   return (
     <span className={styles.identity}>
       {icon ? <Icon aria-hidden className="icon-xs shrink-0" tone="secondary" /> : null}
@@ -52,11 +52,6 @@ export function CheckoutIdentity({
       {detail ? (
         <Text size="caption" leading="inherit" tone="secondary" truncate className={styles.path}>
           {detail}
-        </Text>
-      ) : null}
-      {marker ? (
-        <Text size="caption" leading="inherit" tone="secondary" className={styles.marker}>
-          {marker}
         </Text>
       ) : null}
     </span>

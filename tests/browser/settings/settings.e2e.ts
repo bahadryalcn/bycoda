@@ -154,7 +154,9 @@ for (const theme of ["dark", "light"])
       // 800px): the last tab must stay reachable, not necessarily visible without scrolling.
       const motionTab = page.getByRole("tab", { name: "Motion", exact: true });
       await motionTab.scrollIntoViewIfNeeded();
-      await expect(motionTab).toBeInViewport({ ratio: 1 });
+      // Fractional layout can leave a subpixel at the scroll container's edge.
+      await expect(motionTab).toBeInViewport({ ratio: 0.99 });
+      await motionTab.click({ trial: true });
       await page.screenshot({
         path: info.outputPath(`appearance-ai-closed-${theme}-${width}.png`),
         animations: "disabled",

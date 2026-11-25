@@ -57,6 +57,36 @@ it("refreshes another window's canonical owner on an unscoped admission flush", 
   expect(storage.hostSessionBinding({ id: "shell" })).toBeUndefined();
 });
 
+it("checks a single shell on every open and notifies readers only when its canonical evidence changes", async () => {
+  const storage = await import("./sessionExecutionBinding");
+  const database = await import("./hostSessionBindingDatabase");
+  await storage.hydrateHostSessionBindings();
+  const notify = vi.fn();
+  const unsubscribe = storage.subscribeHostSessionBindings(notify);
+  try {
+    const shell = { id: "shell" };
+    const first = storage.hostSessionBindingSnapshot(shell);
+    vi.mocked(database.readBindingEvidence).mockClear();
+    state.rows = [evidence("first", 1)];
+    await storage.flushHostSessionBindings(shell.id);
+    expect(database.readBindingEvidence).toHaveBeenCalledWith(shell.id);
+    expect(notify).toHaveBeenCalledTimes(0);
+    expect(storage.hostSessionBindingSnapshot(shell)).toBe(first);
+
+    state.rows = [evidence("other-window", 2)];
+    await storage.flushHostSessionBindings(shell.id);
+    expect(storage.hostSessionBindingSnapshot(shell)?.sessionId).toBe("other-window");
+    state.rows = [];
+    await storage.flushHostSessionBindings(shell.id);
+    expect(storage.hostSessionBindingSnapshot(shell)).toBeUndefined();
+    await storage.flushHostSessionBindings(shell.id);
+    expect(database.readBindingEvidence).toHaveBeenCalledTimes(4);
+    expect(notify).toHaveBeenCalledTimes(2);
+  } finally {
+    unsubscribe();
+  }
+});
+
 it("releases only unchanged legacy bytes after canonical migration is confirmed", async () => {
   localStorage.setItem("bycoda.host-session-binding.v1:shell", "original");
   localStorage.setItem("bycoda.host-session-binding.v1:other", "unreviewed");

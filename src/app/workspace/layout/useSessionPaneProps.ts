@@ -11,7 +11,6 @@ import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
 type P = WorkspaceSessionPaneProps;
 
 export interface SessionPaneDeps {
-  onOpenVoiceWork?: P["onOpenVoiceWork"];
   onKeepSession: (sessionId: string) => void;
   tabs: WorkspaceTab[];
   movingWindows: ReturnType<typeof useMovingWindowsState>["movingWindows"];
@@ -22,6 +21,7 @@ export interface SessionPaneDeps {
   onFocusPane: P["onFocus"];
   onClosePane: P["onClose"];
   onCwdChange: P["onCwdChange"];
+  onSessionMachineChange?: P["onSessionMachineChange"];
   onBranchChange: P["onBranchChange"];
   onComposerWorktreeChange: P["onWorktreeChange"];
   onRemoteSnapshot: P["onRemoteSnapshot"];
@@ -78,10 +78,10 @@ export interface SessionPaneDeps {
   onNewTerminalInSession: P["onNewTerminal"];
   onRunSessionProjectAction: P["onRunProjectAction"];
   onRunSessionCode: P["onRunCode"];
+  onRunRemoteSessionCode: P["onRunRemoteCode"];
 }
 
 export function useSessionPaneProps({
-  onOpenVoiceWork,
   onKeepSession,
   tabs,
   movingWindows,
@@ -92,6 +92,7 @@ export function useSessionPaneProps({
   onFocusPane,
   onClosePane,
   onCwdChange,
+  onSessionMachineChange,
   onBranchChange,
   onComposerWorktreeChange,
   onRemoteSnapshot,
@@ -148,6 +149,7 @@ export function useSessionPaneProps({
   onNewTerminalInSession,
   onRunSessionProjectAction,
   onRunSessionCode,
+  onRunRemoteSessionCode,
 }: SessionPaneDeps) {
   const windowMovingSessionIds = useMemo(
     () =>
@@ -159,7 +161,6 @@ export function useSessionPaneProps({
     [tabs, movingWindows, windowTransferPending],
   );
   const sessionPaneProps = {
-    onOpenVoiceWork,
     windowMovingSessionIds,
     workspaceSwitchingSessionId: workspaceNavigation.pending ? active?.id : undefined,
     recents: visibleRecents,
@@ -168,6 +169,7 @@ export function useSessionPaneProps({
     onSessionInteraction: onKeepSession,
     onClose: onClosePane,
     onCwdChange: useKeepSessionAction(onCwdChange, onKeepSession)!,
+    onSessionMachineChange: useKeepSessionAction(onSessionMachineChange, onKeepSession),
     onBranchChange: useKeepSessionAction(onBranchChange, onKeepSession)!,
     onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,
@@ -211,7 +213,10 @@ export function useSessionPaneProps({
     onQuestionReply: useKeepSessionAction(onQuestionReply, onKeepSession)!,
     onQuestionInteraction: useKeepSessionAction(onQuestionInteraction, onKeepSession),
     onOpenFile: useStableCallback<Parameters<P["onOpenFile"]>, void>((path, navigation, options) =>
-      onOpenFile(path, navigation, { ...options, placement: "pane" }),
+      onOpenFile(path, navigation && { ...navigation, keepMarkdownView: true }, {
+        ...options,
+        placement: "pane",
+      }),
     ),
     onOpenDiff,
     onOpenPlan,
@@ -226,6 +231,7 @@ export function useSessionPaneProps({
     onNewTerminal: onNewTerminalInSession,
     onRunProjectAction: onRunSessionProjectAction,
     onRunCode: onRunSessionCode,
+    onRunRemoteCode: onRunRemoteSessionCode,
   };
 
   // One object while its values hold: the main area and inbox-ask panes are memoized on it.

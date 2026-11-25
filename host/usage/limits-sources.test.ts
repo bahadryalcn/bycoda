@@ -11,6 +11,7 @@ import {
   readOpencodeGoKey,
 } from "./limits-opencode";
 import { clearLimitsCache, readUsageLimits } from "./limits-report";
+import { fetchPiLimits } from "./limits-pi";
 
 const blob = JSON.stringify({
   claudeAiOauth: {
@@ -20,6 +21,53 @@ const blob = JSON.stringify({
 });
 beforeEach(clearLimitsCache);
 afterEach(() => vi.unstubAllEnvs());
+
+it("reads Pi's own provider, rejects rotated credentials and propagates Retry-After", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-quota-"));
+  const auth = (access: string) =>
+    JSON.stringify({
+      "openai-codex": {
+        type: "oauth",
+        access,
+        expires: Date.now() + 3_600_000,
+        accountId: "sample",
+      },
+    });
+  try {
+    await writeFile(join(dir, "auth.json"), auth("pi-access"));
+    const request = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(async (_url, init) => {
+        expect(init?.headers).toMatchObject({
+          Authorization: "Bearer pi-access",
+          "ChatGPT-Account-Id": "sample",
+        });
+        return new Response(null, { status: 429, headers: { "Retry-After": "600" } });
+      })
+      .mockImplementation(async () => {
+        await writeFile(join(dir, "auth.json"), auth("replacement"));
+        return Response.json({
+          rate_limit: {
+            secondary_window: {
+              used_percent: 53,
+              limit_window_seconds: 604_800,
+              reset_at: 1_900_000_000,
+            },
+          },
+        });
+      });
+    await expect(fetchPiLimits("pi-openai-codex", dir, request)).resolves.toMatchObject({
+      status: "error",
+      retryAfterMs: 600_000,
+    });
+    await expect(fetchPiLimits("pi-openai-codex", dir, request)).resolves.toMatchObject({
+      status: "unavailable",
+    });
+    expect(request).toHaveBeenCalledTimes(2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 it("reads the Keychain only on darwin and walks the account fallbacks", async () => {
   const calls: string[][] = [];

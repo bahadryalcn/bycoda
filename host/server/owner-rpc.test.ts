@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { LogSink, setDefaultLogSink } from "../diagnostics/logger";
+import { runWithRequestTrace, startRequestTrace } from "../diagnostics/request-trace";
 import {
   HostDomainAuthorizationError,
   HostDomainOutcomeError,
@@ -93,6 +94,43 @@ it("does not report a held poll as slow for the wait its caller asked for", asyn
   // A poll that asked for no wait is an ordinary read.
   const unheld = await changesCall((advance) => (advance(2_100), {}), {}, {});
   expect(unheld.log).toContain("slow call method=machine.changes ms=2100");
+});
+
+it("reports a call that queued past its threshold before a quick handler", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bycoda-rpc-trace-"));
+  dirs.push(dir);
+  const sink = new LogSink({ dir, mirror: false, minLevel: "debug" });
+  setDefaultLogSink(sink);
+  const now = vi.spyOn(performance, "now");
+  now.mockReturnValue(1_000);
+  const trace = startRequestTrace("http");
+  now.mockReturnValue(7_000);
+  const dependencies = {
+    heldPolls: new Map(),
+    engine: { store: { authenticated: async () => true } },
+    remoteChanges: { read: async () => ({}) },
+  };
+  const request = {
+    input: { method: "machine.changes" },
+    params: { waitMs: 1_000, token: "private-token" },
+    result: undefined,
+    token: "token",
+    pollState: { revoked: false },
+    response: { once: () => undefined },
+  };
+  try {
+    await runWithRequestTrace(trace, () =>
+      dispatchOwnerRpc(dependencies as never, request as never),
+    );
+  } finally {
+    now.mockRestore();
+    sink.close();
+  }
+  const log = readFileSync(sink.path, "utf8");
+  expect(log).toMatch(
+    /slow call method=machine\.changes ms=0 traceId=r[0-9a-z]+ transport=http totalMs=6000 admissionMs=6000 handlerMs=0 heldWaitMs=1000 thresholdMs=3000/,
+  );
+  expect(log).not.toContain("private-token");
 });
 
 it("logs only registered workspace command names on failed workspace calls", () => {

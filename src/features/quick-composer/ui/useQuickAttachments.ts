@@ -13,11 +13,17 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   attachmentsFromFiles,
   attachmentsFromPaths,
+  attachmentDraftTokens,
+  beginAttachmentRead,
+  type AttachmentReadCapacity,
+  capturePastedTextAttachment,
   filesFromClipboard,
   MAX_ATTACHMENTS,
   MAX_EMBED_BYTES,
+  mergeAttachments,
   pickAttachments,
   retainAttachmentPickerSelection,
+  replacePastedText,
   revokeAttachment,
 } from "../../sessions/public/attachments";
 import {
@@ -31,7 +37,6 @@ import {
   clipboardTextWithAttachments,
   isFileReferenceText,
   messageFromClipboard,
-  nativeClipboardAttachments,
   readClipboardFilePaths,
   readClipboardImage,
 } from "../../../platform/tauri/clipboard";
@@ -50,6 +55,7 @@ import {
   type ExternalDropPointer,
 } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 
 async function releaseCaptures(files: Attachment[]) {
   const paths = files.flatMap((file) => (file.path ? [file.path] : []));
@@ -100,6 +106,15 @@ export function useQuickAttachments(
     onAddedRef.current = onAdded;
   }, [supported, onAdded]);
   const currentFiles = () => owner?.draft().attachments ?? filesRef.current;
+  const withPathCapacity = useStableCallback(
+    async (read: (capacity: AttachmentReadCapacity) => Promise<Attachment[]>) => {
+      const capacity = beginAttachmentRead(currentFiles, new Set());
+      const files = await read(capacity);
+      const message = capacity.notice();
+      if (message && alive.current) onError({ message });
+      return files;
+    },
+  );
   const updateFiles = (next: Attachment[]) => {
     filesRef.current = next;
     if (owner) owner.update((draft) => ({ ...draft, attachments: next }));
@@ -139,6 +154,7 @@ export function useQuickAttachments(
       /** Wait behind a pending read instead of dropping this one; for pastes that already hold their files. */
       queued = false,
       restorePaste?: (additions: Attachment[], attachments: Attachment[]) => boolean,
+      pasteStillPresent?: () => boolean,
     ): Promise<void> => {
       const queue = queueRef.current;
       if (
@@ -218,6 +234,10 @@ export function useQuickAttachments(
           return;
         }
         accepted.apply(() => {
+          if (pasteStillPresent && !pasteStillPresent()) {
+            stored.forEach(revokeAttachment);
+            return;
+          }
           const before = currentFiles();
           const additions = stored.filter(
             (file) =>
@@ -293,7 +313,7 @@ export function useQuickAttachments(
           hideDrop();
           nativeDropAt.current = Date.now();
           const paths = [...payload.paths];
-          void collect(() => attachmentsFromPaths(paths));
+          void collect(() => withPathCapacity((capacity) => attachmentsFromPaths(paths, capacity)));
         } else {
           if (payload.type === "enter") nativeCount = payload.paths?.length ?? 0;
           showDropRef.current(nativeCount, { position: payload.position });
@@ -308,33 +328,43 @@ export function useQuickAttachments(
       disposed = true;
       stop?.();
     };
-  }, [collect, hideDrop]);
+  }, [collect, hideDrop, withPathCapacity]);
 
-  const readFiles = (input: File[], accepted: QuickPreparation, overflow = false) => {
-    const selected = input.slice(0, MAX_ATTACHMENTS);
+  const readFiles = async (selected: File[], accepted: QuickPreparation, overflow = false) => {
     const skips = collectSkippedAttachments();
-    return Promise.allSettled(
-      selected.map((file, index) =>
-        accepted.stage(`file:${index}`, () =>
-          attachmentsFromFiles([file], { onSkipped: skips.onSkipped }),
+    const incoming: Attachment[] = [];
+    let start = 0;
+    while (start < selected.length) {
+      const room = MAX_ATTACHMENTS - mergeAttachments(currentFiles(), incoming).length;
+      if (room === 0) break;
+      // A skipped or duplicate file leaves a slot for the next wave. Durable stage
+      // keys keep the original input index when the window owner retries this job.
+      const batch = selected.slice(start, start + room);
+      const results = await Promise.allSettled(
+        batch.map((file, index) =>
+          accepted.stage(`file:${start + index}`, () =>
+            attachmentsFromFiles([file], { onSkipped: skips.onSkipped }),
+          ),
         ),
-      ),
-    ).then((results) => {
+      );
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
-      // Valid siblings still attach; oversized or unreadable blobs are named, not dropped.
-      const message = [
-        overflow ? t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) : null,
-        skips.notice(),
-      ]
-        .filter(Boolean)
-        .join(" ");
-      if (message && alive.current) onError({ message });
-      return results.flatMap((result) => (result as PromiseFulfilledResult<Attachment[]>).value);
-    });
+      for (const result of results)
+        if (result.status === "fulfilled") incoming.push(...result.value);
+      start += batch.length;
+    }
+    const message = [
+      overflow || start < selected.length
+        ? t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS })
+        : null,
+      skips.notice(),
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (message && alive.current) onError({ message });
+    return incoming;
   };
-  const clipboard = async (text: string, accepted: QuickPreparation) => {
-    if (!owner) return nativeClipboardAttachments(text);
+  const clipboard = async (text: string, accepted: QuickPreparation, previous?: Promise<void>) => {
     const paths = await accepted.once("clipboard-paths", async () => {
       const selected = await readClipboardFilePaths();
       if (selectionExceedsCapacity(selected))
@@ -345,9 +375,12 @@ export function useQuickAttachments(
       return Object.freeze([...selected]);
     });
     if (paths.length) {
+      await previous;
       const chosen = paths.slice(0, MAX_ATTACHMENTS);
-      const files = await attachmentsFromPaths(chosen);
-      if (!files.length)
+      const capacity = beginAttachmentRead(currentFiles, new Set());
+      const files = await attachmentsFromPaths(chosen, capacity);
+      const limit = capacity.notice();
+      if (!files.length && !limit)
         throw new Error(t("Nothing to attach. The file may have been moved, renamed, or deleted."));
       return {
         files,
@@ -359,10 +392,14 @@ export function useQuickAttachments(
                 p2: MAX_ATTACHMENTS,
               }),
             }
-          : {}),
+          : limit
+            ? { warning: limit }
+            : {}),
       };
     }
     if (text) return { files: [] };
+    if (currentFiles().length >= MAX_ATTACHMENTS)
+      return { files: [], warning: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) };
     const file = await accepted.once("clipboard-image", async () => {
       const selected = await readClipboardImage();
       if (selected && selected.size > MAX_EMBED_BYTES)
@@ -372,6 +409,7 @@ export function useQuickAttachments(
         );
       return selected;
     });
+    await previous;
     return { files: file ? await readFiles([file], accepted) : [] };
   };
   const onPaste = (event: ClipboardEvent) => {
@@ -414,12 +452,44 @@ export function useQuickAttachments(
     }
     if (!supported) return;
     const text = event.clipboardData.getData("text/plain");
+    const paste =
+      !message && !isFileReferenceText(text)
+        ? capturePastedTextAttachment(event.target, text)
+        : undefined;
+    if (paste) {
+      event.preventDefault();
+      paste.insert();
+      const field = paste.field;
+      void collect(
+        (accepted) => readFiles([paste.file], accepted),
+        false,
+        true,
+        (additions, attachments) => {
+          const range = paste.range(field.value);
+          if (!range) return true;
+          const index = attachments.indexOf(additions[0]);
+          const edit = replacePastedText(
+            field.value,
+            range,
+            attachmentDraftTokens(attachments)[index],
+          );
+          insertRestoredText(
+            { field, value: field.value, ...range },
+            edit.text.slice(range.start, edit.caret),
+          );
+          return true;
+        },
+        () => field.isConnected && !!paste.range(field.value),
+      );
+      return;
+    }
     if (text && !isFileReferenceText(text)) return;
     if (!canCollect()) {
       if (!text) {
         event.preventDefault();
+        const previous = queueRef.current.tail;
         void collect(async (accepted) => {
-          const result = await clipboard("", accepted);
+          const result = await clipboard("", accepted, previous);
           if (result.warning && alive.current) onError({ message: result.warning });
           return result.files;
         }, true);
@@ -432,7 +502,7 @@ export function useQuickAttachments(
       const result = await clipboard(text, accepted);
       accepted.apply(() => {
         if (result.warning && alive.current) onError({ message: result.warning });
-        if (result.files.length) {
+        if (result.files.length || result.warning) {
           if (captured) dropPastedText(captured, text);
         } else if (captured) insertRestoredText(captured, text);
       });
@@ -505,16 +575,27 @@ export function useQuickAttachments(
     chooseFiles: () => {
       const selection = retainAttachmentPickerSelection();
       return collect((accepted) =>
-        pickAttachments({ read: () => accepted.once("picker-selection", selection.read) }),
+        withPathCapacity((capacity) =>
+          pickAttachments(
+            { read: () => accepted.once("picker-selection", selection.read) },
+            capacity,
+          ),
+        ),
       );
     },
     takeScreenshot: () => {
       let captured: string | null = null;
       return collect(async (accepted) => {
+        if (currentFiles().length >= MAX_ATTACHMENTS) {
+          if (alive.current)
+            onError({ message: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
+          return [];
+        }
         captured = await accepted.once("screen-selection", () =>
           invoke<string | null>("quick_composer_capture"),
         );
-        return captured ? attachmentsFromPaths([captured]) : [];
+        const path = captured;
+        return path ? withPathCapacity((capacity) => attachmentsFromPaths([path], capacity)) : [];
       }).then(async () => {
         if (!owner && captured && !currentFiles().some((file) => file.path === captured))
           await releaseCaptures([{ path: captured } as Attachment]).catch(() => {});

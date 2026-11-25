@@ -28,6 +28,7 @@ import {
   openAgentSettings,
 } from "./tasksViewTestKit";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
+import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
 const TasksView = withQueryClient(RawTasksView);
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
@@ -499,6 +500,18 @@ it("lists the goal's worker sessions and preserves their host bindings", async (
     projectId: "project-1",
     sessionId: "worker",
   });
+});
+
+it("follows project renames and restores the folder name in task context", async () => {
+  host([task({ title: "Review report" })]);
+  await render();
+  const footer = () => card("Review report").querySelector(".task-card-footer")!.textContent;
+  expect(footer()).toContain("project");
+  act(() => saveTabGroupLabel("/work/project", "Weekly work"));
+  expect(footer()).toContain("Weekly work");
+  act(() => saveTabGroupLabel("/work/project", ""));
+  expect(footer()).toContain("project");
+  expect(footer()).not.toContain("Weekly work");
 });
 
 it("lays tasks out in six columns with the actions each status allows", async () => {

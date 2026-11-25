@@ -138,6 +138,8 @@ export function resetGitIndexStore() {
 export type GitChangeHint = {
   observed?: boolean;
   paths?: readonly string[];
+  /** A user requested a fresh read without reporting a repository mutation. */
+  refresh?: boolean;
 };
 
 let delivering: GitChangeHint | null = null;

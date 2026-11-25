@@ -82,6 +82,18 @@ describe("cross-window working summaries", () => {
     expect(mergeWindowLiveAgents([agent("local")], [], "main")).toEqual([agent("local")]);
   });
 
+  it("keeps a peer's listed Host session openable without focusing that peer", () => {
+    const listed = { ...agent("host-id"), listedRemote: true as const };
+    expect(
+      mergeWindowLiveAgents(
+        [],
+        [{ ownerWindowLabel: "window-2", agents: [listed], ownedSessionKeys: {} }],
+        "main",
+        {},
+      ),
+    ).toEqual([listed]);
+  });
+
   it("focuses the actual adopted owner instead of a locally synthesized host summary", () => {
     expect(
       mergeWindowLiveAgents(

@@ -61,6 +61,30 @@ const note =
   "Check the fallback.\n```ts\nconst result = read();\nif (!result) throw new Error('missing');\n```";
 
 describe("AgentTranscript interjection preview", () => {
+  it("rechecks an unchanged note after tab activation without forcing layout during commit", () => {
+    const blocks: Block[] = [
+      {
+        id: "advisor",
+        role: "system",
+        text: note,
+        interjection: { customType: "advisor", severity: "concern" },
+      },
+    ];
+    const show = (visible: boolean) =>
+      act(() => root.render(createElement(AgentTranscript, { blocks, busy: true, visible })));
+    show(true);
+    const body = container.querySelector("pre")!;
+    const measure = vi.fn(() => bodyHeight);
+    Object.defineProperty(body, "scrollHeight", { get: measure });
+    show(false);
+    bodyHeight = 20;
+    show(true);
+    expect(container.querySelector("pre")).toBe(body);
+    expect(measure).not.toHaveBeenCalled();
+    act(() => resize());
+    expect(measure).toHaveBeenCalled();
+    expect(container.querySelector("button")).toBeNull();
+  });
   it("clamps long blocker bodies by default while retaining the label and full text", () => {
     render(note, "blocker");
     expect(container.querySelector("pre")?.classList.contains("line-clamp-2")).toBe(true);

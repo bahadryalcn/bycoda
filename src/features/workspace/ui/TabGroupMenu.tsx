@@ -1,5 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
@@ -268,11 +268,11 @@ export function TabGroupMenu({
             <Text as="p" size="caption" tone="muted">
               {t("Logo")}
             </Text>
-            <InfoPopover>
+            <InfoTooltip>
               {logoPath
                 ? t("Shown in tabs and composer")
                 : t("Optional. Replaces the folder icon.")}
-            </InfoPopover>
+            </InfoTooltip>
           </div>
           {logoPath ? (
             <Button

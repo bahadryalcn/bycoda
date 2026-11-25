@@ -2,7 +2,7 @@ import { useTaskModelRouting } from "./TaskModelChoiceField";
 import "./task-form.css";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import {
@@ -66,6 +66,7 @@ export function TaskForm({
   onSubmit: (mode: "todo" | "queued" | "save", draft: TaskDraft) => void;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [submitMode, setSubmitMode] = useState<"todo" | "queued" | "save">("todo");
   const [workspaceChecks, patchWorkspaceChecks] = useWorkspaceChecks();
@@ -131,7 +132,7 @@ export function TaskForm({
     (draft.id != null || backgroundMachineFor(machines, draft.cwd)?.id === targetId);
   const canTodo = ready && !todoUnsupported;
   const canSave = ready && (draft.status === "todo" || hasDescription);
-  const projectName = projectDisplayName(draft.cwd);
+  const projectName = projectDisplayNameFrom(draft.cwd, projectLabels);
   // Why a footer action is unavailable, shown as its tooltip.
   const blockedReason = !draft.title.trim()
     ? t("Add a title to continue.")
@@ -210,7 +211,7 @@ export function TaskForm({
                       include: draft.cwd,
                     }).map((entry) => ({
                       value: entry.path,
-                      label: projectDisplayName(entry.path),
+                      label: projectDisplayNameFrom(entry.path, projectLabels),
                       keywords: entry.path,
                     }))}
                     onChange={(cwd) =>

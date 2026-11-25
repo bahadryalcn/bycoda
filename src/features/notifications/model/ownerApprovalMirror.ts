@@ -51,6 +51,7 @@ export function startOwnerApprovalMirror(deps: OwnerApprovalMirrorDeps): () => v
   const sent = new Map<string, string>();
   const outcomes: { id: string; outcome: "answered" | "ended"; approved?: boolean }[] = [];
   let stopped = false;
+  let stopTimer: (() => void) | undefined;
   let busy = false;
   let again = false;
 
@@ -102,8 +103,18 @@ export function startOwnerApprovalMirror(deps: OwnerApprovalMirrorDeps): () => v
     }
   };
 
+  const needsRetry = () => deps.approvals().length > 0 || outcomes.length > 0;
+  const syncTimer = () => {
+    if (!stopped && needsRetry()) {
+      stopTimer ??= setTimer(() => void run(), APPROVAL_POLL_MS);
+    } else {
+      stopTimer?.();
+      stopTimer = undefined;
+    }
+  };
   const run = async () => {
     if (stopped) return;
+    syncTimer();
     if (busy) {
       again = true;
       return;
@@ -119,6 +130,7 @@ export function startOwnerApprovalMirror(deps: OwnerApprovalMirrorDeps): () => v
       // The Host may be unreachable or not yet know this window as the desktop; the next tick retries.
     } finally {
       busy = false;
+      syncTimer();
     }
   };
 
@@ -131,14 +143,11 @@ export function startOwnerApprovalMirror(deps: OwnerApprovalMirrorDeps): () => v
     );
     void run();
   });
-  const stopTimer = setTimer(() => {
-    if (deps.approvals().length > 0 || outcomes.length > 0) void run();
-  }, APPROVAL_POLL_MS);
   void run();
   return () => {
     stopped = true;
     offSubscribe();
     offOutcome();
-    stopTimer();
+    syncTimer();
   };
 }

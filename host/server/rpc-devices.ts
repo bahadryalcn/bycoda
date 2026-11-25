@@ -67,6 +67,7 @@ export async function handleDevicesRpc(
     case "devices.boot":
     case "devices.capture":
     case "devices.stream":
+    case "devices.touch":
     case "devices.control.status":
     case "devices.control.claim":
     case "devices.control.release":
@@ -134,7 +135,10 @@ export async function handleDevicesRpc(
       break;
     case "host.access.read":
       request.result = await readHostAccess(dependencies.engine.store.environmentId, {
-        devices: async () => await dependencies.engine.store.pairedDevices(request.token),
+        devices: async () =>
+          await (request.params.includeDevicePermissions === true
+            ? dependencies.engine.store.pairedDeviceDetails(request.token)
+            : dependencies.engine.store.pairedDevices(request.token)),
         lan: async () => await dependencies.mobileLan.status(),
         privateNetwork: async () => await dependencies.mobileAccess.status(),
         tunnels: async () => await dependencies.tunnels.status(),
@@ -149,6 +153,29 @@ export async function handleDevicesRpc(
       )
         throw new Error("Unexpected devices.paired parameters");
       request.result = await dependencies.engine.store.pairedDeviceDetails(request.token);
+      break;
+    case "devices.applyRecovery":
+      await dependencies.engine.store.applyDeviceRecovery(
+        HostDeviceAccessRequest.parse(request.input.params),
+        request.token,
+      );
+      request.result = { applied: true };
+      break;
+    case "devices.setManagement":
+      if (
+        Object.keys(request.params).some((key) => key !== "id" && key !== "enabled") ||
+        typeof request.params.id !== "string" ||
+        !/^[a-zA-Z0-9_-]{1,128}$/.test(request.params.id) ||
+        typeof request.params.enabled !== "boolean"
+      )
+        throw new Error("Invalid paired device permission");
+      request.result = {
+        updated: await dependencies.engine.store.setDeviceManagement(
+          request.params.id,
+          request.token,
+          request.params.enabled,
+        ),
+      };
       break;
     case "devices.revokeOther":
       if (
@@ -406,3 +433,4 @@ export async function handleDevicesRpc(
     }
   }
 }
+import { HostDeviceAccessRequest } from "@bycoda/account-contracts";

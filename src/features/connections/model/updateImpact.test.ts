@@ -72,7 +72,7 @@ it("deduplicates alternate routes and repeated session IDs", async () => {
       : { etag: "fresh", sessions: [{ id: "one", status: "running", executionOwner: "host" }] },
   );
   const rows = await readUpdateImpact({ machineId: "remote" });
-  expect(rows).toHaveLength(2);
+  expect(rows).toHaveLength(1);
   expect(rows.find((row) => row.affected)).toMatchObject({ id: "remote", running: 1 });
 });
 
@@ -81,7 +81,9 @@ it("keeps failed, incomplete and offline activity unknown", async () => {
     if (id === "local") throw new Error("offline");
     return method === "projects.list" ? [{ id: "a" }] : { unchanged: true, etag: "old" };
   });
-  expect((await readUpdateImpact("local-host")).every((row) => row.running === null)).toBe(true);
+  expect((await readUpdateImpact("app")).every((row) => row.running === null)).toBe(true);
+  vi.mocked(invoke).mockResolvedValue(null);
+  expect((await readUpdateImpact("local-host"))[0].running).toBeNull();
 });
 
 it("includes this computer even before local Host pairing", async () => {
@@ -112,6 +114,53 @@ it("bounds unavailable Host reads without turning a timeout into zero", async ()
     const pending = readUpdateImpact("app");
     await vi.advanceTimersByTimeAsync(8_000);
     expect((await pending).every((row) => row.running === null)).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("reads one local lifecycle summary even without a paired machine", async () => {
+  vi.mocked(invoke).mockImplementation(async (command) =>
+    command === "local_host_update_activity" ? 3 : [remote],
+  );
+  const onMachine = vi.fn();
+  const rows = await readUpdateImpact("local-host", onMachine);
+  expect(rows).toEqual([expect.objectContaining({ affected: true, local: true, running: 3 })]);
+  expect(onMachine).toHaveBeenCalledExactlyOnceWith(rows[0]);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(remoteRequest).not.toHaveBeenCalled();
+});
+
+it("bounds project reads on a selected remote Host", async () => {
+  let active = 0,
+    peak = 0;
+  vi.mocked(remoteRequest).mockImplementation(async (id, method) => {
+    expect(id).toBe("remote");
+    if (method === "projects.list")
+      return Array.from({ length: 128 }, (_, i) => ({ id: String(i) }));
+    peak = Math.max(peak, ++active);
+    await Promise.resolve();
+    active--;
+    return [];
+  });
+  expect((await readUpdateImpact({ machineId: "remote" }))[0].running).toBe(0);
+  expect(peak).toBeLessThanOrEqual(4);
+});
+
+it("stops scheduling projects once an activity check times out", async () => {
+  vi.useFakeTimers();
+  try {
+    let resolveProjects!: (value: { id: string }[]) => void;
+    const projects = new Promise<{ id: string }[]>((resolve) => {
+      resolveProjects = resolve;
+    });
+    vi.mocked(remoteRequest).mockReturnValue(projects);
+    const pending = readUpdateImpact({ machineId: "remote" });
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect((await pending)[0].running).toBeNull();
+    resolveProjects([{ id: "late" }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteRequest).toHaveBeenCalledTimes(1);
   } finally {
     vi.useRealTimers();
   }

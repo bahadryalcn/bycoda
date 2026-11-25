@@ -202,7 +202,11 @@ it("holds the exact native capture permit through effect settlement and rejects 
   };
   await writeFile(
     path,
-    JSON.stringify({ version: 1, generation: "a".repeat(64), entries: [entry] }),
+    JSON.stringify({
+      version: 1,
+      generation: "a".repeat(64),
+      entries: [entry],
+    }),
   );
   const native = new NativeAdmissionOwner(path, "host");
   const fence = new AssistantVisibilityFence();
@@ -273,7 +277,10 @@ it("holds the exact native capture permit through effect settlement and rejects 
   ).rejects.toThrow("scope changed");
   await expect(
     admission.withCapture(
-      await signed("assistant.visibility.capture", { ...capture, issuer: "other-window" }),
+      await signed("assistant.visibility.capture", {
+        ...capture,
+        issuer: "other-window",
+      }),
       expected,
       async () => true,
       async () => "leak",
@@ -281,7 +288,10 @@ it("holds the exact native capture permit through effect settlement and rejects 
   ).rejects.toThrow("issuer or trust changed");
   await expect(
     admission.withCapture(
-      await signed("assistant.visibility.capture", { ...capture, privacyRevision: 2 }),
+      await signed("assistant.visibility.capture", {
+        ...capture,
+        privacyRevision: 2,
+      }),
       expected,
       async () => true,
       async () => "leak",
@@ -302,7 +312,10 @@ it("holds the exact native capture permit through effect settlement and rejects 
       expect(identity.visibilityEpoch).toBe(0);
       expect(admission.currentIdentity(identity)).toBe(true);
       expect(
-        admission.currentIdentity({ ...identity, policyGeneration: "different-process" }),
+        admission.currentIdentity({
+          ...identity,
+          policyGeneration: "different-process",
+        }),
       ).toBe(false);
       expect(
         new AssistantVisibilityAdmission(
@@ -339,22 +352,40 @@ it("holds the exact native capture permit through effect settlement and rejects 
   await expect(
     admission.withCaptures(
       [
-        { envelope: await signed("assistant.visibility.capture", next), expected },
-        { envelope: await signed("assistant.visibility.capture", other), expected: expectedOther },
+        {
+          envelope: await signed("assistant.visibility.capture", next),
+          expected,
+        },
+        {
+          envelope: await signed("assistant.visibility.capture", other),
+          expected: expectedOther,
+        },
       ],
       async () => true,
       async (valid) => valid(),
     ),
   ).resolves.toBe(true);
   const firstThread = { ...capture, sequence: 4 };
-  const secondThread = { ...capture, sequence: 5, threadId: "other-thread", relayId: "relay-3" };
+  const secondThread = {
+    ...capture,
+    sequence: 5,
+    threadId: "other-thread",
+    relayId: "relay-3",
+  };
   await expect(
     admission.withCaptures(
       [
-        { envelope: await signed("assistant.visibility.capture", firstThread), expected },
+        {
+          envelope: await signed("assistant.visibility.capture", firstThread),
+          expected,
+        },
         {
           envelope: await signed("assistant.visibility.capture", secondThread),
-          expected: { ...expected, threadId: "other-thread", relayId: "relay-3" },
+          expected: {
+            ...expected,
+            threadId: "other-thread",
+            relayId: "relay-3",
+          },
         },
       ],
       async () => true,
@@ -436,7 +467,10 @@ it("holds the exact native capture permit through effect settlement and rejects 
   const mixed = admission.withCaptures(
     [
       {
-        envelope: await signed("assistant.visibility.capture", { ...project, sequence: 10 }),
+        envelope: await signed("assistant.visibility.capture", {
+          ...project,
+          sequence: 10,
+        }),
         expected,
       },
     ],
@@ -450,7 +484,10 @@ it("holds the exact native capture permit through effect settlement and rejects 
     },
     [
       {
-        envelope: await signed("assistant.account.capture", { ...account, sequence: 11 }),
+        envelope: await signed("assistant.account.capture", {
+          ...account,
+          sequence: 11,
+        }),
         expected: accountExpected,
       },
     ],
@@ -466,4 +503,131 @@ it("holds the exact native capture permit through effect settlement and rejects 
   await expect(mixed).rejects.toThrow("scope revoked");
   await revocation;
   expect(drained).toBe(true);
+});
+
+it("verifies each source proof as it arrives, so a long run of captures never ages out the first", async () => {
+  const pair = generateKeyPairSync("ed25519");
+  const path = join(await mkdtemp(join(tmpdir(), "visibility-collect-")), "keys.json");
+  await writeFile(
+    path,
+    JSON.stringify({
+      version: 1,
+      generation: "a".repeat(64),
+      entries: [
+        {
+          installationId: "desktop",
+          hostId: "host",
+          publicKey: pair.publicKey.export({ type: "spki", format: "pem" }).toString(),
+          fingerprint: nativeAdmissionFingerprint(pair.publicKey),
+        },
+      ],
+    }),
+  );
+  let clock = 1_000_000;
+  const native = new NativeAdmissionOwner(path, "host", false, () => clock);
+  const fence = new AssistantVisibilityFence();
+  const admission = new AssistantVisibilityAdmission("host", native, fence);
+  const signed = async (action: string, value: unknown) => {
+    const operationJson = JSON.stringify(value);
+    const challenge = await native.challenge({
+      installationId: "desktop",
+      hostId: "host",
+      action,
+      requestDigest: nativeAdmissionDigest(operationJson),
+    });
+    return {
+      operationJson,
+      proof: {
+        challenge,
+        signature: sign(null, nativeAdmissionBytes(challenge), pair.privateKey).toString(
+          "base64url",
+        ),
+      },
+    };
+  };
+  await admission.reopen(
+    await signed("assistant.visibility.reopen", {
+      epoch: 0,
+      projection: {
+        version: 1,
+        revision: 1,
+        operationId: "operation",
+        actor: "issuer",
+        snapshot: {
+          schemaVersion: 1,
+          policyDigest: "a".repeat(64),
+          issuer: "issuer",
+          privacyRevision: 1,
+          visibleProjects: Array.from({ length: 8 }, (_, index) => ({
+            cwd: `/p${index}`,
+          })),
+        },
+      },
+    }),
+    async () => true,
+  );
+  const expectedFor = (index: number) => ({
+    environmentId: "host",
+    threadId: "thread",
+    projectId: `p${index}`,
+    targetCwd: `/p${index}`,
+    action: "room.disclosure",
+    requestId: "request",
+    operationHash: "b".repeat(64),
+    relayId: `relay-${index}`,
+  });
+  const captureFor = (index: number) => ({
+    ...expectedFor(index),
+    issuer: "issuer",
+    sequence: index + 1,
+    projectionRevision: 1,
+    policyDigest: "a".repeat(64),
+    privacyRevision: 1,
+    visibleCwds: [`/p${index}`],
+  });
+  // Eight desktop round trips of five seconds: the first proof is 35 s old when the last arrives.
+  const arrive = async (index: number) => {
+    clock += 5_000;
+    return {
+      envelope: await signed("assistant.visibility.capture", captureFor(index)),
+      index,
+    };
+  };
+  const waiting = [];
+  for (let index = 0; index < 8; index += 1) waiting.push(await arrive(index));
+  await expect(
+    admission.withCaptures(
+      waiting.map(({ envelope, index }) => ({
+        envelope,
+        expected: expectedFor(index),
+      })),
+      async () => true,
+      async () => true,
+    ),
+  ).rejects.toThrow("Invalid native admission proof");
+
+  const collected = admission.collect(async () => true);
+  for (let index = 0; index < 8; index += 1) {
+    const { envelope } = await arrive(index);
+    await collected.project(envelope, {
+      ...expectedFor(index),
+      requestId: "request",
+    });
+  }
+  await expect(
+    collected.run(async (valid, identity) => valid() && identity.issuer === "issuer"),
+  ).resolves.toBe(true);
+  // The proofs were consumed once: running the same set again is refused, never replayed.
+  const replay = admission.collect(async () => true);
+  const stale = await arrive(0);
+  await replay.project(stale.envelope, expectedFor(0));
+  await expect(replay.project(stale.envelope, expectedFor(0))).rejects.toThrow(
+    "Invalid native admission proof",
+  );
+  // A proof that did age out before it reached the Host is still refused.
+  const late = await arrive(1);
+  clock += 31_000;
+  await expect(
+    admission.collect(async () => true).project(late.envelope, expectedFor(1)),
+  ).rejects.toThrow("Invalid native admission proof");
 });

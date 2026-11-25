@@ -328,6 +328,17 @@ function implement(options: Options, state: Runtime) {
     const source = Object.freeze(parse(sourceSchema, input, true));
     return wait(job(async () => (await readActual(source)).record));
   }
+  async function hideEditorDraftRecovery(input: EditorDraftRecoverySource): Promise<void> {
+    const source = parse(sourceSchema, input, true);
+    await wait(
+      job(async () => {
+        parse(
+          z.strictObject({ version: z.literal(1) }),
+          await invoke("native_editor_draft_hide_recovery", { source }),
+        );
+      }),
+    );
+  }
   async function prepareActual(entry: Entry): Promise<PreparedEditorDraftRestore> {
     if (!entry.record) {
       const { record, ownerEpoch } = await readActual(entry.source);
@@ -485,6 +496,7 @@ function implement(options: Options, state: Runtime) {
   return {
     listEditorDraftRecovery,
     readEditorDraftRecovery,
+    hideEditorDraftRecovery,
     prepareEditorDraftRestore,
     observation: () =>
       Object.freeze({
@@ -502,4 +514,5 @@ const globals = globalThis as typeof globalThis & { [stateKey]?: Runtime };
 const recovery = implement({}, (globals[stateKey] ??= runtime()));
 export const listEditorDraftRecovery = recovery.listEditorDraftRecovery;
 export const readEditorDraftRecovery = recovery.readEditorDraftRecovery;
+export const hideEditorDraftRecovery = recovery.hideEditorDraftRecovery;
 export const prepareEditorDraftRestore = recovery.prepareEditorDraftRestore;

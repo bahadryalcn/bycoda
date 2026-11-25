@@ -1,3 +1,4 @@
+import { subagentStepStrip, type SubagentStepStrip } from "./subagentStepStrip";
 import { t } from "../../../shared/i18n/core";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import {
@@ -109,6 +110,8 @@ export type DockAgent = {
   /** "46 steps, 1 failed", worded exactly as on the transcript row. */
   detail: string;
   detailParts?: SubagentStatusPart[];
+  /** The run's recent steps for its card; commands have none. */
+  stepStrip?: SubagentStepStrip;
   /** Epoch ms the run began and ended; absent on older sessions. */
   startedAt?: number;
   endedAt?: number;
@@ -238,6 +241,9 @@ export function dockAgent(block: Block, busy: boolean): DockAgent[] {
       kind: agent ? "agent" : "command",
       status,
       model: agent ? subagentModelName(block) : undefined,
+      ...(agent
+        ? { stepStrip: subagentStepStrip(block.agentRun?.steps ?? [], status === "running") }
+        : {}),
       ...(agent && status !== "interrupted"
         ? { detailParts: subagentStatusParts(block, block.agentRun?.steps ?? []) }
         : {}),

@@ -3,13 +3,21 @@
 The session composer and its docked question form let the chat background show through their theme
 fill. Reduced transparency and forced colors use a solid fill.
 
-Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
-marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
-messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+Markdown formatting appears in the chat composer as you type, including drafts with inline
+attachments and links. Move the caret onto a Markdown marker to see and edit it. Sent messages
+display Markdown. Click a long message to read it in the chat, or use **Expand** to open it in a
+dialog with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+
+In a live reply, text inside a code fence is immediately available to select and copy.
+Syntax colors appear as the fence closes or the reply finishes.
+
+Drafts with a very long unbroken line use the native text field so the caret stays visible
+while typing. The draft keeps its text and attachment references.
 **Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
 If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.
 If copying fails, press **Copy message** again to retry or open **Details** for the reason.
 Pasting into a Bycoda draft restores the text, files and inline attachment references in place, including in Quick Composer and the queue editor.
+Each draft holds up to 20 attachments. When a selection exceeds the remaining space, the composer attaches the files that fit and reports the limit.
 Copied folders appear as paths at their original inline position or after the message if they had no inline reference.
 You can also copy or cut a selection containing attachment references in the chat composer.
 Undoing a cut restores the text and its attachments. Other apps can paste the plain message text.
@@ -26,12 +34,18 @@ Repeated Stop clicks share one pending request per target. After its unconfirmed
 
 Subagent rows show the latest status, elapsed time and step counts beside the name, before the disclosure arrow. Previous status labels and counter values are replaced immediately. Completed runs use the success color, failed runs use the danger color, interrupted or stopped runs use the warning color, and running agents use the accent color. Failed-step counts appear in red; a failed step does not mean the entire run failed.
 
-Operator is hidden from the composer mode menu and command suggestions, including
-Quick Composer. Typing `/operator` still works, and existing Operator-enabled
-conversations keep their access.
+In local chats, choose Operator from the Mode menu or type `/operator`.
 
-In narrow chat panes, the access selector shows its mode icon instead of its label.
-The same access menu and keyboard controls remain available.
+In wide chat panes, use the composer toolbar to change Access or Mode. In narrow panes,
+both controls move to the bottom of the model panel's **Settings** tab so the toolbar stays
+on one row. Click the active mode icon in the composer to turn that mode off.
+
+In narrow chat panes, Queue and Steer take priority while you have a draft. Use your Stop
+shortcut to interrupt the turn while keeping the draft. Stop is visible again when the draft is empty.
+
+When this computer's Host is running the conversation, Stop stays pending until
+the Host reports that the targeted turn ended or the confirmation wait expires.
+If the outcome is still uncertain, a notification lets you know you can try again.
 
 ## Composer mentions
 
@@ -41,16 +55,21 @@ reference a note, or `@crews:` to find a crew or member. Sending a crew or
 member mention delegates work through the existing project permissions.
 Complete references are highlighted in the draft and sent message. You can
 still edit or copy the reference text.
+Backspace after a reference or Delete before it removes the whole reference.
+
+## Pasted text
+
+When you paste 8,000 or more characters into a desktop chat that supports attachments, Bycoda saves the text as a UTF-8 file and shows a **Pasted text** card with its size. Open the card to read the text, remove it from the draft, or use **Download** on the sent card to save a copy. If the file cannot be saved, the pasted text stays in the draft.
 
 ## Image attachments
 
 Recognized skills, attached images and files, quotes, file references and MCP
 references show compact inline tokens with leading type icons while composing.
-Quick Composer uses the same skill, attachment and link treatment. Tracker
-references retain their Jira, GitHub, GitLab or other provider mark; web links
-show a link icon or a recognized provider mark. These decorations preserve the
-original draft text, selection and copied references. Sent skills retain their
-skill icon alongside attachment and tracker identities.
+Tracker references retain their Jira, GitHub, GitLab or other provider mark.
+Web links are compact in the inline chat editor. Quick Composer and other native
+text fields highlight the full URL so following text stays aligned with the caret.
+These decorations preserve the original draft text, selection and copied references.
+Sent skills retain their skill icon alongside attachment and tracker identities.
 
 Draft attachment tokens show a type icon and ordinal, with the original `[imageN]`
 or `[fileN]` text preserved for copying and sending.
@@ -114,6 +133,8 @@ run, **Queue message** and **Shift+Tab** stay available: queued messages show
 Send still starts a new turn at once. Each queued row shows its saved model, account and
 reasoning effort beside the provider icon. The drag handle stays visible for a
 single message, but reordering is disabled until another message is queued.
+Long queues reveal more rows as you scroll. Use **Show more** to reach the next
+group from the keyboard.
 Remove takes a message out immediately. A small **Message removed · Undo** notice
 below the queue restores its text, attachments, saved target and original position.
 The notice closes after five seconds; keyboard focus or a pending/failed restore
@@ -223,13 +244,19 @@ field to its reference actions. Enter opens the focused reference. With a link
 focused, F2 shows its full address for editing.
 
 In the desktop composer, attachment references and file cards show the complete
-filename. An attachment with an inline reference appears at that reference. A long
-filename wraps when the composer is narrow. Click a file or image reference to
-preview it. Focus an attachment reference and press Delete to remove it. Click a skill
+filename. Attachment cards appear above the draft, and inline references stay
+where they were inserted. Image cards show the file size below the thumbnail.
+Click a card or an inline reference to open the preview. Right-click the card or
+the open preview for copy and save actions. Hover over or focus a card to show
+its Remove button. You can also remove the attachment from the card's menu or
+focus its inline reference and press Delete.
+A long filename wraps when the composer is narrow. Click a skill
 for its description, or a skill group to see its members. Skill icons replace the
 invocation prefix in the display. The draft keeps the original invocation.
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
+
+Video and audio files on this computer play inline in the conversation: an assistant reply that links, embeds or names one as a code path shows a player above it, and a video or audio file you attach shows a player above its card in your sent message. Attachments read from a connected machine keep their card and open in the media dialog.
 
 On desktop, use **Download** on a file attachment card to choose where to save a copy. The action also works with formats such as ZIP that the conversation does not preview. Attachment copies are limited to 20 MiB.
 
@@ -252,6 +279,8 @@ If another Git client moves a linked worktree or replaces it with a separate rep
 Local downloads are limited to 1 GiB per file and four simultaneous transfers. The cache is bounded to 4 GiB. Unchanged cached snapshots can be reused; edited copies are preserved. A file changing during transfer causes a retryable failure rather than opening inconsistent bytes.
 
 ## Open a remote development website
+
+Desktop chat labels private development links with the computer's saved name, for example **Office PC · localhost:3000/patients**.
 
 On desktop, use **Open in this computer's browser** in Development servers, or click a matching development URL in a user or assistant message in the remote conversation. bycoda resolves the conversation's machine and project, finds the registered running server, and verifies its process identity before creating a private local browser address. Refresh Development servers when a process restarts.
 

@@ -43,6 +43,9 @@ export const DeviceFrameSchema = z.strictObject({
   base64: z.string(),
   capturedAt: z.string(),
 });
+/** Minimum pause after a fallback capture, also the Host cache lifetime. */
+export const DEVICE_STILL_MIN_GAP_MS = 100;
+
 /**
  * Raw byte cap of one `devices.stream` response. A response of exactly this many
  * bytes was cut by the cap and may end inside a frame.
@@ -55,7 +58,14 @@ export const DeviceStreamChunkSchema = z.strictObject({
   base64: z.string(),
   width: SafeCounterSchema,
   height: SafeCounterSchema,
+  boundary: z.boolean().optional(),
 });
+export const DeviceTouchSchema = z.strictObject({
+  phase: z.enum(["down", "move", "up", "cancel"]),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+export type DeviceTouch = z.infer<typeof DeviceTouchSchema>;
 const coordinate = SafeCounterSchema.max(20000);
 export const DeviceActionSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("openApp"), app: z.string() }),
@@ -166,6 +176,15 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
   "devices.stream": {
     params: z.strictObject({ ...base, deviceId: z.string(), cursor: SafeCounterSchema.optional() }),
     result: DeviceStreamChunkSchema,
+  },
+  "devices.touch": {
+    params: z.strictObject({
+      ...base,
+      deviceId: z.string(),
+      leaseId: z.string(),
+      touch: DeviceTouchSchema,
+    }),
+    result: z.strictObject({ accepted: z.literal(true) }),
   },
   "devices.control.status": {
     params: z.strictObject({ ...base, deviceId: z.string() }),

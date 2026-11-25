@@ -1,6 +1,6 @@
 import { useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useFormat, useT } from "../../../../shared/i18n";
-import { moveItem } from "../../../../shared/lib/reorder";
+import { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
 import type {
   ModelRoutingEntry,
   ModelRoutingPool,
@@ -10,53 +10,52 @@ import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
 import { Text } from "../../../../shared/ui/Text";
-import { ArrowDown, ArrowUp, FolderTree, Plus, X } from "../../../../shared/ui/icons";
+import { FolderTree, GripVertical, Plus, X } from "../../../../shared/ui/icons";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
-import { resolveModel } from "../../../sessions/public/models";
+import { useModelSource } from "../../../sessions/public/modelSource";
 import { includablePools, setPoolMembers, type OrderDraft } from "../../model/modelRoutingDraft";
 import { entryProviderAccount, useEntryAccount } from "./useEntryAccount";
 
 type Members = { entryIds: string[]; poolIds: string[] };
 
 function MemberFrame({
+  id,
   label,
-  index,
   count,
-  onMove,
+  sortable,
   onRemove,
   children,
 }: {
+  id: string;
   label: string;
-  index: number;
   count: number;
-  onMove: (delta: -1 | 1) => void;
+  sortable: ReturnType<typeof useAnimatedReorder<string>>;
   onRemove: () => void;
   children: ReactNode;
 }) {
   const t = useT();
   return (
-    <div className="flex items-center gap-1" role="group" aria-label={label}>
+    <div
+      ref={(node) => sortable.setItemRef(id, node)}
+      className="reorder-item flex w-full max-w-xl items-center gap-2"
+      data-dragging={sortable.draggingId === id ? "" : undefined}
+      role="group"
+      aria-label={label}
+    >
+      <Button
+        iconOnly
+        variant="ghost"
+        size="sm"
+        label={t("Reorder in {p0}", { p0: label })}
+        tooltip={t("Drag to reorder")}
+        shortcut="Alt+↑ / Alt+↓"
+        disabled={count < 2}
+        onPointerDown={(event) => sortable.onItemPointerDown(id, event)}
+        onKeyDown={(event) => sortable.onItemKeyDown(id, event)}
+      >
+        <GripVertical className="icon-sm" />
+      </Button>
       <div className="flex min-w-0 flex-1 items-center gap-2">{children}</div>
-      <Button
-        iconOnly
-        variant="ghost"
-        size="sm"
-        label={t("Move {p0} up", { p0: label })}
-        disabled={index === 0}
-        onClick={() => onMove(-1)}
-      >
-        <ArrowUp className="icon-sm" />
-      </Button>
-      <Button
-        iconOnly
-        variant="ghost"
-        size="sm"
-        label={t("Move {p0} down", { p0: label })}
-        disabled={index === count - 1}
-        onClick={() => onMove(1)}
-      >
-        <ArrowDown className="icon-sm" />
-      </Button>
       <Button
         iconOnly
         variant="ghost"
@@ -75,11 +74,12 @@ function EntryMember({
   ...frame
 }: { entry: ModelRoutingEntry } & Omit<ComponentProps<typeof MemberFrame>, "label" | "children">) {
   const account = useEntryAccount(entry);
-  const name = entryName(entry);
+  const source = useModelSource();
+  const name = source.resolve(entry.harness, entry.model).name;
   return (
     <MemberFrame label={name} {...frame}>
       <Text as="span" size="secondary" className="min-w-0">
-        <ModelLabel model={entry.model} harness={entry.harness} />
+        <ModelLabel model={entry.model} harness={entry.harness} name={name} />
       </Text>
       {account.account ? (
         <Text size="caption" tone="secondary" truncate>
@@ -89,8 +89,6 @@ function EntryMember({
     </MemberFrame>
   );
 }
-
-const entryName = (entry: ModelRoutingEntry) => resolveModel(entry.harness, entry.model).name;
 
 /** Models, then included pools, of one pool in resolution order, plus an Add menu. */
 export function PoolMembers({
@@ -104,10 +102,17 @@ export function PoolMembers({
 }) {
   const t = useT();
   const format = useFormat();
+  const source = useModelSource();
   const { entries, pools } = draft.routing;
   const poolIds = pool.poolIds ?? [];
   const members: Members = { entryIds: pool.entryIds, poolIds };
   const apply = (next: Members) => onEdit((current) => setPoolMembers(current, pool.id, next));
+  const modelOrder = useAnimatedReorder(
+    pool.entryIds,
+    (ids) => apply({ ...members, entryIds: ids }),
+    "y",
+  );
+  const groupOrder = useAnimatedReorder(poolIds, (ids) => apply({ ...members, poolIds: ids }), "y");
   const addableEntries = entries.filter((entry) => !pool.entryIds.includes(entry.id));
   const addablePools = includablePools(draft, pool.id).filter(
     (other) => !poolIds.includes(other.id),
@@ -123,11 +128,12 @@ export function PoolMembers({
             label: t("Models"),
             items: addableEntries.map((entry) => {
               // Same model on two accounts must read apart: the account is part of the row.
-              const account = entryProviderAccount(entry)?.label;
+              const account = entryProviderAccount(entry, source)?.label;
+              const name = source.resolve(entry.harness, entry.model).name;
               return {
                 kind: "item" as const,
                 id: `entry:${entry.id}`,
-                label: account ? `${entryName(entry)} · ${account}` : entryName(entry),
+                label: account ? `${name} · ${account}` : name,
                 content: (
                   <span className="flex min-w-0 items-baseline gap-2">
                     <ModelLabel model={entry.model} harness={entry.harness} />
@@ -161,22 +167,20 @@ export function PoolMembers({
   ];
   return (
     <div className="flex flex-col gap-1 ps-2">
-      {pool.entryIds.map((id, index) => {
+      {pool.entryIds.map((id) => {
         const entry = entries.find((candidate) => candidate.id === id);
         return entry ? (
           <EntryMember
             key={id}
             entry={entry}
-            index={index}
+            id={id}
             count={pool.entryIds.length}
-            onMove={(delta) =>
-              apply({ ...members, entryIds: moveItem(pool.entryIds, index, index + delta) })
-            }
+            sortable={modelOrder}
             onRemove={() => apply({ ...members, entryIds: pool.entryIds.filter((x) => x !== id) })}
           />
         ) : null;
       })}
-      {poolIds.map((id, index) => {
+      {poolIds.map((id) => {
         const included = pools.find((candidate) => candidate.id === id);
         if (!included) return null;
         const name = included.name || t("Unnamed group");
@@ -184,11 +188,9 @@ export function PoolMembers({
           <MemberFrame
             key={id}
             label={name}
-            index={index}
+            id={id}
             count={poolIds.length}
-            onMove={(delta) =>
-              apply({ ...members, poolIds: moveItem(poolIds, index, index + delta) })
-            }
+            sortable={groupOrder}
             onRemove={() => apply({ ...members, poolIds: poolIds.filter((x) => x !== id) })}
           >
             <FolderTree aria-hidden className="icon-sm shrink-0" />

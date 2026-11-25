@@ -8,7 +8,11 @@ import {
 import { sessionActivityAt } from "../model/sessionActivity";
 import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
-import { fuzzyMatch } from "../../../shared/lib/fuzzy";
+import {
+  fuzzyIncludes,
+  prepareFuzzyQuery,
+  type PreparedFuzzyQuery,
+} from "../../../shared/lib/fuzzy";
 import { projectName } from "../../../shared/lib/paths";
 import { sameProjectPath } from "../../projects/public/recents";
 import {
@@ -85,16 +89,19 @@ export function filterSessionsByArchive(
 }
 
 export function filterSessionsByQuery(rows: SessionSummary[], query: string): SessionSummary[] {
-  const needle = query.trim();
-  if (!needle) return rows;
+  const needle = prepareFuzzyQuery(query);
+  if (!needle.tokens.length) return rows;
   return rows.filter((row) => sessionSearchHit(row, needle));
 }
 
-function sessionSearchHit(row: SessionSummary, query: string): boolean {
+function sessionSearchHit(row: SessionSummary, query: PreparedFuzzyQuery): boolean {
   const title = sessionDisplayTitle(row.title, row.harness);
-  const git = [row.repo, row.branch].filter(Boolean).join("/");
-  const fields = [title, row.title, row.model, row.harness, git];
-  return fields.some((field) => field && fuzzyMatch(query, field) != null);
+  if (fuzzyIncludes(query, title) || (row.title !== title && fuzzyIncludes(query, row.title))) {
+    return true;
+  }
+  if (fuzzyIncludes(query, row.model) || fuzzyIncludes(query, row.harness)) return true;
+  const git = row.repo && row.branch ? `${row.repo}/${row.branch}` : row.repo || row.branch;
+  return !!git && fuzzyIncludes(query, git);
 }
 
 export function summaryFromSession(session: Session, git?: SessionGitHint): SessionSummary {

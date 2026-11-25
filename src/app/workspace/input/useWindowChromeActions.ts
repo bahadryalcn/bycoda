@@ -103,14 +103,24 @@ export function useWindowChromeActions(deps: WindowChromeActionDeps): WindowChro
     setProjectRailOpen(next);
     saveProjectRailOpen(next);
   }, [setProjectRailOpen]);
-  const onToggleSidebar = onToggleProjectRail;
-
   const onToggleSessionSidebar = useCallback(() => {
     const next = !openRef.current.sessionSidebar;
     openRef.current.sessionSidebar = next;
     setSessionSidebarOpen(next);
     saveSessionSidebarOpen(next);
   }, [setSessionSidebarOpen]);
+
+  const onToggleSidebar = useCallback(() => {
+    const { projectRail, sessionSidebar } = openRef.current;
+    if (!sessionSidebar) {
+      if (!projectRail) onToggleProjectRail();
+      onToggleSessionSidebar();
+    } else if (projectRail) {
+      onToggleProjectRail();
+    } else {
+      onToggleSessionSidebar();
+    }
+  }, [onToggleProjectRail, onToggleSessionSidebar]);
 
   const onGoToFile = useCallback(() => {
     setSearchViewOpen(false);

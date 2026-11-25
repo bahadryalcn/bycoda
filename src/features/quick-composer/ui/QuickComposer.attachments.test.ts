@@ -187,3 +187,17 @@ it.each(["Backspace", "Delete"])("%s removes an attachment token and its card", 
   expect(prompt.value).toBe("");
   expect(container.querySelector('[aria-label="Remove image.png"]')).toBeNull();
 });
+
+it("Backspace takes a scoped mention without removing the neighboring reference", () => {
+  const prompt = container.querySelector<HTMLTextAreaElement>("textarea")!;
+  act(() => {
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    set.call(prompt, "@notes:plan @crews:planner ");
+    prompt.setSelectionRange(prompt.value.length, prompt.value.length);
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const edit = new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true });
+  act(() => prompt.dispatchEvent(edit));
+  expect(edit.defaultPrevented).toBe(true);
+  expect(prompt.value).toBe("@notes:plan ");
+});

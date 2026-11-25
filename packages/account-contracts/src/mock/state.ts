@@ -1,4 +1,5 @@
 import { emptyMinutes, setMinute } from "../activity.ts";
+import type { HostDeviceAccessReport } from "../hostDeviceAccess.ts";
 import { defaultNotificationSettings } from "../notifications.ts";
 import type {
   Announcement,
@@ -32,6 +33,7 @@ export interface MockState {
   /** Desktop device id to published connect info. */
   connectInfo: Map<string, ConnectInfoUpdate & { updatedAt: string }>;
   pairRequests: Map<string, MockPairRequest>;
+  hostDeviceAccess: HostDeviceAccessReport[];
   /** `${deviceId}|${date}` to `{ timeZone, minutes }`. */
   activity: Map<string, { deviceId: string; date: string; timeZone: string; minutes: Uint8Array }>;
   settings: NotificationSettings;
@@ -45,7 +47,9 @@ export interface MockState {
   nextId: number;
 }
 
-export type MockSeed = Partial<Pick<MockState, "user" | "entitlements" | "announcements">> & {
+export type MockSeed = Partial<
+  Pick<MockState, "user" | "entitlements" | "announcements" | "hostDeviceAccess">
+> & {
   /** Fixed clock for deterministic tests. */
   now?: () => Date;
 };
@@ -92,6 +96,7 @@ export function createMockState(seed: MockSeed = {}): MockState {
     pushTokens: new Map(),
     connectInfo: new Map(),
     pairRequests: new Map(),
+    hostDeviceAccess: structuredClone(seed.hostDeviceAccess ?? []),
     activity: new Map([
       [
         `${sampleDevice.id}|${date}`,

@@ -6,10 +6,10 @@ import { saveCrewTheme } from "../../settings/model/settings";
 import { PacingUncle } from "./PacingUncle";
 import { setCanvasWorkerEnabled } from "../../../shared/lib/canvas-worker/host";
 import { PACING_RENDERER_ID } from "./pacingCanvasHost";
-const state = vi.hoisted(() => ({ motion: true, focused: true, paint: vi.fn() }));
+const state = vi.hoisted(() => ({ motion: true, windowVisible: true, paint: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.motion,
-  useWindowHasFocus: () => state.focused,
+  useMotionWindowVisible: () => state.windowVisible,
 }));
 vi.mock("./pacingUncleArt", () => ({
   drawPacingUncle: state.paint,
@@ -59,7 +59,7 @@ beforeEach(() => {
   } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(180);
   state.motion = true;
-  state.focused = true;
+  state.windowVisible = true;
   state.paint.mockClear();
   workers.length = 0;
   container = document.createElement("div");
@@ -77,7 +77,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 const render = (visible = true) => act(() => root.render(createElement(PacingUncle, { visible })));
-it("retains original main clock, 83ms cadence, focus, visibility and motion gates", () => {
+it("retains original main clock, 83ms cadence, window and element visibility and motion gates", () => {
   render();
   expect(vi.getTimerCount()).toBe(1);
   act(() => vi.advanceTimersByTime(83));
@@ -89,10 +89,10 @@ it("retains original main clock, 83ms cadence, focus, visibility and motion gate
   expect(vi.getTimerCount()).toBe(0);
   render();
   expect(vi.getTimerCount()).toBe(1);
-  state.focused = false;
+  state.windowVisible = false;
   render();
   expect(vi.getTimerCount()).toBe(0);
-  state.focused = true;
+  state.windowVisible = true;
   state.motion = false;
   render();
   expect(vi.getTimerCount()).toBe(0);
@@ -102,16 +102,16 @@ it("retains original main clock, 83ms cadence, focus, visibility and motion gate
 });
 const draws = (worker: WorkerFake) =>
   worker.postMessage.mock.calls.filter(([m]) => m.type === "draw");
-it("keeps one worker alive across focus, visibility and motion pauses", () => {
+it("keeps one worker alive across window and element visibility and motion pauses", () => {
   render();
   expect(workers).toHaveLength(1);
   const [worker] = workers;
   const canvases = [...container.querySelectorAll("canvas")];
   const transfers = vi.mocked(HTMLCanvasElement.prototype.transferControlToOffscreen).mock.calls
     .length;
-  state.focused = false;
+  state.windowVisible = false;
   render();
-  state.focused = true;
+  state.windowVisible = true;
   render();
   render(false);
   render(true);
@@ -135,13 +135,13 @@ it("pauses and resumes drawing on the same worker without a jump in the walk", (
   const elapsedOf = () => draws(worker).at(-1)?.[0].frame.elapsed as number;
   const walked = elapsedOf();
   expect(walked).toBeGreaterThan(0);
-  state.focused = false;
+  state.windowVisible = false;
   render();
   const paused = draws(worker).length;
   act(() => vi.advanceTimersByTime(5000));
   expect(draws(worker)).toHaveLength(paused);
   expect(elapsedOf()).toBe(walked);
-  state.focused = true;
+  state.windowVisible = true;
   render();
   act(() => vi.advanceTimersByTime(83));
   expect(workers).toHaveLength(1);

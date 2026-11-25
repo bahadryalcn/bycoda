@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { isMachineConnectingRefusal } from "./remoteFailure";
 
 type Computer = { environmentId: string; routes: { endpoint: string }[] };
 type Dependencies = {
@@ -57,6 +58,8 @@ export async function withAccountTunnelRecovery<T>(
     const text = String(error);
     if (
       method !== "environment.describe" ||
+      // A dial in progress refused it unsent: no known route was tried, so none is exhausted.
+      isMachineConnectingRefusal(error) ||
       !machine ||
       machine.localHost ||
       !current() ||

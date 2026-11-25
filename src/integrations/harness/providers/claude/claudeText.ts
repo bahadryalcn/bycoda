@@ -10,7 +10,7 @@ import {
   preserveProviderFailure,
 } from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
-import { modelsFor } from "../../../../features/sessions/model/models";
+import { modelsFor, nativeModelId } from "../../../../features/sessions/model/models";
 import {
   createChildProcessHandle,
   resolveClaudeBinary,
@@ -147,7 +147,7 @@ function textSettings(
 
 function pickTextModel(requested?: string): string {
   const selected = requested?.trim();
-  if (selected) return selected;
+  if (selected) return selected.startsWith("claude:") ? nativeModelId(selected) : selected;
   const models = modelsFor("claude");
   const haiku = models.find((model) =>
     /haiku/i.test(`${model.nativeId ?? ""} ${model.name} ${model.id}`),

@@ -7,6 +7,13 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(async () => undefined),
 }));
 
+vi.mock("../../connections/model/connections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/model/connections")>()),
+  useRemoteMachines: () => ({
+    machines: [{ id: "saved-host", environmentId: "windows-host", name: "Ofis PC" }],
+  }),
+}));
+
 vi.mock("../../connections/model/workspaceUrls", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../connections/model/workspaceUrls")>()),
   openWorkspaceUrl: vi.fn(async () => undefined),
@@ -102,6 +109,9 @@ describe("links in sent messages", () => {
     );
 
     expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, undefined);
+    expect(container.querySelector("a")?.textContent).toContain(
+      "Ofis PC · localhost:3000/report?view=pdf#page",
+    );
     expect(openUrl).not.toHaveBeenCalled();
   });
 
@@ -181,10 +191,11 @@ describe("links in sent messages", () => {
       );
       if (compact) {
         await act(async () =>
-          container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!.click(),
+          container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click(),
         );
       }
       const surface = compact ? document.querySelector('[role="dialog"]')! : container;
+      expect(surface.querySelector(`a[href="${url}"]`)?.textContent).toBe("Ofis PC · Report");
       await act(async () => surface.querySelector<HTMLAnchorElement>(`a[href="${url}"]`)!.click());
 
       expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, undefined);
@@ -219,7 +230,7 @@ describe("external link page metadata", () => {
     await act(async () => root.render(createElement(UserLinkPreview, { link: pageLink })));
 
     act(() => chip().dispatchEvent(new Event("pointerover", { bubbles: true })));
-    await act(async () => vi.advanceTimersByTime(299));
+    await act(async () => vi.advanceTimersByTime(449));
     expect(fetchLinkPreviewMetadata).not.toHaveBeenCalled();
 
     await act(async () => vi.advanceTimersByTime(1));
@@ -311,7 +322,7 @@ describe("GitHub work item link preview", () => {
     const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="pr"]')!;
 
     act(() => chip.dispatchEvent(new Event("pointerover", { bubbles: true })));
-    act(() => vi.advanceTimersByTime(299));
+    act(() => vi.advanceTimersByTime(449));
     expect(document.querySelector("[data-hover-card]")).toBeNull();
 
     await act(async () => {

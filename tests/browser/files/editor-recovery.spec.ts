@@ -77,6 +77,58 @@ async function sourceUntouched(page: Page) {
   ).toEqual(state.originalSource);
 }
 
+test("hides the confirmed copy across refreshes while preserving the record", async ({ page }) => {
+  await page.goto("/tests/browser/files/editor-recovery.html");
+  await openCatalog(page);
+  const state = await snapshot(page);
+  const hide = sourceRow(page).getByRole("button", { name: "Hide from list" });
+  const confirmation = page.getByRole("dialog", { name: "Hide recovery copy?" });
+  await hide.click();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await sourceUntouched(page);
+  await hide.click();
+  await confirmation.getByRole("button", { name: "Hide from list", exact: true }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(sourceRow(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Refresh copies", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Refresh copies", exact: true })).toBeEnabled();
+  await expect(sourceRow(page)).toHaveCount(0);
+  await page.getByRole("radio", { name: /All copies/ }).click();
+  await expect(sourceRow(page)).toHaveCount(0);
+  await sourceUntouched(page);
+  expect((await snapshot(page)).disk).toBe(state.disk);
+  expect((await snapshot(page)).writes).toHaveLength(0);
+  await page.evaluate(() =>
+    (
+      window as unknown as { editorRecoveryFixture: Controls }
+    ).editorRecoveryFixture.advanceSource(),
+  );
+  await page.getByRole("button", { name: "Refresh copies", exact: true }).click();
+  await expect(sourceRow(page)).toBeVisible();
+});
+
+test("keeps a copy visible if it changes before hiding and explains how to retry", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/files/editor-recovery.html");
+  await openCatalog(page);
+  const initialRevision = (await snapshot(page)).source.metadata.revision;
+  await sourceRow(page).getByRole("button", { name: "Hide from list" }).click();
+  await page.evaluate(() =>
+    (
+      window as unknown as { editorRecoveryFixture: Controls }
+    ).editorRecoveryFixture.advanceSource(),
+  );
+  const confirmation = page.getByRole("dialog", { name: "Hide recovery copy?" });
+  await confirmation.getByRole("button", { name: "Hide from list", exact: true }).click();
+  await expect(
+    confirmation.getByText("This copy changed. Refresh the list before hiding it."),
+  ).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(sourceRow(page)).toBeVisible();
+  expect((await snapshot(page)).source.metadata.revision).toBe(initialRevision + 1);
+});
+
 test("file-only recovery persists a separate permanent tab, preserves an existing dirty same-path editor and reports only an explicit save", async ({
   page,
 }) => {
@@ -221,12 +273,15 @@ test("pending Native copy keeps the real recovery dialog open through Escape and
 }) => {
   await page.goto("/tests/browser/files/editor-recovery.html?hold-target");
   await openCatalog(page);
+  const close = page
+    .getByRole("dialog", { name: "Recovered work", exact: true })
+    .getByRole("button", { name: "Close", exact: true });
+  await expect(close).not.toHaveAttribute("data-tooltip-owner");
   await sourceRow(page).getByRole("button", { name: "Open copy in new tab", exact: true }).click();
   await expect.poll(async () => (await snapshot(page)).held).toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
   // Close is disabled while the copy is pending; a forced click must not dismiss the dialog.
-  const close = page.getByRole("dialog").getByRole("button", { name: "Close", exact: true });
   await expect(close).toBeDisabled();
   await close.click({ force: true });
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -246,12 +301,21 @@ for (const width of [1280, 800]) {
     }, info) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`/tests/browser/files/editor-recovery.html${light ? "?light" : ""}`);
+      await page.goto(`/tests/browser/files/editor-recovery.html?catalog${light ? "&light" : ""}`);
       await openCatalog(page);
+      await page.getByRole("radio", { name: /All copies/ }).click();
       await page.screenshot({
         path: info.outputPath(`recovery-list-${width}-${light ? "light" : "dark"}.png`),
         animations: "disabled",
       });
+      await sourceRow(page).getByRole("button", { name: "Hide from list" }).click();
+      const confirmation = page.getByRole("dialog", { name: "Hide recovery copy?" });
+      await expect(confirmation).toBeVisible();
+      await page.screenshot({
+        path: info.outputPath(`recovery-hide-${width}-${light ? "light" : "dark"}.png`),
+        animations: "disabled",
+      });
+      await confirmation.getByRole("button", { name: "Cancel" }).click();
       await page.evaluate(() =>
         (
           window as unknown as { editorRecoveryFixture: Controls }

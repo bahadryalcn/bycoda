@@ -1,3 +1,4 @@
+import { isProjectlessScope, PROJECTLESS_SCOPE } from "./sessions/projectless-scope";
 import { sessionWidgetContext } from "./sessions/session-widget-context";
 import { sessionMetadataUpdate, type SessionMetadataPatch } from "./sessions/session-metadata";
 import {
@@ -280,6 +281,10 @@ export class HostStore {
   assertAuthority(sessionId: string, expectedGeneration?: number): Promise<boolean> {
     return this.db.scope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
   }
+  /** Fence check for pure reads: answers from the latest committed head beside the writer queue. */
+  assertAuthorityRead(sessionId: string, expectedGeneration?: number): Promise<boolean> {
+    return this.db.readScope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
+  }
   private async sessionWrite<T>(
     sessionId: string,
     expectedGeneration: number | undefined,
@@ -342,6 +347,12 @@ export class HostStore {
   private closePromise?: Promise<void>;
   environmentId = "";
   readonly attachmentDir: string;
+  /**
+   * The database, its SQLite sidecars and the attachment folder. Only SQLite may open the database
+   * files: a plain open and close of one in this process drops every POSIX lock SQLite holds on it,
+   * and another process can then rebuild the WAL index under a live mapping (SIGBUS).
+   */
+  readonly ownedPaths: readonly string[];
   // This process is the only session writer, so recently used snapshots are
   // served from memory instead of re-parsing whole transcripts. Callers must
   // treat returned values as immutable.
@@ -353,6 +364,8 @@ export class HostStore {
   private authCache = new Map<string, { version: number; expires: number }>();
   private deviceLastSeen = new Map<string, number>();
   private pendingBefore?: Map<string, PendingWrite | undefined>;
+  /** Values taken from `pending` whose checkpoint has not committed yet. */
+  private readonly flushing = new Map<string, HostSession>();
   private snapshotPending(id: string): void {
     if (!this.pendingBefore || this.pendingBefore.has(id)) return;
     const entry = this.pending.get(id);
@@ -592,6 +605,10 @@ export class HostStore {
   constructor(path: string) {
     this.sessionReadPath = path;
     this.attachmentDir = join(dirname(path), "attachments");
+    this.ownedPaths =
+      path === ":memory:"
+        ? [this.attachmentDir]
+        : [path, `${path}-wal`, `${path}-shm`, `${path}-journal`, this.attachmentDir];
     this.db = new StoreDatabase(path);
     this.db.onMutation = (sql) => this.externalMutation(sql);
     this.db.onMutationFault = () => {
@@ -622,6 +639,7 @@ export class HostStore {
     const pendingBefore = this.pendingBefore;
     this.pendingBefore = undefined;
     this.inTransaction = false;
+    this.flushing.clear();
     this.transactionChanges = 0;
     this.transactionProjectChanges.clear();
     this.versions.clearPending();
@@ -692,6 +710,7 @@ export class HostStore {
       );
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
+      CREATE TABLE IF NOT EXISTS device_recovery_receipts (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
     await initializeNativeDeliveryStore(this.db);
     // Additive, host-local records: deleting a conversation or project must not
@@ -747,6 +766,8 @@ export class HostStore {
         ALTER TABLE devices ADD COLUMN last_seen_at INTEGER;
         COMMIT;`);
     }
+    if (!deviceColumns.some((column) => column.name === "management"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN management INTEGER NOT NULL DEFAULT 0");
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -1512,7 +1533,11 @@ export class HostStore {
   }
   async project(id: string): Promise<HostProject> {
     return this.db.readScope(async () => {
-      const row = await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
+      // The reserved row exists for the foreign key; project, Git and path features
+      // all resolve through here and must never see it.
+      const row = isProjectlessScope(id)
+        ? undefined
+        : await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
       if (!row) throw new Error("Project is not registered on this machine");
       return row as unknown as HostProject;
     });
@@ -1520,8 +1545,17 @@ export class HostStore {
   async projects(): Promise<HostProject[]> {
     return this.db.readScope(async () => {
       return (await this.db
-        .prepare("SELECT * FROM projects ORDER BY name")
-        .all()) as unknown as HostProject[];
+        .prepare("SELECT * FROM projects WHERE id<>? ORDER BY name")
+        .all(PROJECTLESS_SCOPE.id)) as unknown as HostProject[];
+    });
+  }
+  /** Only session creation in the reserved scope may call this. */
+  async ensureProjectlessScope(): Promise<HostProject> {
+    return this.db.storeScope(async () => {
+      await this.db
+        .prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)")
+        .run(PROJECTLESS_SCOPE.id, PROJECTLESS_SCOPE.cwd, PROJECTLESS_SCOPE.name);
+      return PROJECTLESS_SCOPE;
     });
   }
   /**
@@ -1546,6 +1580,8 @@ export class HostStore {
     return this.readStates.getStore()?.pending ?? this.pending;
   }
   async addProject(cwd: string, name: string): Promise<HostProject> {
+    if (cwd.trim().toLowerCase() === PROJECTLESS_SCOPE.cwd)
+      throw new Error("This location is reserved for sessions without a project");
     return this.db.storeScope(async () => {
       // Use the same filesystem identity as desktop session discovery. Legacy
       // spellings remain registered so their sessions and feature data stay valid.
@@ -1982,26 +2018,39 @@ export class HostStore {
       return runs;
     });
   }
-  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
-    if (signal) return this.cancellableSessionRead(id, signal, () => this.sync(id, revision));
+  /** The session and its sync answer from one writer admission, so both describe one revision. */
+  async sessionSync(
+    id: string,
+    revision?: number,
+    signal?: AbortSignal,
+  ): Promise<{ current: HostSession; sync: SessionSync }> {
+    if (signal)
+      return this.cancellableSessionRead(id, signal, () => this.sessionSync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
+      if (revision === value.revision)
+        return { current: value, sync: { kind: "unchanged", revision } };
       const { blockRevisions, ...snapshot } = value;
-      if (revision === value.revision) return { kind: "unchanged", revision };
       if (revision === undefined || revision > value.revision || !blockRevisions)
-        return { kind: "snapshot", value: snapshot };
+        return { current: value, sync: { kind: "snapshot", value: snapshot } };
       const {
         session: { blocks, ...session },
         ...rest
       } = snapshot;
       return {
-        kind: "delta",
-        base: revision,
-        value: { ...rest, session },
-        blockIds: blocks.map((block) => block.id),
-        blocks: blocks.filter((block) => (blockRevisions[block.id] ?? value.revision) > revision),
+        current: value,
+        sync: {
+          kind: "delta",
+          base: revision,
+          value: { ...rest, session },
+          blockIds: blocks.map((block) => block.id),
+          blocks: blocks.filter((block) => (blockRevisions[block.id] ?? value.revision) > revision),
+        },
       };
     });
+  }
+  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
+    return (await this.sessionSync(id, revision, signal)).sync;
   }
   /** Sessions taken over from this machine's desktop app, without parsing
    * their transcripts. */
@@ -2223,27 +2272,44 @@ export class HostStore {
         this.stateMetadata.set(id, known);
         return known;
       }
-      const row = await this.db
-        .prepare(
-          `SELECT project_id, revision, status, has_desktop,
-            json_extract(summary, '$.authorityGeneration') AS authority_generation,
-            COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
-          FROM session_state WHERE id=?`,
-        )
-        .get(id);
-      if (!row) return undefined;
-      const value: SessionStateMetadata = {
-        projectId: String(row.project_id),
-        revision: Number(row.revision),
-        status: row.status as HostSession["status"],
-        desktop: !!Number(row.has_desktop),
-        authorityGeneration:
-          row.authority_generation == null ? undefined : Number(row.authority_generation),
-        createdAt: row.created_at == null ? undefined : Number(row.created_at),
-      };
-      this.rememberStateMetadata(id, value);
+      const value = await this.storedStateMetadata(id);
+      if (value) this.rememberStateMetadata(id, value);
       return value;
     });
+  }
+  /**
+   * Metadata for pure session reads, beside the writer queue. It answers with the state before
+   * an open transaction, and keeps an unwritten value visible until its checkpoint commits.
+   * Decisions that must follow queued writes use `sessionStateMetadata`.
+   */
+  async sessionReadMetadata(id: string): Promise<SessionStateMetadata | undefined> {
+    if (this.db.ownsScope) return this.sessionStateMetadata(id);
+    const unwritten = this.pendingBefore?.has(id)
+      ? this.pendingBefore.get(id)?.value
+      : (this.flushing.get(id) ?? this.pending.get(id)?.value);
+    return this.db.readScope(() =>
+      unwritten ? stateMetadataOf(unwritten) : this.storedStateMetadata(id),
+    );
+  }
+  private async storedStateMetadata(id: string): Promise<SessionStateMetadata | undefined> {
+    const row = await this.db
+      .prepare(
+        `SELECT project_id, revision, status, has_desktop,
+          json_extract(summary, '$.authorityGeneration') AS authority_generation,
+          COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
+        FROM session_state WHERE id=?`,
+      )
+      .get(id);
+    if (!row) return undefined;
+    return {
+      projectId: String(row.project_id),
+      revision: Number(row.revision),
+      status: row.status as HostSession["status"],
+      desktop: !!Number(row.has_desktop),
+      authorityGeneration:
+        row.authority_generation == null ? undefined : Number(row.authority_generation),
+      createdAt: row.created_at == null ? undefined : Number(row.created_at),
+    };
   }
   private rememberStateMetadata(id: string, value: SessionStateMetadata) {
     this.stateMetadata.delete(id);
@@ -2440,6 +2506,7 @@ export class HostStore {
   private async flushPending(id: string): Promise<void> {
     const entry = this.take(id);
     if (!entry) return;
+    this.flushing.set(id, entry.value);
     try {
       await this.writeJournal(entry.value, entry.events, entry);
     } catch (error) {
@@ -2448,6 +2515,8 @@ export class HostStore {
       entry.unwritable = isStorageConstraintFailure(error);
       this.restore(entry);
       throw error;
+    } finally {
+      this.flushing.delete(id);
     }
     // The aggregate counts each block independently (a conservative estimate
     // even with shared children). Reserve space for array and revision keys.
@@ -3150,13 +3219,16 @@ export class HostStore {
   async issueDevice(
     name: string,
     kind?: "phone" | "desktop",
+    localDesktop = false,
   ): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
       await this.db
-        .prepare("INSERT INTO devices (id, name, hash, kind, paired_at) VALUES (?, ?, ?, ?, ?)")
-        .run(id, name, this.hash(token), kind ?? null, Date.now());
+        .prepare(
+          "INSERT INTO devices (id, name, hash, kind, paired_at, management) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(id, name, this.hash(token), kind ?? null, Date.now(), localDesktop ? 2 : 0);
       return { id, token };
     });
   }
@@ -3200,6 +3272,8 @@ export class HostStore {
       kind?: "phone" | "desktop";
       pairedAt?: number;
       lastSeenAt?: number;
+      canManageDevices: boolean;
+      isLocalDesktop: boolean;
     }[];
     devicesTruncated: boolean;
   }> {
@@ -3207,7 +3281,7 @@ export class HostStore {
       const paired = await this.pairedDevices(currentToken);
       const rows = await this.db
         .prepare(
-          "SELECT id, kind, paired_at, last_seen_at FROM devices ORDER BY (hash=?) DESC, id LIMIT 256",
+          "SELECT id, kind, paired_at, last_seen_at, management FROM devices ORDER BY (hash=?) DESC, id LIMIT 256",
         )
         .all(this.hash(currentToken));
       const metadata = new Map(rows.map((row) => [String(row.id), row]));
@@ -3217,6 +3291,8 @@ export class HostStore {
           const row = metadata.get(device.id);
           return {
             ...device,
+            canManageDevices: Number(row?.management) > 0,
+            isLocalDesktop: Number(row?.management) === 2,
             ...(row?.kind === "phone" || row?.kind === "desktop" ? { kind: row.kind } : {}),
             ...(typeof row?.paired_at === "number" &&
             Number.isSafeInteger(row.paired_at) &&
@@ -3233,25 +3309,62 @@ export class HostStore {
       };
     });
   }
+  async setDeviceManagement(id: string, currentToken: string, enabled: boolean): Promise<boolean> {
+    return this.changeOtherDevice(id, currentToken, enabled ? 1 : 0);
+  }
+  async applyDeviceRecovery(
+    request: { requestId: string; deviceId: string; management: boolean | null },
+    currentToken: string,
+  ): Promise<void> {
+    await this.transaction(async () => {
+      const caller = await this.db
+        .prepare("SELECT management FROM devices WHERE hash=?")
+        .get(this.hash(currentToken));
+      if (Number(caller?.management) !== 2) throw new Error("Local desktop permission required");
+      const receipt = await this.db
+        .prepare("INSERT OR IGNORE INTO device_recovery_receipts (id) VALUES (?)")
+        .run(request.requestId);
+      if (!receipt.changes) return;
+      await this.changeOtherDevice(
+        request.deviceId,
+        currentToken,
+        request.management === null ? undefined : Number(request.management),
+      );
+    }, "critical");
+  }
   /** The current device has a separate explicit revoke-self flow. */
   async revokeOtherDevice(id: string, currentToken: string): Promise<boolean> {
+    return this.changeOtherDevice(id, currentToken);
+  }
+  private async changeOtherDevice(
+    id: string,
+    currentToken: string,
+    management?: number,
+  ): Promise<boolean> {
     return this.db.storeScope(async () => {
       const hash = this.hash(currentToken);
-      const caller = await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash);
+      const caller = await this.db
+        .prepare("SELECT id, management FROM devices WHERE hash=?")
+        .get(hash);
       if (!caller) throw new Error("Device authorization was revoked");
       if (caller.id === id) throw new Error("Use the revoke-self action for this device");
-      this.clearAuthCache();
-      return (
-        Number(
-          (
-            await this.db
-              .prepare(
-                "DELETE FROM devices WHERE id=? AND hash<>? AND EXISTS (SELECT 1 FROM devices WHERE hash=?)",
-              )
-              .run(id, hash, hash)
-          ).changes,
-        ) > 0
-      );
+      if (!Number(caller.management)) throw new Error("Device management permission required");
+      const target = "WHERE id=? AND hash<>? AND management<>2";
+      if (management === undefined) {
+        this.clearAuthCache();
+        const result = await this.db
+          .prepare(
+            `DELETE FROM devices ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
+          )
+          .run(id, hash, hash);
+        return Number(result.changes) > 0;
+      }
+      const result = await this.db
+        .prepare(
+          `UPDATE devices SET management=? ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
+        )
+        .run(management, id, hash, hash);
+      return Number(result.changes) > 0;
     });
   }
   /** Lets a desktop revoke only the credential it is using. */

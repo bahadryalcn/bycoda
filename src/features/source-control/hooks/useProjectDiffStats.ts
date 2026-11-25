@@ -1,12 +1,18 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
-import { gitDiffStats, subscribeGitChanged, type GitDiffStats } from "../../../platform/tauri/fs";
+import {
+  gitDiffStats,
+  subscribeGitChanged,
+  type GitDiffIndex,
+  type GitDiffStats,
+} from "../../../platform/tauri/fs";
 import { currentGitChangeHint, peekFullGitIndex } from "../model/gitIndexStore";
 import {
   readMachineAvailability,
   subscribeAvailability,
   useMachineAvailability,
 } from "../../connections/public/machineAvailability";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   ACTIVE_PROJECT_REFRESH_MS,
   BACKGROUND_PROJECT_REFRESH_MS,
@@ -14,10 +20,12 @@ import {
 
 type Entry = {
   cwd: string;
+  machineId: string | null;
   stats: GitDiffStats | null;
   listeners: ReturnType<typeof createStore<[]>>;
   activeListeners: Set<() => void>;
   inFlight: boolean;
+  /** An explicit refresh or Git change still needs a read, even after unsubscription. */
   pending: boolean;
   epoch: number;
   loadedAt: number;
@@ -28,7 +36,15 @@ type Entry = {
   onGitChanged: (() => void) | null;
 };
 
+type ReadQueue = {
+  running: number;
+  scheduled: boolean;
+  waiting: Set<Entry>;
+};
+
+const MAX_READS_PER_MACHINE = 4;
 const entries = new Map<string, Entry>();
+const queues = new Map<string | null, ReadQueue>();
 
 function interval(entry: Entry) {
   return entry.activeListeners.size > 0 ? ACTIVE_PROJECT_REFRESH_MS : BACKGROUND_PROJECT_REFRESH_MS;
@@ -38,8 +54,9 @@ function schedule(entry: Entry) {
   if (entry.timer !== null) clearTimeout(entry.timer);
   entry.timer = null;
   if (!entry.listeners.size || entry.inFlight || document.hidden) return;
+  if (queues.get(entry.machineId)?.waiting.has(entry)) return;
   const age = Date.now() - Math.max(entry.loadedAt, entry.attemptedAt);
-  entry.timer = setTimeout(() => void load(entry), Math.max(0, interval(entry) - age));
+  entry.timer = setTimeout(() => requestLoad(entry), Math.max(0, interval(entry) - age));
 }
 
 function entryFor(cwd: string): Entry {
@@ -47,6 +64,7 @@ function entryFor(cwd: string): Entry {
   if (existing) return existing;
   const entry: Entry = {
     cwd,
+    machineId: parseRemotePath(cwd)?.environmentId ?? null,
     stats: null,
     listeners: createStore(),
     activeListeners: new Set(),
@@ -76,37 +94,69 @@ function publish(entry: Entry, stats: GitDiffStats | null) {
   entry.listeners.notify();
 }
 
-async function load(entry: Entry, force = false) {
+function requestLoad(entry: Entry, force = false, manualRefresh = false) {
+  entry.pending ||= force && (!entry.inFlight || !manualRefresh);
   if (document.hidden) {
-    entry.pending ||= force;
     schedule(entry);
     return;
   }
-  if (entry.inFlight) {
-    entry.pending ||= force;
-    return;
+  if (entry.inFlight) return;
+  let queue = queues.get(entry.machineId);
+  if (!queue) {
+    queue = { running: 0, scheduled: false, waiting: new Set() };
+    queues.set(entry.machineId, queue);
   }
+  queue.waiting.add(entry);
+  schedule(entry);
+  drainSoon(entry.machineId, queue);
+}
+
+function drainSoon(machineId: Entry["machineId"], queue: ReadQueue) {
+  if (queue.scheduled) return;
+  queue.scheduled = true;
+  // Collect subscriptions from the same commit before choosing which checkouts start.
+  queueMicrotask(() => {
+    queue.scheduled = false;
+    for (const foreground of [true, false]) {
+      for (const entry of queue.waiting) {
+        if (queue.running >= MAX_READS_PER_MACHINE) return;
+        if (entry.activeListeners.size > 0 !== foreground) continue;
+        queue.waiting.delete(entry);
+        if (!entry.listeners.size || !readMachineAvailability(entry.cwd).available) continue;
+        if (!shouldRead(entry)) continue;
+        queue.running += 1;
+        void read(entry)
+          .finally(() => {
+            queue.running -= 1;
+            drainSoon(machineId, queue);
+          })
+          .catch(() => {});
+      }
+    }
+    if (queue.running === 0) queues.delete(machineId);
+  });
+}
+
+function shouldRead(entry: Entry) {
+  if (document.hidden) return false;
+  const force = entry.pending;
   if (
     !force &&
     (entry.stats !== null || entry.attemptedAt > 0) &&
     Date.now() - Math.max(entry.loadedAt, entry.attemptedAt) < interval(entry)
   ) {
     schedule(entry);
-    return;
+    return false;
   }
   const cached = peekFullGitIndex(entry.cwd);
   if (!force && cached && Date.now() - cached.at < interval(entry)) {
-    applyProjectDiffStats(
-      entry.cwd,
-      {
-        files: cached.value.files.length + (cached.value.conflicts?.length ?? 0),
-        additions: cached.value.additions,
-        deletions: cached.value.deletions,
-      },
-      cached.at,
-    );
-    return;
+    applyProjectIndexStats(entry.cwd, cached.value, cached.at);
+    return false;
   }
+  return true;
+}
+
+async function read(entry: Entry) {
   entry.pending = false;
   entry.inFlight = true;
   const epoch = entry.epoch;
@@ -122,13 +172,24 @@ async function load(entry: Entry, force = false) {
     entry.attemptedAt = Date.now();
     entry.inFlight = false;
     if (entry.pending && entry.listeners.size > 0) {
-      entry.pending = false;
-      void load(entry, true);
+      requestLoad(entry);
     } else schedule(entry);
   }
 }
 
-/** Push stats from a fuller git index (diff pane) so the title-bar badge cannot lag behind. */
+/** Publish the file and line totals of the index shown in the Changes panel. */
+export function applyProjectIndexStats(cwd: string, index: GitDiffIndex, readAt?: number) {
+  applyProjectDiffStats(
+    cwd,
+    {
+      files: index.files.length + (index.conflicts?.length ?? 0),
+      additions: index.additions,
+      deletions: index.deletions,
+    },
+    readAt,
+  );
+}
+
 export function applyProjectDiffStats(cwd: string, stats: GitDiffStats, readAt = Date.now()) {
   if (!cwd || cwd === "~") return;
   const entry = entryFor(cwd);
@@ -141,30 +202,23 @@ export function applyProjectDiffStats(cwd: string, stats: GitDiffStats, readAt =
 function start(entry: Entry) {
   if (entry.onResume) return;
   entry.onResume = () => {
-    if (!document.hidden) void load(entry, entry.pending);
+    if (!document.hidden) requestLoad(entry);
     else schedule(entry);
   };
   entry.onGitChanged = () => {
-    const cached = currentGitChangeHint()?.observed ? peekFullGitIndex(entry.cwd) : null;
-    if (cached) {
-      applyProjectDiffStats(
-        entry.cwd,
-        {
-          files: cached.value.files.length + (cached.value.conflicts?.length ?? 0),
-          additions: cached.value.additions,
-          deletions: cached.value.deletions,
-        },
-        cached.at,
-      );
-    } else void load(entry, true);
+    const hint = currentGitChangeHint();
+    const cached = hint?.observed ? peekFullGitIndex(entry.cwd) : null;
+    if (cached) applyProjectIndexStats(entry.cwd, cached.value, cached.at);
+    else requestLoad(entry, true, hint?.refresh);
   };
   window.addEventListener("focus", entry.onResume);
   document.addEventListener("visibilitychange", entry.onResume);
   entry.unsubscribeGit = subscribeGitChanged(entry.onGitChanged, { cwd: entry.cwd });
-  void load(entry);
+  requestLoad(entry);
 }
 
 function stop(entry: Entry) {
+  queues.get(entry.machineId)?.waiting.delete(entry);
   if (entry.timer !== null) clearTimeout(entry.timer);
   entry.timer = null;
   if (entry.onResume) {
@@ -182,7 +236,7 @@ function subscribeEntry(cwd: string, listener: () => void, foreground = false): 
   const unsubscribe = entry.listeners.subscribe(listener);
   if (foreground) entry.activeListeners.add(listener);
   if (entry.listeners.size === 1) start(entry);
-  else void load(entry);
+  else requestLoad(entry);
   return () => {
     unsubscribe();
     entry.activeListeners.delete(listener);
@@ -229,20 +283,20 @@ export function useProjectsDiffStats(
   const key = JSON.stringify(paths);
   const subscribe = useCallback(
     (listener: () => void) => {
-      const unsubscribers = paths.map((cwd) => subscribeEntry(cwd, listener));
+      const unsubscribers = Array.from(new Set(paths), (cwd) => subscribeEntry(cwd, listener));
       return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
     },
     // `key` stands in for `paths`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [key],
   );
-  // Callers read the changed-file count, so that alone drives re-renders.
+  // The overview totals all three fields. Equal values preserve its snapshot.
   const getSnapshot = useCallback(
     () =>
       paths
         .map((cwd) => {
           const stats = entryFor(cwd).stats;
-          return stats ? `${stats.files}` : "-";
+          return stats ? `${stats.files}:${stats.additions}:${stats.deletions}` : "-";
         })
         .join(","),
     // eslint-disable-next-line react-hooks/exhaustive-deps

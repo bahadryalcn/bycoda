@@ -7,7 +7,7 @@ import {
   type UserQuestionReply,
 } from "../../../integrations/harness";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { type Session } from "../../../features/sessions/model/session";
 import {
   pruneApprovalIntents,
@@ -53,6 +53,7 @@ export interface ApprovalActionDeps {
   onSelectRemoteSession?: (project: string, remoteSessionId: string) => Promise<boolean>;
   /** Closes the full-screen surfaces (search, inbox, ...) that would cover the conversation. */
   closeSurfaces?: () => void;
+  workspaceNavigation?: { cancel: () => void; captureRequest: () => () => boolean };
 }
 
 /** Approval, question reply/interaction and open-approval-session callbacks. Verbatim bodies. */
@@ -60,6 +61,8 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   const { sessionsRef, setInspectedWorkerId, focusOpenSession, onSelectHistorySession } = deps;
   const { ensureOpenSession, liveAgents, unopenedRemoteRef, dismissRemoteFinished } = deps;
   const { onSelectRemoteSession, closeSurfaces } = deps;
+  const cancelNavigation = deps.workspaceNavigation?.cancel;
+  const captureNavigation = deps.workspaceNavigation?.captureRequest;
 
   /** An orchestrated worker is opened through its lead. */
   const ownerOf = useCallback(
@@ -105,7 +108,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
       )
         return;
-      if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) {
+      if (hostSessionBinding(session) || remoteSessionProject(session)) {
         if (current) return;
         const actions = remoteSessionActions(sessionId);
         if (!actions) throw new Error("Question connection is unavailable");
@@ -126,7 +129,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   const onQuestionInteraction = useCallback(
     (sessionId: string, requestId: number) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) return;
+      if (session && (hostSessionBinding(session) || remoteSessionProject(session))) return;
       if (session && !session.worktreeRemoved)
         keepHarnessQuestionOpen(liveTurnHarness(session), sessionId, requestId);
     },
@@ -143,13 +146,12 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       const ownerId = ownerOf(sessionId);
       const locked = (cwd: string) => isProjectLockedIn(getGroupLockView().lock, cwd);
       try {
-        const elsewhere = liveAgents?.find(
-          (agent) => agent.id === ownerId && agent.ownerWindowLabel,
-        );
-        if (elsewhere) {
-          if (locked(elsewhere.cwd)) return false;
+        const live = liveAgents?.find((agent) => agent.id === ownerId);
+        if (live?.ownerWindowLabel) {
+          if (locked(live.cwd)) return false;
+          cancelNavigation?.();
           try {
-            await focusWindowLiveAgent(elsewhere);
+            await focusWindowLiveAgent(live);
             return true;
           } catch (error) {
             toast.show({
@@ -160,19 +162,24 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
             return false;
           }
         }
-        const remote =
-          sessionsRef.current.some((session) => session.id === ownerId) || !onSelectRemoteSession
-            ? undefined
-            : unopenedRemoteRef?.current.find(({ session }) => session.id === ownerId);
-        if (remote && onSelectRemoteSession) {
-          if (locked(remote.project)) return false;
+        const known = sessionsRef.current.find((session) => session.id === ownerId);
+        const remoteProject = live?.listedRemote
+          ? live.cwd
+          : !known
+            ? unopenedRemoteRef?.current.find(({ session }) => session.id === ownerId)?.project
+            : undefined;
+        if (remoteProject && onSelectRemoteSession) {
+          if (locked(remoteProject)) return false;
           closeSurfaces?.();
-          const opened = await onSelectRemoteSession(remote.project, ownerId);
+          const opened = await onSelectRemoteSession(remoteProject, ownerId);
           if (opened) dismissRemoteFinished?.(ownerId);
           return opened;
         }
-        const known = sessionsRef.current.find((session) => session.id === ownerId);
+        if (known && locked(known.cwd)) return false;
+        cancelNavigation?.();
+        const isCurrent = captureNavigation?.();
         const session = known ?? (await ensureOpenSession?.(ownerId));
+        if (isCurrent && !isCurrent()) return false;
         if (ensureOpenSession && !session) return false;
         if (session && locked(session.cwd)) return false;
         closeSurfaces?.();
@@ -185,6 +192,8 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       }
     },
     [
+      cancelNavigation,
+      captureNavigation,
       closeSurfaces,
       dismissRemoteFinished,
       ensureOpenSession,
@@ -213,14 +222,16 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         // A subagent's own subagent opens in the conversation that owns its parent.
         if (parents.length === 1 && delegationParentOf(parents[0])) parents = parentsOf(parents[0]);
         if (child.inboxAsk || parents.length !== 1 || !focusOpenSession(parents[0].id)) return;
+        closeSurfaces?.();
         requestViewDelegated(parents[0].id, child.id);
         return;
       }
       const ownerId = ownerOf(sessionId);
       if (!focusOpenSession(ownerId)) return;
+      closeSurfaces?.();
       if (ownerId !== sessionId) setInspectedWorkerId(sessionId);
     },
-    [focusOpenSession, ownerOf, sessionsRef, setInspectedWorkerId],
+    [closeSurfaces, focusOpenSession, ownerOf, sessionsRef, setInspectedWorkerId],
   );
 
   return {

@@ -912,7 +912,7 @@ it.each(["xai", "openai"] as const)(
       expect(events.error).toHaveBeenCalledExactlyOnceWith(
         "Voice input cleanup was not confirmed. Start voice again.",
         true,
-        { recoverable: true, code: "input_cleanup_unconfirmed" },
+        { recoverable: true, code: "input_cleanup_unconfirmed", speechLost: true },
       );
       socket.emit({ type: "conversation.item.added", item: { id: "unknown-history" } });
       socket.emit({
@@ -2053,7 +2053,7 @@ it("ends voice when the provider never acknowledges a commit", async () => {
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
-      { recoverable: true, code: "audio-commit-unacknowledged" },
+      { recoverable: true, code: "audio-commit-unacknowledged", speechLost: true },
     );
     expect(track.stop).toHaveBeenCalled();
     expect(sockets[0].close).toHaveBeenCalled();
@@ -2067,8 +2067,8 @@ it("ends voice when the provider never acknowledges a commit", async () => {
 it("keeps waiting for a commit while a long utterance is still uploading", async () => {
   vi.useFakeTimers();
   try {
-    const events = callbacks();
-    const voice = await connectedWithFakeTimers(events);
+    const events = { ...callbacks(), diagnostic: vi.fn() };
+    const voice = await connectedWithFakeTimers(events, "xai");
     sockets[0].bufferedAmount = 900_000;
     candidateAudio();
     for (const left of [600_000, 300_000]) {
@@ -2078,11 +2078,67 @@ it("keeps waiting for a commit while a long utterance is still uploading", async
     }
     // The upload stopped moving: now the connection counts as unresponsive.
     await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.diagnostic).toHaveBeenCalledWith({
+      kind: "input-deadline",
+      stage: "commit",
+      elapsedMs: expect.any(Number),
+      bufferedBytes: 300_000,
+      previousBufferedBytes: 300_000,
+      uploadExtensions: 2,
+      socketState: expect.any(Number),
+      lastProviderFrameAgoMs: expect.any(Number),
+    });
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
-      { recoverable: true, code: "audio-commit-unacknowledged" },
+      { recoverable: true, code: "audio-commit-unacknowledged", speechLost: true },
     );
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("gives the xAI commit acknowledgement time after the audio upload finishes", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events, "xai");
+    candidateAudio();
+    sockets[0].bufferedAmount = 600_000;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(14_999);
+    sockets[0].bufferedAmount = 0;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events.error).not.toHaveBeenCalled();
+    acceptInput(sockets[0], "merhaba", "drained");
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith("merhaba");
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("gives xAI a separate transcript window after a late commit acknowledgement", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events, "xai");
+    candidateAudio();
+    await vi.advanceTimersByTimeAsync(14_000);
+    sockets[0].emit({ type: "input_audio_buffer.committed", item_id: "late-commit" });
+    sockets[0].emit({
+      type: "conversation.item.added",
+      item: { id: "late-commit", type: "message", role: "user" },
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    sockets[0].emit({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "late-commit",
+      transcript: "merhaba",
+    });
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith("merhaba");
+    expect(events.error).not.toHaveBeenCalled();
     voice.close();
   } finally {
     vi.useRealTimers();
@@ -2354,6 +2410,194 @@ it("marks a reply played only after generation and audio both finish", async () 
   expect(events.replyPlayed).not.toHaveBeenCalled();
   player.onended();
   expect(events.replyPlayed).toHaveBeenCalledExactlyOnceWith("r1");
+  voice.close();
+});
+
+function committedWithoutItem(socket: Socket) {
+  candidateAudio();
+  socket.emit({ type: "input_audio_buffer.committed" });
+}
+
+it("binds an xAI commit ACK without an item id to its created audio item", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  const socket = sockets.at(-1)!;
+  committedWithoutItem(socket);
+  socket.emit({
+    type: "conversation.item.added",
+    item: { id: "audio-1", type: "message", role: "user", content: [{ type: "input_audio" }] },
+  });
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "audio-1",
+    transcript: "Chrome aç",
+  });
+  expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Chrome aç");
+  expect(events.error).not.toHaveBeenCalled();
+  voice.close();
+});
+
+it("accepts the transcript of an acknowledged commit that named no item", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  const socket = sockets.at(-1)!;
+  committedWithoutItem(socket);
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "audio-2",
+    transcript: "Müzik aç",
+  });
+  expect(events.transcript).toHaveBeenCalledExactlyOnceWith("Müzik aç");
+  voice.close();
+});
+
+it("never binds a client text item to the pending audio commit", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  const socket = sockets.at(-1)!;
+  candidateAudio();
+  socket.emit({
+    type: "conversation.item.added",
+    item: { id: "seed", type: "message", role: "user", content: [{ type: "input_text" }] },
+  });
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "seed",
+    transcript: "not owner speech",
+  });
+  expect(events.transcript).not.toHaveBeenCalled();
+  socket.emit({ type: "input_audio_buffer.committed", item_id: "real" });
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "real",
+    transcript: "gerçek",
+  });
+  expect(events.transcript).toHaveBeenCalledExactlyOnceWith("gerçek");
+  voice.close();
+});
+
+it("reports an acknowledged commit without a transcript separately from a missing ACK", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events);
+    committedWithoutItem(sockets[0]);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.error).toHaveBeenCalledWith(
+      "Voice connection is too slow. Start voice again.",
+      true,
+      { recoverable: true, code: "audio-transcript-missing", speechLost: true },
+    );
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("accepts a slow commit ACK that arrives inside the wait", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events);
+    candidateAudio();
+    await vi.advanceTimersByTimeAsync(14_900);
+    sockets[0].emit({ type: "input_audio_buffer.committed", item_id: "slow" });
+    sockets[0].emit({
+      type: "conversation.item.input_audio_transcription.completed",
+      item_id: "slow",
+      transcript: "geç geldi",
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith("geç geldi");
+    expect(events.error).not.toHaveBeenCalled();
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not report lost speech when a connection drops with no pending input", async () => {
+  setup();
+  const events = callbacks();
+  const voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  sockets.at(-1)!.onclose?.({ code: 1006 });
+  expect(events.error).toHaveBeenCalledWith("Voice connection closed.", true, {
+    recoverable: true,
+    code: "1006",
+  });
+  voice.close();
+});
+
+function playedReply(socket: Socket, id: string) {
+  socket.emit({ type: "response.created", response: { id } });
+  socket.emit({ type: "response.output_audio_transcript.delta", response_id: id, delta: "yanıt" });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: id,
+    item_id: `${id}-item`,
+    content_index: 0,
+    delta: "AAA=",
+  });
+  socket.emit({ type: "response.done", response: { id, output: [] } });
+}
+
+it("confirms elapsed playback before a newer turn when the ended event is late", async () => {
+  setup();
+  const order: string[] = [];
+  const events = {
+    ...callbacks(),
+    replyPlayed: vi.fn(() => order.push("played")),
+    replyDiscarded: vi.fn(() => order.push("discarded")),
+    transcript: vi.fn(() => order.push("transcript")),
+  };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "ilk", "first");
+  order.length = 0;
+  playedReply(socket, "r1");
+  contexts.at(-1)!.currentTime = 1;
+  acceptInput(socket, "ikinci", "second");
+  expect(order).toEqual(["played", "transcript"]);
+  voice.close();
+});
+
+it("keeps unfinished playback unconfirmed when a newer turn interrupts it", async () => {
+  setup();
+  const events = { ...callbacks(), replyPlayed: vi.fn(), replyDiscarded: vi.fn() };
+  const voice = new RealtimeVoice("openai", events, "tr");
+  await voice.connect(secret("openai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "ilk", "first");
+  playedReply(socket, "r1");
+  acceptInput(socket, "ikinci", "second");
+  expect(events.replyPlayed).not.toHaveBeenCalled();
+  expect(events.replyDiscarded).toHaveBeenCalledWith("r1");
+  voice.close();
+});
+
+it("confirms elapsed playback once when the connection drops before the ended event", async () => {
+  setup();
+  const events = { ...callbacks(), replyPlayed: vi.fn(), replyDiscarded: vi.fn() };
+  const voice = new RealtimeVoice("xai", events, "tr");
+  await voice.connect(secret("xai"));
+  const socket = sockets.at(-1)!;
+  acceptInput(socket, "ilk", "first");
+  playedReply(socket, "r1");
+  const output = contexts.at(-1)!;
+  const player = output.createBufferSource.mock.results[0].value;
+  output.currentTime = 1;
+  socket.onclose?.({ code: 1006 });
+  player.onended?.();
+  expect(events.replyPlayed).toHaveBeenCalledExactlyOnceWith("r1");
+  expect(events.replyDiscarded).not.toHaveBeenCalled();
   voice.close();
 });
 

@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { HOST_CREWS } from "./crew";
 const fixture = vi.hoisted(() => ({
   options: undefined as any,
+  poll: undefined as { period: number; urgent?: boolean } | undefined,
   data: undefined as any,
   error: undefined as Error | undefined,
   request: vi.fn(),
@@ -24,6 +25,17 @@ vi.mock("../../connections/model/useRemoteModelCatalog", () => ({
   useRemoteModelCatalog: (args: unknown) => {
     fixture.catalogArgs = args;
     return fixture.catalogRead;
+  },
+}));
+vi.mock("../../../shared/hooks/useQueryVisible", () => ({
+  useQueryVisible: () => true,
+  useForegroundQueryPolling: (
+    _refetch: unknown,
+    period: number,
+    _enabled: boolean,
+    urgent?: boolean,
+  ) => {
+    fixture.poll = { period, urgent };
   },
 }));
 vi.mock("@tanstack/react-query", () => ({
@@ -57,7 +69,7 @@ function projectCrews(cwd: string) {
 const SCOPE_DATA = {
   machine: { id: "local", environmentId: "env-1" },
   project: { id: "project" },
-  runs: [{ id: "running-work" }],
+  runs: [{ id: "running-work", tasks: [] }],
   definitions: [],
   agents: [],
 };
@@ -82,19 +94,14 @@ it("polls only crews.list and never requests the model catalog from the run quer
   expect(data.runs).toEqual([{ id: "running-work", tasks: [] }]);
   expect(data).not.toHaveProperty("catalog");
   // A catalog that is still pending no longer speeds up the run poll.
-  expect(fixture.options.refetchInterval({ state: { data } })).toBe(15000);
-  expect(
-    fixture.options.refetchInterval({
-      state: { data: { ...data, runs: [{ status: "active", tasks: [] }] } },
-    }),
-  ).toBe(5000);
-  expect(
-    fixture.options.refetchInterval({
-      state: {
-        data: { ...data, runs: [{ status: "paused", coordinatorStatus: "running", tasks: [] }] },
-      },
-    }),
-  ).toBe(5000);
+  expect(fixture.options.refetchInterval).toBeUndefined();
+  expect(fixture.poll?.period).toBe(15_000);
+  fixture.data = { ...data, runs: [{ status: "active", tasks: [] }] };
+  projectCrews("C:/project");
+  expect(fixture.poll).toEqual({ period: 5_000, urgent: true });
+  fixture.data = { ...data, runs: [{ status: "paused", coordinatorStatus: "running", tasks: [] }] };
+  projectCrews("C:/project");
+  expect(fixture.poll).toEqual({ period: 5_000, urgent: true });
 });
 
 it("reads the catalog under its own Host, environment and project scope", async () => {
@@ -161,7 +168,7 @@ it("keeps work controls available when only the model catalog fails", () => {
   fixture.catalogRead.error = "Error: Catalog offline";
   fixture.catalogRead.stale = true;
   const data = projectCrews("C:/project").data!;
-  expect(data.runs).toEqual([{ id: "running-work" }]);
+  expect(data.runs).toEqual([{ id: "running-work", tasks: [] }]);
   // A remembered catalog that could not be refreshed is not offered for model choices.
   expect(data.catalog).toEqual({ models: {}, errors: {} });
   expect(data.catalogError).toBe("Catalog offline");
@@ -194,7 +201,7 @@ it("keeps one crew data object across renders until the fetched result changes",
   // A new object on every render re-ran the sidebar's effects, whose connection report
   // re-rendered the sidebar again: React #185 on the Mac's remote project.
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  fixture.data = { machine: { id: "m" }, project: { id: "p" }, runs: [{ id: "r" }] };
+  fixture.data = { machine: { id: "m" }, project: { id: "p" }, runs: [{ id: "r", tasks: [] }] };
   const seen: unknown[] = [];
   let rerender!: () => void;
   function Fixture() {
@@ -208,9 +215,9 @@ it("keeps one crew data object across renders until the fetched result changes",
   await act(async () => rerender());
   expect(seen.length).toBeGreaterThan(1);
   expect(new Set(seen).size).toBe(1);
-  fixture.data = { ...fixture.data, runs: [{ id: "r2" }] };
+  fixture.data = { ...fixture.data, runs: [{ id: "r2", tasks: [] }] };
   await act(async () => rerender());
-  expect((seen.at(-1) as { runs: unknown[] }).runs).toEqual([{ id: "r2" }]);
+  expect((seen.at(-1) as { runs: unknown[] }).runs).toEqual([{ id: "r2", tasks: [] }]);
   await act(async () => root.unmount());
   fixture.data = undefined;
 });

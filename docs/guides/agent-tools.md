@@ -16,9 +16,10 @@ screen does not display them.
 
 ## bykit
 
-When the `bykit` command-line tool is installed and on the Host's PATH, every agent
-session is told not to write throwaway scripts and to use `bykit` for large files,
-diffs, long command output, broad searches and bulk edits. Without it nothing changes.
+Agents use `bykit` when it is available and suits the operation. They can use
+other tools when needed, including Python, Node and shell commands to inspect
+files. For authorized edits, patches and scripts that preserve encoding and
+line endings are also supported.
 Installing it takes effect within about a minute for sessions started afterward.
 **Settings > Tools > bykit** turns the instructions off or on for this computer's
 Host; the change applies from the next agent turn.
@@ -56,6 +57,9 @@ endpoint. Checks of an existing process never issue replacement grants.
 An installed Device Host starts only after **Connect devices**. Opening the panel
 reads its status. Failed status or discovery refreshes invalidate the previous
 readiness and activity observation; retained device drafts and frames stay intact.
+Background status, discovery and live screen failures are logged and retried.
+The panel shows a warning after three seconds of ordinary interruption.
+Errors from actions you trigger are shown right away.
 
 The device header holds the device picker, refresh and control state. Each device carries its platform
 icon (Android or iOS), green while the device is running; its version, kind and state
@@ -67,26 +71,29 @@ Mac even when the conversation belongs to a Windows project. The runtime status,
 platform checks, and setup and start or stop actions follow that selection. Without a
 selected device, the panel lists devices to open.
 
-Live view follows an Android device as video when the Host is on Windows or macOS,
-so the screen moves as it does on the phone and input shows its result at once.
-iOS simulators, older Hosts and any stream failure use still captures instead,
-about one per second. Pausing keeps the picture that was on screen.
+Live view streams Android devices on Windows or macOS Hosts and single-display iOS
+simulators on a Mac. Select the device's machine once. The panel uses that Host
+connection whether you are at that computer or connected remotely. It can display the first decoded picture
+while the still capture is pending. On a Host that supports live touch, Android
+tracks your pointer while you drag. Other Hosts send a swipe when you release.
+Older Hosts can use the previous video transport. Foldable iOS simulators and devices without
+working video request up to three stills per second, one capture at a time. During a transient
+video interruption, the panel shows the last available picture as **Last frame · Not live** until
+a fresh picture arrives. Pausing keeps the current picture.
 
 On a Mac with Xcode 27.1 or later, an available iPhone Duo simulator also exposes
 **Fold device**, **Half-open device** and **Unfold device** in **Device options**.
-Enable device control first. Agents use `devices.action` with
+The panel obtains control automatically. Agents use `devices.action` with
 `action: { type: "fold", posture: "closed" | "half-open" | "open" }` under the same
 device lease. Folding clears inspection targets and refreshes the still frame;
 capture each pose to check layouts. Physical phones and ordinary simulators do not
 offer these controls. The selected Xcode must include the Duo simulator runtime.
 
-Devices opens in view-only mode. The header has an **Allow device control** switch
-and a visible state: **View only**, **Control active**, or **Control in use**.
-A competing controller disables the switch and exposes its ownership reason.
-Claim control explicitly before sending input;
-release it when finished. Another controller's claim, an expired lease or an older
-Host without control ownership support prevents input. Switching conversations or
-computers does not transfer control. App and text drafts remain with their device.
+Devices obtains control automatically for the selected running device while the panel
+is open. If another controller holds the device, the panel waits until it becomes
+available. Input requires a valid Host lease.
+Closing the panel or switching targets releases its lease after pending input finishes.
+App and text drafts remain with their device.
 
 Text, app and accessibility search panels focus their input when opened. Close or
 Escape returns focus to the action that opened the panel. Hidden tool panels keep
@@ -114,8 +121,8 @@ available while the original result is checked.
 
 ## Conversation tools
 
-The tool machine picker lists **This computer** once for local projects. For
-remote projects, it lists the project Host and **This computer** separately.
+The tool machine picker lists each computer once. For remote projects, the
+**Project host** label identifies the computer that holds the project.
 
 Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed. A provider reads its tools only when it starts, so one that started while the Host did not answer, or that outlived a Host restart, starts again before the next message once the Host answers; the conversation and its context continue. If that start does not restore the tools, bycoda waits ten minutes before trying again.
 
@@ -143,16 +150,14 @@ uses the integrated preview first when available. The preview opens in the
 originating conversation's Browser panel by default. A responsive check can resize
 the browser viewport; this does not simulate a physical phone. The dimensions control
 in the Browser toolbar opens presets for desktop, tablet and phone, custom dimensions,
-and rotation. Browser controls and setup remain in their separate menu. Width must be
+and rotation. Width must be
 240–2560 pixels and height 240–2160 pixels. Resizing requires browser control and
 invalidates the previous element selection and frame geometry.
 
-Private HTTP and HTTPS links in a remote conversation open in the project's
-Host Browser. For example, a link to `http://localhost:3000/patients` reaches
-port 3000 on the remote Host. You can open a running app this way even if it
-is missing from Development servers. To open a discovered, supported endpoint
-in your system browser, use **Open in this computer's browser** in Development
-servers.
+On desktop, click a remote conversation's HTTP development link to open it in
+your system browser. For a matching project server, bycoda creates a private
+address on this computer and forwards requests to the remote Host. HTTPS links,
+unmatched servers and unavailable forwarding use the project's Host Browser.
 
 Before a page is open, the Browser panel lists recently opened addresses on this
 computer; choose one to open it, or remove it from the list. Addresses with a user
@@ -167,6 +172,27 @@ not acquire or renew control. A frame remains readable after the 30-second contr
 lease expires or another controller takes control of the same conversation's page.
 Input, navigation, viewport changes and closing still require an active lease;
 the assistant checks status and explicitly claims control again when needed.
+
+The visible desktop Browser panel acquires available control automatically. Click
+the preview to type, paste, use shortcuts or drag. Scroll directly over the fitted
+preview. The panel resumes input when another controller releases the page. If
+Chromium needs installation, the Browser panel shows the setup action.
+
+Pausing live view in the visible Browser panel keeps the page active through
+periodic status reads. If the Host loses the page, the panel clears the old
+image and keeps the address available so you can reopen it.
+
+The desktop panel uses a binary frame stream when supported by the selected
+Host. It displays the most recent frame available and falls back to the
+regular frame request when the stream is unavailable.
+
+On Windows and macOS, entering a loopback address for this computer opens a
+direct local preview. Its keyboard, pointer, and scrolling go straight to the
+embedded browser. Use **Shared host browser** to open the current address in
+the Host when you need named viewports, element selection, recording, or a
+page the assistant can interact with. The shared browser opens its own page,
+with its own sign-in and form state. For a selected remote computer,
+`localhost` always refers to that computer.
 
 The assistant can record the conversation's browser as a short WebM video. Starting a
 recording needs the active control lease. After that, recording continues while the
@@ -183,10 +209,10 @@ conversation's tools. A conversation without open tools does not inherit another
 browser. Returning restores the selected tool, computer and drafts. Hidden panels
 pause preview polling without stopping the underlying server or device.
 
-The separate Conversation tools window follows the active conversation by default,
-including selection from the main session list. Its project and conversation
-selector opens other tool conversations; hover or keyboard focus shows details.
-Use the link/pin control to follow the main window or keep one conversation visible.
+The separate Conversation tools window follows the focused conversation. With one
+view, the header shows its project and conversation. With several, select another
+open tool view to inspect it. The next conversation selection or focus in the
+main window updates the tools window. Hover or focus the title for details.
 Return to conversation moves the view back after its destination is ready. Closing
 the tools window does not close the browser or discard the original conversation.
 
@@ -439,7 +465,16 @@ the owner's other MCP servers disabled for that thread; no config file is change
 a short bycoda hint without the owner's persona. Normal subagents use the parent project's
 folder or worktree and its runtime permissions. Omit `files` or set `files: true` for a
 normal session. When tools are unnecessary or unavailable, give the child enough context
-to answer from the brief. Use `files: false` only when the owner asks for scratch mode and the selected
+to answer from the brief.
+
+New Codex and Claude Code delegates keep their saved conversation in Bycoda. If their
+provider process restarts, Bycoda restores a bounded excerpt of saved conversation context,
+including available tool results. Provider-native state and previous attachment contents are
+not restored from this excerpt. New Pi and OMP delegates use a private native session directory
+and can resume from that directory. OpenCode keeps new tool-enabled delegates archived in its
+own history and can resume them by ID. Existing delegates keep their original storage.
+
+Use `files: false` only when the owner asks for scratch mode and the selected
 model's `filesFalse.available` in `agents.options` is true. Claude and Codex run read-only in
 an empty scratch folder under
 the Host's state directory, with reduced context. Stock Pi uses a tool-free scratch session

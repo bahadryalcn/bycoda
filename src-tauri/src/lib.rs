@@ -47,6 +47,7 @@ mod gitlab;
 mod handoff_history;
 mod harness;
 mod harness_updates;
+mod host_lifecycle;
 mod host_ws;
 mod html_preview;
 mod inbox_media;
@@ -65,6 +66,7 @@ mod macos;
 mod macos_background;
 mod mcp;
 pub use mcp::remote_config::maybe_run as maybe_run_mcp_config_helper;
+mod local_browser_preview;
 mod menu;
 mod messaging;
 mod mobile_pty;
@@ -159,6 +161,7 @@ mod turn_probe;
 mod turn_steps;
 mod voice_overlay;
 mod webview_args;
+mod webview_recovery;
 mod window;
 mod window_fullscreen;
 mod window_glass_state;
@@ -458,6 +461,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(session_links::init())
         .plugin(native_window_lifecycle::init())
+        .plugin(webview_recovery::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -523,6 +527,7 @@ pub fn run() {
             reminders::init(app.handle());
             // Keep this computer's host in step with the desktop it shipped with.
             if !package_smoke::active() {
+                host_lifecycle::start(app.handle());
                 bundled_host::start(app.handle());
             }
             conversation_tools_bridge::start_desktop_relay(app.handle().clone());
@@ -565,6 +570,12 @@ pub fn run() {
             |_context, request, responder| html_preview::respond_async(request, responder),
         )
         .invoke_handler(tauri::generate_handler![
+            local_browser_preview::local_browser_preview_open,
+            local_browser_preview::local_browser_preview_layout,
+            local_browser_preview::local_browser_preview_navigate,
+            local_browser_preview::local_browser_preview_reload,
+            local_browser_preview::local_browser_preview_location,
+            local_browser_preview::local_browser_preview_close,
             package_smoke::package_smoke_dom_proof,
             build_info::build_identity,
             native_authority_checkpoint::native_renderer_checkpoint,
@@ -586,6 +597,7 @@ pub fn run() {
             native_editor_drafts::native_editor_draft_open,
             native_editor_drafts::native_editor_draft_read_current,
             native_editor_drafts::native_editor_draft_read_recovery,
+            native_editor_drafts::native_editor_draft_hide_recovery,
             native_editor_drafts::native_editor_draft_inventory,
             native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,
@@ -647,7 +659,10 @@ pub fn run() {
             local_host::local_host_reconnect,
             local_host::local_host_status,
             local_host::local_host_start,
+            host_lifecycle::switch::local_host_mode,
+            host_lifecycle::switch::local_host_set_mode,
             bundled_host::local_host_bundle_status,
+            bundled_host::local_host_update_activity,
             bundled_host::local_host_bundle_update,
             generic_acp::generic_acp_list,
             generic_acp::generic_acp_save,
@@ -660,6 +675,9 @@ pub fn run() {
             remote::remote_disconnect,
             remote::remote_close_connection,
             remote::remote_request,
+            remote::browser_frames::remote_browser_frames_open,
+            remote::browser_frames::remote_browser_frames_read,
+            remote::browser_frames::remote_browser_frames_close,
             remote::assistant_native_send,
             remote::assistant_native_finish,
             remote::assistant_native_reconcile,
@@ -1334,6 +1352,7 @@ pub fn run() {
             ..
         } => {
             voice_overlay::window_destroyed(handle, &label);
+            local_browser_preview::detach_window(&label);
             window_transfer::window_closed(handle, &label);
             handle
                 .state::<remote::RemoteConnections>()

@@ -4,6 +4,17 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { setLanguagePreference } from "../i18n";
 import { Timestamp } from "./Timestamp";
+import { TOOLTIP_DELAY_MS } from "./Tooltip";
+
+function hoverTime(element: HTMLTimeElement) {
+  act(() => {
+    element.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    vi.advanceTimersByTime(TOOLTIP_DELAY_MS);
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent;
+  act(() => element.dispatchEvent(new PointerEvent("pointerout", { bubbles: true })));
+  return text;
+}
 
 afterEach(async () => {
   vi.useRealTimers();
@@ -47,7 +58,7 @@ it("localizes calendar labels, rolls over at midnight and refreshes after resume
   try {
     act(() => root.render(createElement(Timestamp, { value })));
     expect(container.textContent).toBe("Bugün 23:44");
-    expect(container.querySelector("time")?.title).toBe("17 Eki 2026 23:44");
+    expect(hoverTime(container.querySelector("time")!)).toBe("17 Eki 2026 23:44");
     act(() => vi.advanceTimersByTime(2_000));
     expect(container.textContent).toBe("Dün 23:44");
     await act(async () => setLanguagePreference("en"));
@@ -82,7 +93,7 @@ it("compares calendar days across month and year boundaries and keeps future dat
   }
 });
 
-it("renders relative, clock, date-only and prefixed variants with a full-date title", async () => {
+it("renders relative, clock, date-only and prefixed variants with a full-date tooltip", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.setSystemTime(new Date(2026, 9, 17, 15, 0, 0));
@@ -96,7 +107,7 @@ it("renders relative, clock, date-only and prefixed variants with a full-date ti
   try {
     const at = new Date(2026, 9, 17, 12, 5, 9).getTime();
     expect(text({ value: at, format: "relative" })?.textContent).toBe("3 hours ago");
-    expect(text({ value: at, format: "relative" })?.title).toBe("Oct 17, 2026, 12:05 PM");
+    expect(hoverTime(text({ value: at, format: "relative" })!)).toBe("Oct 17, 2026, 12:05 PM");
     expect(text({ value: at, format: "relative", prefix: "Created" })?.textContent).toBe(
       "Created 3 hours ago",
     );
@@ -106,7 +117,7 @@ it("renders relative, clock, date-only and prefixed variants with a full-date ti
     expect(text({ value: new Date(2025, 2, 4, 9).getTime(), format: "date" })?.textContent).toBe(
       "Mar 4, 2025",
     );
-    expect(text({ value: at, format: "time", tooltip: false })?.title).toBe("");
+    expect(hoverTime(text({ value: at, format: "time", tooltip: false })!)).toBeUndefined();
     expect(text({ value: Number.NaN, format: "time" })).toBeNull();
   } finally {
     act(() => root.unmount());

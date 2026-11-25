@@ -50,6 +50,7 @@ export type SessionSelectionOptions = {
   navigationKey: string;
   /** Whether the Delete key may delete the selection. */
   canDelete: boolean;
+  onDeleteSelected?: (ids: readonly string[]) => void;
   /** A selection-ending gesture also closes the session context menu. */
   onDismissMenu: () => void;
   bulkDelete: Omit<SessionBulkDeleteOptions, "onDeleted">;
@@ -72,13 +73,17 @@ export function useSessionSelection({
   navigationIds,
   navigationKey,
   canDelete,
+  onDeleteSelected,
   onDismissMenu,
   bulkDelete,
 }: SessionSelectionOptions) {
   const [state, setState] = useState(() => emptySelection(scope, navigationKey));
   if (state.scope !== scope) {
     setState(emptySelection(scope, navigationKey));
-  } else if (state.navigationKey !== navigationKey) {
+  } else if (
+    state.navigationKey !== navigationKey &&
+    (state.ids.size > 0 || state.anchor !== null)
+  ) {
     const available = new Set(navigationIds);
     setState({
       ...state,
@@ -97,7 +102,7 @@ export function useSessionSelection({
       })),
   });
 
-  const selectedOrderedIds = navigationIds.filter((id) => state.ids.has(id));
+  const selectedOrderedIds = state.ids.size ? navigationIds.filter((id) => state.ids.has(id)) : [];
   const showBulkBar = state.mode || (state.ids.size > 0 && !state.contextual);
 
   const clear = () => setState(cleared);
@@ -193,7 +198,9 @@ export function useSessionSelection({
   });
   const selectAllFromKey = useEffectEvent(selectAll);
   const deleteFromKey = useEffectEvent(() => {
-    if (canDelete) void bulk.bulkDeleteSessions(selectedOrderedIds);
+    if (!canDelete) return;
+    if (onDeleteSelected) onDeleteSelected(selectedOrderedIds);
+    else void bulk.bulkDeleteSessions(selectedOrderedIds);
   });
   const selecting = state.ids.size > 0 || state.mode;
   const { mode, contextual } = state;

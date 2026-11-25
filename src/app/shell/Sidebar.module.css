@@ -30,7 +30,6 @@
 @container workspace-pane (inline-size < 440px) {
   .workspaceHeader,
   .workspaceHeader > [data-pane-header-body],
-  .workspaceHeader [data-workspace-navigation],
   .workspaceHeader [data-session-tools] {
     column-gap: 0;
   }
@@ -38,7 +37,9 @@
   .workspaceHeader > [data-pane-header-heading] {
     margin-inline-end: var(--space-1);
   }
+}
 
+@container workspace-pane (inline-size < 350px) {
   .newSessionLabel {
     display: none;
   }
@@ -46,7 +47,7 @@
 
 @container workspace-pane (inline-size < 280px) {
   .workspaceHeader [data-workspace-copy-name],
-  .workspaceHeader:has([data-session-tools] [data-expanded]) [data-workspace-navigation] {
+  .workspaceHeader [data-workspace-copy-decoration] {
     display: none;
   }
 }

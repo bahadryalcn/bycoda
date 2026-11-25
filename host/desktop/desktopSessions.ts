@@ -400,6 +400,8 @@ export class DesktopSessions {
     private readonly idleMs = 5000,
     private readonly openDatabase: HostNotesDatabaseFactory = (path, options) =>
       new DatabaseSync(path, options),
+    /** Only an isolated SQLite worker may wait between physical read attempts. */
+    private readonly waitForTruncateRetry?: (ms: number) => void,
   ) {}
 
   private stamps = new Map<string, { at: number; rows: DesktopStampRow[] }>();
@@ -446,6 +448,18 @@ export class DesktopSessions {
         if (isHostNotesAdmissionFault(error) || error instanceof SessionReadError) throw error;
         // A stale handle (file replaced, schema migrated) is retried once fresh.
         this.drop(path);
+        // Windows cannot truncate a mapped WAL index until the other mapping is released.
+        if (
+          this.platform === "win32" &&
+          this.waitForTruncateRetry &&
+          attempt < 4 &&
+          error instanceof Error &&
+          "errcode" in error &&
+          error.errcode === 1546
+        ) {
+          this.waitForTruncateRetry(50 * 2 ** attempt);
+          continue;
+        }
         if (attempt > 0) {
           console.error("Could not read desktop sessions:", error);
           if (

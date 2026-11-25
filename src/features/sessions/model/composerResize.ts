@@ -1,5 +1,5 @@
-/** Matches the composer's `max-h-40`, so the field stops growing where it clips. */
-export const COMPOSER_MAX_HEIGHT = 160;
+/** Shared height ceiling for the native field, its overlay and the inline editor. */
+export const COMPOSER_MAX_HEIGHT = 180;
 
 const READING_MIN_HEIGHT = 68;
 const READING_MAX_HEIGHT = 132;
@@ -41,8 +41,14 @@ export function composerMaxHeight(el: Resizable): number {
     : COMPOSER_MAX_HEIGHT;
 }
 
-/** A hidden tab stays mounted with no layout box, so it reports 0 here. */
+/** Returns false when a draft needs another measurement once its pane is visible. */
 export function resizeComposer(el: Resizable, maxHeight = composerMaxHeight(el)) {
+  // Empty fields already have their intrinsic rows, padding and CSS minimum height.
+  if (el.value === "") {
+    cappedFields.delete(el);
+    if (el.style.height) el.style.height = "";
+    return true;
+  }
   const capped = cappedFields.get(el);
   // Appending to an already overflowing draft cannot make it fit. Keep the
   // capped box instead of laying the entire draft out twice (auto -> cap).
@@ -57,10 +63,10 @@ export function resizeComposer(el: Resizable, maxHeight = composerMaxHeight(el))
     el.clientWidth === capped.width
   ) {
     capped.value = el.value;
-    return;
+    return true;
   }
   cappedFields.delete(el);
-  if (el.scrollHeight === 0) return;
+  if (el.scrollHeight === 0) return false;
   const wrapper = el.parentElement;
   const minHeight = wrapper?.style.minHeight ?? "";
   // Preserve the composer's occupied space during measurement so the browser
@@ -76,4 +82,5 @@ export function resizeComposer(el: Resizable, maxHeight = composerMaxHeight(el))
   } finally {
     if (wrapper) wrapper.style.minHeight = minHeight;
   }
+  return true;
 }

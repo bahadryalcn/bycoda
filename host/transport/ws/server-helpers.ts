@@ -2,7 +2,7 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { ZodError } from "zod";
 import { truncateGraphemes } from "../../../src/shared/lib/text/truncate";
-import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts";
+import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts/policy";
 import type { HostDispatchError } from "../dispatch";
 import type { HostReadWorkBudget } from "../read-budget";
 import type { HostWsPrincipal } from "./server";

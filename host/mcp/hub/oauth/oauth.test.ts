@@ -36,6 +36,7 @@ type Fake = {
     issuer?: string;
     metaIssuer?: string;
     rotate: boolean;
+    profile?: "available" | "unmarked" | "destructive";
   };
   verifierOk: () => boolean | undefined;
   setChallenge: (value: string) => void;
@@ -63,6 +64,43 @@ async function fakeServer(options: Partial<Fake["options"]> = {}, redirect = fal
         .end(JSON.stringify(value));
     if (redirect && path === "/mcp")
       return void res.writeHead(302, { Location: "http://evil.example/x" }).end();
+    if (
+      opts.profile &&
+      path === "/mcp" &&
+      req.headers.authorization === `Bearer ${SECRET_ACCESS}`
+    ) {
+      const { id, method, params } = JSON.parse(body);
+      if (method === "notifications/initialized") return void res.writeHead(202).end();
+      const result =
+        method === "initialize"
+          ? { protocolVersion: "2025-06-18" }
+          : method === "tools/list"
+            ? params.cursor
+              ? {
+                  tools: [
+                    {
+                      name: "connection_identity",
+                      _meta: { "openai/profile": opts.profile !== "unmarked" },
+                      annotations: {
+                        readOnlyHint: true,
+                        destructiveHint: opts.profile === "destructive",
+                      },
+                    },
+                  ],
+                }
+              : {
+                  tools: [{ name: "whoami", annotations: { readOnlyHint: true } }],
+                  nextCursor: "profile",
+                }
+            : {
+                structuredContent: {
+                  id: "user:123",
+                  email: "work@example.test",
+                  secret: SECRET_ACCESS,
+                },
+              };
+      return json(200, { jsonrpc: "2.0", id, result });
+    }
     if (path === "/mcp")
       return json(
         401,
@@ -368,6 +406,61 @@ describe("owner RPC and publication", () => {
     expect(fake.requests.every((r) => !r.path.includes("evil"))).toBe(true);
   });
 
+  it("reads only a declared account profile with the effective Host sign-in", async () => {
+    const fake = await fakeServer({ profile: "available" });
+    const s = setup(fake);
+    const hub = new McpHub({
+      dataDir: s.dir,
+      inventory: async () => [http("remote", fake.url)],
+      oauth: s.oauth,
+    });
+    const scope = { cwd: join(s.dir, "project"), profileFor: "remote" };
+    expect(await oauthRpc(hub, "mcp.oauth.status", scope)).toMatchObject({
+      servers: [{ state: "none" }],
+    });
+    expect(fake.requests).toHaveLength(0);
+    const { response } = await s.signIn();
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(await oauthRpc(hub, "mcp.oauth.status", {})).toEqual({
+      servers: [{ name: "remote", state: "signed-in" }],
+    });
+    expect(await oauthRpc(hub, "mcp.oauth.status", scope)).toEqual({
+      servers: [
+        { name: "remote", state: "signed-in", inherited: true, profile: "work@example.test" },
+      ],
+    });
+    const calls = fake.requests
+      .filter((request) => request.auth && request.path === "/mcp")
+      .map((request) => JSON.parse(request.body))
+      .filter((request) => request.method === "tools/call");
+    expect(calls.map((call) => call.params)).toEqual([
+      { name: "connection_identity", arguments: {} },
+    ]);
+    await oauthRpc(hub, "mcp.oauth.signOut", { cwd: scope.cwd, name: "remote" });
+    expect(await oauthRpc(hub, "mcp.oauth.status", scope)).toEqual({
+      servers: [{ name: "remote", state: "none" }],
+    });
+  });
+
+  it.each(["unmarked", "destructive"] as const)("skips a %s profile tool", async (profile) => {
+    const fake = await fakeServer({ profile });
+    const s = setup(fake);
+    const hub = new McpHub({
+      dataDir: s.dir,
+      inventory: async () => [http("remote", fake.url)],
+      oauth: s.oauth,
+    });
+    const { response } = await s.signIn();
+    await response.text();
+    expect(await oauthRpc(hub, "mcp.oauth.status", { profileFor: "remote" })).toEqual({
+      servers: [{ name: "remote", state: "signed-in" }],
+    });
+    expect(fake.requests.some((request) => request.body.includes('"method":"tools/call"'))).toBe(
+      false,
+    );
+  });
+
   it("exchanges a relayed callback once, only for the exact state and project", async () => {
     const fake = await fakeServer();
     let now = Date.now();
@@ -397,6 +490,10 @@ describe("owner RPC and publication", () => {
       code: "code-1",
     };
     const finish = (args: Record<string, unknown>) => oauthRpc(hub, "mcp.oauth.complete", args);
+    const cancel = (args: Record<string, unknown>) => oauthRpc(hub, "mcp.oauth.cancel", args);
+    await expect(cancel({ ...input, cwd: join(s.dir, "other-project") })).resolves.toEqual({
+      cancelled: false,
+    });
     await expect(finish({ ...input, state: "wrong-state-123456" })).rejects.toThrow(
       /invalid or expired/,
     );
@@ -413,6 +510,14 @@ describe("owner RPC and publication", () => {
     });
     expect(await s.oauth.httpAuth(hub.oauthServerRef(def))).toBeUndefined();
 
+    const cancelled = new URL((await start()).authorizationUrl).searchParams.get("state");
+    await expect(cancel(input)).resolves.toEqual({ cancelled: false });
+    await expect(cancel({ ...input, state: cancelled })).resolves.toEqual({ cancelled: true });
+    await expect(finish({ ...input, state: cancelled })).rejects.toThrow(/invalid or expired/);
+    expect(await s.oauth.httpAuth(hub.oauthServerRef(def, cwd))).toEqual({
+      Authorization: `Bearer ${SECRET_ACCESS}`,
+    });
+
     const denial = new URL((await start()).authorizationUrl).searchParams.get("state");
     await expect(
       finish({ name: def.name, cwd, state: denial, error: "access_denied" }),
@@ -425,6 +530,19 @@ describe("owner RPC and publication", () => {
       finish({ ...input, state: new URL(expiring.authorizationUrl).searchParams.get("state") }),
     ).rejects.toThrow(/invalid or expired/);
     expect(fake.tokenCalls()).toBe(1);
+  });
+
+  it("closes the Host callback listener when a local sign-in is cancelled", async () => {
+    const fake = await fakeServer();
+    const s = setup(fake);
+    const url = new URL((await s.oauth.start(s.server)).authorizationUrl);
+    const state = url.searchParams.get("state")!;
+    const callback = new URL(url.searchParams.get("redirect_uri")!);
+    callback.searchParams.set("code", "code-1");
+    callback.searchParams.set("state", state);
+    expect(s.oauth.cancelSignIn(s.server, state)).toBe(true);
+    await expect(fetch(callback)).rejects.toThrow();
+    expect(fake.tokenCalls()).toBe(0);
   });
 
   it("isolates project OAuth and suppresses inherited owner auth after explicit sign-out", async () => {

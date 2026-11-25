@@ -16,6 +16,7 @@ import {
   subscribeProviderAccounts,
 } from "../../../providers/public/providerAccounts";
 import type { MachineLimits } from "../../../tasks/public/hostSettings";
+import { useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import type { HostProviders } from "../../model/hostProviders";
 import { ModelOrderLimits } from "./ModelOrderLimits";
@@ -53,9 +54,19 @@ export function ModelOrderLimitsTab({
 }) {
   const t = useT();
   const [quotaWindow, setQuotaWindow] = useState<PlanShareWindow>("fiveHour");
-  const labels: Record<string, string> = JSON.parse(
-    useSyncExternalStore(subscribeProviderAccounts, labelsSnapshot, labelsSnapshot),
+  const source = useModelSource();
+  const localLabels = useSyncExternalStore(
+    subscribeProviderAccounts,
+    labelsSnapshot,
+    labelsSnapshot,
   );
+  const labels: Record<string, string> = source.accounts
+    ? Object.fromEntries(
+        Object.entries(source.accounts).flatMap(([provider, accounts]) =>
+          accounts.map((account) => [`${provider}:${account.id}`, account.label]),
+        ),
+      )
+    : JSON.parse(localLabels);
   const capable = useQuery({
     queryKey: ["usage-plan-share-capability", machineId],
     queryFn: async () => (await machineCapabilities(machine!)).includes(HOST_USAGE_PLAN_SHARE),

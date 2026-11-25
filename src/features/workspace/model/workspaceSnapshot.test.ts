@@ -33,6 +33,18 @@ function chat(id: string, cwd: string): Session {
   return session;
 }
 
+it("restores the remote Host of a projectless draft and its acknowledged conversation", () => {
+  const draft = { ...newSession("codex", "~"), remoteExecutionEnvironmentId: "office" };
+  const tab = newTab(draft.id);
+  rememberRemoteSession(draft.id, "office-session");
+  const snapshot = collectWorkspaceSnapshot([tab], [draft], tab.id, "~", new Map());
+  rememberRemoteSession(draft.id, undefined);
+
+  const restored = hydrateWorkspaceSnapshot(snapshot, new Map());
+  expect(restored?.sessions[0]).toMatchObject({ cwd: "~", remoteExecutionEnvironmentId: "office" });
+  expect(remoteSessionFor(draft.id)).toBe("office-session");
+});
+
 it("restores the scratch directory without upgrading old projectless tabs", () => {
   const scratch = newSession("codex", "~");
   const legacy = { ...newSession("codex", "~"), scratchWorkspace: undefined };
@@ -469,6 +481,25 @@ describe("collectWorkspaceSnapshot", () => {
     expect(snapshot.projectTerminals[0]?.splitGroups).toEqual([[first.id, second.id]]);
     const workspace = hydrateWorkspaceSnapshot(snapshot, new Map());
     expect(workspace?.projectTerminals?.[0]?.splitGroups).toEqual([[first.id, second.id]]);
+  });
+
+  it("does not restore a remote command dock as a local terminal", () => {
+    const project = "remote://fixture/project";
+    const dock = createProjectTerminal(project, newTerminalFile(project, "Code block"));
+    const snapshot = collectWorkspaceSnapshot(
+      [{ ...newTab("s1"), id: "t1" }],
+      [],
+      "t1",
+      project,
+      new Map(),
+      [dock],
+    );
+    expect(snapshot.projectTerminals).toEqual([]);
+    const workspace = hydrateWorkspaceSnapshot(
+      { ...snapshot, projectTerminals: [dock] },
+      new Map(),
+    );
+    expect(workspace?.projectTerminals).toEqual([]);
   });
 
   it("stores the last dock side for new projects", () => {

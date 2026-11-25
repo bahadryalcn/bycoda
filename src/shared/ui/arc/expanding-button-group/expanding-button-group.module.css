@@ -62,8 +62,8 @@
 .item[aria-busy="true"] .icon {
   animation: ebg-pending 1s var(--ebg-ease) infinite;
 }
-/* Decorative breathing pauses behind another app or with decorative motion off; the icon stays visible as the busy cue. */
-:global(html:is([data-decorative-motion="off"], [data-window-focus="off"]))
+/* Decorative breathing pauses hidden or minimized or with decorative motion off; the icon stays visible as the busy cue. */
+:global(html:is([data-decorative-motion="off"], [data-window-visible="off"]))
   .item[aria-busy="true"]
   .icon {
   animation-play-state: paused;

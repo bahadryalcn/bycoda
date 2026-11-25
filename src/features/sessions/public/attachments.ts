@@ -6,6 +6,7 @@ export {
   isAttachmentFolder,
   MAX_ATTACHMENTS,
   MAX_EMBED_BYTES,
+  mergeAttachments,
   persistableAttachment,
   pickAttachments,
   retainAttachmentPickerSelection,
@@ -18,3 +19,5 @@ export {
   stripAttachmentTokens,
 } from "../model/attachmentTokens";
 export type { Attachment } from "../model/session";
+export { beginAttachmentRead, type AttachmentReadCapacity } from "../model/attachmentReadCapacity";
+export { capturePastedTextAttachment, replacePastedText } from "../model/pastedTextAttachment";

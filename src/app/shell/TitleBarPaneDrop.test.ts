@@ -105,44 +105,66 @@ describe("title tab pane drops", () => {
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
     expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   });
-  it("joins compact navigation and tabs in one title bar", () => {
+  it("leads the window-wide title bar with the toggle, brand, history and search", () => {
     const onGoBack = vi.fn();
-    const onGoForward = vi.fn();
-    act(() =>
-      root.render(
-        createElement(TitleBar, {
-          tabs: [tab("first"), tab("second")],
-          activeId: "first",
-          cwd: "/project",
-          projectRailOpen: false,
-          compactRail: true,
-          canGoBack: true,
-          canGoForward: true,
-          onGoBack,
-          onGoForward,
-          onToggleSidebar: vi.fn(),
-          onNew: vi.fn(),
-          onSelect: vi.fn(),
-          onClose: vi.fn(),
-          onCloseMany: vi.fn(),
-          onReorder: vi.fn(),
-        }),
-      ),
-    );
+    const onToggleSidebar = vi.fn();
+    const onSearch = vi.fn();
+    const render = (projectRailOpen: boolean) =>
+      act(() =>
+        root.render(
+          createElement(TitleBar, {
+            tabs: [tab("first"), tab("second")],
+            activeId: "first",
+            cwd: "/project",
+            projectRailOpen,
+            spansWindow: true,
+            canGoBack: true,
+            canGoForward: true,
+            onGoBack,
+            onGoForward: vi.fn(),
+            onToggleSidebar,
+            onSearch,
+            onNew: vi.fn(),
+            onSelect: vi.fn(),
+            onClose: vi.fn(),
+            onCloseMany: vi.fn(),
+            onReorder: vi.fn(),
+          }),
+        ),
+      );
+    render(false);
 
-    const nav = container.querySelector<HTMLElement>("[data-compact-title-nav]")!;
-    expect(nav.closest("header")?.className).toContain("body-glass");
-    expect(nav.className).toContain(IS_MAC ? "ps-[70px]" : "ps-1.5");
+    const lead = container.querySelector<HTMLElement>("[data-title-lead]")!;
+    const button = (name: string) =>
+      lead.querySelector<HTMLButtonElement>(`button[aria-label^="${name}"]`)!;
+    expect(lead.closest("header")?.className).toContain("body-glass");
+    // One order on every platform; only the brand is a button where it opens the app menu.
     expect(
-      Array.from(nav.querySelectorAll("button"), (button) =>
-        button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
+      Array.from(lead.querySelectorAll("button"), (item) =>
+        item.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
-    ).toEqual(["Back", "Forward"]);
-    expect(nav.nextElementSibling?.querySelector("[data-title-tab-strip]")).not.toBeNull();
+    ).toEqual(
+      IS_MAC
+        ? ["Toggle sidebar", "Back", "Forward", "Search"]
+        : ["Toggle sidebar", "Application menu", "Back", "Forward", "Search"],
+    );
+    expect(lead.nextElementSibling?.querySelector("[data-title-tab-strip]")).not.toBeNull();
     expect(container.textContent).not.toContain("Development");
 
-    act(() => nav.querySelector<HTMLButtonElement>("button")!.click());
+    // A collapsed rail leaves the mark alone; the wordmark returns with the expanded rail.
+    expect(lead.querySelectorAll("[data-title-brand] img")).toHaveLength(1);
+    expect(button("Toggle sidebar").getAttribute("aria-pressed")).toBe("false");
+
+    act(() => button("Toggle sidebar").click());
+    act(() => button("Back").click());
+    act(() => button("Search").click());
+    expect(onToggleSidebar).toHaveBeenCalledOnce();
     expect(onGoBack).toHaveBeenCalledOnce();
+    expect(onSearch).toHaveBeenCalledOnce();
+
+    render(true);
+    expect(lead.querySelectorAll("[data-title-brand] img")).toHaveLength(2);
+    expect(button("Toggle sidebar").getAttribute("aria-pressed")).toBe("true");
   });
 
   it.each(["first", "second", "self"])(

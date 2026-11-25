@@ -65,6 +65,14 @@ Owner decision, 2026-11-11, source: owner chat:
 
 Recorded decision: remove redundant tooltip content at its source. Shared Tooltip renders explicitly supplied content unchanged; it does not compare the title with visible control text and remove matching words. Visible text buttons do not generate name tooltips automatically. Keep icon explanations, shortcuts, disabled reasons, additional context and explicit recovery of clipped or responsively hidden text.
 
+## Short help uses one tooltip
+
+Owner decision, 2026-11-23, owner chat.
+
+> help yazısına gerek yok üzerine gelince gözüksün. Gereksizse tamamen bile kaldırabilrisin
+
+Short optional explanations use a passive tooltip on hover and keyboard focus. Remove redundant hints. Structured details can use a dedicated opener with an accessible name. Keep required context visible next to the control.
+
 ## Cards, control groups, titles and file pickers come from shared components
 
 Owner decision, 2026-11-11, source: owner chat:
@@ -115,13 +123,11 @@ ownership, family metadata, unused exports and known hand-written control recipe
 
 Owner decisions, 2026-11-15, source: owner chat:
 
-> fokus istemiyorum çok kötü duruyor t3code un ui tasarımını incelermisin buna göre bir yol haritası çiz
-
 > heryer aynı component tasarımlarını kullanması gerekiyor. Eğer farklıysa o component özel bir componenttir fakat onunda benzer tasarım anlayışıyla yapılması gerekiyor biri native biri bycoda biri arc ui olmaması gerekiyor.
 
 Recorded decision: one spec ("One component system spec" in the desktop design system)
-governs shared components, Arc adapters, native windows and feature-special components;
-T3 Code is the quality reference. Owner choices in the same round: no focus visuals on
+governs shared components, Arc adapters, native windows and feature-special components.
+Owner choices in the same round: no focus visuals on
 pointer interaction (keyboard and forced-colors only); the transcript user prompt is a
 right-aligned borderless bubble; settings apply instantly with per-row reset; soft
 white-alpha state fills; faint field resting border; row,
@@ -144,9 +150,7 @@ The selected tool always shows the gliding plate across its whole segment.
 
 Follow-up, 2026-11-15, source: owner chat:
 
-> çizgiler çok belirgin olmuş onu t3code daki gibi yapalım lütfen. 48 rem i de eski haline alalım bence çok iyi durmuyor eskisi daha iyi
-
-Recorded decision: hairlines (pane and card borders, settings row dividers) stay T3-faint
+Recorded decision: hairlines (pane and card borders, settings row dividers) stay faint
 (about 8-10% ink); the default chat width stays 56rem.
 
 ## Shell and workbench: owner reference conversation
@@ -186,6 +190,14 @@ Owner correction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
 
 Recorded direction: the rail uses one neutral ground with no inner tray; section headings use a tight rhythm; development build identity moves to the lower-left footer as a compact status label or icon. Ordinary settings use a bounded shell; list/detail workspaces may use a wider, maximize-capable shell.
 
+## Shell and workbench: Sidebar shortcut cycles through pane layouts
+
+Owner decision, 2026-11-24:
+
+> From the full layout, one Ctrl+B press should switch to the current fixed-left layout, one more to conversation focus, and one more back to the full layout. Leave the floating layouts out for now. (translated)
+
+The shortcut follows that order using the existing pane preferences. The session sidebar retains its independent toggle.
+
 ## Shell and workbench: Navigation shares the chat canvas
 
 Owner decision, 2026-10-31, V3-033, source: `temp/local/2026-10-31-ui-refinements-3/TODO.md` (rail/sidebar/chat screenshots):
@@ -193,6 +205,16 @@ Owner decision, 2026-10-31, V3-033, source: `temp/local/2026-10-31-ui-refinement
 > here the leftmost area and this area have different colors from there; I want them to be like the chat panel on the right, with the same background color, already separated by borders; please let us fix this (translated)
 
 Recorded direction: the project rail and sidebars use the chat canvas in light, dark and custom themes; pane borders provide separation.
+
+## Shell and workbench: One title bar across the window
+
+Owner decision, 2026-11-24 (macOS and Windows screenshots of the top-left window chrome; variant B of `temp/local/top-chrome-preview/`):
+
+> these places are very inconsistent and overlap […] show it in a better form that fits both platforms, does not get mixed up and has no unnecessary things (translated)
+
+> when it is shrunk only the logo can stay, no need to write bycoda (translated)
+
+Recorded direction: every main window has one title bar across its full width with one slot order on every platform: window slot (macOS traffic-light inset), sidebar toggle, brand, Back, Forward, Search, session tabs, then the Windows and Linux window buttons. The brand shows its wordmark only while the project rail is expanded; off macOS it is the application menu button. The project rail, the compact rail and the sidebars hold no brand row, history buttons, sidebar toggle or Search. Surfaces below the bar reserve no traffic-light inset and draw no window buttons (`WindowTitleBarAbove`, `BelowWindowChrome`). Detached session and tool windows keep their own title bar.
 
 ## Shell and workbench: Focus frames and edge stripes
 
@@ -206,6 +228,6 @@ Recorded direction: no surrounding focus frame or decorative edge stripe on a la
 
 Owner decision, 2026-11-16:
 
-> let us gather the alerts in one single place, like t3code, and show them at the top centre of the page; the same errors are shown in so many places … not only errors, infos and warnings arrive like this too (translated)
+> let us gather the alerts in one single place […] and show them at the top centre of the page; the same errors are shown in so many places … not only errors, infos and warnings arrive like this too (translated)
 
 Recorded direction: every toast, warning and information notice, including feature cards in `ToastSlot`, uses the shared `top-center` stack (`DEFAULT_TOAST_PLACEMENT`). A machine connection failure is shown once there; panes, rows and fields do not repeat it or add their own small retry while it is shown (`connectionErrorGate`). Redundant information and success toasts are removed rather than moved.

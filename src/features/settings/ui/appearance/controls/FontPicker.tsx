@@ -7,7 +7,7 @@ import {
   SearchableSelect,
   type SearchableSelectOption,
 } from "../../../../../shared/ui/SearchableSelect";
-import { preloadBundledFont } from "../../../model/fontFaceLoader";
+import { registerBundledFont } from "../../../model/fontFaceLoader";
 import {
   FONT_CATEGORIES,
   fontFamilyValue,
@@ -70,9 +70,9 @@ export function FontPicker({
   onChange: (id: string) => void;
 }) {
   useLocale();
-  // Load preview faces when the available catalog changes.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the document font set aware of families available in this picker.
   useEffect(() => {
-    for (const font of catalog) preloadBundledFont(fontFamilyValue(catalog, font.id));
+    for (const font of catalog) registerBundledFont(fontFamilyValue(catalog, font.id));
   }, [catalog]);
   const options = (() => {
     const rows: SearchableSelectOption[] = [];

@@ -74,6 +74,15 @@
   max-inline-size: 100%;
 }
 
+/* The Arc recorder uses the compact control height at every density. Keep its slot
+   sized while the browser skips offscreen keycaps, and expose the full focus ring. */
+.list .recorder:not(:focus-within) {
+  /* ui-drift-ignore: interaction-state -- paint skipping, not a state style; focus keeps the ring */
+  content-visibility: auto;
+  /* ui-drift-ignore: interaction-state -- reserves the skipped keycap's height */
+  contain-intrinsic-block-size: auto var(--ui-control-height-compact);
+}
+
 .actionSlot {
   display: inline-flex;
   align-items: center;

@@ -280,6 +280,7 @@ export class HostSubscriptionHub {
       }
     stream.touched = this.now();
     if (consumer.replaying && consumer.active) this.replay(stream, consumer);
+    if (stream.target.kind === "deviceVideo") this.schedule();
     return true;
   }
 
@@ -530,6 +531,11 @@ export class HostSubscriptionHub {
         const eligible = [...stream.consumers.values()].filter(
           (consumer) =>
             consumer.active &&
+            (stream.target.kind !== "deviceVideo" ||
+              !consumer.pending.size ||
+              (consumer.pending.size < Math.min(4, this.limits.maxUnacknowledgedEvents) &&
+                consumer.bytes + this.limits.streamChunkBytes <=
+                  this.limits.maxSubscriptionWindowBytes)) &&
             (this.connectionReads.get(consumer.owner.connectionId) ?? 0) <
               (this.options.maxConcurrentReadsPerConnection ?? 2),
         );
@@ -549,7 +555,8 @@ export class HostSubscriptionHub {
           }
           continue;
         }
-        stream.refreshAt = Date.now() + 250;
+        // Video waits on recorder bytes; ordinary invalidations coalesce for 250 ms.
+        stream.refreshAt = stream.target.kind === "deviceVideo" ? undefined : Date.now() + 250;
         this.reads++;
         this.connectionReads.set(
           owner.connectionId,
@@ -690,6 +697,8 @@ export class HostSubscriptionHub {
         this.tombstone(stream);
         return;
       }
+      // The next recorder read starts after acknowledgement frees the delivery window.
+      if (stream.target.kind === "deviceVideo") stream.dirty = true;
       if (snapshot.kind === "unchanged") {
         if (forceSnapshot || snapshot.revision !== stream.revision)
           throw new Error("A fresh stream baseline is required.");
@@ -812,7 +821,10 @@ export class HostSubscriptionHub {
     if (!entry) return false;
     entry.consumer.active = false;
     entry.stream.consumers.delete(identity);
-    if (!entry.stream.consumers.size) entry.stream.reading?.abort();
+    if (!entry.stream.consumers.size) {
+      entry.stream.reading?.abort();
+      if (entry.stream.target.kind === "deviceVideo") this.drop(entry.stream);
+    }
     entry.stream.touched = this.now();
     this.subscriptions.delete(identity);
     return true;

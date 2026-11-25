@@ -1,5 +1,9 @@
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
+import type { LiveAgent } from "../../features/sessions/model/liveAgents";
+import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
+import { pathKey } from "../../shared/lib/paths";
 import type { HostSessionSummary } from "../../features/connections/model/protocol";
+import { parseRemotePath, remotePath } from "../../features/connections/model/remoteProjects";
 import {
   isUserConversation,
   sessionDelegationParent,
@@ -17,6 +21,8 @@ export function projectSessionCollection(
 }
 
 export function remoteSessionSummary(session: HostSessionSummary, cwd: string): SessionSummary {
+  const project = parseRemotePath(cwd);
+  const checkout = session.worktreeCwd || (project ? session.cwd : undefined);
   return {
     id: session.id,
     delegationParent: sessionDelegationParent(session) ?? null,
@@ -39,11 +45,57 @@ export function remoteSessionSummary(session: HostSessionSummary, cwd: string): 
     draft: session.draft,
     repo: session.repo,
     branch: session.branch,
-    worktreeCwd: session.worktreeCwd,
+    worktreeCwd:
+      project && checkout && !parseRemotePath(checkout)
+        ? remotePath(project.environmentId, checkout)
+        : checkout,
   };
 }
 
 /** Open conversations that saved folders may surface; delegated children stay in their parent. */
 export function folderCandidates(remote: boolean, open: readonly SessionSummary[]) {
   return remote ? [] : open.filter(isUserConversation);
+}
+
+export function freshRemoteProjects(rows: readonly Pick<RemoteRailSession, "project" | "fresh">[]) {
+  const projects = new Set<string>();
+  for (const row of rows) {
+    if (row.fresh) projects.add(row.project);
+  }
+  return projects;
+}
+
+/** A live desktop tab and its Host alias both refer to work in that tab's project. */
+export function workingAgentIdsByProject(
+  agents: readonly Pick<LiveAgent, "id" | "cwd" | "done" | "needsApproval">[],
+  sessionFor: (shellId: string) => string | undefined,
+) {
+  const byProject = new Map<string, Set<string>>();
+  for (const agent of agents) {
+    if (agent.done || agent.needsApproval) continue;
+    const key = pathKey(agent.cwd);
+    const ids = byProject.get(key) ?? new Set<string>();
+    ids.add(agent.id);
+    const hostId = sessionFor(agent.id);
+    if (hostId !== undefined) ids.add(hostId);
+    byProject.set(key, ids);
+  }
+  return byProject;
+}
+
+export function sessionsForActionIds(rows: readonly SessionSummary[], ids: readonly string[]) {
+  if (ids.length === 0) return [];
+  if (ids.length === 1) {
+    const row = rows.find((entry) => entry.id === ids[0]);
+    return row ? [row] : [];
+  }
+  // Preserve the first listed record and the menu's selection order for a batch action.
+  const firstById = new Map<string, SessionSummary>();
+  for (const row of rows) {
+    if (!firstById.has(row.id)) firstById.set(row.id, row);
+  }
+  return ids.flatMap((id) => {
+    const row = firstById.get(id);
+    return row ? [row] : [];
+  });
 }

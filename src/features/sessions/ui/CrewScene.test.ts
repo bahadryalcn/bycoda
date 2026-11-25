@@ -6,18 +6,19 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewScene, crewActionAt, labelLift } from "./CrewScene";
 import { CODE_HEIGHT, SIGN_HEIGHT, SIGN_TOP } from "./crewCodeArt";
 import { EmptySession } from "./EmptySession";
+import { TYPING_HOLD_MS } from "./crewTypingHold";
 import { saveCrewGrowthEnabled, saveCrewSceneEnabled } from "../../settings/model/settings";
 import type { Session } from "../model/session";
 
 const state = vi.hoisted(() => ({
   enabled: true,
-  focused: true,
+  windowVisible: true,
   paint: vi.fn(),
   dispose: vi.fn(),
 }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.enabled,
-  useWindowHasFocus: () => state.focused,
+  useMotionWindowVisible: () => state.windowVisible,
 }));
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,
@@ -37,7 +38,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   state.enabled = true;
-  state.focused = true;
+  state.windowVisible = true;
   localStorage.clear();
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(900);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
@@ -141,7 +142,9 @@ it("exposes one descriptive group, with no interactive game controls", () => {
   expect(container.querySelector('[role="group"]')?.getAttribute("aria-label")).toContain(
     "bycoda sign",
   );
-  expect(container.querySelectorAll("canvas[aria-hidden=true]")).toHaveLength(1);
+  // The live canvas and its typing still are both decorative; neither is exposed.
+  expect(container.querySelectorAll("canvas[aria-hidden=true]")).toHaveLength(2);
+  expect(container.querySelectorAll("canvas:not([aria-hidden=true])")).toHaveLength(0);
   expect(container.querySelectorAll("button,input,[tabindex]")).toHaveLength(0);
   expect(container.firstElementChild?.getAttribute("data-motion")).toBe("still");
 });
@@ -174,21 +177,152 @@ it("cancels animation callbacks when hidden and restarts only when visible", () 
   );
   expect(vi.getTimerCount()).toBe(0);
 });
-it("holds the scene while the window is behind another application", () => {
+it("holds the scene while the window is hidden or minimized", () => {
   render();
   enter();
   expect(vi.getTimerCount()).toBe(1);
-  state.focused = false;
+  state.windowVisible = false;
   render();
   expect(vi.getTimerCount()).toBe(0);
   const count = state.paint.mock.calls.length;
   act(() => vi.advanceTimersByTime(30000));
   expect(state.paint).toHaveBeenCalledTimes(count);
-  state.focused = true;
+  state.windowVisible = true;
   render();
   // The re-armed observers report the viewport again before the loop resumes.
   enter();
   expect(vi.getTimerCount()).toBe(1);
+});
+/** One real edit: `beforeinput` then `input`, as engines fire them. */
+const edit = (target: HTMLElement, type = "insertText") =>
+  act(() => {
+    target.dispatchEvent(new InputEvent("beforeinput", { inputType: type, bubbles: true }));
+    target.dispatchEvent(new InputEvent("input", { inputType: type, bubbles: true }));
+  });
+const field = () => {
+  const element = document.createElement("textarea");
+  document.body.append(element);
+  return element;
+};
+const still = () => container.querySelector<HTMLCanvasElement>(".crew-scene__still");
+it("holds its last frame while typing in a field and resumes after the burst, without rebuilding the painter", () => {
+  const input = field();
+  render();
+  enter();
+  act(() => vi.advanceTimersByTime(600));
+  expect(vi.getTimerCount()).toBe(1);
+  // A lone edit only opens the window: the scene keeps animating.
+  edit(input);
+  act(() => vi.advanceTimersByTime(300));
+  expect(container.querySelector(".crew-scene")?.hasAttribute("data-still")).toBe(false);
+  const painted = state.paint.mock.calls.length;
+  act(() => vi.advanceTimersByTime(300));
+  expect(state.paint.mock.calls.length).toBeGreaterThan(painted);
+  for (let key = 0; key < 20; key++) {
+    edit(input);
+    act(() => vi.advanceTimersByTime(40));
+  }
+  const held = state.paint.mock.calls.length;
+  act(() => vi.advanceTimersByTime(300));
+  edit(input);
+  act(() => vi.advanceTimersByTime(300));
+  expect(state.paint.mock.calls.length).toBe(held);
+  expect(state.dispose).not.toHaveBeenCalled();
+  expect(container.querySelector(".crew-scene")?.getAttribute("data-motion")).toBe("running");
+  expect(container.querySelector(".crew-scene")?.hasAttribute("data-still")).toBe(true);
+  act(() => vi.advanceTimersByTime(TYPING_HOLD_MS));
+  expect(container.querySelector(".crew-scene")?.hasAttribute("data-still")).toBe(false);
+  act(() => vi.advanceTimersByTime(600));
+  expect(state.paint.mock.calls.length).toBeGreaterThan(held);
+  expect(state.dispose).not.toHaveBeenCalled();
+  input.remove();
+});
+it("retains the frame as a still with the rim baked in while held, and drops it on resume", () => {
+  const input = field();
+  render();
+  enter();
+  act(() => vi.advanceTimersByTime(600));
+  const context = still()!.getContext("2d") as unknown as { drawImage: ReturnType<typeof vi.fn> };
+  context.drawImage.mockClear();
+  edit(input);
+  expect(context.drawImage).not.toHaveBeenCalled();
+  edit(input);
+  expect(context.drawImage).toHaveBeenCalledTimes(1);
+  expect(context.drawImage.mock.calls[0][0]).toBe(container.querySelector("canvas"));
+  // Further keys neither redraw the still nor rebuild anything.
+  edit(input);
+  edit(input);
+  expect(context.drawImage).toHaveBeenCalledTimes(1);
+  act(() => vi.advanceTimersByTime(TYPING_HOLD_MS));
+  expect(container.querySelector(".crew-scene")?.hasAttribute("data-still")).toBe(false);
+  input.remove();
+});
+it("holds for pastes, dictation and `input`-only engines but not for command chords or caret keys", () => {
+  const input = field();
+  render();
+  enter();
+  const held = () => container.querySelector(".crew-scene")?.hasAttribute("data-still");
+  for (const type of ["insertFromPaste", "insertFromPaste"]) edit(input, type);
+  expect(held()).toBe(true);
+  act(() => vi.advanceTimersByTime(TYPING_HOLD_MS));
+  expect(held()).toBe(false);
+  // No beforeinput: the `input` fallback counts each event.
+  act(() => void input.dispatchEvent(new InputEvent("input", { bubbles: true })));
+  act(() => void input.dispatchEvent(new InputEvent("input", { bubbles: true })));
+  expect(held()).toBe(true);
+  act(() => vi.advanceTimersByTime(TYPING_HOLD_MS));
+  expect(held()).toBe(false);
+  // Ctrl+C, selection and caret keys fire keydown only; none of them edits.
+  for (const init of [
+    { key: "c", ctrlKey: true },
+    { key: "a", ctrlKey: true },
+    { key: "ArrowLeft" },
+  ])
+    act(() => void input.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true })));
+  act(() => void input.dispatchEvent(new Event("copy", { bubbles: true })));
+  expect(held()).toBe(false);
+  act(() => vi.advanceTimersByTime(600));
+  expect(vi.getTimerCount()).toBe(1);
+  input.remove();
+});
+it("ignores edits outside editable fields and checkboxes", () => {
+  render();
+  enter();
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  document.body.append(box);
+  for (const target of [document.body, box]) {
+    edit(target);
+    edit(target);
+  }
+  expect(container.querySelector(".crew-scene")?.hasAttribute("data-still")).toBe(false);
+  expect(vi.getTimerCount()).toBe(1);
+  box.remove();
+});
+it("releases the typing listeners and timer when the scene unmounts mid-burst", () => {
+  const input = field();
+  render();
+  enter();
+  edit(input);
+  edit(input);
+  act(() => root.render(createElement("div")));
+  expect(vi.getTimerCount()).toBe(0);
+  act(() => vi.advanceTimersByTime(TYPING_HOLD_MS));
+  expect(state.paint).toHaveBeenCalled();
+  input.remove();
+});
+it("does not hold a scene that visibility or reduced motion already stopped", () => {
+  const input = field();
+  state.enabled = false;
+  render();
+  enter();
+  const count = state.paint.mock.calls.length;
+  edit(input);
+  edit(input);
+  act(() => vi.advanceTimersByTime(TYPING_HOLD_MS));
+  expect(state.paint.mock.calls.length).toBeLessThanOrEqual(count + 1);
+  expect(vi.getTimerCount()).toBe(0);
+  input.remove();
 });
 it("visibly starts a tea sip soon after entering the viewport and continues after visibility changes", () => {
   render();

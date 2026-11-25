@@ -95,17 +95,26 @@ it("pauses the 30 s machine refresh while hidden and catches up when the window 
     await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS * 3);
     expect(mocks.invoke).not.toHaveBeenCalled();
 
-    // Visible again: the wake refreshes machines and nudges the loop right away.
+    // Visible again: the loop catches up itself while inventory refreshes in parallel.
     hidden = false;
     document.dispatchEvent(new Event("visibilitychange"));
     await flush();
     expect(mocks.invoke).toHaveBeenCalledWith("remote_machines");
-    expect(mocks.nudge).toHaveBeenCalled();
+    expect(mocks.nudge).not.toHaveBeenCalled();
 
     // The periodic refresh resumes once visible.
     mocks.invoke.mockClear();
     await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
     expect(mocks.invoke).toHaveBeenCalled();
+
+    // A peer discovered on show needs a follow-up after the loop's own catch-up.
+    hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    mocks.invoke.mockResolvedValueOnce([...machines, { id: "new", environmentId: "new-env" }]);
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flush();
+    expect(mocks.nudge).toHaveBeenCalledOnce();
   } finally {
     hiddenSpy.mockRestore();
   }

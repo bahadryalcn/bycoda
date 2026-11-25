@@ -51,7 +51,6 @@ export function DeviceNotices({
         leading="inherit"
         {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "device-panel-setup-control")}
       >
-        <span>{t("Run setup with control enabled to install the control tools.")}</span>
         <Button
           variant="primary"
           loading={setupControl.pending}

@@ -1,5 +1,5 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
@@ -43,13 +43,13 @@ export function VoiceSettings() {
           id="voice-companion"
           label={t("Enable voice companion")}
           info={
-            <InfoPopover label={`${t("Enable voice companion")}: ${t("Help")}`}>
+            <InfoTooltip label={t("Enable voice companion")}>
               {settings.mode === "local"
                 ? t(
                     "Talk to your session while the agent works. Audio is processed on this computer.",
                   )
                 : t("Talk to your session while the agent works.")}
-            </InfoPopover>
+            </InfoTooltip>
           }
         >
           <Toggle

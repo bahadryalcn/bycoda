@@ -46,6 +46,7 @@ vi.mock("../model/sessionsStore", async (original) => ({
   // Pure selectors (selectSessionById, ...) stay real; only the store reads are faked.
   ...(await original<object>()),
   useSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
+  usePaneSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
   getSessions: () => [...fake.sessions.values()],
   getShellSessions: () => [...fake.sessions.values()],
   subscribeSessionCommits: () => () => undefined,
@@ -172,6 +173,23 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("reads current command output while the pane holds a previous block", () => {
+  const command: Block = {
+    id: "t",
+    role: "tool",
+    text: "Run tests",
+    streaming: true,
+    tool: { kind: "execute", callId: "run", status: "in_progress", detail: "started" },
+  };
+  const latest = { ...command, tool: { ...command.tool, detail: "continued" } };
+  fake.sessions.set("parent", child({ id: "parent", blocks: [latest] }));
+  const native = { ...props().native, block: command, liveSessionId: "parent" };
+  render(props({ native }));
+  expect(fake.sheetProps.at(-1)?.block).toBe(latest);
+  render(props({ native: { ...native, liveSessionId: undefined } }));
+  expect(fake.sheetProps.at(-1)?.block).toBe(command);
 });
 
 it("routes a native subagent's message through the main agent relay", () => {

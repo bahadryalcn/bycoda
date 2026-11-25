@@ -15,7 +15,7 @@ use tauri::{AppHandle, Manager};
 use crate::remote_ssh::{bootstrap_script, HostPlatform};
 
 /// Only installed release builds carry the host package.
-const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
+pub(crate) const RELEASE_IDENTIFIER: &str = "com.bycoda.desktop";
 /// A deferred upgrade is retried while the app stays open.
 const RETRY_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -56,9 +56,13 @@ struct RetryState {
 }
 
 fn retry_delay(failures: u32) -> Duration {
-    RETRY_INTERVAL
-        .saturating_mul(1u32 << failures.saturating_sub(1).min(4))
-        .min(MAX_RETRY_INTERVAL)
+    exponential_retry(failures, RETRY_INTERVAL, MAX_RETRY_INTERVAL)
+}
+
+pub(crate) fn exponential_retry(failures: u32, initial: Duration, max: Duration) -> Duration {
+    initial
+        .saturating_mul(1u32 << failures.saturating_sub(1).min(31))
+        .min(max)
 }
 
 fn package_identity(archive: &Path) -> std::io::Result<String> {
@@ -399,7 +403,7 @@ fn host_healthy(base: &Path) -> bool {
 }
 
 /// The service may still be starting when the installer returns.
-fn host_healthy_within(base: &Path, limit: Duration) -> bool {
+pub(crate) fn host_healthy_within(base: &Path, limit: Duration) -> bool {
     let deadline = std::time::Instant::now() + limit;
     loop {
         if host_healthy(base) {
@@ -501,6 +505,35 @@ fn host_busy(base: &Path) -> Result<bool, ()> {
         .map_err(|_| ())
 }
 
+pub(crate) fn host_activity(base: &Path) -> Result<crate::host_lifecycle::Activity, ()> {
+    let connection = rusqlite::Connection::open_with_flags(
+        base.join("host.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| ())?;
+    connection
+        .busy_timeout(Duration::from_millis(250))
+        .map_err(|_| ())?;
+    connection
+        .query_row(
+            "SELECT
+          (SELECT count(*) FROM sessions WHERE status='running'),
+          (SELECT count(*) FROM sessions WHERE shell_running=1),
+          (SELECT count(*) FROM automation_runs WHERE json_extract(value, '$.status')='running')",
+            [],
+            |row| {
+                Ok(crate::host_lifecycle::Activity {
+                    sessions: row.get(0)?,
+                    shells: row.get(1)?,
+                    automations: row.get(2)?,
+                    unknown: false,
+                    running_sessions: Vec::new(),
+                })
+            },
+        )
+        .map_err(|_| ())
+}
+
 // Automatic maintenance may replace an existing install only when no owner
 // holds the profile and no session or shell is running. The owner's exclusive
 // transaction and the host activity read are the gates; the installed files,
@@ -524,6 +557,14 @@ fn admitted_activity(base: &Path, owner_approved: bool) -> Result<bool, ()> {
 
 /// A local update coordinator job for the host that is still in progress.
 pub(crate) fn job_pending(base: &Path) -> bool {
+    pending_job(base, false)
+}
+
+pub(crate) fn job_blocks_app_start(base: &Path) -> bool {
+    pending_job(base, true)
+}
+
+fn pending_job(base: &Path, allow_verification: bool) -> bool {
     let job = base.join("update-jobs").join("host.json");
     let Ok(text) = std::fs::read_to_string(&job) else {
         return false;
@@ -538,6 +579,7 @@ pub(crate) fn job_pending(base: &Path) -> bool {
         .and_then(|time| SystemTime::now().duration_since(time).ok())
         .is_some_and(|age| age < STALE_JOB);
     fresh
+        && !(allow_verification && state == "verifying-app-host")
         && !matches!(
             state.as_str(),
             "installed" | "failed" | "error" | "cancelled" | ""
@@ -567,7 +609,7 @@ fn archive_name() -> Option<&'static str> {
     }
 }
 
-struct InstallLock(PathBuf);
+pub(crate) struct InstallLock(PathBuf);
 
 /// A lock older than this was left by a crashed or killed app. The installer
 /// itself is bounded by `SCRIPT_TIMEOUT`, plus its tree-kill attempt.
@@ -597,7 +639,7 @@ fn process_alive(_pid: u32) -> bool {
 /// Whether an installer lock on disk still belongs to a running installer.
 /// A lock is stale when it is older than `STALE_INSTALL_LOCK` or its recorded
 /// owner process is gone. Unknown states count as held, never as reclaimable.
-fn install_lock_held(path: &Path) -> bool {
+pub(crate) fn install_lock_held(path: &Path) -> bool {
     let modified = match std::fs::metadata(path) {
         Ok(meta) => meta.modified().ok(),
         Err(error) => return error.kind() != std::io::ErrorKind::NotFound,
@@ -625,7 +667,7 @@ pub(crate) fn install_running(base: &Path) -> bool {
 }
 
 impl InstallLock {
-    fn acquire(base: &Path) -> Option<Self> {
+    pub(crate) fn acquire(base: &Path) -> Option<Self> {
         std::fs::create_dir_all(base).ok()?;
         let path = base.join("app-install.lock");
         // One reclaim of a stale lock; a lock that is still held fails closed.
@@ -665,6 +707,8 @@ fn run_installer(
     archive: &Path,
     upgrade: bool,
     repair: bool,
+    app_mode: bool,
+    port: Option<u16>,
     lock: std::sync::Arc<InstallLock>,
 ) -> Result<(), String> {
     let windows = cfg!(windows);
@@ -705,13 +749,14 @@ fn run_installer(
         .env("BYCODA_HOST_ARCHIVE", archive)
         .env("BYCODA_HOST_FORCE_UPGRADE", if upgrade { "1" } else { "0" })
         .env("BYCODA_HOST_REPAIR", if repair { "1" } else { "0" })
+        .env("BYCODA_HOST_NO_SERVICE", if app_mode { "1" } else { "0" })
         // Keep verified package bytes across failed retries and app restarts.
         // Explicit SSH upgrades retain their fresh-extraction semantics.
         .env("BYCODA_HOST_REUSE_PACKAGE", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
-    if let Some(port) = running_port(base) {
+    if let Some(port) = port {
         command.env("BYCODA_HOST_PORT", port.to_string());
     }
     #[cfg(windows)]
@@ -884,18 +929,38 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
         return Some(deferred_retry(OTHER_INSTALL));
     };
     let lock = std::sync::Arc::new(lock);
+    let app_mode = match crate::host_lifecycle::mode(&base) {
+        Ok(mode) => mode == crate::host_lifecycle::Mode::App,
+        Err(error) => {
+            record(BundledHostStatus {
+                state: "failed".into(),
+                message: Some(error),
+                ..Default::default()
+            });
+            return Some(RETRY_INTERVAL);
+        }
+    };
     let installed = installed_version(&base);
     let healthy = host_healthy(&base);
     let owner = owner_state(&base);
     let starting = !healthy && owner.starting();
-    let activity = admitted_activity(&base, owner_approved);
+    let activity = if app_mode && !owner_approved && owner != OwnerState::Stopped {
+        let activity = crate::host_lifecycle::activity(&base);
+        if activity.unknown {
+            Err(())
+        } else {
+            Ok(activity.count() != 0)
+        }
+    } else {
+        admitted_activity(&base, owner_approved)
+    };
     let job = job_pending(&base);
     let decision = plan(
         installed.as_deref(),
         &bundled,
         activity,
         job,
-        healthy,
+        healthy || (app_mode && base.join("runtime-path").is_file()),
         starting,
     );
     log_decision(&format!(
@@ -953,15 +1018,34 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
             // Select the verified bundled package for repair, without
             // downgrading a newer installed release. Bootstrap reuses intact
             // extracted bytes on later attempts.
-            let replace = upgrade || (repair && installed.as_deref() == Some(bundled.as_str()));
+            let replace = upgrade
+                || (repair && installed.as_deref() == Some(bundled.as_str()))
+                || (app_mode && installed.is_none() && base.join("runtime-path").is_file());
             log::info!(
                 "bundled host: installer start action={decision:?} replace={replace} repair={repair} installed={installed:?} bundled={bundled}"
             );
-            let result = run_installer(&base, &archive, replace, repair, lock.clone()).and_then(|()| {
+            let port = running_port(&base);
+            let preparation = if app_mode {
+                crate::host_lifecycle::stop_owned(&base, !owner_approved).and_then(|()| {
+                    if owner_verified_stopped(&base) {
+                        Ok(())
+                    } else {
+                        Err("A Host outside this desktop still owns the data directory.".into())
+                    }
+                })
+            } else {
+                Ok(())
+            };
+            let result = preparation.and_then(|()| {
+                run_installer(&base, &archive, replace, repair, app_mode, port, lock.clone())
+            }).and_then(|()| {
+                if app_mode {
+                    crate::host_lifecycle::ensure_child(&base, true, true)?;
+                }
                 if installation_confirmed(
                     installed_version(&base).as_deref(),
                     &bundled,
-                    host_healthy_within(&base, Duration::from_secs(30)),
+                    host_healthy_within(&base, if app_mode { HOST_BOOT_GRACE } else { Duration::from_secs(30) }),
                 ) {
                     Ok(())
                 } else {
@@ -1021,6 +1105,29 @@ pub fn start(app: &AppHandle) {
 #[tauri::command]
 pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
     STATUS.lock().ok().and_then(|slot| slot.clone())
+}
+
+fn update_session_count(base: &Path) -> Option<u32> {
+    match probe_lifecycle_status(base) {
+        Ok((_, response)) => {
+            let activity: crate::host_lifecycle::Activity =
+                serde_json::from_value(response.get("activity")?.clone()).ok()?;
+            (!activity.unknown).then_some(activity.sessions)
+        }
+        Err(LifecycleProbeError::Stopped) => Some(0),
+        Err(LifecycleProbeError::Unconfirmed) => None,
+    }
+}
+
+/// A single authenticated local lifecycle read, including when the old Host is not paired.
+#[tauri::command]
+pub async fn local_host_update_activity() -> Result<Option<u32>, String> {
+    crate::harness::run_blocking("local_host_update_activity", || {
+        Ok(crate::local_host::host_data_dir()
+            .as_deref()
+            .and_then(update_session_count))
+    })
+    .await
 }
 
 /// Updates this computer's host now, from Settings → Machines. The caller
@@ -1197,11 +1304,13 @@ mod tests {
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Stopped)
         );
+        assert_eq!(update_session_count(&base), Some(0));
         std::fs::write(base.join("running.json"), "{").unwrap();
         assert_eq!(
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Unconfirmed)
         );
+        assert_eq!(update_session_count(&base), None);
         std::fs::remove_dir_all(base).unwrap();
     }
 

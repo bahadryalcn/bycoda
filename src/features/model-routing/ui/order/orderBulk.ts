@@ -11,7 +11,8 @@ import {
   type OrderDraft,
 } from "../../model/modelRoutingDraft";
 import type { SetupCandidate } from "../../model/smartSetup";
-import { entryAccountId } from "./orderGrouping";
+import { entryAccountId } from "./useEntryAccount";
+import type { ModelSource } from "../../../sessions/public/modelSource";
 
 /**
  * The choice "Add model" starts from: the last entry's provider when the Host still offers it,
@@ -97,16 +98,17 @@ export function addAccountModels(
   candidates: readonly SetupCandidate[],
   harness: ModelRoutingEntry["harness"],
   accountId: string,
+  source?: ModelSource,
 ): OrderDraft {
   const listed = new Set(
     draft.routing.entries
-      .filter((entry) => entry.harness === harness && entryAccountId(entry) === accountId)
+      .filter((entry) => entry.harness === harness && entryAccountId(entry, source) === accountId)
       .map((entry) => entry.model),
   );
   const missing = candidates.filter(
     (candidate) =>
       candidate.target.harness === harness &&
-      entryAccountId(candidate.target) === accountId &&
+      entryAccountId(candidate.target, source) === accountId &&
       !listed.has(candidate.target.model),
   );
   if (draft.routing.entries.length + missing.length > MODEL_ROUTING_MAX_ENTRIES)

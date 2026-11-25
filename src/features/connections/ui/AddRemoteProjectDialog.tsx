@@ -31,10 +31,16 @@ type RemoteProjectMachine = ReturnType<typeof remoteProjectMachines>[number];
 export function AddRemoteProjectDialog({
   onCancel,
   onOpen,
+  machineId: fixedMachineId,
 }: {
   onCancel: () => void;
   /** Receives the new project's rail key. */
   onOpen: (key: string) => void;
+  /**
+   * Browse only this machine: no machine switch, and no fallback to another one
+   * when it is not connected. For a destination the caller already chose.
+   */
+  machineId?: string;
 }) {
   useLocale();
   const {
@@ -44,7 +50,9 @@ export function AddRemoteProjectDialog({
     error: machinesError,
     refresh: refreshMachines,
   } = useRemoteMachines();
-  const machines = remoteProjectMachines(allMachines);
+  const machines = remoteProjectMachines(allMachines).filter(
+    (entry) => !fixedMachineId || entry.id === fixedMachineId,
+  );
   const [machineId, setMachineId] = useState<string>();
   const machine = machines.find((entry) => entry.id === machineId) ?? machines[0];
   return (
@@ -69,6 +77,7 @@ export function AddRemoteProjectDialog({
         machinesLoading={machinesLoading}
         machinesError={machinesError}
         refreshMachines={refreshMachines}
+        fixedMachine={!!fixedMachineId}
         onSelectMachine={setMachineId}
         onCancel={onCancel}
         onOpen={onOpen}
@@ -84,6 +93,7 @@ function AddRemoteProjectForm({
   machinesLoading,
   machinesError,
   refreshMachines,
+  fixedMachine,
   onSelectMachine,
   onCancel,
   onOpen,
@@ -94,6 +104,8 @@ function AddRemoteProjectForm({
   machinesLoading: boolean;
   machinesError: string | undefined;
   refreshMachines: () => void;
+  /** The caller chose the machine; an absent one is unavailable, not "none connected". */
+  fixedMachine: boolean;
   onSelectMachine: (id: string) => void;
   onCancel: () => void;
   onOpen: (key: string) => void;
@@ -290,9 +302,13 @@ function AddRemoteProjectForm({
           <EmptyState
             size="inline"
             kind="empty"
-            description={t(
-              "No computers are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
-            )}
+            description={
+              fixedMachine
+                ? t("That machine is not available.")
+                : t(
+                    "No computers are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
+                  )
+            }
           />
         </>
       ) : (
@@ -414,26 +430,18 @@ function AddRemoteProjectForm({
               </Button>
             </div>
           ) : null}
-          <RemoteDataStatus
-            label={t("folders")}
-            state={{
-              phase: loading
-                ? directory
-                  ? "refreshing"
-                  : "loading"
-                : browseError
-                  ? "error"
-                  : directory
-                    ? directory.entries.length
-                      ? "ready"
-                      : "empty"
-                    : "loading",
-              error: browseError,
-              updatedAt: verifiedAt,
-            }}
-            onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
-            disabled={opening || creating}
-          />
+          {loading || browseError ? (
+            <RemoteDataStatus
+              label={t("folders")}
+              state={{
+                phase: loading ? (directory ? "refreshing" : "loading") : "error",
+                error: browseError,
+                updatedAt: verifiedAt,
+              }}
+              onRefresh={() => void browse(requestedPath.current)}
+              disabled={opening || creating}
+            />
+          ) : null}
           {directory && (loading || browseError) ? (
             <InlineMessage tone="neutral" icon={null}>
               {t("Showing last loaded folder: ")}

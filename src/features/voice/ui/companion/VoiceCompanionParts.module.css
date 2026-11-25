@@ -15,6 +15,18 @@
   padding-block: 4px;
   text-align: center;
 }
+.stage[data-layout="strip"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-2);
+  padding: var(--space-2) 0;
+}
+.stage[data-layout="strip"] .status {
+  flex: 1 1 12rem;
+}
 .stage[data-layout="stage"] .status {
   flex-direction: column;
   gap: 8px;
@@ -37,11 +49,32 @@
 .stage[data-layout="stage"] .scope {
   justify-content: center;
 }
+.stage[data-full-call] {
+  gap: clamp(var(--space-2), 1.3dvh, var(--space-4));
+  padding: 0;
+}
+.stage[data-full-call] .status {
+  gap: var(--space-3);
+}
+.stage[data-full-call] .statusLine {
+  min-block-size: 1.6rem;
+}
+.stage[data-full-call] .captionSlot {
+  min-block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  text-align: center;
+}
 /* The words in flight on the call stage; long replies stay readable in the transcript. */
 .spoken {
   max-inline-size: min(100%, 36ch);
   margin: 0;
   overflow-wrap: anywhere;
+}
+.stage[data-full-call] .spoken {
+  max-inline-size: min(100%, 58ch);
+  margin: 0;
 }
 .meta {
   display: flex;
@@ -83,6 +116,9 @@
 .caption {
   overflow-wrap: break-word;
 }
+:global([data-full-screen]) .caption {
+  text-align: center;
+}
 .scope {
   display: flex;
   align-items: center;
@@ -94,7 +130,7 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-3);
   min-inline-size: 0;
   min-block-size: 4.5rem;
   max-block-size: min(42dvh, 300px);
@@ -111,9 +147,13 @@
 }
 .bubble {
   max-inline-size: 85%;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.row[data-role="assistant"] .bubble {
+  max-inline-size: min(100%, 62ch);
+  padding-inline: var(--space-1);
 }
 
 /* Footer: a single row that wraps only when the panel is narrower than its controls. */
@@ -152,6 +192,12 @@
 /* A resized panel gives the transcript all the height it has. */
 [data-sized] .chat {
   max-block-size: none;
+}
+[data-full-screen] .chat {
+  min-block-size: 0;
+  max-block-size: none;
+  padding-block-start: var(--space-3);
+  margin-block-end: 0;
 }
 
 /* Open question or job review in its own panel beside the companion (VoiceSidePanel). Fixed to

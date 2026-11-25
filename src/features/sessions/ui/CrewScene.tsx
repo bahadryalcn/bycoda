@@ -25,7 +25,7 @@ import {
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
 import {
   useDecorativeMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import {
   createCodeArtPainter,
@@ -45,6 +45,7 @@ import {
   subscribeCrewTheme,
 } from "../../settings/public/settings";
 import { crewCharge } from "./starWarsCrew";
+import { useTypingHold } from "./crewTypingHold";
 import { riggedCrewTheme } from "./crewThemes";
 import "./CrewScene.css";
 import "./crewClassicColor.css";
@@ -228,11 +229,16 @@ function CrewStage({
   const [labels, setLabels] = useState<SeatLabel[]>([]);
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const still = useRef<HTMLCanvasElement>(null);
   /** `paintedFor` is the motion/seat state of the last paint, so a paused scene still draws a changed state once. */
   const painter = useRef<{ draw: CodeArtPainter; paintedFor: string | null } | null>(null);
   const startedAt = useRef<number | null>(null);
   const enabled = useDecorativeMotionEnabled();
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
+  // Typing holds the last frame like a streaming reply does: the scene keeps its pose, only the
+  // motion timer and repaints stop, and it resumes a moment after the last key.
+  const typing = useTypingHold();
+  const held = typing || paused;
   const [running, setRunning] = useState(false);
   const frame = rigged
     ? variant === "background"
@@ -257,7 +263,7 @@ function CrewStage({
       setRunning(
         shouldRunLoop({
           enabled,
-          focused,
+          windowVisible,
           documentHidden: document.hidden,
           visible: intersects,
           sized: element.clientWidth > 0 && element.clientHeight > 0,
@@ -283,8 +289,8 @@ function CrewStage({
       document.removeEventListener("visibilitychange", update);
       window.removeEventListener("resize", update);
     };
-  }, [enabled, focused]);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter/worker resources; only the art, renderer, theme, growth and variant rebuild them, never focus, visibility, pause or seat percent
+  }, [enabled, windowVisible]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter/worker resources; only the art, renderer, theme, growth and variant rebuild them, never window and element visibility, pause or seat percent
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;
@@ -305,7 +311,7 @@ function CrewStage({
     // The retained painter is not rebuilt for motion or seat changes: a paused scene skips
     // only when this exact state was already drawn.
     const stateKey = `${running}/${crewKey}`;
-    if (!instance || (paused && instance.paintedFor === stateKey)) return;
+    if (!instance || (held && instance.paintedFor === stateKey)) return;
     const { draw } = instance;
     let previous: number | undefined;
     let previousLabels: number | undefined;
@@ -461,7 +467,7 @@ function CrewStage({
       timer = undefined;
       const settled = paint(performance.now() - start);
       // While a reply streams the pane repaints constantly: draw one pose, then hold it.
-      if (paused) return;
+      if (held) return;
       if (idle && settled && !draw.busy?.()) paint(0, false);
       // Expressions are quantized to `frame`; behind a conversation one tick per frame is enough.
       else timer = setTimeout(tick, variant === "background" ? frame : frame / 2);
@@ -470,7 +476,28 @@ function CrewStage({
     return () => {
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, paused, workerEnabled]);
+  }, [running, crewKey, frame, artStatus, rigged, growthEnabled, variant, held, workerEnabled]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- swaps the filtered live canvas for an equal still while typing: software compositing re-runs the CSS drop-shadow rim on every page frame, and a plain canvas costs nothing
+  useEffect(() => {
+    const root = container.current;
+    const frozen = still.current;
+    // The worker host hides the original canvas and shows a clone: draw whichever is visible.
+    const live = [...(root?.querySelectorAll<HTMLCanvasElement>("canvas") ?? [])].find(
+      (surface) => surface !== frozen && surface.style.display !== "none",
+    );
+    const context = frozen?.getContext("2d");
+    if (!typing || !root || !live || !frozen || !context) return;
+    // shortcut: the rim is baked in canvas pixels, so its blur is not scaled with the scene's
+    // CSS width (up to about 1.2x thinner than the live filter), and only while typing.
+    context.clearRect(0, 0, frozen.width, frozen.height);
+    context.filter = getComputedStyle(live).filter || "none";
+    context.drawImage(live, 0, 0, frozen.width, frozen.height);
+    context.filter = "none";
+    root.dataset.still = "true";
+    return () => {
+      delete root.dataset.still;
+    };
+  }, [typing, artStatus, rigged, growthEnabled, variant, workerEnabled]);
   return (
     <div
       ref={container}
@@ -536,6 +563,13 @@ function CrewStage({
         <canvas
           key="code-art-layout-v2"
           ref={canvas}
+          width={CODE_WIDTH}
+          height={CODE_HEIGHT}
+          aria-hidden="true"
+        />
+        <canvas
+          ref={still}
+          className="crew-scene__still"
           width={CODE_WIDTH}
           height={CODE_HEIGHT}
           aria-hidden="true"

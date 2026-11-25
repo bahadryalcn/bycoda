@@ -136,7 +136,7 @@ function DelegationControl({
   const t = useT();
   const values = value === undefined ? {} : { [setting.id]: value };
   if (setting.id === CROSS_SUBAGENTS_KEY)
-    return <SubagentSelectionControl setting={setting} value={value} onChange={onSet} />;
+    return <SubagentSelectionControl setting={setting} value={value} onChange={onSet} compact />;
   if (setting.id === IMAGE_MODELS_KEY)
     return (
       <DelegationSubagentsControl

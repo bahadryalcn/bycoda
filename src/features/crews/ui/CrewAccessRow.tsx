@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import type { CrewPolicy } from "../model/crew";
@@ -62,13 +62,13 @@ export function CrewAccessRow({
           checked={policy.allowSubagents}
           onCheckedChange={(value) => onChange({ allowSubagents: value })}
         />
-        <InfoPopover label={t("About provider sub-agents")}>
+        <InfoTooltip label={t("About provider sub-agents")}>
           <p>
             {t(
               "Provider helper agents run inside the member's own session. This is a separate choice from coordinator approvals.",
             )}
           </p>
-        </InfoPopover>
+        </InfoTooltip>
       </Text>
     </section>
   );

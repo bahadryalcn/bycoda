@@ -4,5 +4,5 @@ export {
   useDecorativeMotionEnabled,
   useAudioFeedbackMotionEnabled,
   usePrefersReducedMotion,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../model/decorativeMotion";

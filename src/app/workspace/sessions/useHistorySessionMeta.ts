@@ -246,7 +246,7 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         return next;
       });
 
-      void setSessionLinkedWorkItem(sessionId, linkedWorkItem).catch((error) => {
+      return setSessionLinkedWorkItem(sessionId, linkedWorkItem).catch((error) => {
         const rolledBackSessions = sessionsRef.current.map((session) =>
           session.id === sessionId && session.linkedWorkItem === linkedWorkItem
             ? { ...session, linkedWorkItem: previousLinkedWorkItem }

@@ -72,3 +72,28 @@ it("does not reveal a locked folder or a hidden workspace root", () => {
   });
   expect(workspaceRepositoryPaths("G:/wallet", groups, {}, [], hidden)).toBeUndefined();
 });
+
+it("includes a synced workspace root and its assigned submodule under remote paths", () => {
+  const root = "remote://windows/G:/wallet";
+  const submodule = `${root}/core-pack`;
+  expect(
+    workspaceRepositoryPaths(
+      root,
+      [
+        {
+          id: "wallet",
+          name: "Wallet",
+          collapsed: false,
+          syncedWorkspace: {
+            rootProjectId: "loc:windows:g:/wallet",
+            includesRoot: true,
+            path: root,
+          },
+        },
+      ],
+      { [submodule.toLowerCase()]: "wallet" },
+      [submodule],
+      NOTHING_LOCKED,
+    ),
+  ).toEqual([root, submodule]);
+});

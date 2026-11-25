@@ -17,7 +17,6 @@ import {
   inFlightRefs,
   isInFlightSession,
   markTurnInterrupted,
-  quitWhileBusyMessage,
   wasTurnInterrupted,
   workspaceFromResumed,
   type ResumedWorkspace,
@@ -28,6 +27,7 @@ import {
   claimRestoredSessions,
   remoteSessionOwnershipKey,
 } from "./sessionWindowOwnership";
+import { remoteSessionProjectKey } from "../../features/connections/model/sessionMachineTarget";
 import { parseRemotePath } from "../../features/connections/model/remoteProjects";
 import { remoteSessionFor } from "../../features/connections/model/connections";
 import { killPty } from "../../platform/tauri/pty";
@@ -74,6 +74,7 @@ import {
 } from "../../features/projects/model/recents";
 import { workspaceTabCwd } from "../../features/workspace/model/workspaceTabGroups";
 import { showBootRestoreNotice } from "./bootRestoreNotice";
+import { quitConfirmMessage, type QuitConfirmPayload } from "./quitConfirmMessage";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
 import { platformConfirm } from "../../shared/model/appConfirm";
@@ -355,14 +356,18 @@ export async function reportQuitPoll(id: number): Promise<void> {
 }
 
 /** The one quit dialog, shown by whichever window the coordinator picked. */
-export async function askQuitConfirmation(id: number, inFlight: number): Promise<void> {
+export async function askQuitConfirmation(
+  id: number,
+  inFlight: number,
+  host: Pick<QuitConfirmPayload, "desktopInFlight" | "hostActivity"> = {},
+): Promise<void> {
   let confirmed = false;
   if (!quitDialogOpen) {
     quitDialogOpen = true;
     try {
       confirmed = await platformConfirm({
         title: appName(),
-        message: quitWhileBusyMessage(inFlight),
+        message: quitConfirmMessage({ id, inFlight, ...host }),
         confirmLabel: t("Quit"),
         tone: "danger",
       });
@@ -564,8 +569,9 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const remoteKeys = new Map<string, string>();
   for (const stub of snapshot?.sessions ?? []) {
     const remoteId = stub.remoteSessionId ?? remoteSessionFor(stub.id);
-    if (remoteId && parseRemotePath(stub.cwd))
-      remoteKeys.set(stub.id, remoteSessionOwnershipKey(stub.cwd, remoteId));
+    const project = remoteSessionProjectKey(stub);
+    if (remoteId && parseRemotePath(project))
+      remoteKeys.set(stub.id, remoteSessionOwnershipKey(project, remoteId));
   }
   for (const tab of snapshot?.tabs ?? [])
     for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);
@@ -1108,7 +1114,7 @@ async function prepareWindowToClose(
     ...tabs.flatMap((tab) =>
       [...tab.editorPanes, ...(tab.terminalPanes ?? [])].flatMap((pane) => pane.files),
     ),
-    ...docks.flatMap((dock) => dock.pane.files),
+    ...docks.flatMap((dock) => dock.pane.files.filter((file) => !dock.remoteRuns?.[file.id])),
   ];
   const unique = [
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),

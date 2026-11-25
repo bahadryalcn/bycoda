@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { loadVoiceSettings, saveVoiceSettings } from "../../voice/model/voiceSettings";
 const state = vi.hoisted(() => ({
   environmentId: "host-a" as string | null,
   request: vi.fn(),
@@ -129,6 +130,25 @@ vi.mock("../../voice/ui/VoiceSetupSteps", () => ({
     step: string;
     onValidChange: (valid: boolean) => void;
   }) => createElement("button", { onClick: () => onValidChange(true) }, `Verify ${step}`),
+}));
+vi.mock("./builder/AssistantBuilderDialog", () => ({
+  AssistantBuilderDialog: ({
+    onApply,
+    onClose,
+  }: {
+    onApply: (patch: { name: string }) => void;
+    onClose: () => void;
+  }) =>
+    createElement(
+      "button",
+      {
+        onClick: () => {
+          onApply({ name: "AI draft" });
+          onClose();
+        },
+      },
+      "Apply AI draft",
+    ),
 }));
 vi.mock("../../voice/model/voicePersona", () => ({ loadVoicePersona: () => ({ rules: "" }) }));
 vi.mock("../../../shared/i18n", () => ({
@@ -277,36 +297,31 @@ it("makes no setup write without a verified Host identity", async () => {
   await start();
   expect(state.request).not.toHaveBeenCalled();
 });
-it("groups all setup capabilities into five steps and gates every voice verification without any setup write before Start", async () => {
+it("shows one voice check per step and finishes without preview or microphone verification", async () => {
   localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "identity" }));
   await render(true);
-  const titles = ["Identity", "Voice", "Work mode", "Presence and hours", "Review"];
+  const titles = ["Identity", "Voice provider", "Speaker", "Microphone", "Review"];
   for (let step = 0; step < titles.length; step++) {
     const dialog = document.querySelector('[role="dialog"]')!;
     const heading = document.getElementById(dialog.getAttribute("aria-labelledby")!);
-    expect(heading?.textContent).toBe("Set up");
+    expect(heading?.textContent).toBe("Voice setup");
     expect(dialog.querySelector('[aria-current="step"]')?.textContent).toContain(titles[step]);
     expect(dialog.querySelectorAll("h2")).toHaveLength(1);
     expect(dialog.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem(key)!).rules).toBe("Keep replies concise");
-    if (titles[step] === "Voice") {
-      for (const check of ["provider", "voice", "microphone"]) {
-        expect(button("Next").disabled).toBe(true);
-        await click(`Verify ${check}`);
-      }
-      expect(button("Next").disabled).toBe(false);
-    }
-    if (titles[step] === "Work mode") {
+    if (titles[step] === "Voice provider") {
       expect(button("Next").disabled).toBe(true);
-      await click("Fixture only watch");
+      expect(document.body.textContent).not.toContain("Verify microphone");
+      await click("Verify provider");
+    }
+    if (titles[step] === "Speaker" || titles[step] === "Microphone") {
+      expect(button("Next").disabled).toBe(false);
+      expect(document.body.textContent).toContain("Optional");
     }
     if (step < titles.length - 1) await click("Next");
   }
   expect(state.request).not.toHaveBeenCalled();
   expect(button("Start").disabled).toBe(false);
-  await click("Back");
-  expect(document.querySelector("textarea")?.value).toBe("Keep replies concise");
-  await click("Next");
   await start();
   expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -316,12 +331,53 @@ it("groups all setup capabilities into five steps and gates every voice verifica
     "host-a",
   );
 });
+it("adds voice to a configured assistant without rewriting the saved profile or its rules", async () => {
+  state.profile.setupComplete = true;
+  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "voice" }));
+  await render(true);
+  expect(document.querySelector('[aria-current="step"]')?.textContent).toContain("Voice provider");
+  await click("Verify provider");
+  await click("Next");
+  await click("Next");
+  await click("Next");
+  await start();
+  expect(state.request).toHaveBeenCalledExactlyOnceWith(
+    { op: "profile.update", expectedVersion: 3, patch: { voiceSetupComplete: true } },
+    "host-a",
+  );
+});
+it("advances an applied AI draft to voice provider without saving it to the Host", async () => {
+  await render(true);
+  await click("Set up with AI");
+  await click("Apply AI draft");
+  expect(button("Verify provider")).toBeDefined();
+  expect(JSON.parse(localStorage.getItem(key)!).patch.name).toBe("AI draft");
+  expect(state.request).not.toHaveBeenCalled();
+});
 it("requires fresh voice verification when reopening a persisted Review draft", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
   await render(true);
   expect(button("Start").disabled).toBe(true);
   await click("Set up voice");
   expect(JSON.parse(localStorage.getItem(key)!).step).toBe("voice");
+  expect(state.request).not.toHaveBeenCalled();
+});
+it("retains the provider check after changing the speaker but invalidates it after changing providers", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), mode: "local", natural: true, engine: "supertonic" });
+  localStorage.setItem(key, JSON.stringify({ ...draft("host-a"), step: "voice" }));
+  await render(true);
+  await click("Verify provider");
+  await click("Next");
+  await click("Next");
+  await click("Next");
+  expect(button("Start").disabled).toBe(false);
+  const settings = loadVoiceSettings();
+  await act(async () =>
+    saveVoiceSettings({ ...settings, speakers: { ...settings.speakers, supertonic: "F2" } }),
+  );
+  expect(button("Start").disabled).toBe(false);
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "grok" }));
+  expect(button("Start").disabled).toBe(true);
   expect(state.request).not.toHaveBeenCalled();
 });
 it("offers a usable fresh budget without writing or changing its authority choices", async () => {

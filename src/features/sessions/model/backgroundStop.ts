@@ -28,6 +28,8 @@ export type StopAllControl = {
   kind: BackgroundStopKind;
   label: string;
   title: string;
+  /** Asked on the first press, so one stray click cannot end the work. */
+  confirmLabel: string;
 };
 
 /**
@@ -55,6 +57,10 @@ export function stopAllControl(dock: ActivityDock, perItem: boolean): StopAllCon
             "Stop every running subagent and background command. The turn itself is not interrupted.",
           );
         },
+        get confirmLabel() {
+          // Provider-reported tasks can have no row yet and rows can outnumber them.
+          return t("Confirm stop {p0}?", { p0: Math.max(dock.running, dock.backgroundCount) });
+        },
       }
     : {
         kind: "turn",
@@ -65,6 +71,9 @@ export function stopAllControl(dock: ActivityDock, perItem: boolean): StopAllCon
           return t(
             "Interrupt the whole turn, subagents included. This harness cannot stop one of them on its own.",
           );
+        },
+        get confirmLabel() {
+          return t("Confirm stop?");
         },
       };
 }

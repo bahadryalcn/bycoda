@@ -15,7 +15,8 @@ import {
 } from "./attachments";
 import { HostDomainRefusalError } from "../domains/context";
 import { attachmentMissingOnHost } from "../../src/features/connections/model/remoteAttachmentPreviews";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { runWithRequestTrace, startRequestTrace } from "../diagnostics/request-trace";
 const cleanups: Array<() => void | Promise<void>> = [];
 it.skipIf(process.platform !== "win32")(
   "serializes UUID case aliases before accepting a conflicting retry",
@@ -228,6 +229,39 @@ it("refuses to read a session attachment whose file is absent instead of surfaci
   const incomplete = await read();
   expect(incomplete).not.toBeInstanceOf(HostDomainRefusalError);
   expect(attachmentMissingOnHost(incomplete)).toBe(false);
+});
+
+it("correlates and deduplicates a missing attachment observed after upload without logging its identity", async () => {
+  const { store } = fixture();
+  const id = randomUUID();
+  const file = { id, name: "private-shot.png", kind: "image", mimeType: "image/png", size: 4 };
+  vi.spyOn(store, "session").mockReturnValue({
+    session: { blocks: [{ attachments: [file] }] },
+  } as unknown as ReturnType<HostStore["session"]>);
+  await writeAttachmentChunk(store, { id, size: 4, offset: 0, data: "YWJjZA==" });
+  rmSync(attachmentPath(store, id));
+  const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  const trace = startRequestTrace("ws");
+  try {
+    for (const offset of [0, 1]) {
+      await expect(
+        runWithRequestTrace(trace, () =>
+          readAttachmentChunk(store, { sessionId: "private-session", id, offset }),
+        ),
+      ).rejects.toThrow(ATTACHMENT_MISSING_MESSAGE);
+    }
+    const lines = write.mock.calls
+      .map(([value]) => String(value))
+      .filter((value) => value.includes("attachment bytes missing"));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/ref=[0-9a-f]{16} .*chunk=first lastObserved=upload-complete/);
+    expect(lines[0]).toContain(`traceId=${trace.id}`);
+    expect(lines[0]).not.toContain("private-session");
+    expect(lines[0]).not.toContain(file.name);
+    expect(lines[0]).not.toContain(id);
+  } finally {
+    write.mockRestore();
+  }
 });
 it("accepts ordered chunks and an identical retry while rejecting changes", async () => {
   const directory = mkdtempSync(join(tmpdir(), "remote-upload-test-"));

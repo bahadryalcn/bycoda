@@ -104,7 +104,7 @@ it("closes every terminal and the panel, keeping one opened during confirmation"
   try {
     await act(async () => root.render(createElement(Consumer)));
     act(() => actions.onCloseProjectTerminals());
-    expect(confirmCloseTerminals).toHaveBeenLastCalledWith([one, two]);
+    expect(confirmCloseTerminals).toHaveBeenLastCalledWith([one, two], undefined, undefined);
     const dock = ref.current[0];
     ref.current = [{ ...dock, pane: { ...dock.pane, files: [one, two, late] } }];
     await act(async () => finish(true));

@@ -3,12 +3,16 @@ import {
   accountApi,
   accountDeviceInfo,
   accountIdentity,
+  accountSharingDestination,
   accountNotificationsPort,
   reportAccountFailure,
   startAccount,
+  useAccountState,
   useAnonymousStats,
 } from "../../features/account";
 import { useDiagnostics } from "../../features/diagnostics";
+import { getDiagnosticsMode } from "../../features/diagnostics/model/diagnosticsConsent";
+import { dataTransfers } from "../../features/data-sharing";
 import { useActivitySync, useActivityTracker } from "../../features/activity";
 import { useRemoteMachines } from "../../features/connections/public/connections";
 import {
@@ -30,9 +34,13 @@ import { isLocalSyncMachine } from "../../features/connections/public/localSync"
  * Only the local sync Host is ever used: a remote machine never receives this computer's activity.
  */
 export function useAccountPlatform(): void {
+  const account = useAccountState();
+  const accountId = account.phase === "signed-in" ? account.context.user.id : null;
   const { machines } = useRemoteMachines();
   const hostId = machines.find(isLocalSyncMachine)?.id;
   useState(() => bindNotificationsServer(accountNotificationsPort()));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Releases the account-owned sharing queue and receipts on identity change or unmount.
+  useLayoutEffect(() => () => dataTransfers.accountChanged(), [accountId]);
   useEffect(() => {
     void startAccount().catch(() => undefined);
   }, []);
@@ -45,6 +53,8 @@ export function useAccountPlatform(): void {
     api: accountApi,
     deviceInfo: accountDeviceInfo,
     identity: accountIdentity,
+    destination: accountSharingDestination,
+    review: (details, send) => dataTransfers.run(details, getDiagnosticsMode, send),
     onFailure: reportAccountFailure,
     environment: () => appDiagnosticsFacts(machinesRef.current),
     readPerformance: readLocalHostPerformance,

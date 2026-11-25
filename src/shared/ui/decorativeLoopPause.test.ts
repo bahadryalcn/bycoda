@@ -2,27 +2,27 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
 /** Decorative loops that keep a visible pending or live state pause their clock while the window
- * is behind another app (and, where the sheet already listens, while decorative motion is off).
+ * is hidden or minimized (and, where the sheet already listens, while decorative motion is off).
  * The element stays on screen so the state still reads; nothing is removed or hidden. */
 const PAUSED_LOOPS: Array<{ path: string; selector: RegExp }> = [
   {
     path: "src/features/voice/ui/VoiceCompanion.module.css",
     selector:
-      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-focus="off"\]\)\)\s+\.launcherAvatar\s+\.launcherDot\s*\{\s*animation-play-state: paused;\s*\}/,
+      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-visible="off"\]\)\)\s+\.launcherAvatar\s+\.launcherDot\s*\{\s*animation-play-state: paused;\s*\}/,
   },
   {
     path: "src/shared/ui/arc/expanding-button-group/expanding-button-group.module.css",
     selector:
-      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-focus="off"\]\)\)\s+\.item\[aria-busy="true"\]\s+\.icon\s*\{\s*animation-play-state: paused;\s*\}/,
+      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-visible="off"\]\)\)\s+\.item\[aria-busy="true"\]\s+\.icon\s*\{\s*animation-play-state: paused;\s*\}/,
   },
   {
     path: "src/shared/ui/arc/line-chart/line-chart.module.css",
     selector:
-      /:global\(html\[data-window-focus="off"\]\) \.chart\[data-loading\] \.series,\s*:global\(html\[data-window-focus="off"\]\) \.skeleton\s*\{\s*animation-play-state: paused;\s*\}/,
+      /:global\(html\[data-window-visible="off"\]\) \.chart\[data-loading\] \.series,\s*:global\(html\[data-window-visible="off"\]\) \.skeleton\s*\{\s*animation-play-state: paused;\s*\}/,
   },
 ];
 
-it.each(PAUSED_LOOPS)("$path pauses its decorative loop for window blur", ({ path, selector }) => {
+it.each(PAUSED_LOOPS)("$path pauses its loop when hidden", ({ path, selector }) => {
   const css = readFileSync(path, "utf8");
   expect(css).toMatch(selector);
   // Paused, not removed: the busy or loading state must stay visible.

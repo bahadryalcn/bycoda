@@ -2,6 +2,7 @@
 import { PickerChoice } from "../../picker/PickerChoice";
 import { usePointerMovement } from "../../picker/usePointerMovement";
 import { Popover, popupListClassName } from "../../Popover";
+import { useOverlay } from "../../overlay";
 import { isImeComposition } from "../../../lib/keyboard";
 import { useT } from "../../../i18n";
 import { observeResize } from "../../../lib/observeResize";
@@ -108,6 +109,10 @@ export interface ComboboxProps extends Omit<
   hideLabel?: boolean;
   /** Accept an editable value outside the suggestions on Enter or blur. */
   allowCustomValue?: boolean;
+  /** Show the explicit custom-value option only for drafts that pass this predicate. */
+  suggestCustomValue?: (value: string) => boolean;
+  /** Lay suggestions out below the field, so they cannot cover dialog actions. */
+  inlineSuggestions?: boolean;
   options: ComboboxOption[];
   value?: string;
   defaultValue?: string;
@@ -143,6 +148,8 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     label,
     hideLabel = false,
     allowCustomValue = false,
+    suggestCustomValue,
+    inlineSuggestions = false,
     options,
     value: controlledValue,
     defaultValue = "",
@@ -166,6 +173,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   const listboxId = `${controlId}-listbox`;
   const hintId = description ? `${controlId}-description` : undefined;
   const inputRef = useRef<HTMLInputElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const controlRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const reduceMotion = useReducedMotion();
@@ -182,11 +190,11 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the open menu minimum width in step with its DOM anchor size
   useLayoutEffect(() => {
     const node = controlRef.current;
-    if (!open || !node) return;
+    if (!open || !node || inlineSuggestions) return;
     const measure = () => setMenuMinWidth(node.offsetWidth);
     measure();
     return observeResize(node, measure);
-  }, [open]);
+  }, [open, inlineSuggestions]);
 
   useImperativeHandle(forwardedRef, () => inputRef.current as HTMLInputElement);
 
@@ -237,7 +245,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     ),
   );
   const filteredOptions =
-    allowCustomValue && customValue && !exactOption
+    allowCustomValue && customValue && !exactOption && (suggestCustomValue?.(customValue) ?? true)
       ? [...matchingOptions, { value: customValue, label: t("Use “{p0}”", { p0: customValue }) }]
       : matchingOptions;
 
@@ -288,6 +296,8 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     setQuery("");
     setActiveIndex(-1);
   };
+
+  useOverlay(fieldRef, false, () => dismiss("escape"), open && inlineSuggestions, undefined, false);
 
   const clear = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -394,7 +404,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   );
 
   return (
-    <div className={styles.field}>
+    <div ref={fieldRef} className={styles.field}>
       <label htmlFor={controlId} className={hideLabel ? "sr-only" : undefined}>
         {label}
       </label>
@@ -438,7 +448,11 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             if (!allowCustomValue || !event.defaultPrevented) openMenu();
           }}
           onBlur={(event) => {
-            if (allowCustomValue) dismiss("outside");
+            if (allowCustomValue) {
+              // Keep inline results in place during pointer clicks on adjacent form actions.
+              if (inlineSuggestions) commitDraft();
+              else dismiss("outside");
+            }
             onBlur?.(event);
           }}
           onClick={openMenu}
@@ -499,19 +513,22 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           {description}
         </span>
       )}
-      {open && (
-        <Popover
-          anchor={controlRef}
-          minWidth={menuMinWidth}
-          align="start"
-          maxHeight={240}
-          restoreFocus={false}
-          onDismiss={dismiss}
-          className={`bycoda-arc ${popupListClassName}`}
-        >
-          {menu}
-        </Popover>
-      )}
+      {open &&
+        (inlineSuggestions ? (
+          <div className={popupListClassName}>{menu}</div>
+        ) : (
+          <Popover
+            anchor={controlRef}
+            minWidth={menuMinWidth}
+            align="start"
+            maxHeight={240}
+            restoreFocus={false}
+            onDismiss={dismiss}
+            className={`bycoda-arc ${popupListClassName}`}
+          >
+            {menu}
+          </Popover>
+        ))}
     </div>
   );
 });

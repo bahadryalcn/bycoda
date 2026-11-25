@@ -3,10 +3,9 @@ import { observeResize } from "../../../../shared/lib/observeResize";
 import {
   useAudioFeedbackMotionEnabled,
   usePrefersReducedMotion,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../../settings/public/decorativeMotion";
-import type { VoiceVisualState } from "../../model/voiceVisualState";
-import { paintCallBackdrop, paintCallOrb } from "./voiceCallArtwork";
+import { paintCallBackdrop, paintCallOrb, type VoiceCallArtworkState } from "./voiceCallArtwork";
 import styles from "./VoiceCore.module.css";
 
 /** Each draw is capped independently of monitor refresh rate. */
@@ -20,17 +19,21 @@ export function VoiceCallScene({
   state,
   level,
   className,
+  expanded = false,
+  size = "stage",
 }: {
   part: "orb" | "backdrop";
-  state: VoiceVisualState;
+  state: VoiceCallArtworkState;
   level: { readonly current: number };
   className?: string;
+  expanded?: boolean;
+  size?: "stage" | "strip";
 }) {
   const element = useRef<HTMLCanvasElement>(null);
-  const previousState = useRef<VoiceVisualState>(undefined);
+  const previousState = useRef<VoiceCallArtworkState>(undefined);
   const motion = useAudioFeedbackMotionEnabled();
   const reduced = usePrefersReducedMotion();
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   const active = state !== "off" && state !== "muted" && state !== "error";
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- paints the call canvas and suspends its frame loop while out of view
@@ -45,7 +48,7 @@ export function VoiceCallScene({
     let visible = true;
     let input = 0;
     let ink = getComputedStyle(canvas).color;
-    const canAnimate = motion && !reduced && focused && active;
+    const canAnimate = motion && !reduced && windowVisible && active;
     let previous: HTMLCanvasElement | undefined;
     if (
       canAnimate &&
@@ -71,8 +74,8 @@ export function VoiceCallScene({
       const seconds = animate ? time : RESTING_TIME;
       const { width, height } = canvas;
       context.clearRect(0, 0, width, height);
-      if (part === "orb") paintCallOrb(context, width, state, seconds, input, ink);
-      else paintCallBackdrop(context, width, height, state, seconds, input);
+      if (part === "orb") paintCallOrb(context, width, state, seconds, input, ink, expanded);
+      else paintCallBackdrop(context, width, height, state, seconds, input, expanded);
       if (previous) {
         const remaining = 1 - (time - RESTING_TIME) / STATE_FADE_SECONDS;
         if (animate && remaining > 0 && previous.width && previous.height) {
@@ -136,7 +139,7 @@ export function VoiceCallScene({
       theme.disconnect();
       document.removeEventListener("visibilitychange", sync);
     };
-  }, [part, state, level, motion, reduced, focused, active]);
+  }, [part, state, level, motion, reduced, windowVisible, active, expanded]);
 
   return (
     <canvas
@@ -144,7 +147,8 @@ export function VoiceCallScene({
       aria-hidden="true"
       data-call-art={part}
       data-state={state}
-      data-size={part === "orb" ? "stage" : undefined}
+      data-expanded={expanded || undefined}
+      data-size={part === "orb" ? size : undefined}
       className={part === "orb" ? styles.callOrb : className}
     />
   );

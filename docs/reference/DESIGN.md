@@ -226,8 +226,7 @@ feedback, container, type, icon, state and motion spec in the desktop design sys
 A component that does a different job may look different, but it is built from the
 same roles and parts; a second recipe for the same job is a defect. Native OS dialogs
 are kept only for boot and updater fatal errors, file pickers and menus that a popover
-cannot fit. T3 Code is the quality reference for state fills, rows, status and
-composer composition.
+cannot fit.
 
 ### Choose the interaction for the task
 
@@ -385,7 +384,7 @@ around the same status.
 
 - **Collection:** PaneHeader, at most one filter row, continuous list, and in-place empty, loading and failure states. Place the primary action in the header.
 - **List and detail:** a selectable master list and detail pane separated by a Sash. Put the detail action and status in its header; show empty, loading and failure states in the affected pane.
-- **Settings:** page header followed by Group and Row controls; keep optional explanations behind info. Place any primary action with the relevant group.
+- **Settings:** page header followed by Group and Row controls. Show short optional explanations on hover and keyboard focus through the info tooltip. Keep prerequisites and consequences visible. Place any primary action with the relevant group.
 - **Panel with toolbar:** at most two chrome bands: header and one toolbar. Put status in the header and the primary action in either band. Render content states in place.
 - **Dialog or sheet form:** Modal or Sheet with FieldGroup and footer actions. Put the primary action in the footer; show validation and pending state by the affected control.
 - **State pane:** use shared empty, loading and failure components in the content region. Keep recovery with the failure and avoid hand-written substitutes.

@@ -1,5 +1,6 @@
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { PickerList, filterPickerOptions, usePickerList } from "../../../shared/ui/picker";
+import { COLLECTION_WINDOW_THRESHOLD } from "../../../shared/hooks/useCollectionVirtualizer";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo, useState } from "react";
 import { Modal } from "../../../shared/ui/Modal";
@@ -34,15 +35,12 @@ export function GitPickDialog({
   useLocale();
   const [query, setQuery] = useState("");
   const options = useMemo(
-    () =>
-      filterPickerOptions(
-        items.map((item) => ({ value: item.id, title: item.label, meta: item.detail })),
-        query,
-      ),
-    [items, query],
+    () => items.map((item) => ({ value: item.id, title: item.label, meta: item.detail })),
+    [items],
   );
+  const matches = useMemo(() => filterPickerOptions(options, query), [options, query]);
   const picker = usePickerList({
-    options,
+    options: matches,
     value: null,
     onChange: onPick,
     loop: true,
@@ -70,6 +68,7 @@ export function GitPickDialog({
             label={title}
             controller={picker}
             query={query}
+            windowed={items.length > COLLECTION_WINDOW_THRESHOLD}
             emptyLabel={items.length === 0 ? emptyText : t("Nothing matches")}
           />
         </div>

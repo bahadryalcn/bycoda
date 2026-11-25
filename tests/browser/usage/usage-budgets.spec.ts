@@ -93,8 +93,13 @@ for (const [theme, width] of [
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`/tests/browser/usage/usage-budgets.html?page=1&theme=${theme}`);
     const accounts = page.locator(".usage-account");
-    await expect(accounts).toHaveCount(4);
+    await expect(page.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(accounts).toHaveCount(0);
     await page.getByRole("tab", { name: "Limits", exact: true }).click();
+    await expect(accounts).toHaveCount(4);
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
       "aria-valuenow",
       "68",
@@ -149,6 +154,12 @@ for (const [theme, width] of [
       fullPage: true,
       animations: "disabled",
     });
+    await page.getByRole("button", { name: "Add budget", exact: true }).click();
+    const draft = page.getByLabel("Budget name (optional)", { exact: true });
+    await draft.fill("Unfinished budget");
+    await cost.click();
+    await page.getByRole("tab", { name: "Limits", exact: true }).click();
+    await expect(draft).toHaveValue("Unfinished budget");
     expect(errors).toEqual([]);
   });
 }

@@ -55,6 +55,9 @@ pub(super) fn start_ssh_job(
                     )?;
                     let info: Value = serde_json::from_str(output.lines().last().unwrap_or(""))
                         .map_err(|_| "Host update returned an invalid response")?;
+                    if info["enabledBackgroundService"] == true {
+                        job.background_service_enabled();
+                    }
                     target.remote_port = info
                         .get("port")
                         .and_then(Value::as_u64)
@@ -78,6 +81,9 @@ pub(super) fn start_ssh_job(
                 )?;
                 let info: Value = serde_json::from_str(output.lines().last().unwrap_or(""))
                     .map_err(|_| "Host setup returned an invalid response")?;
+                if info["enabledBackgroundService"] == true {
+                    job.background_service_enabled();
+                }
                 target.remote_port = info
                     .get("port")
                     .and_then(Value::as_u64)

@@ -152,10 +152,11 @@ export function BranchPicker({
   useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
 
   const inProject = Boolean(cwd) && cwd !== "~";
-  const { branches: projectBranches, settled: branchesSettled } = useProjectBranchesState(
-    cwd,
-    inProject,
-  );
+  const {
+    branches: projectBranches,
+    settled: branchesSettled,
+    unreachable,
+  } = useProjectBranchesState(cwd, inProject);
 
   const { data: worktreeData } = useProjectWorktrees(cwd, inProject && open);
   const byBranch = useMemo(
@@ -342,20 +343,26 @@ export function BranchPicker({
   // Always keep the control mounted so the composer's toolbar does not resize
   // when a folder isn't a git repo. The loading skeleton, "No repo" label, and
   // real branch all share the same icon + 12px line box.
-  const awaitingBranch = inProject && !current && !branchesSettled;
-  const missingGit = !current && !awaitingBranch;
+  // A branch that could not be read (machine unreachable) is neither loading nor "No repo".
+  const stale = unreachable && !branch;
+  const awaitingBranch = inProject && !current && !branchesSettled && !stale;
+  const missingGit = !current && !awaitingBranch && !stale;
   const branchLabel = current
     ? detached
       ? t("detached {p0}", { p0: current })
       : current
-    : t("No repo");
+    : stale
+      ? t("Unavailable")
+      : t("No repo");
   const label = branchLabel;
   const title = awaitingBranch
     ? t("Loading branch")
-    : missingGit
-      ? t("No git repository")
-      : `${t("Switch branch in this worktree…")} · ${label}`;
-  const interactive = enabled && !checkoutBusy && !awaitingBranch && !missingGit;
+    : stale
+      ? t("This machine is unreachable")
+      : missingGit
+        ? t("No git repository")
+        : `${t("Switch branch in this worktree…")} · ${label}`;
+  const interactive = enabled && !checkoutBusy && !awaitingBranch && !missingGit && !stale;
 
   return (
     <div ref={root} className="relative flex min-w-0 shrink">
@@ -364,9 +371,11 @@ export function BranchPicker({
         aria-label={
           awaitingBranch
             ? t("Loading branch")
-            : missingGit
-              ? t("No git repository")
-              : t("Branch {p0}", { p0: label })
+            : stale && !current
+              ? t("This machine is unreachable")
+              : missingGit
+                ? t("No git repository")
+                : t("Branch {p0}", { p0: label })
         }
         aria-expanded={missingGit ? undefined : open}
         aria-haspopup={missingGit ? undefined : "dialog"}

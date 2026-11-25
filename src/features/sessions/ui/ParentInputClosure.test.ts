@@ -137,6 +137,17 @@ afterEach(async () => {
   document.documentElement.style.removeProperty("--motion-reorder-duration");
 });
 
+async function chooseUpload() {
+  await act(async () =>
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!.click(),
+  );
+  await act(async () =>
+    [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Upload file"))!
+      .click(),
+  );
+}
+
 it("closes actual question edits/reply/cache writes and preserves authoritative discard", async () => {
   const reply = vi.fn();
   await act(async () =>
@@ -209,9 +220,10 @@ it("gates real queue save and picker admission while Escape/cancel remains usabl
       }),
     ),
   );
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  const add = document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!;
+  expect(add.disabled).toBe(true);
+  await act(async () => add.click());
+  expect(document.body.querySelector('[role="menuitem"]')).toBeNull();
   expect(save).not.toHaveBeenCalled();
   expect(ports.picker).not.toHaveBeenCalled();
   const cancelButton = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -243,9 +255,7 @@ it("keeps a real pre-close queue attachment read owned through actual result app
       }),
     ),
   );
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  await chooseUpload();
   settleJobs.push(() => finish([]));
   const close = await closeInputs();
   let settled = false;
@@ -520,9 +530,7 @@ it("never applies an old queue read into a reused component with a foreign root/
       }),
     ),
   );
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  await chooseUpload();
   const old = await closeInputs();
   const foreignId = `${id}:foreign`;
   await act(async () =>
@@ -1369,9 +1377,7 @@ it("keeps an actual queue attachment preparation owned after retirement until it
     ),
   );
   const before = await captureParentInputs(id);
-  await act(async () =>
-    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-  );
+  await chooseUpload();
   expect(before.current()).toBe(false);
   await act(async () => root.render(null));
   const pending = await captureParentInputs(id);

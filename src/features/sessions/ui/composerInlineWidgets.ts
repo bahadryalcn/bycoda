@@ -13,6 +13,7 @@ import {
   type InlineReferenceContext,
 } from "./composerInlineReferences";
 import { createInlineScan, updateInlineScan, type InlineScan } from "./composerInlineScan";
+import { composerMarkdownDecorations, composerMarkdownMarkAt } from "./ComposerMarkdown";
 import styles from "../../../shared/ui/DraftToken.module.css";
 import { textAttributes } from "../../../shared/ui/Text";
 
@@ -30,6 +31,7 @@ const iconPaths = {
   external: "M14 4h6v6m0-6-9 9m7-2v8H5V6h8",
   down: "m6 9 6 6 6-6",
   quote: "M4 7h6v7l-3 3m7-10h6v7l-3 3",
+  "file-comment": "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z",
 };
 
 function icon(document: Document, path: keyof typeof iconPaths) {
@@ -47,6 +49,7 @@ function referenceIcon(ref: InlineReference): keyof typeof iconPaths {
     case "skill":
     case "group":
     case "quote":
+    case "file-comment":
       return ref.kind;
     case "url":
       return "link";
@@ -73,6 +76,7 @@ const { className: mentionClassName, "data-tone": mentionTone } = textAttributes
 );
 
 type WidgetActions = {
+  onInlineAttachments(ids: ReadonlySet<string>): void;
   open(reference: InlineReference, anchor: HTMLElement): void;
   remove(id: string): void;
   menu(reference: InlineReference, anchor: HTMLElement): void;
@@ -209,16 +213,22 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
     edited?: InlineReference;
     decorations: DecorationSet;
     atomic: DecorationSet;
+    markdown: DecorationSet;
+    editedMark: number | null;
   }>({
     create(state) {
       const scan = createInlineScan(state, initial);
       const decorations = decorate(scan.references);
+      const { from, to } = state.selection.main;
+      const editedMark = composerMarkdownMarkAt(scan.tree, from, to);
       return {
         context: initial,
         scan,
         references: scan.references,
         decorations,
         atomic: atomicDecorations(decorations, scan.references),
+        markdown: composerMarkdownDecorations(scan.tree, scan.text, editedMark),
+        editedMark,
       };
     },
     update(value, transaction) {
@@ -235,11 +245,18 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
             )
           : value.scan;
       const { references } = scan;
-      const { head } = transaction.newSelection.main;
+      const { from, to, head } = transaction.newSelection.main;
+      const editedMark = composerMarkdownMarkAt(scan.tree, from, to);
+      const markdown =
+        scan.tree === value.scan.tree && editedMark === value.editedMark
+          ? value.markdown
+          : composerMarkdownDecorations(scan.tree, scan.text, editedMark);
       const edited = references.find(
         (item) => item.kind === "url" && item.start < head && item.end > head,
       );
-      if (scan === value.scan && edited === value.edited) return value;
+      if (scan === value.scan && edited === value.edited) {
+        return markdown === value.markdown ? value : { ...value, markdown, editedMark };
+      }
       // Typing that leaves every widget as it was keeps their decorations, shifted by the edit.
       const decorations =
         !edited &&
@@ -254,12 +271,28 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
         edited,
         decorations,
         atomic: atomicDecorations(decorations, references),
+        markdown,
+        editedMark,
       };
     },
-    provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+    provide: (field) => [
+      EditorView.decorations.from(field, (value) => value.decorations),
+      EditorView.decorations.from(field, (value) => value.markdown),
+    ],
   });
+  let reported: ReadonlySet<string> | undefined;
+  function reportAttachments(state: EditorState) {
+    const ids = state.field(ranges).scan.attachmentIds;
+    if (reported && ids.size === reported.size && [...reported].every((id) => ids.has(id))) return;
+    reported = ids;
+    actions.onInlineAttachments(ids);
+  }
   const extension: Extension = [
     ranges,
+    EditorView.updateListener.of((update) => {
+      if (update.state.field(ranges).scan !== update.startState.field(ranges).scan)
+        reportAttachments(update.state);
+    }),
     EditorView.atomicRanges.of((view) => view.state.field(ranges).atomic),
     EditorState.transactionFilter.of((transaction) => {
       if (
@@ -290,5 +323,5 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
       ];
     }),
   ];
-  return { configure, extension };
+  return { configure, extension, reportAttachments };
 }

@@ -689,6 +689,8 @@ export type SshSetup = {
   done: boolean;
   error?: string | null;
   machine?: RemoteMachine | null;
+  /** Setup registered the machine's login service, so it stays reachable when bycoda is closed. */
+  enabledBackgroundService?: boolean;
 };
 
 export function isRemoteProvider(value: unknown): value is RemoteProvider {

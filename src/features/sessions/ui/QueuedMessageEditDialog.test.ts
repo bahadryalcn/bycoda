@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import type { Attachment, QueuedMessage } from "../model/session";
 import * as attachmentApi from "../model/attachments";
+import { attachmentDraftTokens } from "../model/attachmentTokens";
+import { withChatCitations } from "../model/chatCitation";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -60,7 +62,59 @@ async function typeInto(field: HTMLTextAreaElement, text: string) {
   });
 }
 
+async function chooseUpload() {
+  await act(async () =>
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!.click(),
+  );
+  await act(async () =>
+    [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Upload file"))!
+      .click(),
+  );
+}
+
 describe("QueuedMessageEditDialog", () => {
+  it("saves the draft with just the targeted mention removed", async () => {
+    const { field, button, onSave } = await open({
+      message: { id: "mentions", text: "@notes:plan @crews:planner ", attachments: [] },
+    });
+    field.setSelectionRange(field.value.length, field.value.length);
+    act(() =>
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Backspace",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(field.value).toBe("@notes:plan ");
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith("@notes:plan ", []);
+  });
+  it("shows a queued quote as a chip and keeps it through Save", async () => {
+    const citation = {
+      version: 1 as const,
+      id: "c1",
+      sessionId: "s1",
+      blockId: "b1",
+      text: "quoted line",
+      sourceText: "quoted line",
+      occurrence: 0,
+      comment: "",
+    };
+    const { field, button, onSave } = await open({
+      message: {
+        id: "quoted",
+        text: withChatCitations("see [quote1]", [citation]),
+        attachments: [],
+      },
+    });
+    expect(field.value).toBe("see [quote1]");
+    await typeInto(field, "read [quote1]");
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith(withChatCitations("read [quote1]", [citation]), []);
+  });
   it("snaps selections around attached references", async () => {
     const { field } = await open();
     act(() => field.setSelectionRange(10, 10));
@@ -93,9 +147,7 @@ describe("QueuedMessageEditDialog", () => {
     );
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { button } = await open();
-    await act(async () =>
-      document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-    );
+    await chooseUpload();
     expect(button("Save").disabled).toBe(true);
     await act(async () => root.render(null));
     await act(async () =>
@@ -115,13 +167,8 @@ describe("QueuedMessageEditDialog", () => {
     const { button, onSave } = await open({
       message: { id: "empty", text: "Inspect", attachments: [] },
     });
-    await act(async () => {
-      const add = document.body.querySelector<HTMLButtonElement>(
-        '[aria-label="Add files or images"]',
-      )!;
-      add.click();
-      add.click();
-    });
+    await chooseUpload();
+    await chooseUpload();
     expect(button("Save").disabled).toBe(true);
     await act(async () => {
       finishes[0]([{ ...message.attachments[0], id: "first", name: "one.png" }]);
@@ -135,6 +182,46 @@ describe("QueuedMessageEditDialog", () => {
     const { field } = await open();
     expect(field.value).toBe("look at [Image 1 · shot.png · 1 B]");
     expect(document.body.querySelector('[aria-label="Remove shot.png"]')).not.toBeNull();
+  });
+
+  it("skips writes at capacity and can replace a selected reference in the full draft", async () => {
+    const files = Array.from({ length: attachmentApi.MAX_ATTACHMENTS }, (_, i) => ({
+      ...message.attachments[0],
+      id: String(i),
+      name: `seed-${i}.png`,
+    }));
+    const tokens = attachmentDraftTokens(files);
+    const invoke = vi.fn(async (_command: string, args: { name: string }) => "/saved/" + args.name);
+    vi.stubGlobal("__TAURI_INTERNALS__", { invoke });
+    const { field, button, onSave } = await open({
+      message: { id: "full", text: tokens.join(" "), attachments: files },
+    });
+    const pasteFiles = () => {
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "clipboardData", {
+        value: {
+          getData: () => "",
+          files: ["one.txt", "two.txt"].map((name) => new File(["a"], name)),
+        },
+      });
+      field.dispatchEvent(event);
+    };
+    field.setSelectionRange(field.value.length, field.value.length);
+    await act(async () => pasteFiles());
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(0);
+    expect(document.body.textContent).toContain("0 of 2");
+    field.setSelectionRange(0, tokens[0].length);
+    await act(async () => {
+      pasteFiles();
+      await vi.waitFor(() =>
+        expect(invoke.mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(1),
+      );
+    });
+    await act(async () => button("Save").click());
+    expect(onSave.mock.calls[0][1].map((file: Attachment) => file.name)).toEqual([
+      ...files.slice(1).map((file) => file.name),
+      "one.txt",
+    ]);
   });
 
   it.each([false, true])(
@@ -168,6 +255,31 @@ describe("QueuedMessageEditDialog", () => {
       );
     },
   );
+
+  it("replaces a long plain paste with a saved text attachment", async () => {
+    const file: Attachment = {
+      id: "pasted",
+      name: "Pasted text.txt",
+      mimeType: "text/plain",
+      size: 9000,
+      kind: "file",
+      path: "/test/pasted.txt",
+    };
+    vi.spyOn(attachmentApi, "attachmentsFromFiles").mockResolvedValue([file]);
+    const { field, button, onSave } = await open({
+      message: { id: "plain", text: "Before replace after", attachments: [] },
+    });
+    field.setSelectionRange(7, 14);
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { getData: (type: string) => (type === "text/plain" ? "a".repeat(9000) : "") },
+    });
+    await act(async () => field.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(field.value).toMatch(/^Before \[.+\] after$/);
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith(expect.stringMatching(/^Before \[.+\] after$/), [file]);
+  });
 
   it("removing a chip removes its token", async () => {
     const { field, button, onSave } = await open();

@@ -135,7 +135,7 @@ it("keeps the hover panel reachable across the portal gap and compacts once", as
   const card = () => document.querySelector<HTMLElement>("[data-hover-card]");
   await act(async () => {
     trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
-    vi.advanceTimersByTime(350);
+    vi.advanceTimersByTime(450);
   });
   expect(card()).not.toBeNull();
   await act(async () => {
@@ -181,12 +181,25 @@ it("explains why compact is unavailable and preserves cost and API duration", as
 
 it("distinguishes confirmed empty context from unknown usage", async () => {
   await act(async () => root.render(createElement(ContextMeter, { empty: true })));
-  expect(container.textContent).toBe("");
   expect(container.querySelector("[aria-label]")!.getAttribute("aria-label")).toContain("0%");
-  await act(async () => root.render(createElement(ContextMeter, {})));
-  expect(container.textContent).toBe("");
-  await act(async () => root.render(createElement(ContextMeter, { usage: { used: 123 } })));
-  expect(container.textContent).toBe("");
+
+  await act(async () => root.render(createElement(ContextMeter, { working: true })));
+  const trigger = container.querySelector("button")!;
+  expect(trigger.getAttribute("aria-label")).toContain("Unknown");
+  expect(trigger.getAttribute("aria-label")).toContain("Unavailable");
+  expect(trigger.querySelector("[aria-valuenow]")).toBeNull();
+  await act(async () => trigger.click());
+  expect(dialog()?.textContent).toContain("Unknown");
+
+  await act(async () =>
+    root.render(createElement(ContextMeter, { working: true, usage: { used: 123 } })),
+  );
+  expect(container.querySelector("button")).toBe(trigger);
+  expect(dialog()?.textContent).toContain("123 tokens");
+  expect(dialog()?.querySelector('[role="meter"]')).toBeNull();
+
+  await act(async () => root.render(createElement(ContextMeter, { usage })));
+  expect(dialog()?.querySelector('[role="meter"]')?.getAttribute("aria-valuenow")).toBe("23");
 });
 
 it("keeps the signal icon uncluttered and exposes completed TPS, context and compact in its panel", async () => {

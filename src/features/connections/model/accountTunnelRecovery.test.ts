@@ -28,6 +28,16 @@ describe("account tunnel recovery", () => {
     expect(learn).toHaveBeenCalledWith("pc", "env", ["https://new.trycloudflare.com"]);
     expect(send).toHaveBeenCalledTimes(2);
   });
+  it("never treats a dial in progress as exhausted routes", async () => {
+    const recover = vi.fn(async () => true);
+    const refused = "Machine is unreachable right now: a connection attempt is in progress.";
+    const send = vi.fn().mockRejectedValue(refused);
+    await expect(
+      withAccountTunnelRecovery("environment.describe", machine, () => true, send, recover),
+    ).rejects.toBe(refused);
+    expect(recover).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledOnce();
+  });
   it("does not learn a different environment or retry failed identity verification", async () => {
     const learn = vi.fn(async () => false);
     expect(

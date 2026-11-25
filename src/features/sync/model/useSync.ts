@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 import {
   cachedRemoteCapabilities,
   loadRemoteCapabilities,
@@ -12,7 +13,6 @@ import {
   boundedDrain,
   CYCLE_INTERVAL_MS,
   isApplyingRemote,
-  isDocumentHidden,
   recordSyncStatus,
   startSyncLoop,
   SYNC_UNSUPPORTED_MESSAGE,
@@ -204,7 +204,7 @@ export function startAppSync(): () => void {
     });
     return refreshing;
   };
-  const ownership = createSyncWindowOwner(() => wake());
+  const ownership = createSyncWindowOwner(() => onOnline());
   const loop = startSyncLoop(
     () => collectSyncMachineIds(machines),
     (machineId, cycleId) => (method, params) =>
@@ -257,11 +257,30 @@ export function startAppSync(): () => void {
     };
   const unsubscribePaths = subscribeProjectPathsChanged(onLocalChange);
   const unsubscribeLock = subscribeLockRecordChanges(onLocalChange);
-  const wake = () => {
+  const wake = (catchUp: boolean) => {
     if (stopped || !ownership.isOwner()) return;
-    void (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
-      if (!stopped) loop.nudge();
+    const before = machines;
+    return (localLinked ? refreshMachines() : connectLocalHost().then(refreshMachines)).then(() => {
+      // The loop already catches up on show. A new peer needs a follow-up round.
+      if (
+        catchUp &&
+        !stopped &&
+        machines.some(
+          (machine) =>
+            !before.some(
+              (prior) => prior.id === machine.id && prior.environmentId === machine.environmentId,
+            ),
+        )
+      )
+        loop.nudge();
     });
+  };
+  const onOnline = () => {
+    void wake(false)
+      ?.then(() => {
+        if (!stopped) loop.nudge();
+      })
+      .catch((error: unknown) => console.warn("Sync inventory refresh failed", error));
   };
   const unsubscribeRecovered = subscribeRemoteRecovered(() => {
     if (!ownership.isOwner()) return;
@@ -273,18 +292,8 @@ export function startAppSync(): () => void {
       }
     });
   });
-  const onVisibility = () => {
-    if (!document.hidden) wake();
-  };
-  window.addEventListener("focus", wake);
-  window.addEventListener("online", wake);
-  document.addEventListener("visibilitychange", onVisibility);
-  const interval = setInterval(() => {
-    // Hidden: skip the poll; `onVisibility` refreshes and nudges when the window returns.
-    if (isDocumentHidden() || !ownership.isOwner()) return;
-    if (localLinked) void refreshMachines();
-    else void connectLocalHost().then(refreshMachines);
-  }, CYCLE_INTERVAL_MS);
+  window.addEventListener("online", onOnline);
+  const inventoryPolling = startForegroundPolling(wake, CYCLE_INTERVAL_MS, { immediate: false });
   return () => {
     started = false;
     stopped = true;
@@ -306,9 +315,7 @@ export function startAppSync(): () => void {
     unsubscribePaths();
     unsubscribeLock();
     unsubscribeRecovered();
-    window.removeEventListener("focus", wake);
-    window.removeEventListener("online", wake);
-    document.removeEventListener("visibilitychange", onVisibility);
-    clearInterval(interval);
+    window.removeEventListener("online", onOnline);
+    inventoryPolling.stop();
   };
 }

@@ -50,8 +50,8 @@ import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { actionHostAttributes } from "../../../shared/ui/ActionHost";
-import { folderName, isMissingPathError } from "../model/checkoutSelection";
-import { worktreeRowFolder } from "../model/worktreeRows";
+import { isMissingPathError } from "../model/checkoutSelection";
+import { isAgentWorktree } from "../model/worktreeRows";
 import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
@@ -73,6 +73,7 @@ import {
   gitHeadMessage,
   gitPrCreate,
   gitPrStatus,
+  gitPull,
   gitPush,
   gitStageAll,
   gitStageFile,
@@ -168,6 +169,8 @@ type Props = {
     onToggle: (expanded: boolean) => void;
     /** This repository's gitlink change in its parent, shown beside its name. */
     pointer?: ReactNode;
+    /** Narrows the Changes list to this repository (VS Code's single-repository mode) or shows all again. */
+    scope?: { only: boolean; onToggle: () => void };
   };
   /** Repositories listed below this one: their gitlinks leave this list. */
   submodules?: SubmoduleListing;
@@ -341,8 +344,12 @@ export function GitChangesPanel({
 
   // The one branch control: leads the header of the single panel and sits with
   // the actions in a grouped repository row.
+  // A worktree section names its own branch; an in-worktree branch is never switched here.
+  const worktreeSection = !!repository?.checkout && !repository.checkout.isMain;
   const branchControl =
-    detailsOpen && (checkout || (index?.repository !== false && (index?.branch || repository))) ? (
+    detailsOpen &&
+    !worktreeSection &&
+    (checkout || (index?.repository !== false && (index?.branch || repository))) ? (
       <Text
         className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
@@ -447,22 +454,17 @@ export function GitChangesPanel({
     ((index ? index.head : repository?.checkout?.head)
       ? `${t("Detached HEAD")} · ${shortSha((index ? index.head : repository?.checkout?.head) ?? "")}`
       : undefined);
+  // One row format, no text markers: icon, bold name (project, branch or repository folder) and
+  // a muted branch. Where the row lives (session, separate repository) is only the tooltip.
   const identity = repository ? (
-    repository.checkout ? (
-      <CheckoutIdentity
-        icon={!branchControl}
-        title={branchControl ? folderName(cwd) : (branchLabel ?? repository.name)}
-        detail={branchControl ? undefined : worktreeRowFolder(repository.checkout)}
-        marker={repository.current ? t("This session") : undefined}
-      />
-    ) : (
-      <CheckoutIdentity
-        repository
-        title={repository.name}
-        detail={branchControl ? undefined : branchLabel}
-        marker={repository.nested ? t("Separate repository") : undefined}
-      />
-    )
+    <CheckoutIdentity
+      repository={!repository.checkout}
+      agent={!!repository.checkout && isAgentWorktree(repository.checkout)}
+      icon={!branchControl || !repository.checkout}
+      // A worktree is named by its live branch (it may have moved since the list was read).
+      title={worktreeSection ? (branchLabel ?? repository.name) : repository.name}
+      detail={branchControl || worktreeSection ? undefined : branchLabel}
+    />
   ) : null;
   return (
     <div
@@ -489,7 +491,7 @@ export function GitChangesPanel({
             chevron="start"
             onClick={() => repository.onToggle(!detailsOpen)}
             // The row shows names; the hint adds where the folder is.
-            tooltip={cwd}
+            tooltip={repository.nested ? t("Separate repository · {p0}", { p0: cwd }) : cwd}
             className={styles.disclosure}
           >
             {identity}
@@ -599,6 +601,7 @@ export function GitChangesPanel({
                   onOpenCommit={onOpenCommit}
                   toolbar={false}
                   onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
+                  repositoryScope={repository?.scope}
                 />
               ) : null}
             </span>
@@ -665,6 +668,7 @@ export function GitChangesPanel({
               description={t("Initialize a repository to track changes in this folder.")}
               action={{
                 label: t("Initialize Repository"),
+                variant: "primary",
                 pending: busy === "init",
                 disabled: !enabled || (!!busy && busy !== "init"),
                 onClick: async () => {
@@ -722,7 +726,7 @@ export function GitChangesPanel({
         </div>
       )}
       {/* An overview row leaves Stashes and Graph to the one shared set below the rows. */}
-      {!embedded && !repository && !notRepository ? (
+      {!embedded && !repository && index && !notRepository ? (
         <GitPanelSections
           cwd={cwd}
           enabled={enabled}
@@ -782,7 +786,7 @@ function ChangedFiles({
   pending: string | null;
   setPending: (value: string | null) => void;
   /** Shows the index an action is about to produce, ahead of the reload. */
-  showOptimistic: (next: GitDiffIndex) => void;
+  showOptimistic: ReturnType<typeof useDiffIndex>["showOptimistic"];
   /** Filled with the handlers the header menu calls into. */
   actionsRef: RefObject<ChangesActions | null>;
   onOpenFile: (path: string, kind: GitFileDiffKind, pin?: boolean) => void;
@@ -1173,10 +1177,9 @@ function ChangedFiles({
         const text = message.trim() || (await gitHeadMessage(cwd));
         await gitCommit(cwd, text, amending, options?.signoff ?? false);
         committed = true;
-        // The commit is made: its files leave the list now, not after the push
-        // and the reload that follow.
+        // Update the list and its tab totals together once the commit succeeds.
         const committedIndex = index && applyCommit(index, stageAll, amending);
-        if (committedIndex) showOptimistic(committedIndex);
+        if (committedIndex) showOptimistic(committedIndex, { publishStats: true });
         clearDraft();
         if (push || createPr) {
           setPending("Pushing…");
@@ -1226,7 +1229,9 @@ function ChangedFiles({
       setGitFeedback(cwd, null);
       setBusy("sync");
       try {
-        await gitSync(cwd);
+        if (canPublish || index.behind === 0) await gitPush(cwd);
+        else if (pushesCommits) await gitSync(cwd);
+        else await gitPull(cwd);
         if (pushesCommits) recordPrActivity();
         // The counts are settled now: the action must not offer the same push
         // again while the reload reads.

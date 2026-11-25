@@ -43,6 +43,9 @@ export type PerformanceMetrics = Partial<
     | "checkpointWaitMs"
     | "gitMs"
     | "diskMs"
+    | "scriptMs"
+    | "styleAndLayoutMs"
+    | "blockingMs"
     | "elapsedMs"
     | "stageMs",
     number
@@ -69,6 +72,9 @@ const metricKeys = new Set([
   "checkpointWaitMs",
   "gitMs",
   "diskMs",
+  "scriptMs",
+  "styleAndLayoutMs",
+  "blockingMs",
   "elapsedMs",
   "stageMs",
 ]);
@@ -104,6 +110,7 @@ const stages = new Set<string>([
 let enabled = false;
 let capacity = 2048;
 let records: PerformanceTraceRecord[] = [];
+const slowFrames: PerformanceTraceRecord[] = [];
 let sequence = 0;
 const sessionTraces = new Map<string, string>();
 const SESSION_TRACE_LIMIT = 128;
@@ -170,11 +177,15 @@ export function configurePerformanceTracing(options: {
 }
 export function clearPerformanceTrace(): void {
   records = [];
+  slowFrames.length = 0;
   sessionTraces.clear();
   sessionTracesChanged();
 }
 export function getPerformanceTrace(): PerformanceTraceRecord[] {
-  return records.map((record) => ({ ...record, metrics: { ...record.metrics } }));
+  const retained = slowFrames
+    .filter((frame) => !records.includes(frame))
+    .sort((a, b) => a.at - b.at);
+  return [...retained, ...records].map((record) => ({ ...record, metrics: { ...record.metrics } }));
 }
 function append(
   stage: PerformanceStage,
@@ -197,6 +208,11 @@ function append(
     ...(duration === undefined ? {} : { duration }),
     ...(traceId && /^trace-\d+$/.test(traceId) ? { traceId } : {}),
   });
+  if (stage === "long-animation-frame") {
+    slowFrames.push(records[records.length - 1]);
+    slowFrames.sort((a, b) => (b.duration ?? 0) - (a.duration ?? 0));
+    if (slowFrames.length > 16) slowFrames.pop();
+  }
   if (records.length > capacity) records.splice(0, records.length - capacity);
 }
 export function recordPerformanceEvent(
@@ -211,9 +227,10 @@ export function recordPerformanceInterval(
   stage: PerformanceStage,
   startedAt: number,
   duration: number,
+  metrics?: PerformanceMetrics,
 ): void {
   if (enabled && Number.isFinite(startedAt) && Number.isFinite(duration))
-    append(stage, startedAt, {}, undefined, Math.max(0, duration));
+    append(stage, startedAt, metrics, undefined, Math.max(0, duration));
 }
 
 const noop = () => {};

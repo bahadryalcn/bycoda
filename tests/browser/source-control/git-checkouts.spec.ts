@@ -3,6 +3,40 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
+    test(`plain folder offers initialization without requesting Graph ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?submodules&plain-folder");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "fixture", exact: true }).click();
+      const initialize = page.getByRole("button", { name: "Initialize Repository" });
+      await expect(initialize).toBeVisible();
+      await expect(initialize).toHaveAttribute("data-button-variant", "primary");
+      const evidence = "temp/verification/git-folder-empty";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({ path: `${evidence}/${theme}-${width}.png`, animations: "disabled" });
+      await expect(page.getByRole("button", { name: "Graph", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "core-pack main", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Graph", exact: true })).toBeVisible();
+      expect(
+        await page.evaluate(() =>
+          Reflect.get(window, "gitFixtureCalls").filter(
+            (call: { command: string; args: { cwd: string } }) =>
+              call.command === "git_history" && call.args.cwd === "/fixture",
+          ),
+        ),
+      ).toEqual([]);
+      await initialize.click();
+      await expect(initialize).toHaveCount(0);
+      await expect(page.getByText("Auto · fixture", { exact: true })).toBeVisible();
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
     test(`commit shows Push 1 during status refresh in ${theme} at ${width}px`, async ({
       page,
     }) => {
@@ -547,13 +581,16 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
 const worktreeSwitch = (page: Page) =>
   page.getByRole("button", { name: "Switch worktree", exact: true });
 const branchTrigger = (page: Page) => page.getByRole("button", { name: /^Branch / }).first();
+// The project folder row has no text marker: it is the row named by its branch, "main".
 const pickWorktree = async (page: Page, option: string) => {
   await worktreeSwitch(page).click();
   const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
   const row =
     option === "All worktrees"
-      ? list.getByRole("option", { name: "All worktrees", exact: true })
-      : list.getByRole("option").filter({ hasText: option });
+      ? list.getByRole("option", { name: /^All worktrees/ })
+      : list
+          .getByRole("option")
+          .filter({ hasText: option === "Project folder" ? /^main/ : option });
   await row.first().click();
   await expect(list).toHaveCount(0);
 };
@@ -803,7 +840,7 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
     .toBeGreaterThan(diagonalBaseline);
 });
 
-test("All worktrees groups rows, mounts panels lazily and follows the header focus", async ({
+test("All worktrees lists only worktrees with changes as same-level sections and follows the header focus", async ({
   page,
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
@@ -814,7 +851,6 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
   const list = page.locator("[data-checkout-overview]");
   const audit = "/trees/audit/very-long-worktree-folder-name";
   const panelFor = (cwd: string) => list.locator(`[data-git-repository="${cwd}"]`);
-  const rowFor = (cwd: string) => list.locator(`[data-worktree-row="${cwd}"]`);
   const headerFor = (cwd: string) => panelFor(cwd).locator("header button[aria-expanded]").first();
   const diffReads = (cwd: string) =>
     page.evaluate(
@@ -826,21 +862,20 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
         ).length,
       cwd,
     );
-  // The project folder is open; worktrees with work are collapsed rows; clean ones sit behind
-  // a collapsed "Clean · N" group.
-  await expect(list.locator("[data-git-repository]")).toHaveCount(1);
+  // Same-level sections for the worktrees that have uncommitted changes; the first is open.
+  // The clean worktree is only in the header picker, and nothing is labelled or grouped.
+  await expect(list.locator("[data-git-repository]")).toHaveCount(3);
   await expect(headerFor("/fixture")).toHaveAttribute("aria-expanded", "true");
-  await expect(rowFor(audit)).toBeVisible();
-  await expect(rowFor("/trees/detached")).toBeVisible();
-  await expect(rowFor("/trees/clean-one")).toHaveCount(0);
-  const clean = list.getByRole("button", { name: "Clean · 1", exact: true });
-  await expect(clean).toHaveAttribute("aria-expanded", "false");
-  // Collapsed rows read no Git state.
-  expect(await diffReads(audit)).toBe(0);
+  await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "false");
+  await expect(headerFor("/trees/detached")).toHaveAttribute("aria-expanded", "false");
+  await expect(panelFor("/trees/clean-one")).toHaveCount(0);
+  await expect(list.getByText("Clean", { exact: false })).toHaveCount(0);
+  await expect(list.getByText("This session", { exact: false })).toHaveCount(0);
+  await expect(list.getByText("Project folder", { exact: false })).toHaveCount(0);
   expect(await diffReads("/trees/clean-one")).toBe(0);
   // The shared tooltip retains exact paths without repeating them in rows.
   for (const [path, target] of [
-    [audit, rowFor(audit).getByRole("button").first()],
+    [audit, headerFor(audit)],
     ["/fixture", headerFor("/fixture")],
   ] as const) {
     await target.hover();
@@ -863,17 +898,17 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect(rowFor(audit)).toContainText(
+      await expect(headerFor(audit)).toContainText(
         "audit/2026-10-14-long-branch-name-for-responsive-review",
       );
-      await expect(rowFor(audit)).toContainText("very-long-worktree-folder-name");
+      // The hash-like folder is not part of the row; only the tooltip carries the path.
+      await expect(headerFor(audit)).not.toContainText("very-long-worktree-folder-name");
       await expect
         .poll(() =>
           list.evaluate((element) =>
-            [
-              element,
-              ...element.querySelectorAll("[data-git-repository], [data-worktree-row]"),
-            ].every((node) => node.scrollWidth <= node.clientWidth),
+            [element, ...element.querySelectorAll("[data-git-repository]")].every(
+              (node) => node.scrollWidth <= node.clientWidth,
+            ),
           ),
         )
         .toBe(true);
@@ -883,19 +918,15 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
     }
   }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  // Expanding a row mounts its panel (and only then reads its Git state).
-  await rowFor(audit).getByRole("button").first().focus();
+  // Expanding a section shows its changes.
+  await headerFor(audit).focus();
   await page.keyboard.press("Enter");
-  await expect(rowFor(audit)).toHaveCount(0);
   await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
   await expect(panelFor(audit).getByText("workspace.tsx", { exact: true })).toBeVisible();
   await expect.poll(() => diffReads(audit)).toBeGreaterThan(0);
   expect(await diffReads("/trees/clean-one")).toBe(0);
-  await clean.click();
-  await expect(clean).toHaveAttribute("aria-expanded", "true");
-  await expect(rowFor("/trees/clean-one")).toBeVisible();
   // Selecting a worktree in the header focuses it: only its panel remains, and the expanded
-  // state of the overview rows survives the round trip.
+  // state of the overview sections survives the round trip.
   await pickWorktree(page, "Detached");
   await expect(list).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("/trees/detached");
@@ -925,16 +956,20 @@ for (const theme of ["light", "dark"])
       const overview = page.locator("[data-checkout-overview]");
       const main = overview.locator('[data-git-repository="/fixture"]');
       const worktree = overview.locator('[data-git-repository="/trees/cross-provider"]');
-      const worktreeRow = overview.locator('[data-worktree-row="/trees/cross-provider"]');
       const mobile = overview.locator('[data-git-repository="/fixture/mobile"]');
       const toggle = (panel: typeof main) => panel.locator("header button[aria-expanded]").first();
       const message = (panel: typeof main) =>
         panel.getByRole("textbox", { name: "Commit message", exact: true });
-      // All worktrees is the default: the project folder and its child repository are panels,
-      // the other worktree is a plain row that mounts its panel only when expanded.
-      await expect(overview.locator("[data-git-repository]")).toHaveCount(2);
-      await expect(worktreeRow).toBeVisible();
-      await expect(worktree).toHaveCount(0);
+      // All worktrees is the default: the project folder, its child repository and the other
+      // worktree with changes are same-level sections; only the first is open.
+      await expect(overview.locator("[data-git-repository]")).toHaveCount(3);
+      await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "false");
+      await expect(overview.getByText("Separate repository", { exact: false })).toHaveCount(0);
+      const [mainBox, mobileBox, worktreeBox] = await Promise.all(
+        [main, mobile, worktree].map((panel) => panel.boundingBox()),
+      );
+      expect(mobileBox!.x).toBe(mainBox!.x);
+      expect(worktreeBox!.x).toBe(mainBox!.x);
       await expect(toggle(main)).toHaveAttribute("aria-expanded", "true");
       await expect(toggle(mobile)).toHaveAttribute("aria-expanded", "false");
       await expect(main.getByText("workspace.tsx", { exact: true })).toBeVisible();
@@ -949,9 +984,8 @@ for (const theme of ["light", "dark"])
         await main.scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${evidence}/overview-${theme}-${width}-${sidebar}.png` });
       }
-      await worktreeRow.getByRole("button").first().focus();
+      await toggle(worktree).focus();
       await page.keyboard.press("Enter");
-      await expect(worktreeRow).toHaveCount(0);
       await expect(toggle(worktree)).toHaveAttribute("aria-expanded", "true");
       await expect(worktree.getByText("parity.ts", { exact: true })).toBeVisible();
       await expect(worktree.getByText("accounts.ts", { exact: true })).toBeVisible();

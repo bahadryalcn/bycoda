@@ -1,17 +1,15 @@
 import { toolsSessionsFor } from "./useActiveTabContext";
 import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
-import { memo, useEffect, useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { memo, useLayoutEffect, type ComponentProps, type RefObject } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ToolsWorkspace } from "../../../features/host-tools/ToolsWorkspace";
-import { requestToolsUi } from "../../../features/host-tools/toolsUiControl";
-import type { VoiceToolsOutlet } from "../bridges/VoiceWorkspacePanels";
-import { errorText } from "../../../shared/lib/errors";
+import type { VoiceWorkspaceOutlet } from "../../../features/voice/ui/VoiceCompanion";
 import { PaneTree } from "../../../features/workspace/ui/PaneTree";
 import type { EditorPane, WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/projects/model/projectTerminal";
-import { sameProjectPath } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn, sameProjectPath } from "../../../features/projects/model/recents";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import {
   hasPendingApproval,
@@ -22,7 +20,7 @@ import { useShellSessionsSelector } from "../../../features/sessions/model/sessi
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
 import { useTabHibernation } from "../tabs/useTabHibernation";
-import { t as translate, useT } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 
@@ -65,7 +63,7 @@ export type WorkspaceSessionPaneProps = Omit<
 >;
 
 export interface WorkspaceMainAreaProps {
-  voiceToolsOutlet?: VoiceToolsOutlet;
+  voiceWorkspaceOutlet?: VoiceWorkspaceOutlet;
   // Project terminal dock (markup only; dock state lives in Workspace)
   dockGridRef: RefObject<HTMLDivElement | null>;
   projectCwd: string;
@@ -77,6 +75,7 @@ export interface WorkspaceMainAreaProps {
   paintDockSize: DockProps["onSizePaint"];
   commitDockSize: DockProps["onSizeCommit"];
   onNewTerminal: DockProps["onAddTerminal"];
+  remoteTerminalAvailable?: boolean;
   onNewTerminalWithProfile: DockProps["onAddTerminalWithProfile"];
   onSplitProjectTerminal: DockProps["onSplitTerminal"];
   openSettings: (section: SettingsSectionId) => void;
@@ -149,6 +148,7 @@ function hasLiveBlock(blocks: Block[]): boolean {
 }
 
 function WorkspaceMainAreaComponent({
+  voiceWorkspaceOutlet,
   dockGridRef,
   projectCwd,
   projectTerminals,
@@ -159,6 +159,7 @@ function WorkspaceMainAreaComponent({
   paintDockSize,
   commitDockSize,
   onNewTerminal,
+  remoteTerminalAvailable,
   onNewTerminalWithProfile,
   onSplitProjectTerminal,
   openSettings,
@@ -198,7 +199,6 @@ function WorkspaceMainAreaComponent({
   maximizedPane,
   onToggleMaximizePane,
   sessionPaneProps,
-  voiceToolsOutlet,
   linkedWorkItemPanels,
   repairSessions,
   onRepairChecks,
@@ -219,37 +219,6 @@ function WorkspaceMainAreaComponent({
   );
   const activeToolsConversation =
     toolsSessions.find((session) => session.composerSessionId === activeSessionId) ?? null;
-  const voiceToolsConversation = voiceToolsOutlet
-    ? toolsSessions.find(
-        (session) =>
-          session.composerSessionId === voiceToolsOutlet.sessionId &&
-          sameProjectPath(session.cwd, voiceToolsOutlet.cwd),
-      )
-    : undefined;
-  const voiceTargetId = voiceToolsConversation?.sessionId;
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Presents the registered tool when the exact unlocked outlet mounts.
-  useEffect(() => {
-    if (!voiceToolsOutlet) return;
-    if (!voiceTargetId) {
-      voiceToolsOutlet.onError(translate("Project is not available on this Host."));
-      return;
-    }
-    let active = true;
-    const { cwd, tab, onError, onReady } = voiceToolsOutlet;
-    void requestToolsUi({ cwd, sessionId: voiceTargetId, title: "" }, "ui.tools.open", { tab })
-      .then((state) => {
-        if (!active) return;
-        if (state.presentation === "detached")
-          onError(translate("Tool panels are open in another window."));
-        else onReady();
-      })
-      .catch((error) => {
-        if (active) onError(errorText(error));
-      });
-    return () => {
-      active = false;
-    };
-  }, [voiceToolsOutlet, voiceTargetId]);
   // Read from the shell store, not a prop: the main area re-renders only when the
   // protected or known sessions change, not on every status change elsewhere.
   const protection = useShellSessionsSelector(
@@ -289,16 +258,20 @@ function WorkspaceMainAreaComponent({
         </Heading>
       )}
       <ToolsWorkspace
+        outlet={voiceWorkspaceOutlet?.kind === "tools" ? voiceWorkspaceOutlet.element : undefined}
+        outletOverlayParent={voiceWorkspaceOutlet?.overlay}
+        outletPanelId={
+          voiceWorkspaceOutlet?.kind === "tools" ? voiceWorkspaceOutlet.panelId : undefined
+        }
         followEligible={!routeOpen}
-        activeConversation={voiceToolsConversation ?? activeToolsConversation}
+        activeConversation={activeToolsConversation}
         accessibleSessions={toolsSessions}
-        outlet={voiceToolsConversation ? voiceToolsOutlet?.element : undefined}
-        outletOverlayParent={voiceToolsConversation ? voiceToolsOutlet?.overlayParent : undefined}
       >
         <div className="@container/main-row relative flex min-h-0 min-w-0 flex-1">
           <div ref={dockGridRef} className="grid h-full min-h-0 min-w-0 flex-1">
             {projectTerminals.map((dock) => {
               const show = dock.open && sameProjectPath(dock.projectPath, projectCwd);
+              const local = canOpenTerminalIn(dock.projectPath);
               return (
                 <div
                   key={dock.projectPath}
@@ -315,10 +288,12 @@ function WorkspaceMainAreaComponent({
                     onSideChange={onProjectTerminalSide}
                     onSizePaint={paintDockSize}
                     onSizeCommit={commitDockSize}
-                    onAddTerminal={onNewTerminal}
-                    onAddTerminalWithProfile={onNewTerminalWithProfile}
-                    onSplitTerminal={onSplitProjectTerminal}
-                    onSelectDefaultProfile={selectDefaultTerminalProfile}
+                    onAddTerminal={local || remoteTerminalAvailable ? onNewTerminal : undefined}
+                    onAddTerminalWithProfile={local ? onNewTerminalWithProfile : undefined}
+                    onSplitTerminal={
+                      local || remoteTerminalAvailable ? onSplitProjectTerminal : undefined
+                    }
+                    onSelectDefaultProfile={local ? selectDefaultTerminalProfile : undefined}
                     onSelectTerminal={onSelectProjectTerminal}
                     onCloseTerminal={onCloseProjectTerminal}
                     onCloseTerminals={onCloseProjectTerminals}
@@ -348,6 +323,11 @@ function WorkspaceMainAreaComponent({
                       {isHibernated(tab) ? null : (
                         <PaneTree
                           {...sessionPaneProps}
+                          sessionOutlet={
+                            voiceWorkspaceOutlet?.kind === "session"
+                              ? voiceWorkspaceOutlet
+                              : undefined
+                          }
                           visible={tab.id === activeTabId && !inboxViewOpen}
                           layout={tab.layout}
                           maximizedPaneId={

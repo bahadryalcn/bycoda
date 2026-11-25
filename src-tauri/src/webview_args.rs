@@ -4,9 +4,10 @@
 //! second environment whose options differ (HRESULT 0x8007139F). The main
 //! window's configured arguments can change at launch (the opt-in DevTools
 //! port), and `WebviewWindowBuilder::new` does not inherit them, so every
-//! window built in code copies them through `inherit_main_browser_args`.
+//! auxiliary window built in code copies them through `new_app_window`.
 
-use tauri::{AppHandle, Manager, Runtime, WebviewWindowBuilder};
+use std::path::PathBuf;
+use tauri::{AppHandle, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 fn configured_main_browser_args(windows: &[tauri::utils::config::WindowConfig]) -> Option<&str> {
     windows
@@ -15,12 +16,24 @@ fn configured_main_browser_args(windows: &[tauri::utils::config::WindowConfig]) 
         .and_then(|window| window.additional_browser_args.as_deref())
 }
 
-/// Applies the main window's configured browser arguments, if any.
-pub(crate) fn inherit_main_browser_args<'a, R: Runtime, M: Manager<R>>(
-    app: &AppHandle<R>,
-    builder: WebviewWindowBuilder<'a, R, M>,
-) -> WebviewWindowBuilder<'a, R, M> {
-    match configured_main_browser_args(&app.config().app.windows) {
+/// Creates an auxiliary app window and retains its trusted page for recovery.
+pub(crate) fn new_app_window<'a, R: Runtime>(
+    app: &'a AppHandle<R>,
+    label: &str,
+    page: impl Into<PathBuf>,
+) -> WebviewWindowBuilder<'a, R, AppHandle<R>> {
+    let url = WebviewUrl::App(page.into());
+    let args = configured_main_browser_args(&app.config().app.windows);
+    #[cfg(windows)]
+    crate::webview_recovery::remember_config(&tauri::utils::config::WindowConfig {
+        label: label.into(),
+        url: url.clone(),
+        additional_browser_args: args.map(str::to_owned),
+        transparent: true,
+        ..Default::default()
+    });
+    let builder = WebviewWindowBuilder::new(app, label, url).transparent(true);
+    match args {
         Some(args) => builder.additional_browser_args(args),
         None => builder,
     }

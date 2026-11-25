@@ -146,4 +146,17 @@ describe("accountUsageSummary", () => {
       resetsAt: null,
     });
   });
+
+  it("retains the observed percentage and reset for a failed background refresh", () => {
+    expect(
+      accountUsageSummary(
+        limits({
+          status: "error",
+          updatedAt: now - 60_000,
+          weekly: { usedPercent: 53, windowMinutes: 10_080, resetsAt: now + 120_000 },
+        }),
+        now,
+      ),
+    ).toEqual({ usedPercent: 53, resetsAt: now + 120_000 });
+  });
 });

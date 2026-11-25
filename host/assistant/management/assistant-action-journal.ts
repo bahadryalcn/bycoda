@@ -9,6 +9,8 @@ import type {
 import type { AssistantPorts } from "../service";
 import type { NativeLibraryProof } from "../native/assistant-native-library-proof";
 import { truncateGraphemes } from "../../../src/shared/lib/text/truncate";
+import { elapsedSince, monotonicNow } from "../../../src/shared/lib/time/timestamps";
+import { createLogger } from "../../diagnostics/logger";
 
 type Action = {
   identity: string;
@@ -61,12 +63,21 @@ function outcome(value: unknown, depth = 0): string {
     : "completed";
 }
 
+/**
+ * Longest the snapshot's action history waits on native source disclosure. Each distinct Room
+ * source is one sequential desktop round trip (measured 1.3-1.8 s); the owner request's own
+ * 120 s deadline must still have room to answer once the history gives way.
+ */
+export const ACTION_HISTORY_BUDGET_MS = 45_000;
+const log = createLogger("host.assistant-journal");
+
 /** Append-only actual-effect journal. No prompts, payload text or returned private data are stored. */
 export class AssistantActionJournal {
   readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
     private readonly now: () => number,
+    private readonly disclosureBudgetMs = ACTION_HISTORY_BUDGET_MS,
   ) {
     this.ready = store.ready.then(() =>
       store.db.scope(() =>
@@ -264,23 +275,33 @@ export class AssistantActionJournal {
   ): Promise<AssistantActivity[]> {
     await this.ready;
     if (!admission || !ports.withRoomResponseDisclosure) return [];
-    const rows = await this.store.db
-      .prepare(
-        "SELECT value FROM assistant_action_journal j WHERE rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='*'),0) AND rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='job:'||json_extract(j.value,'$.jobId')),0) ORDER BY created_at DESC,identity DESC LIMIT ?",
-      )
-      .all(Math.min(limit * 4, 400));
-    const actions = rows.map((row) => JSON.parse(String(row.value)) as Action);
+    const rows = await this.store.db.readScope(() =>
+      this.store.db
+        .prepare(
+          `SELECT j.value, EXISTS (
+             SELECT 1 FROM assistant_threads t
+             WHERE t.id=COALESCE(json_extract(j.value,'$.threadId'),?) AND t.deleted_at IS NULL
+           ) AS live_thread
+           FROM assistant_action_journal j
+           WHERE j.rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='*'),0)
+             AND j.rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='job:'||json_extract(j.value,'$.jobId')),0)
+           ORDER BY j.created_at DESC,j.identity DESC LIMIT ?`,
+        )
+        .all(targetThreadId ?? null, Math.min(limit * 4, 400)),
+    );
+    const actions = rows.map((row) => ({
+      action: JSON.parse(String(row.value)) as Action,
+      liveThread: row.live_thread === 1,
+    }));
     const settled = new Set(
-      actions.filter((action) => action.phase === "result").map((action) => action.identity),
+      actions
+        .filter(({ action }) => action.phase === "result")
+        .map(({ action }) => action.identity),
     );
     const visible: Action[] = [];
-    for (const action of actions) {
+    for (const { action, liveThread } of actions) {
       if (action.phase === "started" && settled.has(action.identity)) continue;
-      if (!action.threadId && !targetThreadId) continue;
-      const thread = await this.store.db
-        .prepare("SELECT id FROM assistant_threads WHERE id=? AND deleted_at IS NULL")
-        .get(action.threadId ?? targetThreadId!);
-      if (!thread) continue;
+      if (!liveThread) continue;
       if (action.nativeRequired && !action.nativeProofs?.length) continue;
       if (
         action.accountId &&
@@ -309,7 +330,20 @@ export class AssistantActionJournal {
       if (visible.length >= limit) break;
     }
     if (!visible.length) return [];
-    return ports.withRoomResponseDisclosure(
+    // Every source stays disclosed: history is all-or-nothing, never a silently shorter list.
+    // A slow desktop must not hold the whole snapshot to its transport deadline though, so the
+    // history alone gives way after the budget. The abort also reaches the desktop relay, which
+    // drops the capture it is waiting on instead of keeping it pending.
+    const startedAt = monotonicNow();
+    const budget = new AbortController();
+    const timer = setTimeout(() => budget.abort(), this.disclosureBudgetMs);
+    timer.unref();
+    const bounded: RoomManagementAdmission = {
+      ...admission,
+      authorized: async () => !budget.signal.aborted && (await admission.authorized()),
+      signal: admission.signal ? AbortSignal.any([admission.signal, budget.signal]) : budget.signal,
+    };
+    const disclosure = ports.withRoomResponseDisclosure(
       visible.map((action) => ({
         threadId: action.threadId ?? targetThreadId!,
         projects: action.projects.map((project) => project.projectId),
@@ -317,7 +351,7 @@ export class AssistantActionJournal {
         projectProofs: action.projects,
         nativeProofs: action.nativeProofs,
       })),
-      admission,
+      bounded,
       async (valid) => {
         if (!valid()) throw new Error("Assistant action history source visibility changed.");
         return visible.map((action) => ({
@@ -340,5 +374,28 @@ export class AssistantActionJournal {
         }));
       },
     );
+    let gaveUp: Error | undefined;
+    const giveUp = () =>
+      (gaveUp ??=
+        (log.warn("action history gave up waiting on its sources", {
+          actions: visible.length,
+          waitedMs: elapsedSince(startedAt),
+        }),
+        new Error("Assistant action history source is not answering.")));
+    // A capture the budget cancelled fails with the relay's own message; the owner sees one cause.
+    const guarded = disclosure.catch((error: unknown) => {
+      throw budget.signal.aborted ? giveUp() : error;
+    });
+    // Work the abort cannot reach (a lock, a database read) may never settle; the race still ends.
+    const expired = new Promise<never>((_, reject) =>
+      budget.signal.addEventListener("abort", () => reject(giveUp()), { once: true }),
+    );
+    guarded.catch(() => undefined);
+    expired.catch(() => undefined);
+    try {
+      return await Promise.race([guarded, expired]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

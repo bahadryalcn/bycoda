@@ -18,9 +18,9 @@
   animation: member-avatar-blink 4.6s infinite;
 }
 
-/* Same signals the decorative loops follow: decorative motion off, or the window behind another app.
+/* Stop blinking when decorative motion is off or the window is hidden.
    The eyes rest open instead of freezing mid-blink, so the portrait still reads as a face. */
-html:is([data-decorative-motion="off"], [data-window-focus="off"]) .member-avatar-eye {
+html:is([data-decorative-motion="off"], [data-window-visible="off"]) .member-avatar-eye {
   animation: none;
 }
 

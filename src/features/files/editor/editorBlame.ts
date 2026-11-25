@@ -10,6 +10,7 @@ import {
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { textAttributes, type TextRoles } from "../../../shared/ui/Text";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import type { GitBlameLine, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { blameByLine, mapBlameLines } from "../../source-control/public/blameMapping";
 import {
@@ -142,8 +143,13 @@ function blameLabel(entry: GitBlameLine): string {
 // on the body and is positioned from the hovered entry.
 let card: HTMLDivElement | null = null;
 let cardOwner: HTMLElement | null = null;
+let pendingCard: { anchor: HTMLElement; timer: number } | null = null;
 
 function showCard(anchor: HTMLElement, entry: GitBlameLine) {
+  if (pendingCard) {
+    window.clearTimeout(pendingCard.timer);
+    pendingCard = null;
+  }
   card ??= document.createElement("div");
   const { className, ...surface } = surfaceAttributes(
     { variant: "floating", frame: "pane", radius: "popup", elevation: "floating" },
@@ -199,6 +205,10 @@ function showCard(anchor: HTMLElement, entry: GitBlameLine) {
 }
 
 function hideCard(anchor: HTMLElement) {
+  if (pendingCard?.anchor === anchor) {
+    window.clearTimeout(pendingCard.timer);
+    pendingCard = null;
+  }
   if (cardOwner !== anchor) return;
   cardOwner = null;
   card?.remove();
@@ -233,7 +243,13 @@ class BlameMarker extends GutterMarker {
     el.style.setProperty("--blame-color", authorColor(entry.author));
     if (first) el.textContent = blameLabel(entry);
     el.classList.add("cm-blameCommit");
-    el.addEventListener("mouseenter", () => showCard(el, entry));
+    el.addEventListener("mouseenter", () => {
+      if (pendingCard) window.clearTimeout(pendingCard.timer);
+      pendingCard = {
+        anchor: el,
+        timer: window.setTimeout(() => showCard(el, entry), TOOLTIP_DELAY_MS),
+      };
+    });
     el.addEventListener("mouseleave", () => hideCard(el));
     el.addEventListener("click", () => onOpen?.(blameCommit(entry)));
     if (first) {

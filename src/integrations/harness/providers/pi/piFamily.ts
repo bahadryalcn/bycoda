@@ -44,7 +44,7 @@ import {
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { taskListFromToolInput } from "../../../../features/sessions/model/taskList";
-import { normalizeProjectPath } from "../../../../shared/lib/paths";
+import { isEqualOrInside, normalizeProjectPath } from "../../../../shared/lib/paths";
 import {
   selectedAnswerLabels,
   type UserQuestionReply,
@@ -157,6 +157,7 @@ type Live = {
   bindingRetired?: boolean;
   skillPolicyKey?: string;
   chatOnly: boolean;
+  delegateHistoryDirectory?: string;
   rpc: PiRpc;
   cwd: string;
   providerSessionId: string;
@@ -749,6 +750,14 @@ async function ensureLive(
 ): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
+  const { delegateHistoryDirectory } = input;
+  if (
+    delegateHistoryDirectory !== undefined &&
+    (!/^(?:\/|[a-z]:[\\/]|\\\\)/i.test(delegateHistoryDirectory) ||
+      delegateHistoryDirectory.includes("\0"))
+  ) {
+    throw new Error("Delegated Pi history requires an absolute directory.");
+  }
   const state = stateFor(flavor);
   const { resumeByThread, startingByThread } = state;
   const key = JSON.stringify([
@@ -757,6 +766,7 @@ async function ensureLive(
     input.model,
     input.modelSettings,
     input.skillPolicy,
+    delegateHistoryDirectory,
   ]);
   const captured = captureStop(flavor, input.sessionId);
   const { starting, live: existing } = captured;
@@ -778,6 +788,7 @@ async function ensureLive(
     !starting &&
     existing &&
     existing.cwd === input.cwd &&
+    existing.delegateHistoryDirectory === delegateHistoryDirectory &&
     existing.planning === wantPlanning &&
     existing.chatOnly === leanContext(input.modelSettings) &&
     (flavor.id !== "omp" || existing.autoCompact === input.modelSettings?.autoCompact) &&
@@ -816,7 +827,12 @@ async function ensureLive(
       } catch (error) {
         attempt.controller.signal.throwIfAborted();
         assertOptionalProviderProbeError(error);
-        if (!canResume || leanContext(input.modelSettings) || error instanceof OmpCompactionError)
+        if (
+          !canResume ||
+          delegateHistoryDirectory ||
+          leanContext(input.modelSettings) ||
+          error instanceof OmpCompactionError
+        )
           throw error;
         resumeByThread.delete(input.sessionId);
         attempt.handle = retirementsFor(flavor).admit(
@@ -902,6 +918,7 @@ async function startLive(
       handle,
       skillPolicyKey: JSON.stringify(input.skillPolicy),
       chatOnly,
+      delegateHistoryDirectory: input.delegateHistoryDirectory,
       rpc,
       cwd: input.cwd,
       providerSessionId: resume ?? "",
@@ -992,6 +1009,7 @@ async function startLive(
           resume,
           model: modelRef ? native : undefined,
           ...(chatOnly ? { chatOnlyCwd: input.cwd } : {}),
+          sessionDir: input.delegateHistoryDirectory,
           plan: input.intent === "plan",
           ...(skillPaths ? { skillPaths } : {}),
         }),
@@ -1012,6 +1030,13 @@ async function startLive(
       attempt,
       startupRpc.request({ type: "get_state" }, INIT_TIMEOUT_MS, (stateFrame, work) => {
         attempt.controller.signal.throwIfAborted();
+        if (
+          input.delegateHistoryDirectory &&
+          resume &&
+          providerSessionIdFromState(stateFrame.data) !== resume
+        ) {
+          throw new Error("Provider returned a different session for the delegated history.");
+        }
         return consumePiBindingResponse(live, stateFrame, work, () =>
           bindState(flavor, input.sessionId, live, stateFrame.data),
         );
@@ -1819,6 +1844,13 @@ function emitPiBindingEvent(live: Live, event: HarnessEvent): void {
 
 function bindState(flavor: PiFlavor, sessionId: string, live: Live, data: unknown): void {
   const state = sessionFromState(data);
+  if (
+    live.delegateHistoryDirectory &&
+    state.sessionFile &&
+    !isEqualOrInside(state.sessionFile, live.delegateHistoryDirectory)
+  ) {
+    throw new Error("Provider session file is outside the delegated history directory.");
+  }
   const providerSessionId = providerSessionIdFromState(data);
   if (state.contextWindow) live.contextWindow = state.contextWindow;
   if (providerSessionId) {

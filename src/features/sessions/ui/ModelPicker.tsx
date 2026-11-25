@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import {
   coerceModelPickerTab,
@@ -52,7 +53,14 @@ import {
 } from "./modelStoreReaders";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
 import { delegationNextValue, isDelegationSetting } from "../model/crossDelegation";
-import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
+import {
+  HARNESSES,
+  HARNESS_TITLE,
+  unavailableRuntimeModes,
+  type HarnessId,
+  type RuntimeMode,
+} from "../model/session";
+import { AccessPicker } from "./AccessPicker";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
 import { Popover, popupListClassName } from "../../../shared/ui/Popover";
@@ -138,6 +146,11 @@ type Props = {
   inheritChoice?: { label: string; selected: boolean; onSelect: () => void };
   accountId?: string;
   accountChoices?: boolean;
+  /** Conversation-owned choices shown in Settings when the chat toolbar is narrow. */
+  accessMode?: RuntimeMode;
+  accessBusy?: boolean;
+  onAccessModeChange?: (mode: RuntimeMode) => void;
+  modeControl?: ReactNode;
   /**
    * Removes the Agents tab (advisor, subagents, subagent effort, image models) from the panel,
    * for callers that discard those changes, e.g. model-routing rows. Panel presentation only.
@@ -157,6 +170,8 @@ type Props = {
 };
 type RecentMenu = { models: AccountModelChoice[] };
 const MENU_WIDTH = 250;
+const noUsage = () => null;
+
 /** Keyboard chord on the model button that opens the recent-models quick switch. */
 const RECENT_MODELS_SHORTCUT = "alt+down";
 /** Account the provider tab `target` runs on: the one picked while browsing, else the current one, else its default. */
@@ -198,6 +213,10 @@ export function ModelPicker({
   inheritChoice,
   accountId,
   accountChoices = false,
+  accessMode,
+  accessBusy,
+  onAccessModeChange,
+  modeControl,
   hideAgentSettings = false,
   settingsScope,
   showExtras = false,
@@ -209,7 +228,6 @@ export function ModelPicker({
 }: Props) {
   const t = useT();
   const source = useModelSource();
-  const usage = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const switchShortcut = useKeybindingShortcut("App: Switch Model");
   const refreshSource = useStableCallback(source.refresh);
   const accountsSnapshot = useSyncExternalStore(
@@ -236,6 +254,11 @@ export function ModelPicker({
     projectProvidersRevision,
   );
   const [open, setOpen] = useState(false);
+  const usage = useSyncExternalStore<ReturnType<typeof getAllRateLimits> | null>(
+    subscribeRateLimits,
+    () => (open && !hideSettings && source.accounts === undefined ? getAllRateLimits() : null),
+    noUsage,
+  );
   const [tab, setTab] = useState<ModelPickerTab>(harness);
   // The highlighted row is kept by identity, so a catalog refresh cannot move it to another model.
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
@@ -266,6 +289,7 @@ export function ModelPicker({
   const field = presentation === "field";
   const inherit = hideSettings ? undefined : inheritChoice;
   const inheritSelected = inherit?.selected === true;
+  const settingsEnabled = !inheritSelected || settingsScope === "reasoning-and-speed";
   // The local default account lives in browser storage, so React reads it through its store.
   const localDefaultAccountId = useSyncExternalStore(
     subscribeProviderAccounts,
@@ -334,14 +358,17 @@ export function ModelPicker({
   // Explicit field accounts can be shown without accountChoices. Missing accounts keep their warning.
   // oxlint-disable-next-line bycoda/compiler-owns-memo -- Reads the account store snapshot like triggerAccountLabel above; the compiler cannot prove that read pure, so the memo keeps the trigger from recomputing it each render.
   const fieldAccount = useMemo((): ModelTriggerBadgeData["account"] => {
-    if (!field || inheritSelected || !accountId || !supportsProviderAccounts(harness))
+    const selectedAccountId = accountId ?? (accountChoices ? currentAccountId : undefined);
+    if (!field || inheritSelected || !selectedAccountId || !supportsProviderAccounts(harness))
       return undefined;
     if (source.accounts !== undefined) {
       if (!accountsKnown) return undefined;
       const accounts = source.accounts[harness] ?? [];
-      const saved = accounts.find((account) => account.id === accountId);
+      const saved = accounts.find((account) => account.id === selectedAccountId);
       if (!saved)
-        return accountId === "default" ? undefined : { label: t("Unavailable Host account") };
+        return selectedAccountId === "default"
+          ? undefined
+          : { label: t("Unavailable Host account") };
       return accounts.length > 1
         ? {
             label: accountDisplayLabel(accounts, saved),
@@ -351,7 +378,7 @@ export function ModelPicker({
         : undefined;
     }
     const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
-    const saved = accounts.find((account) => account.id === accountId);
+    const saved = accounts.find((account) => account.id === selectedAccountId);
     if (saved)
       return accounts.length > 1
         ? {
@@ -360,10 +387,21 @@ export function ModelPicker({
             number: accounts.indexOf(saved) + 1,
           }
         : undefined;
-    if (accountId !== defaultProviderAccountId(harness) && accountId !== "default")
+    if (selectedAccountId !== defaultProviderAccountId(harness) && selectedAccountId !== "default")
       return { label: t("Removed account") };
-    return { label: providerAccountLabel(harness, accountId) };
-  }, [accountId, accountsKnown, accountsSnapshot, field, harness, inheritSelected, source, t]);
+    return accountId ? { label: providerAccountLabel(harness, accountId) } : undefined;
+  }, [
+    accountId,
+    accountChoices,
+    accountsKnown,
+    accountsSnapshot,
+    currentAccountId,
+    field,
+    harness,
+    inheritSelected,
+    source,
+    t,
+  ]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
     currentRef.current = current;
@@ -389,7 +427,7 @@ export function ModelPicker({
   const settings = useMemo(() => {
     // In beside-picker mode every option row renders as a toolbar pill, so the
     // menu lists models only.
-    if (hideSettings || inheritSelected) return [];
+    if (!open || hideSettings || !settingsEnabled) return [];
     if (settingsScope === "reasoning-and-speed")
       return [effortSetting(current), fastSetting(current)].filter(
         (setting): setting is ModelSetting => setting !== undefined,
@@ -402,7 +440,7 @@ export function ModelPicker({
         source,
         accountChoices: true,
         currentAccountId,
-        signedOutAccounts: source.accounts === undefined ? signedOutAccountKeys(usage) : undefined,
+        signedOutAccounts: usage ? signedOutAccountKeys(usage) : undefined,
         signedOutLabel: t("Not signed in"),
         savedAccountLabel: t("Saved account"),
         values,
@@ -421,8 +459,9 @@ export function ModelPicker({
     currentAccountId,
     hideAgentSettings,
     hideSettings,
-    inheritSelected,
+    open,
     pickerHarnesses,
+    settingsEnabled,
     settingsScope,
     source,
     t,
@@ -675,7 +714,15 @@ export function ModelPicker({
         return;
       }
       if (!openRef.current || event.key !== "Escape") return;
+      // An open Access or Mode menu owns Escape, even before its list takes focus a frame later.
+      if (document.querySelector("[data-access-picker], [data-composer-mode-menu]")) return;
       if (event.target instanceof Element) {
+        if (
+          event.target.closest(
+            '[data-access-picker], [data-access-picker-trigger][aria-expanded="true"], [data-composer-mode-menu], [data-composer-mode-trigger][aria-expanded="true"]',
+          )
+        )
+          return;
         const editor = document.querySelector("[data-model-subagent-editor]");
         const filterList = editor?.querySelector('[aria-haspopup="listbox"][aria-expanded="true"]');
         if (
@@ -749,11 +796,11 @@ export function ModelPicker({
   };
 
   // Choosing an account on the current provider switches the current model to it; on another
-  // provider it waits for the model picked there.
+  // provider it waits for the model picked there. Scoped settings can pin the current default.
   const selectAccount = (id: string) => {
     if (visibleTab === "favorites") return;
     setTabAccounts((previous) => ({ ...previous, [visibleTab]: id }));
-    if (visibleTab === current.harness && !inheritSelected && id !== currentAccountId)
+    if (visibleTab === current.harness && settingsEnabled && id !== currentAccountId)
       onChange(current.harness, current.id, id);
   };
 
@@ -1076,8 +1123,35 @@ export function ModelPicker({
           accountListOpen={accountListOpen}
           onAccountListOpen={setAccountListOpen}
           onSelectAccount={selectAccount}
+          conversationSettings={
+            (accessMode && onAccessModeChange) || modeControl ? (
+              <div className="flex flex-col gap-2.5">
+                {accessMode && onAccessModeChange ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <Text size="caption" tone="inherit" weight="medium">
+                      {t("Access")}
+                    </Text>
+                    <AccessPicker
+                      value={accessMode}
+                      busy={accessBusy}
+                      unavailable={unavailableRuntimeModes(harness)}
+                      onChange={onAccessModeChange}
+                    />
+                  </div>
+                ) : null}
+                {modeControl ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <Text size="caption" tone="inherit" weight="medium">
+                      {t("Mode")}
+                    </Text>
+                    {modeControl}
+                  </div>
+                ) : null}
+              </div>
+            ) : undefined
+          }
           settings={
-            inheritSelected
+            !settingsEnabled || ((settingsScope || hideAgentSettings) && settings.length === 0)
               ? undefined
               : {
                   current,
@@ -1164,17 +1238,26 @@ export function ModelControlPills({
   values,
   onSettingsChange,
   onClose,
-}: Pick<Props, "harness" | "model" | "values" | "onSettingsChange" | "onClose">) {
+  omitEffort = false,
+}: Pick<Props, "harness" | "model" | "values" | "onSettingsChange" | "onClose"> & {
+  /** The picker beside these pills already shows the current effort. */
+  omitEffort?: boolean;
+}) {
   useLocale();
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   void catalogVersion;
   const source = useModelSource();
   const current = source.resolve(harness, model);
   const offered = source.modelsFor(harness);
-  const pills = pillSettings(current).map((setting) =>
+  const offeredPills = pillSettings(current).map((setting) =>
     offeredDelegationSetting(setting, offered, settingValue(setting, values), current),
   );
-  const effort = pills.find((setting) => setting.kind === "select" && isEffortSetting(setting));
+  const isEffortPill = (setting: ModelSetting) =>
+    setting.kind === "select" && isEffortSetting(setting);
+  const pills = omitEffort
+    ? offeredPills.filter((setting) => !isEffortPill(setting))
+    : offeredPills;
+  const effort = pills.find(isEffortPill);
   const groupedSettings = effort
     ? pills.filter((setting) => setting.id === "fast" || setting.id === "serviceTier")
     : [];

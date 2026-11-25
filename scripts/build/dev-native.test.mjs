@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  commitHeadroomWarning,
   nativeDevConfig,
   nativeDevHostDataPath,
   reuseNativeDevProfile,
@@ -488,4 +489,16 @@ test("screenshot requests keep output within verification and require clear evid
   );
   assert.throws(() => loopbackUrl("https://example.com"));
   assert.throws(() => loopbackUrl("http://secret@localhost:19001"));
+});
+
+test("commit headroom warns below 16 GB and stays silent otherwise or on bad output", () => {
+  const kb = (gb) => String(gb * 1024 ** 2);
+  const warning = commitHeadroomWarning(`${kb(10)} ${kb(60)}
+`);
+  assert.match(warning, /10\.0 GB free of 60\.0 GB/);
+  assert.match(warning, /installed bycoda/);
+  assert.equal(commitHeadroomWarning(`${kb(16)} ${kb(60)}`), null);
+  assert.equal(commitHeadroomWarning(`${kb(40)} ${kb(60)}`), null);
+  assert.equal(commitHeadroomWarning(""), null);
+  assert.equal(commitHeadroomWarning("abc def"), null);
 });
