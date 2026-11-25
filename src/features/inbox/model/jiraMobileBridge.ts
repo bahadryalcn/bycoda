@@ -76,6 +76,8 @@ export async function executeRemoteJiraBoard(operation: RemoteJiraOperation, dea
     snapshotId: operation.snapshotId,
     mutation,
     deadline,
+    // Without a valid native permit the native step shows its review as before.
+    ...(operation.permit ? { permit: operation.permit } : {}),
   });
   if (!prepared || typeof prepared !== "object" || Array.isArray(prepared))
     throw new Error("Native Jira approval result is unconfirmed");

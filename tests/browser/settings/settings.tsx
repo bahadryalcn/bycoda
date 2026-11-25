@@ -798,7 +798,7 @@ mockIPC(
           ["HSM-DC-01", ["servers"]],
           ["github.com", ["known-hosts"]],
           ["LM-VM-2", ["servers"]],
-          ["monocode-mac", ["known-hosts", "ssh-config"]],
+          ["dev-mac", ["known-hosts", "ssh-config"]],
           ["petrol ofisi", ["servers"]],
           ["staging.brewline.localtest.me", ["known-hosts"]],
           ["UBUNTU-NTP-01", ["servers"]],

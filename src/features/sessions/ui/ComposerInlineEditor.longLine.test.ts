@@ -32,7 +32,6 @@ function Draft({ initial }: { initial: string }) {
       readOnly: false,
       disabled: false,
       spellCheck: false,
-      hasSubagents: false,
       onInlineAttachments(ids: ReadonlySet<string> | null) {
         ready(ids);
         setActive(ids !== null);

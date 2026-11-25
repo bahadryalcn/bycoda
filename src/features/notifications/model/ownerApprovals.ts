@@ -43,6 +43,26 @@ const pending = new Map<
 >();
 const settled = new Map<string, { signature: string; answer?: boolean }>();
 const surfaces = new Map<string, number>();
+/** Staged batch choices; they survive chat/dialog remounts and end with their request. */
+const drafts = new Map<string, boolean>();
+export const ownerApprovalDraft = (id: string) => drafts.get(id);
+export function stageOwnerApproval(id: string, approved: boolean): void {
+  if (pending.has(id)) drafts.set(id, approved);
+}
+/** Requests the owner put off: the off-page dialog skips them, their chat and the sheet still list them. */
+const deferred = new Set<string>();
+export const isOwnerApprovalDeferred = (id: string) => deferred.has(id);
+export function deferOwnerApprovals(ids: readonly string[]): void {
+  for (const id of ids) if (pending.has(id)) deferred.add(id);
+  // A new snapshot lets the dialog routing drop the deferred requests.
+  requests = [...requests];
+  store.notify();
+}
+export function reopenOwnerApproval(id: string): void {
+  if (!deferred.delete(id)) return;
+  requests = [...requests];
+  store.notify();
+}
 const outcomes = new Set<(outcome: OwnerApprovalOutcome) => void>();
 /** Every pending approval ends once, answered (`answer` set) or not (timeout, revocation, closed window). */
 export function onOwnerApprovalOutcome(listener: (outcome: OwnerApprovalOutcome) => void) {
@@ -80,6 +100,8 @@ function finishOwnerApproval(id: string, approved?: boolean): void {
   clearTimeout(entry.timer);
   entry.release();
   pending.delete(id);
+  drafts.delete(id);
+  deferred.delete(id);
   let answer: boolean | undefined;
   try {
     answer = Date.now() < request.deadline && entry.allowed() ? approved : undefined;

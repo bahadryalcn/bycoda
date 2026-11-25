@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { planShareFingerprint, planShareObservations } from "./planShareQuery";
+import { planShareFingerprint, planShareObservations, samePlanShareScope } from "./planShareQuery";
 
 const sample = (
   account: string,
@@ -37,4 +37,17 @@ it("fingerprints the newest reading per account", () => {
   );
   expect(planShareFingerprint(first)).not.toBe(planShareFingerprint(second));
   expect(planShareFingerprint(second)).toBe('[["claude:a",5]]');
+});
+
+it("keeps an estimate across quota readings but not across windows", () => {
+  const key = (window: string, fingerprint: string) => [
+    "usage",
+    "m1",
+    window,
+    undefined,
+    5,
+    fingerprint,
+  ];
+  expect(samePlanShareScope(key("fiveHour", "a"), key("fiveHour", "b"))).toBe(true);
+  expect(samePlanShareScope(key("fiveHour", "a"), key("weekly", "a"))).toBe(false);
 });

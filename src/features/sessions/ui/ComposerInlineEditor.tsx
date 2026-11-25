@@ -35,7 +35,6 @@ type Props = {
   readOnly: boolean;
   disabled: boolean;
   spellCheck: boolean;
-  hasSubagents: boolean;
   onInlineAttachments: (ids: ReadonlySet<string> | null) => void;
   onRemoveAttachment: (id: string) => void;
   onChangeCitations: (citations: ComposerCitation[], removed?: number) => void;
@@ -52,7 +51,6 @@ export function ComposerInlineEditor({
   readOnly,
   disabled,
   spellCheck,
-  hasSubagents,
   onInlineAttachments,
   onRemoveAttachment,
   onChangeCitations,
@@ -233,14 +231,7 @@ export function ComposerInlineEditor({
   const close = () => setOpened(null);
   return (
     <>
-      <Text
-        as="div"
-        size="body"
-        tone="neutral"
-        ref={mount}
-        className={styles.mount}
-        data-subagents={hasSubagents || undefined}
-      />
+      <Text as="div" size="body" tone="neutral" ref={mount} className={styles.mount} />
       {active && reference?.kind === "file-comment" && references.citationSources ? (
         <ComposerCitations
           key={reference.value}

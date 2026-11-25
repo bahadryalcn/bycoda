@@ -966,8 +966,8 @@ and system surfaces are not available. Physical input is available on
 Windows only. On Windows an app is named by its executable (Chrome is `chrome`, Edge is
 `msedge`; case and `.exe` do not matter). Launch finds installed apps through their
 Windows registration, and an app that is already running is used as is instead of being
-started again. The owner configures the verified helper and the permission mode in
-**Computer use** settings.
+started again. The owner configures the verified helper in **Computer use** settings;
+the permission follows the assistant's permission in **Access** settings.
 
 **Driver** in **Computer use** settings chooses the native helper. **agent-desktop** is
 the default. **Cua Driver** (Windows) is downloaded once from its pinned release and
@@ -985,15 +985,17 @@ conversation and expire after five minutes. App content remains untrusted data.
 In the shared browser the assistant reads the page text and its buttons, links and fields
 with `browser.read`, then clicks or types into an element by its reference. This works
 without image support. References expire when the page changes.
-Only you choose the **Permission** mode in **Computer use** settings; voice and the
-assistant cannot change it. There is no app list to prepare: the first time the
+Computer use has no permission setting of its own. It follows the assistant's
+permission in **Access** settings, which only you choose; voice and the assistant
+cannot change it. **Full access** applies when that permission covers everything and
+**Computer use** is not ticked as an exception; otherwise **Ask every time** applies,
+and **Computer use** settings show which one is in force. There is no app list to prepare: the first time the
 assistant wants to use an app, a dialog asks whether to allow that app. If you allow
 it, the app joins **Approved apps** in the settings and the assistant continues; remove
 it there to be asked again. **Ask every time** (the default) also shows the native
 approval dialog for every action, launch and clipboard use, whether you are present or
-away. **Auto** asks once for each new app, then launches and acts on it without a
-dialog. Clipboard and physical input still require approval. **Full access**
-covers every app, even while you are away. For a clear spoken request, the
+away. **Full access** asks nothing and covers every app, clipboard and physical input,
+even while you are away. For a clear spoken request, the
 assistant uses the effective permission directly and verifies the result in the
 target app. Native approval dialogs, when required, name
 the exact app, window, element, action and text, and identifies the real coding

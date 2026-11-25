@@ -72,8 +72,7 @@ function validate(kind: Kind, values: unknown): Record<string, string> {
       seen.add(name);
       // A pasted token without an auth scheme ("abc" instead of "Bearer abc") is rejected by
       // servers, so a bare Authorization value is sent as a Bearer credential.
-      if (header && name === "authorization" && !/\s/.test(value))
-        return [name, `Bearer ${value}`];
+      if (header && name === "authorization" && !/\s/.test(value)) return [name, `Bearer ${value}`];
       return [header ? name : key, value];
     }),
   );

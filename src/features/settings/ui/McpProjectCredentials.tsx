@@ -1,10 +1,11 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { PasswordField } from "../../../shared/ui/PasswordField";
+import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { Plus, X } from "../../../shared/ui/icons";
 import type { McpHub } from "../hooks/useMcpHub";
@@ -31,6 +32,7 @@ export function McpProjectCredentials({
   onClose: () => void;
 }) {
   const http = kind === "http";
+  const formId = useId();
   const nextId = useRef(1);
   const operating = useRef(false);
   const [fields, setFields] = useState<CredentialField[]>([
@@ -108,17 +110,73 @@ export function McpProjectCredentials({
       })}
       onClose={() => void close()}
       fitViewport
+      footerStart={
+        configured ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            tone="danger"
+            disabled={busy}
+            onClick={() => {
+              void confirmInApp({
+                title: projectName ? t("Remove project credentials?") : t("Remove credentials"),
+                message: t("New sessions will use the server’s default authentication."),
+                confirmLabel: t("Remove credentials"),
+                tone: "danger",
+              })
+                .then((confirmed) => (confirmed ? change() : undefined))
+                .catch(() => {
+                  setError(
+                    t(
+                      "Could not update project credentials. Check the Host connection and try again.",
+                    ),
+                  );
+                });
+            }}
+          >
+            {t("Remove credentials")}
+          </Button>
+        ) : undefined
+      }
+      footer={
+        <ModalActions>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => void close()}
+          >
+            {t("Cancel")}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            size="sm"
+            loading={busy}
+            disabled={busy}
+          >
+            {t("Save credentials")}
+          </Button>
+        </ModalActions>
+      }
     >
-      <form onSubmit={save} className="grid gap-4">
-        {projectName ? (
-          <p>
-            {t(
-              "These values apply to bycoda sessions for this project on this computer. They are stored by the Host.",
-            )}
-          </p>
-        ) : null}
-        {configured && projectName ? (
-          <p>{t("Saving replaces all previously saved values for this server in this project.")}</p>
+      <form id={formId} onSubmit={save} className="grid gap-4">
+        {projectName || configured ? (
+          <Text as="p" size="caption" tone="secondary">
+            {[
+              projectName
+                ? t(
+                    "These values apply to bycoda sessions for this project on this computer. They are stored by the Host.",
+                  )
+                : "",
+              configured ? t("Saved values stay hidden. Saving replaces all of them.") : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          </Text>
         ) : null}
         {fields.map((field) => (
           <div key={field.id} className="flex flex-wrap items-end gap-2">
@@ -188,40 +246,6 @@ export function McpProjectCredentials({
           </Button>
         </div>
         {error ? <InlineError>{error}</InlineError> : null}
-        <ModalActions>
-          {configured ? (
-            <Button
-              type="button"
-              variant="ghost"
-              tone="danger"
-              disabled={busy}
-              onClick={() => {
-                void confirmInApp({
-                  title: projectName ? t("Remove project credentials?") : t("Remove credentials"),
-                  message: t("New sessions will use the server’s default authentication."),
-                  confirmLabel: t("Remove credentials"),
-                  tone: "danger",
-                })
-                  .then((confirmed) => (confirmed ? change() : undefined))
-                  .catch(() => {
-                    setError(
-                      t(
-                        "Could not update project credentials. Check the Host connection and try again.",
-                      ),
-                    );
-                  });
-              }}
-            >
-              {t("Remove credentials")}
-            </Button>
-          ) : null}
-          <Button type="button" variant="ghost" disabled={busy} onClick={() => void close()}>
-            {t("Cancel")}
-          </Button>
-          <Button type="submit" variant="primary" loading={busy} disabled={busy}>
-            {t("Save credentials")}
-          </Button>
-        </ModalActions>
       </form>
     </Modal>
   );

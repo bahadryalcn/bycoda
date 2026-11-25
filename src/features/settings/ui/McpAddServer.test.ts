@@ -137,3 +137,34 @@ it("retains JSON draft and exact provider/scope identity after a rejected save",
   expect(onClose).not.toHaveBeenCalled();
   expect(onAdded).not.toHaveBeenCalled();
 });
+
+it("names a saved Hub server in the description instead of showing locked identity fields", async () => {
+  const manageServer = vi.fn(async () => ({ revision: "r2" }));
+  await act(async () => {
+    root.render(
+      createElement(AddServerModal, {
+        cwd: "/selected-project",
+        globalOnly: true,
+        machineName: "This computer",
+        initialProvider: "claude",
+        manageServer: manageServer as never,
+        editing: {
+          name: "clinic",
+          scope: "user",
+          revision: "r1",
+          enabled: true,
+          config: { url: "https://cms.example.test/mcp" },
+        },
+        onClose,
+        onAdded,
+      }),
+    );
+  });
+  expect(dialog().textContent).toContain("bycoda Hub · Global · This computer");
+  expect(dialog().querySelector('[aria-label^="Provider:"]')).toBeNull();
+  expect(dialog().querySelector('[aria-label^="Scope:"]')).toBeNull();
+  expect(dialog().textContent).not.toContain("Name");
+  expect(dialog().querySelector<HTMLInputElement>('input[type="url"]')!.value).toBe(
+    "https://cms.example.test/mcp",
+  );
+});

@@ -3,7 +3,7 @@ import {
   CREW_HANDLE_PATTERN,
   type CrewDefinition,
   type SavedCrewAgent,
-} from "../../crews/public/mentions";
+} from "../../crews/public/handles";
 import { isMarkdownBlockquotePosition } from "./quoteDraft";
 
 /** Host capability for `crews.member.ask`; the constant lives here until crews exports one. */

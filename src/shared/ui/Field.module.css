@@ -95,6 +95,11 @@
   gap: var(--space-1);
   padding: var(--space-1);
 }
+/* Single-line fields keep the field height: an action button plus block padding would make a
+   field with an adornment (password reveal, clear) taller than its plain neighbours. */
+.control:not(:has(textarea)) > .adornment {
+  padding-block: 0;
+}
 .control:has(textarea) {
   align-items: flex-start;
 }

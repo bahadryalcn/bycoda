@@ -9,7 +9,7 @@ const groups = [
     id: "w1",
     name: "Monorepo",
     collapsed: false,
-    workspaceFile: "C:/work/mono.code-workspace",
+    workspaceFile: "C:/work/sample.code-workspace",
   },
 ];
 

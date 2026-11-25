@@ -24904,7 +24904,7 @@
                   "binarySha256": { "type": "string" },
                   "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
                   "enabled": { "type": "boolean" },
-                  "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" }
+                  "permissionMode": { "enum": ["ask", "full"], "type": "string" }
                 },
                 "required": [
                   "enabled",
@@ -25081,7 +25081,7 @@
               "binarySha256": { "type": "string" },
               "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
               "enabled": { "type": "boolean" },
-              "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" },
+              "permissionMode": { "enum": ["ask", "full"], "type": "string" },
               "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": [
@@ -62833,7 +62833,7 @@
                         "binarySha256": { "type": "string" },
                         "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
                         "enabled": { "type": "boolean" },
-                        "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" }
+                        "permissionMode": { "enum": ["ask", "full"], "type": "string" }
                       },
                       "required": [
                         "enabled",
@@ -81286,5 +81286,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "bc6d256dae0c24cdfb63fab864cb5291f26959c19944d7f54fa544946e3f9489"
+  "schemaHash": "cf12070ce53820172730d7812d8a1ff7c50c3ec7c8532d8fcc24d83eabb1d339"
 }

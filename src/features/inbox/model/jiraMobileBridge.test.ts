@@ -91,6 +91,41 @@ it("routes new mutations only to native approval with the original host deadline
     filters: { allowedBoardIds: [7], projectIds: null },
   });
 });
+it("hands a Full access session permit back to the native review step", async () => {
+  state.invoke
+    .mockResolvedValueOnce({
+      outcome: "approved",
+      approvalId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    })
+    .mockResolvedValueOnce({ outcome: "submitted" });
+  const deadline = Date.now() + 60000;
+  await executeRemoteJiraBoard(
+    {
+      action: "jira-board-move",
+      cwd: "/project",
+      snapshotId: "native-snapshot",
+      key: "ENG-7",
+      target: "backlog",
+      permit: "native-permit",
+    },
+    deadline,
+  );
+  expect(state.invoke).toHaveBeenNthCalledWith(1, "jira_mobile_board_prepare", {
+    cwd: "/project",
+    filters: { allowedBoardIds: [7], projectIds: null },
+    snapshotId: "native-snapshot",
+    mutation: {
+      action: "move",
+      key: "ENG-7",
+      target: "backlog",
+      sprintId: null,
+      beforeKey: null,
+      afterKey: null,
+    },
+    deadline,
+    permit: "native-permit",
+  });
+});
 it("reloads visibility after native approval and never commits stale pre-dialog filters", async () => {
   const approvalId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   state.invoke

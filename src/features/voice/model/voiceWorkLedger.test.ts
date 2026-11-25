@@ -37,7 +37,7 @@ const startCreate = (ledger: VoiceWorkLedger, requestId = "req-1") =>
     requestId,
     args: { ...create.args, requestId },
     request: "fix the login bug",
-    projectPath: "G:\\Projects\\monocode",
+    projectPath: "G:\\Projects\\sample-project",
   })!;
 
 describe("tracking", () => {
@@ -93,7 +93,7 @@ describe("start and settle", () => {
     const entry = ledger.settle(id, {
       action: create.action,
       status: "accepted",
-      projectPath: "G:\\Projects\\monocode",
+      projectPath: "G:\\Projects\\sample-project",
       sessionId: "sess-9",
       submitted: true,
     });
@@ -355,7 +355,7 @@ describe("seed", () => {
     expect(line).toContain("workspace.sessions.create");
     expect(line).toContain("Fix login");
     expect(line).toContain("session-0123456789abcdef");
-    expect(line).toContain("monocode");
+    expect(line).toContain("sample-project");
     expect(line).toContain("now working");
     expect(line).toContain('"fix the login bug"');
   });

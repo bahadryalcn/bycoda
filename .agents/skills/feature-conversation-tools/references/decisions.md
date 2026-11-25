@@ -86,9 +86,7 @@ controller holds the device.
 
 ## Android video subscription and live touch
 
-Owner request, 2026-11-23.
-
-> bizde aynı şekilde yapalım fable 5.2 ve astra ya danışabilrsin. t3code dan ilham alabilrsin.
+Owner request, 2026-11-23. Add live Android video and touch.
 
 Android video uses a bounded subscription on the authenticated Host connection. Drag sends
 live touch through the same lease as other device actions. A gesture can be cancelled without
@@ -113,9 +111,7 @@ The detached window follows conversation focus automatically. Its selector switc
 
 ## Device settings
 
-Owner decision, 2026-11-25 (translated):
-
-> I want to improve the devices settings in bycoda like t3code … users should be able to edit these, like in t3code.
+Owner decision, 2026-11-25. Device settings should be editable in bycoda.
 
 Recorded decision: Settings > Tools > Devices adds **Use devices** (desktop preference
 that hides the Devices tool), **Agents can use devices** (the local Host's `agentDevices`

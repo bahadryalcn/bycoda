@@ -15,6 +15,7 @@ import {
   LOCAL_WORKER_UNRESPONSIVE_MS,
   LocalVoiceService,
   validateVoiceAudio,
+  VOICE_IN_USE_WITHOUT_SPEECH,
 } from "./voice-local";
 import * as gpuDetection from "./voice-gpu";
 import * as runtime from "./voice-runtime";
@@ -472,6 +473,76 @@ it("reloads a warm recognizer when dictation starts with other settings", async 
     inspect.mockRestore();
     close.mockRestore();
     internals.child = undefined;
+    service.close();
+  }
+});
+
+// The phone read "the computer is not ready" whenever the desktop already ran voice with other settings.
+it("lets the phone join a runtime loaded with other settings while desktop windows stay refused", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python", ttsPath: "tts" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    loading?: Promise<unknown>;
+    runtime: runtime.VoiceRuntimeConfig;
+    speech: { start: (config: unknown) => Promise<void> };
+  };
+  vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.loading = Promise.resolve(workerInfo);
+    return workerInfo;
+  });
+  const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    const desktop = await service.start({ natural: true, voiceId: "F1", idleUnloadMinutes: 7 }, true);
+    const phoneConfig = { natural: true, voiceId: "M2", idleUnloadMinutes: 1 };
+    await expect(service.start(phoneConfig)).rejects.toThrow("Voice settings changed.");
+    const listening = await service.start(phoneConfig, true, { joinLoaded: true });
+    const speaking = await service.start(phoneConfig, false, { joinLoaded: true });
+    expect(new Set([desktop.lease, listening.lease, speaking.lease]).size).toBe(3);
+    // The desktop's runtime, voice and idle timeout stay as the desktop chose them.
+    expect(internals.runtime).toMatchObject({ voiceId: "F1", idleUnloadMinutes: 7 });
+    expect(speech).toHaveBeenCalledOnce();
+    expect(speech.mock.calls[0]![0]).toMatchObject({ voiceId: "F1" });
+    expect(inspect).toHaveBeenCalledOnce();
+    // The desktop itself still reconnects with its own settings.
+    await expect(
+      service.start({ natural: true, voiceId: "F1", idleUnloadMinutes: 7 }, true),
+    ).resolves.toMatchObject({ model: workerInfo.model });
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("refuses a phone reply voice when the computer runs dictation without one", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    loading?: Promise<unknown>;
+    speech: { start: (config: unknown) => Promise<void> };
+  };
+  vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.loading = Promise.resolve(workerInfo);
+    return workerInfo;
+  });
+  const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    await service.start({ natural: false }, true);
+    await expect(
+      service.start({ natural: true }, false, { joinLoaded: true }),
+    ).rejects.toThrow(VOICE_IN_USE_WITHOUT_SPEECH);
+    // Listening alone still shares the loaded recognizer.
+    await expect(
+      service.start({ natural: true }, true, { joinLoaded: true }),
+    ).resolves.toMatchObject({ model: workerInfo.model });
+    expect(speech).not.toHaveBeenCalled();
+  } finally {
+    inspect.mockRestore();
     service.close();
   }
 });

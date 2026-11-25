@@ -314,6 +314,49 @@ for (const [width, light] of [
   });
 }
 
+for (const width of [1280, 800]) {
+  for (const light of [false, true]) {
+    const surface = `${light ? "light" : "dark"}-${width}`;
+    test(`draft Markdown and clear text work in both composer editors (${surface})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      for (const inline of [false, true]) {
+        await page.goto(
+          url(inline ? { inlineExamples: "repeated-pdf", turns: "2" } : { turns: "2" }, light),
+        );
+        const editor = inline ? page.locator("[data-composer-inline-input]") : field(page);
+        const clear = page.getByRole("button", { name: "Clear text", exact: true });
+        const source =
+          "Aşağıdaki performans sorunlarına bakar mısın?\n\n## Bulgular (önem sırasıyla)\n\n1. **Stil hesabı eleman başına çok pahalı.** ~9,4k elemanlı DOM’da tam stil hesabı 109 ms sürüyor. CSS’te 10.337 kural, 145 `@container`, 163 `:has()` var." +
+          (inline ? " [file1]" : "");
+        await editor.focus();
+        await editor.press("ControlOrMeta+a");
+        await page.keyboard.insertText(source);
+        await expect(field(page)).toHaveValue(source);
+        const composer = page.locator("[data-composer]");
+        await expect(composer.locator('[data-draft-markdown="heading"]')).toContainText("Bulgular");
+        await editor.blur();
+        await capture(page, `draft-${inline ? "references" : "text"}-${surface}`);
+        await expect(clear).toBeVisible();
+        if (inline) await clear.click();
+        else await clear.press("Enter");
+        await expect(field(page)).toHaveValue("");
+        await expect(editor).toBeFocused();
+        await expect(clear).toBeHidden();
+        if (inline)
+          await expect(
+            composer.getByRole("button", { name: /^Remove .*\.pdf$/ }).first(),
+          ).toBeVisible();
+        await editor.press("ControlOrMeta+z");
+        await expect(field(page)).toHaveValue(source);
+        if (inline)
+          await expect(editor.locator('[data-inline-reference="attachment"]')).toHaveCount(1);
+      }
+    });
+  }
+}
+
 test("selecting all with an inline skill keeps suggestions closed", async ({ page }) => {
   for (const light of [false, true]) {
     await page.goto(url({ inlineExamples: "repeated-pdf" }, light));

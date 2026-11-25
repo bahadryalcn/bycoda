@@ -2,6 +2,122 @@ import { test, expect } from "@playwright/test";
 
 for (const theme of ["dark", "light"]) {
   for (const width of [800, 1280]) {
+    test(`batched owner approvals in ${theme} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 560 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/notifications/notifications.html?owner&theme=${theme}`);
+      await page.getByRole("button", { name: "Request several approvals" }).click();
+      const card = page.locator("[data-chat-column]").first();
+      await expect(card.getByText("4 requests need approval")).toBeVisible();
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await expect(card.getByText("Command: rm -rf dist")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/owner-approval/batch-chat-${theme}-${width}.png`,
+      });
+      const composer = page
+        .getByRole("region", { name: "Turn activity" })
+        .getByText("Needs your input", { exact: true });
+      const bounds = (await card.boundingBox())!;
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual((await composer.boundingBox())!.y);
+      await card.getByRole("button", { name: "Deny", exact: true }).click();
+
+      await page.getByRole("button", { name: "Open settings" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog.getByText("4 requests need approval")).toBeVisible();
+      await expect(dialog.getByText("Command: git push origin main")).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
+      await expect(dialog.getByRole("button", { name: "Later", exact: true })).toBeFocused();
+      await page.screenshot({
+        path: `temp/verification/owner-approval/batch-dialog-${theme}-${width}.png`,
+      });
+
+      // Later hides the batch without answering it; the conversation still shows it.
+      await dialog.getByRole("button", { name: "Later", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByLabel("Batch result")).toHaveText("Pending");
+      await page.getByRole("button", { name: "Open chat" }).click();
+      await expect(card.getByText("4 requests need approval")).toBeVisible();
+      await page.getByRole("button", { name: "Open settings" }).click();
+      await expect(dialog).toHaveCount(0);
+
+      // A new request opens the dialog again; Review goes to the conversation that asked.
+      await page.getByRole("button", { name: "Request approval" }).click();
+      await expect(dialog.getByText("Needs approval", { exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/owner-approval/single-dialog-${theme}-${width}.png`,
+      });
+      await dialog.getByRole("button", { name: "Review", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(card.getByText("5 requests need approval")).toBeVisible();
+      await card.getByRole("button", { name: "Deny", exact: true }).click();
+      await card.getByRole("button", { name: "Deny", exact: true }).click();
+      await page.screenshot({
+        path: `temp/verification/owner-approval/review-chat-${theme}-${width}.png`,
+      });
+      await card.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(page.getByLabel("Batch result")).toHaveText("AADD");
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`owner approval stays above the composer in ${theme} at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 560 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/notifications/notifications.html?owner&theme=${theme}`);
+      await page.getByRole("button", { name: "Request approval" }).click();
+      const card = page.locator("[data-chat-column]").first();
+      const composer = page
+        .getByRole("region", { name: "Turn activity" })
+        .getByText("Needs your input", { exact: true });
+      await card.getByText("Details", { exact: true }).click();
+      const bounds = (await card.boundingBox())!;
+      const composerBounds = (await composer.boundingBox())!;
+      expect(composerBounds.y + composerBounds.height).toBeLessThanOrEqual(560);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(composerBounds.y);
+      await page.screenshot({
+        path: `temp/verification/owner-approval/chat-${theme}-${width}.png`,
+      });
+      const details = card.getByRole("region", { name: "Details", exact: true });
+      const end = card.getByText("End of comment", { exact: true });
+      await expect(end).not.toBeInViewport();
+      await details.focus();
+      await page.keyboard.press("End");
+      await expect(end).toBeInViewport();
+      await card.getByText("Details", { exact: true }).click();
+      await expect(end).toBeHidden();
+
+      await page.getByRole("button", { name: "Review", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(card.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+
+      await page.getByRole("button", { name: "Open settings" }).click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Later", exact: true })).toBeFocused();
+      await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/owner-approval/dialog-${theme}-${width}.png`,
+      });
+      await dialog.getByText("Exact request text", { exact: true }).click();
+      await expect(
+        dialog.getByText("Exact request for PFDEV-1123", { exact: false }),
+      ).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Approve", exact: true })).toBeInViewport();
+      await dialog.getByRole("button", { name: "Approve", exact: true }).click();
+      await expect(page.getByText("Approved", { exact: true })).toBeVisible();
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
     test(`${theme} at ${width}px: toast placement and retained history`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });

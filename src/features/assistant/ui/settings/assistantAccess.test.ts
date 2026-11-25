@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   assistantAccessMode,
   assistantAccessPatch,
+  computerPermissionMode,
   DEFAULT_CRITICAL_EXCLUSIONS,
   effectiveConsent,
   nativeConsentFromGrant,
@@ -122,4 +123,21 @@ it("reads the native grant, treating another credential as inactive", () => {
   expect(
     nativeConsentFromGrant({ revision: 3, permissionLevel: "ask", criticalExclusions: ["spend"] }),
   ).toEqual({ state: "active", permissionLevel: "ask", criticalExclusions: ["spend"] });
+});
+
+it("derives the computer use mode from the standing permission and its Computer use exception", () => {
+  expect(computerPermissionMode(assistantAccessPatch({ execution }, "full"))).toBe("full");
+  expect(computerPermissionMode(assistantAccessPatch({ execution }, "ask"))).toBe("ask");
+  expect(
+    computerPermissionMode({ permissionLevel: "everything", criticalExclusions: ["pushMain"] }),
+  ).toBe("full");
+  expect(
+    computerPermissionMode({ permissionLevel: "everything", criticalExclusions: ["computerUse"] }),
+  ).toBe("ask");
+  // A grant that never saved its exceptions has all of them, Computer use included.
+  expect(computerPermissionMode({ permissionLevel: "everything" })).toBe("ask");
+  expect(computerPermissionMode({ permissionLevel: "projects", criticalExclusions: [] })).toBe(
+    "ask",
+  );
+  expect(computerPermissionMode({})).toBe("ask");
 });

@@ -135,7 +135,7 @@ describe("OpenCode config file", () => {
     const original = '{"mcp":{"x":{"type":"remote"}}}';
     await writeFile(path, original);
     await saveOllamaModelsToOpencode(path, ["qwen3:0.6b"], BASE);
-    expect(await readFile(`${path}.monocode.bak`, "utf8")).toBe(original);
+    expect(await readFile(`${path}.bycoda.bak`, "utf8")).toBe(original);
     const saved = JSON.parse(await readFile(path, "utf8"));
     expect(saved.mcp).toEqual({ x: { type: "remote" } });
   });

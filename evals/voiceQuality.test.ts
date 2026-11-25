@@ -23,7 +23,7 @@ import zh from "../src/shared/i18n/locales/zh-CN.json";
 describe("voice decision regression corpus", () => {
   it.each([
     [
-      "ByCode'da provider bazlı aylık token ve, model kullanımımı bir grafiğe döker misin?",
+      "Bycoda'da provider bazlı aylık token ve, model kullanımımı bir grafiğe döker misin?",
       "display",
     ],
     [

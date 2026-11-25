@@ -3768,7 +3768,7 @@ function Workspace({
                 />
                 <WorkspaceNotices sessionReminders={sessionReminders} openSettings={openSettings} />
                 <SessionNotificationBridges activeSessionId={activeSessionId} />
-                <AppConfirmHost />
+                <AppConfirmHost onOpenSession={onOpenApprovalSession} />
                 <WorkspacePickerDialogs
                   resumePickerFor={resumePickerFor}
                   setResumePickerFor={setResumePickerFor}

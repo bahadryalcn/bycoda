@@ -15,8 +15,11 @@ export type PlanShareDeps = {
 };
 
 const DAY_MS = 86_400_000;
-const MAX_HISTORY_MS = 30 * DAY_MS;
-const SINCE_FALLBACK_MS = { fiveHour: DAY_MS, weekly: 8 * DAY_MS } as const;
+/**
+ * How far back the logs are read per window: the window plus room to calibrate. Older quota
+ * history is not followed, because scanning weeks of transcripts outlasts the RPC deadline.
+ */
+const SCAN_SPAN_MS = { fiveHour: DAY_MS, weekly: 8 * DAY_MS } as const;
 const SESSION_LABEL_MAX = 120;
 
 const folderName = (path: string) =>
@@ -33,11 +36,7 @@ const folderName = (path: string) =>
 export async function readPlanShare(deps: PlanShareDeps, value: unknown): Promise<PlanShareResult> {
   const params = PlanShareParamsSchema.parse(value);
   const now = (deps.now ?? Date.now)();
-  const earliest = params.observations.reduce((min, entry) => Math.min(min, entry.at), now);
-  const sinceMs = Math.max(
-    now - MAX_HISTORY_MS,
-    Math.min(earliest, now - SINCE_FALLBACK_MS[params.window]),
-  );
+  const sinceMs = now - SCAN_SPAN_MS[params.window];
   const roots = await deps.accountRoots();
   const wanted = Object.entries(roots).filter(
     ([account]) => !params.accounts || params.accounts.includes(account),

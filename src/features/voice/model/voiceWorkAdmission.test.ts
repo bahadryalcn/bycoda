@@ -59,7 +59,7 @@ describe("voice work admission", () => {
   });
 
   it("carries the work intent through a short answer to a pending question", () => {
-    for (const answer of ["Yeni proje oluştur", "evet", "başlat", "monocode", "ikincisi"]) {
+    for (const answer of ["Yeni proje oluştur", "evet", "başlat", "sample-project", "ikincisi"]) {
       expect(createSession(answer, "Create a small Pac-Man game.", pacMan)).toBeUndefined();
       expect(voiceCarriedWorkSpeech(answer, pacMan)).toBe(pacMan);
     }
@@ -103,7 +103,7 @@ describe("voice work admission", () => {
     });
     expect(
       voiceWorkRefusal(
-        "monocode",
+        "sample-project",
         "app_tool_call",
         "tasks.create",
         "Create a task to fix the login",
@@ -130,7 +130,7 @@ describe("voice work admission", () => {
 
   it("keeps a requested draft unsent when the answer only names the project", () => {
     const draft = "Bir session aç ama gönderme, oyun fikrini yaz";
-    expect(createSession("monocode", "Game idea", draft)).toMatchObject({
+    expect(createSession("sample-project", "Game idea", draft)).toMatchObject({
       intent: "normal_session",
     });
   });

@@ -70,7 +70,7 @@ it.each([
     options: {},
   },
   {
-    file: "monocode-missing-executable-for-parity-test",
+    file: "bycoda-missing-executable-for-parity-test",
     args: ["literal argument"],
     options: { encoding: "buffer" },
   },

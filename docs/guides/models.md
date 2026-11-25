@@ -197,7 +197,7 @@ this computer through OpenCode. Settings search finds it under `ollama`.
 - Select models and choose **Save to OpenCode**. Bycoda writes them to the
   `provider.ollama` block of OpenCode's user config (`OPENCODE_CONFIG`, otherwise
   `~/.config/opencode/opencode.json`), keeps every other setting, and saves the previous
-  file next to it with a `.monocode.bak` suffix. The models then appear in OpenCode's model list
+  file next to it with a `.bycoda.bak` suffix. The models then appear in OpenCode's model list
   as `ollama/<name>`. Clearing every model removes the block.
 - **Ollama port** sets the port Bycoda uses to reach Ollama on this computer (always
   `127.0.0.1`). By default it comes from `OLLAMA_HOST`, otherwise 11434; **Use default**

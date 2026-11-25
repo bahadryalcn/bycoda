@@ -19,9 +19,9 @@ it("keeps the existing lines when the new inputs are absent", () => {
 
 it("shows tool work instead of preparing a reply, with the target when known", () => {
   expect(voiceStatusText({ ...base, tool: { name: "give_jobs" } })).toBe("Working: give_jobs");
-  expect(voiceStatusText({ ...base, tool: { name: "Create session", target: "monocode" } })).toBe(
-    "Working: Create session · monocode",
-  );
+  expect(
+    voiceStatusText({ ...base, tool: { name: "Create session", target: "sample-project" } }),
+  ).toBe("Working: Create session · sample-project");
 });
 
 it("lets an owner wait win over a running tool and the reply line", () => {

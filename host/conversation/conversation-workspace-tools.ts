@@ -258,9 +258,18 @@ export class ConversationWorkspaceTools {
       return await this.inbox.request(owner, input.requestId, operation);
     if (principal.kind !== "session")
       throw new Error("Inbox writes require a real focused session for owner approval.");
-    // The desktop's native Jira prepare step shows the owner the exact issue and change.
-    if (isRemoteJiraOperation(operation))
-      return await this.inbox.request(owner, input.requestId, operation);
+    // The desktop's native Jira prepare step shows the owner the exact issue and change, unless
+    // native issued this Full access session a one-use permit for it.
+    if (isRemoteJiraOperation(operation)) {
+      if (operation.action !== "jira-board-transition" && operation.action !== "jira-board-move")
+        return await this.inbox.request(owner, input.requestId, operation);
+      const permit = await this.jiraBoardPermit(operation, project.cwd, principal, authorized);
+      return await this.inbox.request(
+        owner,
+        input.requestId,
+        permit ? { ...operation, permit } : operation,
+      );
+    }
     const key = `${owner}:${input.requestId}`;
     const signature = JSON.stringify(operation);
     const pending = this.pendingWrites.get(key);
@@ -299,5 +308,25 @@ export class ConversationWorkspaceTools {
     } finally {
       this.pendingWrites.delete(key);
     }
+  }
+
+  /**
+   * The native permit that lets a Full access session's Jira board change skip the desktop
+   * review. Any other answer, a failure included, leaves the review in place.
+   */
+  private async jiraBoardPermit(
+    operation: Record<string, unknown>,
+    cwd: string,
+    principal: RuntimeLogPrincipal,
+    authorized: () => boolean | Promise<boolean>,
+  ): Promise<string | undefined> {
+    const result = (await this.approveInboxWrite(operation, cwd, principal, authorized).catch(
+      () => undefined,
+    )) as { approved?: unknown; permit?: unknown } | undefined;
+    return result?.approved === true &&
+      typeof result.permit === "string" &&
+      /^[a-f0-9-]{36}$/.test(result.permit)
+      ? result.permit
+      : undefined;
   }
 }

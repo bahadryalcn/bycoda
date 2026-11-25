@@ -25,10 +25,31 @@ function Body({ text, cwd }: { text: string; cwd: string }) {
   return <AgentMarkdown className="inbox-comment-md" text={text} cwd={cwd} />;
 }
 
-/**
- * Inbox write approval rendered the way it will read on the provider: review verdict, summary
- * and each line comment under its file. The exact native text stays one click away.
- */
+export function InboxApprovalTarget({ details }: { details: InboxApprovalDetails }) {
+  const t = useT();
+  const event = details.review ? EVENTS[details.review.event] : undefined;
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <Text as="strong" size="secondary" weight="medium" wrap="anywhere">
+        {details.target}
+      </Text>
+      <Badge size="xs" tone="neutral">
+        {details.provider === "github"
+          ? "GitHub"
+          : details.provider === "jira"
+            ? "Jira"
+            : details.provider}
+      </Badge>
+      {details.review ? (
+        <Badge size="xs" tone={event?.tone ?? "neutral"}>
+          {event ? t(event.label) : details.review.event}
+        </Badge>
+      ) : null}
+    </div>
+  );
+}
+
+/** Structured operation fields and message, with the exact native request available on demand. */
 export function InboxApprovalPreview({
   details,
   message,
@@ -38,22 +59,8 @@ export function InboxApprovalPreview({
 }) {
   const t = useT();
   const review = details.review;
-  const event = review ? EVENTS[review.event] : undefined;
   return (
     <Text as="div" size="body" tone="inherit" className="flex min-w-0 flex-col gap-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <Text as="strong" size="inherit" tone="inherit" truncate className="min-w-0">
-          {details.target}
-        </Text>
-        <Badge size="xs" tone="neutral">
-          {details.provider}
-        </Badge>
-        {review ? (
-          <Badge size="xs" tone={event?.tone ?? "neutral"}>
-            {event ? t(event.label) : review.event}
-          </Badge>
-        ) : null}
-      </div>
       <DescriptionList size="sm">
         <DescriptionItem term={t("Project")} truncate monospace>
           {details.project}
@@ -77,13 +84,13 @@ export function InboxApprovalPreview({
           </DescriptionItem>
         ) : null}
       </DescriptionList>
+      <Disclosure size="sm" summary={t("Exact request text")}>
+        <OutputBlock size="caption" frame="filled">
+          {message}
+        </OutputBlock>
+      </Disclosure>
       {details.thread ? (
-        <OutputBlock
-          size="caption"
-          tone="secondary"
-          frame="card"
-          className="max-h-32 overflow-auto break-words"
-        >
+        <OutputBlock size="caption" tone="secondary" frame="filled">
           {details.thread}
         </OutputBlock>
       ) : null}
@@ -130,11 +137,6 @@ export function InboxApprovalPreview({
           ))}
         </section>
       ) : null}
-      <Disclosure size="sm" summary={t("Exact request text")}>
-        <OutputBlock size="caption" tone="secondary" className="break-words">
-          {message}
-        </OutputBlock>
-      </Disclosure>
     </Text>
   );
 }

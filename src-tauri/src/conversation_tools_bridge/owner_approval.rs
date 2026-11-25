@@ -363,6 +363,22 @@ pub(super) fn call(
         }
         return Ok(json!({ "approved": approved }));
     }
+    if action == "inbox.write.authorize"
+        && matches!(
+            input["operation"]["action"].as_str(),
+            Some("jira-board-transition" | "jira-board-move")
+        )
+    {
+        // The desktop board step reviews these changes itself. A Full access coding session
+        // gets a one-use permit for this exact change instead; nothing else is approved here.
+        if input["operation"]["cwd"].as_str() != request["cwd"].as_str()
+            || !session_full_access(request, issuer, action)?
+        {
+            return Ok(json!({"approved": false}));
+        }
+        let permit = crate::jira::board::mobile_board::issue_session_permit(&input["operation"])?;
+        return Ok(json!({"approved": true, "permit": permit}));
+    }
     if action == "inbox.write.authorize" {
         // Native-only acknowledgement: the agent cannot supply an approval boolean.
         let message = inbox_approval_message(

@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import { OwnerApprovalChat, OwnerApprovalInbox } from "./OwnerApprovalRequests";
 import {
   ownerApprovalsSnapshot,
+  reopenOwnerApproval,
   requestOwnerApproval,
   settleOwnerApproval,
 } from "../model/ownerApprovals";
@@ -43,13 +44,13 @@ it("shows a source request inside its chat and moves it into the shared dialog w
     expect(element.querySelector("section")?.textContent).toContain("Command: pwd");
     const column = element.querySelector("[data-chat-column]");
     expect(column?.className).toContain("max-w-4xl");
-    expect(column?.querySelector('[data-variant="card"]')).not.toBeNull();
+    expect(column?.querySelector('[data-variant="canvas-chat"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => root.render(render(false)));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Command: pwd");
     await act(async () => {
       [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-        .find((button) => button.textContent?.trim() === "Cancel")!
+        .find((button) => button.textContent?.trim() === "Deny")!
         .click();
     });
     expect(await answer).toBe(false);
@@ -131,7 +132,7 @@ it("shows an Inbox review as its line comments in a dialog the owner can approve
     expect(dialog.textContent).toContain("L57");
     await act(async () => {
       [...dialog.querySelectorAll("button")]
-        .find((button) => button.textContent === "Approve this operation")!
+        .find((button) => button.textContent === "Approve")!
         .click();
     });
     expect(await answer).toBe(true);
@@ -176,9 +177,104 @@ it("approves an Inbox request from the chat directly, with Review opening the fu
       [...document.querySelectorAll("button")].filter((item) => item.textContent === label);
     await act(async () => button("Review")[0]!.click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    await act(async () => button("Approve this operation")[0]!.click());
+    await act(async () => button("Approve")[0]!.click());
     expect(await answer).toBe(true);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  } finally {
+    for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+    await act(async () => root.unmount());
+    element.remove();
+  }
+});
+
+it("stages several approvals one by one and sends every decision together", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  const ask = (id: string) =>
+    requestOwnerApproval({
+      id,
+      sessionId: "batch",
+      input: {
+        title: `Request ${id}`,
+        message: `Exact ${id}`,
+        confirmLabel: "Approve",
+        cancelLabel: "Cancel",
+        deadline: Date.now() + 60_000,
+      },
+    });
+  const button = (name: string) =>
+    [...element.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent?.trim() === name || item.getAttribute("aria-label") === name,
+    )!;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(OwnerApprovalChat, { sessionId: "batch", children: "Conversation" }),
+      ),
+    );
+    let answers!: Promise<boolean>[];
+    await act(async () => {
+      answers = ["one", "two", "three"].map(ask);
+    });
+    expect(element.textContent).toContain("3 requests need approval");
+    expect(element.textContent).toContain("Exact one");
+    expect(button("Send").disabled).toBe(true);
+    await act(async () => button("Approve").click());
+    expect(element.textContent).toContain("Exact two");
+    await act(async () => button("Deny").click());
+    await act(async () => button("Previous request").click());
+    expect(element.textContent).toContain("Exact two");
+    expect(button("Deny").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button("Next request").click());
+    await act(async () => button("Approve").click());
+    expect(ownerApprovalsSnapshot()).toHaveLength(3);
+    expect(element.textContent).toContain("2 approved, 1 denied");
+    await act(async () => button("Send").click());
+    expect(await Promise.all(answers)).toEqual([true, false, true]);
+    expect(ownerApprovalsSnapshot()).toHaveLength(0);
+  } finally {
+    for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+    await act(async () => root.unmount());
+    element.remove();
+  }
+});
+
+it("defers an off-page batch without answering it and reopens it from the pending list", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  try {
+    await act(async () => root.render(createElement(OwnerApprovalInbox)));
+    await act(async () => {
+      for (const id of ["a", "b"])
+        void requestOwnerApproval({
+          id: `off-${id}`,
+          input: {
+            title: "File access",
+            message: `Exact ${id}`,
+            confirmLabel: "Allow",
+            cancelLabel: "Cancel",
+            deadline: Date.now() + 60_000,
+          },
+        }).catch(() => {});
+    });
+    const buttons = () => [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ];
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "2 requests need approval",
+    );
+    expect(buttons().some((item) => item.textContent?.trim() === "Cancel")).toBe(false);
+    await act(async () =>
+      buttons()
+        .find((item) => item.textContent?.trim() === "Later")!
+        .click(),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(ownerApprovalsSnapshot().map((request) => request.id)).toEqual(["off-a", "off-b"]);
+    await act(async () => reopenOwnerApproval("off-b"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Exact b");
   } finally {
     for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
     await act(async () => root.unmount());

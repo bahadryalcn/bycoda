@@ -43,7 +43,7 @@ describe("spokenVoiceChoice on a project card", () => {
     parseVoiceChoice({
       question: "Pac-Man oyunu hangi projeye açılsın?",
       options: [
-        { id: "mono", label: "monocode (bycoda)" },
+        { id: "mono", label: "sample-project (bycoda)" },
         { id: "p-1", label: "pac-man" },
         { id: "p-2", label: "pac-man-ui" },
         { id: "new", label: "Yeni proje oluştur" },
@@ -80,9 +80,9 @@ describe("spokenVoiceChoice on a project card", () => {
     expect(pick("Pac-Man projesine")).toBe("p-1");
     expect(pick("pac-man-ui")).toBe("p-2");
     expect(pick("pac-man ui projesine aç")).toBe("p-2");
-    expect(pick("monocode")).toBe("mono");
+    expect(pick("sample-project")).toBe("mono");
     expect(pick("yeni proje")).toBe("new");
-    expect(pick("open monocode bycoda please")).toBe("mono");
+    expect(pick("open sample-project bycoda please")).toBe("mono");
   });
   it("returns nothing when the phrase fits several options or none", () => {
     expect(pick("pac")).toBeUndefined();

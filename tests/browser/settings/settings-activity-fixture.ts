@@ -34,7 +34,7 @@ export function activityFixture(command: string, args: Record<string, unknown>):
     const projects = [
       ["/fixture/upstream", "Backend performance", 4.1],
       ["/fixture/upstream", "Session detail card", 1.6],
-      ["/fixture/bycode-website", "Landing copy", 0.4],
+      ["/fixture/sample-website", "Landing copy", 0.4],
       ["/fixture/accounts-admin", "Admin roles", 0.9],
       ["/fixture/mobile", "Push setup", 0.25],
     ] as const;
@@ -60,7 +60,7 @@ export function activityFixture(command: string, args: Record<string, unknown>):
     return {
       found: true,
       filesScanned: 1,
-      rows: ["/fixture/upstream", "/fixture/bycode-website", "/fixture/accounts-admin"].map(
+      rows: ["/fixture/upstream", "/fixture/sample-website", "/fixture/accounts-admin"].map(
         (project, index) => ({
           slot: Math.floor((start + index * 30 * 60_000) / 1000),
           model: args.provider === "codex" ? "gpt-5.5" : "claude-opus-5-5",

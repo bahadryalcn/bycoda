@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   testDir: "..",
@@ -8,8 +9,8 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:1498", browserName: "chromium", trace: "retain-on-failure" },
   webServer: {
     command:
-      "pnpm exec vite build --config tests/browser/notifications/vite.notifications.config.ts && pnpm exec vite preview --config tests/browser/notifications/vite.notifications.config.ts",
-    cwd: "../../..",
+      "pnpm exec vp build --config tests/browser/notifications/vite.notifications.config.ts && pnpm exec vp preview --config tests/browser/notifications/vite.notifications.config.ts",
+    cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     url: "http://127.0.0.1:1498/tests/browser/notifications/notifications.html",
     reuseExistingServer: false,
     timeout: 120_000,

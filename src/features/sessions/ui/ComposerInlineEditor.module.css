@@ -30,14 +30,10 @@
   min-block-size: 2.875rem;
 }
 
-.mount[data-subagents] :global(.cm-content) {
-  padding-inline-end: calc(var(--space-16) + var(--space-4));
-}
-
 .mount :global(.cm-line) {
   padding: 0;
   /* ui-drift-ignore: feature-typography -- CodeMirror owns the line nodes and shares this line height with its caret geometry. */
-  line-height: 1.9;
+  line-height: 1.65;
 }
 
 .mount :global(.cm-placeholder) {

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -69,6 +69,47 @@ it("reads each account's logs separately and attributes the observed increase", 
   expect(first.jobs).toMatchObject([{ sessionId: "s1", label: "app", estimatedPercent: 12 }]);
   expect(second.jobs).toMatchObject([{ sessionId: "s2", estimatedPercent: 30 }]);
   expect(first.untrackedPercent).toBe(0);
+});
+
+it("reads only the window's span of logs, however old the quota history is", async () => {
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
+  const dir = await mkdtemp(join(tmpdir(), "plan-share-"));
+  dirs.push(dir);
+  await writeFile(join(dir, "recent.jsonl"), line("2026-11-09T10:00:00Z", "m1"));
+  const old = join(dir, "old.jsonl");
+  await writeFile(old, line("2026-10-30T10:00:00Z", "m2"));
+  const oldSeconds = Date.parse("2026-10-30T10:00:00Z") / 1000;
+  await utimes(old, oldSeconds, oldSeconds);
+  const result = await readPlanShare(
+    {
+      environmentId: "env",
+      now: () => NOW,
+      accountRoots: async () => ({
+        "claude:a": { provider: "claude", roots: [dir] },
+      }),
+    },
+    {
+      window: "fiveHour",
+      observations: [
+        // A reading from weeks ago must not widen the scan.
+        {
+          account: "claude:a",
+          at: NOW - 20 * 86_400_000,
+          usedPercent: 5,
+          windowMinutes: 300,
+          resetsAt: null,
+        },
+        {
+          account: "claude:a",
+          at: NOW - 60_000,
+          usedPercent: 10,
+          windowMinutes: 300,
+          resetsAt: null,
+        },
+      ],
+    },
+  );
+  expect(result.coverage.filesScanned).toBe(1);
 });
 
 it("rejects a malformed request", async () => {

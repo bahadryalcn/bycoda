@@ -16,13 +16,12 @@ export const EMPTY_DESKTOP_CONFIGURATION: DesktopControlConfiguration = {
   version: 0,
 };
 
-/** Old stored rows have no mode; they read as "ask". Full access always covers every app; the
- * stored `allowAllApps` value is ignored. */
+/** Anything but a stored "full" reads as "ask". Full access always covers every app; the stored
+ * `allowAllApps` value is ignored. */
 export function normalizeDesktopConfiguration(
   raw: Partial<DesktopControlConfiguration>,
 ): DesktopControlConfiguration {
-  const mode: DesktopPermissionMode =
-    raw.permissionMode === "auto" || raw.permissionMode === "full" ? raw.permissionMode : "ask";
+  const mode: DesktopPermissionMode = raw.permissionMode === "full" ? "full" : "ask";
   return {
     ...EMPTY_DESKTOP_CONFIGURATION,
     ...raw,
@@ -69,19 +68,18 @@ export type DesktopGate = {
   requirePresence: boolean;
 };
 
-/** One table for every owner-configurable mode. Locked/unknown desktop, Stop and disabled control
- * are blocked elsewhere in every mode. An app the owner has not approved yet is asked for once
- * by the conversation gate (ask and auto); auto then launches and acts on it without a dialog. */
+/** One table for both owner-set modes. Locked/unknown desktop, Stop and disabled control are
+ * blocked elsewhere in every mode. In ask mode an app the owner has not approved yet is asked
+ * for once by the conversation gate, and every effect then asks again. */
 export function desktopGate(input: {
   mode: DesktopPermissionMode;
   kind: "act" | "launch" | "clipboard";
   headed: boolean;
 }): DesktopGate {
   if (input.mode === "full") return { ask: false, requirePresence: false };
-  const physical = input.kind === "act" && input.headed;
   return {
-    ask: input.mode === "ask" || input.kind === "clipboard" || physical,
-    requirePresence: physical || input.kind === "clipboard",
+    ask: true,
+    requirePresence: (input.kind === "act" && input.headed) || input.kind === "clipboard",
   };
 }
 

@@ -36,6 +36,7 @@ import {
   knownNotificationProject,
   subscribeNotificationProjects,
 } from "../../notifications/model/notificationProjects";
+import { reopenOwnerApproval } from "../../notifications/model/ownerApprovals";
 import { useProjectNotificationPreferences } from "../../notifications/hooks/useProjectNotificationPreferences";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
@@ -248,6 +249,8 @@ export function ApprovalToasts({
   const openOwnerRequest = (row: OwnerRow) => {
     hidePanel();
     if (row.sessionId) onFocusSession(row.sessionId);
+    // A deferred request without a conversation returns to the shared dialog.
+    else if (row.key.startsWith("owner:")) reopenOwnerApproval(row.key.slice("owner:".length));
   };
   const focusSession = (id: string) => {
     const notice = notices.find((item) => item.sessionId === id);

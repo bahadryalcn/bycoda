@@ -13,7 +13,6 @@ import { Badge } from "../../shared/ui/Badge";
 import { RefreshCw } from "../../shared/ui/icons";
 import {
   DESKTOP_DRIVERS,
-  DESKTOP_PERMISSION_MODES,
   type DesktopControlConfiguration,
   type DesktopControlResponse,
   type DesktopPermissionMode,
@@ -35,11 +34,6 @@ function permissionModeLabels(mode: DesktopPermissionMode) {
     return {
       label: t("Full access"),
       description: t("No questions, on any app, including physical input."),
-    };
-  if (mode === "auto")
-    return {
-      label: t("Auto"),
-      description: t("Asks once for each new app, and for the clipboard and physical input."),
     };
   return {
     label: t("Ask every time"),
@@ -64,7 +58,11 @@ export function DesktopControlSettings({
   onDraftStateChange?: (state: DesktopControlDraftState) => void;
   saveRef?: { current: (() => Promise<void>) | null };
   refreshRef?: { current: (() => void) | null };
-  accessRef?: { current: ((mode: "ask" | "full") => void) | null };
+  /**
+   * The Assistant access settings own the permission mode. A preset also turns computer use and
+   * physical input on; a changed standing permission only moves the mode.
+   */
+  accessRef?: { current: ((mode: DesktopPermissionMode, preset?: boolean) => void) | null };
 }) {
   const [draft, setDraft] = useState<DesktopControlConfiguration>();
   const [saved, setSaved] = useState<DesktopControlConfiguration>();
@@ -157,15 +155,15 @@ export function DesktopControlSettings({
     if (!accessRef) return;
     accessRef.current =
       draft && !pending && !stopping
-        ? (permissionMode) => {
+        ? (permissionMode, preset = false) => {
             setDraft((current) =>
               current
                 ? {
                     ...current,
-                    enabled: true,
+                    ...(preset ? { enabled: true } : {}),
                     permissionMode,
                     allowAllApps: permissionMode === "full",
-                    allowPhysicalInput: true,
+                    ...(preset || permissionMode === "full" ? { allowPhysicalInput: true } : {}),
                   }
                 : current,
             );
@@ -412,31 +410,17 @@ export function DesktopControlSettings({
             <>
               <Row
                 label={t("Permission")}
+                description={t(
+                  "Follows the assistant's permission: full access unless Computer use is an exception.",
+                )}
+                descriptionVisible
                 info={
                   <InfoTooltip>
                     {permissionModeLabels(draft.permissionMode).description}
                   </InfoTooltip>
                 }
               >
-                <Select
-                  hideLabel
-                  label={t("Permission")}
-                  value={draft.permissionMode}
-                  disabled={pending}
-                  options={DESKTOP_PERMISSION_MODES.map((value) => ({
-                    value,
-                    label: permissionModeLabels(value).label,
-                  }))}
-                  onChange={(value) => {
-                    const permissionMode = DESKTOP_PERMISSION_MODES.find((mode) => mode === value);
-                    if (permissionMode)
-                      setDraft({
-                        ...draft,
-                        permissionMode,
-                        ...(permissionMode === "full" ? { allowPhysicalInput: true } : {}),
-                      });
-                  }}
-                />
+                <Text>{permissionModeLabels(draft.permissionMode).label}</Text>
               </Row>
               {draft.permissionMode === "full"
                 ? !embedded && (
