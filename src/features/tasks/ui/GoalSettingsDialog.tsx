@@ -12,7 +12,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
-import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
+import { runtimeModeLabel } from "../model/runtimeModeLabel";
 import type { BoardGoal } from "../model/goalClient";
 import type { GoalSettings } from "../model/hostGoals";
 import { GoalConcurrencyOption, GoalContinueSwitch, TaskMoreOptions } from "./GoalFormParts";
@@ -115,7 +115,7 @@ function GoalSettingsForm({
               access={
                 goal.harness !== "fx" ? (
                   <Text size="caption" tone="secondary">
-                    {t(RUNTIME_MODE_LABEL[goal.runtimeMode])}
+                    {runtimeModeLabel(goal.runtimeMode)}
                   </Text>
                 ) : null
               }
@@ -192,7 +192,7 @@ function GoalSettingsForm({
             </TaskMoreOptions>
           </div>
         </FieldGroup>
-        {error ? <InlineError className="mt-3">{t(error)}</InlineError> : null}
+        {error ? <InlineError className="mt-3" details={error} /> : null}
       </div>
       <ModalFooter>
         <ModalActions

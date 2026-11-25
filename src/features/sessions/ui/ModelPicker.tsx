@@ -47,6 +47,7 @@ import {
   pickerProviderAtRevision,
   providerAccountsAtSnapshot,
 } from "./modelStoreReaders";
+import { catalogText } from "../model/catalogText";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
 import { delegationNextValue, isDelegationSetting } from "../model/crossDelegation";
 import {
@@ -496,8 +497,8 @@ export function ModelPicker({
               values[setting.id] !== setting.value,
           )
           .map((setting) => ({
-            name: t(settingLabel(setting)),
-            label: t(settingValueLabel(setting, values)),
+            name: catalogText(t, settingLabel(setting)),
+            label: catalogText(t, settingValueLabel(setting, values)),
           }))
       : [];
   const triggerTitle = inheritSelected
@@ -912,7 +913,7 @@ export function ModelPicker({
                   size="inherit"
                   tone="inherit"
                   truncate
-                  className="min-w-0 flex-1 text-left"
+                  className="min-w-0 flex-1 text-start"
                 >
                   {inherit.label}
                 </Text>
@@ -1029,6 +1030,9 @@ export function ModelPicker({
                   values,
                   onSettingsChange,
                   disabled: extrasDisabled,
+                  disabledReason: extrasDisabledReason
+                    ? catalogText(t, extrasDisabledReason)
+                    : undefined,
                 }
               : undefined
           }
@@ -1066,7 +1070,7 @@ export function ModelPicker({
           leading={
             inherit ? (
               <Button
-                className="w-full text-left"
+                className="w-full text-start"
                 fullWidth
                 variant="item"
                 type="button"
@@ -1280,12 +1284,12 @@ function SelectPill({
           searchable={false}
           loopNavigation
           key={item.id}
-          label={t(settingLabel(item))}
+          label={catalogText(t, settingLabel(item))}
           value={settingValue(item, values)}
           options={item.options.map((option) => ({
             value: option.value,
 
-            label: t(option.label),
+            label: catalogText(t, option.label),
 
             icon: isEffortSetting(item) ? (
               <Gauge className="icon-sm" />
@@ -1301,12 +1305,15 @@ function SelectPill({
           }}
 
           triggerProps={{
-            "aria-label": `${t(settingLabel(item))}: ${t(settingValueLabel(item, values))}`,
+            "aria-label": `${catalogText(t, settingLabel(item))}: ${catalogText(t, settingValueLabel(item, values))}`,
 
             onMouseDown: (event) => event.preventDefault(),
 
             tooltip: item.description
-              ? { label: t(settingLabel(item)), details: [t(item.description)] }
+              ? {
+                  label: catalogText(t, settingLabel(item)),
+                  details: [catalogText(t, item.description)],
+                }
               : undefined,
           }}
         />

@@ -59,7 +59,7 @@ export function CrewTablePortrait({
   const rects = useMemo(() => crewTableRects(sceneTheme, state, seats), [sceneTheme, state, seats]);
   const label = [
     name,
-    t(members.length === 1 ? "{p0} member" : "{p0} members", { p0: members.length }),
+    members.length === 1 ? t("{p0} member", { p0: 1 }) : t("{p0} members", { p0: members.length }),
     stateLabel,
   ]
     .filter(Boolean)

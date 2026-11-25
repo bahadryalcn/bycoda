@@ -5,8 +5,9 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Text } from "../../../shared/ui/Text";
 import {
   AUTOMATION_TEMPLATE_CATEGORIES,
-  AUTOMATION_TEMPLATES,
+  automationTemplates,
   type AutomationTemplate,
+  type AutomationTemplateCategoryId,
 } from "../model/automationTemplates";
 
 /** Searchable list of examples by category. Picking one fills the draft's instructions and trigger. */
@@ -18,15 +19,28 @@ export function AutomationTemplateMenu({
   onPick: (template: AutomationTemplate) => void;
 }) {
   useLocale();
+  const templates = automationTemplates();
+  const categoryLabels: Record<AutomationTemplateCategoryId, string> = {
+    all: t("All"),
+    popular: t("Popular"),
+    review: t("Code Review"),
+    security: t("Security"),
+    incidents: t("Incidents & Triage"),
+    research: t("Data & Research"),
+    environment: t("Environment"),
+    tasks: t("Tasks"),
+    social: t("Social Media"),
+    planning: t("Planning"),
+  };
   const options = AUTOMATION_TEMPLATE_CATEGORIES.flatMap((category) =>
-    AUTOMATION_TEMPLATES.filter((template) => template.category === category.id).map(
-      (template) => ({
+    templates
+      .filter((template) => template.category === category.id)
+      .map((template) => ({
         value: template.id,
-        label: t(template.name),
-        description: t(template.description),
-        group: t(category.label),
-      }),
-    ),
+        label: template.name,
+        description: template.description,
+        group: categoryLabels[category.id],
+      })),
   );
   return (
     <SearchableSelect
@@ -40,7 +54,7 @@ export function AutomationTemplateMenu({
       align="start"
       menuMinWidth={320}
       onChange={(id) => {
-        const template = AUTOMATION_TEMPLATES.find((entry) => entry.id === id);
+        const template = templates.find((entry) => entry.id === id);
         if (template) onPick(template);
       }}
       renderTrigger={({ props }) => (

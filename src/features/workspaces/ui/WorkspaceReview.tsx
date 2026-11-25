@@ -186,11 +186,10 @@ export function WorkspaceReview({
       const message = presentRemoteError(reason);
       if (message) {
         setError({
-          title: t(
+          title:
             action === "publish"
-              ? "Couldn’t review publication"
-              : "Couldn’t review workspace changes",
-          ),
+              ? t("Couldn’t review publication")
+              : t("Couldn’t review workspace changes"),
           detail: describeRemoteError(reason).details,
         });
       }
@@ -228,11 +227,10 @@ export function WorkspaceReview({
       // Keep the original token and operation key for publication reconciliation.
       // A lost response must never generate a second push or PR intent.
       setError({
-        title: t(
+        title:
           plan.action === "merge"
-            ? "Couldn’t merge workspace changes"
-            : "Couldn’t confirm pull request creation",
-        ),
+            ? t("Couldn’t merge workspace changes")
+            : t("Couldn’t confirm pull request creation"),
         detail: describeRemoteError(reason).details,
       });
       if (plan.action === "merge") clearPlan();
@@ -326,7 +324,7 @@ export function WorkspaceReview({
       : workspace.path;
   return (
     <Modal
-      title={t(mode === "publish" ? "Create PR" : "Review changes")}
+      title={mode === "publish" ? t("Create PR") : t("Review changes")}
       size="lg"
       onClose={() => {
         if (!lock.current) onClose();
@@ -345,6 +343,7 @@ export function WorkspaceReview({
               <Button
                 variant="secondary"
                 loading={pending === "review"}
+                loadingLabel={t("Preparing review…")}
                 disabled={
                   (!!pending && pending !== "review") || (mode === "publish" && !publicationReady)
                 }
@@ -355,13 +354,11 @@ export function WorkspaceReview({
                 }
                 onClick={() => void review(mode)}
               >
-                {t(
-                  plan
-                    ? "Refresh review"
-                    : mode === "publish"
-                      ? "Review publication"
-                      : "Retry review",
-                )}
+                {plan
+                  ? t("Refresh review")
+                  : mode === "publish"
+                    ? t("Review publication")
+                    : t("Retry review")}
               </Button>
               {plan && (
                 <Button
@@ -372,6 +369,13 @@ export function WorkspaceReview({
                     !!plan.blockers.length ||
                     !!plan.artifacts?.blockers.length ||
                     !!plan.overlappingPaths.length
+                  }
+                  disabledReason={
+                    pending
+                      ? t("Wait for the current operation to finish")
+                      : expired
+                        ? t("This review expired or is unavailable. Request a new review.")
+                        : t("Resolve the listed blockers first.")
                   }
                   onClick={() => void deliver()}
                 >
@@ -428,16 +432,16 @@ export function WorkspaceReview({
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-3">
               {(
                 [
-                  ["repository", "Repository"],
-                  ["remote", "Remote"],
-                  ["baseBranchRef", "Base branch"],
-                  ["headBranchRef", "Head branch"],
-                  ["title", "Title"],
+                  ["repository", t("Repository")],
+                  ["remote", t("Remote")],
+                  ["baseBranchRef", t("Base branch")],
+                  ["headBranchRef", t("Head branch")],
+                  ["title", t("Title")],
                 ] as const
               ).map(([key, label]) => (
                 <TextField
                   key={key}
-                  label={t(label)}
+                  label={label}
                   value={publication[key]}
                   disabled={!!pending || attempted}
                   onChange={(event) => {
@@ -465,7 +469,6 @@ export function WorkspaceReview({
             />
           </>
         )}
-        {pending === "review" && <LoadingText delay={false}>{t("Preparing review…")}</LoadingText>}
         {error && <InlineError details={error.detail}>{error.title}</InlineError>}
         {message && (
           <InlineMessage tone={message.tone} live="polite">
@@ -629,7 +632,11 @@ export function WorkspaceReview({
                   {plan.checks.map((check) => (
                     <li key={check.name} className="break-words">
                       {check.name}:{" "}
-                      {t({ passed: "Passed", failed: "Failed", unknown: "Unknown" }[check.status])}
+                      {
+                        { passed: t("Passed"), failed: t("Failed"), unknown: t("Unknown") }[
+                          check.status
+                        ]
+                      }
                     </li>
                   ))}
                 </ul>

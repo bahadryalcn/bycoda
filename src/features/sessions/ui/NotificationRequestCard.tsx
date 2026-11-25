@@ -1,8 +1,9 @@
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { motionAttributes } from "../../../shared/ui/Motion";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
@@ -55,11 +56,16 @@ export function NotificationRequestCard({
       as="article"
       variant={onDismiss ? "floating" : "row"}
       {...motionAttributes(
-        { enter: onDismiss ? "down" : undefined, transition: "colors", duration: "standard" },
+        {
+          enter: onDismiss ? "down" : undefined,
+          transition: "colors",
+          duration: "standard",
+        },
         "approval-toast notification-request pointer-events-auto flex-col items-stretch gap-0 overflow-clip",
       )}
-      role="status"
     >
+      {/* The popup announces itself: the card is not a live region, its own text is. */}
+      <LiveText className="sr-only" text={`${title}. ${label}`} />
       <Button
         fullWidth
         variant="item"
@@ -142,7 +148,10 @@ export function NotificationRequestCard({
             detail={detail}
             details={
               block && hasToolInspection(block)
-                ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
+                ? {
+                    label: t("Details"),
+                    content: <ToolInspectionPanel block={block} />,
+                  }
                 : undefined
             }
             allow={{
@@ -167,9 +176,9 @@ export function NotificationRequestCard({
         decision.danger ? (
           <InlineError inset="row">{decision.feedback}</InlineError>
         ) : (
-          <Text role="status" as="div" size="caption" tone="secondary" className="px-3 pb-2">
+          <InlineMessage tone="neutral" inset="row">
             {decision.feedback}
-          </Text>
+          </InlineMessage>
         )
       ) : null}
     </ActionHost>

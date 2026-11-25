@@ -10,6 +10,8 @@ type Props = Omit<ComponentPropsWithoutRef<"button">, "children" | "className"> 
   label: string;
   loading?: boolean;
   worktree?: boolean;
+  /** Why the trigger is disabled; it keeps the button focusable and says what to do. */
+  disabledReason?: string;
 };
 
 /** Keep working-copy and branch modes visually identical in the composer. */

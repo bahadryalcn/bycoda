@@ -207,6 +207,8 @@ fall. Suppress one line only, always with a reason.
   - Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root
 - `aria-label-without-role` (`TSX in src/app and src/features (excluding tests)`)
   - aria-label on a div without a semantic role (use a named semantic element or associate the label with its intended control)
+- `button-manual-pending` (`TSX in src/app and src/features (excluding tests)`)
+  - Button shows its pending state by hand (use loading with loadingLabel instead of a label swap, and startIcon instead of an icon child)
 - `color-base-hue` (`src/app, src/features, shared stylesheets`)
   - raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed
 - `color-base-opacity` (`src/app, src/features, shared stylesheets`)

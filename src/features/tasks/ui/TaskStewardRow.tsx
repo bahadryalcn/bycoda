@@ -1,5 +1,6 @@
 import { ActionHost, InlineMoreAction, InlineTextAction } from "../../../shared/ui/ActionHost";
 import { Heading } from "../../../shared/ui/Heading";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Switch } from "../../../shared/ui/Switch";
@@ -69,12 +70,9 @@ export function StewardRow({
                   ? t(" {p0} ago", { p0: formatTaskSpan(now - steward.lastRunAt) })
                   : null}
                 {status === "succeeded" && steward.lastProposed !== undefined
-                  ? t(
-                      steward.lastProposed === 1
-                        ? " · {p0} new suggestion"
-                        : " · {p0} new suggestions",
-                      { p0: steward.lastProposed },
-                    )
+                  ? steward.lastProposed === 1
+                    ? t(" · {p0} new suggestion", { p0: steward.lastProposed })
+                    : t(" · {p0} new suggestions", { p0: steward.lastProposed })
                   : null}
               </Text>
             ) : null}
@@ -82,13 +80,18 @@ export function StewardRow({
         ) : null}
         {lastRunError &&
           (status === "failed" ? (
-            <InlineError live="off">{lastRunError}</InlineError>
+            <InlineError live="off" details={lastRunError} />
           ) : (
-            <InlineMessage live="off">{lastRunError}</InlineMessage>
+            <InlineMessage
+              live="off"
+              extra={<ErrorDetails title={t("This run was skipped.")} detail={lastRunError} />}
+            >
+              {t("This run was skipped.")}
+            </InlineMessage>
           ))}
       </div>
       <div className="task-ops-actions">
-        {pending ? <Spinner size="xs" tone="secondary" /> : null}
+        {pending ? <Spinner size="xs" tone="secondary" delay /> : null}
         <Switch
           aria-label={t("Enabled")}
           checked={steward.enabled}

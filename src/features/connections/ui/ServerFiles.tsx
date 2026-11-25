@@ -1,4 +1,5 @@
 import { Sheet } from "../../../shared/ui/Sheet";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
@@ -15,7 +16,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Progress } from "../../../shared/ui/Progress";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
@@ -40,6 +41,7 @@ import {
   type SftpEntry,
   type SftpProgress,
   type SftpRecovery,
+  sftpPhaseLabel,
   subscribeSftpProgress,
   loadSftpRecoveries,
   resumeSftp,
@@ -159,6 +161,11 @@ export function ServerFiles({
   };
   // The listing already says whether the chosen remote filename would replace something.
   const collides = !!upload && entries.some((entry) => entry.name === upload.name);
+  const waitReason = busy
+    ? t("Wait for the current action to finish.")
+    : !loaded
+      ? t("Wait for the file list to load.")
+      : undefined;
 
   return (
     <>
@@ -190,6 +197,7 @@ export function ServerFiles({
               size="sm"
               iconOnly
               disabled={busy || !loaded}
+              disabledReason={waitReason}
               label={t("Parent directory")}
               onClick={() => void load(sftpParent(path))}
             >
@@ -215,6 +223,10 @@ export function ServerFiles({
             </Button>
             <Button
               disabled={busy || !loaded || !!upload}
+              disabledReason={
+                waitReason ??
+                (upload ? t("Finish or cancel the upload in progress first.") : undefined)
+              }
               onClick={() => {
                 void open({ multiple: false, directory: false })
                   .then((value) => {
@@ -234,7 +246,7 @@ export function ServerFiles({
             <div className="flex min-w-0 flex-col gap-1" role="status">
               <Progress
                 compact
-                label={progress ? t(progress.phase) : t("Working…")}
+                label={progress ? sftpPhaseLabel(progress.phase) : t("Working…")}
                 value={
                   progress?.totalBytes != null &&
                   (progress.transferredBytes > 0 || progress.state === "completed")
@@ -261,10 +273,12 @@ export function ServerFiles({
               </div>
             </div>
           ) : null}
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? (
+            <InlineError details={error}>{t("Could not complete the file action.")}</InlineError>
+          ) : null}
           {status ? (
-            <Text role="status" as="p" tone="muted">
-              {status}
+            <Text as="p" tone="muted">
+              <LiveText text={status} />
             </Text>
           ) : null}
           {upload ? (
@@ -294,6 +308,15 @@ export function ServerFiles({
               <div className="flex gap-2">
                 <Button
                   disabled={(collides && !overwrite) || busy || !upload.name}
+                  disabledReason={
+                    busy
+                      ? t("Wait for the current action to finish.")
+                      : !upload.name
+                        ? t("Enter a remote filename first.")
+                        : collides && !overwrite
+                          ? t("Allow replacement first, or choose another remote filename.")
+                          : undefined
+                  }
                   onClick={() =>
                     void act(async (id) => {
                       const remotePath = sftpPath(path, upload.name);
@@ -325,6 +348,7 @@ export function ServerFiles({
                 </Button>
                 <Button
                   disabled={busy}
+                  disabledReason={busy ? t("Wait for the current action to finish.") : undefined}
                   variant="ghost"
                   onClick={() => {
                     setUpload(undefined);
@@ -345,14 +369,17 @@ export function ServerFiles({
                 {recoveries.map((item) => (
                   <div key={item.id} className="flex flex-wrap items-center gap-2">
                     <span className="min-w-0 basis-full break-all">
-                      {t(item.direction)} · {item.remotePath}
+                      {item.direction === "upload" ? t("upload") : t("download")} ·{" "}
+                      {item.remotePath}
                       {item.publication ? (
                         <Text size="inherit" tone="muted" className="block">
-                          {t(
-                            item.publication === "completed"
-                              ? "Transfer completed; recovery cleanup remains. Dismissal removes only recovery metadata."
-                              : "Publication outcome unknown. Check the destination before dismissing recovery; a partial file may remain.",
-                          )}
+                          {item.publication === "completed"
+                            ? t(
+                                "Transfer completed; recovery cleanup remains. Dismissal removes only recovery metadata.",
+                              )
+                            : t(
+                                "Publication outcome unknown. Check the destination before dismissing recovery; a partial file may remain.",
+                              )}
                         </Text>
                       ) : null}
                     </span>
@@ -360,6 +387,13 @@ export function ServerFiles({
                       variant="ghost"
                       size="sm"
                       disabled={busy || !!item.publication}
+                      disabledReason={
+                        busy
+                          ? t("Wait for the current action to finish.")
+                          : item.publication
+                            ? t("Review the destination, then dismiss this recovery.")
+                            : undefined
+                      }
                       onClick={() => {
                         setReview(item);
                         setResumeOverwrite(false);
@@ -384,7 +418,7 @@ export function ServerFiles({
                         })
                       }
                     >
-                      {t(item.publication ? "Dismiss recovery" : "Discard partial")}
+                      {item.publication ? t("Dismiss recovery") : t("Discard partial")}
                     </Button>
                   </div>
                 ))}
@@ -421,6 +455,13 @@ export function ServerFiles({
               <div className="flex gap-2">
                 <Button
                   disabled={busy || (review.direction === "upload" && !resumeOverwrite)}
+                  disabledReason={
+                    busy
+                      ? t("Wait for the current action to finish.")
+                      : review.direction === "upload" && !resumeOverwrite
+                        ? t("Allow replacement first.")
+                        : undefined
+                  }
                   onClick={() =>
                     void act(async (id) => {
                       const ticket = await approve({

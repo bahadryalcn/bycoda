@@ -123,7 +123,12 @@ it("shows one workspace retry after a scoped load failure and recovers from it",
       }),
     ),
   );
-  expect(container.textContent).toContain("Path is outside this machine’s projects");
+  expect(container.textContent).toContain("Couldn’t refresh workspace status");
+  const details = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.startsWith("Details"),
+  );
+  await act(async () => details!.click());
+  expect(document.body.textContent).toContain("Path is outside this machine’s projects");
   const retries = [...container.querySelectorAll("button")].filter(
     (button) => button.textContent === "Retry workspace",
   );

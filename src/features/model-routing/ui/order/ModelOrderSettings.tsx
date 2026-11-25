@@ -123,7 +123,7 @@ function OrderSettingsForm({
   const invalidId = editor.invalidEntryId ?? unavailableOrderEntryId(editor.validation);
   const invalid =
     invalidId && draft.routing.entries.some((entry) => entry.id === invalidId)
-      ? { id: invalidId, message: t(message) }
+      ? { id: invalidId, message }
       : undefined;
   const show = invalid
     ? {
@@ -232,7 +232,7 @@ function OrderSettingsForm({
         }}
         onSave={editor.save}
       >
-        {editor.validation ? <InlineError action={show}>{t(editor.validation)}</InlineError> : null}
+        {editor.validation ? <InlineError action={show}>{editor.validation}</InlineError> : null}
         {editor.error ? (
           <InlineError action={show} details={editor.error}>
             {editor.error.startsWith("Models saved; work limits were not saved.")

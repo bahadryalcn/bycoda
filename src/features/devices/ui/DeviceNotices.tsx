@@ -56,6 +56,9 @@ export function DeviceNotices({
           variant="primary"
           loading={setupControl.pending}
           disabled={setupControl.disabled}
+          disabledReason={t(
+            "Wait for the current device action to finish, or set up the device first.",
+          )}
           onClick={setupControl.onClick}
         >
           {t("Set up device control")}

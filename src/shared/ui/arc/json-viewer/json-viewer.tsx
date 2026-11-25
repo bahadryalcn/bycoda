@@ -620,9 +620,10 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   const copy = async (row: Row, kind: "value" | "path") => {
     const text = kind === "path" ? row.id : copyText(row.value, row.type);
     const write = writeText ?? writeClipboard;
-    const copied = t(kind === "path" ? "Copied path: {p0}" : "Copied value: {p0}", {
-      p0: row.id,
-    });
+    const copied =
+      kind === "path"
+        ? t("Copied path: {p0}", { p0: row.id })
+        : t("Copied value: {p0}", { p0: row.id });
     const notify = () => onCopy?.({ kind, path: row.id, text });
     try {
       await write(text);

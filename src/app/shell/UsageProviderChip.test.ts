@@ -107,6 +107,18 @@ function button(label: string): HTMLButtonElement {
   return result!;
 }
 
+/** Opens the first "Details" link and returns the raw error text its popover shows. */
+async function openDetails(): Promise<string> {
+  const open = () => document.body.querySelector('[aria-label="Error details"]');
+  if (!open())
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((item) => item.getAttribute("aria-label")?.startsWith("Details"))
+        ?.click(),
+    );
+  return open()?.textContent ?? "";
+}
+
 describe("UsageProviderChip", () => {
   it("shows a failed quota refresh with the age of the saved reading", async () => {
     const limits: ProviderRateLimits = {
@@ -163,7 +175,7 @@ describe("UsageProviderChip", () => {
     expect(await tooltipText(trigger)).toBe(limits.error);
     await act(async () => trigger.click());
     const dialog = document.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain(limits.error);
+    expect(await openDetails()).toContain(limits.error);
     expect(dialog?.querySelector('[role="meter"]')).toBeNull();
   });
   it("keeps usage selections independent across providers with the same account ids", async () => {
@@ -344,9 +356,7 @@ describe("UsageProviderChip", () => {
     expect(invoke).toHaveBeenCalledWith("fetch_claude_usage", {
       accountId: "account-work",
     });
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "Claude sign-in expired",
-    );
+    expect(await openDetails()).toContain("Claude sign-in expired");
     expect(document.querySelector('[aria-label="Sign in to Claude Code"]')).toBeNull();
     await act(async () => button("personal").click());
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("81% used");
@@ -863,7 +873,7 @@ describe("UsageProviderChip", () => {
     act(() => useButtons()[0]?.click());
     expect(onConsumeReset).not.toHaveBeenCalled();
     await act(async () => button("Confirm").click());
-    expect(document.body.textContent).toContain("Host offline");
+    expect(await openDetails()).toContain("Host offline");
     expect(onConsumeReset).toHaveBeenCalledTimes(1);
     act(() =>
       useButtons()

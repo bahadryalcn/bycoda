@@ -232,8 +232,6 @@ export function QuickComposer({
     skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
   );
   const [error, setError] = useState<QuickNotice | null>(null);
-  const notice = error?.message;
-  const hasErrorDetails = Boolean(error?.title && notice);
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
@@ -439,7 +437,7 @@ export function QuickComposer({
         ? quickLaunchRefusal(selectedModel.harness, selectedRuntime, intent)
         : null;
     if (refusal) {
-      setError({ message: refusal });
+      setError({ title: refusal });
       return;
     }
     submitting.current = true;
@@ -691,7 +689,7 @@ export function QuickComposer({
       >
         <X className="icon-xs" />
       </Button>
-      <div className="flex shrink-0 items-center gap-2 px-5 pt-3 pr-9">
+      <div className="flex shrink-0 items-center gap-2 ps-5 pe-9 pt-3">
         <QuickWorkspaceControls
           key={cwd}
           value={workspace}
@@ -714,6 +712,7 @@ export function QuickComposer({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("project")}
           disabled={projects.length === 0}
+          disabledReason={projects.length === 0 ? t("Open a project first.") : undefined}
           shortcut="mod+p"
           expanded={picker === "project"}
           truncate
@@ -726,7 +725,7 @@ export function QuickComposer({
               />
             ) : undefined
           }
-          className="ml-auto min-w-0 max-w-[40%]"
+          className="ms-auto min-w-0 max-w-[40%]"
         >
           {cwd ? projectDisplayName(cwd) : t("No project")}
         </Button>
@@ -864,17 +863,13 @@ export function QuickComposer({
           className="mx-3 mb-2 min-w-0 break-words"
           extra={
             <>
-              {hasErrorDetails && notice ? (
-                <ErrorDetails title={error.title} detail={notice} />
-              ) : null}
+              {error.message ? <ErrorDetails title={error.title} detail={error.message} /> : null}
               {error.recovery === "screen-recording" ? (
                 <PermissionRecoveryAction id="screen-recording" />
               ) : null}
             </>
           }
-        >
-          {hasErrorDetails ? null : notice}
-        </Alert>
+        />
       ) : null}
       <Divider decorative />
       <div className="flex shrink-0 items-center gap-1.5 px-3 py-2">
@@ -886,10 +881,16 @@ export function QuickComposer({
           motion="none"
           ref={plusRef}
           aria-expanded={picker === "attachments"}
-          tooltip={
-            attachmentsSupported ? undefined : t("This provider does not support attachments")
-          }
           disabled={!attachmentsSupported || attachments.loading || busy}
+          disabledReason={
+            !attachmentsSupported
+              ? t("This provider does not support attachments")
+              : attachments.loading
+                ? t("Adding attachment…")
+                : busy
+                  ? t("Working…")
+                  : undefined
+          }
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("attachments")}
           className="shrink-0"
@@ -926,7 +927,7 @@ export function QuickComposer({
             <span className="max-[450px]:hidden">{RUNTIME_MODE_LABEL[runtimeMode]}</span>
           </Button>
         ) : null}
-        <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">
+        <Text size="micro" tone="secondary" className="ms-auto flex shrink-0 items-center gap-3">
           {attachments.loading ? <LoadingText>{t("Adding attachment…")}</LoadingText> : null}
           <Button
             variant="primary"
@@ -960,6 +961,13 @@ export function QuickComposer({
             variant="ghost"
             motion="none"
             disabled={attachments.loading || !attachmentsSupported}
+            disabledReason={
+              !attachmentsSupported
+                ? t("This provider does not support attachments")
+                : attachments.loading
+                  ? t("Adding attachment…")
+                  : undefined
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               hidePicker();
@@ -974,6 +982,13 @@ export function QuickComposer({
             variant="ghost"
             motion="none"
             disabled={attachments.loading || !attachmentsSupported}
+            disabledReason={
+              !attachmentsSupported
+                ? t("This provider does not support attachments")
+                : attachments.loading
+                  ? t("Adding attachment…")
+                  : undefined
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               hidePicker();
@@ -1107,7 +1122,7 @@ export function QuickComposer({
                       <Text size="inherit" tone="inherit" truncate>
                         {projectDisplayName(path)}
                       </Text>
-                      <Text truncate size="micro" tone="secondary" className="ml-auto pl-3">
+                      <Text truncate size="micro" tone="secondary" className="ms-auto ps-3">
                         {prettyParent(path)}
                       </Text>
                     </ListRow>

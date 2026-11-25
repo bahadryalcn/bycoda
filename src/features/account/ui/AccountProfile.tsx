@@ -60,7 +60,11 @@ export function AccountProfile({ user }: { user: User }) {
       <Group
         title={t("Region")}
         description={t("Daily summaries and active-time days follow this time zone.")}
-        feedback={zoneError ? <InlineError>{zoneError}</InlineError> : undefined}
+        feedback={
+          zoneError ? (
+            <InlineError details={zoneError}>{t("Could not save the time zone.")}</InlineError>
+          ) : undefined
+        }
       >
         <Row
           label={t("Time zone")}

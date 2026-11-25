@@ -90,7 +90,8 @@ it("serializes a quick second change and never reports the first one as a failed
   // The second change waits for the first write instead of overlapping it.
   expect(writes).toEqual(["on"]);
   expect(row("a").getAttribute("data-pending")).toBe("true");
-  expect(row("a").textContent).toContain("Saving…");
+  // A quick save never flashes a line: "Saving…" waits for the shared loading delay.
+  expect(row("a").textContent).not.toContain("Saving…");
 
   await act(async () => first.resolve(true));
   expect(writes).toEqual(["on", "off"]);

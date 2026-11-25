@@ -24,7 +24,7 @@ export function LinkedInAnalytics({
 }) {
   const [selection, setSelection] = useState("posts");
   const [result, setResult] = useState<{ kind: string; data: LinkedInAnalyticsResult }>();
-  const { error, is, write } = useAccountWrite(t("Could not load analytics."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not load analytics."));
   const browser = account.connection === "browser";
   if (browser && account.accountType !== "member") return null;
   const kind = browser ? "profile" : selection;
@@ -89,13 +89,14 @@ export function LinkedInAnalytics({
             variant={data ? "secondary" : "primary"}
             size="sm"
             disabled={disabled}
+            disabledReason={t("Wait until this computer is online.")}
             loading={is("analytics")}
             onClick={() => void load().catch(() => undefined)}
           >
             {data ? t("Refresh") : t("Read analytics")}
           </Button>
         </div>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
         {data && !Object.keys(data.metrics).length ? (
           <EmptyState
             size="inline"

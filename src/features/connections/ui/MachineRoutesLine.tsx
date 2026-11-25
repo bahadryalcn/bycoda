@@ -4,7 +4,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
-import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -224,15 +224,9 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
                 </Text>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {inUse ? (
-                  <Badge size="xs" tone="accent">
-                    {t("In use")}
-                  </Badge>
-                ) : null}
+                {inUse ? <StatusDot tone="accent" label={t("In use")} /> : null}
                 {route.enabled && reachable === false ? (
-                  <Badge size="xs" tone="warning">
-                    {t("No response")}
-                  </Badge>
+                  <StatusDot tone="warning" label={t("No response")} />
                 ) : null}
                 {route.source === "reported" ? (
                   <Switch
@@ -249,7 +243,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
       </Surface>
       {/* One message at a time; the Check again / Retry button above is the recovery. */}
       {error ? (
-        <InlineError>{error}</InlineError>
+        <InlineError details={error}>{t("Could not change this address.")}</InlineError>
       ) : readError ? (
         <InlineError>{t("Addresses could not be loaded.")}</InlineError>
       ) : probeError ? (

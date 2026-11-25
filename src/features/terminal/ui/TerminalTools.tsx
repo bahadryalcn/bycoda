@@ -1,5 +1,6 @@
 import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { Portal } from "../../../shared/ui/Portal";
@@ -255,6 +256,7 @@ export function TerminalTools({
             iconOnly
             label={t("Previous match")}
             disabled={!query}
+            disabledReason={!query ? t("Enter text to search for first.") : undefined}
             onClick={() => find(true)}
           >
             <ChevronUp className="icon-sm" />
@@ -265,22 +267,27 @@ export function TerminalTools({
             iconOnly
             label={t("Next match")}
             disabled={!query}
+            disabledReason={!query ? t("Enter text to search for first.") : undefined}
             onClick={() => find(false)}
           >
             <ChevronDown className="icon-sm" />
           </Button>
           <div className={styles.hint}>
-            <Text size="caption" tone="muted" role="status">
-              {query && !found
-                ? t("No matches")
-                : query && results && searchDecorations
-                  ? results.resultCount >= SEARCH_RESULT_LIMIT
-                    ? t("Results limited to the first matches")
-                    : results.resultIndex >= 0
-                      ? `${results.resultIndex + 1} / ${results.resultCount}`
-                      : t("{p0} matches", { p0: String(results.resultCount) })
-                  : ""}
-            </Text>
+            <LiveText
+              size="caption"
+              tone="muted"
+              text={
+                query && !found
+                  ? t("No matches")
+                  : query && results && searchDecorations
+                    ? results.resultCount >= SEARCH_RESULT_LIMIT
+                      ? t("Results limited to the first matches")
+                      : results.resultIndex >= 0
+                        ? `${results.resultIndex + 1} / ${results.resultCount}`
+                        : t("{p0} matches", { p0: String(results.resultCount) })
+                    : ""
+              }
+            />
           </div>
         </>
         <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={close}>
@@ -413,26 +420,37 @@ export function TerminalTools({
                   iconOnly
                   label={t("Decrease terminal text size")}
                   disabled={!onFontSizeChange || fontSize <= 8}
+                  disabledReason={
+                    !onFontSizeChange
+                      ? t("Text size cannot be changed here.")
+                      : fontSize <= 8
+                        ? t("Smallest text size reached")
+                        : undefined
+                  }
                   onClick={() => onFontSizeChange?.(fontSize - 1)}
                 >
                   <Minus className="icon-sm" />
                 </Button>
-                <Text
+                <LiveText
                   size="caption"
                   tone="secondary"
                   leading="inherit"
                   className={`${styles.fontValue} tabular-nums`}
-                  role="status"
-                  aria-label={t("Terminal font size")}
-                >
-                  {fontSize}px
-                </Text>
+                  text={`${fontSize}px`}
+                />
                 <Button
                   variant="ghost"
                   size="sm"
                   iconOnly
                   label={t("Increase terminal text size")}
                   disabled={!onFontSizeChange || fontSize >= 40}
+                  disabledReason={
+                    !onFontSizeChange
+                      ? t("Text size cannot be changed here.")
+                      : fontSize >= 40
+                        ? t("Largest text size reached")
+                        : undefined
+                  }
                   onClick={() => onFontSizeChange?.(fontSize + 1)}
                 >
                   <Plus className="icon-sm" />

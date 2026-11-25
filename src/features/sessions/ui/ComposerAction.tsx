@@ -40,7 +40,8 @@ export function ComposerAction({
 }) {
   const t = useT();
   const label = labelProp ?? t("Send");
-  const busyLabel = followUpAction && t(followUpAction === "steer" ? "Steer" : "Queue message");
+  const busyLabel =
+    followUpAction && (followUpAction === "steer" ? t("Steer") : t("Queue message"));
   if (disabled && !busy && !submitting) {
     return (
       <Button
@@ -75,6 +76,7 @@ export function ComposerAction({
                 loading={submitting === "queue"}
                 loadingLabel={t("Sending…")}
                 disabled={submitting === "send"}
+                disabledReason={t("Wait for the current action to finish.")}
                 onClick={onQueue}
               >
                 <ListEnd className="icon-sm" strokeWidth={1.75} />
@@ -94,6 +96,7 @@ export function ComposerAction({
               loading={queueIsPrimary ? !!submitting : submitting === "send"}
               loadingLabel={t("Sending…")}
               disabled={!queueIsPrimary && submitting === "queue"}
+              disabledReason={t("Wait for the current action to finish.")}
               startIcon={
                 followUpAction === "steer" ? (
                   <span className="composer-steer-icon icon-sm" aria-hidden="true" />
@@ -144,6 +147,7 @@ export function ComposerAction({
           loading={submitting === "queue"}
           loadingLabel={t("Sending…")}
           disabled={submitting === "send"}
+          disabledReason={t("Wait for the current action to finish.")}
           onClick={onQueue}
         >
           <ListEnd className="icon-sm" strokeWidth={1.75} />

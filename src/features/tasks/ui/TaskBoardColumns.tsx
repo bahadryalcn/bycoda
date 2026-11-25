@@ -6,11 +6,10 @@ import { t, useLocale } from "../../../shared/i18n";
 import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { TaskCard } from "./TaskBoardCard";
-import { COLUMN_LABELS, TaskBoardColumn } from "./TaskBoardColumn";
+import { TaskBoardColumn } from "./TaskBoardColumn";
+import { columnLabel } from "../model/taskColumnLabel";
 import { createTaskBoardDrag, taskCardKey, useTaskBoardDrag } from "./taskBoardDrag";
 import "./task-board.css";
-
-export { COLUMN_LABELS };
 
 /** The board's columns: cards grouped by status, with drag and drop between and
  * within them. Which card is being dragged, and over which column, lives in a small
@@ -98,7 +97,7 @@ export function TaskBoardColumns({
               { value: "all", label: t("All") },
               ...TASK_COLUMNS.map((status) => ({
                 value: status,
-                label: `${t(COLUMN_LABELS[status])} · ${columns.get(status)!.length}`,
+                label: `${columnLabel(status)} · ${columns.get(status)!.length}`,
               })),
             ]}
             onChange={(value) => onCompactColumnChange(value as TaskColumn | "all")}

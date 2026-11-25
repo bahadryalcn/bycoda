@@ -156,6 +156,7 @@ export function DictationDictionarySettings({
                     variant="ghost"
                     size="sm"
                     disabled={editing !== null}
+                    disabledReason={t("Save or cancel the term you are editing first.")}
                     label={t("Edit {p0}", { p0: entry.term })}
                     onClick={() => begin(index)}
                   >
@@ -167,6 +168,7 @@ export function DictationDictionarySettings({
                     size="sm"
                     tone="danger"
                     disabled={editing !== null}
+                    disabledReason={t("Save or cancel the term you are editing first.")}
                     label={t("Remove {p0}", { p0: entry.term })}
                     onClick={() => {
                       const dictationDictionary = entries.filter((_, item) => item !== index);
@@ -191,7 +193,18 @@ export function DictationDictionarySettings({
         {editing === null ? (
           <div className="flex min-w-0 flex-col gap-2">
             <div>
-              <Button variant="secondary" size="sm" disabled={full} onClick={() => begin("new")}>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={full}
+                disabledReason={t(
+                  "The dictionary is full at {p0} terms. Remove a term to add another.",
+                  {
+                    p0: String(DICTIONARY_LIMIT),
+                  },
+                )}
+                onClick={() => begin("new")}
+              >
                 {t("Add term")}
               </Button>
             </div>
@@ -231,6 +244,15 @@ export function DictationDictionarySettings({
               <Button
                 size="sm"
                 disabled={!hasTerm || (editing === "new" && full) || duplicateError}
+                disabledReason={
+                  !hasTerm
+                    ? t("Enter a term first.")
+                    : duplicateError
+                      ? t("This term is already saved in this scope. Edit the saved term instead.")
+                      : t("The dictionary is full at {p0} terms. Remove a term to add another.", {
+                          p0: String(DICTIONARY_LIMIT),
+                        })
+                }
                 onClick={() => save()}
               >
                 {t("Save term")}
@@ -240,6 +262,17 @@ export function DictationDictionarySettings({
                   variant="secondary"
                   size="sm"
                   disabled={!hasTerm || full || duplicateAnywhere}
+                  disabledReason={
+                    !hasTerm
+                      ? t("Enter a term first.")
+                      : duplicateAnywhere
+                        ? t(
+                            "This term is already saved in this scope. Edit the saved term instead.",
+                          )
+                        : t("The dictionary is full at {p0} terms. Remove a term to add another.", {
+                            p0: String(DICTIONARY_LIMIT),
+                          })
+                  }
                   onClick={() => save(true)}
                 >
                   {t("Add as new term")}

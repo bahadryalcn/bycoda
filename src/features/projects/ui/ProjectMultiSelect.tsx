@@ -281,6 +281,9 @@ export function ProjectMultiSelect({
                 type="button"
                 onClick={() => setNewGroupAnchor(null)}
                 disabled={groupPending}
+                disabledReason={
+                  groupPending ? t("Wait for the current operation to finish") : undefined
+                }
               >
                 {t("Cancel")}
               </Button>
@@ -289,6 +292,13 @@ export function ProjectMultiSelect({
                 motion="none"
                 type="submit"
                 disabled={groupPending || !chosen.length || !name.trim()}
+                disabledReason={
+                  groupPending
+                    ? t("Wait for the current operation to finish")
+                    : !chosen.length
+                      ? t("Choose at least one project.")
+                      : t("Enter a name.")
+                }
                 loading={groupPending}
               >
                 {t("Group")}

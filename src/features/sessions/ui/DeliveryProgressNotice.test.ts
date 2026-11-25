@@ -454,7 +454,13 @@ it("shows why the choice could not be saved and keeps the row", async () => {
       .find((button) => button.textContent === "Discard")!
       .click(),
   );
-  expect(container.textContent).toContain("being sent elsewhere");
+  expect(container.textContent).toContain("Could not record your choice");
+  await act(async () =>
+    Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.startsWith("Details"))!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("being sent elsewhere");
   expect(container.textContent).toContain("Queued");
   unregister();
   await act(async () => root.unmount());

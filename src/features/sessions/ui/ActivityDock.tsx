@@ -180,7 +180,9 @@ export const ActivityDock = memo(function ActivityDock({
   return (
     <div ref={root}>
       {discovery.error ? (
-        <InlineError retry={{ onRetry: discovery.retry }}>{discovery.error}</InlineError>
+        <InlineError details={discovery.error} retry={{ onRetry: discovery.retry }}>
+          {t("Could not load background work.")}
+        </InlineError>
       ) : null}
       {/* Always mounted, so a state change is announced rather than the dock
           appearing. The ticking clock stays out of it. */}
@@ -311,10 +313,15 @@ function DockBody({
       padding={{ block: "xs" }}
       aria-controls={listId}
       data-dock-toggle=""
-      label={`${label}. ${t(
-        open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
-        { p0: counts.map(({ text }) => text).join(" · ") },
-      )}`}
+      label={`${label}. ${
+        open
+          ? t("Background work, {p0}. Hide list", {
+              p0: counts.map(({ text }) => text).join(" · "),
+            })
+          : t("Background work, {p0}. Show list", {
+              p0: counts.map(({ text }) => text).join(" · "),
+            })
+      }`}
       tooltip={open ? t("Hide background work") : t("Show background work")}
       onClick={() => setExpanded(!open)}
       className="max-w-full min-w-0 flex-1 justify-between"
@@ -446,7 +453,7 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   }
   return (
     <StatusDot
-      label={t(state === "working" ? "Working" : "Waiting")}
+      label={state === "working" ? t("Working") : t("Waiting")}
       aria-hidden
       tone={state === "working" ? "accent" : "neutral"}
     />
@@ -531,11 +538,13 @@ function DockAgentRow({
       <Button
         variant="item"
         type="button"
-        aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
+        aria-label={
+          agent.kind === "agent" ? t("Open {p0}", { p0: summary }) : t("Show {p0}", { p0: summary })
+        }
         data-dock-agent={agent.blockId}
         data-dock-agent-state={agent.status}
         onClick={() => onOpen(agent)}
-        className={`activity-dock-agent min-w-0 flex-1 items-center text-left ${agent.kind === "agent" ? rowStyles.row : ""}`}
+        className={`activity-dock-agent min-w-0 flex-1 items-center text-start ${agent.kind === "agent" ? rowStyles.row : ""}`}
       >
         {agent.kind === "agent" ? (
           <DockAgentCard agent={agent} provider={provider} />
@@ -609,13 +618,16 @@ function DockAgentRow({
       </Button>
       {stoppable ? (
         <Button
-          className="mr-1 shrink-0"
+          className="me-1 shrink-0"
           variant="ghost"
           type="button"
-          disabled={stopping}
+          loading={stopping}
+          loadingLabel={t("Stopping…")}
           startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
-          reserveLabels={[t("Stop"), t("Stopping…"), t("Retry stop")]}
-          aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
+          reserveLabels={[t("Stop"), t("Retry stop")]}
+          aria-label={
+            stopping ? t("Stopping {p0}", { p0: agent.name }) : t("Stop {p0}", { p0: agent.name })
+          }
           tooltip={
             stop.failed.has(key)
               ? t("Could not stop it. Try again.")
@@ -627,7 +639,7 @@ function DockAgentRow({
           }
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
-          {stopping ? t("Stopping…") : stop.failed.has(key) ? t("Retry stop") : t("Stop")}
+          {stop.failed.has(key) ? t("Retry stop") : t("Stop")}
         </Button>
       ) : null}
     </div>

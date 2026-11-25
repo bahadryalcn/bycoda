@@ -1,3 +1,4 @@
+import { ownerPromptLabel } from "../model/ownerPromptLabels";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
@@ -81,11 +82,11 @@ export function OwnerApprovalChat({
                 title={request.title}
                 detail={request.message}
                 allow={{
-                  label: t(request.confirmLabel),
+                  label: ownerPromptLabel(t, request.confirmLabel),
                   onClick: () => settleOwnerApproval(request.id, true),
                 }}
                 deny={{
-                  label: t(request.cancelLabel),
+                  label: ownerPromptLabel(t, request.cancelLabel),
                   onClick: () => settleOwnerApproval(request.id, false),
                 }}
                 details={
@@ -190,11 +191,11 @@ function InboxApprovalDialog({
           title={request.title}
           detail={request.message}
           allow={{
-            label: t(request.confirmLabel),
+            label: ownerPromptLabel(t, request.confirmLabel),
             onClick: () => settleOwnerApproval(request.id, true),
           }}
           deny={{
-            label: t(request.cancelLabel),
+            label: ownerPromptLabel(t, request.cancelLabel),
             onClick: () => settleOwnerApproval(request.id, false),
           }}
           details={

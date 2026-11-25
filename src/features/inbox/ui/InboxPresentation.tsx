@@ -104,48 +104,49 @@ export type CiRepairProps = {
 export type InboxStatusMark = {
   Icon: IconComponent;
   tone: BadgeTone;
+  /** Translated. */
   label: string;
 };
 
 /** Status reads from the glyph first and the color second, so it survives color blindness. */
 export function inboxStatusMark(item: InboxItem): InboxStatusMark {
-  const label = inboxItemStatus(item);
+  const status = inboxItemStatus(item);
   const pr = item.kind === "pr";
-  if (label === "Draft") {
+  if (status === "Draft") {
     return {
       Icon: GitPullRequestDraft,
       tone: "neutral",
-      label,
+      label: t("Draft"),
     };
   }
-  if (label === "Merged") {
-    return { Icon: GitMerge, tone: "accent", label };
+  if (status === "Merged") {
+    return { Icon: GitMerge, tone: "accent", label: t("Merged") };
   }
-  if (label === "Closed") {
+  if (status === "Closed") {
     if (
       item.provider === "github" &&
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "completed"
     ) {
-      return { Icon: CheckCircle, tone: "success", label: "Completed" };
+      return { Icon: CheckCircle, tone: "success", label: t("Completed") };
     }
     if (
       item.provider === "github" &&
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "not_planned"
     ) {
-      return { Icon: CircleX, tone: "neutral", label: "Not planned" };
+      return { Icon: CircleX, tone: "neutral", label: t("Not planned") };
     }
     return {
       Icon: pr ? GitPullRequestClosed : CircleX,
       tone: "danger",
-      label,
+      label: t("Closed"),
     };
   }
   return {
     Icon: pr ? GitPullRequest : CircleDot,
     tone: "success",
-    label,
+    label: t("Open"),
   };
 }
 

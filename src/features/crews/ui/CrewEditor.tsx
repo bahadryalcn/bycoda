@@ -34,6 +34,7 @@ import {
   saveLibraryProfile,
 } from "../model/crewRoster";
 import { CrewAccessRow } from "./CrewAccessRow";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { CrewAppearancePicker } from "./CrewAppearancePicker";
 import { CrewEditorBulkBar } from "./CrewEditorBulkBar";
 import { CrewEditorAddFooter, CrewEditorAddPage, liveAdditions } from "./CrewEditorAdd";
@@ -52,7 +53,7 @@ import { useCrewAutosave } from "./useCrewAutosave";
 import { useCrewRebase } from "./useCrewRebase";
 import { usePageFocus } from "./usePageFocus";
 import { useCrewLook } from "./useCrewLook";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 
 export { emptyCrew };
 
@@ -75,14 +76,14 @@ export function CrewEditDialog({ cwd, ...focus }: { cwd: string } & EditorFocus)
     return (
       <Modal title={t("Crew")} size="sm" onClose={focus.onClose}>
         <div>
-          <Alert tone={state.visibleError ? "warning" : "info"}>
-            {state.visibleError ?? t("Loading crews…")}
-            {state.visibleError ? (
-              <Button variant="ghost" onClick={() => void state.refetch()}>
-                {t("Retry")}
-              </Button>
-            ) : null}
-          </Alert>
+          {state.visibleError ? (
+            <InlineError
+              details={state.visibleError}
+              retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+            />
+          ) : (
+            <Alert tone="info">{t("Loading crews…")}</Alert>
+          )}
         </div>
       </Modal>
     );
@@ -123,7 +124,7 @@ function ConnectedCrewEditor({
   const [pendingAction, setPendingAction] = useState<CrewBusyAction>(null);
   const pending = pendingAction !== null;
   const gate = useRef(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ summary: string; details: string } | null>(null);
   const [showIssues, setShowIssues] = useState(false);
   const body = useRef<HTMLFieldSetElement>(null);
   const [rosterQuery, setRosterQuery] = useState("");
@@ -183,11 +184,12 @@ function ConnectedCrewEditor({
     if (gate.current) return;
     gate.current = true;
     setPendingAction(action);
-    setError("");
+    setError(null);
     try {
       await operation();
     } catch (reason) {
-      setError(presentRemoteError(reason, { explicit: true }));
+      const { message, details } = describeRemoteError(reason);
+      setError({ summary: message, details });
     } finally {
       gate.current = false;
       setPendingAction(null);
@@ -480,7 +482,7 @@ function ConnectedCrewEditor({
                     crewId={draft.id}
                     look={looks.look}
                     onChange={looks.setLook}
-                    disabled={pending}
+                    busy={pending}
                   />
                 }
                 access={

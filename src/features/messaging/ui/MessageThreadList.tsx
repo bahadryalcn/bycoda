@@ -9,7 +9,7 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { MESSAGING_PROVIDER_LABELS, threadKey, threadUnread } from "../model/messageThreads";
+import { messagingProviderLabel, threadKey, threadUnread } from "../model/messageThreads";
 import type { MessageThread } from "../model/messagingTypes";
 import { MessagingProviderMark } from "./MessagingProviderMark";
 
@@ -39,7 +39,7 @@ const MessageThreadRow = memo(function MessageThreadRow({
   const preview = truncateGraphemes(thread.preview.replace(/\s+/g, " ").trim(), PREVIEW_GRAPHEMES);
   const participants = truncateGraphemes(thread.participants.join(", "), PARTICIPANTS_GRAPHEMES);
   const source = [participants, accountLabel].filter(Boolean).join(" · ");
-  const provider = t(MESSAGING_PROVIDER_LABELS[thread.provider]);
+  const provider = messagingProviderLabel(thread.provider);
   return (
     <ActionHost selected={active} className="w-full min-w-0">
       <Button

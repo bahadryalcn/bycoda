@@ -53,7 +53,15 @@ it("retries a failed read without closing the dialog", async () => {
       }),
     );
   await render("first");
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("offline");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not open this session.",
+  );
+  await act(async () =>
+    Array.from(document.querySelectorAll("button"))
+      .find((button) => button.textContent === "Details")!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("offline");
   const retry = Array.from(document.querySelectorAll("button")).find(
     (button) => button.textContent === "Retry",
   )!;

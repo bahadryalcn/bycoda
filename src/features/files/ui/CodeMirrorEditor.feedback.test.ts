@@ -63,7 +63,7 @@ it("keeps long staging failures behind Details and next-file notes in wrapped st
   const statuses = [...host.querySelectorAll('[role="status"]')];
   const status = statuses.find((element) => element.textContent === note)!;
   expect(status).toBeDefined();
-  expect(status.getAttribute("data-wrap")).toBe("anywhere");
+  expect(status.className).toContain("wrap-anywhere");
   expect(status.hasAttribute("data-truncate")).toBe(false);
   expect(host.querySelector('[role="alert"]')?.textContent).toContain(
     "Couldn’t mark the file as resolved",

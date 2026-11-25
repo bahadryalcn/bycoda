@@ -357,8 +357,10 @@ it("keeps the stash section visible on load failure and disables it during anoth
     operation = withGitOperation("/repo", "Staging…", () => request.promise);
   });
   expect(
-    container.querySelector<HTMLButtonElement>('[aria-label="Stash all changes"]')?.disabled,
-  ).toBe(true);
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Stash all changes"]')
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
   await act(async () => request.resolve());
   await operation;
   expect(

@@ -479,6 +479,7 @@ function McpConnections({
             label={t("Refresh")}
             loading={loading}
             disabled={loading || busy !== ""}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void refresh()}
           >
             <RefreshCw className="icon-sm" />
@@ -782,7 +783,11 @@ function McpConnections({
           }}
           footer={
             <>
-              <Button disabled={busy !== ""} onClick={() => setRemoveTarget(null)}>
+              <Button
+                disabled={busy !== ""}
+                disabledReason={t("Wait for the current operation to finish")}
+                onClick={() => setRemoveTarget(null)}
+              >
                 {t("Cancel")}
               </Button>
               <Button

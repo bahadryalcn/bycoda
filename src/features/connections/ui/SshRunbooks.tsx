@@ -9,8 +9,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { formatDate, t } from "../../../shared/i18n";
 import { revokeSshHttpProxyApproval } from "../model/sshHttpProxyApproval";
-import { errorText } from "../../../shared/lib/errors";
-import { sanitizeConnectionError } from "../model/remoteConnection";
+import { connectionProblem } from "../model/connectionReason";
 import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { StatusBadge, type BadgeStatus } from "../../../shared/ui/Badge";
@@ -19,7 +18,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -27,7 +26,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { ServerRecord } from "../model/serverInventory";
 import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
-import { validSshRuntimeConfiguration } from "../model/sshGroupDefaults";
+import { sshInheritedFieldLabel, validSshRuntimeConfiguration } from "../model/sshGroupDefaults";
 import { sshProvenanceText } from "./sshProvenanceText";
 import { sshProxyEndpointText } from "./sshProxyEndpointText";
 import {
@@ -94,7 +93,7 @@ export function SshRunbooks({
   );
   const [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState("");
+    [problem, setProblem] = useState<{ title: string; details?: string }>();
   const mounted = useRef(false),
     locked = useRef(false);
   const [status, setStatus] = useState<SshRunStatus>();
@@ -138,11 +137,12 @@ export function SshRunbooks({
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
-    setError("");
+    setProblem(undefined);
     try {
       await work();
     } catch (reason) {
-      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
+      if (mounted.current)
+        setProblem(connectionProblem(t("Could not complete this action."), reason));
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -183,7 +183,7 @@ export function SshRunbooks({
       })
       .catch((reason) => {
         if (mounted.current && sequence === loadSequence.current)
-          setError(sanitizeConnectionError(errorText(reason)));
+          setProblem(connectionProblem(t("Could not load the SSH runbooks."), reason));
       })
       .finally(() => {
         if (mounted.current && sequence === loadSequence.current) setLoading(false);
@@ -215,7 +215,11 @@ export function SshRunbooks({
       })
       .catch((reason) => {
         // A status lookup that follows a failed operation must not replace that operation's error.
-        if (current) setError((previous) => previous || sanitizeConnectionError(errorText(reason)));
+        if (current)
+          setProblem(
+            (previous) =>
+              previous ?? connectionProblem(t("Could not read the run status."), reason),
+          );
       });
     return () => {
       current = false;
@@ -239,7 +243,7 @@ export function SshRunbooks({
         .catch((reason) => {
           if (!current) return;
           failures++;
-          setError(sanitizeConnectionError(errorText(reason)));
+          setProblem(connectionProblem(t("Could not read the run status."), reason));
         })
         .finally(() => {
           if (!current) return;
@@ -375,7 +379,7 @@ export function SshRunbooks({
           <Text as="p" tone="muted">
             {t("Target")}: {server.name}
           </Text>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {problem ? <InlineError details={problem.details}>{problem.title}</InlineError> : null}
           {intents.length ? (
             <Text
               as="section"
@@ -389,15 +393,22 @@ export function SshRunbooks({
                   <p className="min-w-0 flex-1 break-all">
                     {profiles.find((item) => item.id === intent.automationId)?.name ??
                       intent.automationId}{" "}
-                    · {t(intent.trigger === "startup" ? "After connection" : "Scheduled")} ·{" "}
+                    · {intent.trigger === "startup" ? t("After connection") : t("Scheduled")} ·{" "}
                     {t("Pending review")}
                   </p>
                   <Button
                     disabled={busy || frozen}
+                    disabledReason={
+                      busy
+                        ? t("Wait for the current action to finish.")
+                        : frozen
+                          ? t("Wait for the current run to finish.")
+                          : undefined
+                    }
                     onClick={() => {
                       const found = profiles.find((item) => item.id === intent.automationId);
                       if (!found || found.revision !== intent.revision) {
-                        setError(t("Runbook changed. Refresh and review again."));
+                        setProblem({ title: t("Runbook changed. Refresh and review again.") });
                         return;
                       }
                       setDraft(sshRunbookDraft(found));
@@ -485,21 +496,19 @@ export function SshRunbooks({
                     {RUN_STATE_BADGE[target.state] ? (
                       <StatusBadge status={RUN_STATE_BADGE[target.state]!} />
                     ) : (
-                      t(
-                        {
-                          exited: "Exited",
-                          cancelled: "Cancelled",
-                          unknown: "Unknown",
-                        }[target.state as "exited" | "cancelled" | "unknown"],
-                      )
+                      {
+                        exited: t("Exited"),
+                        cancelled: t("Cancelled"),
+                        unknown: t("Unknown"),
+                      }[target.state as "exited" | "cancelled" | "unknown"]
                     )}
                     {target.exitCode != null ? ` · ${target.exitCode}` : ""}
                   </p>
                   {target.reason ? (
                     <Text as="div" size="inherit" tone="muted" className="w-full min-w-0">
-                      <p>{t(sshRunReasonMessage(target.reason))}</p>
+                      <p>{sshRunReasonMessage(target.reason)}</p>
                       <ErrorDetails
-                        title={t(sshRunReasonMessage(target.reason))}
+                        title={sshRunReasonMessage(target.reason)}
                         label={t("Technical details")}
                         detail={target.reason}
                       />
@@ -683,7 +692,7 @@ export function SshRunbooks({
                 "flex min-w-0 flex-col gap-2 pbs-3",
               )}
             >
-              <p>{t(selectedIntent ? "Pending review" : "Manual execution")}</p>
+              <p>{selectedIntent ? t("Pending review") : t("Manual execution")}</p>
               <Text as="p" size="inherit" tone="inherit" weight="medium">
                 {activeReview.value.profile.name} · r{activeReview.value.profile.revision}
               </Text>
@@ -737,19 +746,7 @@ export function SshRunbooks({
                       ) : null}
                       {Object.entries(target.configuration?.provenance ?? {}).map(
                         ([field, source]) => (
-                          <DescriptionItem
-                            key={field}
-                            term={t(
-                              (
-                                {
-                                  user: "SSH user",
-                                  port: "SSH port",
-                                  identityFile: "Identity file",
-                                  certificateFile: "Public SSH certificate file",
-                                } as Record<string, string>
-                              )[field] ?? field,
-                            )}
-                          >
+                          <DescriptionItem key={field} term={sshInheritedFieldLabel(field)}>
                             {sshProvenanceText(source)}
                           </DescriptionItem>
                         ),

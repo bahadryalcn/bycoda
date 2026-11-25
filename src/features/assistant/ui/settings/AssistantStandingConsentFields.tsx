@@ -8,26 +8,28 @@ import { Row } from "../../../../shared/ui/settings";
 import styles from "./settings.module.css";
 import { DEFAULT_CRITICAL_EXCLUSIONS } from "./assistantAccess";
 
-const exclusions = [
-  ["pushMain", "Push to main"],
-  ["deleteProject", "Delete projects"],
-  ["deleteSession", "Delete conversations"],
-  ["sendMessages", "Send messages"],
-  ["computerUse", "Computer use"],
-  ["spend", "Spend money"],
-] as const;
+const exclusions = () =>
+  [
+    ["pushMain", t("Push to main")],
+    ["deleteProject", t("Delete projects")],
+    ["deleteSession", t("Delete conversations")],
+    ["sendMessages", t("Send messages")],
+    ["computerUse", t("Computer use")],
+    ["spend", t("Spend money")],
+  ] as const;
 
 /** Explicit owner policy. Profile is a mirror; native grants are saved before it. */
 export function AssistantStandingConsentFields({
   value,
   onChange,
   projects,
-  disabled,
+  pending,
 }: {
   value: AssistantProfilePatch;
   onChange: (patch: AssistantProfilePatch) => void;
   projects: readonly { id?: string; name: string; path: string }[];
-  disabled: boolean;
+  /** The owner's save is running; the choices wait for it. */
+  pending: boolean;
 }) {
   const authorityId = useId();
   return (
@@ -48,7 +50,7 @@ export function AssistantStandingConsentFields({
           label={t("Assistant authority")}
           hideLabel
           value={value.permissionLevel ?? "legacy"}
-          disabled={disabled}
+          disabled={pending}
           onValueChange={(permissionLevel) =>
             onChange({
               permissionLevel: permissionLevel as AssistantProfilePatch["permissionLevel"],
@@ -75,7 +77,7 @@ export function AssistantStandingConsentFields({
                 <Checkbox
                   key={project.id}
                   label={project.name}
-                  disabled={disabled}
+                  disabled={pending}
                   checked={(value.permissionProjectIds ?? []).includes(project.id!)}
                   onChange={(event) =>
                     onChange({
@@ -92,11 +94,11 @@ export function AssistantStandingConsentFields({
       {value.permissionLevel && (
         <Row label={t("Always ask for approval")} stacked>
           <div className={styles.consentChoices}>
-            {exclusions.map(([key, label]) => (
+            {exclusions().map(([key, label]) => (
               <Checkbox
                 key={key}
-                label={t(label)}
-                disabled={disabled}
+                label={label}
+                disabled={pending}
                 checked={(value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).includes(key)}
                 onChange={(event) =>
                   onChange({

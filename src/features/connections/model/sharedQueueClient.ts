@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { persistableQueue } from "../../sessions/public/queuePersistence";
 import { cachedRemoteCapabilities, remoteRequest } from "./connections";
 import {
@@ -424,8 +425,9 @@ export class SharedQueueClient {
         editingId: undefined,
       };
       this.conflict = true;
-      this.notice =
-        "Another computer changed a queued message you also changed. Your version was kept as a new message.";
+      this.notice = t(
+        "Another computer changed a queued message you also changed. Your version was kept as a new message.",
+      );
       this.persist();
       this.emit(true, String(error).replace(/^Error: /, ""));
       return true;
@@ -696,8 +698,10 @@ export class SharedQueueClient {
     };
     this.conflict = false;
     this.notice = duplicated
-      ? "Another computer changed a queued message you also changed. Your version was kept as a new message."
-      : "Another computer changed the queue. Check it, then resume.";
+      ? t(
+          "Another computer changed a queued message you also changed. Your version was kept as a new message.",
+        )
+      : t("Another computer changed the queue. Check it, then resume.");
     this.persist();
     this.emit(true);
   }

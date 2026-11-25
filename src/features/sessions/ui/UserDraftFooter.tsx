@@ -32,6 +32,9 @@ export function UserDraftFooter({
   onSendDraft?: (block: Block) => boolean | void;
 }) {
   const t = useT();
+  const heldReason = deliveryActive
+    ? (heldActionTitle ?? t("Wait for the current action to finish."))
+    : undefined;
   const tone =
     delivery === "undelivered" ? "danger" : delivery === "uncertain" ? "warning" : "neutral";
   return (
@@ -48,45 +51,46 @@ export function UserDraftFooter({
           </Badge>
         </span>
       </Tooltip>
-      <Tooltip label={deliveryActive ? heldActionTitle : undefined} asChild>
-        <span className="flex items-center gap-1">
-          {onEditDraft ? (
-            <Button
-              motion="none"
-              variant="ghost"
-              size="sm"
-              aria-label={t("Edit draft")}
-              type="button"
-              disabled={deliveryActive}
-              onClick={() => onEditDraft(block)}
-            >
-              {t("Edit draft")}
-            </Button>
-          ) : null}
+      <span className="flex items-center gap-1">
+        {onEditDraft ? (
           <Button
             motion="none"
             variant="ghost"
             size="sm"
-            aria-label={t("Remove draft")}
+            aria-label={t("Edit draft")}
             type="button"
             disabled={deliveryActive}
-            onClick={() => onRemoveDraft?.(block)}
+            disabledReason={heldReason}
+            onClick={() => onEditDraft(block)}
           >
-            {t("Remove draft")}
+            {t("Edit draft")}
           </Button>
-          <Button
-            motion="none"
-            variant="secondary"
-            size="sm"
-            aria-label={t("Send draft")}
-            type="button"
-            disabled={deliveryActive}
-            onClick={() => onSendDraft?.(block)}
-          >
-            {t("Send draft")}
-          </Button>
-        </span>
-      </Tooltip>
+        ) : null}
+        <Button
+          motion="none"
+          variant="ghost"
+          size="sm"
+          aria-label={t("Remove draft")}
+          type="button"
+          disabled={deliveryActive}
+          disabledReason={heldReason}
+          onClick={() => onRemoveDraft?.(block)}
+        >
+          {t("Remove draft")}
+        </Button>
+        <Button
+          motion="none"
+          variant="secondary"
+          size="sm"
+          aria-label={t("Send draft")}
+          type="button"
+          disabled={deliveryActive}
+          disabledReason={heldReason}
+          onClick={() => onSendDraft?.(block)}
+        >
+          {t("Send draft")}
+        </Button>
+      </span>
       {delivery === "undelivered" || delivery === "uncertain" ? (
         <Text as="span" size="caption" tone="secondary" className="basis-full text-end font-sans">
           {deliveryDescription}

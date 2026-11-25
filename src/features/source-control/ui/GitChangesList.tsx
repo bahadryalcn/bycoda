@@ -1,4 +1,5 @@
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
@@ -267,9 +268,12 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     <ChangeSelectionCtx.Provider value={context}>
       <li className="list-none">
         {selectedFiles.length > 1 ? (
-          <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
-            {t("{p0} selected entries", { p0: selectedFiles.length })}
-          </Text>
+          <LiveText
+            size="caption"
+            tone="secondary"
+            className="block px-3 py-1"
+            text={t("{p0} selected entries", { p0: selectedFiles.length })}
+          />
         ) : null}
         {/* A grid, not a listbox: every row holds independent buttons, which options may not. The
             grid is one Tab stop (the focused row's open button); arrows move between rows and
@@ -432,11 +436,13 @@ function ChangeDirRow({
         </div>
         <div role="gridcell" className="flex shrink-0 items-center">
           <InlineAction
-            label={t(kind === "staged" ? "Unstage Changes in {p1}" : "Stage Changes in {p1}", {
-              p1: dir.path,
-            })}
+            label={
+              kind === "staged"
+                ? t("Unstage Changes in {p1}", { p1: dir.path })
+                : t("Stage Changes in {p1}", { p1: dir.path })
+            }
             tabIndex={-1}
-            disabled={rest.busy !== null}
+            disabled={!!rest.busy}
             onClick={() => rest.onFolderAction(dir.path, kind === "staged" ? "unstage" : "stage")}
           >
             {kind === "staged" ? (

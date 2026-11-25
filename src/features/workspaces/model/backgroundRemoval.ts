@@ -1,6 +1,8 @@
+import { createElement } from "react";
 import { errorText } from "../../../shared/lib/errors";
 import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { toast } from "../../../shared/ui/ToastRegion";
 
 /** Folders whose removal is still running, keyed by `pathKey`. Survives dialog and page unmount. */
@@ -43,7 +45,10 @@ export async function runBackgroundRemoval(
       id,
       tone: "danger",
       title: t("Couldn't delete {p0}", { p0: label }),
-      message: errorText(error),
+      extra: createElement(ErrorDetails, {
+        detail: errorText(error),
+        title: t("Couldn't delete {p0}", { p0: label }),
+      }),
     });
     return false;
   } finally {

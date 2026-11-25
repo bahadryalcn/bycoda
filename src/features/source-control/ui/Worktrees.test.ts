@@ -429,7 +429,9 @@ it("keeps the settings rows mounted through focus refreshes and failures", async
   expect(button("Create worktree").disabled).toBe(false);
   await act(async () => request.reject(new Error("Git unavailable")));
   expect(container.querySelector('[aria-label="Reveal feature"]')).toBe(reveal);
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Git unavailable");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t load worktrees",
+  );
   expect(container.textContent).toContain("Deletion is unavailable until Refresh succeeds.");
   expect(unavailable(worktreeDelete(container, '[aria-label="Delete feature"]'))).toBe(true);
   expect(
@@ -1042,7 +1044,12 @@ it("reports partial completion if worktree removal fails after successful prefli
   await act(async () => document.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   await act(async () => button("Delete worktree and session").click());
   expect(onDeleteSessions).toHaveBeenCalledOnce();
-  const alert = document.querySelector('[role="alert"]')?.textContent ?? "";
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((node) => node.textContent === "Details")!
+      .click(),
+  );
+  const alert = document.body.textContent ?? "";
   expect(alert).toContain("The sessions were deleted, but the worktree was kept.");
   // Regression for #757: the cause is appended without the raw `Error:` prefix.
   expect(alert).not.toContain("Error:");
@@ -1258,7 +1265,7 @@ it("shows no selected branch after removal even when the old path has a branch a
     "This session’s worktree was deleted. Select a worktree to continue.",
   );
   expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
-  expect(button("Switch branch in this worktree…").disabled).toBe(true);
+  expect(button("Switch branch in this worktree…").getAttribute("aria-disabled")).toBe("true");
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo" }));
 });

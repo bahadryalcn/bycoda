@@ -5,29 +5,29 @@ import type { SettingsEntry } from "./settings";
 export const TERMINAL_SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "terminal-default-profile",
-    label: "Default terminal profile",
+    label: () => t("Default terminal profile"),
     keywords: "shell bash git bash powershell pwsh cmd wsl zsh default ! command",
   },
   {
     id: "terminal-code-result",
-    label: "Add result to chat when finished",
+    label: () => t("Add result to chat when finished"),
     keywords: "code block run output result chat composer kod bloğu çalıştır çıktı sonuç sohbet",
   },
   {
     id: "terminal-available-shells",
-    label: "Advanced terminal settings",
+    label: () => t("Advanced terminal settings"),
     keywords: "local available shells discovery advanced gelişmiş kabuk keşif",
   },
   {
     id: "host-shells",
-    label: "Default shell",
+    label: () => t("Default shell"),
     keywords: "remote server local sync host shell ssh uzak sunucu kabuk",
   },
 ].map((item) => ({
   id: item.id,
   section: "terminal" as const,
   get label() {
-    return t(item.label);
+    return item.label();
   },
   keywords: item.keywords,
 }));

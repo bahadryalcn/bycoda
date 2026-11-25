@@ -5,7 +5,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
-import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
+import { runtimeModeLabel } from "../model/runtimeModeLabel";
 import { automationScheduleLabel } from "../model/automations";
 import { dateTimeFormat, useT } from "../../../shared/i18n";
 import {
@@ -50,7 +50,7 @@ export function AutomationProposalDialog() {
     >
       <div className="flex flex-col gap-3">
         {state.status === "preparing" ? <Text>{t("Preparing…")}</Text> : null}
-        {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
+        {state.notice ? <Alert tone="danger">{state.notice}</Alert> : null}
         {saved ? <Alert tone="success">{t("Saved")}</Alert> : null}
         {proposal ? (
           <>
@@ -83,7 +83,7 @@ export function AutomationProposalDialog() {
                 <ModelLabel harness={execution.harness} model={execution.model} />
               </DescriptionItem>
               <DescriptionItem term={t("Mode")}>
-                {t(RUNTIME_MODE_LABEL[execution.runtimeMode])}
+                {runtimeModeLabel(execution.runtimeMode)}
               </DescriptionItem>
             </DescriptionList>
           </>

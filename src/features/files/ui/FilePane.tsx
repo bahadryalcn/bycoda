@@ -364,6 +364,13 @@ function PlanSurface({
     );
   }
 
+  const buildReason = session?.busy
+    ? t("Wait for the current turn to finish before building the plan.")
+    : !block.text.trim()
+      ? t("The plan is empty.")
+      : block.plan?.status === "streaming"
+        ? t("Wait for the plan to finish")
+        : undefined;
   const buildDisabled =
     !!session?.busy ||
     !block.text.trim() ||
@@ -405,6 +412,7 @@ function PlanSurface({
               variant="ghost"
               startIcon={<Play className="icon-sm" />}
               disabled={buildDisabled}
+              disabledReason={buildReason}
               loading={block.plan?.status === "building"}
               onClick={() => onBuildPlan(plan.sessionId, block.id)}
             >

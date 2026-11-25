@@ -193,7 +193,7 @@ it("lists recovery metadata without auto-resume and requires fresh upload replac
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_resume", expect.anything());
     await act(async () => context.button("Review resume").click());
     expect(context.host.textContent).toContain("/remote/target.txt");
-    expect(context.button("Resume").disabled).toBe(true);
+    expect(context.button("Resume").getAttribute("aria-disabled")).toBe("true");
     await act(async () =>
       context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
     );
@@ -237,7 +237,7 @@ it("asks for replacement consent only when the remote filename already exists", 
     // An existing name needs fresh explicit consent every time.
     native.open.mockResolvedValueOnce("C:/file.txt");
     await act(async () => context.button("Upload").click());
-    expect(context.button("Upload file").disabled).toBe(true);
+    expect(context.button("Upload file").getAttribute("aria-disabled")).toBe("true");
     const checkbox = context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(checkbox.checked).toBe(false);
     await act(async () => checkbox.click());
@@ -253,7 +253,7 @@ it("asks for replacement consent only when the remote filename already exists", 
     expect(context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(
       false,
     );
-    expect(context.button("Upload file").disabled).toBe(true);
+    expect(context.button("Upload file").getAttribute("aria-disabled")).toBe("true");
   } finally {
     await context.cleanup();
   }
@@ -272,7 +272,7 @@ it("requires target inspection and metadata-only dismissal after uncertain publi
   ]);
   try {
     expect(context.host.textContent).toContain("Publication outcome unknown");
-    expect(context.button("Review resume").disabled).toBe(true);
+    expect(context.button("Review resume").getAttribute("aria-disabled")).toBe("true");
     expect(native.invoke).not.toHaveBeenCalledWith("ssh_sftp_resume", expect.anything());
     await act(async () => context.button("Dismiss recovery").click());
     expect(native.invoke).toHaveBeenCalledWith(
@@ -296,8 +296,9 @@ it("retains the last directory on a network failure instead of erasing it", asyn
     );
     expect(context.host.textContent).toContain("file.txt");
     expect(context.host.querySelector('[role="alert"]')?.textContent).toContain(
-      "connection interrupted",
+      "Could not complete the file action.",
     );
+    expect(context.host.textContent).not.toContain("connection interrupted");
   } finally {
     await context.cleanup();
   }

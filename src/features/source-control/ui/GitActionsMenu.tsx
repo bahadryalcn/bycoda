@@ -247,7 +247,7 @@ export function GitActionsMenu({
         get title() {
           // The progress label names the action ("Pulling…" -> "Pulling failed").
           return pending
-            ? t("{p0} failed", { p0: t(pending).replace(/…$/, "") })
+            ? t("{p0} failed", { p0: pending.replace(/…$/, "") })
             : t("Git operation failed");
         },
         detail: errorText(error),
@@ -355,7 +355,7 @@ export function GitActionsMenu({
   };
 
   const stashWith = (mode: GitStashMode) =>
-    run(() => gitStash(cwd, undefined, mode), "Changes stashed");
+    run(() => gitStash(cwd, undefined, mode), t("Changes stashed"));
 
   const undoLastCommit = async () => {
     if (
@@ -370,7 +370,7 @@ export function GitActionsMenu({
     ) {
       return;
     }
-    await run(() => gitUndoLastCommit(cwd), "Last commit undone");
+    await run(() => gitUndoLastCommit(cwd), t("Last commit undone"));
   };
 
   const abortOperation = async () => {
@@ -397,18 +397,18 @@ export function GitActionsMenu({
       case "repository-scope":
         return repositoryScope?.onToggle();
       case "pull":
-        return run(() => gitPull(cwd), undefined, "Pulling…");
+        return run(() => gitPull(cwd), undefined, t("Pulling…"));
       case "pull-rebase":
-        return run(() => gitPull(cwd, true), undefined, "Pulling…");
+        return run(() => gitPull(cwd, true), undefined, t("Pulling…"));
       case "push":
       case "branch-publish":
-        return run(() => gitPush(cwd), undefined, "Pushing…");
+        return run(() => gitPush(cwd), undefined, t("Pushing…"));
       case "sync":
-        return run(() => gitSync(cwd), undefined, "Syncing…");
+        return run(() => gitSync(cwd), undefined, t("Syncing…"));
       case "fetch":
-        return run(() => gitFetch(cwd), undefined, "Fetching…");
+        return run(() => gitFetch(cwd), undefined, t("Fetching…"));
       case "fetch-prune":
-        return run(() => gitFetch(cwd, true), undefined, "Fetching…");
+        return run(() => gitFetch(cwd, true), undefined, t("Fetching…"));
       case "auto-fetch":
         return onToggleAutoFetch();
       case "checkout":
@@ -726,6 +726,11 @@ export function GitActionsMenu({
                 iconOnly
                 label={label}
                 disabled={!item || item.kind !== "item" || !!item.disabled || !!busy}
+                disabledReason={
+                  busy
+                    ? t("Wait for the current operation to finish")
+                    : t("{p0} is not available right now.", { p0: label })
+                }
                 onClick={() => void handle(id)}
               >
                 <Icon className="icon-sm" />
@@ -742,6 +747,7 @@ export function GitActionsMenu({
         aria-label={t("Branch actions")}
         aria-expanded={open}
         disabled={busy !== null}
+        disabledReason={busy !== null ? t("Wait for the current operation to finish") : undefined}
         onClick={(event) => {
           const button = event.currentTarget;
           setAnchor((current) => (current ? null : button));

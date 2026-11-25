@@ -205,13 +205,18 @@ export function XPostActions({ account, client, disabled }: Props) {
         variant="primary"
         className="self-start"
         disabled={busy || !valid}
+        disabledReason={
+          busy ? t("Wait for the current change to finish.") : t("Enter a valid post ID first.")
+        }
         loading={x.busy}
         onClick={() => void review().catch(() => undefined)}
       >
         {t("Review")}
       </Button>
-      {listing.error ? <InlineError details={listing.details}>{listing.error}</InlineError> : null}
-      {x.error ? <InlineError details={x.details}>{x.error}</InlineError> : null}
+      {listing.failureTitle ? (
+        <InlineError details={listing.details}>{listing.failureTitle}</InlineError>
+      ) : null}
+      {x.failureTitle ? <InlineError details={x.details}>{x.failureTitle}</InlineError> : null}
       {x.notice ? <InlineMessage tone="info">{x.notice}</InlineMessage> : null}
       {x.dialog}
     </div>

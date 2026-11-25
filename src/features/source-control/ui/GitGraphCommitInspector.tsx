@@ -121,6 +121,7 @@ export function GitGraphCommitInspector({
               type="button"
               onClick={onBranch}
               disabled={disabled}
+              disabledReason={disabled ? t("Wait for the current operation to finish") : undefined}
             >
               {t("New branch")}
             </Button>
@@ -173,7 +174,7 @@ export function GitGraphCommitInspector({
           onChange={(event) => setFileQuery(event.target.value)}
         />
         <section aria-label={t("Changed files")} className="min-h-0">
-          {files.loading && !files.data ? <GitLoading text="Loading…" /> : null}
+          {files.loading && !files.data ? <GitLoading text={t("Loading…")} /> : null}
           {visibleFiles.map((file) => (
             <Button
               variant="item"
@@ -200,7 +201,7 @@ export function GitGraphCommitInspector({
               size="inline"
               kind={fileQuery ? "filtered" : "empty"}
               inset="row"
-              description={t(fileQuery ? "No matching files" : "No changed files")}
+              description={fileQuery ? t("No matching files") : t("No changed files")}
             />
           ) : null}
         </section>
@@ -238,6 +239,7 @@ export function GitGraphCommitInspector({
             iconOnly
             label={t("Previous file")}
             disabled={selectedIndex <= 0}
+            disabledReason={selectedIndex <= 0 ? t("This is the first file.") : undefined}
             onClick={() => setPicked(visibleFiles[selectedIndex - 1].relative)}
           >
             <ChevronLeft className="icon-sm" />
@@ -249,6 +251,11 @@ export function GitGraphCommitInspector({
             iconOnly
             label={t("Next file")}
             disabled={selectedIndex < 0 || selectedIndex >= visibleFiles.length - 1}
+            disabledReason={
+              selectedIndex < 0 || selectedIndex >= visibleFiles.length - 1
+                ? t("This is the last file.")
+                : undefined
+            }
             onClick={() => setPicked(visibleFiles[selectedIndex + 1].relative)}
           >
             <ChevronRight className="icon-sm" />
@@ -258,7 +265,7 @@ export function GitGraphCommitInspector({
       {diff.error ? (
         <GitFeedback title={t("Couldn’t load diff")} detail={diff.error} onRetry={diff.refresh} />
       ) : null}
-      {diff.loading && !diff.data ? <GitLoading text="Loading…" /> : null}
+      {diff.loading && !diff.data ? <GitLoading text={t("Loading…")} /> : null}
       <div className="flex min-h-0 flex-1 flex-col">
         {mode === "blame" && relative && diff.data && !diff.data.binary && !diff.data.tooLarge ? (
           <GitCommitBlameView

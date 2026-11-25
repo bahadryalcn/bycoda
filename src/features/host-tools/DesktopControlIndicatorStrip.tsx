@@ -130,7 +130,7 @@ export function DesktopControlStrip({
     <DesktopControlStripView
       name={view?.status?.assistantName}
       status={view?.status ?? undefined}
-      error={error}
+      notice={error}
       stopping={stopping || view?.stopping}
       unknown={!!error || !view?.status}
       forceVisible={floating}

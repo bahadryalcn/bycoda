@@ -5,6 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 const actions = vi.hoisted(() => ({
   copyText: vi.fn(async () => {}),
   openPathWithDefaultApp: vi.fn(async () => {}),
@@ -111,7 +120,8 @@ describe("AgentMarkdown file link context menu", () => {
     actions.revealPath.mockRejectedValueOnce(new Error("Explorer is unavailable"));
     await pick(REVEAL_LABEL);
     const alert = document.body.querySelector<HTMLElement>('[data-toast-region] [role="alert"]');
-    expect(alert?.textContent).toContain("Explorer is unavailable");
+    expect(alert?.textContent).toContain("Couldn’t open the file in its default app");
+    expect(await rawDetails(alert!)).toContain("Explorer is unavailable");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -224,8 +234,8 @@ describe("AgentMarkdown file link context menu", () => {
 
     await pick("Open in default app");
 
-    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-      "No application can open this file",
-    );
+    const alert = document.body.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent).toContain("Couldn’t open the file in its default app");
+    expect(await rawDetails(alert!)).toContain("No application can open this file");
   });
 });

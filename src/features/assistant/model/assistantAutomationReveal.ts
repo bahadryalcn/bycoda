@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 export type AssistantAutomationTarget = { id: string; projectId: string; environmentId?: string };
 export type AssistantAutomationReveal = {
   id: string;
@@ -27,6 +28,6 @@ export function assistantAutomationProject(
     automation.projectId !== project.id ||
     !canOpenProject(project.path)
   )
-    throw new Error("The linked automation changed or its project is unavailable.");
+    throw new Error(t("The linked automation changed or its project is unavailable."));
   return project;
 }

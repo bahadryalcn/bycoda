@@ -4,6 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useT } from "../../../shared/i18n";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
@@ -76,22 +77,18 @@ export function ProviderSignInPanel({
         </Text>
       ) : null}
       <Button
-        reserveLabels={[t("Waiting for browser…")]}
         variant="primary"
         type="button"
         autoFocus={autoFocus}
         className="mt-4"
         disabled={state === "running" || (complete && !onComplete)}
+        disabledReason={complete && !onComplete ? t("You are already signed in.") : undefined}
         loading={state === "running"}
         loadingLabel={t("Waiting for browser…")}
         startIcon={complete ? <Check className="icon-sm" aria-hidden /> : undefined}
         onClick={complete && onComplete ? onComplete : onSignIn}
       >
-        {state === "running"
-          ? t("Waiting for browser…")
-          : complete
-            ? (completeActionLabel ?? t("Signed in"))
-            : t("Sign in to {p0}", { p0: title })}
+        {complete ? (completeActionLabel ?? t("Signed in")) : t("Sign in to {p0}", { p0: title })}
       </Button>
       {instructions ? (
         <div className="mt-3 flex max-w-60 flex-col items-center gap-2 text-center">
@@ -136,8 +133,12 @@ export function ProviderSignInPanel({
         </div>
       ) : null}
       {state === "error" && error ? (
-        <Alert tone="danger" className="mt-2.5 max-w-60">
-          {error}
+        <Alert
+          tone="danger"
+          className="mt-2.5 max-w-60"
+          extra={<ErrorDetails title={t("Sign-in failed")} detail={error} />}
+        >
+          {t("Sign-in failed")}
         </Alert>
       ) : null}
     </div>

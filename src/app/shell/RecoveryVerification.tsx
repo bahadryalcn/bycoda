@@ -20,8 +20,11 @@ export function RecoveryVerification({
         {verification}
       </Text>
       {readError ? (
-        <InlineError retry={{ label: t("Retry verification"), pending, onRetry }}>
-          {readError}
+        <InlineError
+          details={readError}
+          retry={{ label: t("Retry verification"), pending, onRetry }}
+        >
+          {t("Could not verify this session.")}
         </InlineError>
       ) : null}
     </div>

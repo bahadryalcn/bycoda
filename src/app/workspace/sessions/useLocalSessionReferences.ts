@@ -28,6 +28,7 @@ import { newDefaultSession, type Session } from "../../../features/sessions/mode
 import { requestTranscriptJump } from "../../../features/sessions/model/transcriptJump";
 import { requestViewDelegated } from "../../../features/sessions/ui/delegatedFocus";
 import type { LocalSessionReference } from "../../../features/sessions/model/localSessionReference";
+import { catalogText } from "../../../features/sessions/model/catalogText";
 import type { LocalSessionReferenceNavigation } from "../../../features/sessions/ui/LocalSessionReferenceContext";
 import { t } from "../../../shared/i18n";
 import { withTimeout } from "../../../shared/lib/withTimeout";
@@ -104,14 +105,13 @@ export function useLocalSessionReferences(deps: Deps) {
                     : undefined,
             origin: target.locator.kind === "host" ? t("Local Host") : t("Local Native"),
             status: target.status
-              ? t(
-                  (
-                    { idle: "Idle", running: "Running", interrupted: "Interrupted" } as Record<
-                      string,
-                      string
-                    >
-                  )[target.status] ?? target.status,
-                )
+              ? target.status === "idle"
+                ? t("Idle")
+                : target.status === "running"
+                  ? t("Running")
+                  : target.status === "interrupted"
+                    ? t("Interrupted")
+                    : catalogText(t, target.status)
               : t("Status unavailable"),
           };
         },

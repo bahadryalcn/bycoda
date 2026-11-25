@@ -139,23 +139,22 @@ export function InboxDetail({
     threadLoading,
     threadError,
   } = useInboxDetailData(item, revision, tab, fullFile, panel);
-  const externalActionLabel = t(
+  const externalActionLabel =
     item.kind === "pr"
       ? gitlab
-        ? "Review on GitLab"
+        ? t("Review on GitLab")
         : azuredevops
-          ? "Review on ADO"
-          : "Review on GitHub"
+          ? t("Review on ADO")
+          : t("Review on GitHub")
       : linear
-        ? "Open in Linear"
+        ? t("Open in Linear")
         : jira
-          ? "Open in Jira"
+          ? t("Open in Jira")
           : gitlab
-            ? "Open on GitLab"
+            ? t("Open on GitLab")
             : azuredevops
-              ? "Open on ADO"
-              : "Open on GitHub",
-  );
+              ? t("Open on ADO")
+              : t("Open on GitHub");
   const commentScope = `${cwd}:${item.projectPath}:${inboxItemKey(item)}`;
   const [replyTo, setReplyTo] = useRetainedState<InboxReplyTarget | null>(
     `inbox:reply:${commentScope}`,
@@ -179,7 +178,7 @@ export function InboxDetail({
   const [starting, setStarting] = useState(false);
   const chooseStartProject = tracker || ((gitlab || azuredevops) && !item.projectPath);
   const statusMark = inboxStatusMark(item);
-  const status = tracker ? item.state || inboxItemStatus(item) : t(statusMark.label);
+  const status = tracker ? item.state || inboxItemStatus(item) : statusMark.label;
 
   const source = tracker ? item.teamName || item.repo : item.repo || projectName(item.projectPath);
   const attentionLabel =
@@ -225,7 +224,7 @@ export function InboxDetail({
 
   const mergeBlocker = [
     ["REVIEW_REQUIRED", "CHANGES_REQUESTED"].includes(reviewDecision.toUpperCase())
-      ? t(reviewLabel)
+      ? reviewLabel
       : "",
     prChecksOverall?.kind === "fail"
       ? t("Failing checks: {p0}", { p0: formatNumber(prChecksOverall.failed) })
@@ -464,7 +463,7 @@ export function InboxDetail({
                                 : "neutral"
                         }
                       >
-                        {t(reviewLabel)}
+                        {reviewLabel}
                       </Badge>
                     ) : null}
                     {githubWorkspace ? null : (
@@ -485,7 +484,7 @@ export function InboxDetail({
                     <Text
                       size="micro"
                       tone="secondary"
-                      className="mr-0.5 inline-flex shrink-0 items-center gap-1"
+                      className="me-0.5 inline-flex shrink-0 items-center gap-1"
                     >
                       <MessageMultiple className="icon-sm" strokeWidth={1.75} />
                       {t("Related")} {relatedSessions.length === 1 ? t("thread") : t("threads")}
@@ -531,6 +530,8 @@ export function InboxDetail({
                           variant="primary"
                           size="md"
                           type="button"
+                          loading={starting}
+                          loadingLabel={t("Sending…")}
                           disabled={
                             starting ||
                             (chooseStartProject &&
@@ -561,7 +562,7 @@ export function InboxDetail({
                               .finally(() => setStarting(false));
                           }}
                         >
-                          {starting ? t("Sending…") : t("Send to agent")}
+                          {t("Send to agent")}
                         </Button>
                         {chooseStartProject ? (
                           <div className="min-w-0 max-w-full">
@@ -628,12 +629,9 @@ export function InboxDetail({
                       count={panel ? prDiff?.files.length : undefined}
                       countLabel={
                         panel && prDiff
-                          ? t(
-                              prDiff.files.length === 1
-                                ? "{p0} changed file"
-                                : "{p0} changed files",
-                              { p0: prDiff.files.length },
-                            )
+                          ? prDiff.files.length === 1
+                            ? t("{p0} changed file", { p0: prDiff.files.length })
+                            : t("{p0} changed files", { p0: prDiff.files.length })
                           : undefined
                       }
                       onClick={() => {

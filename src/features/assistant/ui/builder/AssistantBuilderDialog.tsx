@@ -79,6 +79,15 @@ export function AssistantBuilderDialog({
                 variant="primary"
                 type="button"
                 disabled={!canFinish || !available || interview.failure !== null}
+                disabledReason={
+                  !canFinish
+                    ? t("Answer a question first.")
+                    : !available
+                      ? t("This model cannot write text. Pick another one to continue.")
+                      : interview.failure !== null
+                        ? t("Retry the failed message first.")
+                        : undefined
+                }
                 onClick={finish}
               >
                 {t("Preview assistant")}
@@ -135,6 +144,7 @@ export function AssistantBuilderDialog({
             onAnswer={interview.answer}
             onRetry={interview.retry}
             disabled={!available}
+            disabledReason={t("This model cannot write text. Pick another one to continue.")}
           />
         </>
       )}

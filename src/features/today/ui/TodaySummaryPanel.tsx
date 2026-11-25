@@ -60,7 +60,7 @@ export function SummaryPanel({
     controller.current?.abort();
     const next = new AbortController();
     controller.current = next;
-    const periodLabel = t(data.period === "today" ? "Today" : "This week");
+    const periodLabel = data.period === "today" ? t("Today") : t("This week");
     const context = {
       period: data.window
         ? `${periodLabel} (${formatDate(data.window.start)} – ${formatDate(data.window.end)})`
@@ -145,6 +145,7 @@ export function SummaryPanel({
           onClick={() => send().catch(() => undefined)}
           loading={state.status === "running"}
           disabled={!provider || saving}
+          disabledReason={provider ? undefined : t("Connect a provider to summarize")}
         >
           {t("Send")}
         </Button>
@@ -196,6 +197,9 @@ export function SummaryPanel({
             size="sm"
             onClick={() => save(result.text).catch(() => undefined)}
             disabled={result.saved || state.status === "running"}
+            disabledReason={
+              state.status === "running" ? t("Wait for the summary to finish.") : undefined
+            }
             loading={saving}
             loadingLabel={t("Saving…")}
           >

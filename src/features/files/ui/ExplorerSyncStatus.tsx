@@ -46,7 +46,7 @@ export function ExplorerSyncStatus({
         size="micro"
         tone="muted"
         leading="none"
-        className="flex shrink-0 items-center gap-1 pr-1.5"
+        className="flex shrink-0 items-center gap-1 pe-1.5"
       >
         {state.phase === "error" && !shownCentrally && (
           <LiveText className="sr-only" mode="assertive" text={state.error ?? ""} />
@@ -60,7 +60,7 @@ export function ExplorerSyncStatus({
         {shownError && !fitsOneLine(shownError) ? (
           <ErrorDetails
             className="shrink-0"
-            title={shownError}
+            title={errorHeadline(shownError)}
             detail={state.error ?? shownError}
           />
         ) : null}

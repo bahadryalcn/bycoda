@@ -3,6 +3,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { useEffect, useState, type ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { ChevronRight } from "../../../shared/ui/icons";
@@ -117,14 +118,13 @@ export function CrewSessions({
           {state.visibleError && !sharedConnectionIssue ? (
             <InlineError
               inset="row"
-              details={state.errorDetails}
+              details={state.visibleError}
+              extra={state.errorDetails ? <ErrorDetails detail={state.errorDetails} /> : undefined}
               retry={{
                 onRetry: () => void state.refetch(),
                 pending: state.isFetching,
               }}
-            >
-              {state.visibleError}
-            </InlineError>
+            />
           ) : null}
           {sharedConnectionIssue && !data ? (
             <LiveText text={t("Not connected")} tone="muted" className="block px-2.5 py-1" />

@@ -4,6 +4,7 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { sshProxyEndpointText } from "./sshProxyEndpointText";
@@ -215,8 +216,17 @@ export function SshAgentForwarding({
           )}
         </Alert>
         {active?.error ? (
-          <Alert tone="danger" action={{ label: t("Retry"), onClick: () => void request() }}>
-            {active.error}
+          <Alert
+            tone="danger"
+            action={{ label: t("Retry"), onClick: () => void request() }}
+            extra={
+              <ErrorDetails
+                title={t("Could not review the SSH agent target.")}
+                detail={active.error}
+              />
+            }
+          >
+            {t("Could not review the SSH agent target.")}
           </Alert>
         ) : active?.loading ? (
           <LoadingText />

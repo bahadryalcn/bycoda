@@ -16,7 +16,8 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
 import { ModelPicker } from "../../sessions/public/ModelPicker";
 import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
-import { RUNTIME_MODES, RUNTIME_MODE_LABEL } from "../../sessions/model/session";
+import { RUNTIME_MODES } from "../../sessions/model/session";
+import { runtimeModeLabel } from "../model/runtimeModeText";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../connections/model/protocol";
 import { TimeTriggerSentence } from "../../automations/ui/TriggerEditor";
 import { Text, textAttributes } from "../../../shared/ui/Text";
@@ -111,7 +112,7 @@ export function AssistantQuickAutomationFields({
             disabled={disabled}
             options={RUNTIME_MODES.map((mode) => ({
               value: mode,
-              label: t(RUNTIME_MODE_LABEL[mode]),
+              label: runtimeModeLabel(mode),
             }))}
             onValueChange={(runtimeMode) =>
               update({ runtimeMode: runtimeMode as AssistantQuickAutomationAction["runtimeMode"] })
@@ -134,11 +135,11 @@ export function AssistantQuickAutomationFields({
                   value={value.scheduleKind}
                   disabled={disabled}
                   options={[
-                    ["hourly", "Hourly"],
-                    ["daily", "Daily"],
-                    ["weekdays", "Weekdays"],
-                    ["weekly", "Weekly"],
-                  ].map(([id, label]) => ({ value: id, label: t(label) }))}
+                    { value: "hourly", label: t("Hourly") },
+                    { value: "daily", label: t("Daily") },
+                    { value: "weekdays", label: t("Weekdays") },
+                    { value: "weekly", label: t("Weekly") },
+                  ]}
                   onValueChange={(scheduleKind) =>
                     update({
                       scheduleKind: scheduleKind as AssistantQuickAutomationAction["scheduleKind"],

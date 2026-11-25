@@ -103,8 +103,8 @@ describe("NotificationMuteControl", () => {
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
     const resume = buttonWithText("Resume notifications");
     const mute = buttonWithText("Mute");
-    expect(resume.disabled).toBe(true);
-    expect(mute.disabled).toBe(true);
+    expect(resume.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(mute.getAttribute("aria-disabled") === "true").toBe(true);
     act(() => {
       localStorage.setItem(
         "bycoda.projectNotifications.v1",
@@ -112,8 +112,8 @@ describe("NotificationMuteControl", () => {
       );
       window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.projectNotifications.v1" }));
     });
-    expect(resume.disabled).toBe(false);
-    expect(mute.disabled).toBe(false);
+    expect(resume.getAttribute("aria-disabled") === "true").toBe(false);
+    expect(mute.getAttribute("aria-disabled") === "true").toBe(false);
     expect(loadNotificationPreferences().private.disabled).toEqual(["issues"]);
     expect(loadNotificationPreferences().private.mutedUntil).toBeNull();
   });
@@ -129,13 +129,13 @@ describe("NotificationMuteControl", () => {
       localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
       window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.projectNotifications.v1" }));
     });
-    expect(submit.disabled).toBe(true);
+    expect(submit.getAttribute("aria-disabled") === "true").toBe(true);
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     act(() => {
       localStorage.setItem("bycoda.projectNotifications.v1", "{}");
       window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.projectNotifications.v1" }));
     });
-    expect(submit.disabled).toBe(false);
+    expect(submit.getAttribute("aria-disabled") === "true").toBe(false);
     click("Mute until then");
     expect(loadNotificationPreferences().private.mutedUntil).toBe(
       new Date(2030, 0, 15, 17, 35).getTime(),

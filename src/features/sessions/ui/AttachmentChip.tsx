@@ -4,7 +4,7 @@ import {
 } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { motionAttributes } from "../../../shared/ui/Motion";
@@ -42,6 +42,37 @@ type Props = {
   /** Puts the token into the message text again. */
   onInsertToken?: () => void;
 };
+
+/** The translated type name of an attachment kind, through literal keys. */
+function attachmentTypeLabel(
+  translate: ReturnType<typeof useT>,
+  kind: ReturnType<typeof attachmentPresentation>["kind"],
+): string {
+  switch (kind) {
+    case "image":
+      return translate("Image");
+    case "audio":
+      return translate("Audio");
+    case "video":
+      return translate("Video");
+    case "pdf":
+      return translate("PDF");
+    case "markdown":
+      return translate("Markdown");
+    case "text":
+      return translate("Text");
+    case "spreadsheet":
+      return translate("Spreadsheet");
+    case "code":
+      return translate("Code");
+    case "archive":
+      return translate("Compressed archive");
+    case "folder":
+      return translate("Folder");
+    case "file":
+      return translate("File");
+  }
+}
 
 export function AttachmentChip({ attachment, onRemove, draft, token, onInsertToken }: Props) {
   const t = useT();
@@ -121,7 +152,7 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
     .filter(Boolean)
     .join(" · ");
 
-  const typeText = presentation.typeExtension ?? t(presentation.label);
+  const typeText = presentation.typeExtension ?? attachmentTypeLabel(t, presentation.kind);
   // The app tooltip carries what a native `title` would: the full path (or name), type and size.
   const fileTooltip = {
     label: attachment.path ?? attachment.name,
@@ -333,9 +364,9 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
         </InlineMessage>
       ) : null}
       {saveCopy.error ? (
-        <InlineMessage tone="warning" live="assertive">
-          {saveCopy.error}
-        </InlineMessage>
+        <InlineError details={saveCopy.error}>
+          {t("Could not save attachment {p0}.", { p0: displayName })}
+        </InlineError>
       ) : null}
       {attachment.browserAnnotation ? (
         <Disclosure

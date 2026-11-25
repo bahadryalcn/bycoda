@@ -75,13 +75,6 @@ type Launch = {
   result?: DevServerStartResult;
   pending?: boolean;
 };
-const stateLabels = {
-  starting: "Starting",
-  running: "Running",
-  stopping: "Stopping",
-  stopped: "Stopped",
-  error: "Error",
-};
 const stateTones = {
   starting: "info",
   running: "success",
@@ -89,10 +82,20 @@ const stateTones = {
   stopped: "neutral",
   error: "danger",
 } as const;
-function StateBadge({ state }: { state: keyof typeof stateLabels }) {
+function StateBadge({ state }: { state: keyof typeof stateTones }) {
+  const label =
+    state === "starting"
+      ? t("Starting")
+      : state === "running"
+        ? t("Running")
+        : state === "stopping"
+          ? t("Stopping")
+          : state === "stopped"
+            ? t("Stopped")
+            : t("Error");
   return (
     <Badge variant="dot" size="sm" tone={stateTones[state]}>
-      {t(stateLabels[state])}
+      {label}
     </Badge>
   );
 }
@@ -654,6 +657,11 @@ function ProjectDevServersPanel({
           </Text>
           <Checkbox
             disabled={disabled || intent === "restart"}
+            disabledReason={
+              intent === "restart"
+                ? t("Restarting always includes the whole process tree.")
+                : waitReason
+            }
             checked={tree}
             onChange={(event) => setTree(event.target.checked)}
             label={t("Include this process's children")}
@@ -752,11 +760,9 @@ function ProjectDevServersPanel({
           </OutputBlock>
         ) : (
           <Text as="p" size="caption" tone="secondary">
-            {t(
-              current.server.managed
-                ? "Logs are unavailable for this process."
-                : "Logs are unavailable for this external process.",
-            )}
+            {current.server.managed
+              ? t("Logs are unavailable for this process.")
+              : t("Logs are unavailable for this external process.")}
           </Text>
         )
       ) : null}
@@ -937,7 +943,14 @@ function ProjectDevServersPanel({
           ) : null}
         </div>
       ) : null}
-      {server.error ? <Alert tone="danger">{server.error}</Alert> : null}
+      {server.error ? (
+        <Alert
+          tone="danger"
+          extra={<ErrorDetails title={t("The server reported an error.")} detail={server.error} />}
+        >
+          {t("The server reported an error.")}
+        </Alert>
+      ) : null}
       {selectedDetails ? renderDetails(selectedDetails) : null}
     </aside>
   );
@@ -976,9 +989,9 @@ function ProjectDevServersPanel({
                 ? scanError
                   ? ""
                   : t("Refresh to discover servers.")
-                : t(visibleServers.length === 1 ? "{p0} server" : "{p0} servers", {
-                    p0: visibleServers.length,
-                  })}
+                : visibleServers.length === 1
+                  ? t("{p0} server", { p0: visibleServers.length })
+                  : t("{p0} servers", { p0: visibleServers.length })}
           </span>
           {autoRefresh ? null : (
             <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">

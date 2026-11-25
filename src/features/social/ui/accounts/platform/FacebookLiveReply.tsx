@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
+import { presentRemoteError } from "../../../../connections/public/remoteFailure";
 import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
@@ -25,10 +26,14 @@ export function FacebookLiveReply({
   const t = useT();
   const confirm = useConfirm();
   const state = inboxReplyState(client, `facebook-live:${accountId}:${liveId}:${comment.id}`);
-  const { draft, operation, busy, error, queued } = useSyncExternalStore(
-    state.subscribe,
-    state.snapshot,
-  );
+  const [details, setDetails] = useState<string>();
+  const {
+    draft,
+    operation,
+    busy,
+    error: failureTitle,
+    queued,
+  } = useSyncExternalStore(state.subscribe, state.snapshot);
   const send = async () => {
     const text = draft.text.trim();
     if (
@@ -55,6 +60,7 @@ export function FacebookLiveReply({
           },
         },
       );
+    setDetails(undefined);
     state.update({
       operation: attempt,
       busy: "send",
@@ -74,9 +80,8 @@ export function FacebookLiveReply({
           error: t("Reply requires review in Activity. Its original draft has been kept."),
         });
     } catch (cause) {
-      state.update({
-        error: cause instanceof Error ? cause.message : t("Could not save this change. Try again."),
-      });
+      setDetails(presentRemoteError(cause, { explicit: true }));
+      state.update({ error: t("Could not save this change. Try again.") });
     } finally {
       state.update({ busy: "" });
     }
@@ -114,7 +119,7 @@ export function FacebookLiveReply({
         ) : null}
       </div>
       {queued ? <InlineMessage tone="success">{t("Reply queued.")}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirm.dialog}
     </>
   );

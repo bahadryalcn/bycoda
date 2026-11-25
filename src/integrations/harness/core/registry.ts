@@ -787,7 +787,7 @@ export function sendHarnessTurn(
             input.onEvent({
               type: "status",
               key: "delegation-unavailable",
-              text: t(delegationNotice(fallback)),
+              text: delegationNotice(fallback),
             });
           }
           if (deliversHint) markRuntimeHintDelivered(input.sessionId, thread, hint);

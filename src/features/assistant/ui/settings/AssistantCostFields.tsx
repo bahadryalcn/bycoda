@@ -66,7 +66,7 @@ export function AssistantCostFields({
       onReset={restoreDefaults}
       resetLabel={t("Restore defaults")}
     >
-      <Text size="secondary">{t(automatic ? "Automatic" : "Custom")}</Text>
+      <Text size="secondary">{automatic ? t("Automatic") : t("Custom")}</Text>
     </Row>
   );
   const policy = assistantPolicy(value);
@@ -89,25 +89,25 @@ export function AssistantCostFields({
   );
   const limits = (
     <>
-      {number("chiefWakeLimit", "Supervisor reviews", 1, 120, policy.chiefWakeLimit, "/hour")}
-      {number("nudgeLimit", "Follow-ups", 0, 2, policy.nudgeLimit, "before recovery")}
-      {number("summaryRefreshMessages", "Summary every", 10, 200, 20, "messages")}
-      {number("perWakeTokenCap", "Reserve per review", 1000, 1_000_000, undefined, "tokens")}
+      {number("chiefWakeLimit", t("Supervisor reviews"), 1, 120, policy.chiefWakeLimit, t("/hour"))}
+      {number("nudgeLimit", t("Follow-ups"), 0, 2, policy.nudgeLimit, t("before recovery"))}
+      {number("summaryRefreshMessages", t("Summary every"), 10, 200, 20, t("messages"))}
+      {number("perWakeTokenCap", t("Reserve per review"), 1000, 1_000_000, undefined, t("tokens"))}
       {number(
         "chiefSoftContext",
-        "Compact supervisor context",
+        t("Compact supervisor context"),
         10_000,
         1_000_000,
         undefined,
-        "tokens",
+        t("tokens"),
       )}
       {number(
         "chiefHardContext",
-        "Restart supervisor context",
+        t("Restart supervisor context"),
         20_000,
         2_000_000,
         undefined,
-        "tokens",
+        t("tokens"),
       )}
     </>
   );
@@ -115,35 +115,35 @@ export function AssistantCostFields({
     <Fragment key={workerReset}>
       {number(
         "workerSoftContext",
-        "Compact by token count",
+        t("Compact by token count"),
         10000,
         999999,
         workerContext.workerSoftContext,
-        "tokens",
+        t("tokens"),
       )}
       {number(
         "workerHardContext",
-        "Start fresh by token count",
+        t("Start fresh by token count"),
         10001,
         1000000,
         workerContext.workerHardContext,
-        "tokens",
+        t("tokens"),
       )}
       {number(
         "workerCompactPercent",
-        "Compact by context usage",
+        t("Compact by context usage"),
         1,
         98,
         workerContext.workerCompactPercent,
-        "%",
+        t("%"),
       )}
       {number(
         "workerHandoffPercent",
-        "Start fresh by context usage",
+        t("Start fresh by context usage"),
         2,
         99,
         workerContext.workerHandoffPercent,
-        "%",
+        t("%"),
       )}
     </Fragment>
   );

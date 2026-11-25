@@ -29,12 +29,12 @@ export function CrewAppearancePicker({
   crewId,
   look,
   onChange,
-  disabled,
+  busy,
 }: {
   crewId: string;
   look: CrewAppearance;
   onChange: (patch: CrewAppearance) => void;
-  disabled?: boolean;
+  busy?: boolean;
 }) {
   useLocale();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -50,7 +50,7 @@ export function CrewAppearancePicker({
         label={t("Crew icon and color")}
         aria-haspopup="dialog"
         aria-expanded={open}
-        disabled={disabled}
+        disabled={busy}
         onClick={() => setOpen((value) => !value)}
         className="shrink-0"
       >

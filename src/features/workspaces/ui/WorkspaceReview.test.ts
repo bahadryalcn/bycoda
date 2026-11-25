@@ -132,7 +132,7 @@ it("blocks overlapping target paths and expired approval plans", async () => {
         : { ...plan, overlappingPaths: ["src/changed.ts"], expiresInMs: 0 }) as never,
   );
   await renderReview();
-  expect(button("Merge into main").disabled).toBe(true);
+  expect(button("Merge into main").getAttribute("aria-disabled")).toBe("true");
   expect(container.textContent).toContain("Overlapping target changes");
   expect(container.textContent).toContain("This review expired");
   expect(
@@ -377,7 +377,12 @@ it("closes the dialog at once and reports a blocker left after closing in the ba
   await act(async () => button("Remove record").click());
   expect(close).toHaveBeenCalledOnce();
   expect(show).toHaveBeenLastCalledWith(
-    expect.objectContaining({ tone: "danger", message: "Workspace is still in use." }),
+    expect.objectContaining({
+      tone: "danger",
+      extra: expect.objectContaining({
+        props: expect.objectContaining({ detail: "Workspace is still in use." }),
+      }),
+    }),
   );
   expect(vi.mocked(workspaceRequest).mock.calls.map(([method]) => method)).not.toContain(
     "workspaces.cleanup.apply",

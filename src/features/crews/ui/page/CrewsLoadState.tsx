@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
-import { Alert } from "../../../../shared/ui/Alert";
+import { InlineError } from "../../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../../shared/ui/connectionErrorGate";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
@@ -12,12 +12,10 @@ function RetryAlert({ state }: { state: CrewState }) {
   const shownCentrally = useConnectionErrorShownCentrally(state.error);
   if (shownCentrally) return null;
   return (
-    <Alert
-      tone="warning"
-      action={{ label: t("Retry"), pending: state.isFetching, onClick: () => void state.refetch() }}
-    >
-      {state.visibleError}
-    </Alert>
+    <InlineError
+      details={state.visibleError}
+      retry={{ onRetry: () => void state.refetch(), pending: state.isFetching, label: t("Retry") }}
+    />
   );
 }
 

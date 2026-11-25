@@ -85,7 +85,9 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     retry: false,
   });
   const projectsShownCentrally = useConnectionErrorShownCentrally(projects.error);
-  const projectsFailure = projects.error ? describeRemoteError(projects.error) : null;
+  const { message: summary, details: summaryDetails } = projects.error
+    ? describeRemoteError(projects.error)
+    : { message: "", details: "" };
   const [newName, setNewName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -175,7 +177,12 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             }}
             footer={
               <ModalActions>
-                <Button variant="ghost" disabled={creating} onClick={cancel}>
+                <Button
+                  variant="ghost"
+                  disabled={creating}
+                  disabledReason={t("Wait for the current operation to finish")}
+                  onClick={cancel}
+                >
                   {t("Cancel")}
                 </Button>
                 <Button
@@ -185,6 +192,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
                   startIcon={<FolderPlus className="icon-sm" />}
                   loading={creating}
                   disabled={disabled || !newName.trim()}
+                  disabledReason={!newName.trim() ? t("Enter a name first.") : undefined}
                 >
                   {t("Create project")}
                 </Button>
@@ -214,16 +222,16 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             </form>
           </Modal>
         ) : null}
-        {projectsFailure && !projectsShownCentrally ? (
+        {projects.error && !projectsShownCentrally ? (
           <InlineMessage
             tone="warning"
             extra={
-              projectsFailure.details && projectsFailure.details !== projectsFailure.message ? (
-                <ErrorDetails title={projectsFailure.message} detail={projectsFailure.details} />
+              summaryDetails && summaryDetails !== summary ? (
+                <ErrorDetails title={summary} detail={summaryDetails} />
               ) : undefined
             }
           >
-            {projectsFailure.message}
+            {summary}
           </InlineMessage>
         ) : null}
       </div>
@@ -261,7 +269,7 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
             {describeRemoteError(machineList.error).message}
           </InlineError>
         ) : null}
-        {switchError ? <InlineMessage tone="warning">{switchError}</InlineMessage> : null}
+        {switchError ? <InlineError details={switchError} /> : null}
       </div>
     ) : null;
   return { cwd: scopeCwd, state: away ? scoped : state, picker, projectPicker };

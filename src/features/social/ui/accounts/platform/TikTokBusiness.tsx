@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useState } from "react";
 import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -23,7 +24,7 @@ export function TikTokBusiness({
   onChanged(status: TikTokBusinessStatus): void;
 }) {
   const t = useT();
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Could not connect TikTok for Business."),
   );
   const confirmation = useConfirm();
@@ -45,13 +46,14 @@ export function TikTokBusiness({
           size="sm"
           variant="secondary"
           disabled={disabled || busy}
+          disabledReason={accountBlockedReason(disabled)}
           loading={is("check")}
           onClick={() => check().catch(() => undefined)}
         >
           {t("Check Business API access")}
         </Button>
       </div>
-      {!status && !busy && !error && (
+      {!status && !busy && !failureTitle && (
         <Text size="caption" tone="secondary">
           {t("Check access to see whether this Host can connect TikTok for Business.")}
         </Text>
@@ -124,6 +126,11 @@ export function TikTokBusiness({
               type="submit"
               variant="primary"
               disabled={disabled || busy || !businessId}
+              disabledReason={
+                disabled || busy
+                  ? accountBlockedReason(disabled)
+                  : t("Enter the TikTok Business ID first.")
+              }
               loading={is("connect")}
             >
               {t("Connect TikTok for Business")}
@@ -131,7 +138,7 @@ export function TikTokBusiness({
           </div>
         </form>
       )}
-      {error && <InlineError details={details}>{error}</InlineError>}
+      {failureTitle && <InlineError details={details}>{failureTitle}</InlineError>}
       {confirmation.dialog}
     </div>
   );

@@ -96,6 +96,7 @@ export function DelegationSettings({
                 type="button"
                 label={t("Remove all {p0} overrides", { p0: layerLabel(layer, source) })}
                 disabled={disabled}
+                disabledReason={t("Wait for the current save to finish.")}
                 onClick={() => {
                   setPending((current) => current.filter((item) => !sameLayer(item, layer)));
                   update(writeLayer(delegation, layer, {}));
@@ -158,6 +159,7 @@ function AddOverrideMenu({
         type="button"
         startIcon={<Plus />}
         disabled={disabled}
+        disabledReason={t("Wait for the current save to finish.")}
         aria-haspopup="menu"
         expanded={open}
         onClick={() => setOpen((next) => !next)}

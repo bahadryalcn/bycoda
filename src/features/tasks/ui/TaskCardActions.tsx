@@ -343,6 +343,11 @@ export function TaskActions({
           startIcon={lead.icon}
           loading={lead.loading}
           disabled={lead.disabled}
+          disabledReason={
+            lead.disabled && !lead.loading
+              ? t("Wait for the current operation to finish")
+              : undefined
+          }
           onClick={lead.run}
         >
           {lead.label}
@@ -398,7 +403,7 @@ export function TaskActions({
           ) : null}
         </>
       ) : null}
-      {reviewError ? <InlineError className="basis-full">{reviewError}</InlineError> : null}
+      {reviewError ? <InlineError className="basis-full" details={reviewError} /> : null}
     </div>
   );
 }

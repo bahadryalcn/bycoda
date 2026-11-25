@@ -702,6 +702,41 @@ function scanClassTokens(node, handle) {
   ts.forEachChild(node, (child) => scanClassTokens(child, handle));
 }
 
+// Progress text ("Saving…", "Setting up…"): a word ending in -ing, then an ellipsis.
+const progressText = /\p{L}ing\b[^…]*…$/u;
+
+/**
+ * A shared Button that shows its pending state by hand: a `{busy ? t("Saving…") : t("Save")}`
+ * label swap, or an icon child beside text while it can be `loading` (the spinner takes the
+ * `startIcon` slot, and only plain-text children stay readable beside it).
+ */
+function manualPending(node, opening) {
+  if (!ts.isJsxElement(node)) return false;
+  const children = node.children.filter((child) => !ts.isJsxText(child) || child.text.trim());
+  const swapsLabel = children.some((child) => {
+    const value = ts.isJsxExpression(child) ? expressionOf(child.expression) : null;
+    return (
+      value &&
+      ts.isConditionalExpression(value) &&
+      [value.whenTrue, value.whenFalse].some((branch) =>
+        progressText.test(staticText(branch) ?? ""),
+      )
+    );
+  });
+  const loading = attribute(opening, "loading");
+  // Rows, tabs and media tiles keep a centered spinner over composite content.
+  const composite =
+    ["item", "tab"].includes(literal(attribute(opening, "variant")?.initializer)) ||
+    literal(attribute(opening, "layout")?.initializer) === "media";
+  const canLoad =
+    loading &&
+    expressionOf(loading.initializer)?.kind !== ts.SyntaxKind.FalseKeyword &&
+    !attribute(opening, "iconOnly") &&
+    !composite;
+  const iconChild = canLoad && children.length > 1 && ts.isJsxSelfClosingElement(children[0]);
+  return swapsLabel || Boolean(iconChild);
+}
+
 function auditView(node, opening, name, imports, resolve, add, file) {
   const disabled = attribute(opening, "disabled");
   const disabledValue = expressionOf(disabled?.initializer);
@@ -728,6 +763,8 @@ function auditView(node, opening, name, imports, resolve, add, file) {
     )
       add("duplicate-feedback-channel", opening.getStart());
   }
+  if (name === "Button" && manualPending(node, opening))
+    add("button-manual-pending", opening.getStart());
   if (["Badge", "BadgeList"].includes(name) && rowHasBadge(node, name, imports, resolve))
     add("row-text-badge", opening.getStart());
 
@@ -1002,7 +1039,7 @@ export function scanViewGuards(file, source, add) {
   if (!file.endsWith(".tsx") || !/^src\/(?:app|features|shared)\//.test(file)) return;
   // Avoid parsing most source files; comments and string examples are rejected by the AST.
   if (
-    !/card|opacity-0|invisible|Group|(?:t|T)ooltip|description|muted|secondary|className|aria-label|role|disabled|Badge|caption|title|ModalActions|InlineMessage|InlineError|Alert|FailureState|Toast|(?:focus|outline)[-:]/.test(
+    !/card|opacity-0|invisible|Group|(?:t|T)ooltip|description|muted|secondary|className|aria-label|role|disabled|Badge|caption|title|ModalActions|InlineMessage|InlineError|Alert|FailureState|Toast|loading|(?:focus|outline)[-:]/.test(
       source,
     )
   )

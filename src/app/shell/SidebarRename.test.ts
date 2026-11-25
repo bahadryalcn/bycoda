@@ -861,7 +861,7 @@ describe("sidebar session bulk actions", () => {
     const notice = container.querySelector("[data-session-delete-status]");
     expect(notice?.textContent).toContain("Original conversation");
     expect(notice?.textContent).toContain("0/3");
-    expect(barButton("Deleting… selected").disabled).toBe(true);
+    expect(barButton("Deleting… selected").getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       pressKey(document.body, "Delete");
     });

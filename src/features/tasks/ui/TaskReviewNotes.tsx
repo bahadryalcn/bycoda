@@ -51,6 +51,13 @@ export function TaskReviewNotes({
                 variant="ghost"
                 type="button"
                 disabled={busy || stale}
+                disabledReason={
+                  stale
+                    ? t("Reconnect this machine before changing its tasks.")
+                    : busy
+                      ? t("Wait for the current operation to finish")
+                      : undefined
+                }
                 onClick={() =>
                   onRead(notes.filter((note) => note.readAt === undefined).map((note) => note.id))
                 }
@@ -146,8 +153,14 @@ export function TaskReviewNotes({
                 <Button
                   variant="ghost"
                   type="button"
-
                   disabled={busy || stale}
+                  disabledReason={
+                    stale
+                      ? t("Reconnect this machine before changing its tasks.")
+                      : busy
+                        ? t("Wait for the current operation to finish")
+                        : undefined
+                  }
                   onClick={() => onResolve(note.id, !resolved)}
                 >
                   {resolved ? t("Reopen note") : t("Mark fixed")}

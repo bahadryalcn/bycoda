@@ -160,7 +160,7 @@ it("retains the saved change list after a failed refresh and requires recovery b
   const keep = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Keep",
   )!;
-  expect(keep.disabled).toBe(true);
+  expect(keep.getAttribute("aria-disabled")).toBe("true");
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Retry",
   )!;

@@ -2,11 +2,12 @@ import { t } from "../../../shared/i18n";
 import type { PendingChange } from "../../../shared/ui/settings";
 import type { PromptTemplate } from "../../sessions/public/promptTemplates";
 
-const FIELDS = [
-  ["name", "Template name"],
-  ["trigger", "Template trigger"],
-  ["body", "Template text"],
-] as const;
+const fields = () =>
+  [
+    ["name", t("Template name")],
+    ["trigger", t("Template trigger")],
+    ["body", t("Template text")],
+  ] as const;
 
 /**
  * Every unsaved template edit: added and removed templates and each changed field, grouped by
@@ -30,12 +31,12 @@ export function templateChanges(
       });
       continue;
     }
-    for (const [field, label] of FIELDS) {
+    for (const [field, label] of fields()) {
       if ((row[field] ?? "") === (before[field] ?? "")) continue;
       changes.push({
         id: `${row.id}:${field}`,
         scope,
-        label: t(label),
+        label,
         revert: () =>
           setRows(
             rows.map((entry) =>

@@ -20,16 +20,13 @@ export function SubagentRetryButton({ onRetry }: { onRetry: () => Promise<void> 
       size="sm"
       type="button"
       className="self-start"
-      disabled={state === "pending"}
+      loading={state === "pending"}
+      loadingLabel={t("Retrying…")}
+      startIcon={<RotateCcw className="icon-sm" aria-hidden />}
       onClick={retry}
       data-subagent-retry
     >
-      <RotateCcw className="icon-sm" aria-hidden />
-      {state === "pending"
-        ? t("Retrying…")
-        : state === "failed"
-          ? t("Could not retry. Try again")
-          : t("Retry")}
+      {state === "failed" ? t("Could not retry. Try again") : t("Retry")}
     </Button>
   );
 }

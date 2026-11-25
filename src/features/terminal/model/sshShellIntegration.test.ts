@@ -128,7 +128,7 @@ it("requests a snapshot only explicitly and never sends remote setup or commands
       }),
     );
     expect(controller.waiting).toBe(false);
-    expect(controller.error).toBe("No safe matching suggestions.");
+    expect(controller.notice).toBe("No safe matching suggestions.");
     await act(async () => controller.dismiss());
     expect(controller.waiting).toBe(false);
   } finally {
@@ -436,7 +436,7 @@ it("reports failed registration and retries before requesting suggestions", asyn
     return null;
   }
   await act(async () => root.render(createElement(Fixture)));
-  expect(controller.error).toBe("Remote shell integration is unavailable");
+  expect(controller.notice).toBe("Remote shell integration is unavailable");
   expect(native.invoke).not.toHaveBeenCalled();
   await act(async () => controller.request());
   expect(listen).toHaveBeenCalledTimes(2);

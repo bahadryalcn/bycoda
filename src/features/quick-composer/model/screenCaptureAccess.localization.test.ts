@@ -9,13 +9,13 @@ it("translates typed failures and keeps screen recording recovery tied to the co
     await setLanguagePreference("tr");
     expect(captureNotice(new AttachmentFailureError("image-too-large", "Internal detail"))).toEqual(
       {
-        message: "Bu görsel eklemek için çok büyük.",
+        title: "Bu görsel eklemek için çok büyük.",
       },
     );
     const notice = captureNotice("screen-recording-permission-required");
-    expect(notice.message).toContain("Ekran Kaydı erişimi gerekir");
+    expect(notice.title).toContain("Ekran Kaydı erişimi gerekir");
     expect(notice.recovery).toBe("screen-recording");
-    expect(captureNotice(new Error(notice.message))).toEqual({ message: notice.message });
+    expect(captureNotice(new Error(notice.title))).toMatchObject({ message: notice.title });
   } finally {
     await setLanguagePreference(previousLanguage);
   }

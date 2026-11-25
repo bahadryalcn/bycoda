@@ -103,14 +103,15 @@ export function ModelRoleRow({
       label={
         previewNode ? (
           <div className="flex min-w-0 flex-col gap-1">
-            <span>{t(label)}</span>
+            <span>{label}</span>
             {previewNode}
           </div>
         ) : (
-          t(label)
+          label
         )
       }
       disabled={disabled}
+      disabledReason={t("Wait for the current save to finish.")}
       stacked={choice?.kind === "fixed"}
       feedback={
         choice?.kind === "fixed" ? (
@@ -125,7 +126,7 @@ export function ModelRoleRow({
       <div className="flex min-w-0 w-full flex-wrap items-center gap-2">
         <div className="w-48 max-w-full shrink-0">
           <Select
-            label={t("Model for {p0}", { p0: t(label) })}
+            label={t("Model for {p0}", { p0: label })}
             hideLabel
             value={value}
             disabled={disabled}

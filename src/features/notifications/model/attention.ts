@@ -277,13 +277,13 @@ export function shouldNotifyFor(context: NotificationContext): boolean {
   return context.permission === "granted" || context.permission === "prompt";
 }
 
-export const LOCKED_NOTIFICATION_TEXT = "A session in a locked group needs attention";
+export const lockedNotificationText = () => t("A session in a locked group needs attention");
 
 /** The same notification with nothing that names the project or the session. */
 export function maskLockedNotification(payload: NotificationPayload): NotificationPayload {
   return {
     ...payload,
-    title: t(LOCKED_NOTIFICATION_TEXT),
+    title: lockedNotificationText(),
     subtitle: "",
     body: "",
     projectName: t("Locked group"),

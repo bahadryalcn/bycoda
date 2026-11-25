@@ -15,7 +15,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { MessageTimeline } from "../../../shared/ui/MessageTimeline";
 import { ChevronDown, ExternalLink, MessageMultiple, RefreshCw } from "../../../shared/ui/icons";
 import { useThreadMessages } from "../hooks/useThreadMessages";
-import { MESSAGING_PROVIDER_LABELS } from "../model/messageThreads";
+import { messagingProviderLabel } from "../model/messageThreads";
 import type { MessageThread, MessagingAccount, ThreadMessage } from "../model/messagingTypes";
 import { emailReplyAddress, isAtThreadEnd } from "../model/threadMessages";
 import { MessageReplyComposer } from "./MessageReplyComposer";
@@ -47,7 +47,7 @@ export function MessageThreadView({
     earlierError,
     loadEarlier,
   } = useThreadMessages(thread);
-  const [linkError, setLinkError] = useState("");
+  const [linkFailed, setLinkFailed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   // The reader follows the newest message until they scroll up, so a refresh or an opened
   // earlier page never drags them away from what they are reading.
@@ -123,12 +123,12 @@ export function MessageThreadView({
   };
 
   const openLink = useStableCallback((url: string) => {
-    setLinkError("");
-    openExternal(url).catch(() => setLinkError(t("Could not open the link. Try again.")));
+    setLinkFailed(false);
+    openExternal(url).catch(() => setLinkFailed(true));
   });
   const [project] = useState(createThreadMessageProjection);
   const items = messages ? project(messages, openLink, locale) : [];
-  const providerLabel = t(MESSAGING_PROVIDER_LABELS[thread.provider]);
+  const providerLabel = messagingProviderLabel(thread.provider);
   const accountLine = account
     ? [account.label || providerLabel, account.identity].filter(Boolean).join(" · ")
     : providerLabel;
@@ -186,7 +186,9 @@ export function MessageThreadView({
           </Button>
         ) : null}
       </header>
-      {linkError ? <InlineError className="mx-4 mt-2">{linkError}</InlineError> : null}
+      {linkFailed ? (
+        <InlineError className="mx-4 mt-2">{t("Could not open the link. Try again.")}</InlineError>
+      ) : null}
       <div
         ref={scrollRef}
         // Focusable only by script, as the landing place when the last "Load earlier" button unmounts.
@@ -199,7 +201,7 @@ export function MessageThreadView({
             <FailureState
               icon={<MessageMultiple aria-hidden="true" />}
               title={t("Could not load this conversation.")}
-              description={error}
+              error={error}
               onRetry={reload}
               retrying={loading}
             />

@@ -1,4 +1,5 @@
 import { errorText } from "../../shared/lib/errors";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { confirmInApp } from "../../shared/model/appConfirm";
@@ -194,7 +195,11 @@ async function runUpdateFlowOnce(
     const failed: UpdaterSnapshot = { phase: "error", currentVersion, error };
     onProgress?.(failed);
     if (manual) {
-      toast.show({ tone: "danger", title: t("Couldn't check for updates."), message: error });
+      toast.show({
+        tone: "danger",
+        title: t("Couldn't check for updates."),
+        extra: createElement(ErrorDetails, { detail: error }),
+      });
     }
     return failed;
   }

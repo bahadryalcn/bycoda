@@ -67,6 +67,9 @@ export function ManualPathDialog({
   const [browseFailure, setBrowseFailure] = useState<unknown>(null);
   const flow = useAddAndTest({ onAdd: (input) => onAdd(input), onTest });
   const locked = flow.busy || flow.done;
+  const lockedReason = flow.done
+    ? t("This model is already added.")
+    : t("Wait for the current step to finish.");
   const close = useDecisionDialogClose(
     !flow.done &&
       (name !== (prefill?.name ?? "") ||
@@ -170,7 +173,13 @@ export function ManualPathDialog({
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done ? null : (
-            <Button variant="primary" loading={flow.busy} disabled={flow.busy} onClick={submit}>
+            <Button
+              variant="primary"
+              loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
+              disabled={flow.busy}
+              onClick={submit}
+            >
               {t("Add and test")}
             </Button>
           )}
@@ -215,7 +224,13 @@ export function ManualPathDialog({
               error={errors.path}
               onChange={(event) => setModelPath(event.target.value)}
               endAdornment={
-                <Button variant="ghost" size="sm" disabled={locked} onClick={browseModel}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={locked}
+                  disabledReason={lockedReason}
+                  onClick={browseModel}
+                >
                   {t("Choose…")}
                 </Button>
               }
@@ -228,7 +243,13 @@ export function ManualPathDialog({
               disabled={locked}
               onChange={(event) => setRuntimePath(event.target.value)}
               endAdornment={
-                <Button variant="ghost" size="sm" disabled={locked} onClick={browseRuntime}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={locked}
+                  disabledReason={lockedReason}
+                  onClick={browseRuntime}
+                >
                   {t("Choose…")}
                 </Button>
               }
@@ -252,9 +273,6 @@ export function ManualPathDialog({
           options={CONTRACT_ADAPTERS.map((value) => ({ value, label: contractLabel(value) }))}
           onValueChange={(value) => setAdapter(value as ContractAdapter)}
         />
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
-        ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {browseFailure !== null ? <ErrorNotice error={browseFailure} /> : null}
         {flow.outcome ? (

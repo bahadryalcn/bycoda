@@ -149,6 +149,9 @@ export function DeviceInspector({
           </span>
           <Button
             disabled={!controlEnabled || !node.enabled || !node.clickable}
+            disabledReason={t(
+              "Wait for the current device action to finish, or set up the device first.",
+            )}
             onClick={() => {
               onPressNode(inspection!.inspectionId, node.id);
             }}
@@ -161,6 +164,9 @@ export function DeviceInspector({
         variant="ghost"
         loading={loading}
         disabled={!controlEnabled || !canInspect}
+        disabledReason={t(
+          "Wait for the current device action to finish, or set up the device first.",
+        )}
         onClick={onRefresh}
       >
         {t("Refresh inspection")}

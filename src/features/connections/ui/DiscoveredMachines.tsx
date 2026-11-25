@@ -23,13 +23,14 @@ import { MACHINE_SEARCH_FROM } from "./machineListSearch";
 import { useDiscoveredMachines } from "./useDiscoveredMachines";
 import type { RemoteMachine } from "../model/protocol";
 
-const SOURCE_LABEL: Record<CandidateSource, string> = {
-  account: "Account",
-  tailscale: "Tailscale",
-  "ssh-config": "SSH config",
-  "known-hosts": "Known hosts",
-  servers: "Servers",
-};
+const sourceLabel = (source: CandidateSource) =>
+  ({
+    account: t("Account"),
+    tailscale: t("Tailscale"),
+    "ssh-config": t("SSH config"),
+    "known-hosts": t("Known hosts"),
+    servers: t("Servers"),
+  })[source];
 
 function MachineIcon({ machine }: { machine: DiscoveredMachine }) {
   if (machine.group === "mobile") return <Smartphone aria-hidden className="icon-md" />;
@@ -54,7 +55,7 @@ function CandidateRow({
 }) {
   const plan = sshAddPlan(machine);
   const pair = plan ? null : accountPairPlan(machine);
-  const sources = [...new Set(machine.sources.map((source) => t(SOURCE_LABEL[source])))];
+  const sources = [...new Set(machine.sources.map((source) => sourceLabel(source)))];
   if (machine.group === "shared") sources.unshift(t("Shared with you"));
   return (
     <div className="flex items-center gap-3 px-3 py-2">
@@ -108,7 +109,7 @@ function groupBySource(machines: DiscoveredMachine[]) {
         ? t("Shared with you")
         : machine.group === "mobile"
           ? t("Phones")
-          : t(SOURCE_LABEL[machine.sources[0] ?? "account"]);
+          : sourceLabel(machine.sources[0] ?? "account");
     groups.set(label, [...(groups.get(label) ?? []), machine]);
   }
   return [...groups].map(([label, rows]) => ({ label, machines: rows }));

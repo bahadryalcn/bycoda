@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../../connections/public/remoteFailure";
 import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
@@ -31,7 +32,7 @@ export function TelegramChannelConnect({
   const [target, setTarget] = useState(account.connected ? account.platformId : "");
   const [review, setReview] = useState<SocialTelegramChannelReview>();
   const [pending, setPending] = useState<"inspect" | "connect">();
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ title: string; details?: string }>();
   const occupied = useRef(false);
   const generation = useRef(0);
 
@@ -41,7 +42,7 @@ export function TelegramChannelConnect({
   if (seenKey !== accountKey) {
     setSeenKey(accountKey);
     setReview(undefined);
-    setError("");
+    setProblem(undefined);
     setTarget(account.connected ? account.platformId : "");
   }
   useEffect(() => {
@@ -60,7 +61,7 @@ export function TelegramChannelConnect({
     const timer = setTimeout(
       () => {
         setReview(undefined);
-        setError(t("The channel review expired. Inspect it again before connecting."));
+        setProblem({ title: t("The channel review expired. Inspect it again before connecting.") });
       },
       Math.max(0, review.expiresAt - Date.now()),
     );
@@ -72,15 +73,16 @@ export function TelegramChannelConnect({
     if (busy || occupied.current) return;
     occupied.current = true;
     setPending(kind);
-    setError("");
+    setProblem(undefined);
     try {
       await action();
-    } catch {
-      setError(
-        t(
+    } catch (cause) {
+      setProblem({
+        title: t(
           "The channel could not be verified. Check the bot's channel administrator rights and inspect it again.",
         ),
-      );
+        details: presentRemoteError(cause, { explicit: true }),
+      });
     } finally {
       occupied.current = false;
       setPending(undefined);
@@ -99,7 +101,7 @@ export function TelegramChannelConnect({
     void run("connect", async () => {
       if (!review || Date.now() >= review.expiresAt) {
         setReview(undefined);
-        setError(t("The channel review expired. Inspect it again before connecting."));
+        setProblem({ title: t("The channel review expired. Inspect it again before connecting.") });
         return;
       }
       const approved = review;
@@ -131,7 +133,7 @@ export function TelegramChannelConnect({
             generation.current++;
             setTarget(event.currentTarget.value);
             setReview(undefined);
-            setError("");
+            setProblem(undefined);
           }}
         />
         <Button
@@ -174,7 +176,7 @@ export function TelegramChannelConnect({
           </Button>
         </>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {problem ? <InlineError details={problem.details}>{problem.title}</InlineError> : null}
     </div>
   );
 }

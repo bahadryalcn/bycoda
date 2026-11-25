@@ -60,7 +60,11 @@ export function SessionDiscussionPanel({
 }: SessionDiscussionPanelProps) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState("");
+  // `summary` is a finished sentence; `detail` is the raw provider text kept behind Details.
+  const [problem, setProblem] = useState<{
+    summary?: string;
+    detail?: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const request = useRef(0);
@@ -101,7 +105,7 @@ export function SessionDiscussionPanel({
   useEffect(() => {
     const generation = ++request.current;
     let active = true;
-    setError("");
+    setProblem(null);
     setLoading(true);
     void open()
       .then((sessionId) => {
@@ -109,7 +113,7 @@ export function SessionDiscussionPanel({
           mount({ sessionId, host: host.current });
       })
       .catch((cause: unknown) => {
-        if (active && generation === request.current) setError(errorText(cause));
+        if (active && generation === request.current) setProblem({ detail: errorText(cause) });
       })
       .finally(() => {
         if (active && generation === request.current) setLoading(false);
@@ -126,14 +130,17 @@ export function SessionDiscussionPanel({
     if (!onRestart) return;
     const generation = ++request.current;
     setLoading(true);
-    setError("");
+    setProblem(null);
     void onRestart()
       .then((sessionId) => {
         if (generation === request.current && host.current)
           mount({ sessionId, host: host.current });
       })
       .catch((cause: unknown) => {
-        if (generation === request.current) setError(presentRemoteError(cause, { explicit: true }));
+        if (generation === request.current)
+          setProblem({
+            summary: presentRemoteError(cause, { explicit: true }),
+          });
       })
       .finally(() => {
         if (generation === request.current) setLoading(false);
@@ -158,11 +165,15 @@ export function SessionDiscussionPanel({
           {restartAction}
         </div>
       ) : null}
-      {error ? (
+      {problem ? (
         <InlineError
-          retry={{ label: t("Try again"), onRetry: () => setRevision((value) => value + 1) }}
+          details={problem.detail}
+          retry={{
+            label: t("Try again"),
+            onRetry: () => setRevision((value) => value + 1),
+          }}
         >
-          {error}
+          {problem.summary ?? t("Could not open this conversation.")}
         </InlineError>
       ) : null}
       {loading ? <LoadingText inset="row" /> : null}

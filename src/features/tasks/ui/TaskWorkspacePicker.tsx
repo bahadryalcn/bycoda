@@ -119,6 +119,11 @@ export function TaskWorkspacePicker({
   const inventory = loadedInventory?.scope === currentContext ? loadedInventory.data : undefined;
   const loadKey = `${currentContext}\0${revision}`;
   const fetching = Boolean(machine && cwd) && fetchedKey !== loadKey;
+  const workspaceWait = fetching
+    ? t("Wait for the worktrees to load.")
+    : busy
+      ? t("Wait for the current operation to finish")
+      : undefined;
   // Retire writes from the previous target, including a switch away and back.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- swaps the write token when the Host/project target changes so late replies from the old target are dropped
   useLayoutEffect(() => {
@@ -249,15 +254,14 @@ export function TaskWorkspacePicker({
         ) : null}
         {error ? (
           <InlineError
+            details={error}
             retry={{
               label: t("Retry"),
               pending: fetching,
               disabled: disabled || busy,
               onRetry: () => setRevision((count) => count + 1),
             }}
-          >
-            {error}
-          </InlineError>
+          ></InlineError>
         ) : null}
         {inventory ? (
           <>
@@ -309,6 +313,7 @@ export function TaskWorkspacePicker({
                 type="button"
                 loading={creation === "existing"}
                 disabled={disabled || busy || fetching}
+                disabledReason={workspaceWait}
                 onClick={() => void create(true)}
               >
                 {t("Create worktree for this branch")}
@@ -326,6 +331,9 @@ export function TaskWorkspacePicker({
               variant="ghost"
               type="button"
               disabled={disabled || busy || fetching || !newName.trim()}
+              disabledReason={
+                workspaceWait ?? (newName.trim() ? undefined : t("Enter a branch name first."))
+              }
               loading={creation === "new"}
               onClick={() => void create(false)}
             >
@@ -333,11 +341,13 @@ export function TaskWorkspacePicker({
             </Button>
             {isolate === undefined ? null : (
               <InfoPopover>
-                {t(
-                  isolate
-                    ? "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout."
-                    : "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
-                )}
+                {isolate
+                  ? t(
+                      "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout.",
+                    )
+                  : t(
+                      "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
+                    )}
               </InfoPopover>
             )}
           </>

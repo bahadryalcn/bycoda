@@ -328,23 +328,17 @@ export function StewardForm({
             <TaskMoreOptions
               summary={[
                 draft.maxProposals !== DEFAULT_MAX_PROPOSALS &&
-                  t(
-                    draft.maxProposals === 1
-                      ? "{p0} suggestion per run"
-                      : "{p0} suggestions per run",
-                    {
-                      p0: format.formatNumber(draft.maxProposals),
-                    },
-                  ),
+                  (draft.maxProposals === 1
+                    ? t("{p0} suggestion per run", { p0: format.formatNumber(draft.maxProposals) })
+                    : t("{p0} suggestions per run", {
+                        p0: format.formatNumber(draft.maxProposals),
+                      })),
                 draft.maxOpen !== DEFAULT_MAX_OPEN &&
-                  t(
-                    draft.maxOpen === 1
-                      ? "Pause at {p0} open suggestion"
-                      : "Pause at {p0} open suggestions",
-                    {
-                      p0: format.formatNumber(draft.maxOpen),
-                    },
-                  ),
+                  (draft.maxOpen === 1
+                    ? t("Pause at {p0} open suggestion", { p0: format.formatNumber(draft.maxOpen) })
+                    : t("Pause at {p0} open suggestions", {
+                        p0: format.formatNumber(draft.maxOpen),
+                      })),
               ]}
             >
               <Surface
@@ -364,7 +358,7 @@ export function StewardForm({
             </TaskMoreOptions>
           </div>
         </FieldGroup>
-        {error ? <InlineError className="mt-3">{error}</InlineError> : null}
+        {error ? <InlineError className="mt-3" details={error} /> : null}
       </div>
       <ModalFooter>
         <ModalActions reason={!saving ? reason : undefined}>

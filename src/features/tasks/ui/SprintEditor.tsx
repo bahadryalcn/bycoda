@@ -245,7 +245,7 @@ export function SprintEditor({
               );
             })}
         </Disclosure>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error} /> : null}
       </form>
     </Modal>
   );

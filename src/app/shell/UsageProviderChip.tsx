@@ -46,11 +46,12 @@ import { ArrowLeft, Check, ChevronRight, Plus } from "../../shared/ui/icons";
 import { Popover } from "../../shared/ui/Popover";
 import { Badge } from "../../shared/ui/Badge";
 import { InlineError, InlineMessage } from "../../shared/ui/InlineError";
-import { Spinner } from "../../shared/ui/Spinner";
+import { LoadingText } from "../../shared/ui/LoadingText";
 import { Heading } from "../../shared/ui/Heading";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { surfaceAttributes, Surface } from "../../shared/ui/Surface";
 import { Tooltip } from "../../shared/ui/Tooltip";
+import { LiveText } from "../../shared/ui/LiveText";
 import { Button } from "../../shared/ui/Button";
 import {
   ProviderSignInPanel,
@@ -160,7 +161,7 @@ export function UsageProviderChip(props: UsageProviderChipProps) {
             {t("not connected")}
           </Text>
         ) : windows.length === 0 ? (
-          <UnknownUsageBar label={limits.error ?? t("Usage unavailable")} />
+          <UnknownUsageBar label={t("Usage unavailable")} detail={limits.error || undefined} />
         ) : (
           <span className="flex min-w-0 items-center gap-2 tabular-nums">
             {windows.map((entry, index) => (
@@ -367,6 +368,7 @@ function UsageProviderDetails({
                       else setUsageAccountId(account.id);
                     }}
                     disabled={resetAction === "using" || reconnectState === "running"}
+                    disabledReason={t("Wait for the current operation to finish")}
                   >
                     <AccountColorDot account={account} className="size-1.5" />
                     <Text size="inherit" tone="inherit" truncate className="min-w-0">
@@ -444,9 +446,7 @@ function UsageProviderDetails({
                       : t("Couldn’t refresh. Showing the last available snapshot.")}
                   </InlineMessage>
                 ) : detailLimits.status === "fetching" ? (
-                  <InlineMessage tone="neutral" icon={<Spinner size="micro" />}>
-                    {t("Updating")}
-                  </InlineMessage>
+                  <LoadingText size="caption">{t("Updating")}</LoadingText>
                 ) : (
                   <Text as="p" size="caption" tone="secondary">
                     {updated}
@@ -634,7 +634,7 @@ function ProviderAccountPicker({
         {accounts.map((account) => {
           const selected = account.id === accountId;
           const identity = identities[identityKey(account)];
-          const kind = t(account.kind === "work" ? "Work" : "Personal");
+          const kind = account.kind === "work" ? t("Work") : t("Personal");
           const usage = usageFor(account);
           const meters = meterWindowsWith(usage, t);
           const chipSurface = surfaceAttributes(
@@ -849,17 +849,17 @@ function UsageWindowCard({
   const shown = showRemaining ? remaining : pct;
   const title =
     kind === "session"
-      ? "5-hour limit"
+      ? t("5-hour limit")
       : kind === "weekly"
-        ? "Weekly limit"
+        ? t("Weekly limit")
         : kind === "monthly"
-          ? "Monthly limit"
-          : `${formatWindowLabel(window.windowMinutes)} limit`;
+          ? t("Monthly limit")
+          : t("{p0} limit", { p0: formatWindowLabel(window.windowMinutes) });
   return (
     <section className="px-1">
       <div className="flex items-baseline justify-between gap-3">
         <SectionLabel as="h3" size="micro">
-          {t(title)}
+          {title}
         </SectionLabel>
         <Text size="micro" tone="secondary">
           {formatUsagePercent(shown)} {showRemaining ? t("remaining") : t("used")}
@@ -869,7 +869,7 @@ function UsageWindowCard({
         compact
         showLegend={false}
         showRemaining={showRemaining}
-        label={`${t(title)} ${showRemaining ? t("remaining") : t("used")}`}
+        label={`${title} ${showRemaining ? t("remaining") : t("used")}`}
         valueText={`${formatUsagePercent(shown)} ${showRemaining ? t("remaining") : t("used")}`}
         className="mbs-1.5"
         segments={[{ id: "used", label: t("used"), value: pct }]}
@@ -906,19 +906,28 @@ function UsageWindowCard({
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   const t = useT();
   return (
-    <Surface variant="card" className="flex flex-col gap-2" role="status">
-      <Text size="micro" tone="inherit" weight="medium">
-        {loading
-          ? t("Loading usage…")
-          : limits.status === "unavailable"
-            ? t("Not connected")
-            : t("Usage unavailable")}
-      </Text>
+    <Surface variant="card" className="flex flex-col gap-2">
+      <LiveText
+        size="micro"
+        tone="inherit"
+        weight="medium"
+        text={
+          loading
+            ? t("Loading usage…")
+            : limits.status === "unavailable"
+              ? t("Not connected")
+              : t("Usage unavailable")
+        }
+      />
       <UnknownUsageBar
         label={loading ? t("Loading usage…") : t("Usage unavailable")}
         loading={loading}
       />
-      {limits.error ? <InlineError live="off">{limits.error}</InlineError> : null}
+      {limits.error ? (
+        <InlineError live="off" details={limits.error}>
+          {t("Could not read the provider status.")}
+        </InlineError>
+      ) : null}
     </Surface>
   );
 }
@@ -1066,16 +1075,7 @@ function BankedResetRow({
             </Text>
           </Tooltip>
         </div>
-        {action === "using" ? (
-          <Text
-            size="caption"
-            tone="secondary"
-            className="inline-flex shrink-0 items-center gap-1.5"
-          >
-            <Spinner size="xs" />
-            {t("Applying…")}
-          </Text>
-        ) : canUse && action !== "confirming" && (!outcome || retryable) ? (
+        {action === "using" || (canUse && action !== "confirming" && (!outcome || retryable)) ? (
           <Button
             variant="secondary"
             size="xs"
@@ -1083,23 +1083,27 @@ function BankedResetRow({
             motion="none"
             type="button"
             className="shrink-0"
-            disabled={disabled}
+            loading={action === "using"}
+            loadingLabel={t("Applying…")}
+            disabled={disabled && action !== "using"}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={onConfirm}
           >
             {retryable ? t("Try again") : t("Use reset")}
           </Button>
         ) : null}
       </div>
-      {outcome ? (
-        <Text
-          as="p"
+      {outcome && action === "error" ? (
+        <InlineError className="mt-0.5" details={error ?? undefined}>
+          {t("Could not complete this action.")}
+        </InlineError>
+      ) : outcome ? (
+        <LiveText
+          className="mt-0.5 block break-words"
           size="caption"
           tone={action === "reset" ? "success" : "secondary"}
-          className="mt-0.5 break-words"
-          role="status"
-        >
-          {action === "error" ? error : resetOutcomeLabel(action, t, provider)}
-        </Text>
+          text={resetOutcomeLabel(action, t, provider)}
+        />
       ) : null}
       {action === "confirming" ? (
         <div className="mt-1.5 flex items-center justify-between gap-2">

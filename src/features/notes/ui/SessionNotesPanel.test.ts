@@ -192,17 +192,17 @@ function body() {
 
 it("autosaves after the delay and keeps routine status quiet", async () => {
   await render();
-  expect(container.querySelector("[data-note-save-state]")).toBeNull();
+  expect(container.querySelector(".note-save-status")).toBeNull();
   vi.useFakeTimers();
   await input(body(), "Save this note now");
-  expect(container.querySelector("[data-note-save-state]")).toBeNull();
+  expect(container.querySelector(".note-save-status")).toBeNull();
   await act(async () => {
     await vi.advanceTimersByTimeAsync(500);
   });
   expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
     "Save this note now",
   );
-  expect(container.querySelector("[data-note-save-state]")).toBeNull();
+  expect(container.querySelector(".note-save-status")).toBeNull();
 });
 
 it("keeps autosaving the draft after deletion fails", async () => {
@@ -414,7 +414,7 @@ it("preserves an unsaved body across close and reopen after persistent write fai
     body().focus();
     body().blur();
   });
-  expect(container.textContent).toContain("Disk full");
+  expect(container.textContent).toContain("Could not save note");
   await act(async () => root.render(null));
   invoke.mockImplementation(original);
   await render();
@@ -498,7 +498,7 @@ it.each([false, true])(
         body().focus();
         body().blur();
       });
-      expect(container.textContent).toContain("Newer write failed");
+      expect(container.textContent).toContain("Could not save note");
     }
     if (remount) await act(async () => root.render(null));
     await act(async () => release());
@@ -507,7 +507,7 @@ it.each([false, true])(
       true,
     );
     expect(body().value).toBe("Newer unsaved draft");
-    if (!remount) expect(container.textContent).toContain("Newer write failed");
+    if (!remount) expect(container.textContent).toContain("Could not save note");
     await act(async () => root.render(null));
     await render();
     expect(body().value).toBe("Newer unsaved draft");
@@ -571,11 +571,13 @@ it.each(["copy", "create"])(
     });
     expect(stored.some((note) => note.id === own.id)).toBe(false);
     expect(body().value).toBe(draft);
-    expect(container.textContent).toContain("Your draft is preserved");
+    expect(container.textContent).toContain("Could not save note");
+    // The raw text sits behind Details; open it first so the failure shows as it arrives.
+    await click("Details: Could not save note");
     await click("Save as new note");
     expect(body().value).toBe(draft);
     expect(stored.some((note) => note.sourceSessionId === sessionId)).toBe(false);
-    expect(container.textContent).toContain(
+    expect(document.body.textContent).toContain(
       failure === "copy" ? "Image copy failed" : "Recovery creation failed",
     );
     failRecovery = false;

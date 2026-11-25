@@ -6,6 +6,11 @@ import type { SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { SnapchatProfilePanel } from "./SnapchatProfilePanel";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 let root: Root;
 let element: HTMLElement;
 const member: SocialAccount = {
@@ -96,7 +101,7 @@ it("requires the owner to confirm creation and keeps the member draft after an u
   });
   expect(onChanged).not.toHaveBeenCalled();
   expect(element.querySelector("input")?.value).toBe("Draft profile");
-  expect(button("Create Public Profile").disabled).toBe(true);
+  expect(isBlocked(button("Create Public Profile"))).toBe(true);
   await act(async () => button("Read profile").click());
   expect(element.querySelector("input")?.value).toBe("Draft profile");
   expect(button("Create Public Profile").disabled).toBe(false);

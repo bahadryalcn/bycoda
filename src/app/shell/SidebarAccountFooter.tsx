@@ -62,6 +62,7 @@ export function SidebarAccountFooter({
       tooltipSide={compact ? "right" : "top"}
       onClick={onOpenSettings}
       disabled={!onOpenSettings}
+      disabledReason={!onOpenSettings ? t("Not available yet.") : undefined}
     >
       <Settings className="icon-md" aria-hidden />
     </Button>

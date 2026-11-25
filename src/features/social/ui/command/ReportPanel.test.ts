@@ -100,8 +100,9 @@ it("shows a suggestion failure alongside available report results", () => {
     },
   });
   expect(element.querySelector('[data-tone="warning"]')?.textContent).toContain(
-    "AI generation failed or stopped.",
+    "Suggestions could not be generated.",
   );
+  expect(element.textContent).not.toContain("AI generation failed or stopped.");
   expect(element.textContent).toContain("Replied to 3 comments");
 });
 

@@ -42,7 +42,7 @@ import {
   useWorkspaceFeatures,
   workspaceFeatureSettings,
 } from "../../settings/model/workspaceFeatures";
-import { WORKSPACE_FEATURE_CHOICES } from "../../settings/ui/WorkspaceFeatureSettings";
+import { workspaceFeatureChoices } from "../../settings/ui/WorkspaceFeatureSettings";
 /** The default palette, shown in the mode tiles before the user changes it in Settings. */
 const { className: CHOICE_FRAME_CLASS, ...CHOICE_FRAME_DATA } = surfaceAttributes({
   frame: "card",
@@ -143,7 +143,7 @@ export function OnboardingWorkspace() {
       />
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
-          {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
+          {workspaceFeatureChoices().map(({ id, label, description, icon: Icon }) => (
             <Checkbox
               key={id}
               appearance="card"
@@ -161,10 +161,10 @@ export function OnboardingWorkspace() {
                       weight="medium"
                       leading="inherit"
                     >
-                      {t(label)}
+                      {label}
                     </Text>
                     <Text as="small" size="micro" tone="muted" leading="snug">
-                      {t(description)}
+                      {description}
                     </Text>
                   </div>
                 </>

@@ -15,7 +15,6 @@ const surfaces = [
   ["features/sessions/ui/AgentTranscript.tsx", "Sending"],
   ["features/voice/ui/VoiceOverlayWindow.tsx", "Connecting voice"],
   ["features/group-lock/ui/GroupLockSettings.tsx", "Updating"],
-  ["features/group-lock/ui/HiddenGroupsSettings.tsx", "Updating"],
 ] as const;
 
 it.each(surfaces)("uses the ellipsis character in %s", (path, message) => {

@@ -145,6 +145,7 @@ function EventRow({
               label={channelLabel(channel)}
               checked={isChannelOn(settings, event, channel)}
               disabled={locked}
+              disabledReason={locked ? t("This notification cannot be turned off.") : undefined}
               onChange={(next) => {
                 const on = next.currentTarget.checked;
                 onChange((s) => setChannel(s, event, channel, on));

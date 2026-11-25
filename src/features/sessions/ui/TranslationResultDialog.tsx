@@ -194,6 +194,15 @@ export function TranslationResultDialog({
           <Button
             variant={result && !pending && !error ? "primary" : "secondary"}
             disabled={!result || pending || !!error}
+            disabledReason={
+              pending
+                ? reprompt
+                  ? t("Rewriting…")
+                  : t("Translating…")
+                : error
+                  ? t("Retry before applying.")
+                  : t("Nothing to apply yet.")
+            }
             onClick={() => {
               try {
                 onApply(result);

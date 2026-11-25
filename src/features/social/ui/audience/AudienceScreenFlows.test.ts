@@ -8,6 +8,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   buttonsByText,
   clickButton,
@@ -211,7 +212,7 @@ describe("AudienceScreen Fill with AI", () => {
     await loaded();
     clickButton("Fill with AI");
     await loaded();
-    expect(bodyText()).toContain("AI is stopped.");
+    expect(openErrorDetails()).toContain("AI is stopped.");
     expect(bodyText()).not.toContain("AI prepared");
   });
 

@@ -208,7 +208,9 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
           }
         />
         {reading ? <LoadingText>{t("Reading the file…")}</LoadingText> : null}
-        {fileError ? <InlineError>{fileError}</InlineError> : null}
+        {fileError ? (
+          <InlineError details={fileError}>{t("Could not read the file.")}</InlineError>
+        ) : null}
 
         {table ? (
           <>

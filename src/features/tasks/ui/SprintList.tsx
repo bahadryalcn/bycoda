@@ -4,6 +4,7 @@ import type { RemoteMachine } from "../../connections";
 import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Surface } from "../../../shared/ui/Surface";
+import { sprintStateLabel } from "../model/statusLabels";
 import { sprintProjectKey, type HostSprint } from "../model/hostSprints";
 import { sprintDateRange } from "./sprintDateRange";
 import { SprintStatusBadge } from "./SprintStatusBadge";
@@ -34,16 +35,7 @@ export function SprintList({
   // A state that no sprint has any more falls back to All.
   const stateFilter = present.some((state) => state === chosen) ? chosen : "all";
   const label = (state: string) =>
-    state === "all"
-      ? t("All")
-      : t(
-          {
-            planned: "Planned",
-            active: "Active",
-            completed: "Completed",
-            archived: "Archived",
-          }[state as (typeof STATES)[number]],
-        );
+    state === "all" ? t("All") : sprintStateLabel(state as (typeof STATES)[number]);
   // Server and machine names only tell rows apart when several machines are involved.
   const manyServers = machines.length > 1;
   const shown = rows.filter(

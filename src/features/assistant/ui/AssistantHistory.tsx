@@ -10,35 +10,67 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Briefcase, ExternalLink } from "../../../shared/ui/icons";
 import styles from "./AssistantHistory.module.css";
 
-export const assistantActivityLabels: Record<string, string> = {
-  "action.started": "Started",
-  "action.completed": "Completed",
-  "action.submitted": "Submitted",
-  "action.accepted": "Accepted",
-  "action.unknown": "Outcome unknown",
-  "action.failed": "Failed",
-  "action.refused": "Refused",
-  "action.cancelled": "Cancelled",
-  "action.pending": "Pending",
-  "action.running": "Running",
-  "action.waiting": "Waiting",
-  "budget.exhausted": "Budget exhausted",
-  "chief.woke": "Status reviewed",
-  "conversation.replied": "Conversation reply",
-  "job.received": "Job received",
-  "job.replanned": "Job replanned",
-  "job.started": "Job started",
-  "job.unknown": "Dispatch status unknown",
-  "job.pause": "Job paused",
-  "job.resume": "Job resumed",
-  "job.stop": "Job stopped",
-  "memory.saved": "Memory saved",
-  "profile.updated": "Settings updated",
-  "task.started": "Task started",
-  "job.waiting": "Waiting for you",
-  "job.stalled": "Stalled",
-  "job.problem": "Job problem",
-};
+/** The translated label of an activity kind; call it while rendering. */
+export function assistantActivityLabel(kind: string): string {
+  switch (kind) {
+    case "action.started":
+      return t("Started");
+    case "action.completed":
+      return t("Completed");
+    case "action.submitted":
+      return t("Submitted");
+    case "action.accepted":
+      return t("Accepted");
+    case "action.unknown":
+      return t("Outcome unknown");
+    case "action.failed":
+      return t("Failed");
+    case "action.refused":
+      return t("Refused");
+    case "action.cancelled":
+      return t("Cancelled");
+    case "action.pending":
+      return t("Pending");
+    case "action.running":
+      return t("Running");
+    case "action.waiting":
+      return t("Waiting");
+    case "budget.exhausted":
+      return t("Budget exhausted");
+    case "chief.woke":
+      return t("Status reviewed");
+    case "conversation.replied":
+      return t("Conversation reply");
+    case "job.received":
+      return t("Job received");
+    case "job.replanned":
+      return t("Job replanned");
+    case "job.started":
+      return t("Job started");
+    case "job.unknown":
+      return t("Dispatch status unknown");
+    case "job.pause":
+      return t("Job paused");
+    case "job.resume":
+      return t("Job resumed");
+    case "job.stop":
+      return t("Job stopped");
+    case "memory.saved":
+      return t("Memory saved");
+    case "profile.updated":
+      return t("Settings updated");
+    case "task.started":
+      return t("Task started");
+    case "job.waiting":
+      return t("Waiting for you");
+    case "job.stalled":
+      return t("Stalled");
+    case "job.problem":
+      return t("Job problem");
+    default:
+      return t("Activity");
+  }
+}
 /** Problems keep the danger tone; every other kind stays neutral. */
 const DANGER_KINDS = new Set(["job.problem", "job.unknown", "action.failed", "action.unknown"]);
 
@@ -70,7 +102,7 @@ export function AssistantHistory({
       <LiveText
         tone="secondary"
         className={styles.empty}
-        text={!entries.length ? t(filtered ? "No results" : "No activity yet") : ""}
+        text={!entries.length ? (filtered ? t("No results") : t("No activity yet")) : ""}
       />
       {[...groups].map(([key, events]) => (
         <section className={styles.day} key={key} aria-labelledby={`history-day-${key}`}>
@@ -116,7 +148,7 @@ export function AssistantHistory({
                 {/* The summary already says what happened; only problems earn a kind badge. */}
                 {DANGER_KINDS.has(entry.kind) && (
                   <Badge size="xs" className={styles.kind} tone="danger">
-                    {t(assistantActivityLabels[entry.kind] ?? "Activity")}
+                    {assistantActivityLabel(entry.kind)}
                   </Badge>
                 )}
                 {(entry.jobId || (entry.sessionId && onOpenSession)) && (

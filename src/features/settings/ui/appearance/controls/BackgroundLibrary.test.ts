@@ -87,12 +87,16 @@ it("revokes old image intent when applying a library image", async () => {
 
 it("disables apply and delete while the background is changing", () => {
   render(true);
-  expect(host.querySelector<HTMLButtonElement>('button[aria-label="Added image"]')!.disabled).toBe(
-    true,
-  );
-  expect(host.querySelector<HTMLButtonElement>('button[aria-label="Delete image"]')!.disabled).toBe(
-    true,
-  );
+  expect(
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="Added image"]')!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
+  expect(
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="Delete image"]')!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
 });
 
 it("updates themes added while delete confirmation is open and surfaces a failed reference save", async () => {

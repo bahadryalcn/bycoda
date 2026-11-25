@@ -47,13 +47,28 @@ import {
 } from "../model/usageBudgets";
 
 const scopes = ["machine", "project", "session", "workspace"] as const;
-const scopeLabel = {
-  machine: "This machine",
-  project: "Project",
-  session: "Session",
-  workspace: "Workspace",
-};
-const periodLabel = { all: "All time", weekly: "Rolling 7 days", fiveHour: "5 hours" };
+function scopeLabel(scope: BudgetScope): string {
+  switch (scope) {
+    case "machine":
+      return t("This machine");
+    case "project":
+      return t("Project");
+    case "session":
+      return t("Session");
+    case "workspace":
+      return t("Workspace");
+  }
+}
+function periodLabel(period: UsageBudget["period"]): string {
+  switch (period) {
+    case "all":
+      return t("All time");
+    case "weekly":
+      return t("Rolling 7 days");
+    case "fiveHour":
+      return t("5 hours");
+  }
+}
 type ProjectCatalog = {
   groups: ReturnType<typeof loadProjectGroups>;
   recents: string[];
@@ -85,11 +100,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
     refresh: number;
     budgets: UsageBudget[];
     readings: Record<string, BudgetReading>;
-    error: string;
+    problem: string;
     now: number;
   } | null>(null);
   const [catalog, setCatalog] = useState<ProjectCatalog>({ groups: [], recents: [] });
-  const [writeError, setError] = useState("");
+  const [writeProblem, setProblem] = useState("");
   const [editor, setEditor] = useState<UsageBudget | "new" | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   // Project storage is read here, in the handler, so the editor opens with
@@ -127,7 +142,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             refresh,
             budgets: rules,
             readings: Object.fromEntries(rows),
-            error: "",
+            problem: "",
             now: instant,
           });
         }
@@ -138,7 +153,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             refresh,
             budgets: [],
             readings: {},
-            error: t("Usage budget settings could not be read."),
+            problem: t("Usage budget settings could not be read."),
             now: Date.now(),
           });
       }
@@ -151,7 +166,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
   const pending = load?.version !== version || load?.refresh !== refresh;
   const budgets = load?.budgets ?? [];
   const readings = load?.readings ?? {};
-  const error = writeError || load?.error;
+  const problem = writeProblem || load?.problem;
   const now = load?.now ?? 0;
   const editorVisible =
     editor === "new" ||
@@ -174,9 +189,9 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
   const remove = (id: string) => {
     try {
       deleteUsageBudget(id);
-      setError("");
+      setProblem("");
     } catch (cause) {
-      setError(t("Usage budget settings could not be saved."));
+      setProblem(t("Usage budget settings could not be saved."));
       throw cause;
     }
   };
@@ -203,7 +218,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 "Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule then warns and still sends the message.",
               )}
             </p>
-            <ul className="list-disc space-y-1 pl-4">
+            <ul className="list-disc space-y-1 ps-4">
               <li>{t("Token budgets count input, output and cache tokens from local records.")}</li>
               <li>
                 {t(
@@ -241,7 +256,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           </Button>
         ) : null}
       </div>
-      {!pending && !visible.length && !editor && !error ? (
+      {!pending && !visible.length && !editor && !problem ? (
         <EmptyState
           size="inline"
           kind="empty"
@@ -252,7 +267,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           }}
         />
       ) : null}
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {problem ? <Alert tone="danger">{problem}</Alert> : null}
       {editor && editorVisible ? (
         <BudgetEditor
           key={editor === "new" ? "new" : editor.id}
@@ -269,7 +284,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
           onSave={() => {
             // The saved card appearing in the list is the confirmation.
             setEditor(null);
-            setError("");
+            setProblem("");
             addButton.current?.focus();
           }}
         />
@@ -298,8 +313,8 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   {budget.label}
                 </SectionLabel>
                 <Text as="p">
-                  {t(scopeLabel[budget.scope])} · {t(periodLabel[budget.period])} ·{" "}
-                  {t(budget.action === "block" ? "Block new turns" : "Monitor only")}
+                  {scopeLabel(budget.scope)} · {periodLabel(budget.period)} ·{" "}
+                  {budget.action === "block" ? t("Block new turns") : t("Monitor only")}
                 </Text>
                 <Text as="p" className="break-all">
                   {budget.scope === "machine"
@@ -337,13 +352,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 />
                 <Text as="p" tone="inherit">
                   {formatReading(reading.used!)} / {formatReading(reading.limit)} ·{" "}
-                  {t(
-                    reading.state === "exceeded"
-                      ? "Budget reached"
-                      : reading.state === "warning"
-                        ? "Approaching budget"
-                        : "Within budget",
-                  )}
+                  {reading.state === "exceeded"
+                    ? t("Budget reached")
+                    : reading.state === "warning"
+                      ? t("Approaching budget")
+                      : t("Within budget")}
                   {!pending ? (
                     <>
                       {" · "}
@@ -425,7 +438,7 @@ function BudgetEditor({
     `${draftKey}:account`,
     budget ? `${budget.provider}:${budget.accountId}` : "",
   );
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState("");
   const targets =
     scope === "machine"
       ? [{ value: "local", label: t("This machine") }]
@@ -477,7 +490,7 @@ function BudgetEditor({
           !targets.some((o) => o.value === target) ||
           (metric === "accountPercent" && !selectedAccount)
         ) {
-          setError(
+          setProblem(
             t("Choose a target and valid positive limits. Percent must be between 0 and 100."),
           );
           return;
@@ -487,7 +500,7 @@ function BudgetEditor({
           clearDraft(next);
           onSave();
         } catch {
-          setError(t("Usage budget settings could not be saved."));
+          setProblem(t("Usage budget settings could not be saved."));
         }
       }}
     >
@@ -500,7 +513,7 @@ function BudgetEditor({
             setTarget(v === "machine" ? "local" : "");
             if (v === "machine") setMetric("tokens");
           }}
-          options={scopes.map((s) => ({ value: s, label: t(scopeLabel[s]) }))}
+          options={scopes.map((s) => ({ value: s, label: scopeLabel(s) }))}
         />
         <BudgetSelect
           label={t("Budget target")}
@@ -544,7 +557,7 @@ function BudgetEditor({
           />
         )}
         <NumberField
-          label={t(metric === "tokens" ? "Allocation (%)" : "Account usage threshold (%)")}
+          label={metric === "tokens" ? t("Allocation (%)") : t("Account usage threshold (%)")}
           min={0.01}
           max={100}
           step="any"
@@ -559,7 +572,7 @@ function BudgetEditor({
           options={(metric === "tokens"
             ? (["all", "weekly", "fiveHour"] as const)
             : (["weekly", "fiveHour"] as const)
-          ).map((p) => ({ value: p, label: t(periodLabel[p]) }))}
+          ).map((p) => ({ value: p, label: periodLabel(p) }))}
         />
         <BudgetSelect
           label={t("When reached")}
@@ -580,7 +593,7 @@ function BudgetEditor({
           }
         />
       </div>
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {problem ? <Alert tone="danger">{problem}</Alert> : null}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button type="submit" variant="primary">
           {t("Save budget")}

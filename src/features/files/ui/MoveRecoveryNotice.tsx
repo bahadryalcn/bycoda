@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useState } from "react";
 import { revealPath } from "../../../platform/tauri/fs";
 import { t } from "../../../shared/i18n/technical";
@@ -13,8 +14,8 @@ export function MoveRecoveryNotice({ notice }: { notice: CopyNotice }) {
   const [error, setError] = useState<string | null>(null);
   if (typeof notice === "string")
     return (
-      <Text role="status" as="p" size="caption" tone="secondary" className="px-2 py-1">
-        {notice}
+      <Text as="p" size="caption" tone="secondary" className="px-2 py-1">
+        <LiveText text={notice} />
       </Text>
     );
   const reveal = () => {
@@ -31,7 +32,7 @@ export function MoveRecoveryNotice({ notice }: { notice: CopyNotice }) {
       >
         {t("Show")}
       </Button>
-      {notice.warning ? <InlineError>{notice.warning}</InlineError> : null}
+      {notice.warning ? <InlineError details={notice.warning} /> : null}
       {error ? (
         <InlineError details={error}>{t("Couldn’t show the recovery copy")}</InlineError>
       ) : null}

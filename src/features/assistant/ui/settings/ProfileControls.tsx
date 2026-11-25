@@ -1,6 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
-import { t } from "../../../../shared/i18n";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
@@ -9,7 +8,7 @@ import { ProfileRow, useProfileRows } from "./SettingsProfileRow";
 import styles from "../AssistantProfileFields.module.css";
 import workStyles from "./work.module.css";
 
-/** Visible select for a saved profile field. Option labels are translated here; an optional one-line hint sits below. */
+/** Visible select for a saved profile field. Labels, option labels and the hint arrive translated; an optional one-line hint sits below. */
 export function ProfileSelect({
   label,
   value,
@@ -27,15 +26,15 @@ export function ProfileSelect({
   const select = (
     <Select
       hideLabel={rows}
-      label={t(label)}
+      label={label}
       value={value}
-      options={options.map(([value, label]) => ({ value, label: t(label) }))}
+      options={options.map(([value, label]) => ({ value, label }))}
       onValueChange={onValueChange}
     />
   );
   if (rows)
     return (
-      <ProfileRow label={t(label)} description={hint ? t(hint) : undefined}>
+      <ProfileRow label={label} description={hint}>
         {() => select}
       </ProfileRow>
     );
@@ -44,7 +43,7 @@ export function ProfileSelect({
     <div className={workStyles.field}>
       {select}
       <Text as="p" leading="snug" className={workStyles.hint}>
-        {t(hint)}
+        {hint}
       </Text>
     </div>
   );
@@ -65,14 +64,14 @@ export function ProfileSegmented({
   const segmented = (
     <RadioGroup
       variant="inline"
-      label={t(label)}
+      label={label}
       value={value}
-      options={options.map(([value, label]) => ({ value, label: t(label) }))}
+      options={options.map(([value, label]) => ({ value, label }))}
       onValueChange={onValueChange}
     />
   );
-  if (useProfileRows()) return <ProfileRow label={t(label)}>{() => segmented}</ProfileRow>;
-  return <FieldGroup legend={t(label)}>{segmented}</FieldGroup>;
+  if (useProfileRows()) return <ProfileRow label={label}>{() => segmented}</ProfileRow>;
+  return <FieldGroup legend={label}>{segmented}</FieldGroup>;
 }
 
 /** Integer draft that keeps invalid text visible until the owner corrects it. */
@@ -94,14 +93,14 @@ export function ProfileNumber({
   const [raw, setRaw] = useState(String(value ?? ""));
   const endAdornment: ReactNode = unit ? (
     <Text size="micro" tone="secondary" leading="inherit" className={styles.unit}>
-      {t(unit)}
+      {unit}
     </Text>
   ) : undefined;
   return (
-    <ProfileRow label={t(label)}>
+    <ProfileRow label={label}>
       {(hideLabel) => (
         <NumberField
-          label={t(label)}
+          label={label}
           hideLabel={hideLabel}
           value={raw}
           min={min}

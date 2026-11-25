@@ -87,9 +87,10 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           setUndo({
             id: outcome.trashIds[0]!,
             ids: outcome.trashIds,
-            label: t(outcome.trashIds.length === 1 ? "{p0} note" : "{p0} notes", {
-              p0: outcome.trashIds.length,
-            }),
+            label:
+              outcome.trashIds.length === 1
+                ? t("{p0} note", { p0: outcome.trashIds.length })
+                : t("{p0} notes", { p0: outcome.trashIds.length }),
             environmentId,
           });
         } else if (outcome.deleted) setUndo(null);
@@ -212,6 +213,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     }
                     checked={allChecked}
                     disabled={visible.length === 0}
+                    disabledReason={t("There are no notes to select.")}
                     indeterminate={visibleChecked > 0 && !allChecked}
                     onChange={(event) => {
                       const value = event.currentTarget.checked;
@@ -234,6 +236,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                         size="sm"
                         tone="danger"
                         disabled={Boolean(pending)}
+                        disabledReason={t("Wait for the current action to finish.")}
                         onClick={() => confirmBulkDelete(checkedNotes)}
                       >
                         {t("Delete")}
@@ -263,7 +266,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           )}
           {snapshot.capabilities.notes &&
             visible.length === 0 &&
-            empty(query ? "No results" : "No notes yet")}
+            empty(query ? t("No results") : t("No notes yet"))}
         </section>
       )}
     </>

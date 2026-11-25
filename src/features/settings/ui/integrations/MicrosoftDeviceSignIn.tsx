@@ -179,18 +179,15 @@ export function MicrosoftDeviceSignIn({
       <div className="integration-actions">
         <Button
           stableWidth
-          reserveLabels={[t("Starting sign-in…")]}
           loading={phase.kind === "starting"}
+          loadingLabel={t("Starting sign-in…")}
           disabled={disabled}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={() => {
             begin().catch(() => undefined);
           }}
         >
-          {phase.kind === "starting"
-            ? t("Starting sign-in…")
-            : signedIn || phase.kind === "done"
-              ? t("Sign in again")
-              : t("Sign in with Microsoft")}
+          {signedIn || phase.kind === "done" ? t("Sign in again") : t("Sign in with Microsoft")}
         </Button>
       </div>
       {phase.kind === "failed" ? (

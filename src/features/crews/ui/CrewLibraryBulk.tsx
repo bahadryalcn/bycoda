@@ -120,6 +120,7 @@ export function CrewLibraryBulkBar({
                 checked={visible.length > 0 && chosen === visible.length}
                 indeterminate={chosen > 0 && chosen < visible.length}
                 disabled={applying || !visible.length}
+                disabledReason={!visible.length ? t("There are no members to select.") : undefined}
                 onChange={(event) =>
                   onSelectedChange(
                     event.target.checked ? new Set(visible.map((a) => a.id)) : new Set(),

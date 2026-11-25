@@ -114,7 +114,7 @@ export function NewSessionProjectDialog({
     options: filterPickerOptions(choices, query, undefined, ({ value }) =>
       value === NO_PROJECT_CWD
         ? undefined
-        : `${t(isRemoteProjectPath(value) ? "Remote" : "Local")} · ${value}`,
+        : `${isRemoteProjectPath(value) ? t("Remote") : t("Local")} · ${value}`,
     ),
     value: null,
     onChange: (path) => void pick(path),

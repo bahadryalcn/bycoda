@@ -5,6 +5,15 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { openErrorDetails } from "./errorDetails.fixture";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 const actions = vi.hoisted(() => ({
   browseDirectory: vi.fn(),
   revealPath: vi.fn(),
@@ -85,7 +94,7 @@ it("browses a Windows build folder outside projects and keeps its files out of t
   const installer = [...dialog.querySelectorAll("button")].find(
     (button) => button.textContent === "bycoda.exe",
   )!;
-  expect(installer.disabled).toBe(true);
+  expect(installer.disabled || installer.getAttribute("aria-disabled") === "true").toBe(true);
   await act(async () => installer.click());
   expect(onOpenFile).not.toHaveBeenCalled();
   await act(async () =>
@@ -111,9 +120,8 @@ it("does not navigate above a remote Windows drive root", async () => {
   await render("[Drive](C:/)");
   await act(async () => container.querySelector("a")!.click());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-  expect(dialog.querySelector<HTMLButtonElement>('[aria-label="Parent folder"]')!.disabled).toBe(
-    true,
-  );
+  const parent = dialog.querySelector<HTMLButtonElement>('[aria-label="Parent folder"]')!;
+  expect(parent.disabled || parent.getAttribute("aria-disabled") === "true").toBe(true);
 });
 
 it("reports a failed folder request without guessing a different parent", async () => {
@@ -121,9 +129,9 @@ it("reports a failed folder request without guessing a different parent", async 
   await render("[Summary](/repo/assets/özet.md)");
   await revealFromMenu();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(document.querySelector('[role="alert"]')!.textContent).toContain(
-    "The machine disconnected",
-  );
+  const alert = document.querySelector<HTMLElement>('[role="alert"]')!;
+  expect(alert.textContent).toContain("Couldn’t open the file in its default app");
+  expect(await rawDetails(alert)).toContain("The machine disconnected");
   expect(actions.browseDirectory).not.toHaveBeenCalledWith("remote://env/repo/assets");
 });
 afterEach(() => {

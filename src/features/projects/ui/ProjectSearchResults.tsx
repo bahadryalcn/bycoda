@@ -125,14 +125,14 @@ function FileMatches({
               onKeyDown={(event) => onResultKey(event, group.start + index)}
               onClick={() => openMatch(match)}
               onDoubleClick={() => openMatch(match, true)}
-              className="flex w-full items-start gap-2 text-left"
+              className="flex w-full items-start gap-2 text-start"
             >
               <Text
                 role="img"
                 aria-label={t("Line {p0}", { p0: match.line })}
                 size="micro"
                 tone="muted"
-                className="w-7 shrink-0 pt-0 text-right font-mono tabular-nums"
+                className="w-7 shrink-0 pt-0 text-end font-mono tabular-nums"
               >
                 {match.line}
               </Text>

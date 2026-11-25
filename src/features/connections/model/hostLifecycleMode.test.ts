@@ -20,12 +20,12 @@ it("maps each mode to the switch", () => {
 it("reports a pending switch, an unsupported Host and errors", () => {
   expect(hostModeSwitchView({ ...base, pendingMode: "service" }).pending).toBe("service");
   expect(hostModeSwitchView({ ...base, switchSupported: false }).unsupported).toBe(true);
-  expect(hostModeSwitchView({ ...base, lastError: "Refused." }).error).toBe("Refused.");
-  expect(hostModeSwitchView({ ...base, mismatch: true }).error).toContain("repair");
+  expect(hostModeSwitchView({ ...base, lastError: "Refused." }).lastError).toBe("Refused.");
+  expect(hostModeSwitchView({ ...base, mismatch: true }).mismatchNotice).toContain("repair");
   // The native error wins over the generic mismatch text.
-  expect(hostModeSwitchView({ ...base, mismatch: true, lastError: "Refused." }).error).toBe(
-    "Refused.",
-  );
+  const refused = hostModeSwitchView({ ...base, mismatch: true, lastError: "Refused." });
+  expect(refused.lastError).toBe("Refused.");
+  expect(refused.mismatchNotice).toBeUndefined();
 });
 
 it("says a machine stays reachable only when setup enabled its service", () => {

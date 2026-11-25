@@ -22,7 +22,7 @@ import { UsageQuotaWindows } from "./UsageQuotaWindows";
 import { UsageProviderIdentity } from "./UsageProviderIdentity";
 import { UsageOverview } from "./UsageOverview";
 import type { UsageFilters } from "../model/usageAnalytics";
-import { usageLabel } from "./UsageVisualizations";
+import { usageLabel } from "./UsageProviderIdentity";
 import { UsageDisplaySettings } from "./UsageDisplaySettings";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useShowRemainingUsage } from "../../settings/model/displayPrefs";
@@ -64,6 +64,29 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
       />
     </div>
   );
+}
+
+function colorLabel(id: (typeof PROVIDER_ACCOUNT_COLORS)[number]["id"]): string {
+  switch (id) {
+    case "blue":
+      return t("Blue");
+    case "coral":
+      return t("Coral");
+    case "amber":
+      return t("Amber");
+    case "green":
+      return t("Green");
+    case "pink":
+      return t("Pink");
+    case "purple":
+      return t("Purple");
+    case "teal":
+      return t("Teal");
+    case "slate":
+      return t("Slate");
+    case "orange":
+      return t("Orange");
+  }
 }
 
 function UsageLimits({
@@ -214,7 +237,7 @@ function AccountLimits({
                 items: PROVIDER_ACCOUNT_COLORS.map((option) => ({
                   kind: "item" as const,
                   id: option.id,
-                  label: t(option.label),
+                  label: colorLabel(option.id),
                   checked: account.color === option.id,
                   icon: (
                     <span

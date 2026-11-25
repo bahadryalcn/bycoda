@@ -134,13 +134,14 @@ export function SshIdentityField({
             variant="ghost"
             aria-label={`${t("Choose key file…")}: ${pathLabel}`}
             disabled={disabled}
+            disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
             loading={selecting}
+            startIcon={<Folder aria-hidden className="icon-sm" />}
             onClick={() => {
               close();
               void browse();
             }}
           >
-            <Folder aria-hidden className="icon-sm" />
             {t("Choose key file…")}
           </Button>
         )}

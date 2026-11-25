@@ -8,6 +8,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clickButton,
   clickMenuItem,
@@ -118,7 +119,7 @@ describe("CaptureRules list", () => {
       },
     });
     await open(mock);
-    expect(bodyText()).toContain("Rules are unavailable.");
+    expect(openErrorDetails()).toContain("Rules are unavailable.");
     expect(bodyText()).not.toContain("Loading rules");
   });
 });
@@ -151,7 +152,7 @@ describe("CaptureRules switch", () => {
     const props = await open(mock);
     act(() => switches()[0]!.click());
     await flush();
-    expect(bodyText()).toContain("Turning this on needs the owner's approval.");
+    expect(openErrorDetails()).toContain("Turning this on needs the owner's approval.");
     expect(switches()[0]!.getAttribute("aria-checked")).toBe("false");
     expect(props.onChanged).not.toHaveBeenCalled();
   });
@@ -193,7 +194,7 @@ describe("CaptureRules delete", () => {
     openRuleMenu("Launch hashtag");
     clickMenuItem("Delete rule…");
     await flush();
-    expect(bodyText()).toContain("Rule is in use.");
+    expect(openErrorDetails()).toContain("Rule is in use.");
     expect(bodyText()).toContain("Launch hashtag");
   });
 });

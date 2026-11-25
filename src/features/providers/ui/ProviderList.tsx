@@ -81,6 +81,7 @@ function ProviderListItem({
         controlHeight="auto"
         padding={{ block: "xl", inline: "md" }}
         disabled={disabled}
+        disabledReason={t("Wait for the current action to finish.")}
         className="provider-cli-option"
         tooltip={title}
         tooltipWhen="overflow"

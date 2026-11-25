@@ -4,6 +4,7 @@ import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Sheet } from "../../../../shared/ui/Sheet";
 import { Eye } from "../../../../shared/ui/icons";
@@ -67,6 +68,7 @@ export function SocialChatLiveView({
               {accounts.isPending ? <LoadingText delay={false} /> : null}
               {accounts.isError ? (
                 <InlineError
+                  details={presentRemoteError(accounts.error, { explicit: true })}
                   retry={{
                     label: t("Try again"),
                     onRetry: () => {
@@ -74,7 +76,7 @@ export function SocialChatLiveView({
                     },
                   }}
                 >
-                  {accounts.error.message}
+                  {t("Could not read the accounts. Try again.")}
                 </InlineError>
               ) : null}
               {accounts.data?.length === 0 ? (

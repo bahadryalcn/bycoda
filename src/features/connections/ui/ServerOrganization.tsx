@@ -32,7 +32,7 @@ export function ServerOrganization({
   const tagPrefix = tags.includes(",") ? tags.slice(0, tags.lastIndexOf(",") + 1) + " " : "";
   const [favorite, setFavorite] = useState(server.metadata.favorite);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   /** What the last acknowledged save (or the loaded record) holds; an unchanged draft saves nothing. */
   const persisted = useRef(JSON.stringify([group, tags, favorite]));
   const title = <>{t("Organization")}</>;
@@ -42,7 +42,7 @@ export function ServerOrganization({
     if (pending.current || snapshot === persisted.current) return;
     pending.current = true;
     setSaving(true);
-    setError("");
+    setSaveMessage("");
     try {
       await updateServerMetadata(server.id, {
         group: next.group.trim(),
@@ -58,7 +58,7 @@ export function ServerOrganization({
       });
       persisted.current = snapshot;
     } catch {
-      setError(t("Couldn’t save server organization."));
+      setSaveMessage(t("Couldn’t save server organization."));
     } finally {
       pending.current = false;
       setSaving(false);
@@ -112,7 +112,7 @@ export function ServerOrganization({
           label={t("Favorite")}
           className="flex items-center gap-2"
         />
-        {error ? <InlineError>{error}</InlineError> : null}
+        {saveMessage ? <InlineError>{saveMessage}</InlineError> : null}
       </form>
     </>
   );

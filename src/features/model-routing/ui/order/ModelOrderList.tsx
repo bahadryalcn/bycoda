@@ -45,11 +45,6 @@ export type InvalidEntry = { id: string; message: string };
 /** Asks the list to scroll to and focus a row; a new `n` repeats the request for the same row. */
 export type FocusRequest = { id: string; n: number };
 
-const SECTION_TITLE: Record<EntryKind, string> = {
-  work: "Work accounts",
-  personal: "Personal accounts",
-  shared: "Shared models",
-};
 const KINDS = ["work", "personal", "shared"] as const;
 
 /**
@@ -84,6 +79,11 @@ export function ModelOrderList({
   focusRequest?: FocusRequest;
 }) {
   const t = useT();
+  const sectionTitles: Record<EntryKind, string> = {
+    work: t("Work accounts"),
+    personal: t("Personal accounts"),
+    shared: t("Shared models"),
+  };
   const source = useModelSource();
   const quotaLabel = useQuotaLabel();
   const root = useRef<HTMLDivElement>(null);
@@ -345,7 +345,7 @@ export function ModelOrderList({
       {KINDS.filter((kind) => byKind[kind].length).map((kind, sectionIndex) => {
         const ids = byKind[kind].map((entry) => entry.id);
         const selectedCount = ids.filter((id) => chosen.has(id)).length;
-        const title = sectioned ? t(SECTION_TITLE[kind]) : t("All models");
+        const title = sectioned ? sectionTitles[kind] : t("All models");
         return (
           <Group
             key={kind}

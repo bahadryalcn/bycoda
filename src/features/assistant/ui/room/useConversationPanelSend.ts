@@ -35,7 +35,7 @@ export function useConversationPanelSend(
     setPending,
     pending,
     clearingRef,
-    error,
+    notice,
     setError,
     selected,
     requestKey,
@@ -78,7 +78,7 @@ export function useConversationPanelSend(
         }
       }
       await load(target);
-      if (isTauri() && selected.current === target && error)
+      if (isTauri() && selected.current === target && notice)
         setError(
           t(
             "The original reply could not be confirmed. Check the original Host before sending again.",

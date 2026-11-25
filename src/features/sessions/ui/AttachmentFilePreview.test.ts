@@ -7,6 +7,15 @@ import { MAX_DOCUMENT_BYTES } from "../../files/model/documentViewer";
 import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentTokenText } from "./AttachmentTokenText";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   prepare: vi.fn(),
@@ -405,7 +414,9 @@ describe("save a copy of an attachment", () => {
       ),
     );
     await clickSave();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("disk full");
+    const alert = container.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not save attachment");
+    expect(await rawDetails(alert!)).toContain("disk full");
     await clickSave();
     expect(mocks.saveCopy).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -421,7 +432,9 @@ describe("save a copy of an attachment", () => {
       ),
     );
     await clickSave();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("maximum 20 MB");
+    const payloadAlert = container.querySelector<HTMLElement>('[role="alert"]');
+    expect(payloadAlert?.textContent).toContain("Could not save attachment");
+    expect(await rawDetails(payloadAlert!)).toContain("maximum 20 MB");
     expect(loadPreview).not.toHaveBeenCalled();
     expect(mocks.saveCopy).not.toHaveBeenCalled();
     act(() =>
@@ -435,7 +448,9 @@ describe("save a copy of an attachment", () => {
       ),
     );
     await clickSave();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("maximum 20 MB");
+    const alert = container.querySelector<HTMLElement>('[role="alert"]');
+    expect(alert?.textContent).toContain("Could not save attachment");
+    expect(await rawDetails(alert!)).toContain("maximum 20 MB");
     expect(mocks.saveCopy).not.toHaveBeenCalled();
   });
 

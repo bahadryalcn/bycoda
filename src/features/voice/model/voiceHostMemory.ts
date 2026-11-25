@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type {
   AssistantRequest,
   AssistantResponse,
@@ -60,13 +61,13 @@ export async function rememberHostVoiceMemory(
   if (kind === "rule")
     return {
       saved: false,
-      error: "Only your current explicit correction can create an owner rule.",
+      error: t("Only your current explicit correction can create an owner rule."),
     };
   if (!loadVoiceMemory().enabled)
-    return { saved: false, error: "Memory is turned off in Settings." };
+    return { saved: false, error: t("Memory is turned off in Settings.") };
   const clean = typeof text === "string" ? text.trim() : "";
   if (!clean || clean.length > 300)
-    return { saved: false, error: "The note is empty or too long." };
+    return { saved: false, error: t("The note is empty or too long.") };
   const found = await request({ op: "memory.search", query: clean.slice(0, 200), limit: 100 });
   const existing = found.entries?.find(
     (entry) =>
@@ -89,7 +90,7 @@ export async function rememberHostVoiceMemory(
           active: true,
           forbiddenTerms: [],
         });
-  if (!result.memory) return { saved: false, error: "Memory could not be changed." };
+  if (!result.memory) return { saved: false, error: t("Memory could not be changed.") };
   return { saved: true, id: result.memory.id };
 }
 export function ownerAskedToForget(text: string) {
@@ -105,15 +106,15 @@ export async function forgetHostVoiceMemory(
   confirmed?: { version: number; text: string },
 ) {
   if (!loadVoiceMemory().enabled)
-    return { forgotten: false, error: "Memory is turned off in Settings." };
-  if (typeof id !== "string") return { forgotten: false, error: "The note was not found." };
+    return { forgotten: false, error: t("Memory is turned off in Settings.") };
+  if (typeof id !== "string") return { forgotten: false, error: t("The note was not found.") };
   if (!ownerQuote || !ownerAskedToForget(ownerQuote) || !confirmed)
-    return { forgotten: false, error: "Choose the exact memory to forget and confirm it." };
+    return { forgotten: false, error: t("Choose the exact memory to forget and confirm it.") };
   const result = await request({ op: "memory.search", query: "", limit: 100 });
   const entry = result.entries?.find((value) => value.id === id);
-  if (!entry) return { forgotten: false, error: "The note was not found." };
+  if (!entry) return { forgotten: false, error: t("The note was not found.") };
   if (entry.version !== confirmed.version || entry.text !== confirmed.text)
-    return { forgotten: false, error: "The saved memory changed. Review it before deleting." };
+    return { forgotten: false, error: t("The saved memory changed. Review it before deleting.") };
   await request({ op: "memory.delete", id, expectedVersion: entry.version });
   return { forgotten: true };
 }

@@ -13,7 +13,7 @@ export async function loadModelRoutingHost(machine: RemoteMachine) {
   return { machineId: machine.id, supported: capabilities.includes(HOST_MODEL_ROUTING) };
 }
 
-/** The capability probe of one Host; `error` is the single reason it could not be read. */
+/** The capability probe of one Host; `message` is the presented sentence for why it could not be read. */
 export function useModelRoutingHost(machine: RemoteMachine | undefined) {
   const query = useQuery({
     queryKey: ["settings", "model-routing-host", machine?.id],
@@ -24,7 +24,7 @@ export function useModelRoutingHost(machine: RemoteMachine | undefined) {
   return {
     data: query.data,
     pending: !!machine && query.isPending,
-    error: query.error ? presentRemoteError(query.error, { explicit: true }) : undefined,
+    message: query.error ? presentRemoteError(query.error, { explicit: true }) : undefined,
     /** The Host refused this computer's credential; reconnecting is the owner's choice. */
     revoked: query.error ? isHostAuthorizationRefusal(query.error) : false,
     retry: () => {

@@ -123,6 +123,7 @@ function RoutingChip({
         aria-haspopup="dialog"
         expanded={!disabled && open}
         disabled={disabled}
+        disabledReason={t("Models cannot change right now.")}
         startIcon={<Sparkles className="icon-xs" aria-hidden />}
         endIcon={<ChevronDown className="icon-xs" aria-hidden />}
         onClick={() => setOpen(!open)}
@@ -239,7 +240,13 @@ function RoutingChoice({
             revision={routing.state?.version}
           />
           {onManage ? (
-            <Button type="button" variant="link" onClick={onManage} disabled={disabled}>
+            <Button
+              type="button"
+              variant="link"
+              onClick={onManage}
+              disabled={disabled}
+              disabledReason={t("Models cannot change right now.")}
+            >
               {t("Manage models")}
             </Button>
           ) : null}

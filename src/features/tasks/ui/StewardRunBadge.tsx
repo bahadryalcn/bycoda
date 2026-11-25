@@ -1,7 +1,7 @@
-import { useT } from "../../../shared/i18n";
+import { useLocale } from "../../../shared/i18n";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import type { StewardRunStatus } from "../model/hostStewards";
-import { STEWARD_STATUS_LABELS } from "../model/stewardClient";
+import { stewardStatusLabel } from "../model/statusLabels";
 
 function runTone(status: StewardRunStatus): StatusTextTone {
   if (status === "failed") return "failed";
@@ -11,10 +11,10 @@ function runTone(status: StewardRunStatus): StatusTextTone {
 }
 
 export function StewardRunBadge({ status }: { status: StewardRunStatus }) {
-  const t = useT();
+  useLocale();
   return (
     <StatusText tone={runTone(status)} wrap>
-      {t(STEWARD_STATUS_LABELS[status])}
+      {stewardStatusLabel(status)}
     </StatusText>
   );
 }

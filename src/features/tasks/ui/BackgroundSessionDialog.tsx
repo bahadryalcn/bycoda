@@ -2,6 +2,7 @@ import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -77,8 +78,12 @@ export function BackgroundSessionDialog({
     <Modal title={summary?.title ?? t("Background session")} onClose={onClose} size="md">
       <div className="flex min-h-0 flex-col gap-3">
         {error ? (
-          <Alert tone="danger" className="flex-wrap">
-            <span>{error}</span>
+          <Alert
+            tone="danger"
+            className="flex-wrap"
+            title={t("Could not open this session.")}
+            extra={<ErrorDetails title={t("Could not open this session.")} detail={error} />}
+          >
             <Button
               variant="ghost"
               type="button"

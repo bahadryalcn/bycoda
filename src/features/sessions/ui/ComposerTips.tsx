@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { Text } from "../../../shared/ui/Text";
 import { AiIdea } from "../../../shared/ui/icons";
+import { catalogText } from "../model/catalogText";
 import "./ComposerTips.css";
 
 export const COMPOSER_TIPS = [
@@ -65,6 +66,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const tipId = useId();
+  const tipLabel = open ? t("Next tip") : t("Tip");
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   useEffect(() => {
     const update = () => setHidden(document.hidden);
@@ -97,7 +99,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         size="sm"
         iconOnly
         motion="none"
-        label={t(open ? "Next tip" : "Tip")}
+        label={tipLabel}
         title=""
         aria-controls={open ? tipId : undefined}
         aria-haspopup="dialog"
@@ -110,7 +112,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
         }}
       >
         <AiIdea className="icon-sm" />
-        <span className="sr-only">{t(open ? "Next tip" : "Tip")}</span>
+        <span className="sr-only">{tipLabel}</span>
       </Button>
       {open ? (
         <Popover
@@ -129,7 +131,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
           <Text as="div" tone="secondary" leading="relaxed" className="composer-tips-copy">
             <TipText
               key={`${locale}-${index}`}
-              text={t(COMPOSER_TIPS[index])}
+              text={catalogText(t, COMPOSER_TIPS[index])}
               animate={active && !hidden}
             />
           </Text>

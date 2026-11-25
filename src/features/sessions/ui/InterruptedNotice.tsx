@@ -4,6 +4,7 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Pause } from "../../../shared/ui/icons";
 import { claimAutoContinue } from "../model/autoContinue";
 import { executionUserIndex } from "../model/executionTurn";
+import { catalogText } from "../model/catalogText";
 import { canAutoContinue } from "../model/inFlight";
 import type { Session } from "../model/session";
 import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
@@ -67,7 +68,7 @@ export const InterruptedNotice = memo(function InterruptedNotice({
         ownerStopped
           ? t("Continue to pick up where it left off, or send a new message.")
           : message
-            ? t(message)
+            ? catalogText(t, message)
             : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })
       }
       actions={

@@ -37,13 +37,13 @@ export function SessionRecoveryControl({
 
   const label = includeFiles ? t("Recovered work") : t("Recovered sessions");
   const clearLabel = t("Dismiss recovered sessions");
-  const failure = saveFailure
+  const problem = saveFailure
     ? t("Recovery dismissal was not saved.")
     : clearError
       ? t("Could not update the recovery list. Try again.")
       : undefined;
   const canClear = !!onClear && count > 0;
-  const showOptions = optionsOpen && (canClear || !!failure);
+  const showOptions = optionsOpen && (canClear || !!problem);
   const endPending = () => {
     pendingRef.current = false;
     setPending(false);
@@ -78,7 +78,7 @@ export function SessionRecoveryControl({
         ref={anchor}
         data-recovery-control
         variant="ghost"
-        tone={failure ? "danger" : undefined}
+        tone={problem ? "danger" : undefined}
         motion="none"
         iconOnly
         label={`${label} (${count})`}
@@ -90,22 +90,22 @@ export function SessionRecoveryControl({
           ) : undefined
         }
         aria-haspopup="dialog"
-        aria-expanded={canClear || failure ? showOptions : undefined}
+        aria-expanded={canClear || problem ? showOptions : undefined}
         loading={pending}
         onClick={() => {
-          if (failure && !count) setOptionsOpen((open) => !open);
+          if (problem && !count) setOptionsOpen((open) => !open);
           else {
             setOptionsOpen(false);
             onOpen();
           }
         }}
         onContextMenu={(event) => {
-          if (!canClear && !failure) return;
+          if (!canClear && !problem) return;
           event.preventDefault();
           setOptionsOpen(true);
         }}
         onKeyDown={(event) => {
-          if (!canClear && !failure) return;
+          if (!canClear && !problem) return;
           if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
           event.preventDefault();
           setOptionsOpen(true);
@@ -113,7 +113,7 @@ export function SessionRecoveryControl({
       >
         <RotateCcw className="icon-md" aria-hidden />
       </Button>
-      {showOptions && !failure && canClear ? (
+      {showOptions && !problem && canClear ? (
         <DropdownMenu
           anchor={anchor}
           label={label}
@@ -124,7 +124,7 @@ export function SessionRecoveryControl({
           onPick={() => void clear().catch(console.error)}
         />
       ) : null}
-      {showOptions && failure ? (
+      {showOptions && problem ? (
         <Popover
           anchor={anchor}
           kind="dialog"
@@ -139,7 +139,7 @@ export function SessionRecoveryControl({
               onRetry: () => void (saveFailure ? retrySave() : clear()).catch(console.error),
             }}
           >
-            {failure}
+            {problem}
           </InlineError>
         </Popover>
       ) : null}

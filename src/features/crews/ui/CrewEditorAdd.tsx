@@ -82,6 +82,11 @@ export function CrewEditorAddFooter({
       <Button
         variant="primary"
         disabled={pending || (mode === "library" && !livePicked.length)}
+        disabledReason={
+          mode === "library" && !livePicked.length
+            ? t("Select at least one member first.")
+            : undefined
+        }
         onClick={onAdd}
       >
         {mode !== "library"

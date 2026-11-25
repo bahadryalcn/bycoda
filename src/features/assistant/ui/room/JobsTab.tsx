@@ -67,6 +67,13 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
     (snapshot.capabilities.jobs ||
       snapshot.capabilities.quickNotes ||
       snapshot.capabilities.quickAutomations);
+  const startReason = pending
+    ? t("Wait for the current action to finish.")
+    : !jobDraftVisible
+      ? t("The project for this job is not visible.")
+      : !jobText.trim()
+        ? t("Describe the job first.")
+        : t("Jobs are not available on this computer.");
   function start() {
     if (!canStart) return;
     const prepared = prepareJobReview(jobText);
@@ -104,10 +111,11 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             }
             variant="primary"
             disabled={!canStart}
+            disabledReason={startReason}
             loading={pending?.key === "jobs.create"}
             onClick={start}
           >
-            {t(confirmJobs ? "Review jobs" : "Start")}
+            {confirmJobs ? t("Review jobs") : t("Start")}
           </Button>
         }
       />
@@ -164,6 +172,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
               size="sm"
               startIcon={<Square className="icon-sm" />}
               disabled={Boolean(pending)}
+              disabledReason={t("Wait for the current action to finish.")}
               onClick={() => bulk("stop")}
             >
               {t("Stop")}
@@ -171,6 +180,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             <Button
               size="sm"
               disabled={Boolean(pending)}
+              disabledReason={t("Wait for the current action to finish.")}
               startIcon={<Trash2 className="icon-sm" />}
               tone="danger"
               onClick={() => bulk("delete")}
@@ -191,8 +201,8 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
               selected={selected.has(job.id)}
               selectionMode={visibleSelectedCount > 0}
               busy={pending?.key === job.id}
-              disabled={Boolean(pending)}
-              error={error?.key === job.id ? error.text : ""}
+              pending={Boolean(pending)}
+              notice={error?.key === job.id ? error.text : ""}
               onEdit={
                 job.kind !== "quick" && !finished(job) && environmentId
                   ? (mode) => setJobEdit({ job, mode, environmentId, scopeKey: privacy.key })
@@ -216,7 +226,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
         <EmptyState
           context="panel"
           kind={filtered ? "filtered" : "empty"}
-          title={t(filtered ? "No matching jobs" : "No jobs yet")}
+          title={filtered ? t("No matching jobs") : t("No jobs yet")}
           description={filtered ? t("Try a different search or clear the filters.") : undefined}
           resetLabel={t("Reset")}
           onReset={

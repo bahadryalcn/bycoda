@@ -323,7 +323,7 @@ function MarkdownLink({
       {/* A markdown link title (a cited source) shows in the shared tooltip, not a native one. */}
       {title ? <Tooltip label={title}>{anchor}</Tooltip> : anchor}
       {linkError ? (
-        <FileActionError message={linkError} onDismiss={() => setLinkError(undefined)} />
+        <FileActionError details={linkError} onDismiss={() => setLinkError(undefined)} />
       ) : null}
     </>
   );
@@ -1168,7 +1168,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
             ) : null}
             {fileActionError ? (
               <FileActionError
-                message={fileActionError}
+                details={fileActionError}
                 onDismiss={() => setFileActionError(null)}
               />
             ) : null}

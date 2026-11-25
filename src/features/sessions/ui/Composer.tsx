@@ -4389,6 +4389,11 @@ export const Composer = memo(function Composer({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={recallLastTurn}
                 disabled={disabled || worktreeRemoved}
+                disabledReason={
+                  worktreeRemoved
+                    ? t("Select a branch or worktree to continue…")
+                    : t("Action unavailable.")
+                }
               >
                 <Undo2 className="icon-sm" />
               </Button>

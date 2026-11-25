@@ -79,7 +79,9 @@ export function WhatsNewDialog({ version, onClose }: Props) {
         ) : undefined
       }
     >
-      {linkError ? <InlineError>{linkError}</InlineError> : null}
+      {linkError ? (
+        <InlineError details={linkError}>{t("Could not open the link.")}</InlineError>
+      ) : null}
       <WhatsNewBody version={version} />
     </Modal>
   );

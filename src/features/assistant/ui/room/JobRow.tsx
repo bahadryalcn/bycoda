@@ -89,8 +89,8 @@ export function JobRow({
   selected,
   selectionMode,
   busy,
-  disabled,
-  error,
+  pending,
+  notice,
   onSelect,
   onDetails,
   onControl,
@@ -103,8 +103,10 @@ export function JobRow({
   /** Another row is selected: every checkbox stays visible. */
   selectionMode: boolean;
   busy: boolean;
-  disabled: boolean;
-  error: string;
+  /** Another Room action is running; the row's controls wait for it. */
+  pending: boolean;
+  /** A message about this row, already written for the owner. */
+  notice: string;
   onSelect: (selected: boolean) => void;
   onDetails: () => void;
   onControl: (action: JobAction) => void;
@@ -181,25 +183,25 @@ export function JobRow({
             {t("Dispatch status unknown. Check the linked epic before retrying.")}
           </InlineError>
         )}
-        {error && <InlineError>{error}</InlineError>}
+        {notice && <InlineError>{notice}</InlineError>}
       </div>
       <div className={styles.actions}>
         {job.pendingTaskDeletion && (
-          <InlineTextAction disabled={disabled} onClick={() => onControl("keep")}>
+          <InlineTextAction disabled={pending} onClick={() => onControl("keep")}>
             {t("Keep job and tasks")}
           </InlineTextAction>
         )}
         {job.awaitingOwnerRestart && onReviewTasks && (
-          <InlineTextAction disabled={disabled} onClick={onReviewTasks}>
+          <InlineTextAction disabled={pending} onClick={onReviewTasks}>
             {t("Review tasks")}
           </InlineTextAction>
         )}
         {canToggle && (
           <InlineAction
             reveal="always"
-            label={t(job.status === "paused" ? "Resume" : "Pause")}
+            label={job.status === "paused" ? t("Resume") : t("Pause")}
             loading={busy}
-            disabled={disabled}
+            disabled={pending}
             onClick={() => onControl(job.status === "paused" ? "resume" : "pause")}
           >
             {job.status === "paused" ? (
@@ -214,7 +216,7 @@ export function JobRow({
           label={t("Job actions")}
           expanded={Boolean(menu)}
           loading={busy && !canToggle}
-          disabled={disabled}
+          disabled={pending}
           onOpen={setMenu}
         />
       </div>

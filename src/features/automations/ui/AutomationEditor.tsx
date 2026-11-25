@@ -334,15 +334,7 @@ export function AutomationEditor({
               {saved ? null : (
                 <AutomationTemplateMenu
                   disabled={saving}
-                  onPick={(template) =>
-                    onChange(
-                      withTemplate(draft, {
-                        ...template,
-                        name: t(template.name),
-                        prompt: t(template.prompt),
-                      }),
-                    )
-                  }
+                  onPick={(template) => onChange(withTemplate(draft, template))}
                 />
               )}
               {onDelete ? (

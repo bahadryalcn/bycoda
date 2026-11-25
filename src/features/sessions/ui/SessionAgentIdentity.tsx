@@ -32,7 +32,7 @@ export function SessionAgentIdentity({
       tone="secondary"
       leading="normal"
       data-session-agent
-      aria-label={`${t(running ? "Running agent" : "Session agent")}: ${label}`}
+      aria-label={`${running ? t("Running agent") : t("Session agent")}: ${label}`}
       className="flex min-w-0 items-center gap-1.5"
     >
       {running ? <StatusDot label={t("Running agent")} aria-hidden /> : null}

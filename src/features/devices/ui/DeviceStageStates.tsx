@@ -1,4 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -87,6 +88,9 @@ export function DeviceConnectState({
           variant="primary"
           loading={connecting}
           disabled={connectDisabled}
+          disabledReason={t(
+            "Wait for the current device action to finish, or set up the device first.",
+          )}
           onClick={onConnect}
         >
           {installed ? t("Connect devices") : t("Set up and connect")}
@@ -184,14 +188,20 @@ function DeviceNoDevicesState({
           weight="medium"
           leading="inherit"
           className="device-panel-state-title"
-          role="status"
         >
-          {t("No devices found")}
+          <LiveText text={t("No devices found")} />
         </Text>
         <HowToConnect />
       </div>
       <div className="device-panel-state-actions">
-        <Button loading={refreshing} disabled={refreshDisabled} onClick={onRefresh}>
+        <Button
+          loading={refreshing}
+          disabled={refreshDisabled}
+          disabledReason={t(
+            "Wait for the current device action to finish, or set up the device first.",
+          )}
+          onClick={onRefresh}
+        >
           {t("Refresh devices")}
         </Button>
         <SetupAccessButton onSetup={onSetup} />
@@ -247,7 +257,6 @@ export function DeviceWaitingState({
         tone="secondary"
         leading="inherit"
         className="device-panel-waiting"
-        role="status"
       >
         <LoadingText>{t("Loading devices…")}</LoadingText>
       </Text>
@@ -267,11 +276,26 @@ export function DeviceWaitingState({
           facts={facts(device)}
           action={
             device.physical ? (
-              <Button loading={refreshing} disabled={refreshDisabled} onClick={onRefresh}>
+              <Button
+                loading={refreshing}
+                disabled={refreshDisabled}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
+                onClick={onRefresh}
+              >
                 {t("Refresh devices")}
               </Button>
             ) : (
-              <Button variant="primary" loading={booting} disabled={bootDisabled} onClick={onBoot}>
+              <Button
+                variant="primary"
+                loading={booting}
+                disabled={bootDisabled}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
+                onClick={onBoot}
+              >
                 {device.platform === "ios" ? t("Start simulator") : t("Start emulator")}
               </Button>
             )
@@ -299,11 +323,16 @@ export function DeviceWaitingState({
         tone="secondary"
         leading="inherit"
         className="device-panel-waiting"
-        role="status"
       >
         <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
         <p className="device-panel-waiting-text">
-          {live ? t("Loading device screen…") : t("Resume live view to follow the device screen.")}
+          <LiveText
+            text={
+              live
+                ? t("Loading device screen…")
+                : t("Resume live view to follow the device screen.")
+            }
+          />
         </p>
       </Text>
     );
@@ -325,7 +354,6 @@ export function DeviceWaitingState({
         tone="secondary"
         leading="inherit"
         className="device-panel-waiting"
-        role="status"
       />
     );
   return (

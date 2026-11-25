@@ -261,7 +261,7 @@ describe("onboarding workflow", () => {
     await click("Import 1 projects");
     expect(mock.run).toHaveBeenCalledOnce();
     expect(button("Back").disabled).toBe(true);
-    expect(button("Skip import").disabled).toBe(true);
+    expect(button("Skip import").getAttribute("aria-disabled")).toBe("true");
     const signal = mock.run.mock.calls[0][0].signal as AbortSignal;
     await click("Stop import");
     expect(signal.aborted).toBe(true);

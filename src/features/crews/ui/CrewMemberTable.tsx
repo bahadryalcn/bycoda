@@ -10,7 +10,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ChevronDown, GitBranch, Plus, Trash2 } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
@@ -33,16 +33,14 @@ function MemberLinkMark({ link }: { link?: "linked" | "customized" }) {
   useLocale();
   if (link !== "customized") return null;
   return (
-    <Tooltip label={t("Not following library profile")} asChild>
-      <Text
-        role="img"
-        aria-label={t("Not following library profile")}
-        size="inherit"
-        className="inline-flex shrink-0"
-      >
-        <GitBranch className="icon-xs" aria-hidden />
-      </Text>
-    </Tooltip>
+    <Text
+      role="img"
+      aria-label={t("Not following library profile")}
+      size="inherit"
+      className="inline-flex shrink-0"
+    >
+      <GitBranch className="icon-xs" aria-hidden />
+    </Text>
   );
 }
 
@@ -178,6 +176,9 @@ export function CrewMemberTable({
           <Button
             variant="secondary"
             disabled={!catalogModels(data.catalog).length}
+            disabledReason={
+              !catalogModels(data.catalog).length ? t("No models configured") : undefined
+            }
             onClick={onStarter}
           >
             {t("Use starter roster")}

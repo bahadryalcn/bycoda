@@ -5,7 +5,7 @@ import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
@@ -351,6 +351,13 @@ function GroupDialog({
             tone={kind === "delete" ? "danger" : undefined}
             loading={pending}
             disabled={pending || (kind === "rename" && (!name.trim() || taken))}
+            disabledReason={
+              kind === "rename" && !name.trim()
+                ? t("Enter a name first.")
+                : kind === "rename" && taken
+                  ? t("A group with this name already exists")
+                  : undefined
+            }
             onClick={() => void apply()}
           >
             {kind === "rename" ? t("Rename") : t("Delete group")}
@@ -359,7 +366,7 @@ function GroupDialog({
       }
     >
       <div className="flex flex-col gap-3">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? <InlineError details={error} /> : null}
         {kind === "rename" ? (
           <TextField
             label={t("Group name")}
@@ -372,12 +379,11 @@ function GroupDialog({
           />
         ) : (
           <Text as="p" size="body" tone="inherit">
-            {t(
-              members.length === 1
-                ? "{p0} member leaves this group. The member itself is kept."
-                : "{p0} members leave this group. The members themselves are kept.",
-              { p0: members.length },
-            )}
+            {members.length === 1
+              ? t("{p0} member leaves this group. The member itself is kept.", { p0: 1 })
+              : t("{p0} members leave this group. The members themselves are kept.", {
+                  p0: members.length,
+                })}
           </Text>
         )}
       </div>

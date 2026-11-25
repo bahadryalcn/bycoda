@@ -39,7 +39,7 @@ type XApplyResult = {
  */
 export function useXApply(account: SocialAccount, client: SocialClient) {
   const { confirm, dialog } = useConfirm();
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The X action needs review. Check the result on X before sending again."),
   );
   const [notice, setNotice] = useState("");
@@ -80,5 +80,5 @@ export function useXApply(account: SocialAccount, client: SocialClient) {
     });
     return applied === true;
   };
-  return { apply, busy: is("apply"), error, details, notice, dialog };
+  return { apply, busy: is("apply"), failureTitle, details, notice, dialog };
 }

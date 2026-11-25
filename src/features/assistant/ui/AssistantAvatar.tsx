@@ -7,6 +7,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import {
   ASSISTANT_AVATAR_PRESETS,
   DEFAULT_ASSISTANT_AVATAR,
+  type AssistantAvatarPresetId,
   assistantAvatarGeneratedValue,
   assistantAvatarImageUrl,
   assistantAvatarPresetValue,
@@ -16,6 +17,28 @@ import { loadGeneratedAvatar } from "../model/generatedAvatarCache";
 import { Avatar, type AvatarSize } from "../../../shared/ui/identity/Avatar";
 import { AvatarGenerator } from "./builder/AvatarGenerator";
 import styles from "./AssistantAvatar.module.css";
+
+/** The translated name of a bundled portrait; call it while rendering. */
+function presetLabel(id: AssistantAvatarPresetId): string {
+  switch (id) {
+    case "orb":
+      return t("Orb");
+    case "robot":
+      return t("Robot");
+    case "owl":
+      return t("Owl");
+    case "fox":
+      return t("Fox");
+    case "spark":
+      return t("Spark");
+    case "wave":
+      return t("Wave");
+    case "character":
+      return t("Assistant");
+    case "cat":
+      return t("Cat");
+  }
+}
 
 const DEFAULT_PORTRAIT = assistantAvatarImageUrl(DEFAULT_ASSISTANT_AVATAR);
 
@@ -147,8 +170,8 @@ export function AssistantAvatarPicker({
           ...ASSISTANT_AVATAR_PRESETS.map((preset) => ({
             value: assistantAvatarPresetValue(preset.id),
             iconOnly: true,
-            ariaLabel: t(preset.label),
-            tooltip: t(preset.label),
+            ariaLabel: presetLabel(preset.id),
+            tooltip: presetLabel(preset.id),
             content: (
               <img
                 className={styles.tileImage}

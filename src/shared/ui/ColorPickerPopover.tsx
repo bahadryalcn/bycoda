@@ -65,7 +65,7 @@ export function ColorSwatchRow({
         const selected =
           customColor == null && (colorIndex === index || (colorIndex == null && index === 0));
         return (
-          <Tooltip key={color} label={label} asChild>
+          <Tooltip key={color} label={label} details={[color]} asChild>
             <button
               type="button"
               aria-label={label}
@@ -84,7 +84,7 @@ export function ColorSwatchRow({
         );
       })}
       {onToggleCustom ? (
-        <Tooltip label={t("Custom color")} asChild>
+        <Tooltip label={t("Custom color")} details={customColor ? [customColor] : []} asChild>
           <button
             type="button"
             aria-label={t("Custom color")}

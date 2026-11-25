@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { t, useLocale } from "../../../shared/i18n";
 
 /** One save/recovery vocabulary for the library editor and the session note panel. */
@@ -11,15 +11,24 @@ export type NoteSaveState =
   | "unsaved"
   | "saved";
 
-const LABELS: Record<NoteSaveState, string> = {
-  deleting: "Deleting…",
-  failed: "Save failed",
-  conflict: "Changed elsewhere",
-  recovering: "Saving recovery copy…",
-  saving: "Saving…",
-  unsaved: "Unsaved changes",
-  saved: "Saved",
-};
+function noteSaveLabel(state: NoteSaveState): string {
+  switch (state) {
+    case "deleting":
+      return t("Deleting…");
+    case "failed":
+      return t("Save failed");
+    case "conflict":
+      return t("Changed elsewhere");
+    case "recovering":
+      return t("Saving recovery copy…");
+    case "saving":
+      return t("Saving…");
+    case "unsaved":
+      return t("Unsaved changes");
+    case "saved":
+      return t("Saved");
+  }
+}
 
 /** Notes save automatically, so routine save progress stays silent. */
 const QUIET: ReadonlySet<NoteSaveState> = new Set(["saved", "unsaved", "saving"]);
@@ -45,14 +54,11 @@ export function NoteSaveStatus({ state, className }: { state: NoteSaveState; cla
   if (QUIET.has(state)) return null;
   const attention = state === "failed" || state === "conflict";
   return (
-    <Text
+    <LiveText
+      text={noteSaveLabel(state)}
       size="caption"
       tone={attention ? "danger" : "secondary"}
-      role="status"
-      data-note-save-state={state}
       className={`note-save-status ${className ?? ""}`}
-    >
-      {t(LABELS[state])}
-    </Text>
+    />
   );
 }

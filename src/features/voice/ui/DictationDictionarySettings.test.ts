@@ -142,7 +142,7 @@ it("retains a new draft if concurrent changes fill the dictionary limit", async 
   const save = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Save term",
   )!;
-  expect(save.disabled).toBe(true);
+  expect(save.getAttribute("aria-disabled")).toBe("true");
   await act(async () => save.click());
   expect(loadVoiceSettings().dictationDictionary).toHaveLength(500);
   expect(
@@ -218,7 +218,7 @@ it("explains the 500-term ceiling beside the list and disables Add term only at 
   });
   await render();
   expect(container.textContent).toContain("The dictionary is full at 500 terms.");
-  expect(buttonNamed("Add term").disabled).toBe(true);
+  expect(buttonNamed("Add term").getAttribute("aria-disabled")).toBe("true");
 });
 
 it("blocks a repeated term in the same scope before saving and keeps the draft", async () => {
@@ -230,7 +230,7 @@ it("blocks a repeated term in the same scope before saving and keeps the draft",
   await click("Add term");
   await input("Preferred spelling", " bycoda ");
   expect(container.textContent).toContain("This term is already saved in this scope.");
-  expect(buttonNamed("Save term").disabled).toBe(true);
+  expect(buttonNamed("Save term").getAttribute("aria-disabled")).toBe("true");
   await input("Preferred spelling", "Bycoda Workspace");
   expect(container.textContent).not.toContain("This term is already saved in this scope.");
   await click("Save term");

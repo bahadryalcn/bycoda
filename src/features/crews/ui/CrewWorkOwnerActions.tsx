@@ -132,12 +132,21 @@ function Composer({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
-      {action.error ? <InlineError>{action.error}</InlineError> : null}
+      {action.error ? <InlineError details={action.error} /> : null}
       <div>
         <Button
           size="sm"
           variant="primary"
           disabled={!plan.ok}
+          disabledReason={
+            !plan.ok
+              ? mode === "assign"
+                ? t("Write a message first.")
+                : text.trim()
+                  ? t("This note is too long.")
+                  : t("Write a message first.")
+              : undefined
+          }
           loading={action.pending}
           onClick={() => void send()}
         >
@@ -179,7 +188,7 @@ function RetryList({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) 
           </Button>
         </div>
       ))}
-      {action.error ? <InlineError>{action.error}</InlineError> : null}
+      {action.error ? <InlineError details={action.error} /> : null}
     </div>
   );
 }

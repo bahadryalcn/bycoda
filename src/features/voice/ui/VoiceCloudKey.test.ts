@@ -46,9 +46,10 @@ it.each(["elevenlabs", "openrouter"] as const)(
     expect(host.textContent).toContain("Checking saved key");
     await type("draft-secret");
     expect(
-      [...host.querySelectorAll("button")].find((button) => button.textContent === "Save")!
-        .disabled,
-    ).toBe(true);
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Save")!
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
     await act(async () => reject(new Error("Host unavailable")));
     expect(host.textContent).toContain("Could not check saved key");
     expect(host.querySelector("input")!.placeholder).toBe("Key status unknown");

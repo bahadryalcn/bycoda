@@ -79,6 +79,11 @@ export function TunnelStartForm({
 }) {
   const id = useId();
   const { controller, state, overview, ready, action, run } = session;
+  const notReadyReason = ready
+    ? undefined
+    : state.pending
+      ? t("Wait for the current action to finish.")
+      : t("Wait for the status check to finish.");
   const { provider, setProvider, target, setTarget, localUrl, setLocalUrl, token, setToken } =
     draft;
   const selected = overview?.providers.find((entry) => entry.provider === provider);
@@ -152,13 +157,11 @@ export function TunnelStartForm({
         <div className="external-tunnel-credentials">
           {selected ? (
             <InlineMessage tone={selected.credential === "saved" ? "success" : "warning"}>
-              {t(
-                selected.credential === "saved"
-                  ? "ngrok authtoken is saved securely on this computer."
-                  : selected.credential === "unavailable"
-                    ? issueCopy["credential-store-unavailable"]
-                    : issueCopy["credential-missing"],
-              )}
+              {selected.credential === "saved"
+                ? t("ngrok authtoken is saved securely on this computer.")
+                : selected.credential === "unavailable"
+                  ? issueCopy("credential-store-unavailable")
+                  : issueCopy("credential-missing")}
             </InlineMessage>
           ) : null}
           <form
@@ -189,6 +192,15 @@ export function TunnelStartForm({
               type="submit"
               loading={state.pending && action === "credential"}
               disabled={!overview || state.pending || !token}
+              disabledReason={
+                state.pending
+                  ? t("Wait for the current action to finish.")
+                  : !overview
+                    ? t("Wait for the status check to finish.")
+                    : !token
+                      ? t("Enter the ngrok authtoken first.")
+                      : undefined
+              }
             >
               {t("Save token securely")}
             </Button>
@@ -198,6 +210,7 @@ export function TunnelStartForm({
                 type="button"
                 className="shrink-0"
                 disabled={!ready}
+                disabledReason={notReadyReason}
                 loading={state.pending && action === "forget"}
                 onClick={() => void run("forget", () => controller.credential(""))}
               >
@@ -258,6 +271,7 @@ export function TunnelStartForm({
               label={t("Restart tunnel automatically")}
               description={t("bycoda updates the link in your account when the URL changes.")}
               disabled={!ready}
+              disabledReason={notReadyReason}
             />
           ) : null
         ) : null}

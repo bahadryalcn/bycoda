@@ -89,7 +89,11 @@ it.each(["removed", "unavailable"])(
     localStorage.setItem("bycoda.archivedProjects", change === "removed" ? "[]" : "{broken");
     await act(async () => confirm.click());
     expect(remove).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("The operation did not complete");
+    const details = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!;
+    await act(async () => details.click());
+    expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
+      "The operation did not complete",
+    );
   },
 );
 

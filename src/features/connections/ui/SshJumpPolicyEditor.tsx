@@ -26,6 +26,7 @@ export function SshJumpPolicyEditor({
   onChange: (value: SshJumpPolicyDraft[]) => void;
   disabled?: boolean;
 }) {
+  const busyReason = disabled ? t("Wait for the current action to finish.") : undefined;
   const ids = useRef<number[]>([]).current;
   const nextId = useRef(0);
   while (ids.length < value.length) ids.push(nextId.current++);
@@ -68,6 +69,13 @@ export function SshJumpPolicyEditor({
               iconOnly
               label={`${t("Move up")}: ${index + 1}`}
               disabled={disabled || index === 0}
+              disabledReason={
+                disabled
+                  ? busyReason
+                  : index === 0
+                    ? t("The first jump host cannot move up.")
+                    : undefined
+              }
               onClick={() => move(index, -1)}
             >
               <ArrowUp className="icon-xs" />
@@ -77,6 +85,13 @@ export function SshJumpPolicyEditor({
               iconOnly
               label={`${t("Move down")}: ${index + 1}`}
               disabled={disabled || index === value.length - 1}
+              disabledReason={
+                disabled
+                  ? busyReason
+                  : index === value.length - 1
+                    ? t("The last jump host cannot move down.")
+                    : undefined
+              }
               onClick={() => move(index, 1)}
             >
               <ArrowDown className="icon-xs" />
@@ -86,6 +101,7 @@ export function SshJumpPolicyEditor({
               iconOnly
               label={`${t("Remove jump host")}: ${index + 1}`}
               disabled={disabled}
+              disabledReason={busyReason}
               onClick={() => {
                 ids.splice(index, 1);
                 onChange(value.filter((_, i) => i !== index));
@@ -135,14 +151,14 @@ export function SshJumpPolicyEditor({
               />
               {(
                 [
-                  ["certificateFile", "Certificate file"],
-                  ["knownHostsFile", "Known hosts file"],
+                  ["certificateFile", t("Certificate file")],
+                  ["knownHostsFile", t("Known hosts file")],
                 ] as const
               ).map(([field, label]) => (
                 <TextField
                   key={field}
-                  label={t(label)}
-                  aria-label={`${t("Jump host")} ${index + 1}: ${t(label)}`}
+                  label={label}
+                  aria-label={`${t("Jump host")} ${index + 1}: ${label}`}
                   value={hop[field]}
                   maxLength={4096}
                   onChange={(event) => update(index, field, event.target.value)}
@@ -156,6 +172,13 @@ export function SshJumpPolicyEditor({
         variant="ghost"
         startIcon={<Plus className="icon-xs" />}
         disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
+        disabledReason={
+          disabled
+            ? busyReason
+            : value.length >= MAX_SSH_JUMP_HOSTS
+              ? t("A connection can use at most {p0} jump hosts.", { p0: MAX_SSH_JUMP_HOSTS })
+              : undefined
+        }
         onClick={() => onChange([...value, emptySshJumpPolicyDraft()])}
       >
         {t("Add jump host")}

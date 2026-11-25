@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { AssistantJob } from "../../../shared/model/host-contracts/assistant";
 import {
   assistantJobProjectIds,
@@ -35,6 +36,6 @@ export function assistantJobTasksGoal(
       return !!project && canOpenProject(project.path);
     })
   )
-    throw new Error("The linked job tasks changed or their projects are unavailable.");
+    throw new Error(t("The linked job tasks changed or their projects are unavailable."));
   return goal;
 }

@@ -216,7 +216,7 @@ export function QuickWorkspaceControls({
         aria-expanded={open === "branch" || open === "base"}
         loading={!settled}
         disabled={disabled}
-        aria-description={!enabled || !ready ? disabledReason : undefined}
+        disabledReason={disabledReason}
         worktree={!!value.tree && !value.tree.isMain}
         onMouseDown={(event) => {
           event.preventDefault();

@@ -57,6 +57,11 @@ export function FacebookCommentActions({
             variant="secondary"
             loading={work.is(action)}
             disabled={actionTaken === "delete" || actionTaken === action}
+            disabledReason={
+              actionTaken === "delete"
+                ? t("This comment was deleted.")
+                : t("This action was already applied.")
+            }
             onClick={() => void moderate(action).catch(() => undefined)}
           >
             {actions[action]}
@@ -64,7 +69,9 @@ export function FacebookCommentActions({
         ))}
       </div>
       {actionTaken ? <InlineMessage tone="success">{t("Saved")}</InlineMessage> : null}
-      {work.error ? <InlineError>{work.error}</InlineError> : null}
+      {work.failureTitle ? (
+        <InlineError details={work.details}>{work.failureTitle}</InlineError>
+      ) : null}
       {confirm.dialog}
     </Disclosure>
   );

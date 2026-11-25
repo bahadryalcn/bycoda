@@ -1,8 +1,6 @@
 import { AssistantMemoryPanel } from "../AssistantMemoryPanel";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
-import { InlineError } from "../../../../shared/ui/InlineError";
-import styles from "../AssistantView.module.css";
 import { useAssistantRoom } from "./assistantRoomContext";
 
 export function MemoryTab({ snapshot }: { snapshot: AssistantSnapshot }) {
@@ -31,11 +29,7 @@ export function MemoryTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           query={query}
           searching={memorySearching}
           pending={Boolean(pending)}
-          searchError={
-            memorySearchError && (
-              <InlineError className={styles.error}>{t(memorySearchError)}</InlineError>
-            )
-          }
+          searchError={memorySearchError}
           errorFor={errorFor}
           onQuery={setQuery}
           onAdd={() => setMemoryEdit("new")}

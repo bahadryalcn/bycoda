@@ -25,7 +25,7 @@ export function InstagramHighlightsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const confirmation = useConfirm();
@@ -156,6 +156,13 @@ export function InstagramHighlightsPanel({
               size="sm"
               variant="primary"
               disabled={!validName || !validStories || (!selected && !storyIds.length)}
+              disabledReason={
+                !validName
+                  ? t("Enter a valid highlight name first.")
+                  : !validStories
+                    ? t("Check the story IDs first.")
+                    : t("Choose a story first.")
+              }
               onClick={() =>
                 run(
                   selected
@@ -203,7 +210,7 @@ export function InstagramHighlightsPanel({
         </>
       ) : null}
       {notice ? <InlineMessage>{notice}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

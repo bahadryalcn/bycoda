@@ -124,16 +124,37 @@ export function useApprovalDecisionControl(
   const current = local?.occurrence === occurrence ? local : null;
   const pending = intent?.phase === "pending" || !!current?.pending;
   const repeatBlocked = retainedRequestBlocked || !!intent?.repeatBlocked || !!current?.unconfirmed;
+  const messageText: Record<string, string> = {
+    [APPROVAL_INTENT_MESSAGES.closed]: t("Preparing checkpoint. This approval was not sent."),
+    [APPROVAL_INTENT_MESSAGES.capacity]: t(
+      "Approval decision storage is full. Original decisions are retained.",
+    ),
+    [APPROVAL_INTENT_MESSAGES.changed]: t(
+      "This approval request or its connection changed. This decision was not sent.",
+    ),
+    [APPROVAL_INTENT_MESSAGES.unavailable]: t(
+      "Approval connection is unavailable. This decision was not sent.",
+    ),
+    [APPROVAL_INTENT_MESSAGES.occurrence]: t(
+      "This Host cannot verify which request you are answering. Update the Host before responding.",
+    ),
+    [APPROVAL_INTENT_MESSAGES.unidentified]: t(
+      "This request cannot be verified. Refresh the conversation or update its execution client.",
+    ),
+    [APPROVAL_INTENT_MESSAGES.unconfirmed]: t("Waiting for confirmation"),
+  };
+  // A message outside the table is a provider diagnostic and shows as it came.
+  const messageFor = (message: string) => messageText[message] ?? message;
   const feedback = pending
     ? t("Sending decision…")
     : repeatBlocked
-      ? t(APPROVAL_INTENT_MESSAGES.unconfirmed)
+      ? messageFor(APPROVAL_INTENT_MESSAGES.unconfirmed)
       : intent?.error
-        ? t(intent.error)
+        ? messageFor(intent.error)
         : current?.error
-          ? t(current.error)
+          ? messageFor(current.error)
           : closed
-            ? t(APPROVAL_INTENT_MESSAGES.closed)
+            ? messageFor(APPROVAL_INTENT_MESSAGES.closed)
             : null;
   const danger = !pending && !repeatBlocked && !!(intent?.error || current?.error);
   const decide = async (decision: ApprovalDecision, allowForSession?: true) => {

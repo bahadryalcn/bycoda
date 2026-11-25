@@ -169,7 +169,7 @@ it("renders stored message text as text and never as markup or a link", async ()
   expect(element.textContent).toContain("<img src=x onerror=alert(1)> hello");
 });
 
-it("shortens long message text to 160 characters and shows the Host error as a helper line without expanding", async () => {
+it("shortens long message text to 160 characters and keeps the Host error behind Details", async () => {
   await mount({
     jobs: [
       job({
@@ -181,7 +181,11 @@ it("shortens long message text to 160 characters and shows the Host error as a h
   });
   expect(element.textContent).toContain(`${"a".repeat(159)}…`);
   expect(element.textContent).not.toContain("a".repeat(160));
-  expect(element.textContent).toContain("Rate limited");
+  expect(element.textContent).not.toContain("Rate limited");
+  await act(async () => button("Details")?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Rate limited",
+  );
 });
 
 it.each<[string | undefined, string]>([

@@ -10,6 +10,7 @@ import { Text, type TextTone } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { resolveModel } from "../../sessions/public/models";
+import { taskStateText } from "../model/taskTextLabels";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
@@ -144,10 +145,10 @@ export function TaskList({
           const elapsed = now === undefined ? "" : taskTimeLabel(task, now);
           const parts = [
             workspace.needsRenewedApproval
-              ? `${t(workspace.completion)} · ${t(workspace.delivery)}`
+              ? `${taskStateText(workspace.completion)} · ${taskStateText(workspace.delivery)}`
               : "",
             stateText && fullError && fullError !== reason ? (
-              <Tooltip key="state" label={fullError}>
+              <Tooltip key="state" details={[fullError]}>
                 {stateText}
               </Tooltip>
             ) : (
@@ -189,6 +190,9 @@ export function TaskList({
                       <span className="sr-only">{t("Select task: {p0}", { p0: task.title })}</span>
                     }
                     disabled={disabled}
+                    disabledReason={
+                      disabled ? t("Wait for the current operation to finish") : undefined
+                    }
                     checked={selected.has(key)}
                     onChange={(event) => onToggle(task, event.currentTarget.checked)}
                   />
@@ -198,7 +202,7 @@ export function TaskList({
                   variant="item"
                   aria-current={isActive ? "true" : undefined}
                   aria-label={task.title}
-                  className="min-w-0 flex-1 items-center gap-2 text-left"
+                  className="min-w-0 flex-1 items-center gap-2 text-start"
                   onClick={() => onOpen(task)}
                 >
                   <span aria-hidden="true" className="grid shrink-0 place-items-center">

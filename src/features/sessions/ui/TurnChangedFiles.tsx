@@ -25,7 +25,7 @@ export function TurnChangedFiles({
             <span aria-hidden className="shrink-0">
               <FileTypeIcon name={path.split(/[/\\]/).pop() ?? path} isDir={false} />
             </span>
-            <MiddleTruncate mode="path" className="min-w-0 flex-1 text-left font-mono">
+            <MiddleTruncate mode="path" className="min-w-0 flex-1 text-start font-mono">
               {path}
             </MiddleTruncate>
             {counts ? <DiffStat {...counts} showZero className="shrink-0" /> : null}

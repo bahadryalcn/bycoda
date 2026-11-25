@@ -111,7 +111,9 @@ export function ApiProviderDialog({
             <Button
               variant="primary"
               loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
               disabled={flow.busy || !entry}
+              disabledReason={entry ? undefined : t("Choose a provider first.")}
               onClick={submit}
             >
               {t("Add and test")}
@@ -189,9 +191,6 @@ export function ApiProviderDialog({
           error={errors.key}
           onChange={(event) => setApiKey(event.target.value)}
         />
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
-        ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {linkFailure !== null ? <ErrorNotice error={linkFailure} /> : null}
         {flow.outcome ? (

@@ -237,7 +237,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   } | null>(null);
   const error =
     errorState?.scopeKey === privacy.key
-      ? { ...errorState, text: t(errorState.text) }
+      ? errorState
       : errorState?.key === "pauseAll"
         ? {
             ...errorState,

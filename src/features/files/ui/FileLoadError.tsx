@@ -11,19 +11,13 @@ import { Progress } from "../../../shared/ui/Progress";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { useEffect, useRef, useState } from "react";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { revealLabel } from "./explorerMenuItems";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { isUnsupportedRemoteRoute } from "../../connections/public/remoteFailure";
 import { useGracedFailure } from "../../connections/public/transientFailure";
 import { basename } from "../../../platform/tauri/fs";
 import { useRevealFile } from "./useRevealFile";
 import { readTextFileSlice, type TextFileSlice, type TextFileStamp } from "../data/largeTextFile";
-
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open containing folder";
 
 /** Prefix of the native editor-limit error (`read_text_file_sync` in `fs.rs`). */
 const TOO_LARGE_TO_EDIT = "File is too large to edit";
@@ -75,7 +69,7 @@ function FileLoadFailure({
         error
         detail={message}
         onRetry={retryable ? onRetry : undefined}
-        action={local ? { label: t(REVEAL_LABEL), onClick: () => void reveal() } : undefined}
+        action={local ? { label: revealLabel(), onClick: () => void reveal() } : undefined}
         extra={
           local ? undefined : (
             <CopyButton
@@ -180,6 +174,7 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
           size="sm"
           variant="ghost"
           disabled={history.length === 0}
+          disabledReason={t("Already at the start of the file.")}
           onClick={() => {
             setOffset(history[history.length - 1] ?? 0);
             setHistory((current) => current.slice(0, -1));
@@ -191,6 +186,7 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
           size="sm"
           variant="ghost"
           disabled={!hasNext}
+          disabledReason={t("Already at the end of the file.")}
           onClick={() => {
             setHistory((current) => [...current, page.offset]);
             setOffset(page.end);
@@ -205,7 +201,7 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
             startIcon={<Folder className="icon-xs" strokeWidth={1.75} />}
             onClick={() => void reveal()}
           >
-            {t(REVEAL_LABEL)}
+            {revealLabel()}
           </Button>
         ) : (
           <CopyButton

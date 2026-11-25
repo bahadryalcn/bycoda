@@ -17,8 +17,6 @@ function status(job: ThemeGenerationJob) {
   switch (job.status) {
     case "running":
       return job.kind === "image" ? t("Drawing a background image…") : t("Generating…");
-    case "cancelling":
-      return t("Cancelling…");
     case "saving":
       return t("Saving…");
     case "cancelled":
@@ -74,25 +72,33 @@ export function ThemeGenerationActivity({
                       : "Gemini"}
                 </Text>
               </div>
-              <InlineMessage
-                tone={
-                  job.status === "failed" ? "danger" : job.status === "done" ? "success" : "neutral"
-                }
-                icon={
-                  isActiveGeneration(job) ? (
-                    <Spinner size="xs" />
-                  ) : job.status === "cancelled" ? null : undefined
-                }
-              >
-                {status(job)}
-              </InlineMessage>
+              {/* While cancelling, the Cancel action itself says so beside its spinner. */}
+              {job.status === "cancelling" ? null : (
+                <InlineMessage
+                  tone={
+                    job.status === "failed"
+                      ? "danger"
+                      : job.status === "done"
+                        ? "success"
+                        : "neutral"
+                  }
+                  icon={
+                    isActiveGeneration(job) ? (
+                      <Spinner size="xs" />
+                    ) : job.status === "cancelled" ? null : undefined
+                  }
+                >
+                  {status(job)}
+                </InlineMessage>
+              )}
               <div className="theme-generation-actions">
                 {job.status === "running" || job.status === "cancelling" ? (
                   <Button
                     size="sm"
                     variant="ghost"
                     aria-label={`${t("Cancel")} ${job.name}`}
-                    disabled={job.status === "cancelling"}
+                    loading={job.status === "cancelling"}
+                    loadingLabel={t("Cancelling…")}
                     onClick={job.status === "running" ? job.cancel : undefined}
                   >
                     {t("Cancel")}
@@ -105,6 +111,7 @@ export function ThemeGenerationActivity({
                     disabled={
                       job.kind === "themes" && active.some((entry) => entry.kind === "themes")
                     }
+                    disabledReason={t("Wait for the current theme generation to finish.")}
                     onClick={job.retry}
                   >
                     {t("Retry")}

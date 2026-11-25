@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useState } from "react";
 import { formatNumber, t } from "../../../../../shared/i18n";
 import { Badge } from "../../../../../shared/ui/Badge";
@@ -37,7 +38,7 @@ export function XApiActions({ account, client, disabled }: Props) {
 function XReadouts({ account, client, disabled }: Props) {
   const [insights, setInsights] = useState<Awaited<ReturnType<typeof xReadInsights>>>();
   const [spaces, setSpaces] = useState<Awaited<ReturnType<typeof xListOwnSpaces>>>();
-  const { error, details, is, write } = useAccountWrite(t("Could not load data."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not load data."));
   const read = (operation: string, fetch: () => Promise<void>) => void write(operation, fetch);
   const enterprise = account.xApiProduct === "enterprise";
   const spaceStates: Record<string, string> = {
@@ -56,6 +57,7 @@ function XReadouts({ account, client, disabled }: Props) {
             size="sm"
             variant="secondary"
             disabled={disabled}
+            disabledReason={accountBlockedReason(disabled)}
             loading={is("analytics")}
             onClick={() =>
               read("analytics", async () => {
@@ -70,6 +72,7 @@ function XReadouts({ account, client, disabled }: Props) {
           size="sm"
           variant="secondary"
           disabled={disabled}
+          disabledReason={accountBlockedReason(disabled)}
           loading={is("spaces")}
           onClick={() =>
             read("spaces", async () => {
@@ -122,7 +125,7 @@ function XReadouts({ account, client, disabled }: Props) {
           ))}
         </ul>
       ) : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
     </div>
   );
 }

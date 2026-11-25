@@ -29,6 +29,7 @@ function ContributeRow() {
       >
         <Button
           loading={flow.status === "cloning"}
+          loadingLabel={t("Cloning…")}
           onClick={() => startContribution().catch(() => undefined)}
         >
           {t("Clone and open…")}
@@ -185,6 +186,7 @@ function ProductLink({
         loading={pending === "open"}
         loadingLabel={t("Opening…")}
         disabled={pending !== null}
+        disabledReason={t("Wait for the current operation to finish")}
         tooltip={
           address.replace(/^https?:\/\//, "") === displayAddress.replace(/^https?:\/\//, "")
             ? undefined
@@ -202,6 +204,7 @@ function ProductLink({
           label={`${t("Copy")}: ${address}`}
           tooltip={copied ? t("Copied") : t("Copy")}
           disabled={pending !== null}
+          disabledReason={t("Wait for the current operation to finish")}
           loading={pending === "copy"}
           onClick={() => run("copy").catch(() => undefined)}
         >

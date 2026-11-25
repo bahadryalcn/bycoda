@@ -463,6 +463,7 @@ function QuestionFormContent({
                 }))
               }
               locked={held}
+              lockedReason={t("Wait for the current action to finish.")}
               onSelect={(optionId) =>
                 updateDraft((current) => ({
                   ...current,
@@ -491,6 +492,13 @@ function QuestionFormContent({
                   type="button"
                   startIcon={<FilePlus />}
                   disabled={held || files.length >= MAX_ATTACHMENTS}
+                  disabledReason={
+                    held
+                      ? t("Wait for the current action to finish.")
+                      : t("You can attach up to {p0} files.", {
+                          p0: MAX_ATTACHMENTS,
+                        })
+                  }
                   loading={readingAttachments}
                   onClick={() => readAttachments(() => pickAttachments())}
                 >
@@ -579,6 +587,7 @@ function QuestionFormContent({
                 type="button"
                 className="shrink-0"
                 disabled={held}
+                disabledReason={t("Wait for the current action to finish.")}
                 startIcon={<ChevronLeft />}
                 onClick={() => updateDraft((current) => ({ ...current, step: index - 1 }))}
               >

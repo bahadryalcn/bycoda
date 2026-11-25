@@ -239,7 +239,7 @@ describe("question attachments", () => {
     const onReply = render();
     await pick();
     act(() => button("Send answer").click());
-    expect(button("Attach files").disabled).toBe(true);
+    expect(button("Attach files").getAttribute("aria-disabled")).toBe("true");
     expect(button(`Remove ${file.name}`)).toBeUndefined();
     expect(mocks.drop?.disabled).toBe(true);
     act(() =>

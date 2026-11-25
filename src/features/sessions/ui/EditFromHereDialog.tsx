@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -70,9 +71,9 @@ export function EditFromHereDialog({
           onCheckedChange={setRevertFiles}
         />
         {planLoading ? (
-          <Text as="p" role="status" size="body" tone="inherit">
+          <LoadingText delay={false} size="body" tone="inherit">
             {unavailable}
-          </Text>
+          </LoadingText>
         ) : unavailable ? (
           <Text as="p" size="body" tone="inherit">
             {unavailable}
@@ -100,7 +101,7 @@ export function EditFromHereDialog({
             </ul>
           </div>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error}>{t("Couldn’t rewind")}</InlineError> : null}
       </div>
     </Modal>
   );

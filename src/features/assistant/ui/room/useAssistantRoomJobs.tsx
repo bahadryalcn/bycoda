@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
 import { Text, textAttributes } from "../../../../shared/ui/Text";
 import type {
   AssistantJob,
@@ -86,7 +86,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
           JSON.stringify(assistantJobProjectIds(result.job)) !==
             JSON.stringify(assistantJobProjectIds(job))
         )
-          throw new Error("Job status is unknown. Check the Room before retrying.");
+          throw new Error(t("Job status is unknown. Check the Room before retrying."));
       });
       return;
     }
@@ -94,7 +94,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       run(`deleteReview:${job.id}`, t("Loading…"), async () => {
         const sourcePrivacy = privacy.key;
         let review: ReturnType<typeof verifiedAssistantJobDeleteReview>,
-          reviewError = "";
+          reviewProblem: ReturnType<typeof describeRemoteError> | null = null;
         if (job.kind !== "quick" && job.goalId) {
           try {
             const response = await assistantRequest({
@@ -105,10 +105,12 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
             review = verifiedAssistantJobDeleteReview(job, response.deleteReview, canSeeProject);
             if (!review)
               throw new Error(
-                "The task deletion scope could not be verified. You can still delete only the job.",
+                t(
+                  "The task deletion scope could not be verified. You can still delete only the job.",
+                ),
               );
           } catch (cause) {
-            reviewError = presentRemoteError(cause, { explicit: true });
+            reviewProblem = describeRemoteError(cause);
           }
         }
         if (
@@ -121,7 +123,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
           title: t("Delete job?"),
           message: job.title,
           confirmLabel: (state) =>
-            t(state.acknowledged ? "Delete job and tasks" : "Delete job only"),
+            state.acknowledged ? t("Delete job and tasks") : t("Delete job only"),
           acknowledge: review
             ? {
                 label: t("Also delete the reviewed tasks"),
@@ -155,17 +157,17 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                 ))}
               </ul>
             </>
-          ) : reviewError ? (
-            <InlineError>{t(reviewError)}</InlineError>
+          ) : reviewProblem ? (
+            <InlineError details={reviewProblem.details}>{reviewProblem.message}</InlineError>
           ) : undefined,
           consequences: (state) => [
-            t(
-              state.acknowledged
-                ? "The job and reviewed task metadata stop first and move to Recently deleted. Sessions, branches, worktrees and working files remain."
-                : job.kind === "quick"
-                  ? "Deleting this job keeps its saved note or automation."
-                  : "The job stops first. Tasks, sessions, worktrees and changes remain.",
-            ),
+            state.acknowledged
+              ? t(
+                  "The job and reviewed task metadata stop first and move to Recently deleted. Sessions, branches, worktrees and working files remain.",
+                )
+              : job.kind === "quick"
+                ? t("Deleting this job keeps its saved note or automation.")
+                : t("The job stops first. Tasks, sessions, worktrees and changes remain."),
             ...(state.acknowledged
               ? [
                   t(
@@ -176,10 +178,12 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
           ],
           onConfirm: async ({ acknowledged }) => {
             if (!assistantJobVisible(job, canSeeProject))
-              throw new Error("The selected project is no longer visible.");
+              throw new Error(t("The selected project is no longer visible."));
             if (acknowledged && !verifiedAssistantJobDeleteReview(job, review, canSeeProject))
               throw new Error(
-                "The task deletion scope could not be verified. You can still delete only the job.",
+                t(
+                  "The task deletion scope could not be verified. You can still delete only the job.",
+                ),
               );
             const input: Extract<AssistantRequest, { op: "jobs.control" }> = {
               op: "jobs.control",
@@ -190,7 +194,9 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
             };
             if (frozenInput && JSON.stringify(input) !== JSON.stringify(frozenInput))
               throw new Error(
-                "The deletion is pending. Keep its original task selection while checking its status.",
+                t(
+                  "The deletion is pending. Keep its original task selection while checking its status.",
+                ),
               );
             frozenInput ??= input;
             try {
@@ -203,7 +209,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                 JSON.stringify(assistantJobProjectIds(result.job)) !==
                   JSON.stringify(assistantJobProjectIds(job))
               )
-                throw new Error("Job status is unknown. Check the Room before retrying.");
+                throw new Error(t("Job status is unknown. Check the Room before retrying."));
             } catch (cause) {
               await refresh();
               throw cause;
@@ -221,7 +227,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     } else
       mutate(
         job.id,
-        t(action === "stop" ? "Stopping…" : action === "pause" ? "Pausing…" : "Resuming…"),
+        action === "stop" ? t("Stopping…") : action === "pause" ? t("Pausing…") : t("Resuming…"),
         {
           op: "jobs.control",
           id: job.id,
@@ -239,7 +245,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         !assistantJobVisible(job, canSeeProject) ||
         !props.onReviewJobTasks
       )
-        throw new Error("The selected project is no longer visible.");
+        throw new Error(t("The selected project is no longer visible."));
       await props.onReviewJobTasks({
         jobId: job.id,
         goalId: job.goalId,
@@ -285,7 +291,8 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     } catch {
       /* Review the retained source text. */
     }
-    if (conflictingBatch) throw new Error("Job status is unknown. Check the Room before retrying.");
+    if (conflictingBatch)
+      throw new Error(t("Job status is unknown. Check the Room before retrying."));
     return {
       rows: (single ? [source] : source.split(/\r?\n/))
         .filter((request) => request.trim())
@@ -323,7 +330,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       jobBatch.current = new AssistantJobBatch(async (request) => {
         if (request.op === "jobs.create") {
           if (request.kind !== "quick" && !assistantJobVisible(request, canSeeProject))
-            throw new Error("The selected project is no longer visible.");
+            throw new Error(t("The selected project is no longer visible."));
           if (
             request.kind === "quick" &&
             (request.quickAction.kind === "note"
@@ -339,7 +346,9 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
         }
         if (!sourceEnvironment)
           throw new Error(
-            "The original computer could not be verified. Keep this draft and reconnect that computer.",
+            t(
+              "The original computer could not be verified. Keep this draft and reconnect that computer.",
+            ),
           );
         return ownerRequest(request, sourceEnvironment);
       });
@@ -357,9 +366,12 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       );
       if (!sourceEnvironment)
         throw new Error(
-          "The original computer could not be verified. Keep this draft and reconnect that computer.",
+          t(
+            "The original computer could not be verified. Keep this draft and reconnect that computer.",
+          ),
         );
-      if (!rows.every(visibleDraft)) throw new Error("The selected project is no longer visible.");
+      if (!rows.every(visibleDraft))
+        throw new Error(t("The selected project is no longer visible."));
       await jobBatch.current!.start(rows.map(reviewedDraft));
       await refresh();
     });
@@ -431,7 +443,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     error?.key === key ? <InlineError className={styles.error}>{error.text}</InlineError> : null;
   const empty = (text: string) => (
     <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
-      {t(text)}
+      {text}
     </Text>
   );
   function clearHistory() {

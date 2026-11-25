@@ -3,7 +3,7 @@ import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { TriangleAlert } from "../../../../shared/ui/icons";
-import { isMicrophoneBlocked } from "../../model/microphoneAccess";
+import { isMicrophoneBlocked, microphoneBlockedMessage } from "../../model/microphoneAccess";
 import { isVoiceSetupError, VoiceRecoveryAction } from "../MicrophoneRecoveryAction";
 
 /** Errors whose text is already the owner's next step; every other error is a technical detail. */
@@ -69,7 +69,7 @@ export function VoiceErrorNotice({
         isMicrophoneBlocked(error) ? (
           // The owner's next step is in the sentence itself: no raw detail to hide.
           <Text as="p" size="inherit" tone="secondary" className="break-words select-text">
-            {error}
+            {microphoneBlockedMessage()}
           </Text>
         ) : (
           <div>

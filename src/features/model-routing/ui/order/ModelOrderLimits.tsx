@@ -7,7 +7,8 @@ import { NumberField } from "../../../../shared/ui/NumberField";
 import { TokenAmountField } from "./TokenAmountField";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Text } from "../../../../shared/ui/Text";
-import { Badge } from "../../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
+import { TriangleAlert } from "../../../../shared/ui/icons";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../../shared/ui/UsageMeter";
 import { Select } from "../../../../shared/ui/Select";
@@ -118,9 +119,12 @@ export function ModelOrderLimits({
         <Row label={t("Used today")}>
           <div className="flex min-w-0 items-center gap-2">
             {usage.limitReached ? (
-              <Badge size="xs" tone="danger">
+              <InfoTooltip
+                label={t("Limit reached")}
+                icon={<TriangleAlert className="icon-sm" aria-hidden />}
+              >
                 {t("Limit reached")}
-              </Badge>
+              </InfoTooltip>
             ) : null}
             {usage.dailyAgentMinutes > 0 ? (
               <UsageMeter

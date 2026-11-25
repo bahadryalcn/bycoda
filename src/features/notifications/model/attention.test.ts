@@ -6,7 +6,7 @@ import {
   enteredBackgroundFinish,
   flashFor,
   lastLine,
-  LOCKED_NOTIFICATION_TEXT,
+  lockedNotificationText,
   maskLockedNotification,
   sessionPhase,
   sessionsNeedingAttention,
@@ -488,7 +488,7 @@ describe("notifications for a locked group", () => {
 
   it("names neither the project nor the session", () => {
     const masked = maskLockedNotification(secret);
-    expect(masked.title).toBe(LOCKED_NOTIFICATION_TEXT);
+    expect(masked.title).toBe(lockedNotificationText());
     expect(JSON.stringify(masked)).not.toMatch(/secret/i);
     expect(masked.sessionId).toBe("s1");
   });

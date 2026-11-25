@@ -35,6 +35,9 @@ type Props = {
   onOpenSettings?: () => void;
   onClose: () => void;
 };
+/** Which save failed; the sentence is chosen where it renders so it follows the language. */
+type SaveFailure = "seen" | "preferences" | null;
+
 export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onClose }: Props) {
   useLocale();
   const notificationProjects = useNotificationProjects(projectPaths);
@@ -47,7 +50,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
   const [local, setLocal] = useState({
     key: pathsKey,
     customOpen: false,
-    error: null as string | null,
+    error: null as SaveFailure,
   });
   const scoped = local.key === pathsKey ? local : { key: pathsKey, customOpen: false, error: null };
   const customOpen = scoped.customOpen;
@@ -58,7 +61,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       key: pathsKey,
       customOpen: next,
     }));
-  const setError = (next: string | null) =>
+  const setError = (next: SaveFailure) =>
     setLocal((previous) => ({
       ...(previous.key === pathsKey ? previous : { customOpen: false }),
       key: pathsKey,
@@ -150,7 +153,13 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
                 </Button>
               </Alert>
             ) : null}
-            {saveError ? <Alert tone="danger">{t(saveError)}</Alert> : null}
+            {saveError ? (
+              <Alert tone="danger">
+                {saveError === "seen"
+                  ? t("Some read status updates may have saved. Retry to complete.")
+                  : t("Could not save notification preferences. Please try again.")}
+              </Alert>
+            ) : null}
           </div>
         ) : undefined
       }
@@ -158,7 +167,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
         if (id === "read-all") {
           if (!hasUnread) return;
           const applyResult = (saved: boolean) => {
-            if (!saved) setError("Some read status updates may have saved. Retry to complete.");
+            if (!saved) setError("seen");
             else onClose();
           };
           const result = markInboxItemsSeen(entries);
@@ -185,7 +194,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
           });
           onClose();
         } catch {
-          setError("Could not save notification preferences. Please try again.");
+          setError("preferences");
         }
       }}
     />

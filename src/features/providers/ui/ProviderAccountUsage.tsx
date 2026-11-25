@@ -27,6 +27,26 @@ const STATUS_TONE: Record<AccountStatusTone, BadgeTone> = {
 };
 
 /** Dot + word, e.g. "● Ready" or "● Exhausted back in 31m". */
+/** The account status label in the current language; the model keeps its fixed labels in English. */
+function statusText(label: string): string {
+  switch (label) {
+    case "Checking…":
+      return t("Checking…");
+    case "Ready":
+      return t("Ready");
+    case "Running low":
+      return t("Running low");
+    case "Exhausted":
+      return t("Exhausted");
+    case "Not signed in":
+      return t("Not signed in");
+    case "Usage unavailable":
+      return t("Usage unavailable");
+    default:
+      return label;
+  }
+}
+
 export function AccountStatusLabel({
   status,
   className = "",
@@ -47,7 +67,7 @@ export function AccountStatusLabel({
       )}
     >
       <Badge tone={STATUS_TONE[status.tone]} size="sm">
-        {t(status.label)}
+        {statusText(status.label)}
       </Badge>
       {status.detail ? (
         <OverflowTooltip label={status.detail}>
@@ -69,7 +89,6 @@ export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
       iconOnly
       label={t("Refresh usage limits")}
       loading={usage.refreshing}
-      disabled={usage.refreshing}
       onClick={usage.refresh}
     >
       <RefreshCw className="icon-sm" strokeWidth={1.75} />
@@ -195,7 +214,11 @@ export function UsageMeter({
           decimals={0}
           tone={pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral"}
           className="mt-1.5"
-          label={t(showRemaining ? "{p0} limit remaining" : "{p0} limit used", { p0: title })}
+          label={
+            showRemaining
+              ? t("{p0} limit remaining", { p0: title })
+              : t("{p0} limit used", { p0: title })
+          }
         />
       </div>
     </Tooltip>

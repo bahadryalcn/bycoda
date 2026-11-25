@@ -46,15 +46,13 @@ export function GoalFinalReview({
                   : "idle"
           }
         >
-          {t(
-            goal.finalAcceptance?.status === "passed"
-              ? "Verified"
-              : goal.finalAcceptance?.status === "failed"
-                ? "Failed"
-                : goal.finalAcceptance?.status === "running"
-                  ? "Running"
-                  : "Queued",
-          )}
+          {goal.finalAcceptance?.status === "passed"
+            ? t("Verified")
+            : goal.finalAcceptance?.status === "failed"
+              ? t("Failed")
+              : goal.finalAcceptance?.status === "running"
+                ? t("Running")
+                : t("Queued")}
         </StatusText>
       </div>
       {goal.finalAcceptance?.note ? (

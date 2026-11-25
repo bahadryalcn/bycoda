@@ -84,7 +84,7 @@ import { claudeAdapter } from "../providers/claude/claudeAdapter";
 import { codexAdapter } from "../providers/codex/codexAdapter";
 import { genericAcpAdapter } from "../providers/generic-acp/genericAcpAdapter";
 import { registerBuiltinHarnesses } from "./register";
-import { LANGUAGES, setLanguagePreference, t } from "../../../shared/i18n/core";
+import { LANGUAGES, setLanguagePreference } from "../../../shared/i18n/core";
 import { delegationFallback, delegationNotice } from "./delegationReadiness";
 
 function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapter {
@@ -128,8 +128,10 @@ describe("harness registry", () => {
           ...(bounded ? { crossSubagentMaxEffort: "high" } : {}),
         };
         const guidance = delegationFallback(modelSettings, false);
+        const expected = delegationNotice(guidance);
+        await setLanguagePreference("en");
         const notice = delegationNotice(guidance);
-        const expected = t(notice);
+        await setLanguagePreference(locale);
         if (locale !== "en") expect(expected).not.toBe(notice);
         await sendHarnessTurn({
           harness: "codex",

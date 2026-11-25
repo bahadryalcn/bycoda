@@ -1,5 +1,6 @@
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
@@ -83,7 +84,17 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
           <ReportList title={t("Done")} lines={data.done} />
           <ReportList title={t("Results")} lines={data.results} />
           {data.suggestionsError ? (
-            <InlineMessage tone="warning">{data.suggestionsError}</InlineMessage>
+            <InlineMessage
+              tone="warning"
+              extra={
+                <ErrorDetails
+                  detail={data.suggestionsError}
+                  title={t("Suggestions could not be generated.")}
+                />
+              }
+            >
+              {t("Suggestions could not be generated.")}
+            </InlineMessage>
           ) : null}
           <ReportList title={t("Suggestions")} lines={data.suggestions} />
           {!data.done.length && !data.results.length ? (

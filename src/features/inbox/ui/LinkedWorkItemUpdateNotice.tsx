@@ -3,7 +3,6 @@ import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { Spinner } from "../../../shared/ui/Spinner";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { useEffect, useState } from "react";
@@ -82,12 +81,16 @@ export function LinkedWorkItemUpdateNotice({
   if (!card || card.status === "loading") return null;
 
   const KindIcon = card.kind === "pr" ? GitPullRequest : CircleDot;
-  const kindLabel = t(card.kind === "pr" ? "Pull request" : "Issue");
+  const kindLabel = card.kind === "pr" ? t("Pull request") : t("Issue");
   const latest = card.entries[0];
   const discussion =
     latest?.kind === "comment" || latest?.kind === "review" || latest?.kind === "review_comment";
   const openLabel =
-    latest?.kind === "commit" ? t("Open commit") : t(card.kind === "pr" ? "Open PR" : "Open issue");
+    latest?.kind === "commit"
+      ? t("Open commit")
+      : card.kind === "pr"
+        ? t("Open PR")
+        : t("Open issue");
   const agentLabel = discussion
     ? t("Address with agent")
     : latest?.kind === "commit"
@@ -151,7 +154,7 @@ export function LinkedWorkItemUpdateNotice({
             onAcknowledge();
             openUrlSafely(card.url);
           }}
-          className="block w-full text-left"
+          className="block w-full text-start"
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <KindIcon tone="secondary" className="icon-sm shrink-0" strokeWidth={1.75} />
@@ -179,13 +182,14 @@ export function LinkedWorkItemUpdateNotice({
                 key={`${entry.kind}:${entry.id}`}
                 type="button"
                 disabled={!entry.url}
+                disabledReason={t("This item has no link.")}
                 onClick={() => {
                   if (entry.url) {
                     onAcknowledge();
                     openUrlSafely(entry.url);
                   }
                 }}
-                className="w-full text-left"
+                className="w-full text-start"
               >
                 <Text size="inherit" tone="secondary" className="mt-0.5">
                   <ActivityIcon entry={entry} />
@@ -200,7 +204,7 @@ export function LinkedWorkItemUpdateNotice({
                         @{entry.author}
                       </Text>
                     ) : null}
-                    <Text size="inherit" tone="secondary" className="ml-auto shrink-0">
+                    <Text size="inherit" tone="secondary" className="ms-auto shrink-0">
                       <InboxRelativeTime at={entry.createdAt} />
                     </Text>
                   </Text>
@@ -237,14 +241,16 @@ export function LinkedWorkItemUpdateNotice({
                 variant="ghost"
                 type="button"
                 disabled={Boolean(cleanupAction) || !onArchiveSession}
+                disabledReason={
+                  cleanupAction
+                    ? t("Finishing the current cleanup…")
+                    : t("This session cannot be archived here.")
+                }
+                loading={cleanupAction === "archive"}
+                startIcon={<Archive className="icon-xs shrink-0" strokeWidth={1.75} />}
                 onClick={() => void runCleanup("archive", onArchiveSession)}
                 className="min-w-0"
               >
-                {cleanupAction === "archive" ? (
-                  <Spinner size="xs" />
-                ) : (
-                  <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
-                )}
                 <Text size="inherit" tone="inherit" truncate className="min-w-0 whitespace-nowrap">
                   {t("Archive session")}
                 </Text>
@@ -254,14 +260,16 @@ export function LinkedWorkItemUpdateNotice({
                 tone="danger"
                 type="button"
                 disabled={Boolean(cleanupAction) || !onDeleteSession}
+                disabledReason={
+                  cleanupAction
+                    ? t("Finishing the current cleanup…")
+                    : t("This session cannot be deleted here.")
+                }
+                loading={cleanupAction === "delete"}
+                startIcon={<Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />}
                 onClick={() => void runCleanup("delete", onDeleteSession)}
-                className="ml-auto min-w-0"
+                className="ms-auto min-w-0"
               >
-                {cleanupAction === "delete" ? (
-                  <Spinner size="xs" />
-                ) : (
-                  <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
-                )}
                 <Text size="inherit" tone="inherit" truncate className="min-w-0 whitespace-nowrap">
                   {t("Delete…")}
                 </Text>

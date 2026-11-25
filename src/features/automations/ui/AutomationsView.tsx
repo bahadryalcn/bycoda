@@ -8,6 +8,7 @@ import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale } from "../../../shared/i18n";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
@@ -264,6 +265,7 @@ function AutomationsContent({
     deleting,
     toggling,
     actionError,
+    actionErrorTitle,
     setActionError,
     onSave,
     onRun,
@@ -368,37 +370,36 @@ function AutomationsContent({
     >
       {confirmDialog}
       {revealStatus && revealAutomation && (
-        <Text
-          as="div"
-          size="secondary"
-          tone="inherit"
-          role="status"
-          className="flex flex-wrap items-center gap-2 px-4 py-2"
-        >
-          <span>
-            {t(
-              revealStatus === "draft"
-                ? "Keep or close your current automation draft before opening the requested automation."
-                : revealStatus === "filter"
-                  ? "The requested automation is hidden by your filters."
-                  : "The linked automation is unavailable on its original computer.",
-            )}
-          </span>
-          <Button
-            disabled={saving || !!draft}
-            onClick={() => applyReveal(revealStatus === "filter")}
-          >
-            {t(revealStatus === "filter" ? "Reset filters" : "Retry")}
-          </Button>
-          <Button
-            onClick={() => {
+        <InlineMessage
+          tone="warning"
+          inset="row"
+          action={{
+            label: revealStatus === "filter" ? t("Reset filters") : t("Retry"),
+            onClick: () => applyReveal(revealStatus === "filter"),
+            disabled: saving || !!draft,
+            disabledReason: draft
+              ? t(
+                  "Keep or close your current automation draft before opening the requested automation.",
+                )
+              : undefined,
+            pending: saving,
+          }}
+          secondaryAction={{
+            label: t("Dismiss"),
+            onClick: () => {
               revealDone.current = revealAutomation.token;
               setRevealStatus("");
-            }}
-          >
-            {t("Dismiss")}
-          </Button>
-        </Text>
+            },
+          }}
+        >
+          {revealStatus === "draft"
+            ? t(
+                "Keep or close your current automation draft before opening the requested automation.",
+              )
+            : revealStatus === "filter"
+              ? t("The requested automation is hidden by your filters.")
+              : t("The linked automation is unavailable on its original computer.")}
+        </InlineMessage>
       )}
       {host.migrationBlocked.length ? (
         <Alert tone="warning">
@@ -428,7 +429,7 @@ function AutomationsContent({
                 aria-pressed={compactListOpen}
                 onClick={() => setCompactListOpen((open) => !open)}
               >
-                {t(compactListOpen ? "Back" : "Show automation list")}
+                {compactListOpen ? t("Back") : t("Show automation list")}
                 {!compactListOpen ? ` · ${automations.length}` : null}
               </Button>
             </div>
@@ -503,9 +504,14 @@ function AutomationsContent({
             <Alert
               tone="danger"
               className="mx-3 mt-1 mb-2 shrink-0"
-              extra={<ErrorDetails detail={error} title={t("Automation action failed.")} />}
+              extra={
+                <ErrorDetails
+                  detail={error}
+                  title={actionErrorTitle ?? t("Automation action failed.")}
+                />
+              }
             >
-              {t("Automation action failed.")}
+              {actionErrorTitle ?? t("Automation action failed.")}
             </Alert>
           ) : null}
           {paused && !editorDraft ? (
@@ -568,7 +574,10 @@ function AutomationsContent({
                             taskId,
                           });
                         } catch (reason) {
-                          setActionError(presentRemoteError(reason, { explicit: true }));
+                          setActionError(
+                            presentRemoteError(reason, { explicit: true }),
+                            t("Could not open the task."),
+                          );
                         }
                       }
                     : undefined
@@ -584,7 +593,10 @@ function AutomationsContent({
                       });
                     else await onOpenSession(sessionId);
                   } catch (reason: unknown) {
-                    setActionError(presentRemoteError(reason, { explicit: true }));
+                    setActionError(
+                      presentRemoteError(reason, { explicit: true }),
+                      t("Could not open this session."),
+                    );
                   }
                 }}
               />
@@ -592,11 +604,8 @@ function AutomationsContent({
           ) : readFailed && !hasAutomations ? (
             <FailureState
               title={t("Automations unavailable")}
-              description={
-                host.error?.message ??
-                localQuery.error?.message ??
-                t("Automations could not be read.")
-              }
+              description={t("Automations could not be read.")}
+              error={host.error ?? localQuery.error}
               onRetry={
                 queryVisible
                   ? () => {

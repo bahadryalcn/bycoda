@@ -46,14 +46,14 @@ export function CrewsActive({
   const [error, setError] = useState("");
   if (!supported) return null;
   if (active.error) {
-    const failure = describeRemoteError(active.error);
+    const { message: summary, details } = describeRemoteError(active.error);
     return (
       <div className="p-4 pb-0">
         <InlineError
-          details={failure.details}
+          details={details}
           retry={{ onRetry: () => void active.refetch(), pending: active.isFetching }}
         >
-          {failure.message}
+          {summary}
         </InlineError>
       </div>
     );
@@ -70,7 +70,7 @@ export function CrewsActive({
   };
   return (
     <div className="flex flex-col gap-3 p-4 pb-0">
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error} /> : null}
       {groupActiveByProject(items, currentKey).map((group) => (
         <section key={group.key} aria-label={group.name || t("Project")} className="flex flex-col">
           <SectionLabel count={group.items.length}>{group.name || t("Project")}</SectionLabel>
@@ -108,6 +108,7 @@ function ActiveRow({
         motion="none"
         type="button"
         disabled={!canOpen}
+        disabledReason={!canOpen ? t("This member has no session to open yet.") : undefined}
         onClick={() => onOpen(item)}
         className="flex min-w-0 flex-1 items-center gap-3"
       >

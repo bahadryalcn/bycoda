@@ -6,7 +6,11 @@ import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { Plus } from "../../../shared/ui/icons";
 import { MAX_NOTE_TAGS, normalizeNoteTags } from "../notes";
-import { NOTE_TAG_PRESETS, noteTagSuggestions } from "../model/noteTagSuggestions";
+import {
+  NOTE_TAG_PRESETS,
+  noteTagPresetLabel,
+  noteTagSuggestions,
+} from "../model/noteTagSuggestions";
 
 export function NoteTagsEditor({
   tags,
@@ -87,7 +91,7 @@ export function NoteTagsEditor({
                     if (!sameTags(next, tags)) onChange(next);
                   }}
                 >
-                  {preset ? t(preset.label) : `#${tag}`}
+                  {preset ? noteTagPresetLabel(preset.value) : `#${tag}`}
                 </Button>
               );
             })}

@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { HostProject } from "../../../../connections/public/protocol";
 import { presentRemoteError } from "../../../../connections/public/remoteFailure";
@@ -29,12 +30,24 @@ type Attempt = {
   sendAttempted?: true;
   job?: SocialJob;
 };
+/** A sentence already written and translated for the owner; it is the failure title as written. */
+class OwnerMessage extends Error {}
+
+/** The failure title and Host details of a failed step: an owner sentence is its own title. */
+function failureOf(cause: unknown, title: string) {
+  return cause instanceof OwnerMessage
+    ? { failureTitle: cause.message, details: undefined }
+    : { failureTitle: title, details: presentRemoteError(cause, { explicit: true }) };
+}
+
 type ComposerState = {
   input: ComposerInput;
   attempt?: Attempt;
   pending?: "review" | "send" | "status";
   feedback?: "queued" | "uncertain" | "notQueued";
-  error?: string;
+  /** The translated failure title; `details` is the Host text behind it. */
+  failureTitle?: string;
+  details?: string;
 };
 
 function createComposerStore() {
@@ -91,7 +104,8 @@ export function prefillInstagramDirect(
     input: { ...current.input, ...input },
     attempt: undefined,
     feedback: undefined,
-    error: undefined,
+    failureTitle: undefined,
+    details: undefined,
   });
   return true;
 }
@@ -119,7 +133,7 @@ async function prepareDraft(
   const recipient =
     attempt.recipient ?? (await client.browserInstagramRecipient(accountId, handle));
   if (recipient.handle !== handle || !/^\d{1,30}$/.test(recipient.platformId))
-    throw new Error(t("Could not verify this Instagram recipient."));
+    throw new OwnerMessage(t("Could not verify this Instagram recipient."));
   store.update({ attempt: { ...attempt, recipient } });
   const contact = await client.request<SocialContact>(
     "contacts.upsert",
@@ -136,7 +150,7 @@ async function prepareDraft(
     contact.platformId !== recipient.platformId ||
     !contact.projectIds.includes(projectId)
   )
-    throw new Error(t("Could not verify this Instagram recipient."));
+    throw new OwnerMessage(t("Could not verify this Instagram recipient."));
   const draft = await client.request<SocialDraft>(
     "messages.draft",
     { accountId, projectId, contactId: contact.id, text },
@@ -149,7 +163,7 @@ async function prepareDraft(
     draft.contactId !== contact.id ||
     draft.text !== text
   )
-    throw new Error(t("The message could not be prepared."));
+    throw new OwnerMessage(t("The message could not be prepared."));
   store.update({ attempt: { ...attempt, recipient, draft } });
   return draft;
 }
@@ -256,7 +270,8 @@ function Composer({
       input: { ...current.input, ...patch },
       attempt: undefined,
       feedback: undefined,
-      error: undefined,
+      failureTitle: undefined,
+      details: undefined,
     });
   };
 
@@ -284,7 +299,8 @@ function Composer({
       attempt,
       pending: "review",
       feedback: undefined,
-      error: undefined,
+      failureTitle: undefined,
+      details: undefined,
     });
     try {
       const draft = await prepareDraft(client, account.id, store, attempt);
@@ -319,7 +335,7 @@ function Composer({
     } catch (cause) {
       store.update({
         ...(store.read().attempt?.sendAttempted ? { feedback: "uncertain" as const } : {}),
-        error: presentRemoteError(cause, { explicit: true }),
+        ...failureOf(cause, t("Could not send this message. Try again.")),
       });
     } finally {
       store.update({ pending: undefined });
@@ -329,11 +345,11 @@ function Composer({
   const checkStatus = async () => {
     const { attempt, pending } = store.read();
     if (disabled || pending || !attempt?.sendAttempted) return;
-    store.update({ pending: "status", error: undefined });
+    store.update({ pending: "status", failureTitle: undefined, details: undefined });
     try {
       showReceipt(store, await checkMessage(client, account.id, attempt));
     } catch (cause) {
-      store.update({ error: presentRemoteError(cause, { explicit: true }) });
+      store.update(failureOf(cause, t("Could not check the message status. Try again.")));
     } finally {
       store.update({ pending: undefined });
     }
@@ -372,6 +388,7 @@ function Composer({
               size="sm"
               loading={state.pending === "status"}
               disabled={disabled || !!state.pending}
+              disabledReason={accountBlockedReason(disabled)}
               onClick={() => void checkStatus().catch(() => undefined)}
             >
               {t("Check status")}
@@ -384,6 +401,17 @@ function Composer({
                 state.pending === "send" || (state.pending === "review" && !state.attempt?.draft)
               }
               disabled={accountUnavailable || !!state.pending || !project || !handle || !text}
+              disabledReason={
+                accountUnavailable
+                  ? accountBlockedReason(true)
+                  : state.pending
+                    ? accountBlockedReason(false)
+                    : !project
+                      ? t("Choose a project first.")
+                      : !handle
+                        ? t("Enter a handle first.")
+                        : t("Enter a message first.")
+              }
               onClick={() => void review().catch(() => undefined)}
             >
               {t("Review Instagram message")}
@@ -395,7 +423,9 @@ function Composer({
           {t("Grant a project permission to send new messages.")}
         </InlineMessage>
       )}
-      {state.error ? <InlineError>{state.error}</InlineError> : null}
+      {state.failureTitle ? (
+        <InlineError details={state.details}>{state.failureTitle}</InlineError>
+      ) : null}
       {state.feedback === "queued" ? (
         <InlineMessage tone="success">
           {t("Instagram message queued. Check Activity for delivery.")}

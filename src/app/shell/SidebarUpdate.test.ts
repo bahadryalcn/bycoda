@@ -107,7 +107,7 @@ describe("SidebarUpdate", () => {
     );
 
     expect(markup).toContain("Downloading 42%");
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('aria-busy="true"');
   });
 
   it("ignores a second click while readAppVersion is still pending", async () => {

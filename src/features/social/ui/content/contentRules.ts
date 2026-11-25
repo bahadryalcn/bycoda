@@ -567,11 +567,32 @@ export function draftProblems(input: RuleInput): Problem[] {
           account.connection === "browser"
             ? browserContentIssue(account, job)
             : snapchatContentIssue(account, job);
-        if (issue) add(t(issue));
+        if (issue) add(connectionIssueText(issue));
       }
     }
   }
   return problems;
+}
+
+/**
+ * Owner-readable text for a Snapchat or browser capability check. The integration layer returns
+ * English sentences; the ones with a catalog entry are translated, the rest show as written.
+ */
+function connectionIssueText(issue: string): string {
+  switch (issue) {
+    case "Snapchat API publishing requires an OAuth-verified Public Profile UUID.":
+      return t("Snapchat API publishing requires an OAuth-verified Public Profile UUID.");
+    case "Choose an explicit Spotlight language and country locale, such as tr_TR or en_US.":
+      return t("Choose an explicit Spotlight language and country locale, such as tr_TR or en_US.");
+    case "Snapchat API Spotlight requires a 6–60 second MP4 of at least 540 × 960 pixels.":
+      return t("Snapchat API Spotlight requires a 6–60 second MP4 of at least 540 × 960 pixels.");
+    case "Snapchat API Spotlight requires one owner-uploaded MP4 video.":
+      return t("Snapchat API Spotlight requires one owner-uploaded MP4 video.");
+    case "Snapchat Spotlight descriptions must fit 160 characters.":
+      return t("Snapchat Spotlight descriptions must fit 160 characters.");
+    default:
+      return issue;
+  }
 }
 
 /** Owner-readable text for each shared X option check; unknown checks keep the generic line. */

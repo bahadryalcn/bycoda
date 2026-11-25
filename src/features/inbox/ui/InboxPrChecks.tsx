@@ -118,7 +118,7 @@ export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
   const mark = overallMark(overall);
   const label = t("Checks: {p0}", { p0: overall.description });
   return (
-    <Tab value="checks" aria-label={label} tooltip={label}>
+    <Tab value="checks" aria-label={label}>
       <Text size="inherit" tone="inherit" leading="none">
         {t("Checks")}
       </Text>
@@ -142,6 +142,7 @@ function PrCheckRow({
   refreshToken,
   onFix,
   fixDisabled,
+  fixDisabledReason,
   fixAnchor,
   repairItem,
   revealToken,
@@ -155,6 +156,7 @@ function PrCheckRow({
   refreshToken: unknown;
   onFix?: (anchor: HTMLButtonElement) => void;
   fixDisabled?: boolean;
+  fixDisabledReason?: string;
   fixAnchor?: HTMLButtonElement;
   repairItem?: RepairGroup["items"][number];
   revealToken?: number;
@@ -310,9 +312,9 @@ function PrCheckRow({
     </>
   );
   const className =
-    "flex w-full min-w-0 max-w-lg flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-left";
+    "flex w-full min-w-0 max-w-lg flex-1 items-center gap-2.5 rounded-(--ui-control-radius) text-start";
   const statusCell = (
-    <span className="min-w-14 shrink-0 text-left whitespace-nowrap">
+    <span className="min-w-14 shrink-0 text-start whitespace-nowrap">
       {repairItem ? (
         <CheckRepairStatus item={repairItem} />
       ) : (
@@ -326,7 +328,7 @@ function PrCheckRow({
     <Text
       size="caption"
       tone="secondary"
-      className="mr-1 w-11 shrink-0 whitespace-nowrap text-right tabular-nums @max-[480px]/checks:hidden"
+      className="me-1 w-11 shrink-0 whitespace-nowrap text-end tabular-nums @max-[480px]/checks:hidden"
     >
       {duration}
     </Text>
@@ -340,6 +342,7 @@ function PrCheckRow({
       ref={fixRef}
       onClick={(event) => onFix(event.currentTarget)}
       disabled={fixDisabled}
+      disabledReason={fixDisabledReason}
       aria-haspopup="dialog"
       aria-expanded={fixOpen}
       tooltip={t("Fix with AI")}
@@ -372,28 +375,22 @@ function PrCheckRow({
       size="caption"
       tone="inherit"
       id={detailsId}
-      className="min-w-0 space-y-3 py-3 pl-10 pr-3 @max-[420px]/checks:pl-3"
+      className="min-w-0 space-y-3 py-3 ps-10 pe-3 @max-[420px]/checks:ps-3"
     >
       {loading && !details && !error ? (
         <LoadingText inset="row">{t("Loading steps…")}</LoadingText>
       ) : null}
       {error ? (
-        <Alert tone="danger">
-          <Text as="p" size="caption" tone="inherit">
-            {t("Could not load job details.")}
-          </Text>
-          <Text as="p" size="micro" tone="inherit" className="break-words">
-            {error}
-          </Text>
-          <Button
-            variant="ghost"
-            type="button"
-            loading={loading}
-            onClick={() => setRetry((value) => value + 1)}
-          >
-            {t("Retry details")}
-          </Button>
-        </Alert>
+        <Alert
+          tone="danger"
+          title={t("Could not load job details.")}
+          extra={<ErrorDetails title={t("Could not load job details.")} detail={error} />}
+          action={{
+            label: t("Retry details"),
+            onClick: () => setRetry((value) => value + 1),
+            pending: loading,
+          }}
+        />
       ) : null}
       {details ? (
         <>
@@ -531,7 +528,7 @@ function PrCheckRow({
               variant="item"
               fullWidth
               motion="none"
-              className="w-full min-w-0 max-w-lg flex-1 text-left"
+              className="w-full min-w-0 max-w-lg flex-1 text-start"
               type="button"
               aria-label={title}
               onClick={() => openUrlSafely(url)}
@@ -686,6 +683,7 @@ export function InboxPrChecks({
                   : undefined
               }
               fixDisabled={refreshing || stale || Boolean(error)}
+              fixDisabledReason={fixBlockedReason}
               fixAnchor={selection?.anchor}
               provider={view.provider}
               cwd={cwd}
@@ -702,23 +700,26 @@ export function InboxPrChecks({
     ) : null;
   const requiredFailures = rows.filter((row) => row.state === "fail" && !row.allowFailure).length;
   const headline = requiredFailures
-    ? t(requiredFailures === 1 ? "{p0} check needs a fix" : "{p0} checks need a fix", {
-        p0: formatNumber(requiredFailures),
-      })
+    ? requiredFailures === 1
+      ? t("{p0} check needs a fix", { p0: formatNumber(requiredFailures) })
+      : t("{p0} checks need a fix", { p0: formatNumber(requiredFailures) })
     : counts.fail
       ? t("Optional checks failed")
       : counts.pending
-        ? t(counts.pending === 1 ? "{p0} check is running" : "{p0} checks are running", {
-            p0: formatNumber(counts.pending),
-          })
+        ? counts.pending === 1
+          ? t("{p0} check is running", { p0: formatNumber(counts.pending) })
+          : t("{p0} checks are running", { p0: formatNumber(counts.pending) })
         : attention
-          ? t(attention === 1 ? "{p0} check needs attention" : "{p0} checks need attention", {
-              p0: formatNumber(attention),
-            })
+          ? attention === 1
+            ? t("{p0} check needs attention", { p0: formatNumber(attention) })
+            : t("{p0} checks need attention", { p0: formatNumber(attention) })
           : counts.pass
             ? t("Checks passed")
             : t("No checks ran");
   const summary = describeCheckSummary({ ...counts, fail: 0 }, t, formatNumber);
+  const fixBlockedReason = error
+    ? t("Reload the checks first.")
+    : t("Wait for the latest check results.");
   return (
     <section
       data-inbox-pr-checks
@@ -756,6 +757,7 @@ export function InboxPrChecks({
               ref={allFixRef}
               type="button"
               disabled={refreshing || stale || Boolean(error)}
+              disabledReason={fixBlockedReason}
               onClick={(event) =>
                 setSelection({
                   checks: rows.filter((row) => row.state === "fail"),
@@ -790,7 +792,7 @@ export function InboxPrChecks({
       {stale ? (
         <Alert tone={error ? "danger" : "warning"}>
           <Text as="p" size="caption" tone="inherit" weight="medium">
-            {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
+            {error ? t("Checks refresh failed") : t("Checking the latest revision…")}
           </Text>
           {error ? (
             <>

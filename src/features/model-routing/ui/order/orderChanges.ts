@@ -1,7 +1,12 @@
 import { t } from "../../../../shared/i18n";
 import type { PendingChange } from "../../../../shared/ui/settings";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
-import { MODEL_ROLE_METADATA, modelChoicesEqual } from "../../model/modelRoutingRoles";
+import {
+  MODEL_ROLE_METADATA,
+  modelChoicesEqual,
+  modelRoleGroupLabel,
+  modelRoleLabel,
+} from "../../model/modelRoutingRoles";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -83,8 +88,8 @@ export function orderChanges(
     const choice = after.roles[role];
     changes.push({
       id: `role:${role}`,
-      scope: t(group),
-      label: t(labelKey),
+      scope: modelRoleGroupLabel(group),
+      label: modelRoleLabel(labelKey),
       detail:
         choice?.kind === "pool"
           ? t("Group: {p0}", {

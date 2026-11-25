@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { presentRemoteError } from "../../../../connections/public/remoteFailure";
 import { useState } from "react";
 import { openExternal } from "../../../../../platform/tauri/openExternal";
 import { useT } from "../../../../../shared/i18n";
@@ -17,6 +18,7 @@ import {
 } from "../../../model/instagramManagement";
 import type { SocialClient } from "../../../model/socialClient";
 import { socialQueryScope } from "../../../model/socialQuery";
+import { accountBlockedReason } from "../blockedReason";
 import { useAccountWrite } from "../useAccountWrite";
 import "./instagram.css";
 
@@ -41,7 +43,9 @@ export function InstagramManagementRequests({
   const queryClient = useQueryClient();
   const confirmation = useConfirm();
   const [uncertain, setUncertain] = useState<ReadonlySet<string>>(new Set());
-  const { write, is, error } = useAccountWrite(t("Could not save this change. Try again."));
+  const { write, is, failureTitle, details } = useAccountWrite(
+    t("Could not save this change. Try again."),
+  );
   const scope = [...socialQueryScope(client), "instagram", accountId];
   const requestsKey = [...scope, "management"];
   const query = useQuery({
@@ -138,6 +142,7 @@ export function InstagramManagementRequests({
           size="sm"
           variant="ghost"
           disabled={disabled}
+          disabledReason={accountBlockedReason(disabled)}
           loading={query.isFetching}
           onClick={() => {
             query.refetch().catch(() => undefined);
@@ -195,6 +200,11 @@ export function InstagramManagementRequests({
                 size="sm"
                 variant="primary"
                 disabled={disabled || !instagramManagementApply(item)}
+                disabledReason={
+                  disabled
+                    ? accountBlockedReason(true)
+                    : t("This request cannot be applied from here.")
+                }
                 loading={is(item.id)}
                 onClick={() => {
                   apply(item).catch(() => undefined);
@@ -207,6 +217,7 @@ export function InstagramManagementRequests({
               size="sm"
               variant="ghost"
               disabled={disabled}
+              disabledReason={accountBlockedReason(disabled)}
               loading={is(item.id)}
               onClick={() => {
                 dismiss(item).catch(() => undefined);
@@ -217,8 +228,12 @@ export function InstagramManagementRequests({
           </div>
         </Surface>
       ))}
-      {error || query.error ? (
-        <InlineError>{error || t("Could not load data.")}</InlineError>
+      {failureTitle || query.error ? (
+        <InlineError
+          details={failureTitle ? details : presentRemoteError(query.error, { explicit: true })}
+        >
+          {failureTitle || t("Could not load data.")}
+        </InlineError>
       ) : null}
       {confirmation.dialog}
     </section>

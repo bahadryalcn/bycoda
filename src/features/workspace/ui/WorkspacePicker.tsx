@@ -211,7 +211,7 @@ function ComposerWorkspacePicker({
       />
       {children}
       {mode === "worktree" ? (
-        <div className={alignBase === "end" ? "ml-auto flex min-w-0 justify-end" : "flex min-w-0"}>
+        <div className={alignBase === "end" ? "ms-auto flex min-w-0 justify-end" : "flex min-w-0"}>
           <WorktreeBasePicker
             initialOpen={initialPicker === "base"}
             branches={branches?.branches ?? []}

@@ -44,12 +44,18 @@ describe("OnboardingStatistics choice", () => {
     container.remove();
   });
 
-  it("shows the statistics disclosure inline before the choice", async () => {
+  it("shows the full statistics disclosure in its own section before the choice", async () => {
     await render();
     expect(container.querySelector("li")).toBeNull();
-    expect(container.querySelector(".onboarding-hint")?.textContent).toBe(
-      "Shared statistics disclosure",
-    );
+    const section = container.querySelector("section[data-stats-disclosure]")!;
+    expect(section.querySelector("p")?.textContent).toBe("Shared statistics disclosure");
+    const titleId = section.getAttribute("aria-labelledby");
+    expect(section.querySelector("h3")?.textContent).toBe("What is sent");
+    expect(section.querySelector(`[id="${titleId}"]`)?.textContent).toBe("What is sent");
+    expect(
+      section.compareDocumentPosition(option("Share anonymous statistics")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("shows no answer as selected while the choice is unset", async () => {

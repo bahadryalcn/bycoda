@@ -1,7 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -101,7 +102,15 @@ export function TaskBoardProblem({
               <LocalHostStartButton onStarted={onRetry} onError={setStartError} />
             ) : null}
           </div>
-          {startError ? <Alert tone="danger">{startError}</Alert> : null}
+          {startError ? (
+            <Alert
+              tone="danger"
+              title={t("Could not start the local Host.")}
+              extra={
+                <ErrorDetails title={t("Could not start the local Host.")} detail={startError} />
+              }
+            />
+          ) : null}
           {details ? (
             <Disclosure variant="compact" summary={t("Technical details")}>
               <div className="task-board-status-details">
@@ -125,7 +134,7 @@ export function TaskDeliveryDialog({
   acting,
   busy,
   valid,
-  error,
+  notice,
   onChange,
   onBusyChange,
   onChecksChange,
@@ -138,7 +147,8 @@ export function TaskDeliveryDialog({
   acting: boolean;
   busy: boolean;
   valid: boolean;
-  error: ReactNode;
+  /** The Host or form sentence for the last failed save; already written for the owner. */
+  notice: string | null;
   onChange: (workspace?: TaskWorkspace) => void;
   onBusyChange: (busy: boolean) => void;
   onChecksChange: (patch: Partial<WorkspaceChecks>) => void;
@@ -181,7 +191,7 @@ export function TaskDeliveryDialog({
             "The completed task stays on its branch. Pending tasks in this epic and project will use the selected integration worktree.",
           )}
         </Text>
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {notice ? <Alert tone="danger">{notice}</Alert> : null}
         <TaskWorkspacePicker
           machine={machine}
           cwd={task.cwd}

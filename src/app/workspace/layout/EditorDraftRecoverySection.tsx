@@ -6,6 +6,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Check, EyeOff, File, RefreshCw, Search } from "../../../shared/ui/icons";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
@@ -187,9 +188,11 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
             })}
           </ul>
         ) : recovery.loading ? (
-          <Text role="status" as="p" size="secondary" tone="secondary" className="py-3">
-            {t("Checking file recovery copies…")}
-          </Text>
+          <div className="py-3">
+            <LoadingText size="secondary" tone="secondary">
+              {t("Checking file recovery copies…")}
+            </LoadingText>
+          </div>
         ) : query ? (
           <EmptyState
             context="panel"

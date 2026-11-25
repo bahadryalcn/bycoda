@@ -112,7 +112,9 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
     const button = document.body.querySelector<HTMLButtonElement>(
       `button[aria-label="${phase === "error" ? "Retry loading conversation" : "Refresh conversation"}"]`,
     )!;
-    expect(button.disabled).toBe(phase === "loading" || phase === "refreshing");
+    // A busy control explains itself (`aria-disabled` keeps it focusable) instead of going native-disabled.
+    const blocked = button.disabled || button.getAttribute("aria-disabled") === "true";
+    expect(blocked).toBe(phase === "loading" || phase === "refreshing");
     // The toast button stays short; the data name lives in the aria-label and the copy.
     if (attention) expect(button.textContent).toBe(phase === "error" ? "Retry" : "Refresh");
     if (phase === "error")
@@ -120,7 +122,7 @@ it.each(["ready", "empty", "loading", "refreshing", "stale", "error"] as const)(
         "Read failed",
       );
     act(() => button.click());
-    expect(onRefresh).toHaveBeenCalledTimes(button.disabled ? 0 : 1);
+    expect(onRefresh).toHaveBeenCalledTimes(blocked ? 0 : 1);
   },
 );
 

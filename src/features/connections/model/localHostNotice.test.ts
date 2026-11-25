@@ -18,7 +18,7 @@ it("says the host could not be verified when versions match but no descriptor an
   expect(localHostNotice(deferred("0.7.7", "0.7.7"), "unavailable")).toEqual({
     tone: "info",
     title: "This computer's host could not be verified.",
-    details: [{ text: "It continues when the host can be restarted safely." }],
+    details: ["It continues when the host can be restarted safely."],
   });
 });
 
@@ -27,11 +27,8 @@ it("reports a waiting update with both versions and the mapped reason", () => {
     tone: "info",
     title: "A host update is waiting.",
     details: [
-      {
-        text: "This computer's host is {p0}; this app includes {p1}.",
-        params: { p0: "0.5.53", p1: "0.5.54" },
-      },
-      { text: "It continues when the host can be restarted safely." },
+      "This computer's host is 0.5.53; this app includes 0.5.54.",
+      "It continues when the host can be restarted safely.",
     ],
     canUpdateNow: true,
   });
@@ -40,7 +37,7 @@ it("reports a waiting update with both versions and the mapped reason", () => {
     "ok",
   );
   expect(unknown?.title).toBe("A host update is waiting.");
-  expect(unknown?.details).toEqual([{ text: "Another host update is being installed." }]);
+  expect(unknown?.details).toEqual(["Another host update is being installed."]);
   // Another installer owns the Host: a second one must not be offered.
   expect(unknown?.canUpdateNow).toBe(false);
 });
@@ -51,18 +48,20 @@ it("warns when the update failed and shows versions only when they differ", () =
     canUpdateNow: true,
     tone: "warning",
     title: "The host on this computer could not be updated.",
-    details: [{ params: { p0: "1", p1: "2" } }, { text: "Disk full" }],
+    details: ["This computer's host is 1; this app includes 2."],
+    raw: "Disk full",
   });
-  expect(localHostNotice({ ...failed, installed: "2" }, "ok")?.details).toEqual([
-    { text: "Disk full" },
-  ]);
+  expect(localHostNotice({ ...failed, installed: "2" }, "ok")).toMatchObject({
+    details: [],
+    raw: "Disk full",
+  });
 });
 
 it("keeps the mismatch warnings ahead of update state", () => {
-  expect(localHostNotice(deferred("1", "1"), "capabilities")?.details[0]?.text).toContain(
+  expect(localHostNotice(deferred("1", "1"), "capabilities")?.details[0]).toContain(
     "does not support managed workspace",
   );
-  expect(localHostNotice(null, "identity")?.details[0]?.text).toBe(
+  expect(localHostNotice(null, "identity")?.details[0]).toBe(
     "The serving Host source differs from the Host bundled with this app.",
   );
 });

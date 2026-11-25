@@ -45,6 +45,7 @@ export function SourceOrderPicker({
         aria-haspopup="dialog"
         expanded={anchor !== null}
         disabled={disabled}
+        disabledReason={disabled ? t("Wait for the current change to finish.") : undefined}
         onClick={(event) => setAnchor(event.currentTarget)}
       >
         <span className="flex min-w-0 items-center gap-1">
@@ -100,6 +101,9 @@ export function SourceOrderPicker({
                 <div key={id} className="flex min-w-0 items-center justify-between gap-2">
                   <Checkbox
                     disabled={disabled}
+                    disabledReason={
+                      disabled ? t("Wait for the current change to finish.") : undefined
+                    }
                     checked={index >= 0}
                     onChange={() =>
                       onChange(index >= 0 ? value.filter((item) => item !== id) : [...value, id])
@@ -128,6 +132,11 @@ export function SourceOrderPicker({
                         iconOnly
                         label={t("Move up")}
                         disabled={disabled || index === 0}
+                        disabledReason={
+                          disabled
+                            ? t("Wait for the current change to finish.")
+                            : t("Already first.")
+                        }
                         onClick={() => onChange(moveSource(value, id, -1))}
                       >
                         <ArrowUp />
@@ -138,6 +147,11 @@ export function SourceOrderPicker({
                         iconOnly
                         label={t("Move down")}
                         disabled={disabled || index === value.length - 1}
+                        disabledReason={
+                          disabled
+                            ? t("Wait for the current change to finish.")
+                            : t("Already last.")
+                        }
                         onClick={() => onChange(moveSource(value, id, 1))}
                       >
                         <ArrowDown />

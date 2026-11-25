@@ -253,6 +253,7 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                   motion="none"
                   type="button"
                   disabled={uncommitted}
+                  disabledReason={uncommitted ? t("This change is not committed yet.") : undefined}
                   align="start"
                   tooltip={uncommitted ? undefined : entry.summary}
                   tooltipDetails={uncommitted ? undefined : [entry.author]}
@@ -281,7 +282,7 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 <Text
                   size="inherit"
                   tone="muted"
-                  className="w-10 shrink-0 pr-3 text-right select-none"
+                  className="w-10 shrink-0 pe-3 text-end select-none"
                 >
                   {entry.line}
                 </Text>

@@ -140,7 +140,7 @@ it("persists the key assignment once and reuses the saved server on later connec
     id: existing.id,
     identityFile: "C:/keys/work",
   });
-  expect(choose.disabled).toBe(true);
+  expect(choose.getAttribute("aria-disabled")).toBe("true");
   // The assigned key is the pressed one; the control is icon-only.
   expect(choose.getAttribute("aria-pressed")).toBe("true");
   expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Edit SSH server");
@@ -159,8 +159,10 @@ it("persists the key assignment once and reuses the saved server on later connec
   await act(async () => find("Organization").click());
   await act(async () => find("SSH settings").click());
   expect(
-    document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
-  ).toBe(true);
+    document
+      .querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
   expect(
     bridge.invoke.mock.calls.filter(([command]) => command === "server_ssh_identity_set"),
   ).toHaveLength(1);
@@ -219,7 +221,7 @@ it.each(["host", "inherited"])("assigns a persistent key to a %s connection", as
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   expect(choose.disabled).toBe(false);
   await act(async () => choose.click());
-  expect(choose.disabled).toBe(true);
+  expect(choose.getAttribute("aria-disabled")).toBe("true");
   expect(choose.getAttribute("aria-pressed")).toBe("true");
   expect(bridge.invoke).toHaveBeenCalledWith("server_ssh_identity_set", {
     id: base.id,
@@ -247,7 +249,10 @@ it("does not replace a saved key when assigning another key fails", async () => 
   await act(async () => find("SSH settings").click());
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   await act(async () => choose.click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Could not save key");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not assign the SSH key.",
+  );
+  expect(document.querySelector('[role="alert"]')?.textContent).not.toContain("Could not save key");
   expect(choose.disabled).toBe(false);
   expect(choose.getAttribute("aria-pressed")).toBe("false");
   expect(container.textContent).toContain("C:/keys/previous");

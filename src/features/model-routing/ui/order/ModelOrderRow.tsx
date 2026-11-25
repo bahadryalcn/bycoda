@@ -21,14 +21,23 @@ import { ModelProfileBadge } from "./ModelProfileBadge";
 import { useEntryAccount } from "./useEntryAccount";
 import { useQuotaLabel } from "./useQuotaLabel";
 
-const skipLabels = {
-  unavailable: "Model unavailable or disabled",
-  signedOut: "Account signed out",
-  belowLimit: "Below the reserved limit",
-  unknownLimit: "Unknown limit: skipped",
-  missingCapability: "Host capability unavailable",
-  otherScope: "Account is for other work",
-};
+/** Why an entry is skipped; `t()` takes literals only, so each label is translated where it is named. */
+function skipLabel(skip: NonNullable<ModelRoutingEntryStatus["skip"]>, t: ReturnType<typeof useT>) {
+  switch (skip) {
+    case "unavailable":
+      return t("Model unavailable or disabled");
+    case "signedOut":
+      return t("Account signed out");
+    case "belowLimit":
+      return t("Below the reserved limit");
+    case "unknownLimit":
+      return t("Unknown limit: skipped");
+    case "missingCapability":
+      return t("Host capability unavailable");
+    case "otherScope":
+      return t("Account is for other work");
+  }
+}
 
 /** One compact line per order entry; reordering is the grip (drag or Alt+Up/Down). */
 export function ModelOrderRow({
@@ -108,6 +117,7 @@ export function ModelOrderRow({
             tooltip={t("Drag to reorder")}
             shortcut="Alt+↑ / Alt+↓"
             disabled={count < 2}
+            disabledReason={t("Add another model to reorder.")}
             onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
             onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
           >
@@ -168,10 +178,10 @@ export function ModelOrderRow({
         ) : null}
         {status?.skip ? (
           <InfoTooltip
-            label={t(skipLabels[status.skip])}
+            label={skipLabel(status.skip, t)}
             icon={<TriangleAlert className="icon-sm" aria-hidden />}
           >
-            {t(skipLabels[status.skip])}
+            {skipLabel(status.skip, t)}
           </InfoTooltip>
         ) : null}
         {left !== accountQuota ? (

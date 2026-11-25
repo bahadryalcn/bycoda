@@ -3,6 +3,7 @@ import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -198,10 +199,11 @@ export function TabGroupMenu({
   const logoOperation = useRef(false);
 
   const trimmedName = name.trim();
-  const nameError = validateName && trimmedName !== label.trim() ? validateName(trimmedName) : null;
+  const nameProblem =
+    validateName && trimmedName !== label.trim() ? validateName(trimmedName) : null;
 
   const commitName = () => {
-    if (nameError) return false;
+    if (nameProblem) return false;
     onRename(groupId, trimmedName);
     return true;
   };
@@ -265,7 +267,7 @@ export function TabGroupMenu({
               variant="ghost"
               motion="none"
               type="button"
-              disabled={logoBusy}
+              loading={logoBusy}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 if (logoOperation.current) return;
@@ -288,7 +290,15 @@ export function TabGroupMenu({
           ) : null}
         </div>
       ) : null}
-      {logoError ? <Alert tone="danger">{logoError}</Alert> : null}
+      {logoError ? (
+        <Alert
+          tone="danger"
+          title={t("Could not update the project logo.")}
+          extra={
+            <ErrorDetails title={t("Could not update the project logo.")} detail={logoError} />
+          }
+        />
+      ) : null}
 
       <SectionLabel as="div" className="mb-1.5">
         {t("Color")}
@@ -396,9 +406,9 @@ export function TabGroupMenu({
               if (commitName()) onClose();
             }}
             aria-label={nameCaption}
-            aria-invalid={nameError ? true : undefined}
+            aria-invalid={nameProblem ? true : undefined}
           />
-          {nameError ? <Alert tone="danger">{nameError}</Alert> : null}
+          {nameProblem ? <Alert tone="danger">{nameProblem}</Alert> : null}
         </>
       ),
     },

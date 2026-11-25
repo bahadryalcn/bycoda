@@ -47,13 +47,14 @@ export function SshSetupPromptForm({
         />
       )}
       <div className="flex gap-2">
-        <Button disabled={answering} variant="primary" type="submit">
+        <Button loading={answering} variant="primary" type="submit">
           {prompt.confirm ? t("Trust host and continue") : t("Continue")}
         </Button>
         {prompt.confirm && (
           <Button
             type="button"
             disabled={answering}
+            disabledReason={answering ? t("Wait for the current action to finish.") : undefined}
             onClick={() => void respond("no")}
             variant="secondary"
           >

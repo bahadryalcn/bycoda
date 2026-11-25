@@ -103,7 +103,7 @@ it("requires Basic plaintext consent, dispatches once and clears the owned DOM i
   await credentials();
   const user = field("Proxy username"),
     password = field("Proxy password");
-  expect(button("Approve this operation").disabled).toBe(true);
+  expect(button("Approve this operation").getAttribute("aria-disabled")).toBe("true");
   expect(native.approve).not.toHaveBeenCalled();
   await act(async () =>
     document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
@@ -173,10 +173,16 @@ it("shows native stale-route errors with cleared credentials and requires explic
     document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
   );
   await act(async () => button("Approve this operation").click());
+  expect(document.body.textContent).toContain("Could not approve this proxy operation.");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((entry) => entry.textContent === "Details")!
+      .click(),
+  );
   expect(document.body.textContent).toContain("Proxy target changed");
   expect(field("Proxy username").value).toBe("");
   expect(field("Proxy password").value).toBe("");
-  expect(button("Approve this operation").disabled).toBe(true);
+  expect(button("Approve this operation").getAttribute("aria-disabled")).toBe("true");
   await act(async () => button("Cancel").click());
   expect(await pending.result).toBeNull();
 });

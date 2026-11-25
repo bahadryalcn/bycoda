@@ -76,6 +76,13 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
+const detailsText = async () => {
+  const trigger = [...document.querySelectorAll("button")].find(
+    (entry) => entry.textContent === "Details",
+  )!;
+  await act(async () => trigger.click());
+  return document.body.textContent ?? "";
+};
 const button = (text: string) =>
   [...document.querySelectorAll("button")].find((item) => item.textContent === text)!;
 const render = () =>
@@ -112,7 +119,10 @@ it("previews again after a checkbox edit and preserves selections after native C
   expect(native.preview).toHaveBeenLastCalledWith(server.id, changed, false);
   native.apply.mockRejectedValue(new Error("configuration changed"));
   await act(async () => button("Apply inheritance").click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("configuration changed");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not complete this action.",
+  );
+  expect(await detailsText()).toContain("configuration changed");
   expect(label.querySelector<HTMLInputElement>("input")!.checked).toBe(true);
   expect(native.apply).toHaveBeenCalledTimes(1);
 });
@@ -133,7 +143,7 @@ it("preserves edited group drafts on save conflict and in-use deletion errors, w
   await act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
   await act(async () => button("Confirm delete").click());
   expect(native.remove).toHaveBeenCalledExactlyOnceWith(group.id, 4);
-  expect(document.body.textContent).toContain("group in use");
+  expect(await detailsText()).toContain("group in use");
   expect(button("Save group")).toBeTruthy();
 });
 it("never migrates a legacy display label and creates profiles only after explicit group save", async () => {

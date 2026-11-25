@@ -49,7 +49,7 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
     await render(2, { state: "idle" }, true);
     for (const label of ["Save", "Discard"]) {
       const button = [...container.querySelectorAll("button")].find(
-        (node) => node.textContent === label,
+        (node) => node.textContent === label || node.textContent === "Saving…",
       )!;
       expect(button.getAttribute("aria-disabled")).toBe("true");
     }

@@ -3524,7 +3524,12 @@ it("does not retarget a retained owner job review when the selected local Host c
         .find((button) => button.textContent === "Start jobs")!
         .click();
     });
-    expect(page.textContent).toContain("original connection");
+    await act(async () => {
+      [...page.querySelectorAll("button")]
+        .find((button) => button.textContent === "Details")!
+        .click();
+    });
+    expect(document.body.textContent).toContain("original connection");
     expect(assistantHost.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(
       false,
     );
@@ -3967,7 +3972,12 @@ it("links accepted jobs to the original owner turn and retries only metadata aft
         .find((button) => button.textContent === "Start jobs")!
         .click();
     });
-    expect(page.textContent).toContain("link acknowledgement lost");
+    await act(async () => {
+      [...page.querySelectorAll("button")]
+        .find((button) => button.textContent === "Details")!
+        .click();
+    });
+    expect(document.body.textContent).toContain("link acknowledgement lost");
     const first = assistantHost.request.mock.calls.find(
       ([input]) => input.op === "messages.linkJob",
     )![0];

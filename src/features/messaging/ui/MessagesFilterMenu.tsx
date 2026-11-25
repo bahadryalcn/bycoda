@@ -3,7 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { Settings } from "../../../shared/ui/icons";
 import {
-  MESSAGING_PROVIDER_LABELS,
+  messagingProviderLabel,
   toggleListValue,
   type MessageFilters,
 } from "../model/messageThreads";
@@ -42,7 +42,7 @@ export function MessagesFilterMenu({
       items: providers.map((provider) => ({
         kind: "item",
         id: `provider:${provider}`,
-        label: t(MESSAGING_PROVIDER_LABELS[provider]),
+        label: messagingProviderLabel(provider),
         icon: <MessagingProviderMark provider={provider} className="block icon-sm shrink-0" />,
         checked: !filters.hiddenProviders.includes(provider),
         selectionRole: "checkbox",
@@ -56,7 +56,7 @@ export function MessagesFilterMenu({
       items: accounts.map((account) => ({
         kind: "item",
         id: `account:${account.id}`,
-        label: account.label || account.identity || t(MESSAGING_PROVIDER_LABELS[account.provider]),
+        label: account.label || account.identity || messagingProviderLabel(account.provider),
         description:
           account.label && account.identity !== account.label ? account.identity : undefined,
         icon: (

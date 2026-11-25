@@ -367,7 +367,7 @@ export function ProviderAccountsSettings({
         <Group
           id="provider-accounts"
           layout="full"
-          title={t(harness === "cursor" ? "Sign in" : "Accounts")}
+          title={harness === "cursor" ? t("Sign in") : t("Accounts")}
           action={
             accountProvider ? (
               <div
@@ -377,6 +377,7 @@ export function ProviderAccountsSettings({
                 <Button
                   size="sm"
                   disabled={Boolean(working)}
+                  disabledReason={t("Wait for the current operation to finish")}
                   onClick={(event) => startAdd(accountProvider, event.currentTarget)}
                 >
                   <Plus className="icon-sm" strokeWidth={1.75} aria-hidden />
@@ -489,7 +490,7 @@ export function ProviderAccountsSettings({
                             tone="secondary"
                             wrap
                           />
-                          <AccountKindTag tag={t(work ? "Work" : "Personal")} work={work} />
+                          <AccountKindTag tag={work ? t("Work") : t("Personal")} work={work} />
                         </Text>
                         {exhausted ? (
                           <Text
@@ -529,17 +530,18 @@ export function ProviderAccountsSettings({
                       <div className="provider-account-actions">
                         {signingIn || !limits || canSignIn(limits) ? (
                           <Button
-                            reserveLabels={[t("Signing in…")]}
                             size="sm"
                             variant="secondary"
                             loading={signingIn}
+                            loadingLabel={t("Signing in…")}
                             disabled={Boolean(working)}
+                            disabledReason={t("Wait for the current operation to finish")}
                             aria-label={t("Sign in to {p0}", {
                               p0: account.label,
                             })}
                             onClick={() => void signInAccount(account)}
                           >
-                            {signingIn ? t("Signing in…") : t("Sign in")}
+                            {t("Sign in")}
                           </Button>
                         ) : null}
                         <Button
@@ -551,6 +553,7 @@ export function ProviderAccountsSettings({
                           aria-expanded={menuOpen}
                           loading={removing}
                           disabled={Boolean(working)}
+                          disabledReason={t("Wait for the current operation to finish")}
                           onClick={(event) => {
                             const anchor = event.currentTarget;
                             setMenu((current) =>
@@ -588,16 +591,17 @@ export function ProviderAccountsSettings({
               ) : (
                 <>
                   <Button
-                    reserveLabels={[t("Signing in…")]}
                     variant="secondary"
                     disabled={Boolean(working)}
+                    disabledReason={t("Wait for the current operation to finish")}
                     loading={working === `signin:${standaloneHarness}`}
+                    loadingLabel={t("Signing in…")}
                     aria-label={t("Sign in to {p0}", {
                       p0: HARNESS_TITLE[standaloneHarness],
                     })}
                     onClick={() => void signInStandaloneProvider(standaloneHarness)}
                   >
-                    {working === `signin:${standaloneHarness}` ? t("Signing in…") : t("Sign in")}
+                    {t("Sign in")}
                   </Button>
                 </>
               )}

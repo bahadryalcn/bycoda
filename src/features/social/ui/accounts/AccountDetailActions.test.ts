@@ -170,7 +170,7 @@ it("offers Resume for a paused account and sends the opposite value", async () =
   const request = vi.fn(async () => ({}));
   render(request, { account: account({ paused: true }) });
   expect(menu("pause")?.textContent).toBe("Resume account");
-  expect(element.querySelector('[aria-label="Paused"]')).not.toBeNull();
+  expect(element.querySelector('[aria-label="Account status: Paused"]')).not.toBeNull();
   const item = menu("pause");
   await act(async () => item?.click());
   expect(request).toHaveBeenCalledExactlyOnceWith("accounts.pause", {
@@ -224,7 +224,7 @@ it("keeps the connection when the owner declines the removal", async () => {
 it("has nothing to remove for an account that is not connected", () => {
   render(vi.fn(), { account: account({ connected: false }) });
   expect(menu("remove")?.disabled).toBe(true);
-  expect(element.querySelector('[aria-label="Connection needed"]')).not.toBeNull();
+  expect(element.querySelector('[aria-label="Account status: Connection needed"]')).not.toBeNull();
 });
 
 it("disables both menu actions while the Host is offline", () => {

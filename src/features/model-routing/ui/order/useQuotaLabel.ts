@@ -7,14 +7,12 @@ export function useQuotaLabel() {
   const format = useFormat();
   return (status: ModelRoutingEntryStatus | undefined, loading: boolean, failed = false) =>
     status?.leftPercent == null
-      ? t(
-          loading || status?.limitState === "reading"
-            ? "Reading limit…"
-            : failed || status?.limitState === "unavailable"
-              ? "Limit unavailable"
-              : status?.limitState === "noQuota"
-                ? "No plan quota"
-                : "Limit unknown",
-        )
+      ? loading || status?.limitState === "reading"
+        ? t("Reading limit…")
+        : failed || status?.limitState === "unavailable"
+          ? t("Limit unavailable")
+          : status?.limitState === "noQuota"
+            ? t("No plan quota")
+            : t("Limit unknown")
       : t("{p0}% left", { p0: format.formatNumber(status.leftPercent) });
 }

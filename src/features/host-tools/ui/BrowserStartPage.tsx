@@ -9,11 +9,14 @@ import { forgetBrowserUrl, readBrowserRecents } from "../model/browserRecents";
 /** Shown while no frame exists: what to do next, plus recently opened addresses. */
 export function BrowserStartPage({
   disabled,
+  disabledReason,
   onOpen,
 }: {
   /** Kept for callers; the empty state is the address bar alone. */
   description?: string;
   disabled: boolean;
+  /** Why opening is unavailable while `disabled`. */
+  disabledReason?: string;
   onOpen: (url: string) => void;
 }) {
   const [recents, setRecents] = useState(readBrowserRecents);
@@ -28,6 +31,7 @@ export function BrowserStartPage({
                   <Button
                     variant="item"
                     disabled={disabled}
+                    disabledReason={disabledReason}
                     startIcon={<Globe className="icon-sm" aria-hidden />}
                     aria-label={t("Open {p0}", { p0: url })}
                     onClick={() => onOpen(url)}

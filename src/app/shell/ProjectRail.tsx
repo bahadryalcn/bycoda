@@ -7,6 +7,7 @@ import { EmptyState } from "../../shared/ui/EmptyState";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { errorText } from "../../shared/lib/errors";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { Checkbox } from "../../shared/ui/Checkbox";
@@ -1806,7 +1807,10 @@ function ProjectGroupSection({
   );
   const itemByPath = new Map(items.map((item) => [item.path, item]));
   const memberCount = items.length + workspaceIds.length + remoteItems.length;
-  const countLabel = t(memberCount === 1 ? "{p0} project" : "{p0} projects", { p0: memberCount });
+  const countLabel =
+    memberCount === 1
+      ? t("{p0} project", { p0: memberCount })
+      : t("{p0} projects", { p0: memberCount });
   const expanded = (!group.collapsed || revealed) && !locked;
   const collapsed = !expanded;
   // Open, the working rows show it themselves; collapsed, the header stands in for them.
@@ -2446,7 +2450,7 @@ function ProjectCard({
         tooltipDetails={[
           <DescriptionList key="location" hideTerms size="sm" className="mt-1 gap-y-1.5">
             <DescriptionItem
-              term={t(remote ? "Machine" : "Folder")}
+              term={remote ? t("Machine") : t("Folder")}
               icon={
                 remote ? (
                   <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
@@ -2501,7 +2505,7 @@ function ProjectCard({
               leading="snug"
               className="mt-1 wrap-anywhere"
             >
-              {connectionDetail}
+              <ErrorDetails title={connectionStatus} detail={connectionDetail} />
             </Text>
           ),
           (connectionStatus || busy) && (

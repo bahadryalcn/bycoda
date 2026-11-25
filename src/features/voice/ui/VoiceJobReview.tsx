@@ -56,6 +56,7 @@ export function VoiceJobReview({
     <Button
       variant="primary"
       loading={review.busy}
+      disabledReason={t("Complete every job and pick an available project before starting.")}
       disabled={rows.some(
         (row) =>
           !assistantJobDraftReady(row) ||
@@ -69,15 +70,13 @@ export function VoiceJobReview({
       )}
       onClick={() => onStart(rows)}
     >
-      {t(
-        review.error
-          ? "Check and retry"
-          : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
-            ? "Save notes"
-            : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "automation")
-              ? "Create automations"
-              : "Start jobs",
-      )}
+      {review.error
+        ? t("Check and retry")
+        : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
+          ? t("Save notes")
+          : rows.every((row) => row.kind === "quick" && row.quickAction?.kind === "automation")
+            ? t("Create automations")
+            : t("Start jobs")}
     </Button>
   );
   return (
@@ -88,7 +87,11 @@ export function VoiceJobReview({
       onClose={() => {
         if (!review.busy) onCancel();
       }}
-      footerStart={review.error ? <InlineError>{review.error}</InlineError> : undefined}
+      footerStart={
+        review.error ? (
+          <InlineError details={review.error}>{t("The jobs could not be started.")}</InlineError>
+        ) : undefined
+      }
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={review.busy} onClick={onCancel}>

@@ -130,7 +130,9 @@ function AutomationCard({
   ]
     .filter(Boolean)
     .join(" · ");
-  const label = t(automation.enabled ? "Pause {p0}" : "Enable {p0}", { p0: automation.name });
+  const label = automation.enabled
+    ? t("Pause {p0}", { p0: automation.name })
+    : t("Enable {p0}", { p0: automation.name });
   return (
     <CollectionRow
       data-paused={automation.enabled ? undefined : ""}

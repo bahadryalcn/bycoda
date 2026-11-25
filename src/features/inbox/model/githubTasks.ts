@@ -1,6 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { fetchJiraInboxPage, type JiraListContinuation } from "./jiraInboxPage";
 import type { GithubStatus } from "./githubStatus";
+import { t } from "../../../shared/i18n";
 import { formatGithubRelativeTime as formatRelativeTime } from "../../../shared/i18n/format";
 import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "../../../shared/lib/store";
@@ -8,6 +9,7 @@ import { githubRead, resetGithubReadBlock } from "./githubReadGate";
 import { clearGithubRepositories, discoverGithubRepositories } from "./githubRepositories";
 export { githubRepo, githubRepositories } from "./githubRepositories";
 import { pathKey } from "../../../shared/lib/paths";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { INBOX_VISIBLE_POLL_MS } from "./inboxPolling";
 import { clearKnownInboxItems } from "./inboxSeen";
 import {
@@ -301,12 +303,12 @@ const fetchedAt = new Map<string, number>();
 const ITEM_CACHE_LIMIT = 128;
 function freshEnough(key: string, maxAgeMs?: number) {
   const at = fetchedAt.get(key);
-  return maxAgeMs != null && at != null && Date.now() - at < maxAgeMs;
+  return maxAgeMs != null && at != null && elapsedSince(at) < maxAgeMs;
 }
 function remember<T>(cache: Map<string, T>, key: string, value: T, namespace: string) {
   cache.delete(key);
   cache.set(key, value);
-  fetchedAt.set(`${namespace}:${key}`, Date.now());
+  fetchedAt.set(`${namespace}:${key}`, monotonicNow());
   while (cache.size > ITEM_CACHE_LIMIT) {
     const oldest = cache.keys().next().value!;
     cache.delete(oldest);
@@ -467,7 +469,7 @@ export function listGithubWorkItems(
     query.search.trim(),
   ]);
   const cached = githubLists.get(key);
-  if (!options?.force && cached && Date.now() - cached.at < INBOX_CACHE_FRESH_MS)
+  if (!options?.force && cached && elapsedSince(cached.at) < INBOX_CACHE_FRESH_MS)
     return Promise.resolve(cached.items);
   const pending = githubListsInflight.get(key);
   if (pending) return pending;
@@ -484,7 +486,7 @@ export function listGithubWorkItems(
     .then((items) => {
       if (generation === inboxCacheGeneration) {
         githubLists.delete(key);
-        githubLists.set(key, { items, at: Date.now() });
+        githubLists.set(key, { items, at: monotonicNow() });
         while (githubLists.size > 128) githubLists.delete(githubLists.keys().next().value!);
       }
       return items;
@@ -820,11 +822,11 @@ function keepPrRowAfterRefreshFailure(
 export function githubReviewDecisionLabel(decision: string): string {
   switch (decision.trim().toUpperCase()) {
     case "APPROVED":
-      return "Approved";
+      return t("Approved");
     case "CHANGES_REQUESTED":
-      return "Changes requested";
+      return t("Changes requested");
     case "REVIEW_REQUIRED":
-      return "Review required";
+      return t("Review required");
     default:
       return "";
   }
@@ -833,13 +835,13 @@ export function githubReviewDecisionLabel(decision: string): string {
 export function githubReviewStateLabel(state: string): string {
   switch (state.trim().toUpperCase()) {
     case "APPROVED":
-      return "Approved";
+      return t("Approved");
     case "CHANGES_REQUESTED":
-      return "Requested changes";
+      return t("Requested changes");
     case "DISMISSED":
-      return "Dismissed";
+      return t("Dismissed");
     case "COMMENTED":
-      return "Commented";
+      return t("Commented");
     default:
       return "";
   }
@@ -849,26 +851,26 @@ export function gitlabAttentionLabel(reason: string): string {
   const action = reason.trim().toLowerCase();
   switch (action) {
     case "assigned":
-      return "Assigned to you";
+      return t("Assigned to you");
     case "mentioned":
     case "directly_addressed":
-      return "Mentioned you";
+      return t("Mentioned you");
     case "review_requested":
-      return "Review requested";
+      return t("Review requested");
     case "review_submitted":
-      return "Review submitted";
+      return t("Review submitted");
     case "approval_required":
-      return "Approval required";
+      return t("Approval required");
     case "build_failed":
-      return "Pipeline failed";
+      return t("Pipeline failed");
     case "unmergeable":
-      return "Cannot be merged";
+      return t("Cannot be merged");
     case "merge_train_removed":
-      return "Removed from merge train";
+      return t("Removed from merge train");
     case "member_access_requested":
-      return "Access requested";
+      return t("Access requested");
     case "marked":
-      return "Added to your to-dos";
+      return t("Added to your to-dos");
     default:
       return action
         .split("_")

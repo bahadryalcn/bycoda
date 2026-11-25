@@ -87,9 +87,10 @@ export function SprintCatalog({
       ) : null}
       {failures.map((source) =>
         source.error ? (
-          <InlineError key={source.machine.environmentId}>
-            {source.machine.name}: {source.error}
-          </InlineError>
+          <InlineError
+            key={source.machine.environmentId}
+            details={`${source.machine.name}: ${source.error}`}
+          />
         ) : null,
       )}
       {/* The planning server's own read error shows here unless its catalog read already failed. */}
@@ -97,7 +98,7 @@ export function SprintCatalog({
       !failures.some(
         (source) => source.error && source.machine.environmentId === board.coordinatorEnvironmentId,
       ) ? (
-        <InlineError>{board.error}</InlineError>
+        <InlineError details={board.error} />
       ) : null}
     </>
   );

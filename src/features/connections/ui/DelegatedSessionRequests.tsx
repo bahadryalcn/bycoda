@@ -111,7 +111,7 @@ function SessionRequests({
               {remote.remoteHistoryHasMore ? (
                 <Button
                   variant="ghost"
-                  disabled={remote.remoteHistoryLoading}
+                  loading={remote.remoteHistoryLoading}
                   onClick={() =>
                     void Promise.resolve(remote.onLoadRemoteHistory?.()).catch(() => {})
                   }
@@ -120,7 +120,9 @@ function SessionRequests({
                 </Button>
               ) : null}
               {remote.remoteHistoryError ? (
-                <InlineError>{remote.remoteHistoryError}</InlineError>
+                <InlineError details={remote.remoteHistoryError}>
+                  {t("Could not load older messages.")}
+                </InlineError>
               ) : null}
               {approvals.map((block) => (
                 <ActivityRow

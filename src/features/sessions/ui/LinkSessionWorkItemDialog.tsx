@@ -37,7 +37,7 @@ export function LinkSessionWorkItemDialog({
     options: ComboboxOption[];
     failed?: boolean;
   }>();
-  const [error, setError] = useState("");
+  const [invalid, setInvalid] = useState(false);
   const formId = useId();
   const input = useRef<HTMLInputElement>(null);
   const query = draft.trim();
@@ -91,7 +91,7 @@ export function LinkSessionWorkItemDialog({
     event.preventDefault();
     const item = readLink();
     if (!item) {
-      setError(t("Enter a valid GitHub issue or pull request URL."));
+      setInvalid(true);
       return;
     }
     onSave(item);
@@ -132,8 +132,8 @@ export function LinkSessionWorkItemDialog({
           suggestCustomValue={(value) => Boolean(parseLink(value))}
           options={options}
           value={url}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? `${formId}-error` : undefined}
+          aria-invalid={invalid}
+          aria-describedby={invalid ? `${formId}-error` : undefined}
           placeholder={t("Search by title or number, or paste a URL")}
           emptyMessage={
             isUrl || !cwd || cwd === "~"
@@ -146,12 +146,12 @@ export function LinkSessionWorkItemDialog({
           }
           onInput={(event) => {
             setDraft(event.currentTarget.value);
-            if (error) setError("");
+            if (invalid) setInvalid(false);
           }}
           onValueChange={(value) => {
             setUrl(value);
             if (!value) setDraft("");
-            if (error) setError("");
+            if (invalid) setInvalid(false);
           }}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || isImeComposition(event.nativeEvent)) return;
@@ -160,9 +160,9 @@ export function LinkSessionWorkItemDialog({
             event.currentTarget.form?.requestSubmit();
           }}
         />
-        {error && (
+        {invalid && (
           <InlineMessage id={`${formId}-error`} tone="danger">
-            {error}
+            {t("Enter a valid GitHub issue or pull request URL.")}
           </InlineMessage>
         )}
       </Text>

@@ -135,7 +135,7 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
         </InlineMessage>
       ) : null}
 
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error}>{t("Could not read sequences.")}</InlineError> : null}
       {sequences === undefined && !error ? (
         <LoadingText delay={false} className="audience-muted">
           {t("Loading sequences…")}

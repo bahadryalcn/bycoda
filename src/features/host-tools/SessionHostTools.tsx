@@ -146,11 +146,11 @@ function ConversationHostTools({
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
   const toolMenuTrigger = useRef<HTMLButtonElement>(null);
   const toolLabels = {
-    devices: "Devices",
-    browser: "Host browser",
-    servers: "Development servers",
-    logs: "Logs",
-    resources: "Resource usage",
+    devices: t("Devices"),
+    browser: t("Host browser"),
+    servers: t("Development servers"),
+    logs: t("Logs"),
+    resources: t("Resource usage"),
   } as const;
   const toolIcons = {
     devices: AppWindow,
@@ -347,7 +347,6 @@ function ConversationHostTools({
           size="sm"
           startIcon={<RefreshCw className="icon-sm" aria-hidden />}
           loading={machinesLoading}
-          disabled={machinesLoading}
           onClick={() => setMachinesRefresh((value) => value + 1)}
         >
           {machinesError && !machinesShownCentrally ? t("Retry") : t("Refresh machines")}
@@ -402,13 +401,13 @@ function ConversationHostTools({
                     <Tab
                       key={id}
                       value={id}
-                      aria-label={t(toolLabels[id])}
-                      tooltip={t(toolLabels[id])}
+                      aria-label={toolLabels[id]}
+                      tooltip={toolLabels[id]}
                       tooltipWhen="overflow"
                       icon={<Icon className="icon-sm" aria-hidden />}
                       className="host-tools-nav-tab"
                     >
-                      {t(toolLabels[id])}
+                      {toolLabels[id]}
                     </Tab>
                   );
                 })}
@@ -452,7 +451,7 @@ function ConversationHostTools({
                   truncate
                   className="host-tools-nav-label"
                 >
-                  {t(toolLabels[tab])}
+                  {toolLabels[tab]}
                 </Text>
               </Button>
               {toolMenuOpen ? (
@@ -472,7 +471,7 @@ function ConversationHostTools({
                     return {
                       kind: "item" as const,
                       id,
-                      label: t(toolLabels[id]),
+                      label: toolLabels[id],
                       icon: <Icon className="icon-sm" aria-hidden />,
                       checked: id === tab,
                       selectionRole: "radio" as const,
@@ -608,7 +607,7 @@ function ConversationHostTools({
           id={`${panelId}-panel`}
           role="tabpanel"
           aria-labelledby={onlyTab ? undefined : `${panelId}-tab-${tab}`}
-          aria-label={onlyTab ? t(toolLabels[tab]) : undefined}
+          aria-label={onlyTab ? toolLabels[tab] : undefined}
           className={`host-tools-content host-tools-content-${tab}`}
           tabIndex={0}
         >

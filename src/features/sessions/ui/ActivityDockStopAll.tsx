@@ -74,7 +74,7 @@ export function DockStopAll({
         tooltip={failed ? t("Could not stop it. Try again.") : control.title}
         startIcon={<OctagonX className="icon-xs" strokeWidth={1.75} />}
         reserveLabels={[t("Stop all"), control.confirmLabel, t("Stopping…"), t("Retry stop")]}
-        disabled={stopping}
+        loading={stopping}
         onBlur={() => setArmed(false)}
         onClick={press}
       >

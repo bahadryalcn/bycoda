@@ -630,7 +630,10 @@ it("names the machine being worked on in connection progress", async () => {
   machines = [machine];
   await render();
   await pick("Home Mac", "Reconnect");
-  expect(container.querySelector('[role="status"]')!.textContent).toContain("Home Mac");
+  // The progress card names the machine; its live line carries the step.
+  expect(container.querySelector('[role="status"]')!.parentElement!.textContent).toContain(
+    "Home Mac",
+  );
 });
 
 it("keeps the open draft when the manual disclosure is clicked while closed views change", async () => {
@@ -648,7 +651,7 @@ it("keeps the open draft when the manual disclosure is clicked while closed view
 
 it("disables adding a machine while a setup is in progress, with Stop as the way out", async () => {
   await start();
-  expect(button("Add a computer").disabled).toBe(true);
+  expect(button("Add a computer").getAttribute("aria-disabled")).toBe("true");
   await act(async () => button("Stop").click());
   expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
   state = { ...state, done: true, error: "Connection cancelled" };

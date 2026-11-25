@@ -89,6 +89,9 @@ export function DeviceSetupPanel({
           label={t("Refresh status")}
           loading={refresh.loading}
           disabled={refresh.disabled}
+          disabledReason={t(
+            "Wait for the current device action to finish, or set up the device first.",
+          )}
           onClick={refresh.onClick}
         >
           <RefreshCw className="icon-sm" aria-hidden />
@@ -137,28 +140,44 @@ export function DeviceSetupPanel({
         />
       ) : null}
       <div className="host-tool-actions device-panel-setup-actions">
-        <Button disabled={setup.disabled} loading={setup.loading} onClick={setup.onClick}>
-          <Download className="icon-sm" aria-hidden />
+        <Button
+          disabled={setup.disabled}
+          disabledReason={t(
+            "Wait for the current device action to finish, or set up the device first.",
+          )}
+          loading={setup.loading}
+          loadingLabel={status.installed ? t("Updating…") : t("Setting up…")}
+          startIcon={<Download className="icon-sm" aria-hidden />}
+          onClick={setup.onClick}
+        >
           {status.installed ? t("Update setup") : t("Set up device tools")}
         </Button>
         {status.running ? (
           <Button
             variant="ghost"
             disabled={stop.disabled}
+            disabledReason={t(
+              "Wait for the current device action to finish, or set up the device first.",
+            )}
             loading={stop.loading}
+            loadingLabel={t("Stopping…")}
+            startIcon={<Square className="icon-sm" aria-hidden />}
             onClick={stop.onClick}
           >
-            <Square className="icon-sm" aria-hidden />
             {t("Stop device host")}
           </Button>
         ) : (
           <Button
             variant="primary"
             disabled={start.disabled}
+            disabledReason={t(
+              "Wait for the current device action to finish, or set up the device first.",
+            )}
             loading={start.loading}
+            loadingLabel={t("Starting…")}
+            startIcon={<Play className="icon-sm" aria-hidden />}
             onClick={start.onClick}
           >
-            <Play className="icon-sm" aria-hidden />
             {t("Start device host")}
           </Button>
         )}

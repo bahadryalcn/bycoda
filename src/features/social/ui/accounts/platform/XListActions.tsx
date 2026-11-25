@@ -139,7 +139,11 @@ export function XListActions({ account, client, disabled }: Props) {
                 <span className="social-x-actions">
                   {list.private ? (
                     <Tooltip label={t("Private")}>
-                      <Lock className="icon-sm" tone="muted" aria-label={t("Private")} />
+                      <Lock
+                        className="icon-sm"
+                        tone="muted"
+                        aria-label={t("This list is private.")}
+                      />
                     </Tooltip>
                   ) : null}
                   {list.memberCount !== undefined ? (
@@ -174,6 +178,13 @@ export function XListActions({ account, client, disabled }: Props) {
                     size="sm"
                     variant="primary"
                     disabled={busy || !renaming.name.trim() || renaming.name.trim() === list.name}
+                    disabledReason={
+                      busy
+                        ? t("Wait for the current change to finish.")
+                        : !renaming.name.trim()
+                          ? t("Enter a list name first.")
+                          : t("Enter a different name first.")
+                    }
                     onClick={() => void rename(list, renaming.name.trim()).catch(() => undefined)}
                   >
                     {t("Review")}
@@ -255,6 +266,11 @@ export function XListActions({ account, client, disabled }: Props) {
                       size="sm"
                       variant="secondary"
                       disabled={busy || !isXResourceId(userId.trim())}
+                      disabledReason={
+                        busy
+                          ? t("Wait for the current change to finish.")
+                          : t("Enter a valid X user ID first.")
+                      }
                       onClick={() => void addMember(list).catch(() => undefined)}
                     >
                       {t("Add list member")}
@@ -283,8 +299,10 @@ export function XListActions({ account, client, disabled }: Props) {
           {t("Create list")}
         </Button>
       </div>
-      {read.error ? <InlineError details={read.details}>{read.error}</InlineError> : null}
-      {x.error ? <InlineError details={x.details}>{x.error}</InlineError> : null}
+      {read.failureTitle ? (
+        <InlineError details={read.details}>{read.failureTitle}</InlineError>
+      ) : null}
+      {x.failureTitle ? <InlineError details={x.details}>{x.failureTitle}</InlineError> : null}
       {x.notice ? (
         <Text as="p" size="caption" tone="muted">
           {x.notice}

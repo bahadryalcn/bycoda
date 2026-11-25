@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { validWorkerContextSettings } from "../../../shared/model/assistantContext";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { invoke } from "@tauri-apps/api/core";
@@ -80,12 +80,13 @@ type Project = { id?: string; path: string; name: string };
 type SettingsPage = "personal" | "work" | "access" | "advanced";
 type SectionSave = MutableRefObject<(() => Promise<void>) | null>;
 
-const pages = [
-  ["personal", "Personal", UserRound],
-  ["work", "Work", Briefcase],
-  ["access", "Access", Shield],
-  ["advanced", "Advanced", SlidersHorizontal],
-] as const;
+const pages = () =>
+  [
+    ["personal", t("Personal"), UserRound],
+    ["work", t("Work"), Briefcase],
+    ["access", t("Access"), Shield],
+    ["advanced", t("Advanced"), SlidersHorizontal],
+  ] as const;
 
 function permissionLevelLabel(level: NonNullable<AssistantProfilePatch["permissionLevel"]>) {
   if (level === "ask") return t("Ask for each operation");
@@ -116,10 +117,12 @@ function RefreshButton({
   onClick,
   loading,
   disabled,
+  disabledReason,
 }: {
   onClick: () => void;
   loading?: boolean;
   disabled?: boolean;
+  disabledReason?: string;
 }) {
   return (
     <Button
@@ -131,6 +134,7 @@ function RefreshButton({
       startIcon={<RefreshCw className="icon-sm" />}
       loading={loading}
       disabled={disabled}
+      disabledReason={disabledReason}
       onClick={onClick}
     />
   );
@@ -213,7 +217,7 @@ export function AssistantSettings({
   const [retention, setRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [savedRetention, setSavedRetention] = useState(snapshot.conversationRetentionDays ?? 0);
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [customAccessOpen, setCustomAccessOpen] = useState(false);
@@ -277,7 +281,7 @@ export function AssistantSettings({
     const execution =
       draft.execution ?? defaultWorker(next === "full" ? "full-access" : "supervised");
     if (!execution) {
-      setError(t("Choose a worker model before enabling job execution."));
+      setProblem({ message: t("Choose a worker model before enabling job execution.") });
       return;
     }
     setDraft((current) => ({
@@ -290,7 +294,7 @@ export function AssistantSettings({
     // The preset also replaces the native grant on Save: full grants everything, ask drops it.
     consentChanged.current = true;
     setConsentDirty(true);
-    setError("");
+    setProblem(null);
     setSavedNotice(false);
   }
   function requestLeave(leave: () => void) {
@@ -303,7 +307,7 @@ export function AssistantSettings({
     setRetention(savedRetention);
     consentChanged.current = false;
     setConsentDirty(false);
-    setError("");
+    setProblem(null);
     setSavedNotice(false);
     setFormKey((current) => current + 1);
   }
@@ -373,7 +377,7 @@ export function AssistantSettings({
   /** True only after every dirty section was acknowledged; the first failure keeps the draft. */
   async function save(): Promise<boolean> {
     if (busy) return false;
-    setError("");
+    setProblem(null);
     if (profileDirty && !validWorkerContextSettings(draft)) {
       setPage("advanced");
       return false;
@@ -397,7 +401,7 @@ export function AssistantSettings({
         setPage("access");
         setCustomAccessOpen(true);
       }
-      if (!shownInline) setError(presentRemoteError(cause, { explicit: true }));
+      if (!shownInline) setProblem(describeRemoteError(cause));
       return false;
     } finally {
       setPending(false);
@@ -502,9 +506,9 @@ export function AssistantSettings({
             {...surfaceAttributes({ frame: "pane", edge: "block-end" }, settingsStyles.navigation)}
           >
             <TabList className={settingsStyles.tabs} label={t("Assistant settings")}>
-              {pages.map(([value, label, Icon]) => (
+              {pages().map(([value, label, Icon]) => (
                 <Tab key={value} value={value} icon={<Icon className="icon-sm" aria-hidden />}>
-                  {t(label)}
+                  {label}
                 </Tab>
               ))}
             </TabList>
@@ -605,7 +609,7 @@ export function AssistantSettings({
                     <AssistantStandingConsentFields
                       value={draft}
                       projects={projects}
-                      disabled={busy}
+                      pending={busy}
                       onChange={(patch) => {
                         consentChanged.current = true;
                         setConsentDirty(true);
@@ -623,6 +627,11 @@ export function AssistantSettings({
                           type="button"
                           variant="ghost"
                           disabled={busy || nativeConsent.state === "loading"}
+                          disabledReason={
+                            nativeConsent.state === "loading"
+                              ? t("Wait for the computer access check to finish.")
+                              : undefined
+                          }
                           onClick={() => {
                             consentChanged.current = true;
                             setConsentDirty(true);
@@ -725,6 +734,7 @@ export function AssistantSettings({
                         onClick={() => void manual.refresh()}
                         loading={manual.pending === "list"}
                         disabled={!!manual.pending || manual.stopping}
+                        disabledReason={t("Wait for the current action to finish.")}
                       />
                     }
                   >
@@ -803,7 +813,7 @@ export function AssistantSettings({
               </Button>
             }
           >
-            {error && <InlineError>{error}</InlineError>}
+            {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
           </SettingsSaveBar>
         </footer>
       </form>

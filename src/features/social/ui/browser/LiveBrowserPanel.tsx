@@ -67,11 +67,10 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
     if (await send({ type: "type", text })) setText("");
   };
 
-  const message: Record<LiveBrowserViewStatus, string> = {
+  const message: Record<Exclude<LiveBrowserViewStatus, "error">, string> = {
     connecting: t("Connecting to the browser window…"),
     live: t("Live. Click the page to interact."),
     waiting: t("Waiting for the browser window to start."),
-    error: t("The live view is unavailable."),
   };
 
   return (
@@ -84,7 +83,7 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
       </header>
       {status === "error" ? (
         <InlineError details={details} retry={{ onRetry: retry }}>
-          {message.error}
+          {t("The live view is unavailable.")}
         </InlineError>
       ) : status !== "live" ? (
         <Text as="p" tone="secondary">
@@ -113,7 +112,7 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
           onChange={(event) => setText(event.target.value)}
         />
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" size="sm" disabled={busy || text.length === 0}>
+          <Button type="submit" size="sm" disabled={busy || !text.length}>
             {t("Type into the page")}
           </Button>
           <Button

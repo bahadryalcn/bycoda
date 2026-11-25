@@ -158,12 +158,7 @@ export function WorkspaceDirectoryRemoval({
             {t("Cancel")}
           </Button>
           {!closeFirst && (
-            <Button
-              variant="secondary"
-              loading={pending === "plan"}
-              disabled={!!pending && pending !== "plan"}
-              onClick={() => void preview()}
-            >
+            <Button variant="secondary" loading={pending === "plan"} onClick={() => void preview()}>
               {t("Refresh preview")}
             </Button>
           )}
@@ -171,6 +166,7 @@ export function WorkspaceDirectoryRemoval({
             variant="primary"
             tone="danger"
             disabled={!!plan?.blockers.length}
+            disabledReason={t("Resolve the listed blockers first.")}
             onClick={remove}
           >
             {missingRecord ? t("Remove record") : t("Delete directory")}
@@ -192,7 +188,11 @@ export function WorkspaceDirectoryRemoval({
           {plan?.path ?? workspace.path}
         </Text>
         {pending === "plan" && <LoadingText>{t("Checking directory…")}</LoadingText>}
-        {error && <InlineError className="break-words">{error}</InlineError>}
+        {error && (
+          <InlineError className="break-words" details={error}>
+            {t("Could not check the directory.")}
+          </InlineError>
+        )}
         {plan && (
           <>
             {plan.head && (

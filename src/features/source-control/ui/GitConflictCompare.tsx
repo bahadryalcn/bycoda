@@ -3,7 +3,7 @@ import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconn
 import { FailureState } from "../../../shared/ui/FailureState";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
@@ -128,7 +128,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
             <FailureState
               context="panel"
               title={t("Couldn’t load the versions")}
-              description={load.message}
+              error={load.message}
               onRetry={() => setRetry((value) => value + 1)}
             />
           </div>
@@ -136,15 +136,14 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       ) : (
         <>
           {notes.length > 0 ? (
-            <Text
-              role="status"
-              as="p"
-              size="caption"
-              tone="secondary"
+            <InlineMessage
+              tone="info"
+              live="polite"
+              text={{ size: "caption" }}
               {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-4 py-1.5")}
             >
               {notes.join(" ")}
-            </Text>
+            </InlineMessage>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col">
             {load.stages.images && selected && !selected.unavailable ? (

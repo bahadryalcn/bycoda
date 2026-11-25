@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Badge } from "../../../shared/ui/Badge";
 import { refreshSshRunbookQueue, useSshRunbookQueue } from "../model/sshRunbookQueue";
 import {
@@ -99,8 +100,14 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                     ? undefined
                     : { label: t("Retry"), onClick: () => void operation(refreshSshRunbookQueue) }
                 }
+                extra={
+                  <ErrorDetails
+                    title={t("Could not update the SSH review queue.")}
+                    detail={error || queue.error}
+                  />
+                }
               >
-                {error || queue.error}
+                {t("Could not update the SSH review queue.")}
               </Alert>
             ) : null}
             {review?.runId ? (
@@ -121,7 +128,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                 )}
               >
                 <span className="min-w-0 break-all">
-                  {t(intent.trigger === "startup" ? "Startup" : "Scheduled")} ·{" "}
+                  {intent.trigger === "startup" ? t("Startup") : t("Scheduled")} ·{" "}
                   {names[intent.automationId] ?? intent.automationId} · r{intent.revision}
                 </span>
                 <div className="flex gap-2">

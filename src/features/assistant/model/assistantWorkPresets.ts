@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../shared/model/host-contracts/assistant";
 
 /** One answer to "how freely may the assistant work?". Each preset sets the five job controls
@@ -32,24 +33,31 @@ export const ASSISTANT_WORK_PRESETS: Record<AssistantWorkPreset, PresetValues> =
   },
 };
 
-/** English i18n keys: label and one-line description per preset. */
-export const ASSISTANT_WORK_PRESET_TEXT: Record<
-  AssistantWorkPreset,
-  { label: string; description: string }
-> = {
-  watch: {
-    label: "Only watch",
-    description: "Talks with you and reports what happens. Starts no jobs.",
-  },
-  ask: {
-    label: "Work and ask",
-    description: "Runs jobs you assign. Asks before commands, file changes and big plans.",
-  },
-  free: {
-    label: "Work freely",
-    description: "Runs jobs without asking. Commands and file changes run without confirmation.",
-  },
-};
+/** The translated label and one-line description of a preset; call it while rendering. */
+export function assistantWorkPresetText(name: AssistantWorkPreset): {
+  label: string;
+  description: string;
+} {
+  switch (name) {
+    case "watch":
+      return {
+        label: t("Only watch"),
+        description: t("Talks with you and reports what happens. Starts no jobs."),
+      };
+    case "ask":
+      return {
+        label: t("Work and ask"),
+        description: t("Runs jobs you assign. Asks before commands, file changes and big plans."),
+      };
+    case "free":
+      return {
+        label: t("Work freely"),
+        description: t(
+          "Runs jobs without asking. Commands and file changes run without confirmation.",
+        ),
+      };
+  }
+}
 
 /** The preset the profile matches exactly, or "custom". A profile without a worker model
  * matches by its job controls alone, since there is no permission to compare. */

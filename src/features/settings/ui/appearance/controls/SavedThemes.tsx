@@ -24,6 +24,7 @@ import {
   renameTheme,
 } from "./savedThemeActions";
 import { ThemeNameDialog } from "./ThemeNameDialog";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { errorText } from "../../../../../shared/lib/errors";
 import "./ThemeControls.css";
 import { writeGeneratorValue } from "./themeGeneratorSession";
@@ -93,7 +94,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
   const { images } = useBackgroundLibrary();
   const { confirm, dialog } = useConfirm();
   const [renaming, setRenaming] = useState<SavedTheme | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; detail?: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const apply = async (theme: SavedTheme) => {
@@ -104,11 +105,13 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
       const outcome = await applySavedTheme(appearance, theme);
       writeGeneratorValue("selectedLookName", theme.name, "");
       if (outcome === "image-missing")
-        setNotice(
-          t("This theme's image is no longer in the library. The rest of the look was applied."),
-        );
+        setNotice({
+          text: t(
+            "This theme's image is no longer in the library. The rest of the look was applied.",
+          ),
+        });
     } catch (error) {
-      setNotice(errorText(error));
+      setNotice({ text: t("Could not apply the theme."), detail: errorText(error) });
     } finally {
       setBusy(false);
     }
@@ -172,6 +175,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                 variant="item"
                 className="theme-saved-apply"
                 disabled={busy || appearance.chatBackgroundBusy}
+                disabledReason={t("Wait for the current operation to finish")}
                 onClick={() => {
                   apply(theme).catch((error: unknown) => console.error(error));
                 }}
@@ -223,8 +227,14 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
         })}
       </ul>
       {notice ? (
-        <SettingsFeedback state="warning" onDismiss={() => setNotice(null)}>
-          {notice}
+        <SettingsFeedback
+          state="warning"
+          onDismiss={() => setNotice(null)}
+          extra={
+            notice.detail ? <ErrorDetails title={notice.text} detail={notice.detail} /> : undefined
+          }
+        >
+          {notice.text}
         </SettingsFeedback>
       ) : null}
       {renaming ? (

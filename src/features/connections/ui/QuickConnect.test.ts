@@ -148,7 +148,15 @@ it.each(["cancelled", "error", "accepted"])(
       outcome === "error" ? fail(new Error("Tab admission failed")) : complete(outcome),
     );
     expect(close).toHaveBeenCalledTimes(outcome === "accepted" ? 1 : 0);
-    if (outcome === "error") expect(document.body.textContent).toContain("Tab admission failed");
+    if (outcome === "error") {
+      expect(document.body.textContent).toContain("Couldn’t open this SSH connection.");
+      await act(async () =>
+        [...document.querySelectorAll("button")]
+          .find((button) => button.textContent === "Details")!
+          .click(),
+      );
+      expect(document.body.textContent).toContain("Tab admission failed");
+    }
     await act(async () => root.render(null));
     await act(async () => render());
     expect(

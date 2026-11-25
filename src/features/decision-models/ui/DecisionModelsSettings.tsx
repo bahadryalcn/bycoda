@@ -272,6 +272,7 @@ export function DecisionModelsSettings({
                   disabled={
                     testingAll || sources?.some((source) => model.isPending(`test:${source.id}`))
                   }
+                  disabledReason={t("Wait for the current test to finish.")}
                   onClick={() => void runTestAll().catch((error: unknown) => setTopError(error))}
                 >
                   {t("Test all")}

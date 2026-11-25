@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useState } from "react";
 import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -34,7 +35,9 @@ export function TikTokDirectMessage({
 }) {
   const t = useT();
   const confirm = useConfirm();
-  const { write, is, error, details } = useAccountWrite(t("Could not prepare the TikTok message."));
+  const { write, is, failureTitle, details } = useAccountWrite(
+    t("Could not prepare the TikTok message."),
+  );
   const [project, setProject] = useState("");
   const [username, setUsername] = useState("");
   const [message, setMessage] = useState("");
@@ -207,6 +210,13 @@ export function TikTokDirectMessage({
               type="submit"
               variant="secondary"
               disabled={disabled || busy || !valid}
+              disabledReason={
+                disabled || busy
+                  ? accountBlockedReason(disabled)
+                  : !projectId
+                    ? t("Choose a project first.")
+                    : t("Fill in the fields above.")
+              }
               loading={is("draft")}
             >
               {t("Prepare message")}
@@ -217,6 +227,7 @@ export function TikTokDirectMessage({
               size="sm"
               variant="primary"
               disabled={disabled || busy}
+              disabledReason={accountBlockedReason(disabled)}
               loading={is("send")}
               onClick={() => send().catch(() => undefined)}
             >
@@ -233,6 +244,7 @@ export function TikTokDirectMessage({
               size="sm"
               variant="secondary"
               disabled={disabled || busy}
+              disabledReason={accountBlockedReason(disabled)}
               loading={is("check")}
               onClick={() => check().catch(() => undefined)}
             >
@@ -261,6 +273,7 @@ export function TikTokDirectMessage({
           variant="secondary"
           className="self-start"
           disabled={disabled || busy}
+          disabledReason={accountBlockedReason(disabled)}
           onClick={() => {
             setMessage("");
             edit();
@@ -269,7 +282,7 @@ export function TikTokDirectMessage({
           {t("New message")}
         </Button>
       )}
-      {error && <InlineError details={details}>{error}</InlineError>}
+      {failureTitle && <InlineError details={details}>{failureTitle}</InlineError>}
       {confirm.dialog}
     </div>
   );

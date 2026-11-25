@@ -68,7 +68,11 @@ it("previews current canonical target without launching, then connects/removes o
         }),
       ),
     );
-    expect([...container.querySelectorAll("button")].every((button) => button.disabled)).toBe(true);
+    expect(
+      [...container.querySelectorAll("button")].every(
+        (button) => button.disabled || button.getAttribute("aria-disabled") === "true",
+      ),
+    ).toBe(true);
     expect(onConnect).toHaveBeenCalledTimes(1);
   } finally {
     act(() => root.unmount());

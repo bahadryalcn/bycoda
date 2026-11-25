@@ -37,7 +37,7 @@ export function CommandInput({ text, busy, onChange, onSubmit }: CommandInputPro
             size="sm"
             startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />}
             loading={busy}
-            disabled={empty}
+            disabled={!text.trim()}
           >
             {t("Plan")}
           </Button>

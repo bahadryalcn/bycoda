@@ -299,10 +299,10 @@ it("suggests the project's package.json scripts instead of generic examples", as
     expect(document.body.textContent).toContain("Scripts from package.json");
     expect(texts).toEqual(expect.arrayContaining(["dev", "test", "build", "lint"]));
     expect(
-      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-        (item) => item.textContent === "lint",
-      )!.disabled,
-    ).toBe(true);
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((item) => item.textContent === "lint")!
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
     expect(texts).not.toContain("Dev server");
     await act(async () =>
       [...document.querySelectorAll<HTMLButtonElement>("button")]

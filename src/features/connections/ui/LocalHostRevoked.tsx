@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { reconnectLocalHost } from "../model/localHostService";
 import type { RemoteMachine } from "../model/protocol";
@@ -45,7 +46,13 @@ export function LocalHostRevokedFeedback({
       state="error"
       action={{ label: t("Reconnect"), onClick: () => void reconnect(), pending }}
     >
-      {[t("This computer's connection to its Host was revoked."), error].filter(Boolean).join(" ")}
+      {t("This computer's connection to its Host was revoked.")}
+      {error ? (
+        <>
+          {" "}
+          <ErrorDetails title={t("Could not reconnect to this computer's Host.")} detail={error} />
+        </>
+      ) : null}
     </SettingsFeedback>
   );
 }
@@ -59,8 +66,15 @@ export function LocalHostRevokedNotice({ machine }: { machine: RemoteMachine }) 
       tone="warning"
       title={t("This computer's connection to its Host was revoked.")}
       action={{ label: t("Reconnect"), onClick: () => void reconnect(), pending }}
+      extra={
+        error ? (
+          <ErrorDetails title={t("Could not reconnect to this computer's Host.")} detail={error} />
+        ) : undefined
+      }
     >
-      {error ?? t("Tasks, sessions and sync on this computer are unavailable until you reconnect.")}
+      {error
+        ? t("Could not reconnect to this computer's Host.")
+        : t("Tasks, sessions and sync on this computer are unavailable until you reconnect.")}
     </Alert>
   );
 }

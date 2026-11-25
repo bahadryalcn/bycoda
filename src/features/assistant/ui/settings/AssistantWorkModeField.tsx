@@ -5,7 +5,7 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { RadioGroup } from "../../../../shared/ui/RadioGroup";
 import {
   ASSISTANT_WORK_PRESETS,
-  ASSISTANT_WORK_PRESET_TEXT,
+  assistantWorkPresetText,
   applyAssistantWorkPreset,
   assistantWorkPreset,
   type AssistantWorkPreset,
@@ -30,7 +30,7 @@ export function AssistantWorkModeField({
 }) {
   const rows = useProfileRows();
   const defaultWorker = useDefaultWorkerExecution();
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState("");
   const current = assistantWorkPreset(value);
   function choose(name: string) {
     if (!PRESETS.includes(name as AssistantWorkPreset)) return;
@@ -40,12 +40,12 @@ export function AssistantWorkModeField({
     if (mode.autonomy !== "report" && !value.execution) {
       const execution = defaultWorker(mode.runtimeMode);
       if (!execution) {
-        setError(t("Choose a worker model before enabling job execution."));
+        setProblem(t("Choose a worker model before enabling job execution."));
         return;
       }
       patch.execution = execution;
     }
-    setError("");
+    setProblem("");
     onChange(patch);
   }
   const showCustom = current === "custom";
@@ -62,8 +62,8 @@ export function AssistantWorkModeField({
         options={[
           ...PRESETS.map((name) => ({
             value: name,
-            label: t(ASSISTANT_WORK_PRESET_TEXT[name].label),
-            description: t(ASSISTANT_WORK_PRESET_TEXT[name].description),
+            label: assistantWorkPresetText(name).label,
+            description: assistantWorkPresetText(name).description,
           })),
           ...(showCustom
             ? [
@@ -76,7 +76,7 @@ export function AssistantWorkModeField({
             : []),
         ]}
       />
-      {error && <InlineError>{error}</InlineError>}
+      {problem && <InlineError>{problem}</InlineError>}
     </>
   );
   if (rows)

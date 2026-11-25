@@ -6,15 +6,22 @@ export function FailureAlert({
   title,
   detail,
   tone = "danger",
+  action,
+  className,
 }: {
   title: string;
-  detail: string;
+  detail: string | undefined;
   tone?: AlertTone;
+  /** One recovery link after the copy, such as Retry. */
+  action?: { label: string; onClick: () => void; disabled?: boolean; pending?: boolean };
+  className?: string;
 }) {
   return (
     <Alert
       tone={tone}
       title={title}
+      className={className}
+      action={action}
       extra={
         detail && detail !== title ? <ErrorDetails title={title} detail={detail} /> : undefined
       }

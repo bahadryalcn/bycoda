@@ -289,7 +289,7 @@ export function GitHistoryGraph({
         <EmptyState size="inline" kind="empty" inset="row" description={t("No project folder")} />
       ) : commits.length === 0 ? (
         loading ? (
-          <GitLoading text="Loading commit graph…" />
+          <GitLoading text={t("Loading commit graph…")} />
         ) : error || failure ? undefined : ( // The failure notice above the list already explains it; no second failure state here.
           <EmptyState size="inline" kind="empty" inset="row" description={t("No commits yet")} />
         )
@@ -356,7 +356,7 @@ export function GitHistoryGraph({
       width={264}
       header={
         <Text as="div" size="caption" tone="secondary" className="px-2 py-1.5">
-          <Code className="mr-2">{menu.commit.shortSha}</Code>
+          <Code className="me-2">{menu.commit.shortSha}</Code>
           <Text as="span" size="inherit" tone="primary" truncate className="block">
             {menu.commit.subject}
           </Text>
@@ -492,7 +492,7 @@ export function GitHistoryGraph({
             </>
           }
         >
-          <Suspense fallback={<GitLoading text="Loading commit graph…" />}>
+          <Suspense fallback={<GitLoading text={t("Loading commit graph…")} />}>
             <GitGraphWorkspace
               key={`${cwd}:${resolutionReset}`}
               cwd={cwd}

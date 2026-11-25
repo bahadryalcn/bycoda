@@ -509,7 +509,7 @@ function ScopedRuntimeLogsPanel({
       if (alive.current)
         setNotice(t("Logs added to conversation draft. Review and send when ready."));
     } catch (cause) {
-      if (alive.current) setActionError(t(errorText(cause)));
+      if (alive.current) setActionError(errorText(cause));
     } finally {
       inspectingRef.current = false;
       if (alive.current) setInspecting(false);
@@ -905,6 +905,7 @@ function ScopedRuntimeLogsPanel({
                       ? t("Wait for the current monitor action")
                       : t("Enter a port or URL")
                   }
+                  iconOnly
                   loading={monitorOperation?.method === "start"}
                   label={t("Open website and capture logs")}
                 >
@@ -917,6 +918,7 @@ function ScopedRuntimeLogsPanel({
                   type="button"
                   disabled={monitorBusy}
                   disabledReason={t("Wait for the current monitor action")}
+                  iconOnly
                   loading={monitorOperation?.method === "list"}
                   onClick={() => void monitorAction("list")}
                   label={t("Load monitors")}
@@ -960,6 +962,7 @@ function ScopedRuntimeLogsPanel({
                       type="button"
                       disabled={monitorBusy}
                       disabledReason={t("Wait for the current monitor action")}
+                      iconOnly
                       loading={
                         monitorOperation?.method === "stop" && monitorOperation.id === monitor.id
                       }

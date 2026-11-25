@@ -13,9 +13,9 @@ export function crewUsageText(usage: CrewUsage): string {
   if (usage.durationMs !== undefined) parts.push(formatDuration(usage.durationMs));
   if (usage.tokens !== undefined)
     parts.push(
-      t(usage.tokensExact ? "{p0} tokens" : "At least {p0} tokens", {
-        p0: formatUsageTokens(usage.tokens),
-      }),
+      usage.tokensExact
+        ? t("{p0} tokens", { p0: formatUsageTokens(usage.tokens) })
+        : t("At least {p0} tokens", { p0: formatUsageTokens(usage.tokens) }),
     );
   if (usage.costUsd !== undefined)
     parts.push(formatNumber(usage.costUsd, { style: "currency", currency: "USD" }));

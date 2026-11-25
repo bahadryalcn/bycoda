@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { openFeedbackDialog } from "../../account";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import {
@@ -366,13 +367,11 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                 p0: snapshot.progress,
               })
             : t("Downloading… The app restarts after installation.")
-          : snapshot.phase === "checking"
-            ? t("Checking for updates…")
-            : snapshot.phase === "current"
-              ? t("You're on the latest version.")
-              : snapshot.phase === "error"
-                ? (snapshot.error ?? t("Update check failed."))
-                : null;
+          : snapshot.phase === "current"
+            ? t("You're on the latest version.")
+            : snapshot.phase === "error"
+              ? t("Update check failed.")
+              : null;
 
   return (
     <>
@@ -406,7 +405,8 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                 {t("Could not read update information.")}
               </SettingsFeedback>
             ) : null}
-            {snapshot.phase !== "idle" || updatesEnabled === false ? (
+            {(snapshot.phase !== "idle" && snapshot.phase !== "checking") ||
+            updatesEnabled === false ? (
               <SettingsFeedback
                 state={
                   snapshot.phase === "error"
@@ -416,6 +416,11 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                       : snapshot.phase === "current"
                         ? "success"
                         : "loading"
+                }
+                extra={
+                  snapshot.phase === "error" && updatesEnabled !== false && snapshot.error ? (
+                    <ErrorDetails title={t("Update check failed.")} detail={snapshot.error} />
+                  ) : undefined
                 }
               >
                 {status}
@@ -437,6 +442,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
           startIcon={<Sparkles strokeWidth={1.75} aria-hidden />}
           onClick={() => onOpenWhatsNew(snapshot.currentVersion)}
           disabled={snapshot.currentVersion === "…"}
+          disabledReason={t("Wait for the version to load.")}
         >
           {t("What's new")}
         </Button>
@@ -448,7 +454,15 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
             disabled={
               busy || metadataError || snapshot.currentVersion === "…" || updatesEnabled !== true
             }
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : metadataError
+                  ? t("Could not read update information.")
+                  : t("Wait for the version to load.")
+            }
             loading={busy}
+            loadingLabel={snapshot.phase === "checking" ? t("Checking for updates…") : undefined}
             startIcon={
               hasUpdate ? (
                 <ArrowDownCircle strokeWidth={1.75} aria-hidden />

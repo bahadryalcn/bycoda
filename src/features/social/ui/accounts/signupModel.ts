@@ -190,6 +190,15 @@ export function signupStepLabel(step: NonNullable<SocialBrowserWorkflow["registr
   }
 }
 
+/**
+ * A signup sentence the Host sent. The Host words these as fixed catalog sentences, so the lookup
+ * key is the received text; one that is not in the catalog shows as the Host wrote it.
+ */
+export function signupMessageText(message: string): string {
+  // oxlint-disable-next-line bycoda/literal-translation-key -- The Host sends fixed catalog sentences; the key is the received text.
+  return t(message);
+}
+
 /** A short problem for states the owner cannot advance from; undefined while work can go on. */
 export function signupProblem(workflow: SocialBrowserWorkflow): string | undefined {
   if (workflow.status === "expired") return t("The signup window expired. Start again.");
@@ -201,7 +210,9 @@ export function signupProblem(workflow: SocialBrowserWorkflow): string | undefin
     workflow.status === "awaiting_owner" &&
     (registration?.step === "rate_limit" || registration?.step === "network_blocked")
   )
-    return registration.message ? t(registration.message) : signupStepLabel(registration.step);
+    return registration.message
+      ? signupMessageText(registration.message)
+      : signupStepLabel(registration.step);
   if (registration?.status === "unsupported")
     return t("This signup step is not recognized. Finish it in the platform window.");
   if (registration?.status === "changed")

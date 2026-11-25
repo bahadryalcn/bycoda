@@ -120,7 +120,7 @@ export function YouTubeManage({
       [section]: { ...current[section], ...values },
     }));
   const setField = (key: string, value: string | File[]) => mergeDraft({ [key]: value });
-  const { write, error, details, is, setError } = useAccountWrite(
+  const { write, failureTitle, details, is, setError } = useAccountWrite(
     t("The YouTube operation failed."),
   );
   const confirmation = useConfirm();
@@ -459,12 +459,21 @@ export function YouTubeManage({
               {t("Pick an item in the list above, or enter its ID.")}
             </Text>
           ) : null}
-          {error ? <InlineError details={details}>{error}</InlineError> : null}
+          {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
           <div className="youtube-actions">
             <Button
               variant={form.danger ? "secondary" : "primary"}
               tone={form.danger ? "danger" : undefined}
               disabled={Boolean(incomplete || unavailable || blocked || nothingToChange)}
+              disabledReason={
+                blocked
+                  ? t("Connect and resume this account first.")
+                  : unavailable
+                    ? capabilityReasonText(capability)
+                    : incomplete
+                      ? t("Fill in the fields above.")
+                      : t("No changes to save.")
+              }
               loading={busy}
               onClick={() => {
                 run().catch(handleError);
@@ -486,7 +495,7 @@ export function YouTubeManage({
         </section>
       ) : (
         <>
-          {error ? <InlineError details={details}>{error}</InlineError> : null}
+          {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
           {result !== undefined ? <YouTubeResult result={result} busy={busy} /> : null}
         </>
       )}

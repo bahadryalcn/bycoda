@@ -2699,8 +2699,8 @@ it("disables unrelated task, goal, steward and note mutations while a board acti
   expect(button(panel()!, "Stop")!.getAttribute("aria-disabled")).toBe("true");
   expect(button(card("Running B"), "Stop")!.getAttribute("aria-disabled")).toBe("true");
   const notes = panel()!.querySelector('[aria-label="Review notes"]')!;
-  expect(button(notes, "Mark 1 as read")!.disabled).toBe(true);
-  expect(button(notes, "Mark fixed")!.disabled).toBe(true);
+  expect(button(notes, "Mark 1 as read")!.getAttribute("aria-disabled")).toBe("true");
+  expect(button(notes, "Mark fixed")!.getAttribute("aria-disabled")).toBe("true");
   const goalCard = container.querySelector('article[aria-label="Launch the beta"]')!;
   expect(button(goalCard, "Approve")!.disabled).toBe(true);
   await act(async () =>

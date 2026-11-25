@@ -193,13 +193,13 @@ it("keeps detail retry focused with local pending feedback and ignores duplicate
   expect(retry.isConnected).toBe(true);
   expect(retry.getAttribute("aria-busy")).toBe("true");
   expect(document.activeElement).toBe(retry);
-  expect(container.textContent).toContain("Detail temporarily unavailable");
+  expect(container.textContent).toContain("Could not load or update notes.");
   expect(container.querySelector('[aria-label="Note title"]')).toBeNull();
   await act(async () => finish(stored));
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     stored.title,
   );
-  expect(container.textContent).not.toContain("Detail temporarily unavailable");
+  expect(container.textContent).not.toContain("Could not load or update notes.");
 });
 
 // Renders and re-filters a 1,000-row library under jsdom; it passes alone but full-suite worker

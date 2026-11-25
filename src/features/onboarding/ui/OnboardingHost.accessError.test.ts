@@ -25,6 +25,14 @@ afterEach(async () => {
   vi.mocked(configureFileAccess).mockReset();
 });
 
+// Raw error text sits behind the Details popover; open it and read the dialog it shows.
+async function detailsText() {
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return [...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent ?? "";
+}
+
 it("shows a readable file-access failure without the Error prefix", async () => {
   vi.mocked(configureFileAccess).mockRejectedValue(new Error("Consent dialog was dismissed"));
   await act(async () =>
@@ -39,6 +47,6 @@ it("shows a readable file-access failure without the Error prefix", async () => 
   );
   const text = document.body.textContent ?? "";
   expect(text).toContain("Could not set up file access.");
-  expect(text).toContain("Consent dialog was dismissed");
   expect(text).not.toContain("Error:");
+  expect(await detailsText()).toContain("Consent dialog was dismissed");
 });

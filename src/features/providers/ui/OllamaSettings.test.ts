@@ -177,7 +177,7 @@ it("saves a custom port and returns to the default", async () => {
   expect(button("Save")?.getAttribute("aria-disabled") === "true").toBe(true);
   await type("70000");
   expect(container.textContent).toContain("Enter a port from 1 to 65535.");
-  expect(button("Save")?.disabled).toBe(true);
+  expect(button("Save")?.getAttribute("aria-disabled")).toBe("true");
   await type("12000");
   await act(async () => button("Save")?.click());
   expect(mock.remote).toHaveBeenCalledWith("local", "ollama.port.set", { port: 12000 });

@@ -47,7 +47,7 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
       className="note-mini-card flex items-start gap-2"
     >
       <File className="icon-sm mt-0.5 shrink-0" tone="secondary" strokeWidth={1.75} />
-      <div className="flex min-w-0 flex-1 flex-col text-left">
+      <div className="flex min-w-0 flex-1 flex-col text-start">
         <Text size="secondary" tone="primary" weight="medium" leading="snug" wrap="anywhere">
           {card.title || t("Untitled")}
         </Text>

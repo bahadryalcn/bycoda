@@ -43,6 +43,7 @@ export function DictationOptions({
         expanded={open}
         opens="up"
         disabled={disabled}
+        disabledReason={t("Dictation language is locked while dictation is running.")}
         // Keep the caret in the message box.
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}

@@ -13,6 +13,7 @@ import { isXResourceId } from "../../../../../integrations/social/adapters/x-ide
 import { xHandoff, type XDestination } from "../../../../../integrations/social/x-handoff";
 import type { SocialAccount } from "../../../model/social";
 import type { SocialClient } from "../../../model/socialClient";
+import { accountBlockedReason } from "../blockedReason";
 import { useAccountWrite } from "../useAccountWrite";
 import { BrowserInboxHandoff } from "./BrowserInboxHandoff";
 import { XApiActions } from "./XApiActions";
@@ -97,7 +98,7 @@ export function XAccountActions({ account, client, disabled }: Props) {
   const [streamServer, setStreamServer] = useState("");
   const [streamKey, setStreamKey] = useState("");
   const [keySaved, setKeySaved] = useState(false);
-  const { error, details, is, write } = useAccountWrite(t("Could not open the link."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not open the link."));
   const needsTarget = destination === "post";
   const options = destinations();
   const current = options.find((option) => option.value === destination);
@@ -153,12 +154,15 @@ export function XAccountActions({ account, client, disabled }: Props) {
               className="self-start"
               loading={is("open")}
               disabled={needsTarget && !isXResourceId(target)}
+              disabledReason={t("Enter a valid post ID first.")}
               onClick={() => void write("open", open).catch(() => undefined)}
             >
               {t("Open in browser")}
             </Button>
           ) : null}
-          {!chat && error ? <InlineError details={details}>{error}</InlineError> : null}
+          {!chat && failureTitle ? (
+            <InlineError details={details}>{failureTitle}</InlineError>
+          ) : null}
         </div>
         {destination === "live" && account.connected ? (
           <div className="social-x-group">
@@ -194,6 +198,9 @@ export function XAccountActions({ account, client, disabled }: Props) {
               size="sm"
               className="self-start"
               disabled={disabled || !streamServer.trim() || !streamKey.trim()}
+              disabledReason={
+                disabled ? accountBlockedReason(true) : t("Enter the stream server and key first.")
+              }
               loading={is("key")}
               onClick={() =>
                 void write("key", async () => {

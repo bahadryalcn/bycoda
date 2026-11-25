@@ -219,7 +219,7 @@ export function GitGraphList({
               }
             >
               {!workspace ? (
-                <Text size="inherit" tone="inherit" truncate className="pl-3">
+                <Text size="inherit" tone="inherit" truncate className="ps-3">
                   {t("Branch / Tag")}
                 </Text>
               ) : null}
@@ -446,16 +446,16 @@ const CompactRow = memo(function CompactRow(props: RowProps) {
         className={`${button.className} flex items-stretch`}
       >
         {plain ? null : <GraphLane row={row} />}
-        <span className="ml-1 flex min-w-0 flex-1 items-center">
+        <span className="ms-1 flex min-w-0 flex-1 items-center">
           <Subject item={item} />
         </span>
         <RefPills
           refs={refs}
           budgetPx={110}
           maxWidth="40cqw"
-          className="ml-1 shrink-0 self-center"
+          className="ms-1 shrink-0 self-center"
         />
-        <GraphAvatar name={commit.author} className="git-graph-author ml-1.5 self-center" />
+        <GraphAvatar name={commit.author} className="git-graph-author ms-1.5 self-center" />
         <Tooltip label={formatAbsoluteTime(commit.timestamp)} asChild>
           <Text
             as="span"
@@ -463,7 +463,7 @@ const CompactRow = memo(function CompactRow(props: RowProps) {
             tone="secondary"
             leading="relaxed"
 
-            className="git-graph-date ml-1.5 w-7 shrink-0 text-right"
+            className="git-graph-date ms-1.5 w-7 shrink-0 text-end"
           >
             {formatRelativeTime(commit.timestamp, now)}
           </Text>
@@ -500,7 +500,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
         style={workspace ? undefined : { gridTemplateColumns: columns }}
       >
         {!workspace ? (
-          <span className="flex min-w-0 items-center pr-1 pl-3">
+          <span className="flex min-w-0 items-center pe-1 ps-3">
             <RefPills refs={refs} budgetPx={workspace ? 104 : WIDE_REFS_PX - 16} maxWidth="100%" />
           </span>
         ) : null}
@@ -513,7 +513,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
             <Subject item={item} />
           </span>
         ) : (
-          <Subject item={item} className="pl-1" />
+          <Subject item={item} className="ps-1" />
         )}
         {workspace ? (
           <OverflowTooltip label={commit.author}>
@@ -523,7 +523,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
           </OverflowTooltip>
         ) : null}
         {!workspace ? (
-          <span className={`flex min-w-0 items-center gap-1.5 pr-2 ${dim}`}>
+          <span className={`flex min-w-0 items-center gap-1.5 pe-2 ${dim}`}>
             <GraphAvatar name={commit.author} />
             <Text size="caption" tone="secondary" truncate className="min-w-0">
               {commit.author}

@@ -275,7 +275,7 @@ export function DocumentView({
         {openButton}
       </ViewerFooter>
       {openAction.error ? (
-        <FileActionError message={openAction.error} onDismiss={openAction.dismiss} />
+        <FileActionError details={openAction.error} onDismiss={openAction.dismiss} />
       ) : null}
     </div>
   );

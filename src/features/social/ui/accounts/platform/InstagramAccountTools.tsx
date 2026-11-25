@@ -50,7 +50,7 @@ export function InstagramAccountTools({
   projects: readonly HostProject[];
   disabled: boolean;
 }) {
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const [notice, setNotice] = useState("");
@@ -338,7 +338,7 @@ export function InstagramAccountTools({
             )
           : null}
         {notice ? <InlineMessage>{notice}</InlineMessage> : null}
-        {error ? <InlineError details={details}>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       </div>
     </Disclosure>
   );

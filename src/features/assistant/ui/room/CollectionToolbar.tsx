@@ -11,7 +11,7 @@ import { FilterTrigger } from "../../../../shared/ui/FilterTrigger";
 import { Plus, Sparkles, Trash2 } from "../../../../shared/ui/icons";
 import styles from "../AssistantView.module.css";
 import toolbar from "./CollectionToolbar.module.css";
-import { assistantActivityLabels } from "../AssistantHistory";
+import { assistantActivityLabel } from "../AssistantHistory";
 import { statusLabel, matches } from "./assistantRoomHelpers";
 import { useAssistantRoom } from "./assistantRoomContext";
 
@@ -97,7 +97,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
             type="search"
             value={query}
             aria-label={t("Search this section")}
-            placeholder={t(view === "Sessions" ? "Search sessions" : "Search")}
+            placeholder={view === "Sessions" ? t("Search sessions") : t("Search")}
             appearance="field"
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
@@ -107,6 +107,13 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                 startIcon={<Sparkles className="icon-sm" />}
                 loading={pending?.key === "notes.summary"}
                 disabled={Boolean(pending) || !environmentId}
+                disabledReason={
+                  pending
+                    ? t("Wait for the current action to finish.")
+                    : !environmentId
+                      ? t("The assistant's computer is not connected.")
+                      : undefined
+                }
                 onClick={() => {
                   const sourceEnvironment = environmentId,
                     scopeKey = privacy.key;
@@ -115,7 +122,9 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                   run("notes.summary", t("Preparing briefing…"), async () => {
                     if (!sourceEnvironment)
                       throw new Error(
-                        "The original computer could not be verified. Keep this draft and reconnect that computer.",
+                        t(
+                          "The original computer could not be verified. Keep this draft and reconnect that computer.",
+                        ),
                       );
                     const response = await assistantRequest(
                       { op: "briefing.daily", day },
@@ -124,7 +133,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                     if (scopeKey !== visibility.current.privacy.key) return;
                     if (!response.snapshot)
                       throw new Error(
-                        "Daily summary could not be confirmed. Retry on its original computer.",
+                        t("Daily summary could not be confirmed. Retry on its original computer."),
                       );
                     setDailySummary({
                       snapshot: response.snapshot,
@@ -141,6 +150,11 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                 variant="primary"
                 startIcon={<Plus className="icon-sm" />}
                 disabled={!snapshot.capabilities.notes}
+                disabledReason={
+                  snapshot.capabilities.notes
+                    ? undefined
+                    : t("Notes are not available on this computer.")
+                }
                 onClick={() => setNoteEdit("new")}
               >
                 {t("New note")}
@@ -188,7 +202,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
           <div className={toolbar.panel}>
             <div className={toolbar.fields}>
               <Select
-                label={t(view === "History" ? "Type" : "Status")}
+                label={view === "History" ? t("Type") : t("Status")}
                 value={filter}
                 options={[
                   { value: "", label: t("All") },
@@ -202,7 +216,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                     value,
                     label:
                       view === "History"
-                        ? t(assistantActivityLabels[value] ?? "Activity")
+                        ? assistantActivityLabel(value)
                         : statusLabel(value as Parameters<typeof statusLabel>[0]),
                   })),
                 ]}

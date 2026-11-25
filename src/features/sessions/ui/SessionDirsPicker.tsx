@@ -64,7 +64,7 @@ type FolderPick = {
   project: string;
   pickingRef: { current: boolean };
   setPicking: (picking: boolean) => void;
-  setError: (message: string | undefined) => void;
+  setProblem: (message: string | undefined) => void;
   setOpen: (open: boolean) => void;
   changeProject: (path: string) => void;
 };
@@ -77,7 +77,7 @@ async function pickSessionFolders({
   project,
   pickingRef,
   setPicking,
-  setError,
+  setProblem,
   setOpen,
   changeProject,
 }: FolderPick): Promise<void> {
@@ -88,7 +88,7 @@ async function pickSessionFolders({
     );
     if (selected.length === 0) return;
     if (selected.some((path) => !isLocalProject(path))) {
-      setError(t("Choose a local project folder rather than your home or drive root."));
+      setProblem(t("Choose a local project folder rather than your home or drive root."));
       setOpen(true);
       return;
     }
@@ -103,7 +103,7 @@ async function pickSessionFolders({
       setOpen(true);
     }
   } catch {
-    setError(t("Could not open the folder picker. Please try again."));
+    setProblem(t("Could not open the folder picker. Please try again."));
     setOpen(true);
   } finally {
     pickingRef.current = false;
@@ -140,7 +140,8 @@ export function SessionDirsPicker({
   const [query, setQuery] = useState("");
   const [picking, setPicking] = useState(false);
   const pickingRef = useRef(false);
-  const [error, setError] = useState<string>();
+  const [problem, setProblem] = useState<string>();
+  const disabledReason = enabled ? undefined : t("Folders cannot be changed right now.");
   const root = useRef<HTMLDivElement>(null);
   const { overridden, dirs, projectDirs } = useSessionAdditionalDirs(sessionId, project);
   const storedRecents = useRecents();
@@ -189,7 +190,7 @@ export function SessionDirsPicker({
     pickingRef.current = true;
     const choosingProject = mode === "project";
     setPicking(true);
-    setError(undefined);
+    setProblem(undefined);
     await pickSessionFolders({
       t,
       choosingProject,
@@ -197,7 +198,7 @@ export function SessionDirsPicker({
       project,
       pickingRef,
       setPicking,
-      setError,
+      setProblem,
       setOpen,
       changeProject,
     });
@@ -253,13 +254,14 @@ export function SessionDirsPicker({
         aria-expanded={open}
         aria-haspopup="dialog"
         disabled={!enabled}
+        disabledReason={disabledReason}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           if (open) dismiss(true);
           else {
             setMode("folders");
             setQuery("");
-            setError(undefined);
+            setProblem(undefined);
             setOpen(true);
           }
         }}
@@ -300,13 +302,14 @@ export function SessionDirsPicker({
             emptyLabel={t("No matching folders")}
             className="max-h-64"
           />
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {problem ? <Alert tone="danger">{problem}</Alert> : null}
           <PickerFooter align="start">
             {onProjectChange ? (
               <Button
                 variant="ghost"
                 type="button"
                 disabled={picking || !enabled}
+                disabledReason={disabledReason}
                 tooltip={
                   mode === "folders"
                     ? t("Existing conversations open a new session in the chosen project.")
@@ -315,7 +318,7 @@ export function SessionDirsPicker({
                 onClick={() => {
                   setMode(mode === "folders" ? "project" : "folders");
                   setQuery("");
-                  setError(undefined);
+                  setProblem(undefined);
                 }}
               >
                 {mode === "folders" ? t("Change project…") : t("Back")}
@@ -325,6 +328,7 @@ export function SessionDirsPicker({
               variant="ghost"
               type="button"
               disabled={picking || !enabled}
+              disabledReason={disabledReason}
               onClick={() => void browse()}
               loading={picking}
               startIcon={<Plus className="icon-sm" />}
@@ -338,6 +342,7 @@ export function SessionDirsPicker({
                 label={t("Reset")}
                 type="button"
                 disabled={picking || !enabled}
+                disabledReason={disabledReason}
                 onClick={() => saveSessionAdditionalDirs(sessionId, project, null)}
               >
                 <RotateCcw className="icon-sm" />

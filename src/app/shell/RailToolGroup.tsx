@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup, ButtonGroupSelection } from "../../shared/ui/ButtonGroup";
 import { StatusDot } from "../../shared/ui/StatusDot";
@@ -20,6 +21,7 @@ export type RailTool = {
 
 /** Workspace tools as one joined group of icon buttons that wraps into rows on a narrow rail (bycoda.css); each name lives in its tooltip. */
 export function RailToolGroup({ label, tools }: { label: string; tools: readonly RailTool[] }) {
+  const t = useT();
   return (
     <ButtonGroup
       aria-label={label}
@@ -43,6 +45,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
           selected={tool.active}
           aria-current={tool.active ? "page" : undefined}
           disabled={!tool.onSelect}
+          disabledReason={!tool.onSelect ? t("Not available yet.") : undefined}
           onClick={tool.onSelect}
           data-usage-guide={tool.guide}
           className="min-w-0 flex-1"

@@ -77,6 +77,15 @@ import { codexAdapter } from "../../../integrations/harness/providers/codex/code
 import { antigravityAdapter } from "../../../integrations/harness/providers/antigravity/antigravityAdapter";
 import { saveLastModelChoice } from "../model/models";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
   await act(async () => {
@@ -2330,7 +2339,8 @@ describe("Composer question focus", () => {
       onSubmit,
     };
     await act(async () => root.render(createElement(Composer, props)));
-    expect(container.textContent).toContain(
+    expect(container.textContent).toContain("Could not prepare the workspace.");
+    expect(await rawDetails(container)).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
     expect(

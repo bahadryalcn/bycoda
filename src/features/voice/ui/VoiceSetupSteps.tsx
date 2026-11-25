@@ -20,6 +20,7 @@ import { MicrophoneInputSettings } from "./MicrophoneInputSettings";
 import { openSettingsSection } from "../../settings/public/settingsLink";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { isMicrophoneBlocked } from "../model/microphoneAccess";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import styles from "./VoiceSetupSteps.module.css";
 
@@ -185,7 +186,14 @@ export function VoiceSetupSteps({
       ) : null}
       {step === "microphone" ? <MicrophoneInputSettings /> : null}
       {error ? (
-        <InlineError extra={<MicrophoneRecoveryAction message={error} />}>{t(error)}</InlineError>
+        <InlineError
+          details={error}
+          extra={<MicrophoneRecoveryAction blocked={isMicrophoneBlocked(error)} />}
+        >
+          {step === "provider"
+            ? t("Could not check the voice provider.")
+            : t("Could not play the voice preview.")}
+        </InlineError>
       ) : null}
     </div>
   );

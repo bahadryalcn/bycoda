@@ -94,6 +94,7 @@ export function ConversationHeader({
             aria-haspopup="menu"
             aria-expanded={Boolean(threadMenu)}
             disabled={pending || clearing || summaryRefreshing}
+            disabledReason={pending ? t("Wait for the current action to finish.") : undefined}
             loading={clearing || summaryRefreshing}
             onClick={(event) => setThreadMenu(event.currentTarget)}
           >
@@ -137,11 +138,9 @@ export function ConversationHeader({
             {
               kind: "item",
               id: "summary",
-              label: t(
-                hasAssistantSummaryRefresh(localStorage, environmentId, threadId)
-                  ? "Retry summary refresh"
-                  : "Refresh conversation summary",
-              ),
+              label: hasAssistantSummaryRefresh(localStorage, environmentId, threadId)
+                ? t("Retry summary refresh")
+                : t("Refresh conversation summary"),
               disabled: !summaryRefreshable,
             },
             {

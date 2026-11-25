@@ -106,7 +106,8 @@ import {
 } from "../model/voiceSettings";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { VoiceSessionPicker } from "./VoicePanelChoices";
-import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
+import { voiceEngineMessage } from "../model/voiceEngineMessages";
+import { saveVoiceTurnEndChoice, voiceTurnChoiceFailedText } from "../model/voiceTurnPolicy";
 import { createVoiceController } from "../model/voiceController";
 import { converseWithAssistant } from "../model/voiceAssistant";
 import { voiceTools } from "../model/realtimeVoice";
@@ -469,12 +470,10 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         : ownerRuleWrites.current!.retry());
       if (!mounted.current) return;
       const message = result.saved
-        ? t(
-            result.manualTurnEnd
-              ? "Your rule was saved. Choose Finish turn when you are done speaking."
-              : "Your rule was saved.",
-          )
-        : t(result.error ?? "Memory could not be changed.");
+        ? result.manualTurnEnd
+          ? t("Your rule was saved. Choose Finish turn when you are done speaking.")
+          : t("Your rule was saved.")
+        : (result.error ?? t("Memory could not be changed."));
       const canReply = generation.current === epoch && Boolean(client.current);
       setRuleNotice(result.saved && canReply ? "" : message);
       if (canReply) reply(message);
@@ -504,13 +503,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           if (generation.current === epoch && turnRevision.current === revision)
             reply(
               t("Availability: {p0}", {
-                p0: t(
+                p0:
                   presenceIntent === "away"
-                    ? "Away"
+                    ? t("Away")
                     : presenceIntent === "dnd"
-                      ? "Do not disturb"
-                      : "Here",
-                ),
+                      ? t("Do not disturb")
+                      : t("Here"),
               }),
             );
         })
@@ -539,7 +537,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         })
         .catch((cause) => {
           if (generation.current === epoch)
-            setError(voiceError(cause, "The stop request could not be confirmed. Check the Room."));
+            setError(
+              voiceError(cause, t("The stop request could not be confirmed. Check the Room.")),
+            );
         });
       return true;
     }
@@ -736,7 +736,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         pending.review = {
           ...pending.review,
           busy: false,
-          error: voiceError(cause, "Job status is unknown. Check the Room before retrying."),
+          error: voiceError(cause, t("Job status is unknown. Check the Room before retrying.")),
           accepted: pending.batch.accepted.map((job) => job.id),
         };
         // A direct start that fails shows its one coherent error in the review.
@@ -794,7 +794,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
                 delivery: "unknown",
                 error: voiceError(
                   cause,
-                  "The answer is unconfirmed. Your original choice is kept.",
+                  t("The answer is unconfirmed. Your original choice is kept."),
                 ),
               },
             });
@@ -869,11 +869,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
           prompt: {
             ...pending.choice.prompt,
             delivery: "unknown",
-            error: t(
-              pending.presentation
-                ? "Saving this question is unconfirmed. Retry to verify the original card."
-                : "The answer is unconfirmed. Your original choice is kept.",
-            ),
+            error: pending.presentation
+              ? t("Saving this question is unconfirmed. Retry to verify the original card.")
+              : t("The answer is unconfirmed. Your original choice is kept."),
           },
         });
       }
@@ -1042,7 +1040,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     setPlayback,
     setMessage,
     setError,
-    formatError: (cause) => voiceError(cause, "Voice could not connect."),
+    formatError: (cause) => voiceError(cause, t("Voice could not connect.")),
   });
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -2174,7 +2172,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     // transcript write. Real source/receipt errors and retry failures stay visible.
     if (cause instanceof VoiceContextScopeUnavailable) return;
     setHistoryNotice(
-      voiceError(cause, "The voice question context could not be verified for saving."),
+      voiceError(cause, t("The voice question context could not be verified for saving.")),
     );
   }
   function interceptSpeech(text: string) {
@@ -2557,8 +2555,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         const done = "saved" in result ? result.saved : result.forgotten;
         const spoken = done
           ? decision.reply ||
-            t(decision.action === "remember" ? "I'll remember that." : "Forgotten.")
-          : t(("error" in result && result.error) || "Memory could not be changed.");
+            (decision.action === "remember" ? t("I'll remember that.") : t("Forgotten."))
+          : ("error" in result && result.error) || t("Memory could not be changed.");
         reply(spoken, session, false, () => recordResponse({ role: "assistant", text: spoken }));
         return;
       }
@@ -2620,11 +2618,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         if (generation.current !== epoch) return;
         if (binding.sequence === sequence.current)
           reply(
-            t(
-              accepted
-                ? "Accepted. You can keep talking while the agent works."
-                : "The request was not accepted. Check the session.",
-            ),
+            accepted
+              ? t("Accepted. You can keep talking while the agent works.")
+              : t("The request was not accepted. Check the session."),
             session,
           );
       } else {
@@ -2636,7 +2632,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       }
     } catch (cause) {
       if (!controller.signal.aborted && generation.current === epoch)
-        setError(voiceError(cause, "The voice request failed."));
+        setError(voiceError(cause, t("The voice request failed.")));
     } finally {
       transcriptStore.current?.finish();
       if (sideRequest.current === controller) {
@@ -3015,11 +3011,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         if (cause instanceof VoiceOwnerChoicePending) presentation = cause;
         if (generation.current === epoch)
           setHistoryNotice(
-            t(
-              presentation
-                ? "Saving this question is unconfirmed. Retry to verify the original card."
-                : "This choice could not be saved in the Room. Keep voice open to answer.",
-            ),
+            presentation
+              ? t("Saving this question is unconfirmed. Retry to verify the original card.")
+              : t("This choice could not be saved in the Room. Keep voice open to answer."),
           );
       } finally {
         preparingChoice.current = false;
@@ -3105,7 +3099,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         throw new Error("Unexpected work brief fields.");
       text = voiceWorkText(args.text);
     } catch (cause) {
-      return { accepted: false, error: voiceError(cause, "The voice work brief is invalid.") };
+      return { accepted: false, error: voiceError(cause, t("The voice work brief is invalid.")) };
     }
     const fresh = findSession(session.id);
     if (!fresh || fresh.historyLoading || fresh.historyLoadError || fresh.worktreeRemoved)
@@ -3274,7 +3268,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
             return;
           }
           if (fatal) close();
-          setError(t(value));
+          setError(voiceEngineMessage(value));
         },
       },
       locale.split("-")[0],
@@ -3476,12 +3470,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       }
       if (runtimeRegistrationPending) {
         close();
-        setError(voiceError(cause, "Voice runtime registration was not confirmed."));
+        setError(voiceError(cause, t("Voice runtime registration was not confirmed.")));
       } else if (classifyVoiceFailure(cause).recoverable)
         recoverRealtime(provider, false, "connect-failed");
       else {
         close();
-        setError(voiceError(cause, "Voice could not connect."));
+        setError(voiceError(cause, t("Voice could not connect.")));
       }
     }
   }
@@ -3598,7 +3592,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     } catch (cause) {
       if (generation.current === epoch) {
         close();
-        setError(voiceError(cause, "Conversation history is unavailable."));
+        setError(voiceError(cause, t("Conversation history is unavailable.")));
       }
       return;
     }
@@ -3652,7 +3646,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         error: (value, fatal) => {
           if (generation.current === epoch) {
             if (fatal) close();
-            setError(t(value));
+            setError(voiceEngineMessage(value));
           }
         },
       },
@@ -3678,7 +3672,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     } catch (cause) {
       if (generation.current !== epoch) return;
       close();
-      setError(voiceError(cause, "Local voice could not start."));
+      setError(voiceError(cause, t("Local voice could not start.")));
     }
   }
   const returnCall = useVoiceReturnCall({
@@ -3704,9 +3698,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   });
   const visualState = voiceVisualState({ status, phase, muted, playback, error });
   const sessionProgress = useVoiceSessionProgress(target);
-  const sessionStatusText = t(
-    sessionProgress === "quiet" ? "No recent session updates" : "Session working",
-  );
+  const sessionStatusText =
+    sessionProgress === "quiet" ? t("No recent session updates") : t("Session working");
   // One shared sampler: the panel re-renders when hearing flips, not for each level value. The
   // detached window mirrors this text, so it keeps sampling while the main window is hidden.
   const hearingInput = useVoiceHearing(audioLevel, status === "live" && !muted, detached);
@@ -3770,9 +3763,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         removeFillers: next.removeFillers,
         manualTurnEnd: manual,
       });
-      setError((current) => (current === t(VOICE_TURN_CHOICE_FAILED) ? "" : current));
+      setError((current) => (current === voiceTurnChoiceFailedText() ? "" : current));
     } catch {
-      setError(t(VOICE_TURN_CHOICE_FAILED));
+      setError(voiceTurnChoiceFailedText());
     }
   }
   async function popOut(placement: Omit<VoiceOverlayPlacement, "width" | "height">) {
@@ -3788,7 +3781,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       });
       setDetached(true);
     } catch (cause) {
-      setError(voiceError(cause, "The floating voice window could not open."));
+      setError(voiceError(cause, t("The floating voice window could not open.")));
     }
   }
   function dock() {
@@ -4018,11 +4011,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       : "footer"
     : undefined;
   const moveName = t("Move voice window");
-  const moveHint = t(
-    canDetach
-      ? "Drag outside the app to float it. Use arrow keys to reposition."
-      : "Use arrow keys to reposition.",
-  );
+  const moveHint = canDetach
+    ? t("Drag outside the app to float it. Use arrow keys to reposition.")
+    : t("Use arrow keys to reposition.");
   if (open && detached && !props.wakeControls)
     return <VoiceReturnButton ref={launcher} onReturn={dock} />;
   const launcherControl =

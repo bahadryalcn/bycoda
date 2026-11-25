@@ -121,6 +121,15 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
             motion="none"
             type="button"
             disabled={stashAction !== "create" && (!!busy || !hasChanges)}
+            disabledReason={
+              stashAction === "create"
+                ? undefined
+                : busy
+                  ? t("Wait for the current operation to finish")
+                  : hasChanges
+                    ? undefined
+                    : t("There are no changes to stash.")
+            }
             loading={stashAction === "create"}
             loadingLabel={t("Working…")}
             onClick={() => void run("create", () => gitStash(cwd))}

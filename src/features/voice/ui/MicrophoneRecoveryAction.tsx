@@ -14,7 +14,8 @@ export function isVoiceSetupError(message: string) {
 }
 
 export function VoiceRecoveryAction({ message }: { message: string }) {
-  if (!isVoiceSetupError(message)) return <MicrophoneRecoveryAction message={message} />;
+  if (!isVoiceSetupError(message))
+    return <MicrophoneRecoveryAction blocked={isMicrophoneBlocked(message)} />;
   const detail = message.replace(SETUP_REFUSAL, "").split(". Open Settings", 1)[0];
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
@@ -31,8 +32,8 @@ export function VoiceRecoveryAction({ message }: { message: string }) {
 }
 
 /** OS recovery is never offered for a webview refusal after an OS grant. */
-export function MicrophoneRecoveryAction({ message }: { message: string }) {
-  return canOpenMicrophoneSettings() && isMicrophoneBlocked(message) ? (
+export function MicrophoneRecoveryAction({ blocked }: { blocked: boolean }) {
+  return canOpenMicrophoneSettings() && blocked ? (
     <PermissionRecoveryAction id="microphone" />
   ) : null;
 }

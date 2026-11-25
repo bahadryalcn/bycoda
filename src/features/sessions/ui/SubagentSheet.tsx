@@ -189,7 +189,7 @@ export function SubagentSheet({
             ? `${t("Advisor")}: ${name}`
             : t("Subagent: {p0}", { p0: name })
       }
-      closeLabel={t(command ? "Close command panel" : "Close agent panel")}
+      closeLabel={command ? t("Close command panel") : t("Close agent panel")}
       escapeScope="[data-session-drop]"
       scroll="none"
       bodyClassName={`${styles.layout} font-sans`}
@@ -202,7 +202,7 @@ export function SubagentSheet({
               iconOnly
               size="sm"
               variant="ghost"
-              label={t(expanded ? "Restore" : "Expand")}
+              label={expanded ? t("Restore") : t("Expand")}
               onClick={() => setExpanded((value) => !value)}
             >
               {expanded ? (
@@ -232,26 +232,21 @@ export function SubagentSheet({
               className="shrink-0"
               variant="ghost"
               type="button"
-              disabled={stopping}
+              loading={stopping}
+              loadingLabel={t("Stopping…")}
+              startIcon={<Square className="icon-sm" aria-hidden />}
               tooltip={
                 stops.failed.has(stopKey)
                   ? t("Could not stop it. Try again.")
-                  : t(
-                      command
-                        ? "Stop this command"
-                        : agentRole === "advisor"
-                          ? "Stop"
-                          : "Stop this subagent",
-                    )
+                  : command
+                    ? t("Stop this command")
+                    : agentRole === "advisor"
+                      ? t("Stop")
+                      : t("Stop this subagent")
               }
               onClick={() => stops.request(stopKey, onStop)}
             >
-              <Square className="icon-sm" aria-hidden />
-              {stopping
-                ? t("Stopping…")
-                : stops.failed.has(stopKey)
-                  ? t("Could not stop. Retry")
-                  : t("Stop")}
+              {stops.failed.has(stopKey) ? t("Could not stop. Retry") : t("Stop")}
             </Button>
           ) : null}
           {onShowInTranscript ? (
@@ -656,7 +651,7 @@ function PromptCard({ prompt }: { prompt: string }) {
     <Surface as="section" variant="card" padding="sm" aria-label={t("Prompt")} className="mb-2">
       <Text as="div" size="secondary" tone="inherit" leading="normal">
         <SectionLabel>{t("Prompt")}</SectionLabel>
-        <ClampText lines={6} moreLabel={t(assignment ? "Show more" : "Show full prompt")}>
+        <ClampText lines={6} moreLabel={assignment ? t("Show more") : t("Show full prompt")}>
           <Text
             as="p"
             size="inherit"

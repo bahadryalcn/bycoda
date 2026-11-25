@@ -1,6 +1,10 @@
+import { t } from "../../../shared/i18n";
 import { loadVoiceSettings, saveVoiceSettings, type VoiceSettings } from "./voiceSettings";
 
 export const VOICE_TURN_CHOICE_FAILED = "Turn ending preference could not be saved. Try again.";
+/** The translated sentence for the thrown English constant above. */
+export const voiceTurnChoiceFailedText = () =>
+  t("Turn ending preference could not be saved. Try again.");
 
 /** An explicit owner choice wins over any in-flight spoken-rule save. */
 export function chooseVoiceTurnEnd(settings: VoiceSettings, manualTurnEnd: boolean): VoiceSettings {

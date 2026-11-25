@@ -102,11 +102,11 @@ function readPlacements(): Record<string, Placement> {
     return {};
   }
 }
-const placements = {
-  left: { label: "Dock left", Icon: PanelLeft },
-  right: { label: "Dock right", Icon: PanelRight },
-  top: { label: "Dock top", Icon: PanelTop },
-  bottom: { label: "Dock bottom", Icon: PanelBottom },
+const placementIcons = {
+  left: PanelLeft,
+  right: PanelRight,
+  top: PanelTop,
+  bottom: PanelBottom,
 } as const;
 
 function PlacementButton({
@@ -118,7 +118,13 @@ function PlacementButton({
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const { Icon, label } = placements[value];
+  const Icon = placementIcons[value];
+  const labels = {
+    left: t("Dock left"),
+    right: t("Dock right"),
+    top: t("Dock top"),
+    bottom: t("Dock bottom"),
+  } as const;
   return (
     <>
       <Button
@@ -128,7 +134,7 @@ function PlacementButton({
         ref={trigger}
         type="button"
         className="tools-workspace-icon"
-        label={`${t("Placement")}: ${t(label)}`}
+        label={`${t("Placement")}: ${labels[value]}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
@@ -143,13 +149,13 @@ function PlacementButton({
           align="end"
           onClose={() => setOpen(false)}
           onPick={(side) => onChange(side as Placement)}
-          items={(Object.keys(placements) as Placement[]).map((side) => {
-            const option = placements[side];
+          items={(Object.keys(placementIcons) as Placement[]).map((side) => {
+            const SideIcon = placementIcons[side];
             return {
               kind: "item",
               id: side,
-              label: t(option.label),
-              icon: <option.Icon className="icon-sm" aria-hidden />,
+              label: labels[side],
+              icon: <SideIcon className="icon-sm" aria-hidden />,
               checked: side === value,
               selectionRole: "radio",
             };
@@ -1102,7 +1108,6 @@ export function ToolsWorkspace({
                               className="tools-workspace-icon"
                               label={t("Open in new window")}
                               loading={detaching === pane.id}
-                              disabled={detaching === pane.id}
                               onClick={async () => {
                                 if (transfers.current.has(pane.id)) return;
                                 transfers.current.add(pane.id);

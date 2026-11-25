@@ -248,10 +248,10 @@ it("retains the old folder during failed navigation and retries the requested fo
   await render();
   await act(async () => button("code").click());
   expect(document.body.textContent).toContain("Refreshing folders");
-  expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
+  expect(button("Open").getAttribute("aria-disabled")).toBe("true");
   await act(async () => fail(new Error("Permission denied")));
   expect(document.body.textContent).toContain("Permission denied");
-  expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
+  expect(button("Open").getAttribute("aria-disabled")).toBe("true");
   await act(async () =>
     (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),
   );

@@ -133,7 +133,7 @@ it("lists each account by name and shows health text only when it needs attentio
   expect(rows).toHaveLength(2);
   expect(rows[0]?.textContent).toContain("Account a1");
   expect(rows[0]?.textContent).not.toContain("Connected");
-  expect(rows[1]?.querySelector('[aria-label="Connection needed"]')).not.toBeNull();
+  expect(rows[1]?.querySelector('[aria-label="Account status: Connection needed"]')).not.toBeNull();
 });
 
 it("keeps a retry line when the accounts cannot be read and offers Try again", async () => {
@@ -285,6 +285,8 @@ it("shows unknown health and retry when intervention read fails", async () => {
   act(() => root.render(createElement(AccountsScreen, input)));
   await flush();
   expect(element.textContent).toContain("Could not check whether accounts need your attention.");
-  expect(element.querySelector('[aria-label="Connection status unknown"]')).not.toBeNull();
+  expect(
+    element.querySelector('[aria-label="Account status: Connection status unknown"]'),
+  ).not.toBeNull();
   expect(element.textContent).toContain("Try again");
 });

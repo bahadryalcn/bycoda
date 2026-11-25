@@ -13,7 +13,7 @@ bootSecondaryWindowAppearance();
 function IndicatorWindow() {
   useLocale();
   const root = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   useEffect(() => {
     const observer = new ResizeObserver(() => {
       const height = root.current?.getBoundingClientRect().height;
@@ -28,11 +28,11 @@ function IndicatorWindow() {
         floating
         onDismiss={() => {
           void invoke("desktop_control_indicator_dismiss").catch(() =>
-            setError(t("Computer control status is unavailable. Stop remains available.")),
+            setNotice(t("Computer control status is unavailable. Stop remains available.")),
           );
         }}
       />
-      {error && <InlineError>{error}</InlineError>}
+      {notice && <InlineError>{notice}</InlineError>}
     </div>
   );
 }

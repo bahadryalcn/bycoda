@@ -5,6 +5,7 @@ import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
   createSkillGroup,
   renameSkillGroup,
@@ -117,7 +118,14 @@ export function SkillGroupDialogs({
           onKeyDown={saveOnEnter}
         />
       ) : null}
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <Alert
+          tone="danger"
+          extra={<ErrorDetails detail={error} title={t("Could not save the group.")} />}
+        >
+          {t("Could not save the group.")}
+        </Alert>
+      ) : null}
     </Modal>
   );
 }

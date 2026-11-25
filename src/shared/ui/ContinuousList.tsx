@@ -8,7 +8,7 @@ import { useRetainedScroll } from "../hooks/useRetainedScroll";
 import { useRetainedState } from "../hooks/useRetainedState";
 import { useT } from "../i18n";
 import { EmptyState } from "./EmptyState";
-import { InlineMessage } from "./InlineError";
+import { InlineError, InlineMessage } from "./InlineError";
 import { Button } from "./Button";
 import { Spinner } from "./Spinner";
 import styles from "./ContinuousList.module.css";
@@ -65,7 +65,7 @@ export function CollectionFooter({
           <Spinner label={t("Loading…")} />
         ) : error ? (
           <>
-            <InlineMessage tone="danger">{error}</InlineMessage>
+            <InlineError details={error} />
             {onRetry ? (
               <Button variant="ghost" size="sm" onClick={onRetry}>
                 {t("Retry")}
@@ -89,7 +89,7 @@ export function CollectionFooter({
       {loading && !(hasMore && onLoadMore) && !(error && onRetry) ? (
         <Spinner label={t("Loading…")} />
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {error ? <InlineError details={error} /> : null}
       {partial ? <InlineMessage tone="warning">{partial}</InlineMessage> : null}
       {error && onRetry ? (
         <Button variant="ghost" size="sm" loading={loading} onClick={onRetry}>

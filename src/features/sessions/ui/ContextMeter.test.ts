@@ -172,9 +172,9 @@ it("explains why compact is unavailable and preserves cost and API duration", as
   await act(async () => container.querySelector("button")!.click());
   expect(dialog()?.textContent).toContain("$1.80");
   expect(dialog()?.textContent).toContain("4m 50s");
-  expect(dialog()?.textContent).toContain("Wait for the current operation to finish");
   const compact = dialog()!.querySelector<HTMLButtonElement>(".context-meter-actions button")!;
-  expect(compact.disabled).toBe(true);
+  expect(compact.getAttribute("aria-disabled")).toBe("true");
+  expect(compact.getAttribute("aria-description")).toBe("Wait for the current operation to finish");
   await act(async () => compact.click());
   expect(onCompact).not.toHaveBeenCalled();
 });
@@ -231,7 +231,7 @@ it("keeps the signal icon uncluttered and exposes completed TPS, context and com
   expect(dialog()!.textContent).not.toContain("output tokens");
   expect(dialog()!.textContent).not.toContain("Speed scale");
   expect(dialog()!.textContent).not.toContain("Zero or unavailable");
-  expect(dialog()!.textContent).toContain("Average speed includes tools and waiting.");
+  expect(dialog()!.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
   expect(dialog()!.querySelector("button[aria-controls]")).toBeNull();
   await act(async () =>
     [...dialog()!.querySelectorAll("button")]

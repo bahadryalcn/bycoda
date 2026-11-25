@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { HostModelSource } from "../../connections/public/HostModelSource";
@@ -43,7 +44,7 @@ export function CrewTaskDialog({
   ) : (
     <Modal title={t("New task")} onClose={onClose}>
       {state.visibleError ? (
-        <Alert tone="danger">{state.visibleError}</Alert>
+        <InlineError details={state.visibleError} />
       ) : (
         <LoadingText>{t("Loading crews…")}</LoadingText>
       )}
@@ -155,11 +156,7 @@ function CrewTaskDraft({
         if (!gate.current) onClose();
       }}
     >
-      {error ? (
-        <Alert tone="danger" className="mx-4 mt-3">
-          {error}
-        </Alert>
-      ) : null}
+      {error ? <InlineError details={error} className="mx-4 mt-3" /> : null}
       {receipt && startError ? (
         <Alert
           tone="warning"

@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
@@ -137,9 +138,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
           }}
         />
         {relay.openError ? (
-          <Text as="p" size="caption" tone="danger">
-            {relay.openError}
-          </Text>
+          <InlineError details={relay.openError}>{t("Could not open this session.")}</InlineError>
         ) : null}
         {relay.blockedReason ? (
           <Text as="p" size="caption" tone="secondary">
@@ -175,7 +174,13 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
               {t("Open session")}
             </Button>
           ) : null}
-          <Button type="submit" variant="primary" disabled={!canSend} shortcut="Mod+Enter">
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!canSend}
+            disabledReason={relay.blockedReason ?? t("Write a message first")}
+            shortcut="Mod+Enter"
+          >
             {direct ? t("Send") : t("Relay via main agent")}
           </Button>
         </div>

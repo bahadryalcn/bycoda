@@ -96,7 +96,9 @@ export function FindPeopleDialog({
         if (!running) onClose();
       }}
       size="lg"
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
+      footerStart={
+        error ? <InlineError details={error}>{t("Could not find people.")}</InlineError> : undefined
+      }
       footer={
         <ModalActions reason={error ? undefined : reason}>
           <Button variant="ghost" disabled={running} onClick={onClose}>

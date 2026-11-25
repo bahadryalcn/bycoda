@@ -149,7 +149,7 @@ function TaskCardBody({
     >
       <Heading size="item" lines={2} className="task-card-title">
         {actions.pending ? (
-          <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
+          <Spinner size="xs" label={t("Loading…")} className="me-1 inline-block" />
         ) : null}
         {task.title}
         <GripVertical
@@ -182,9 +182,11 @@ function TaskCardBody({
         {unread ? (
           <Badge
             variant="count"
-            label={t(unread === 1 ? "{p0} new review note" : "{p0} new review notes", {
-              p0: unread,
-            })}
+            label={
+              unread === 1
+                ? t("{p0} new review note", { p0: unread })
+                : t("{p0} new review notes", { p0: unread })
+            }
           >
             {unread}
           </Badge>
@@ -220,11 +222,7 @@ function TaskCardBody({
             >
               <Heading size="item">{task.title}</Heading>
               <TaskStatusText status={{ ...status, detail: undefined }} />
-              {task.budgetStop ? (
-                <Text as="p" tone="secondary" size="secondary">
-                  {task.budgetStop}
-                </Text>
-              ) : null}
+              {task.budgetStop ? <InlineError details={task.budgetStop} /> : null}
               {task.repairStop?.message ? (
                 <Text as="p" tone="secondary" size="secondary">
                   {task.repairStop.message}

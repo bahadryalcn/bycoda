@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -67,12 +68,12 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
               })}
             </Text>
             {failed ? (
-              <Text tone="danger" size="inherit" className="ml-2">
+              <Text tone="danger" size="inherit" className="ms-2">
                 {t("{p0} failed", { p0: failed })}
               </Text>
             ) : null}
             {unresolved ? (
-              <Text tone="warning" size="inherit" className="ml-2">
+              <Text tone="warning" size="inherit" className="ms-2">
                 {t("{p0} unresolved", { p0: unresolved })}
               </Text>
             ) : null}
@@ -170,11 +171,11 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
         </Text>
       </Disclosure>
       {report && matches && !report.workspaceFingerprint ? (
-        <Text as="p" size="micro" tone="warning" role="status">
+        <InlineMessage tone="warning">
           {t(
             "File freshness could not be checked. Recheck changed outputs before relying on this evidence.",
           )}
-        </Text>
+        </InlineMessage>
       ) : null}
     </div>
   );

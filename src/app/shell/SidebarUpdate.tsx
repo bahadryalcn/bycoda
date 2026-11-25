@@ -231,14 +231,14 @@ export function SidebarUpdate({
   return (
     <Button
       onClick={onClick}
-      disabled={busy}
+      loading={busy}
+      loadingLabel={busy ? label : undefined}
       variant="primary"
       size={compact ? "lg" : undefined}
       fullWidth={!compact}
       motion="none"
       label={label}
-      startIcon={busy ? <Spinner size="md" /> : <Download className="icon-md" />}
-      aria-busy={busy || undefined}
+      startIcon={<Download className="icon-md" />}
       tooltip={label}
       tooltipWhen="overflow"
     >

@@ -72,27 +72,46 @@ import {
   ContinuousUsageTable,
   formatMetric,
   formatUsagePercent,
-  metricNames,
+  metricName,
   UsageDataNotes,
 } from "./UsageCharts";
 import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
 import { UsageRecordedSessions } from "./UsageRecordedSessions";
-import { usageProviderLabel, UsageProviderIdentity } from "./UsageProviderIdentity";
+import { usageLabel, usageProviderLabel, UsageProviderIdentity } from "./UsageProviderIdentity";
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import "./UsageAnalytics.css";
 
 type Preset = "today" | "yesterday" | "7d" | "30d" | "90d" | "all" | "custom";
-const presetLabels: Record<Preset, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  "7d": "7 days",
-  "30d": "30 days",
-  "90d": "90 days",
-  all: "All time",
-  custom: "Custom date and time",
-};
+const presets: Preset[] = ["today", "yesterday", "7d", "30d", "90d", "all", "custom"];
+function presetLabel(preset: Preset): string {
+  switch (preset) {
+    case "today":
+      return t("Today");
+    case "yesterday":
+      return t("Yesterday");
+    case "7d":
+      return t("7 days");
+    case "30d":
+      return t("30 days");
+    case "90d":
+      return t("90 days");
+    case "all":
+      return t("All time");
+    case "custom":
+      return t("Custom date and time");
+  }
+}
+const metricKeys: UsageMetric[] = [
+  "cost",
+  "tokens",
+  "input",
+  "output",
+  "cacheRead",
+  "cacheWrite",
+  "duration",
+];
 type Load = {
   queryKey: string;
   prices?: ModelPrices | null;
@@ -438,11 +457,11 @@ export function UsageOverview({
       values.map((value: string) => ({ key: key as keyof UsageFilters, value })),
     );
   const names: Record<keyof UsageFilters, string> = {
-    provider: "Provider",
-    account: "Account",
-    project: "Project",
-    model: "Model",
-    group: "Workspace",
+    provider: t("Provider"),
+    account: t("Account"),
+    project: t("Project"),
+    model: t("Model"),
+    group: t("Workspace"),
   };
   const chooseFilter = (key: keyof UsageFilters, value: string) => {
     setFilters((f) => ({ ...f, [key]: [value] }));
@@ -575,7 +594,7 @@ export function UsageOverview({
         <div className="usage-analytics-actions">
           <div className="usage-band-scope">
             <InfoPopover label={t("Data sources and coverage")}>
-              <p>{t(limitsOnly ? "This machine" : "This machine · Local session logs")}</p>
+              <p>{limitsOnly ? t("This machine") : t("This machine · Local session logs")}</p>
               {/* shortcut: the zone id is shown as the platform reports it; no i18n formatter returns only the zone. */}
               <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
               {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
@@ -602,9 +621,9 @@ export function UsageOverview({
               hideLabel
               label={t("Date range")}
               value={preset}
-              options={Object.entries(presetLabels).map(([value, label]) => ({
+              options={presets.map((value) => ({
                 value,
-                label: t(label),
+                label: presetLabel(value),
               }))}
               onValueChange={(v) => {
                 if (v === "custom") {
@@ -699,12 +718,12 @@ export function UsageOverview({
               <SearchableSelect
                 key={key}
                 multiple
-                label={t(names[key])}
+                label={names[key]}
                 placeholder={t("All")}
                 value={effectiveFilters[key]}
                 options={[...options[key]].map(([value, label]) => ({
                   value,
-                  label: key === "model" ? label : t(label),
+                  label: key === "model" ? label : usageLabel(label),
                   ...(key === "provider" || key === "account"
                     ? {
                         icon: (
@@ -759,11 +778,9 @@ export function UsageOverview({
       {view !== "limits" && partial && (
         <Alert tone="warning">
           {(load.failed > 0 || stale) &&
-            t(
-              stale
-                ? "Previous usage remains visible. Some sources could not be refreshed."
-                : "Some account logs could not be read. Totals are partial.",
-            )}
+            (stale
+              ? t("Previous usage remains visible. Some sources could not be refreshed.")
+              : t("Some account logs could not be read. Totals are partial."))}
           {load.turnsFailed && (
             <p>
               {t(
@@ -790,11 +807,11 @@ export function UsageOverview({
             <EmptyState
               size="inline"
               kind={activeFilters.length ? "filtered" : "empty"}
-              description={t(
+              description={
                 activeFilters.length
-                  ? "No usage matches these filters."
-                  : "No usage recorded in this period.",
-              )}
+                  ? t("No usage matches these filters.")
+                  : t("No usage recorded in this period.")
+              }
               {...(activeFilters.length
                 ? {
                     onReset: () => {
@@ -835,7 +852,7 @@ export function UsageOverview({
                             selected={metric === key}
                             onClick={() => setMetric(key)}
                           >
-                            {t(metricNames[key])}
+                            {metricName(key)}
                           </Button>
                           <Text
                             as="strong"
@@ -935,9 +952,9 @@ export function UsageOverview({
                   label={t("Chart metric")}
                   value={metric}
                   onValueChange={(v) => setMetric(v as UsageMetric)}
-                  options={Object.entries(metricNames).map(([value, label]) => ({
+                  options={metricKeys.map((value) => ({
                     value,
-                    label: t(label),
+                    label: metricName(value),
                   }))}
                 />
               )}
@@ -949,7 +966,7 @@ export function UsageOverview({
                   onValueChange={(v) => setDimension(v as UsageDimension)}
                   options={(["provider", "account", "model", "project"] as const).map((value) => ({
                     value,
-                    label: t(names[value]),
+                    label: names[value],
                   }))}
                 />
               )}
@@ -1048,7 +1065,7 @@ export function UsageOverview({
               </div>
               <div className="usage-overview-main">
                 <Contribution
-                  title={t(names[dimension])}
+                  title={names[dimension]}
                   rows={matchedRows}
                   metric={metric}
                   colors={colors}

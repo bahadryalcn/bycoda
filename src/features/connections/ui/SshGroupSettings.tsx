@@ -16,18 +16,19 @@ import { SshIdentityField } from "./SshIdentityField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { X } from "../../../shared/ui/icons";
 import { sshProvenanceText } from "./sshProvenanceText";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
 import type { ServerRecord } from "../model/serverInventory";
-import { errorText } from "../../../shared/lib/errors";
-import { sanitizeConnectionError } from "../model/remoteConnection";
+import { connectionProblem } from "../model/connectionReason";
 import {
   SSH_INHERITED_FIELDS,
   sshGroupDraft,
   sshGroupProfileFromDraft,
+  sshInheritedFieldLabel,
   listSshGroupDefaults,
   saveSshGroupDefaults,
   removeSshGroupDefaults,
@@ -40,12 +41,6 @@ import {
   type SshInheritedField,
 } from "../model/sshGroupDefaults";
 
-const labels: Record<SshInheritedField, string> = {
-  user: "SSH user",
-  port: "SSH port",
-  identityFile: "Identity file",
-  certificateFile: "Public SSH certificate file",
-};
 export function SshGroupSettings({
   server,
   onClose,
@@ -65,7 +60,7 @@ export function SshGroupSettings({
     locked = useRef(false);
   const [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState(""),
+    [problem, setProblem] = useState<{ title: string; details?: string }>(),
     [notice, setNotice] = useState<"" | "saved" | "applied">("");
   const [draft, setDraft] = useRetainedState<{
     value: SshGroupDraft;
@@ -109,12 +104,13 @@ export function SshGroupSettings({
     if (locked.current) return;
     locked.current = true;
     setBusy(true);
-    setError("");
+    setProblem(undefined);
     setNotice("");
     try {
       await work();
     } catch (reason) {
-      if (mounted.current) setError(sanitizeConnectionError(errorText(reason)));
+      if (mounted.current)
+        setProblem(connectionProblem(t("Could not complete this action."), reason));
     } finally {
       locked.current = false;
       if (mounted.current) setBusy(false);
@@ -123,7 +119,7 @@ export function SshGroupSettings({
   const load = useCallback(async () => {
     const generation = ++loadEpoch.current;
     setLoading(true);
-    setError("");
+    setProblem(undefined);
     const results = await Promise.allSettled([
       listSshGroupDefaults(),
       previewSshConfiguration(server.id, null, true),
@@ -133,7 +129,7 @@ export function SshGroupSettings({
     if (results[1].status === "fulfilled") {
       const saved = results[1].value;
       if (saved.connectionId !== server.id) {
-        setError(t("SSH configuration changed."));
+        setProblem({ title: t("SSH configuration changed.") });
         setLoading(false);
         return;
       }
@@ -147,7 +143,8 @@ export function SshGroupSettings({
       }
     }
     const failed = results.find((result) => result.status === "rejected");
-    if (failed?.status === "rejected") setError(sanitizeConnectionError(errorText(failed.reason)));
+    if (failed?.status === "rejected")
+      setProblem(connectionProblem(t("Could not load the SSH group settings."), failed.reason));
     setPreview(undefined);
     setLoading(false);
   }, [server.id]);
@@ -175,13 +172,14 @@ export function SshGroupSettings({
           !value.configuration.digest ||
           JSON.stringify(value.inheritance) !== JSON.stringify(inheritance)
         ) {
-          setError(t("SSH configuration changed."));
+          setProblem({ title: t("SSH configuration changed.") });
           return;
         }
         setPreview({ value, scope, reviewed: true });
       },
       (reason) => {
-        if (current && mounted.current) setError(sanitizeConnectionError(errorText(reason)));
+        if (current && mounted.current)
+          setProblem(connectionProblem(t("Could not preview the SSH configuration."), reason));
       },
     );
     return () => {
@@ -195,6 +193,13 @@ export function SshGroupSettings({
     setNotice("");
   };
   const selectedGroup = groups.find((group) => group.id === selected);
+  const inheritReason =
+    busy || loading
+      ? t("Wait for the current action to finish.")
+      : selected
+        ? undefined
+        : t("Choose a group first.");
+  const busyReason = busy ? t("Wait for the current action to finish.") : undefined;
   const profile = draft ? sshGroupProfileFromDraft(draft.value) : undefined;
   const effectiveValue = (field: string) => {
     const value = (
@@ -240,6 +245,9 @@ export function SshGroupSettings({
             <Button
               variant="primary"
               disabled={busy || !profile}
+              disabledReason={
+                busyReason ?? (profile ? undefined : t("Complete the group details first."))
+              }
               success={notice === "saved"}
               successLabel={t("Saved")}
               onClick={() =>
@@ -263,7 +271,7 @@ export function SshGroupSettings({
         }
       >
         <div className="flex min-w-0 flex-col gap-3">
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {problem ? <InlineError details={problem.details}>{problem.title}</InlineError> : null}
           <TextField
             label={t("Group name")}
             value={draft.value.name}
@@ -376,6 +384,12 @@ export function SshGroupSettings({
             ))}
             <Button
               disabled={busy || draft.value.environment.length >= 32}
+              disabledReason={
+                busyReason ??
+                (draft.value.environment.length >= 32
+                  ? t("A group can hold at most 32 environment values.")
+                  : undefined)
+              }
               onClick={() =>
                 editDraft({
                   environment: [...draft.value.environment, { name: "", value: "" }],
@@ -403,7 +417,9 @@ export function SshGroupSettings({
           <Button
             variant="primary"
             disabled={busy || !activePreview?.reviewed}
-            disabledReason={activePreview || error ? undefined : t("Reviewing the configuration…")}
+            disabledReason={
+              activePreview || problem ? undefined : t("Reviewing the configuration…")
+            }
             onClick={() =>
               void operation(async () => {
                 if (!activePreview?.reviewed) return;
@@ -426,12 +442,17 @@ export function SshGroupSettings({
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {error ? (
+        {problem ? (
           <Alert
             tone="danger"
             action={initialized ? undefined : { label: t("Retry"), onClick: () => void load() }}
+            extra={
+              problem.details ? (
+                <ErrorDetails title={problem.title} detail={problem.details} />
+              ) : undefined
+            }
           >
-            {error}
+            {problem.title}
           </Alert>
         ) : null}
         <LiveText
@@ -468,6 +489,7 @@ export function SshGroupSettings({
           </Button>
           <Button
             disabled={busy || !selectedGroup}
+            disabledReason={busyReason ?? (selectedGroup ? undefined : t("Choose a group first."))}
             onClick={() => {
               setNotice("");
               if (selectedGroup)
@@ -485,6 +507,7 @@ export function SshGroupSettings({
             {SSH_INHERITED_FIELDS.map((field) => (
               <Checkbox
                 disabled={!selected || busy || loading}
+                disabledReason={inheritReason}
                 checked={fields.includes(field)}
                 onChange={(event) =>
                   change(() =>
@@ -495,12 +518,13 @@ export function SshGroupSettings({
                     ),
                   )
                 }
-                label={t(labels[field])}
+                label={sshInheritedFieldLabel(field)}
                 key={field}
               />
             ))}
             <Checkbox
               disabled={!selected || busy || loading}
+              disabledReason={inheritReason}
               checked={environment}
               onChange={(event) => change(() => setEnvironment(event.target.checked))}
               label={t("Remote environment")}
@@ -521,10 +545,7 @@ export function SshGroupSettings({
             <DescriptionList size="sm" className="mbs-2">
               {Object.entries(activePreview.value.configuration.provenance).map(
                 ([field, source]) => (
-                  <DescriptionItem
-                    key={field}
-                    term={t(labels[field as SshInheritedField] ?? field)}
-                  >
+                  <DescriptionItem key={field} term={sshInheritedFieldLabel(field)}>
                     {effectiveValue(field) !== undefined ? (
                       <Code className="block">{effectiveValue(field)}</Code>
                     ) : null}

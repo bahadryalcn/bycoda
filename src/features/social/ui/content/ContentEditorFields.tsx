@@ -146,6 +146,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
                 size="body"
                 checked={checked}
                 disabled={availability.disabled && !checked}
+                disabledReason={availability.reason}
                 onChange={() =>
                   onDraft({ ...draft, accountIds: toggleAccount(draft.accountIds, account.id) })
                 }

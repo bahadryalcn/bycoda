@@ -66,7 +66,8 @@ it("loads OpenCode on entry and finds free models without Free in their name", a
   ];
   await render("opencode");
   expect(state.refresh).toHaveBeenCalledExactlyOnceWith("opencode");
-  expect(container.textContent).toContain("Big PickleDefaultFree");
+  expect(container.textContent).toContain("Big PickleFree");
+  expect(container.querySelector('[aria-label="Default"]')).not.toBeNull();
   const input = container.querySelector("input")!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "free");

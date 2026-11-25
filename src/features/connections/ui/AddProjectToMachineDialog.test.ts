@@ -114,6 +114,10 @@ it("shows a clone error and does not settle", async () => {
   await render();
   await act(async () => button("Clone").click());
   await flush();
+  expect(document.body.textContent).toContain("Could not add the project to this computer.");
+  // The raw text is behind Details, not in the line.
+  expect(document.body.textContent).not.toContain("Permission denied");
+  await act(async () => button("Details").click());
   expect(document.body.textContent).toContain("Permission denied");
   expect(done).not.toHaveBeenCalled();
   expect(button("Clone").disabled).toBe(false);

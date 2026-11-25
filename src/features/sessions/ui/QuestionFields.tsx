@@ -38,6 +38,7 @@ export function QuestionFields({
   onCustom,
   onRejectedInput,
   locked = false,
+  lockedReason,
 }: {
   question: UserQuestion;
   selected: string[];
@@ -48,6 +49,8 @@ export function QuestionFields({
   onCustom: (value: string) => boolean;
   onRejectedInput: () => void;
   locked?: boolean;
+  /** Why the fields are locked, shown on the disabled controls. */
+  lockedReason?: string;
 }) {
   const t = useT();
   const options = displayOptions(question, t("Other"));
@@ -158,7 +161,12 @@ export function QuestionFields({
           {!question.multiSelect ? (
             <RadioGroup
               className={styles.radio}
-              legendText={{ size: "body", tone: "neutral", weight: "medium", leading: "normal" }}
+              legendText={{
+                size: "body",
+                tone: "neutral",
+                weight: "medium",
+                leading: "normal",
+              }}
               label={question.prompt}
               name={question.id}
               value={selected[0] ?? ""}
@@ -176,6 +184,7 @@ export function QuestionFields({
                 key={option.id}
                 className={styles.option}
                 disabled={locked}
+                disabledReason={locked ? lockedReason : undefined}
                 checked={selected.includes(option.id)}
                 aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
                 tabIndex={highlighted === optionIndex ? 0 : -1}
@@ -241,6 +250,7 @@ export function QuestionFields({
             className={styles.addNote}
             startIcon={<Plus />}
             disabled={locked}
+            disabledReason={locked ? lockedReason : undefined}
             onClick={() => {
               focusNote.current = true;
               setNoteOpen(true);

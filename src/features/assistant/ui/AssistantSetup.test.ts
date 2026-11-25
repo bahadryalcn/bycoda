@@ -169,6 +169,9 @@ function button(label: string) {
     (button) => button.textContent?.trim() === label,
   )!;
 }
+// A blocked control with a reason stays focusable, so it is aria-disabled rather than disabled.
+const blocked = (node: HTMLButtonElement) =>
+  node.disabled || node.getAttribute("aria-disabled") === "true";
 async function click(label: string) {
   await act(() => button(label).click());
   flushDraft();
@@ -288,18 +291,18 @@ it("shows one voice check per step and finishes without preview or microphone ve
     expect(dialog.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(JSON.parse(localStorage.getItem(key)!).rules).toBe("Keep replies concise");
     if (titles[step] === "Voice provider") {
-      expect(button("Next").disabled).toBe(true);
+      expect(blocked(button("Next"))).toBe(true);
       expect(document.body.textContent).not.toContain("Verify microphone");
       await click("Verify provider");
     }
     if (titles[step] === "Speaker" || titles[step] === "Microphone") {
-      expect(button("Next").disabled).toBe(false);
+      expect(blocked(button("Next"))).toBe(false);
       expect(document.body.textContent).toContain("Optional");
     }
     if (step < titles.length - 1) await click("Next");
   }
   expect(state.request).not.toHaveBeenCalled();
-  expect(button("Start").disabled).toBe(false);
+  expect(blocked(button("Start"))).toBe(false);
   await start();
   expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -327,7 +330,7 @@ it("adds voice to a configured assistant without rewriting the saved profile or 
 it("requires fresh voice verification when reopening a persisted Review draft", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
   await render(true);
-  expect(button("Start").disabled).toBe(true);
+  expect(blocked(button("Start"))).toBe(true);
   expect(document.body.textContent).not.toContain("Set up voice");
   expect(state.request).not.toHaveBeenCalled();
 });
@@ -339,14 +342,14 @@ it("retains the provider check after changing the speaker but invalidates it aft
   await click("Next");
   await click("Next");
   await click("Next");
-  expect(button("Start").disabled).toBe(false);
+  expect(blocked(button("Start"))).toBe(false);
   const settings = loadVoiceSettings();
   await act(async () =>
     saveVoiceSettings({ ...settings, speakers: { ...settings.speakers, supertonic: "F2" } }),
   );
-  expect(button("Start").disabled).toBe(false);
+  expect(blocked(button("Start"))).toBe(false);
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), mode: "grok" }));
-  expect(button("Start").disabled).toBe(true);
+  expect(blocked(button("Start"))).toBe(true);
   expect(state.request).not.toHaveBeenCalled();
 });
 it("offers a usable fresh budget without writing or changing its authority choices", async () => {
@@ -390,7 +393,7 @@ it("runs core setup as one screen with the name, a preselected work mode and Sta
   // "Only watch" is applied up front, so nothing blocks Start on a first setup.
   const saved = JSON.parse(localStorage.getItem(key)!).patch;
   expect(saved).toMatchObject({ autonomy: "report", planApproval: "always", confirmJobs: true });
-  expect(button("Start").disabled).toBe(false);
+  expect(blocked(button("Start"))).toBe(false);
   await click("Fixture work and ask");
   expect(JSON.parse(localStorage.getItem(key)!).patch.autonomy).toBe("chief");
 });
@@ -514,7 +517,12 @@ it("hides confirmed sleep prevention off while retaining unknown, pending, activ
   };
   await render(true);
   expect(document.querySelector("[data-assistant-keep-awake]")?.getAttribute("role")).toBe("alert");
-  expect(document.body.textContent).toContain("Fixture native failure");
+  // The raw native failure sits behind the Details popover, which opens above the dialog.
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  await act(async () => trigger?.click());
+  expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
+    "Fixture native failure",
+  );
 });
 
 it.each([
@@ -534,5 +542,5 @@ it.each([
   await render(true);
   expect(JSON.parse(localStorage.getItem(key)!)).toEqual({ ...saved, step });
   expect(state.request).not.toHaveBeenCalled();
-  if (step === "voice") expect(button("Next").disabled).toBe(true);
+  if (step === "voice") expect(blocked(button("Next"))).toBe(true);
 });

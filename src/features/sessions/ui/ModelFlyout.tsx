@@ -24,6 +24,8 @@ export type ModelFlyoutExtras = {
   values: Record<string, string>;
   onSettingsChange: (values: Record<string, string>) => void;
   disabled?: boolean;
+  /** Translated reason the extras are locked. */
+  disabledReason?: string;
 };
 
 export function ModelFlyout({
@@ -96,7 +98,7 @@ function ExtrasEntry({ extras, onOpen }: { extras: ModelFlyoutExtras; onOpen: ()
       data-model-extras-entry
       onMouseDown={(event) => event.preventDefault()}
       onClick={onOpen}
-      className="shrink-0 text-left"
+      className="shrink-0 text-start"
     >
       <SlidersHorizontal className="icon-sm shrink-0" strokeWidth={1.75} />
       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
@@ -132,6 +134,7 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
         values={extras.values}
         onSettingsChange={extras.onSettingsChange}
         disabled={extras.disabled}
+        disabledReason={extras.disabledReason}
         title={`${HARNESS_TITLE[extras.harness]} · ${name}`}
         leading={
           <Button
@@ -141,7 +144,7 @@ function ExtrasView({ extras, onBack }: { extras: ModelFlyoutExtras; onBack: () 
             type="button"
             aria-label={t("Back")}
             onClick={onBack}
-            className="-ml-1 shrink-0"
+            className="-ms-1 shrink-0"
           >
             <ArrowLeft className="icon-sm" strokeWidth={1.75} />
           </Button>

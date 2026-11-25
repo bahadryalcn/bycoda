@@ -55,7 +55,7 @@ export function SkillsLibraryToolbar({
           { value: "groups", label: t("Groups") },
         ]}
       />
-      <span className="ml-auto" />
+      <span className="ms-auto" />
       <Button
         ref={filterTrigger}
         variant="ghost"

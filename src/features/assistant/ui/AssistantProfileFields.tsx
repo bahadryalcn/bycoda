@@ -111,14 +111,14 @@ export function AssistantProfileFields({
       <>
         <AddressFrequency value={value} onChange={onChange} />
         <ProfileSelect
-          label="Tone"
+          label={t("Tone")}
           value={String(value.tone ?? "friendly")}
           options={[
-            ["friendly", "Friendly"],
-            ["neutral", "Neutral"],
-            ["formal", "Formal"],
-            ["casual", "Casual"],
-            ["blunt", "Blunt"],
+            ["friendly", t("Friendly")],
+            ["neutral", t("Neutral")],
+            ["formal", t("Formal")],
+            ["casual", t("Casual")],
+            ["blunt", t("Blunt")],
           ]}
           onValueChange={(tone) => onChange({ tone: tone as AssistantProfilePatch["tone"] })}
         />
@@ -157,12 +157,12 @@ export function AssistantProfileFields({
         />
         <ProfileSelect
           label={t("Start a conversation")}
-          hint={rows ? "The microphone opens only when you choose to talk." : undefined}
+          hint={rows ? t("The microphone opens only when you choose to talk.") : undefined}
           value={String(value.proactiveSpeech ?? "never")}
           options={[
-            ["never", "Never"],
-            ["return", "Only when I return"],
-            ["important", "Also for important events"],
+            ["never", t("Never")],
+            ["return", t("Only when I return")],
+            ["important", t("Also for important events")],
           ]}
           onValueChange={(next) =>
             onChange({ proactiveSpeech: next as AssistantProfilePatch["proactiveSpeech"] })
@@ -197,9 +197,9 @@ function AddressFrequency({
       label={t("How often to use your name")}
       value={value.addressFrequency ?? "sometimes"}
       options={[
-        ["always", "Always"],
-        ["sometimes", "Sometimes"],
-        ["never", "Never"],
+        ["always", t("Always")],
+        ["sometimes", t("Sometimes")],
+        ["never", t("Never")],
       ]}
       onValueChange={(next) =>
         onChange({ addressFrequency: next as AssistantProfilePatch["addressFrequency"] })
@@ -209,8 +209,8 @@ function AddressFrequency({
 }
 
 /** Auto follows the spoken language; every other option is an app language saved by its region tag. */
-const LANGUAGE_OPTIONS: readonly (readonly [string, string])[] = [
-  ["auto", "Auto"],
+const languageOptions = (): readonly (readonly [string, string])[] => [
+  ["auto", t("Auto")],
   ...APP_LANGUAGES.map(({ tag, label }) => [tag, label] as const),
 ];
 
@@ -234,10 +234,7 @@ function ProfileLanguage({
             hideLabel
             label={t("Language")}
             value={value}
-            options={LANGUAGE_OPTIONS.map(([id, label]) => ({
-              value: id,
-              label: id === "auto" ? t(label) : label,
-            }))}
+            options={languageOptions().map(([value, label]) => ({ value, label }))}
             onValueChange={onValueChange}
           />
         )}
@@ -246,9 +243,9 @@ function ProfileLanguage({
   return (
     <div className={roleStyles.inlineField}>
       <ProfileSelect
-        label="Language"
+        label={t("Language")}
         value={value}
-        options={LANGUAGE_OPTIONS}
+        options={languageOptions()}
         onValueChange={onValueChange}
       />
       <InfoTooltip label={t("About language")}>{help}</InfoTooltip>

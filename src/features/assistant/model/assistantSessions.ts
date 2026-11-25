@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import type { HostSession } from "../../connections/model/protocol";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
@@ -13,15 +14,15 @@ export async function readAssistantSession(
   const reader = owner ?? (await captureAssistantHostRead());
   const result = await reader.session(sessionId);
   if (!result?.session || result.session.id !== sessionId)
-    throw new Error("The Host returned no matching session state.");
+    throw new Error(t("The Host returned no matching session state."));
   if (!(typeof projectId === "string" ? [projectId] : projectId).includes(result.projectId))
-    throw new Error("The session project no longer matches this job.");
+    throw new Error(t("The session project no longer matches this job."));
   if (
     !["idle", "running", "interrupted"].includes(result.status) ||
     !Number.isFinite(result.updatedAt) ||
     result.updatedAt < 0
   )
-    throw new Error("The Host returned invalid session status.");
+    throw new Error(t("The Host returned invalid session status."));
   return { ...result, environmentId: reader.environmentId };
 }
 

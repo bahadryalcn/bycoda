@@ -40,6 +40,7 @@ import {
 
 import { persistQuickComposerShortcut } from "../model/quickComposerPersist";
 import { keybindingActionLabel } from "../model/keybindingLabel";
+import { keybindingCategoryLabel, keybindingWhenLabel } from "../model/keybindingLabels";
 import {
   isGlobalShortcut,
   QUICK_COMPOSER_DEFAULT_SHORTCUT,
@@ -100,17 +101,22 @@ export function ShortcutEditor({
   const focusing = useRef(false);
   const [error, setError] = useState<{ title: string; detail: string } | null>(null);
   const [preview, setPreview] = useState("");
+  const [busyKind, setBusyKind] = useState<"reset" | "enable" | null>(null);
   const held = useRef({
     metaKey: false,
     ctrlKey: false,
     altKey: false,
     shiftKey: false,
   });
-  const run = async (action: () => void | Promise<void>) => {
+  const run = async (
+    action: () => void | Promise<void>,
+    kind: "reset" | "enable" | null = null,
+  ) => {
     if (pending.current) return;
     pending.current = true;
     setRecording(false);
     setBusy(true);
+    setBusyKind(kind);
     setError(null);
     setSaved(false);
     onFeedbackChange?.({ state: "loading" });
@@ -125,6 +131,7 @@ export function ShortcutEditor({
       onFeedbackChange?.({ state: "error", title, detail });
     } finally {
       setBusy(false);
+      setBusyKind(null);
       pending.current = false;
     }
   };
@@ -157,7 +164,13 @@ export function ShortcutEditor({
       onFeedbackChange?.(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isImeComposition(event) || event.repeat) return;
+      if (isImeComposition(event)) return;
+      // A held chord repeats: swallow the repeats so they cannot reach the app, but record nothing new.
+      if (event.repeat) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const bare = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
       // Tab and Shift+Tab retain forward/backward keyboard navigation.
       if (!event.metaKey && !event.ctrlKey && !event.altKey && event.code === "Tab") {
@@ -296,9 +309,10 @@ export function ShortcutEditor({
               variant="ghost"
               iconOnly
               label={t("Reset {p0} shortcut", { p0: name })}
+              loading={busyKind === "reset"}
               disabled={busy || disabled}
               disabledReason={busy ? t("Finish the current change first.") : undefined}
-              onClick={() => void run(onReset)}
+              onClick={() => void run(onReset, "reset")}
             >
               <RotateCcw aria-hidden strokeWidth={1.75} />
             </Button>
@@ -306,7 +320,14 @@ export function ShortcutEditor({
         </span>
       </div>
       {!display && onEnable ? (
-        <Button variant="ghost" disabled={busy || disabled} onClick={() => void run(onEnable)}>
+        <Button
+          variant="ghost"
+          loading={busyKind === "enable"}
+          loadingLabel={t("Saving…")}
+          disabled={busy || disabled}
+          disabledReason={busy ? t("Finish the current change first.") : undefined}
+          onClick={() => void run(onEnable, "enable")}
+        >
           {t("Enable")}
         </Button>
       ) : null}
@@ -318,7 +339,7 @@ export function ShortcutEditor({
           {error.title}
         </SettingsFeedback>
       ) : busy || saved ? (
-        <SettingsFeedback state={busy ? "loading" : "success"} immediate>
+        <SettingsFeedback state={busy ? "loading" : "success"} immediate={!busy}>
           {busy ? t("Saving…") : t("Saved")}
         </SettingsFeedback>
       ) : null}
@@ -449,9 +470,9 @@ const KeybindingSettingsRow = memo(function KeybindingSettingsRow({
       }
       scope={
         row.when === "Always" ? undefined : (
-          <OverflowTooltip label={t("When: {p0}", { p0: t(row.when) })}>
+          <OverflowTooltip label={t("When: {p0}", { p0: keybindingWhenLabel(row.when) })}>
             <Text size="inherit" tone="muted" leading="inherit" truncate className={styles.context}>
-              {t("When: {p0}", { p0: t(row.when) })}
+              {t("When: {p0}", { p0: keybindingWhenLabel(row.when) })}
             </Text>
           </OverflowTooltip>
         )
@@ -468,7 +489,7 @@ const KeybindingSettingsRow = memo(function KeybindingSettingsRow({
         feedback ? (
           <SettingsFeedback
             state={feedback.state}
-            immediate
+            immediate={feedback.state !== "loading"}
             extra={
               feedback.state === "error" ? (
                 <ErrorDetails title={feedback.title} detail={feedback.detail} />
@@ -671,7 +692,10 @@ export function KeybindingsPage() {
                   onChange={setCategory}
                   options={[
                     { value: "all", label: t("All categories") },
-                    ...categories.map((value) => ({ value, label: t(value) })),
+                    ...categories.map((value) => ({
+                      value,
+                      label: keybindingCategoryLabel(value),
+                    })),
                   ]}
                 />
                 <Text as="span" size="secondary" weight="medium" tone="primary">
@@ -689,7 +713,12 @@ export function KeybindingsPage() {
                     { value: "unassigned", label: t("Unassigned") },
                   ]}
                 />
-                <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
+                <Button
+                  variant="ghost"
+                  onClick={resetFilters}
+                  disabled={!filtered}
+                  disabledReason={t("No filters are set.")}
+                >
                   {t("Reset filters")}
                 </Button>
               </div>
@@ -702,9 +731,11 @@ export function KeybindingsPage() {
           <div className={styles.activeFilters}>
             <span>
               {[
-                category !== "all" ? `${t("Category")}: ${t(category)}` : null,
+                category !== "all"
+                  ? `${t("Category")}: ${keybindingCategoryLabel(category)}`
+                  : null,
                 status !== "all"
-                  ? `${t("Status")}: ${t(status === "modified" ? "Modified" : status === "disabled" ? "Disabled" : "Unassigned")}`
+                  ? `${t("Status")}: ${status === "modified" ? t("Modified") : status === "disabled" ? t("Disabled") : t("Unassigned")}`
                   : null,
               ]
                 .filter(Boolean)
@@ -739,7 +770,7 @@ export function KeybindingsPage() {
                 key={group}
                 title={
                   <span>
-                    {t(group)}{" "}
+                    {keybindingCategoryLabel(group)}{" "}
                     <Text size="caption" tone="muted" leading="inherit" className="tabular-nums">
                       · {entries.length}
                     </Text>

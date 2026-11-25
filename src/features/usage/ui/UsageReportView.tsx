@@ -15,12 +15,6 @@ import { formatMetric } from "./UsageCharts";
 
 const ReportContext = createContext<UsageReport | undefined>(undefined);
 
-const periodLabel = {
-  "month-to-date": "This month",
-  "last-30-days": "Last 30 days",
-  "monthly-history": "Monthly",
-} as const;
-
 /** One bar per row; the aggregated tail says how many rows it stands for. */
 function ReportChart({
   report,
@@ -80,12 +74,17 @@ const UsageReportLayout = defineComponent({
     const [openFailed, setOpenFailed] = useState(false);
     const t = useT();
     if (!report) return null;
+    const periodNames = {
+      "month-to-date": t("This month"),
+      "last-30-days": t("Last 30 days"),
+      "monthly-history": t("Monthly"),
+    };
     const { totals } = report;
     return (
       <article className="grid min-w-0 gap-3 [overflow-wrap:anywhere]">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <Heading as="h3" size="section">
-            {`${t("Usage")} · ${t(periodLabel[report.period])}`}
+            {`${t("Usage")} · ${periodNames[report.period]}`}
           </Heading>
           <div className="flex items-center gap-2">
             {report.coverage.partial ? (

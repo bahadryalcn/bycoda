@@ -79,6 +79,7 @@ export function SprintManagement({
     }
   };
   const canNew = board.supported && projects.length > 0;
+  const lifecycleBlock = selected ? board.lifecycleIssue(selected) : null;
   const server = sprintServerChoice(board, t("Selected Host is unavailable"));
   const manage = selected && fullyAccessible(selected);
   const dates = selected ? sprintDateRange(selected, t) : "";
@@ -123,7 +124,8 @@ export function SprintManagement({
               <Button
                 variant="primary"
                 loading={busy === "start"}
-                disabled={!!busy || !!board.lifecycleIssue(selected)}
+                disabled={!!busy || !!lifecycleBlock}
+                disabledReason={lifecycleBlock ?? undefined}
                 onClick={() => void act("start", () => board.command(selected, "start"))}
               >
                 {t("Start sprint")}
@@ -132,7 +134,8 @@ export function SprintManagement({
               <Button
                 variant="primary"
                 loading={busy === "complete"}
-                disabled={!!busy || !!board.lifecycleIssue(selected)}
+                disabled={!!busy || !!lifecycleBlock}
+                disabledReason={lifecycleBlock ?? undefined}
                 onClick={() =>
                   void act("complete", async () => setCompleting(await board.report(selected.id)))
                 }
@@ -163,6 +166,11 @@ export function SprintManagement({
               variant="primary"
               startIcon={<Plus className="icon-xs" />}
               disabled={!canNew || !!busy}
+              disabledReason={
+                board.supported
+                  ? t("Add a project before creating a sprint.")
+                  : t("Selected Host is unavailable")
+              }
               onClick={() => setEditing("new")}
             >
               {t("New sprint")}

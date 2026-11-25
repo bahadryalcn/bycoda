@@ -69,7 +69,7 @@ function workspace(patch: Partial<Workspace> = {}): Workspace {
     client: client as unknown as Workspace["client"],
     shell,
     loaded: true,
-    error: "",
+    problem: "",
     selectWorkspace,
     setAiStopped,
     retry,
@@ -263,7 +263,7 @@ it("does not show the offline warning before the first snapshot is read", () => 
 });
 
 it("shows the connection error with a retry when no Host is available", () => {
-  render({ machineId: "", client: null, error: "Connect a bycoda Host for Social Media." });
+  render({ machineId: "", client: null, problem: "Connect a bycoda Host for Social Media." });
   expect(element.textContent).toContain("Connect a bycoda Host for Social Media.");
   act(() => buttonWithText("Try again")?.click());
   expect(retry).toHaveBeenCalledTimes(1);

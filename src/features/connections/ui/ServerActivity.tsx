@@ -20,7 +20,7 @@ export function ServerActivity({
   expanded?: boolean;
 }) {
   const [pending, setPending] = useState<string>();
-  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
   const activity = server.metadata.activity ?? [];
   const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
   const visibleActivity = activity.filter((event) => !bookmarkedOnly || event.bookmarked);
@@ -43,14 +43,16 @@ export function ServerActivity({
       <Text as="p" size="inherit" tone="muted" className="mbs-2">
         {t("Launch metadata only. Terminal contents are not recorded.")}
       </Text>
-      {error ? <InlineError className="mbs-2">{error}</InlineError> : null}
+      {failed ? (
+        <InlineError className="mbs-2">{t("Couldn’t update activity bookmark.")}</InlineError>
+      ) : null}
       {!visibleActivity.length ? (
         <EmptyState
           size="inline"
           kind={bookmarkedOnly ? "filtered" : undefined}
-          description={t(
-            bookmarkedOnly ? "No bookmarked activity." : "No connection activity yet.",
-          )}
+          description={
+            bookmarkedOnly ? t("No bookmarked activity.") : t("No connection activity yet.")
+          }
           onReset={bookmarkedOnly ? () => setBookmarkedOnly(false) : undefined}
         />
       ) : (
@@ -65,17 +67,22 @@ export function ServerActivity({
                 variant="ghost"
                 iconOnly
                 pressed={event.bookmarked}
-                label={t(event.bookmarked ? "Remove bookmark" : "Bookmark")}
+                label={event.bookmarked ? t("Remove bookmark") : t("Bookmark")}
                 disabled={pending != null}
+                disabledReason={
+                  pending != null && pending !== event.id
+                    ? t("Wait for the current action to finish.")
+                    : undefined
+                }
                 loading={pending === event.id}
                 onClick={async () => {
                   if (pending != null) return;
                   setPending(event.id);
-                  setError("");
+                  setFailed(false);
                   try {
                     await bookmarkServerActivity(server.id, event.id, !event.bookmarked);
                   } catch {
-                    setError(t("Couldn’t update activity bookmark."));
+                    setFailed(true);
                   } finally {
                     setPending(undefined);
                   }

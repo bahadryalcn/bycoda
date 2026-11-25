@@ -8,6 +8,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clickButton,
   clientMock,
@@ -181,7 +182,7 @@ describe("FindPeopleDialog", () => {
     await flush();
     clickButton("Find people");
     await flush();
-    expect(bodyText()).toContain("The account token expired.");
+    expect(openErrorDetails()).toContain("The account token expired.");
     expect(props.onCollected).not.toHaveBeenCalled();
     expect(buttonByText("Cancel")).toBeTruthy();
   });

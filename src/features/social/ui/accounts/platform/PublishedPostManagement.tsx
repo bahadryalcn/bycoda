@@ -124,6 +124,15 @@ export function PublishedPostManagement({
             size="sm"
             tone="danger"
             disabled={!post || !!post.deletion || busy}
+            disabledReason={
+              !post
+                ? t("Choose a post first.")
+                : post.deletion === "deleted"
+                  ? t("This post is already deleted.")
+                  : post.deletion
+                    ? t("Deletion needs review. Open the post to check it.")
+                    : t("Wait for the current change to finish.")
+            }
             loading={work.is("delete")}
             onClick={() => void remove().catch(() => undefined)}
           >
@@ -160,7 +169,9 @@ export function PublishedPostManagement({
           ) : null}
         </>
       ) : null}
-      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
+      {work.failureTitle ? (
+        <InlineError details={work.details}>{work.failureTitle}</InlineError>
+      ) : null}
       {confirmation.dialog}
     </div>
   );

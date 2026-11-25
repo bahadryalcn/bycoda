@@ -69,11 +69,6 @@ export function TaskListPreview({ items, explanation }: Props) {
               >
                 {item.text}
               </Text>
-              {item.status === "cancelled" ? (
-                <Badge tone="neutral" size="xs">
-                  {t("Cancelled")}
-                </Badge>
-              ) : null}
             </li>
           ))}
         </ol>
@@ -88,7 +83,11 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
     return <StatusBadge status={status === "completed" ? "done" : "running"} iconOnly size="xs" />;
   }
   if (status === "cancelled") {
-    return <Minus aria-hidden className="icon-xs text-(--transcript-ink-faint)" strokeWidth={2} />;
+    return (
+      <span role="img" aria-label={t("Cancelled")} className="inline-flex">
+        <Minus aria-hidden className="icon-xs text-(--transcript-ink-faint)" strokeWidth={2} />
+      </span>
+    );
   }
   return <StatusDot tone="neutral" label={t("Pending")} />;
 }

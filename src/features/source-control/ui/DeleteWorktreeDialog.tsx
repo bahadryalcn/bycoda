@@ -70,7 +70,9 @@ export function DeleteWorktreeDialog({
     ),
     confirmLabel: ({ acknowledged }: ConfirmState) =>
       sessionCount && acknowledged
-        ? t(sessionCount === 1 ? "Delete worktree and session" : "Delete worktree and sessions")
+        ? sessionCount === 1
+          ? t("Delete worktree and session")
+          : t("Delete worktree and sessions")
         : t("Delete worktree"),
     consequences: ({ acknowledged }: ConfirmState) => [
       sessionCount > 0 && {
@@ -129,15 +131,15 @@ export function DeleteWorktreeDialog({
       <Checkbox
         size="caption"
         label={t("Also delete branch {p0}", { p0: tree.branch })}
-        description={
+        checked={wantsBranchDelete}
+        disabled={!!block}
+        disabledReason={
           block === "unpushed"
             ? t("It has unpushed commits.")
             : block === "default"
               ? t("It is the default branch.")
               : undefined
         }
-        checked={wantsBranchDelete}
-        disabled={!!block}
         onChange={(event) => setDeleteBranch(event.target.checked)}
       />
     ) : undefined,

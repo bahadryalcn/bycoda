@@ -60,7 +60,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
     draftSaveError,
     pending,
     clearing,
-    error,
+    notice,
     confirm,
     confirmScope,
     setConfirm,
@@ -146,13 +146,13 @@ export function ConversationPanel(props: ConversationPanelProps) {
               size="inline"
               kind={transcript === "filtered" ? "filtered" : "empty"}
               onReset={transcript === "filtered" ? () => setQuery("") : undefined}
-              description={t(
+              description={
                 transcript === "filtered"
-                  ? "No results"
+                  ? t("No results")
                   : transcript === "empty"
-                    ? "No messages yet"
-                    : "Open a conversation to begin",
-              )}
+                    ? t("No messages yet")
+                    : t("Open a conversation to begin")
+              }
             />
           )}
           {messageElements.length > 0 && (
@@ -164,7 +164,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
             />
           )}
         </div>
-        <LiveText className="sr-only" mode="assertive" text={error} />
+        <LiveText className="sr-only" mode="assertive" text={notice} />
         <LiveText
           className="sr-only"
           text={
@@ -175,7 +175,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
                 : summaryLabel || ""
           }
         />
-        {error && (
+        {notice && (
           <div className={styles.feedback}>
             <InlineError
               live="off"
@@ -184,7 +184,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
                 disabled: pending || clearing,
               }}
             >
-              {error}
+              {notice}
             </InlineError>
           </div>
         )}

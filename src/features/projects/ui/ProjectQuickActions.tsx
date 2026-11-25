@@ -217,7 +217,10 @@ function ProjectQuickActionsFor({
       saveProjectActions(actionsCwd, values);
     } catch (reason) {
       // A browser storage failure, not a remote one: no Host text to disclose.
-      setError({ message: t("Could not save actions: {p0}", { p0: String(reason) }), details: "" });
+      setError({
+        message: t("Could not save actions: {p0}", { p0: String(reason) }),
+        details: "",
+      });
       return false;
     }
     setActions(values);
@@ -487,6 +490,7 @@ function ProjectQuickActionTrigger({
   item: ExpandingButtonGroupItem;
   onError: (reason: unknown) => void;
 }) {
+  const t = useT();
   return (
     <Button
       ref={ref}
@@ -500,6 +504,7 @@ function ProjectQuickActionTrigger({
       selected={item.active}
       tone={item.tone}
       disabled={disabled ?? item.disabled}
+      disabledReason={(disabled ?? item.disabled) ? t("Not available right now.") : undefined}
       aria-haspopup={props["aria-haspopup"]}
       aria-expanded={props["aria-expanded"]}
       data-tauri-drag-region="false"

@@ -1,4 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -500,6 +501,9 @@ export function ServersView({
                     <Button
                       variant="ghost"
                       disabled={!filterCount && !recentFirst}
+                      disabledReason={
+                        !filterCount && !recentFirst ? t("No filters are applied.") : undefined
+                      }
                       onClick={() => {
                         setGroup("");
                         setTag("");
@@ -653,6 +657,13 @@ export function ServersView({
               <Checkbox
                 aria-label={t("Select visible servers")}
                 disabled={!filtered.length || bulkBusy}
+                disabledReason={
+                  bulkBusy
+                    ? t("Wait for the current action to finish.")
+                    : !filtered.length
+                      ? t("No servers to select.")
+                      : undefined
+                }
                 checked={filtered.length > 0 && visibleChecked === filtered.length}
                 indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
                 onChange={(event) => {
@@ -667,19 +678,29 @@ export function ServersView({
                   });
                 }}
               />
-              <Text role="status" size="inherit">
-                {t("{p0} selected", { p0: checkedServers.length })}
-                {checkedServers.length > visibleChecked
-                  ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
-                  : ""}
-              </Text>
-              <Button variant="ghost" disabled={bulkBusy} onClick={() => setCheckedIds(new Set())}>
+              <LiveText
+                size="inherit"
+                text={`${t("{p0} selected", { p0: checkedServers.length })}${
+                  checkedServers.length > visibleChecked
+                    ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
+                    : ""
+                }`}
+              />
+              <Button
+                variant="ghost"
+                disabled={bulkBusy}
+                disabledReason={bulkBusy ? t("Wait for the current action to finish.") : undefined}
+                onClick={() => setCheckedIds(new Set())}
+              >
                 {t("Clear selection")}
               </Button>
               <div className="ms-auto flex gap-1">
                 <Button
                   variant="ghost"
                   disabled={bulkBusy}
+                  disabledReason={
+                    bulkBusy ? t("Wait for the current action to finish.") : undefined
+                  }
                   onClick={() => void runBulk(checkedServers, false)}
                   startIcon={<Star className="icon-sm" />}
                 >
@@ -688,6 +709,9 @@ export function ServersView({
                 <Button
                   tone="danger"
                   disabled={bulkBusy}
+                  disabledReason={
+                    bulkBusy ? t("Wait for the current action to finish.") : undefined
+                  }
                   onClick={() => {
                     setFailure(undefined);
                     setBulkTargets([...checkedServers]);

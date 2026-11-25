@@ -13,6 +13,11 @@ import type { BuildIdentity } from "../../workspaces/model/contracts";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 
+/** The build id, branch and head, or a translated note when the identity is unknown. */
+function identityLabel(identity: BuildIdentity | null): string {
+  return identity ? buildIdentityLabel(identity) : t("source identity unknown");
+}
+
 /** The native and renderer stamps are separate evidence, including when either is unknown. */
 export function BuildIdentityDetails() {
   useLocale();
@@ -59,18 +64,18 @@ export function BuildIdentityDetails() {
         {comparison === "exact" && readState !== "failed" ? (
           /* Both stamps are the same: say so once and show the identity once. */
           <DescriptionItem term={t("Source")}>
-            {t(buildIdentityLabel())}{" "}
+            {identityLabel(buildIdentity)}{" "}
             <Text size="inherit" tone="secondary">
               · {t("Same source")}
             </Text>
           </DescriptionItem>
         ) : (
           <>
-            <DescriptionItem term={t("App source")}>{t(buildIdentityLabel())}</DescriptionItem>
+            <DescriptionItem term={t("App source")}>{identityLabel(buildIdentity)}</DescriptionItem>
             <DescriptionItem term={t("Native source")}>
               {readState === "failed" && !native
                 ? t("Unavailable: the native build stamp could not be read.")
-                : t(buildIdentityLabel(native))}
+                : identityLabel(native)}
               {readState === "failed" && native ? (
                 <Text size="inherit" tone="secondary">
                   {" "}
@@ -79,14 +84,14 @@ export function BuildIdentityDetails() {
               ) : null}
             </DescriptionItem>
             <DescriptionItem term={t("Source comparison")}>
-              {t(
+              {
                 {
-                  exact: "Same source",
-                  included: "Source included",
-                  different: "Different source",
-                  unknown: "Unknown",
-                }[comparison],
-              )}
+                  exact: t("Same source"),
+                  included: t("Source included"),
+                  different: t("Different source"),
+                  unknown: t("Unknown"),
+                }[comparison]
+              }
             </DescriptionItem>
           </>
         )}

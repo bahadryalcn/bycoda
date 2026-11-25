@@ -25,23 +25,27 @@ export type HostModeSwitchView = {
   pending?: HostLifecycleMode;
   /** The older Host cannot change mode. */
   unsupported: boolean;
-  error?: string;
+  /** The desktop's own text for the last failed switch; the generic mismatch text never hides it. */
+  lastError?: string;
+  /** The registration does not match the saved setting. */
+  mismatchNotice?: string;
 };
 
 /** The switch's states, derived once so the UI only renders them. */
 export function hostModeSwitchView(status: HostModeStatus): HostModeSwitchView {
-  const error =
-    status.lastError ||
-    (status.mismatch
-      ? t(
-          "This computer's host service does not match its saved setting. Switch it again to repair.",
-        )
-      : undefined);
   return {
     checked: status.mode === "service",
     pending: status.pendingMode ?? undefined,
     unsupported: status.switchSupported === false,
-    ...(error ? { error } : {}),
+    ...(status.lastError
+      ? { lastError: status.lastError }
+      : status.mismatch
+        ? {
+            mismatchNotice: t(
+              "This computer's host service does not match its saved setting. Switch it again to repair.",
+            ),
+          }
+        : {}),
   };
 }
 
@@ -86,7 +90,7 @@ export function useHostLifecycleMode() {
     try {
       setStatus(await setHostLifecycleMode(mode, force));
     } catch (reason) {
-      setFailure(t(errorText(reason)));
+      setFailure(errorText(reason));
       await read();
     } finally {
       setSwitching(false);

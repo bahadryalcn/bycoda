@@ -110,8 +110,12 @@ it("keeps a failed deletion open and prevents dismissal while it is pending", as
     expect(cancel).not.toHaveBeenCalled();
     await act(async () => fail(new Error("Could not delete conversation")));
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "Could not delete conversation",
+      "Couldn’t delete this project.",
     );
+    await act(async () =>
+      document.body.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!.click(),
+    );
+    expect(document.body.textContent).toContain("Could not delete conversation");
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(button("Delete").disabled).toBe(false);
     expect(confirm).toHaveBeenCalledTimes(1);

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { openErrorDetails } from "../../features/sessions/ui/errorDetails.fixture";
 import { act, createElement as h, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -228,7 +229,8 @@ it("reports a rejected native window and permits retry", async () => {
   const { container } = await mount();
   const button = container.querySelector<HTMLButtonElement>('[aria-label="Open in new window"]')!;
   await act(() => button.click());
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("window failed");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not open window");
+  expect(openErrorDetails(container)).toContain("window failed");
   expect(button.disabled).toBe(false);
 });
 

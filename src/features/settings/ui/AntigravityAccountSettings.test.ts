@@ -146,8 +146,14 @@ it("shows discovery errors and allows retry", async () => {
   mock.discover.mockRejectedValueOnce(new Error("Authentication required"));
   await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not check Antigravity CLI.",
+  );
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!;
+  await act(async () => trigger.click());
+  expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
     "Authentication required",
   );
+  await act(async () => trigger.click());
   expect(button().disabled).toBe(false);
   await act(async () => button().click());
   expect(container.textContent).toContain("No Antigravity models");

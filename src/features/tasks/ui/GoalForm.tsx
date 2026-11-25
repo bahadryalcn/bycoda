@@ -359,6 +359,7 @@ export function GoalForm({
                       reveal="always"
                       label={t("Remove {p0}", { p0: label })}
                       disabled={workspaceBusy}
+                      disabledReason={t("Creating the integration worktree…")}
                       onClick={() => {
                         setCrewValid(false);
                         setWorkspaceChecks((current) => {
@@ -482,7 +483,7 @@ export function GoalForm({
             </TaskMoreOptions>
           </div>
         </FieldGroup>
-        {error ? <InlineError className="mt-3">{error}</InlineError> : null}
+        {error ? <InlineError className="mt-3" details={error} /> : null}
       </div>
       <ModalFooter>
         <ModalActions reason={reason}>

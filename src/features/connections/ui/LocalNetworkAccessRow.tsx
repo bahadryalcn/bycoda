@@ -58,11 +58,11 @@ export function LocalNetworkAccessRow({
 
   const on = status?.state === "ready";
   const feedback = error ? (
-    <InlineError>{error}</InlineError>
+    <InlineError details={error}>{t("Could not change local network access.")}</InlineError>
   ) : status?.networkHint ? (
-    <InlineMessage tone="warning">{t(status.networkHint)}</InlineMessage>
+    <InlineMessage tone="warning">{status.networkHint}</InlineMessage>
   ) : status && !on && status.state !== "setup-required" && status.reason ? (
-    <InlineMessage tone="neutral">{t(status.reason)}</InlineMessage>
+    <InlineMessage tone="neutral">{status.reason}</InlineMessage>
   ) : undefined;
 
   return (

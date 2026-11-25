@@ -145,7 +145,7 @@ export function GitPanelSections({
   );
 }
 
-const SECTION_LABEL: Record<GitPanelSection, string> = { stashes: "Stashes", graph: "Graph" };
+const SECTIONS: GitPanelSection[] = ["stashes", "graph"];
 
 function isEditable(target: EventTarget | null): boolean {
   return (
@@ -181,10 +181,10 @@ export function usePanelPreferencesMenu({
       y={point.y}
       ariaLabel={t("Source Control")}
       items={[
-        ...(Object.keys(SECTION_LABEL) as GitPanelSection[]).map((section) => ({
+        ...SECTIONS.map((section) => ({
           kind: "item" as const,
           id: section,
-          label: t(SECTION_LABEL[section]),
+          label: section === "stashes" ? t("Stashes") : t("Graph"),
           checked: shown[section],
         })),
         { kind: "sep" as const },
@@ -199,7 +199,7 @@ export function usePanelPreferencesMenu({
       onPick={(id) => {
         setPoint(null);
         if (id === "auto-fetch") onToggleAutoFetch();
-        else if (id in SECTION_LABEL)
+        else if (SECTIONS.includes(id as GitPanelSection))
           saveGitPanelSection(id as GitPanelSection, !shown[id as GitPanelSection]);
       }}
       onClose={() => setPoint(null)}

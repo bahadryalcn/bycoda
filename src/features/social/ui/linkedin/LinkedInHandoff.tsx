@@ -14,6 +14,7 @@ export function LinkedInHandoff({
   ariaLabel,
   loading,
   disabled,
+  disabledReason,
   onOpen,
 }: {
   title?: string;
@@ -23,6 +24,8 @@ export function LinkedInHandoff({
   ariaLabel?: string;
   loading?: boolean;
   disabled?: boolean;
+  /** Why the button is disabled. Pass it whenever `disabled` can be true. */
+  disabledReason?: string;
   onOpen(): void;
 }) {
   return (
@@ -43,6 +46,7 @@ export function LinkedInHandoff({
         aria-label={ariaLabel}
         loading={loading}
         disabled={disabled}
+        disabledReason={disabledReason}
         onClick={onOpen}
       >
         {action}

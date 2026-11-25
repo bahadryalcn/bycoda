@@ -85,7 +85,7 @@ export type DesktopIndicatorStatus = {
 export function DesktopControlStripView({
   name,
   status,
-  error = "",
+  notice = "",
   stopping = false,
   unknown = false,
   forceVisible = false,
@@ -95,7 +95,7 @@ export function DesktopControlStripView({
 }: {
   name?: string;
   status?: DesktopIndicatorStatus;
-  error?: string;
+  notice?: string;
   stopping?: boolean;
   unknown?: boolean;
   forceVisible?: boolean;
@@ -103,7 +103,7 @@ export function DesktopControlStripView({
   onStop: () => void;
   onDismiss?: () => void;
 }) {
-  if (!forceVisible && !status?.enabled && !status?.active && !error && !stopping) return null;
+  if (!forceVisible && !status?.enabled && !status?.active && !notice && !stopping) return null;
   const action = !unknown && !stopping ? status?.currentAction : undefined;
   const app =
     action?.action.startsWith("clipboard-") && action.app === "Global clipboard"
@@ -156,14 +156,20 @@ export function DesktopControlStripView({
         ) : null}
       </span>
       <LiveText className="sr-only" text={label} />
-      {error && <InlineError className={styles.error}>{error}</InlineError>}
+      {notice && <InlineError className={styles.notice}>{notice}</InlineError>}
       {inactive && onDismiss ? (
         <Button size="sm" onClick={onDismiss}>
           {t("Dismiss")}
         </Button>
       ) : state === "stopped" ? null : (
-        <Button size="sm" tone="danger" loading={stopping} onClick={onStop}>
-          {stopping ? t("Stopping…") : t("Stop computer use")}
+        <Button
+          size="sm"
+          tone="danger"
+          loading={stopping}
+          loadingLabel={t("Stopping…")}
+          onClick={onStop}
+        >
+          {t("Stop computer use")}
         </Button>
       )}
     </Text>

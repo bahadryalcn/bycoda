@@ -1,4 +1,5 @@
 import { CircleAlert, Pause, TriangleAlert } from "../../../../shared/ui/icons";
+import { t } from "../../../../shared/i18n";
 import { Tooltip } from "../../../../shared/ui/Tooltip";
 import type { HealthStatus } from "../common/HealthDot";
 
@@ -22,7 +23,11 @@ export function AccountStatusMark({
   const { Icon, tone } = MARKS[status];
   return (
     <Tooltip label={label}>
-      <Icon className="icon-sm shrink-0" tone={tone} aria-label={label} />
+      <Icon
+        className="icon-sm shrink-0"
+        tone={tone}
+        aria-label={t("Account status: {p0}", { p0: label })}
+      />
     </Tooltip>
   );
 }

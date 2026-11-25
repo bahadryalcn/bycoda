@@ -39,12 +39,13 @@ export const mergeActionsDisabled = Facet.define<boolean, boolean>({
 
 type Run = (id: number, choice: MergeChoice) => void;
 
-const CHOICES = [
-  ["ours", "Accept Current", "Accept Current (Alt+1)"],
-  ["theirs", "Accept Incoming", "Accept Incoming (Alt+2)"],
-  ["both", "Accept Both", "Accept Both: current, then incoming (Alt+3)"],
-  ["manual", "Mark as Resolved", "Keep the text below as the resolution (Alt+4)"],
-] as const;
+const choices = () =>
+  [
+    ["ours", t("Accept Current"), t("Accept Current (Alt+1)")],
+    ["theirs", t("Accept Incoming"), t("Accept Incoming (Alt+2)")],
+    ["both", t("Accept Both"), t("Accept Both: current, then incoming (Alt+3)")],
+    ["manual", t("Mark as Resolved"), t("Keep the text below as the resolution (Alt+4)")],
+  ] as const;
 
 export function regionStateLabel(region: MergeRegion) {
   switch (region.choice) {
@@ -119,17 +120,17 @@ class RegionActions extends WidgetType {
       const item = document.createElement("button");
       item.type = "button";
       applyChoiceButton(item);
-      item.textContent = t(text);
-      item.title = t(title);
+      item.textContent = text;
+      item.title = title;
       if (pressed !== undefined) item.setAttribute("aria-pressed", String(pressed));
       item.disabled = this.disabled || (choice === "reset" && !this.resettable);
       item.addEventListener("mousedown", (event) => event.preventDefault());
       item.addEventListener("click", () => this.run(region.id, choice));
       return item;
     };
-    for (const [choice, text, title] of CHOICES)
+    for (const [choice, text, title] of choices())
       root.append(button(choice, text, title, region.choice === choice));
-    root.append(button("reset", "Reset", "Restore the unresolved text"));
+    root.append(button("reset", t("Reset"), t("Restore the unresolved text")));
     return root;
   }
   override ignoreEvent() {

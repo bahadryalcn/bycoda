@@ -7,6 +7,7 @@ import {
   providerAccounts,
   supportsProviderAccounts,
 } from "../../../providers/public/providerAccounts";
+import { modelSettingText } from "../../model/modelSettingText";
 import {
   draftChangeItems,
   withoutDraftItem,
@@ -14,27 +15,32 @@ import {
   type DraftChangeItem,
 } from "../../model/providerDefaultsDraft";
 
-const FIELD_LABEL: Record<Exclude<DraftChangeItem["field"], "extra">, string> = {
-  defaultProvider: "Default provider",
-  model: "Model",
-  effort: "Effort",
-  runtimeMode: "Permissions",
-  hidden: "Show in picker",
-  account: "Account",
-};
-const DELEGATION_LABEL: Record<string, string> = {
-  crossSubagents: "Subagents",
-  crossAdvisor: "Advisor",
-  crossSubagentMaxEffort: "Subagent max effort",
-  imageModels: "Image models",
-};
+function fieldLabels(): Record<Exclude<DraftChangeItem["field"], "extra">, string> {
+  return {
+    defaultProvider: t("Default provider"),
+    model: t("Model"),
+    effort: t("Effort"),
+    runtimeMode: t("Permissions"),
+    hidden: t("Show in picker"),
+    account: t("Account"),
+  };
+}
+function delegationLabels(): Record<string, string> {
+  return {
+    crossSubagents: t("Subagents"),
+    crossAdvisor: t("Advisor"),
+    crossSubagentMaxEffort: t("Subagent max effort"),
+    imageModels: t("Image models"),
+  };
+}
 
 function extraLabel(harness: HarnessId, key: string): string {
-  if (DELEGATION_LABEL[key]) return t(DELEGATION_LABEL[key]);
+  const delegation = delegationLabels()[key];
+  if (delegation) return delegation;
   const setting = resolveModel(harness, defaultModelId(harness)).settings?.find(
     (candidate) => candidate.id === key,
   );
-  return setting ? t(setting.label) : key;
+  return setting ? modelSettingText(setting.label) : key;
 }
 
 function scopeLabel(item: DraftChangeItem): string | undefined {
@@ -65,7 +71,7 @@ export function defaultsDraftChanges(
     label:
       item.field === "extra"
         ? extraLabel(item.harness!, item.extraKey ?? "")
-        : t(FIELD_LABEL[item.field]),
+        : fieldLabels()[item.field],
     detail: detail(item),
     revert: () => onDraftChange(withoutDraftItem(draft, item)),
   }));

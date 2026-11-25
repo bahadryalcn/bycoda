@@ -8,19 +8,28 @@ import { Text } from "../../../shared/ui/Text";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { UsageProviderIdentity } from "./UsageProviderIdentity";
+import { UsageProviderIdentity, usageLabel } from "./UsageProviderIdentity";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
-export const metricNames: Record<UsageMetric, string> = {
-  cost: "Estimated cost",
-  tokens: "Total tokens",
-  input: "Uncached input",
-  output: "Output",
-  cacheRead: "Cache read",
-  cacheWrite: "Cache write",
-  duration: "Agent time",
-};
+export function metricName(metric: UsageMetric): string {
+  switch (metric) {
+    case "cost":
+      return t("Estimated cost");
+    case "tokens":
+      return t("Total tokens");
+    case "input":
+      return t("Uncached input");
+    case "output":
+      return t("Output");
+    case "cacheRead":
+      return t("Cache read");
+    case "cacheWrite":
+      return t("Cache write");
+    case "duration":
+      return t("Agent time");
+  }
+}
 export function formatMetric(value: number, metric: UsageMetric): string {
   if (metric === "cost")
     return formatNumber(value, {
@@ -134,7 +143,7 @@ export function ContinuousUsageTable({
         {providers.map((provider) => (
           <UsageProviderIdentity key={provider} provider={provider} label="" />
         ))}
-        <span>{t(row.label)}</span>
+        <span>{usageLabel(row.label)}</span>
       </span>
     );
   };
@@ -152,7 +161,7 @@ export function ContinuousUsageTable({
             if (allMetrics) setSort({ key: metric, direction: "desc" });
           }}
         >
-          {t(allMetrics ? "Show fewer metrics" : "Show all metrics")}
+          {allMetrics ? t("Show fewer metrics") : t("Show all metrics")}
         </Button>
       </div>
       <SortableDataTable
@@ -194,7 +203,7 @@ export function ContinuousUsageTable({
               : [...new Set([metric, "cost", "tokens"])]) as UsageMetric[]
           ).map((key) => ({
             key,
-            label: t(metricNames[key]),
+            label: metricName(key),
             numeric: true,
             sortable: true,
             render: (_: unknown, row: Record<string, unknown>) =>

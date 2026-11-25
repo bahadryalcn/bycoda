@@ -137,7 +137,7 @@ it.each([
   );
   expect(container.textContent).toContain("Used today");
   expect(container.textContent).toContain(usage.usedMinutes === 125 ? "2h 5m" : "1h 15m");
-  expect(container.textContent?.includes("Limit reached")).toBe(usage.limitReached);
+  expect(!!container.querySelector('[aria-label="Limit reached"]')).toBe(usage.limitReached);
   expect(container.textContent?.includes("Today's agent time is incomplete.")).toBe(
     usage.usageUncertain,
   );

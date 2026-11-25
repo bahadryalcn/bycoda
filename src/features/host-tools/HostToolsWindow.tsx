@@ -61,9 +61,15 @@ const STATUS_TONES: Record<string, BadgeTone> = {
   Idle: "neutral",
 };
 function sessionStatusBadge(status: string | undefined) {
+  const labels: Record<string, string> = {
+    Working: t("Working"),
+    Interrupted: t("Interrupted"),
+    Failed: t("Failed"),
+    Idle: t("Idle"),
+  };
   return status ? (
     <Badge size="xs" tone={STATUS_TONES[status] ?? "neutral"}>
-      {t(status)}
+      {labels[status] ?? status}
     </Badge>
   ) : undefined;
 }
@@ -452,12 +458,13 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   const cancelled = returnFailed && error === returnCancelled;
   const showReturnDetails = returnFailed && !cancelled && error !== returnChanged;
   // Cancel and changed-tools are our own translated sentences; anything else is raw cause text.
-  const errorTitle =
-    !showReturnDetails && returnFailed
-      ? error
-      : returnFailed
+  const errorTitle = cancelled
+    ? returnCancelled
+    : returnFailed
+      ? showReturnDetails
         ? returnErrorTitle
-        : t("Could not complete this in the tools window.");
+        : returnChanged
+      : t("Could not complete this in the tools window.");
   const reattach = async () => {
     if (!currentPane?.composerWindow || returning.current) return;
     returning.current = true;
@@ -617,6 +624,11 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           iconOnly
           label={t("Return to conversation")}
           disabled={!currentPane?.composerWindow || pending}
+          disabledReason={
+            !currentPane?.composerWindow
+              ? t("There is no conversation window to return to.")
+              : undefined
+          }
           loading={pending}
           onClick={() => {
             void reattach().catch((cause) => setError(toolsTransferError(cause)));

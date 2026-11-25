@@ -130,10 +130,18 @@ it("shows an error with Retry after a failed automatic preparation instead of lo
   });
   await render({ autoPrepare: true });
   expect(prepares()).toBe(1);
-  expect(container.textContent).toContain("Helper checksum did not match.");
+  expect(container.textContent).toContain("Could not prepare the helper.");
   expect(container.textContent).toContain("Error");
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!.click(),
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.getAttribute("aria-label")?.startsWith("Details"))!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("Helper checksum did not match.");
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
   );
   expect(prepares()).toBe(2);
 });

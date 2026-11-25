@@ -59,7 +59,7 @@ export function AccountsScreen({
     : { disabled: false };
   // One notice with one Retry: the first failure wins, a reload retries all three reads.
   const loadProblem =
-    data.error ||
+    data.failureTitle ||
     (data.projectsError
       ? t("Could not read projects. Previous results may be out of date.")
       : "") ||
@@ -86,7 +86,7 @@ export function AccountsScreen({
       </SectionLabel>
       {loadProblem ? (
         <InlineError
-          details={data.error ? data.errorDetails : undefined}
+          details={data.failureTitle ? data.errorDetails : undefined}
           retry={{ onRetry: data.reload, label: t("Try again") }}
         >
           {loadProblem}

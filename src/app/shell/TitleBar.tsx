@@ -1,4 +1,5 @@
 import { surfaceAttributes } from "../../shared/ui/Surface";
+import { paneEdgeLabel } from "./paneEdgeLabel";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
@@ -386,11 +387,11 @@ function TitleTabItem({
   const copy = buildTabCopy(tab, t("New session"), t);
   const { headline, tooltip, meta } = copy;
   const fileIcon = tab.files[0];
-  const accessibleTooltip = [
-    tooltip,
+  const tooltipExtras = [
     ...(tab.previewSessionId || tab.previewFileId ? [t("Preview")] : []),
     ...((tab.doneHarnesses?.length ?? 0) > 0 ? [t("Response complete")] : []),
-  ].join(" · ");
+  ];
+  const accessibleTooltip = [tooltip, ...tooltipExtras].join(" · ");
 
   const setItemRef = sortable.setItemRef;
   const setNode = (el: HTMLDivElement | null) => {
@@ -435,7 +436,8 @@ function TitleTabItem({
         align="start"
         motion="none"
         type="button"
-        tooltip={accessibleTooltip}
+        tooltip={tooltip}
+        tooltipDetails={tooltipExtras}
         aria-label={accessibleTooltip}
         aria-current={active ? "page" : undefined}
         data-tauri-drag-region="false"
@@ -488,11 +490,11 @@ function TitleTabItem({
             </TabLabel>
             {tab.pendingWindowMove || tab.movingWindow ? (
               <Tooltip
-                label={
+                details={[
                   tab.movingWindow
                     ? t("Opening new window…")
-                    : t("Moves to a new window when the response finishes")
-                }
+                    : t("Moves to a new window when the response finishes"),
+                ]}
               >
                 <Text
                   size="inherit"
@@ -840,7 +842,7 @@ function TitleBarComponent({
               {
                 kind: "item" as const,
                 id: "toggle-maximize",
-                label: t(layout.maximized ? "Restore panel layout" : "Maximize panel"),
+                label: layout.maximized ? t("Restore panel layout") : t("Maximize panel"),
                 shortcut: maximizeShortcut ?? undefined,
               },
             ]
@@ -955,10 +957,10 @@ function TitleBarComponent({
                 event,
                 tabId === activeId &&
                   tabs.find((tab) => tab.id === tabId)?.focusedPaneId === over.id
-                  ? t("Split {p0} with a new session", { p0: t(over.edge) })
+                  ? t("Split {p0} with a new session", { p0: paneEdgeLabel(over.edge, t) })
                   : over.edge === "center"
                     ? t("Add as pane tab")
-                    : t("Place {p0}", { p0: t(over.edge) }),
+                    : t("Place {p0}", { p0: paneEdgeLabel(over.edge, t) }),
               );
             return over != null || !overStrip;
           },

@@ -17,6 +17,7 @@ import type { SocialAccount, SocialJob } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
 import "./linkedin.css";
+import { linkedInBusyReason } from "./linkedinReasons";
 
 export function LinkedInPostManagement({
   account,
@@ -33,7 +34,7 @@ export function LinkedInPostManagement({
   const [reviewId, setReviewId] = useState("");
   const [review, setReview] = useState<LinkedInManagementReview>();
   const confirm = useConfirm();
-  const { error, is, write } = useAccountWrite(t("Could not save changes."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not save changes."));
   const [jobsLoaded, setJobsLoaded] = useState(false);
   const busy = is("review") || is("submit") || is("posts");
   const reviewLabels = {
@@ -210,6 +211,7 @@ export function LinkedInPostManagement({
                 size="sm"
                 className="self-start"
                 disabled={disabled || busy}
+                disabledReason={linkedInBusyReason(disabled)}
                 loading={is("submit")}
                 onClick={() => void submit().catch(() => undefined)}
               >
@@ -246,7 +248,7 @@ export function LinkedInPostManagement({
         {review?.state === "attempting" || review?.state === "inspect" ? (
           <InlineError>{t("Check the result on LinkedIn before trying again.")}</InlineError>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       </div>
       {confirm.dialog}
     </Disclosure>

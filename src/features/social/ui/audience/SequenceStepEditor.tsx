@@ -143,6 +143,7 @@ export function SequenceStepEditor({
               variant="ghost"
               size="sm"
               disabled={disabled}
+              disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
               onClick={() =>
                 onChange({
                   ...step,
@@ -166,6 +167,11 @@ export function SequenceStepEditor({
               size="sm"
               startIcon={<Plus className="icon-sm" aria-hidden="true" />}
               disabled={disabled || step.variants.length >= 4}
+              disabledReason={
+                step.variants.length >= 4
+                  ? t("A step can have at most 4 variants.")
+                  : t("Wait for the current action to finish.")
+              }
               onClick={() =>
                 onChange({
                   ...step,
@@ -185,7 +191,14 @@ export function SequenceStepEditor({
               onCheckedChange={(personalize) => onChange({ ...step, personalize })}
             />
           </span>
-          <Button variant="ghost" size="sm" tone="danger" disabled={disabled} onClick={onRemove}>
+          <Button
+            variant="ghost"
+            size="sm"
+            tone="danger"
+            disabled={disabled}
+            disabledReason={disabled ? t("Wait for the current action to finish.") : undefined}
+            onClick={onRemove}
+          >
             {t("Remove step")}
           </Button>
         </div>

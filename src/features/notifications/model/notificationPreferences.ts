@@ -1,3 +1,5 @@
+import type { t as appT } from "../../../shared/i18n";
+
 export const NOTIFICATION_CATEGORIES = [
   { id: "pullRequests", label: "Pull requests / Merge requests" },
   { id: "issues", label: "Issues and Linear tasks" },
@@ -8,6 +10,23 @@ export const NOTIFICATION_CATEGORIES = [
 ] as const;
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]["id"];
+
+export function notificationCategoryLabel(t: typeof appT, category: NotificationCategory): string {
+  switch (category) {
+    case "pullRequests":
+      return t("Pull requests / Merge requests");
+    case "issues":
+      return t("Issues and Linear tasks");
+    case "agentFinished":
+      return t("Agent finished");
+    case "agentInput":
+      return t("Agent approvals and questions");
+    case "agentFailed":
+      return t("Agent failures and usage limits");
+    case "reminders":
+      return t("Reminders");
+  }
+}
 export const NOTIFICATION_MUTE_HOURS = [1, 4, 8] as const;
 export type NotificationSubject = {
   projectId: string;

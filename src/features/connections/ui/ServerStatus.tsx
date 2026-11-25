@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -58,10 +58,14 @@ export function MachineStatus({
         : state.status === "outdated-host"
           ? t("Update Host")
           : indicator.tone === "down"
-            ? t(lifecycle.paused ? "Automatic reconnect paused" : "Not connected")
+            ? lifecycle.paused
+              ? t("Automatic reconnect paused")
+              : t("Not connected")
             : indicator.tone === "connecting"
               ? t("Connecting")
-              : t(degraded ? "Refresh pending" : "Connected");
+              : degraded
+                ? t("Refresh pending")
+                : t("Connected");
   const tone =
     needsSignIn(state.status) || state.status === "unreachable"
       ? "warning"
@@ -80,11 +84,7 @@ export function MachineStatus({
   return (
     <div className="flex flex-col items-start gap-2">
       {badge}
-      {state.error ? (
-        <Text as="p" tone="muted" leading="relaxed" className="w-full break-words">
-          {state.error}
-        </Text>
-      ) : null}
+      {state.error ? <ErrorDetails title={label} detail={state.error} /> : null}
       {showDiagnostics ? <RemoteConnectionDetails environmentId={machine.environmentId} /> : null}
     </div>
   );
@@ -109,6 +109,11 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
         label={t("Reconnect")}
         loading={reconnecting}
         disabled={state.status === "identity-mismatch"}
+        disabledReason={
+          state.status === "identity-mismatch"
+            ? t("This computer's identity changed. Remove it and add it again to reconnect.")
+            : undefined
+        }
         onClick={() => void reconnectRemoteMachine(machine.environmentId, { signIn: true })}
       >
         <RefreshCw aria-hidden className="icon-sm" />

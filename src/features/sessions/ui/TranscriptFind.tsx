@@ -3,7 +3,7 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { Portal } from "../../../shared/ui/Portal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
-import { useLocale, useT } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import {
   useCallback,
   memo,
@@ -318,7 +318,7 @@ function FindButton({
   disabled?: boolean;
   children: React.ReactNode;
 }) {
-  useLocale();
+  const t = useT();
   return (
     <Button
       variant="ghost"
@@ -328,6 +328,7 @@ function FindButton({
       label={label}
       shortcut={shortcut}
       disabled={disabled}
+      disabledReason={t("No matches")}
       onClick={onClick}
     >
       {children}

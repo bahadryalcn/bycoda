@@ -116,11 +116,19 @@ it("shows the reason when the host cannot be started", async () => {
     button.textContent?.includes("Start host"),
   )!;
   await act(async () => start.click());
-  expect(notice()?.textContent).toContain("did not start");
+  expect(notice()?.textContent).toContain("could not be started");
   await openNotifications();
   expect(notice()).toBeNull();
   await openNotifications();
-  expect(notice()?.textContent).toContain("did not start");
+  expect(notice()?.textContent).toContain("could not be started");
+  // The desktop's own text is behind Details.
+  expect(notice()?.textContent).not.toContain("did not start");
+  await act(async () =>
+    [...document.body.querySelectorAll("button")]
+      .find((entry) => entry.textContent === "Details")!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("did not start");
 });
 
 it("stays silent while the host runs, starts or updates", async () => {

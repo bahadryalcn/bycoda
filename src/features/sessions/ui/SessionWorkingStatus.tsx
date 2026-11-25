@@ -43,7 +43,7 @@ export function SessionWorkingStatus({
   const since = held ? (wait.since ?? startedAt) : startedAt;
   const now = useMinuteNow(showElapsed && since != null && visible) ? wallClockNow() : 0;
   const elapsed = showElapsed && since != null && now > 0 ? formatLiveMinutes(since, now) : null;
-  const word = t(held ? "Waiting" : "Working");
+  const word = held ? t("Waiting") : t("Working");
   const reason = wait ? sessionWaitReason(wait) : word;
   return (
     <Tooltip label={labelled ? undefined : [reason, elapsed].filter(Boolean).join(", ")} asChild>

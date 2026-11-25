@@ -114,6 +114,7 @@ export function TikTokFields({
               <Checkbox
                 checked={!item.blocked && options[item.key] === true}
                 disabled={item.blocked}
+                disabledReason={t("Turned off in your TikTok settings")}
                 onChange={(event) => change({ [item.key]: event.target.checked })}
                 label={
                   <>

@@ -319,7 +319,7 @@ describe("removing media and disabled state", () => {
     const remove = [...element.querySelectorAll("button")].find(
       (item) => item.getAttribute("aria-label") === "Remove a.png",
     )!;
-    expect(remove.disabled).toBe(true);
+    expect(remove.getAttribute("aria-disabled")).toBe("true");
   });
 });
 

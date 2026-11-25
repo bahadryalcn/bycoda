@@ -6,6 +6,7 @@ import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { ActionHost, InlineAction, actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text } from "../../../shared/ui/Text";
 import { Check, ExternalLink, X } from "../../../shared/ui/icons";
@@ -51,13 +52,16 @@ function useNotificationProjectName(cwd: string): string {
   return cwd ? project?.name || projectName(cwd) : "";
 }
 
+/** A failed history action: the translated sentence, plus the provider text behind Details. */
+type HistoryFailure = { title: string; detail?: string };
+
 type HistoryActionContext = {
   onOpen: (entry: NotificationHistoryEntry) => Promise<void>;
   onRemove: (entry: NotificationHistoryEntry) => Promise<boolean>;
   onMarkRead: (entry: NotificationHistoryEntry) => Promise<boolean>;
   inFlight: { current: boolean };
   setBusy: (busy: "open" | null) => void;
-  setError: (error: string | null) => void;
+  setError: (error: HistoryFailure | null) => void;
   t: (key: string) => string;
 };
 
@@ -73,14 +77,15 @@ async function runHistoryAction(
   try {
     if (action === "open") await onOpen(entry);
     else if (action === "read") {
-      if (!(await onMarkRead(entry))) setError(t("This notification could not be updated."));
-    } else if (!(await onRemove(entry))) setError(t("This notification could not be removed."));
+      if (!(await onMarkRead(entry)))
+        setError({ title: t("This notification could not be updated.") });
+    } else if (!(await onRemove(entry)))
+      setError({ title: t("This notification could not be removed.") });
   } catch (failure) {
-    setError(
-      failure instanceof Error && failure.message
-        ? failure.message
-        : t("This conversation is no longer available."),
-    );
+    setError({
+      title: t("This conversation is no longer available."),
+      detail: failure instanceof Error && failure.message ? failure.message : undefined,
+    });
   } finally {
     inFlight.current = false;
     setBusy(null);
@@ -112,7 +117,7 @@ export function HistoryItem({
   const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState<"open" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<HistoryFailure | null>(null);
   const inFlight = useRef(false);
   const project = useNotificationProjectName(entry.cwd);
   const run = (action: "open" | "remove" | "read") =>
@@ -270,15 +275,28 @@ export function HistoryItem({
               </Button>
             </div>
           ) : null}
-          {error ? <Alert tone="warning">{error}</Alert> : null}
+          {error ? <HistoryFailureAlert failure={error} /> : null}
         </div>
       ) : null}
       {!expanded && error ? (
         <div className="notification-history-details" data-no-drag="">
-          <Alert tone="warning">{error}</Alert>
+          <HistoryFailureAlert failure={error} />
         </div>
       ) : null}
     </ActionHost>
+  );
+}
+
+function HistoryFailureAlert({ failure }: { failure: HistoryFailure }) {
+  return (
+    <Alert
+      tone="warning"
+      extra={
+        failure.detail ? <ErrorDetails title={failure.title} detail={failure.detail} /> : undefined
+      }
+    >
+      {failure.title}
+    </Alert>
   );
 }
 

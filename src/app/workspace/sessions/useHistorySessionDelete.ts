@@ -1,5 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
+  createElement,
   useCallback,
   useEffect,
   type Dispatch,
@@ -437,7 +439,7 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
             mode === "archive"
               ? t("Could not archive this conversation.")
               : t("Could not delete this conversation."),
-          message: detail,
+          extra: createElement(ErrorDetails, { detail }),
         });
         return false;
       } finally {

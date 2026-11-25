@@ -363,6 +363,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   className="shrink-0"
                   type="submit"
                   loading={operation === "save"}
+                  loadingLabel={t("Connecting…")}
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
                 >
                   {t("Connect")}
@@ -434,10 +435,12 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                       className="shrink-0"
                       size="sm"
                       loading={projectsLoading}
+                      loadingLabel={t("Loading…")}
                       disabled={busy || checking || projectsLoading}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => void loadProjects()}
                     >
-                      {projectsLoading ? t("Loading…") : t("Refresh projects")}
+                      {t("Refresh projects")}
                     </Button>
                   }
                 />
@@ -486,14 +489,12 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                       className="shrink-0"
                       size="sm"
                       loading={boardsLoading}
+                      loadingLabel={t("Loading…")}
                       disabled={busy || checking || boardsLoading}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => setBoardsRevision((value) => value + 1)}
                     >
-                      {boardsLoading
-                        ? t("Loading…")
-                        : boardsError
-                          ? t("Retry")
-                          : t("Refresh boards")}
+                      {boardsError ? t("Retry") : t("Refresh boards")}
                     </Button>
                   }
                 />

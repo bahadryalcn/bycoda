@@ -3,6 +3,8 @@ import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { TriangleAlert } from "../../../shared/ui/icons";
 import { Row } from "../../../shared/ui/settings";
 import {
   requestSystemPermission,
@@ -78,9 +80,12 @@ export function PermissionRow({
       >
         <span className={styles.badges}>
           {failed ? (
-            <Badge size="xs" tone="warning">
+            <InfoTooltip
+              label={t("Status unavailable")}
+              icon={<TriangleAlert className="icon-sm" aria-hidden />}
+            >
               {t("Status unavailable")}
-            </Badge>
+            </InfoTooltip>
           ) : (
             <PermissionStatusBadge state={entry.state} restart={restart} animate />
           )}
@@ -99,7 +104,7 @@ export function PermissionRow({
             )}
             {restart && <PermissionRestartButton />}
             {!failed && !restart && entry.canRequest && (
-              <Button loading={requesting} disabled={requesting} onClick={() => void allow()}>
+              <Button loading={requesting} onClick={() => void allow()}>
                 {t("Allow")}
               </Button>
             )}

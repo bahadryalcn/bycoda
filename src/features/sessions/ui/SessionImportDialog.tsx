@@ -14,6 +14,7 @@ import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Popover } from "../../../shared/ui/Popover";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Switch } from "../../../shared/ui/Switch";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
@@ -370,6 +371,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               type="button"
               stableWidth
               disabled={counts.toImport === 0}
+              disabledReason={t("Select at least one conversation to import.")}
               onClick={() => void start()}
             >
               {t("Import")} {counts.toImport > 0 ? counts.toImport.toLocaleString(locale) : ""}
@@ -393,9 +395,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
       <div className="flex min-h-0 flex-col gap-3">
         {load.status === "loading" ? (
           <div className="flex flex-col gap-2 py-4">
-            <Text role="status" as="p" size="secondary" tone="secondary" className="text-center">
+            <LoadingText layout="fill" inset="none" size="secondary" delay={false}>
               {t("Scanning Claude Code and Codex history…")}
-            </Text>
+            </LoadingText>
             {[0, 1, 2, 3, 4].map((row) => (
               <Skeleton key={row} aria-hidden className="h-7 w-full" />
             ))}
@@ -499,6 +501,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       variant="ghost"
                       type="button"
                       disabled={filterCount === 0}
+                      disabledReason={t("No filters are active.")}
                       onClick={resetFilters}
                     >
                       {t("Reset filters")}
@@ -525,6 +528,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 <Checkbox
                   aria-label={t("Select all shown")}
                   disabled={shownKeys.length === 0}
+                  disabledReason={t("No conversations to select.")}
                   checked={shownKeys.length > 0 && shownChosen === shownKeys.length}
                   indeterminate={shownChosen > 0 && shownChosen < shownKeys.length}
                   onChange={() =>
@@ -577,6 +581,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                           <Checkbox
                             aria-label={t("Select all missing folders")}
                             disabled={missingKeys.length === 0}
+                            disabledReason={t("No conversations to select.")}
                             checked={missingKeys.length > 0 && missingChosen === missingKeys.length}
                             indeterminate={missingChosen > 0 && missingChosen < missingKeys.length}
                             onChange={(event) => toggleKeys(missingKeys, event.target.checked)}
@@ -770,6 +775,7 @@ function FolderSection({
         <Checkbox
           aria-label={t("Select every conversation in {p0}", { p0: folder.path })}
           disabled={keys.length === 0}
+          disabledReason={t("No conversations to select.")}
           checked={keys.length > 0 && chosen === keys.length}
           indeterminate={chosen > 0 && chosen < keys.length}
           onChange={(event) => onToggleKeys(keys, event.target.checked)}
@@ -810,7 +816,7 @@ function FolderSection({
           <Text
             size="micro"
             tone="muted"
-            className="shrink-0 whitespace-nowrap text-right tabular-nums"
+            className="shrink-0 whitespace-nowrap text-end tabular-nums"
           >
             {chosen > 0 && chosen < keys.length
               ? `${chosen.toLocaleString(locale)} / ${folder.items.length.toLocaleString(locale)}`
@@ -831,6 +837,7 @@ function FolderSection({
               >
                 <Checkbox
                   disabled={imported}
+                  disabledReason={imported ? t("Already imported.") : undefined}
                   checked={imported || selected.has(key)}
                   onChange={(event) => onToggleKeys([key], event.target.checked)}
                   label={
@@ -873,14 +880,14 @@ function FolderSection({
                       <Text
                         size="micro"
                         tone="secondary"
-                        className="shrink-0 whitespace-nowrap text-right"
+                        className="shrink-0 whitespace-nowrap text-end"
                       >
                         {formatImportDate(item.lastAt)}
                       </Text>
                       <Text
                         size="micro"
                         tone="secondary"
-                        className="shrink-0 whitespace-nowrap text-right @max-[480px]/import-rows:hidden"
+                        className="shrink-0 whitespace-nowrap text-end @max-[480px]/import-rows:hidden"
                       >
                         {formatBytes(item.sizeBytes)}
                       </Text>
@@ -895,7 +902,7 @@ function FolderSection({
             );
           })}
           {folder.items.length > limit ? (
-            <li className="pl-[calc(2rem+0.25rem)] pr-3 pt-1">
+            <li className="ps-[calc(2rem+0.25rem)] pe-3 pt-1">
               <Button variant="ghost" type="button" onClick={() => setLimit(limit + ITEM_PAGE)}>
                 {t("Show {p0} more", {
                   p0: Math.min(ITEM_PAGE, folder.items.length - limit).toLocaleString(locale),

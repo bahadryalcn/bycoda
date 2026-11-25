@@ -1,4 +1,6 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
@@ -95,12 +97,12 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
     actions: [],
   });
   const [settled, setSettled] = useState<object>();
-  const [loadError, setLoadError] = useState("");
+  const [loadProblem, setLoadProblem] = useState<{ title: string; details?: string }>();
   // Both are keyed by the request they belong to, so a reload or scope change drops them.
   const [moreLoading, setMoreLoading] = useState<object>();
   const [moreFailed, setMoreFailed] = useState<object>();
   const [attempt, setAttempt] = useState(0);
-  const { error, details, write } = useAccountWrite(
+  const { failureTitle, details, write } = useAccountWrite(
     t("The action could not be undone. Try again."),
   );
 
@@ -122,10 +124,14 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
             actions: actionPage.items,
             actionsNext: actionPage.next,
           });
-          setLoadError("");
+          setLoadProblem(undefined);
         },
-        () => {
-          if (alive) setLoadError(t("The activity could not be read. Try again."));
+        (reason) => {
+          if (alive)
+            setLoadProblem({
+              title: t("The activity could not be read. Try again."),
+              details: presentRemoteError(reason, { explicit: true }),
+            });
         },
       )
       .finally(() => {
@@ -181,17 +187,22 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Activity")}
     >
-      {loadError ? (
-        <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
-      ) : error ? (
-        <InlineError details={details}>{error}</InlineError>
+      {loadProblem ? (
+        <InlineError
+          details={loadProblem.details}
+          retry={{ onRetry: reload, label: t("Try again") }}
+        >
+          {loadProblem.title}
+        </InlineError>
+      ) : failureTitle ? (
+        <InlineError details={details}>{failureTitle}</InlineError>
       ) : null}
       {loading && !entries.length ? (
         <LoadingText delay={false} className="social-muted">
           {t("Loading…")}
         </LoadingText>
       ) : null}
-      {!loading && !entries.length && !hasMore && !loadError ? (
+      {!loading && !entries.length && !hasMore && !loadProblem ? (
         <EmptyState
           size="inline"
           kind="empty"
@@ -221,9 +232,10 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
                       </InlineMessage>
                     ) : null}
                     {job.error ? (
-                      <TechnicalDetails>
-                        <p>{job.error}</p>
-                      </TechnicalDetails>
+                      <ErrorDetails
+                        detail={job.error}
+                        title={`${jobKindText(job.kind)} · ${nameOf(job.accountId)}`}
+                      />
                     ) : null}
                   </>
                 }

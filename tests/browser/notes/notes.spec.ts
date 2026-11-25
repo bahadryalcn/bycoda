@@ -822,7 +822,7 @@ for (const theme of ["light", "dark"])
       await page.keyboard.press("Escape");
       await expect(editor).toBeVisible();
       await expect(panel.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
-      await expect(page.locator('[data-note-save-state="saved"]')).toHaveCount(0);
+      await expect(page.locator(".note-save-status")).toHaveCount(0);
       await page.screenshot({
         path: `temp/verification/notes-save-flow/panel-${theme}-${width}.png`,
       });

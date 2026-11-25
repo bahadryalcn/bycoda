@@ -29,7 +29,9 @@ export function InstagramAccountMentions({
 }) {
   const [page, setPage] = useState<Page>();
   const [browserPage, setBrowserPage] = useState<InstagramBrowserMentions>();
-  const { write, is, error, details } = useAccountWrite(t("Could not read Instagram mentions."));
+  const { write, is, failureTitle, details } = useAccountWrite(
+    t("Could not read Instagram mentions."),
+  );
   const read = (cursor?: string) => {
     void write("read", async () => {
       if (browser) setBrowserPage(await client.browserInstagramMentions(accountId));
@@ -106,7 +108,7 @@ export function InstagramAccountMentions({
           {t("Load more")}
         </Button>
       ) : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
     </FieldGroup>
   );
 }

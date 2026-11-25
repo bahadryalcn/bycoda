@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../../shared/ui/Button";
 import { ImageLightbox } from "../../../../../shared/ui/ImageLightbox";
 import { Check, Dices, RefreshCw } from "../../../../../shared/ui/icons";
@@ -482,6 +483,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                       size="sm"
                       variant="ghost"
                       disabled={drawing}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => startImage(suggestion, index)}
                     >
                       {t("Change image")}
@@ -489,6 +491,11 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                     <Button
                       size="sm"
                       disabled={applying || inUse}
+                      disabledReason={
+                        inUse
+                          ? t("This image is already in use.")
+                          : t("Wait for the current operation to finish")
+                      }
                       loading={applyingImage === image.image.id}
                       onClick={() => applyCandidate(image.image, suggestion)}
                     >
@@ -501,6 +508,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                       size="sm"
                       variant="ghost"
                       disabled={drawing}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => startImage(suggestion, index)}
                     >
                       {t("Generate image")}
@@ -513,8 +521,16 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
         </div>
       ) : null}
       {imageFailure !== null ? (
-        <SettingsFeedback state="error" onDismiss={() => setImageFailure(null)}>
-          {imageFailure || t("Could not use the generated image.")}
+        <SettingsFeedback
+          state="error"
+          onDismiss={() => setImageFailure(null)}
+          extra={
+            imageFailure ? (
+              <ErrorDetails title={t("Could not use the generated image.")} detail={imageFailure} />
+            ) : undefined
+          }
+        >
+          {t("Could not use the generated image.")}
         </SettingsFeedback>
       ) : null}
       {suggestions.length > 0 && jobs.length > 0 ? <Divider /> : null}

@@ -90,13 +90,13 @@ export function JiraStatusPicker({
         aria-haspopup="dialog"
         expanded={open}
         loading={saving}
+        startIcon={<mark.Icon className="icon-sm" strokeWidth={1.75} aria-hidden="true" />}
         onClick={() => {
           setOpen(!open);
           if (!open && state?.phase !== "loading" && !(state?.phase === "error" && state.saved))
             void loadTransitions();
         }}
       >
-        <mark.Icon className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
         {status}
       </Button>
       {open ? (
@@ -114,7 +114,7 @@ export function JiraStatusPicker({
             <Text size="caption" tone="secondary" className="px-2 py-1">
               {t("Change status")}
             </Text>
-            {state?.phase === "loading" || saving ? <LoadingText /> : null}
+            {state?.phase === "loading" ? <LoadingText /> : null}
             {state?.phase === "choices" ? (
               state.transitions.length ? (
                 state.transitions.map((transition) => (

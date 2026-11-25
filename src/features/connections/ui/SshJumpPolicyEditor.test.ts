@@ -96,16 +96,17 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
     // Field help buttons (aria-haspopup) and disclosure toggles (aria-expanded) stay readable while the editor is disabled.
     expect(
       [...host.querySelectorAll("button:not([aria-haspopup]):not([aria-expanded])")].every(
-        (b) => (b as HTMLButtonElement).disabled,
+        (b) => (b as HTMLButtonElement).disabled || b.getAttribute("aria-disabled") === "true",
       ),
     ).toBe(true);
     await act(async () =>
       root.render(createElement(SshJumpPolicyEditor, { value, onChange: change })),
     );
     expect(
-      [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Add jump host"))
-        ?.disabled,
-    ).toBe(true);
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent?.includes("Add jump host"))
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     const next = [
       {
         ...value[0],

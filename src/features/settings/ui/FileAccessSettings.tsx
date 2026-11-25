@@ -161,7 +161,8 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
                   extra={<ErrorDetails detail={error} />}
                   action={{
                     label: t("Retry"),
-                    disabled: pending !== null,
+                    pending: pending === "read",
+                    disabled: pending === "configure",
                     onClick: () => void refresh(),
                   }}
                 >
@@ -175,10 +176,9 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
                           )}
                   </p>
                 </SettingsFeedback>
-              ) : pending ? (
-                <SettingsFeedback state="loading" immediate={pending === "configure"}>
-                  {pending === "configure" ? t("Waiting for approval…") : t("Loading…")}
-                </SettingsFeedback>
+              ) : pending && pending !== "configure" ? (
+                // A pending review shows "Waiting for approval…" in its own action instead.
+                <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
               ) : null}
             </>
           ) : null
@@ -200,7 +200,13 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           ) : null}
           <Button
             loading={pending === "configure"}
+            loadingLabel={t("Waiting for approval…")}
             disabled={pending !== null || mode === null || statusUnavailable}
+            disabledReason={
+              statusUnavailable
+                ? t("File access status is unavailable.")
+                : t("Wait for the current operation to finish")
+            }
             onClick={() => void review()}
           >
             {t("Change file access…")}

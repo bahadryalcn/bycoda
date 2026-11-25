@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { z } from "zod";
 import {
   AssistantOwnerQuestionSchema,
@@ -148,7 +149,9 @@ export class AssistantOwnerQuestionDraft {
     const captured = AssistantOwnerQuestionSchema.parse(structuredClone(question));
     if (!environmentId || environmentId.length > 200)
       throw new Error(
-        "The original computer could not be verified. Keep this draft and reconnect that computer.",
+        t(
+          "The original computer could not be verified. Keep this draft and reconnect that computer.",
+        ),
       );
     this.scope = ownerQuestionDraftScope(environmentId, captured);
     const saved = readRecord(storage, this.scope);
@@ -160,7 +163,9 @@ export class AssistantOwnerQuestionDraft {
       this.record = saved;
     else if (storage.getItem(this.scope))
       throw new Error(
-        "The saved question draft does not match its original question. Keep it and refresh the question.",
+        t(
+          "The saved question draft does not match its original question. Keep it and refresh the question.",
+        ),
       );
     else
       this.record = {
@@ -194,7 +199,7 @@ export class AssistantOwnerQuestionDraft {
   private assert() {
     if (!this.authorized())
       throw new Error(
-        "The question's Host or project visibility changed. Keep the original draft.",
+        t("The question's Host or project visibility changed. Keep the original draft."),
       );
   }
   private persist() {
@@ -210,7 +215,7 @@ export class AssistantOwnerQuestionDraft {
       }
     } catch {
       throw new Error(
-        "The question draft could not be saved on this device. Keep this card open and retry.",
+        t("The question draft could not be saved on this device. Keep this card open and retry."),
       );
     }
   }
@@ -294,7 +299,7 @@ export class AssistantOwnerQuestionDraft {
       throw unconfirmedError("The previous answer", "Check the original question before retrying.");
     const question = this.record.question;
     if (question.sourceCurrent === false || !["open", "snoozed"].includes(question.status))
-      throw new Error("This question changed with its work. Refresh it before answering.");
+      throw new Error(t("This question changed with its work. Refresh it before answering."));
     const base = { id: question.id, expectedVersion: question.version, requestId: this.createId() };
     let intent: NonNullable<RecordValue["intent"]>;
     try {
@@ -343,7 +348,7 @@ export class AssistantOwnerQuestionDraft {
       const current = inspected.ownerQuestion;
       if (!current)
         throw new Error(
-          "The question is no longer available. Keep this draft and review its original work.",
+          t("The question is no longer available. Keep this draft and review its original work."),
         );
       if (
         current.version !== intent.expectedVersion ||
@@ -351,13 +356,13 @@ export class AssistantOwnerQuestionDraft {
         current.sourceCurrent === false ||
         !["open", "snoozed"].includes(current.status)
       )
-        throw new Error("This question changed with its work. Refresh it before answering.");
+        throw new Error(t("This question changed with its work. Refresh it before answering."));
       const result = await request(structuredClone(intent), this.environmentId);
       this.assert();
       const complete = this.accepted(result, intent);
       if (!complete)
         throw new Error(
-          "The answer could not be verified. Keep this draft and check the original question.",
+          t("The answer could not be verified. Keep this draft and check the original question."),
         );
       this.clear();
       return complete;

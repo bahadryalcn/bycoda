@@ -44,6 +44,7 @@ function HiddenDictation({
         startIcon={<StatusDot tone="danger" appearance="solid" size="sm" />}
         tooltip={title ? t("Return to the session that receives the text") : undefined}
         disabled={!run.sessionId}
+        disabledReason={t("This dictation is not tied to a session.")}
         onClick={() => run.sessionId && onOpenSession(run.sessionId)}
       >
         <Text size="inherit" tone="inherit" truncate>
@@ -55,7 +56,7 @@ function HiddenDictation({
         size="sm"
         iconOnly
         label={t("Stop dictation")}
-        disabled={finishing}
+        loading={finishing}
         onClick={run.stop}
       >
         <Square className="icon-sm" strokeWidth={2} />

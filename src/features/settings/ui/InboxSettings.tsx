@@ -43,32 +43,32 @@ import { isImeComposition } from "../../../shared/lib/keyboard";
 export const INBOX_PROVIDERS = [
   {
     id: "github",
-    name: "GitHub",
-    description: "Pull requests, reviews, and issues, read through the GitHub CLI.",
+    name: () => t("GitHub"),
+    description: () => t("Pull requests, reviews, and issues, read through the GitHub CLI."),
     Component: GithubSettings,
   },
   {
     id: "gitlab",
-    name: "GitLab",
-    description: "Merge requests from GitLab.com or a self-managed instance.",
+    name: () => t("GitLab"),
+    description: () => t("Merge requests from GitLab.com or a self-managed instance."),
     Component: GitlabSettings,
   },
   {
     id: "azuredevops",
-    name: "Azure DevOps",
-    description: "Pull requests and Boards work items from your ADO organization.",
+    name: () => t("Azure DevOps"),
+    description: () => t("Pull requests and Boards work items from your ADO organization."),
     Component: AzureDevOpsSettings,
   },
   {
     id: "jira",
-    name: "Jira",
-    description: "Jira Cloud issues from the projects you pick.",
+    name: () => t("Jira"),
+    description: () => t("Jira Cloud issues from the projects you pick."),
     Component: JiraSettings,
   },
   {
     id: "linear",
-    name: "Linear",
-    description: "Issues assigned to you, from the teams you pick.",
+    name: () => t("Linear"),
+    description: () => t("Issues assigned to you, from the teams you pick."),
     Component: LinearSettings,
   },
 ] as const;
@@ -100,9 +100,9 @@ export function GithubSettings() {
                   "GitHub CLI could not be set up automatically. Check your internet connection, then check again.",
                 )
               : t("Installing GitHub CLI on this computer. This takes about a minute.");
-  const label = checking
-    ? t("Checking")
-    : error || !status
+  // The Check again action shows its own progress; the badge keeps the last known state.
+  const label =
+    error || !status
       ? t("Check failed")
       : status.connected
         ? t("Connected")
@@ -123,21 +123,22 @@ export function GithubSettings() {
         info={description}
         scope={t("This computer · GitHub CLI account")}
       >
-        <Badge
-          size="sm"
-          appearance="subtle"
-          aria-busy={checking || (status?.installing && !slow) || undefined}
-        >
-          {label}
-        </Badge>
+        {checking && !status && !error ? null : (
+          <Badge
+            size="sm"
+            appearance="subtle"
+            aria-busy={(status?.installing && !slow) || undefined}
+          >
+            {label}
+          </Badge>
+        )}
         <Button
-          stableWidth
-          reserveLabels={[t("Checking")]}
           className="shrink-0"
           onClick={() => void checkStatus()}
           loading={checking}
+          loadingLabel={t("Checking")}
         >
-          {checking ? t("Checking") : t("Check again")}
+          {t("Check again")}
         </Button>
       </Row>
       <InboxConnectionError error={error} />
@@ -304,17 +305,14 @@ export function GitlabSettings() {
             />
             <Button
               stableWidth
-              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+              reserveLabels={[t("Retry save and test")]}
               className="shrink-0"
               onClick={() => void onSave()}
               loading={operation === "save"}
+              loadingLabel={t("Saving and testing…")}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
-              {busy
-                ? t("Saving and testing…")
-                : error
-                  ? t("Retry save and test")
-                  : t("Save and test connection")}
+              {error ? t("Retry save and test") : t("Save and test connection")}
             </Button>
             {connected ? (
               <Button
@@ -496,17 +494,14 @@ export function AzureDevOpsSettings() {
             />
             <Button
               stableWidth
-              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+              reserveLabels={[t("Retry save and test")]}
               className="shrink-0"
               onClick={() => void onSave()}
               loading={operation === "save"}
+              loadingLabel={t("Saving and testing…")}
               disabled={busy || checking || !url.trim() || !token.trim()}
             >
-              {busy
-                ? t("Saving and testing…")
-                : error
-                  ? t("Retry save and test")
-                  : t("Save and test connection")}
+              {error ? t("Retry save and test") : t("Save and test connection")}
             </Button>
             {connected ? (
               <Button
@@ -713,17 +708,14 @@ export function LinearSettings() {
             />
             <Button
               stableWidth
-              reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+              reserveLabels={[t("Retry save and test")]}
               className="shrink-0"
               onClick={() => void onSave()}
               loading={operation === "save"}
+              loadingLabel={t("Saving and testing…")}
               disabled={busy || checking || !token.trim()}
             >
-              {busy
-                ? t("Saving and testing…")
-                : error
-                  ? t("Retry save and test")
-                  : t("Save and test connection")}
+              {error ? t("Retry save and test") : t("Save and test connection")}
             </Button>
             {connected ? (
               <Button

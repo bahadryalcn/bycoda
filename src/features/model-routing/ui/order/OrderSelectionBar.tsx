@@ -6,7 +6,7 @@ import type {
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../../../../shared/ui/DropdownMenu";
-import { Text } from "../../../../shared/ui/Text";
+import { LiveText } from "../../../../shared/ui/LiveText";
 import { Trash2, X } from "../../../../shared/ui/icons";
 import { effortChoices } from "./orderBulk";
 
@@ -77,9 +77,10 @@ export function OrderSelectionBar({
       aria-label={t("Selected models")}
       className="flex flex-wrap items-center gap-2 px-4 py-2"
     >
-      <Text size="secondary" aria-live="polite">
-        {t("{p0} selected", { p0: format.formatNumber(selected.length) })}
-      </Text>
+      <LiveText
+        size="secondary"
+        text={t("{p0} selected", { p0: format.formatNumber(selected.length) })}
+      />
       <Button size="sm" tone="danger" startIcon={<Trash2 className="icon-sm" />} onClick={onRemove}>
         {t("Remove")}
       </Button>

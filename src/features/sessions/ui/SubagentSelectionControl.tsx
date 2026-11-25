@@ -10,6 +10,7 @@ import {
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SubagentModeControl } from "./SubagentModeControl";
 import { DelegationOptionIcon, delegationSelectChoice } from "./DelegationSettings";
+import { catalogText } from "../model/catalogText";
 import type { ModelSetting } from "../model/models";
 
 /** Subagent mode (Automatic, Custom, Off) with the custom model list, in the conversation panel's wire values. */
@@ -34,7 +35,7 @@ export function SubagentSelectionControl({
   return (
     <div className="flex min-w-0 flex-col items-end gap-2">
       <SubagentModeControl
-        label={t(setting.label)}
+        label={catalogText(t, setting.label)}
         value={value}
         picking={pickingCustom}
         onCustom={() => setPicking({ value })}
@@ -46,7 +47,7 @@ export function SubagentSelectionControl({
       {custom ? (
         <SearchableSelect
           multiple
-          label={t(setting.label)}
+          label={catalogText(t, setting.label)}
           hideLabel
           placeholder={t("Add")}
           selectionLabels={

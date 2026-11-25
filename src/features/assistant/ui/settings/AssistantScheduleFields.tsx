@@ -14,11 +14,12 @@ import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
 import { AdvancedSettings } from "../../../../shared/ui/settings";
 
-const notificationOptions = [
-  ["all", "All updates"],
-  ["urgent", "Urgent only"],
-  ["none", "None"],
-] as const;
+const notificationOptions = () =>
+  [
+    ["all", t("All updates")],
+    ["urgent", t("Urgent only")],
+    ["none", t("None")],
+  ] as const;
 
 /** The presence and hours explanation, shown beside the section title. */
 export function AssistantScheduleInfo() {
@@ -85,7 +86,7 @@ export function AssistantScheduleFields({
         <ProfileSelect
           label={t("When present")}
           value={String(value.notificationPresent ?? policy.notificationPresent)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
             onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
           }
@@ -93,7 +94,7 @@ export function AssistantScheduleFields({
         <ProfileSelect
           label={t("When away")}
           value={String(value.notificationAway ?? policy.notificationAway)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
             onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
           }
@@ -212,7 +213,7 @@ export function AssistantScheduleFields({
         <ProfileSelect
           label={t("When present")}
           value={String(value.notificationPresent ?? policy.notificationPresent)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
             onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
           }
@@ -220,7 +221,7 @@ export function AssistantScheduleFields({
         <ProfileSelect
           label={t("When away")}
           value={String(value.notificationAway ?? policy.notificationAway)}
-          options={notificationOptions}
+          options={notificationOptions()}
           onValueChange={(next) =>
             onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
           }

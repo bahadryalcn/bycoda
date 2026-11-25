@@ -25,19 +25,35 @@ import type {
   PhonePairingLinkStatus,
 } from "../model/phonePairingTypes";
 
-const accessCopy = {
-  "setup-required":
-    "Open a private, secure connection for your phone. Other Tailscale services stay available.",
-  "install-required":
-    "Install Tailscale on this machine and your phone, then sign in to the same account.",
-  "sign-in-required":
-    "Open Tailscale on this machine and sign in to the same account as your phone.",
-  offline: "Connect this machine in Tailscale, then check again.",
-  "approval-required": "Tailscale needs your approval to allow secure connections on this machine.",
-  "permission-required":
-    "Tailscale needs permission on this machine. Check its permissions, then try again.",
-  unavailable: "A secure phone address is not available on this machine yet.",
-} as const;
+const accessCopy = (
+  state:
+    | "setup-required"
+    | "install-required"
+    | "sign-in-required"
+    | "offline"
+    | "approval-required"
+    | "permission-required"
+    | "unavailable",
+) =>
+  ({
+    "setup-required": t(
+      "Open a private, secure connection for your phone. Other Tailscale services stay available.",
+    ),
+    "install-required": t(
+      "Install Tailscale on this machine and your phone, then sign in to the same account.",
+    ),
+    "sign-in-required": t(
+      "Open Tailscale on this machine and sign in to the same account as your phone.",
+    ),
+    offline: t("Connect this machine in Tailscale, then check again."),
+    "approval-required": t(
+      "Tailscale needs your approval to allow secure connections on this machine.",
+    ),
+    "permission-required": t(
+      "Tailscale needs permission on this machine. Check its permissions, then try again.",
+    ),
+    unavailable: t("A secure phone address is not available on this machine yet."),
+  })[state];
 
 function PhonePairingLink({ url, label }: PhonePairingLinkProps) {
   const [status, setStatus] = useState<PhonePairingLinkStatus>("idle");
@@ -61,10 +77,10 @@ function PhonePairingLink({ url, label }: PhonePairingLinkProps) {
         stableWidth
         type="button"
         className="shrink-0"
-        disabled={status === "pending"}
+        loading={status === "pending"}
+        startIcon={<ExternalLink className="icon-sm" />}
         onClick={() => void open()}
       >
-        <ExternalLink className="icon-sm" />
         {label}
       </Button>
       {status === "error" ? (
@@ -165,7 +181,7 @@ export function PhonePairingFlow({
           localNetwork &&
           (networkHint || state.access.reason) ? (
             <InlineMessage tone={networkHint ? "warning" : "info"}>
-              {t((networkHint ?? state.access.reason)!)}
+              {networkHint ?? state.access.reason}
             </InlineMessage>
           ) : null}
           {state.access.state === "ready" ? (
@@ -181,9 +197,9 @@ export function PhonePairingFlow({
               <InlineMessage tone="info">
                 {localNetwork
                   ? networkHint
-                    ? t(networkHint)
+                    ? networkHint
                     : state.access.reason
-                      ? t(state.access.reason)
+                      ? state.access.reason
                       : state.access.state === "setup-required"
                         ? t(
                             "Enable local network access to connect your phone. Pairing and workspace data are encrypted.",
@@ -191,7 +207,7 @@ export function PhonePairingFlow({
                         : t(
                             "Local network access is unavailable. Check your computer's network and firewall, then try again.",
                           )
-                  : t(accessCopy[state.access.state])}
+                  : accessCopy(state.access.state)}
               </InlineMessage>
               {localNetwork && addresses.length > 1 ? (
                 <SearchableSelect

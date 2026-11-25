@@ -240,7 +240,6 @@ export function ArchivePage({
                           <Button
                             className="shrink-0"
                             loading={!!pending[`restore:${project.path}`]}
-                            disabled={!!pending[`restore:${project.path}`]}
                             onClick={() =>
                               void run(`restore:${project.path}`, () =>
                                 restoreProject(project.path),
@@ -255,6 +254,7 @@ export function ArchivePage({
                             className="shrink-0"
                             tone="danger"
                             disabled={!!pending[`restore:${project.path}`]}
+                            disabledReason={t("Wait for the current operation to finish")}
                             onClick={() => setDeleting(project)}
                           >
                             {t("Delete")}

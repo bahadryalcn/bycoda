@@ -4,6 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AiSetupCard } from "./AiSetupCard";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 // The app's model picker is a large session control; this card only needs its onChange contract.
 vi.mock("../../../sessions/public/ModelPicker", async () => {
   const { createElement: h } = await import("react");
@@ -47,7 +52,7 @@ it("explains why a model is needed and blocks saving until one is chosen", () =>
   expect(document.body.textContent).toContain(
     "AI needs a model before it can plan or write reports.",
   );
-  expect(button("Use this model")?.disabled).toBe(true);
+  expect(isBlocked(button("Use this model"))).toBe(true);
   expect(element.textContent).not.toContain("Choose a model first.");
   act(() => button("Use this model")?.click());
   expect(onSave).not.toHaveBeenCalled();

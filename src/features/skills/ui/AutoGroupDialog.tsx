@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Settings } from "../../../shared/ui/icons";
@@ -81,6 +82,7 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
       <Button
         size="sm"
         disabled={running || !skills.length}
+        disabledReason={skills.length ? undefined : t("Install a skill first.")}
         loading={running}
         onClick={() => {
           void run();
@@ -111,7 +113,12 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
       </Button>
       {error && !proposal ? (
         <div className="basis-full">
-          <Alert tone="danger">{error}</Alert>
+          <Alert
+            tone="danger"
+            extra={<ErrorDetails detail={error} title={t("Could not group the skills.")} />}
+          >
+            {t("Could not group the skills.")}
+          </Alert>
         </div>
       ) : null}
       {proposal ? (
@@ -134,7 +141,14 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
             </ModalActions>
           }
         >
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? (
+            <Alert
+              tone="danger"
+              extra={<ErrorDetails detail={error} title={t("Could not group the skills.")} />}
+            >
+              {t("Could not group the skills.")}
+            </Alert>
+          ) : null}
           {proposal.map((group, index) => (
             <section key={index}>
               <SectionLabel count={group.skillNames.length}>{group.name}</SectionLabel>

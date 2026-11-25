@@ -16,6 +16,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { LiveBrowserPanel } from "../browser/LiveBrowserPanel";
 import { errorText } from "../../../../shared/lib/errors";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { accountBlockedReason } from "./blockedReason";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -45,7 +46,7 @@ export function BrowserSettings({
   const [loadError, setLoadError] = useState<{ details: string } | undefined>();
   const [attempt, setAttempt] = useState(0);
   const [live, setLive] = useState(false);
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The browser settings could not be saved. Try again."),
   );
 
@@ -147,6 +148,7 @@ export function BrowserSettings({
           variant="secondary"
           size="sm"
           disabled={disabled}
+          disabledReason={accountBlockedReason(disabled)}
           onClick={() => setLive((value) => !value)}
         >
           {live ? t("Close live view") : t("Open live view")}
@@ -206,7 +208,7 @@ export function BrowserSettings({
           {t("Save browser settings")}
         </Button>
       </div>
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {live ? (
         <Surface
           variant="card"

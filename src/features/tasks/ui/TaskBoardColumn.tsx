@@ -6,7 +6,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { taskColumn, type TaskColumn } from "../model/hostTasks";
-import { t } from "../../../shared/i18n";
+import { columnLabel } from "../model/taskColumnLabel";
 import { type ComponentProps, memo, useEffect, useRef, useState } from "react";
 import { taskSessionIds } from "../model/backgroundSession";
 import { TaskCard } from "./TaskBoardCard";
@@ -20,15 +20,6 @@ import {
 } from "./taskBoardDrag";
 import { COLUMN_WINDOW, columnWindowSize } from "./taskBoardWindow";
 import "./task-board.css";
-
-export const COLUMN_LABELS: Record<TaskColumn, string> = {
-  todo: "To do",
-  queued: "Queued",
-  running: "Running",
-  review: "Review",
-  done: "Done",
-  blocked: "Blocked",
-};
 
 const COLUMN_TONES: Partial<Record<TaskColumn, BadgeTone>> = {
   queued: "info",
@@ -103,7 +94,7 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
   return (
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- The section is a drop target and cards expose move actions independently.
     <section
-      aria-label={t(COLUMN_LABELS[status])}
+      aria-label={columnLabel(status)}
       data-task-column={status}
       data-empty={column.length === 0 || undefined}
       data-compact-selected={compactSelected || undefined}
@@ -135,11 +126,11 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
         count={column.length}
         icon={
           COLUMN_TONES[status] ? (
-            <StatusDot tone={COLUMN_TONES[status]} label={t(COLUMN_LABELS[status])} aria-hidden />
+            <StatusDot tone={COLUMN_TONES[status]} label={columnLabel(status)} aria-hidden />
           ) : undefined
         }
       >
-        {t(COLUMN_LABELS[status])}
+        {columnLabel(status)}
       </SectionLabel>
       {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Observe bubbled focus to keep the focused card in the window. */}
       <ul

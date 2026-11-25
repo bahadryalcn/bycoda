@@ -128,8 +128,8 @@ it("shows a switch failure in the reopened picker", async () => {
   await render();
   await render(false, "Working copy no longer exists");
   expect(trigger().getAttribute("aria-expanded")).toBe("true");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
-    "Working copy no longer exists",
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t switch worktree",
   );
   expect(copyName()).toBe("All worktrees");
 });
@@ -253,7 +253,9 @@ it("shows creation errors and allows correcting the name before retrying", async
   await act(async () => trigger().click());
   await typeQuery("invalid name");
   await press("Enter");
-  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Enter a valid branch name");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t create worktree",
+  );
   expect(trigger().getAttribute("aria-expanded")).toBe("true");
   expect(search().value).toBe("invalid name");
   expect(search().disabled).toBe(false);

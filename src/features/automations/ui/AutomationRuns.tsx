@@ -7,7 +7,6 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { CircleAlert } from "../../../shared/ui/icons";
 import { findTriggerEvent, triggerName } from "../model/automationTriggerCatalog";
 import {
@@ -133,9 +132,7 @@ function RunRow({
         <span>
           {/* Still running, but stuck until the owner answers. */}
           {run.status === "running" && run.needsInput ? (
-            <Tooltip label={t("Needs input")}>
-              <CircleAlert className="icon-sm" aria-label={t("Needs input")} />
-            </Tooltip>
+            <CircleAlert className="icon-sm" role="img" aria-label={t("Needs input")} />
           ) : (
             <RunStatusPill status={run.status} />
           )}

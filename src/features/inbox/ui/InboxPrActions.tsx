@@ -72,8 +72,12 @@ export function githubPrActionCopy(
           p0: source,
           p1: destination,
         }),
-        confirm: "Merge pull request",
-        progress: "Merging…",
+        get confirm() {
+          return t("Merge pull request");
+        },
+        get progress() {
+          return t("Merging…");
+        },
       };
     case "squash":
       return {
@@ -84,8 +88,12 @@ export function githubPrActionCopy(
           p0: source,
           p1: destination,
         }),
-        confirm: "Squash and merge",
-        progress: "Merging…",
+        get confirm() {
+          return t("Squash and merge");
+        },
+        get progress() {
+          return t("Merging…");
+        },
       };
     case "rebase":
       return {
@@ -96,8 +104,12 @@ export function githubPrActionCopy(
           p0: source,
           p1: destination,
         }),
-        confirm: "Rebase and merge",
-        progress: "Merging…",
+        get confirm() {
+          return t("Rebase and merge");
+        },
+        get progress() {
+          return t("Merging…");
+        },
       };
     case "draft":
       return {
@@ -105,8 +117,12 @@ export function githubPrActionCopy(
           return t("Convert to draft?");
         },
         detail: t("Reviewers will see that this pull request is not ready to merge."),
-        confirm: "Convert to draft",
-        progress: "Converting…",
+        get confirm() {
+          return t("Convert to draft");
+        },
+        get progress() {
+          return t("Converting…");
+        },
       };
     case "ready":
       return {
@@ -114,8 +130,12 @@ export function githubPrActionCopy(
           return t("Mark as ready for review?");
         },
         detail: t("Reviewers will see that this pull request is ready for feedback."),
-        confirm: "Ready for review",
-        progress: "Updating…",
+        get confirm() {
+          return t("Ready for review");
+        },
+        get progress() {
+          return t("Updating…");
+        },
       };
     case "close":
       return {
@@ -123,8 +143,12 @@ export function githubPrActionCopy(
           return t("Close this pull request?");
         },
         detail: t("The pull request will close without merging. You can reopen it later."),
-        confirm: "Close pull request",
-        progress: "Closing…",
+        get confirm() {
+          return t("Close pull request");
+        },
+        get progress() {
+          return t("Closing…");
+        },
       };
     case "reopen":
       return {
@@ -132,8 +156,12 @@ export function githubPrActionCopy(
           return t("Reopen this pull request?");
         },
         detail: t("The pull request will return to the open state."),
-        confirm: "Reopen pull request",
-        progress: "Reopening…",
+        get confirm() {
+          return t("Reopen pull request");
+        },
+        get progress() {
+          return t("Reopening…");
+        },
       };
   }
 }
@@ -209,7 +237,7 @@ function GithubPrActionsForItem({
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<ActionFailureState | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [queued, setQueued] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const state = item.state.trim().toLowerCase();
   const selectedMerge =
@@ -219,7 +247,7 @@ function GithubPrActionsForItem({
   const askToRun = (action: GithubPrAction, anchor: HTMLElement) => {
     setMergeMenuOpen(false);
     setActionError(null);
-    setNotice(null);
+    setQueued(false);
     setRefreshError(null);
     if (
       ["merge", "squash", "rebase"].includes(action) &&
@@ -257,11 +285,9 @@ function GithubPrActionsForItem({
       );
       if (!active.current) return;
       setConfirmation(null);
-      setNotice(
+      setQueued(
         (action === "merge" || action === "squash" || action === "rebase") &&
-          next.state.trim().toLowerCase() !== "merged"
-          ? "Merge queued or auto-merge enabled."
-          : null,
+          next.state.trim().toLowerCase() !== "merged",
       );
       setRefreshError(next.refreshError ?? null);
       // A failed refresh returns only the new state; the row keeps its known fields.
@@ -397,9 +423,9 @@ function GithubPrActionsForItem({
           {t("Reopen pull request")}
         </Button>
       ) : null}
-      {notice ? (
+      {queued ? (
         <InlineMessage tone="info" className="w-full">
-          {t(notice)}
+          {t("Merge queued or auto-merge enabled.")}
         </InlineMessage>
       ) : null}
       {refreshError ? <InlineError details={refreshError} /> : null}
@@ -435,10 +461,10 @@ function GithubPrActionsForItem({
               tone={confirmation.action === "close" ? "danger" : undefined}
               type="button"
               loading={busy}
-              loadingLabel={t(confirmCopy.progress)}
+              loadingLabel={confirmCopy.progress}
               onClick={() => void runAction(confirmation.action, confirmation.expectedHeadOid)}
             >
-              {t(confirmCopy.confirm)}
+              {confirmCopy.confirm}
             </Button>
           </div>
         </Popover>

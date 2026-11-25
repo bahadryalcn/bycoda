@@ -378,6 +378,7 @@ export function DesktopControlSettings({
             label={t("Driver")}
             value={draft.driver}
             disabled={pending || stopping}
+            disabledReason={t("Wait for the current operation to finish")}
             options={DESKTOP_DRIVERS.map((value) => ({
               value,
               label: value === "cua-driver" ? "Cua Driver" : "agent-desktop",
@@ -418,7 +419,7 @@ export function DesktopControlSettings({
       {draft && (
         <>
           <Row
-            label={t(showPermissionControls ? "Enable computer use" : "Status")}
+            label={showPermissionControls ? t("Enable computer use") : t("Status")}
             feedback={showPermissionControls ? actions : undefined}
           >
             {computerBadge}

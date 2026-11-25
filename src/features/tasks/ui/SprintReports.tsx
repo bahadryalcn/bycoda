@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
-import { useLocale, useT } from "../../../shared/i18n";
+import { t as translate, useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { BarChart, LineChart, type LineChartDatum } from "../../../shared/ui/Charts";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -11,7 +11,12 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { StatRow } from "../../../shared/ui/StatTile";
-import { sprintProjectKey, type SprintReport, type SprintTotals } from "../model/hostSprints";
+import {
+  sprintProjectKey,
+  type SprintLedgerEntry,
+  type SprintReport,
+  type SprintTotals,
+} from "../model/hostSprints";
 import type { SprintBoardController } from "../model/sprintClient";
 import { SprintDataTable, SprintKpi } from "./SprintReportParts";
 import { SprintStatusBadge } from "./SprintStatusBadge";
@@ -288,7 +293,7 @@ export function SprintReports({
           description={t("No sprints yet. Create and start a sprint to see its progress here.")}
           action={onOpenSprints ? { label: t("Go to Sprints"), onClick: onOpenSprints } : undefined}
         />
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error} /> : null}
       </Text>
     );
   const capacityPoints =
@@ -352,7 +357,7 @@ export function SprintReports({
           </div>
         </div>
       )}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error} /> : null}
       {totals ? (
         <>
           <StatRow label={t("Sprint progress")}>
@@ -452,16 +457,7 @@ export function SprintReports({
                 rows={scopedLedger.map((entry) => ({
                   key: String(entry.sequence),
                   time: new Date(entry.at).toLocaleString(locale),
-                  change: t(
-                    {
-                      scope: "Scope changed",
-                      estimate: "Estimate changed",
-                      status: "Task status changed",
-                      start: "Sprint started",
-                      complete: "Sprint completed",
-                      update: "Sprint updated",
-                    }[entry.kind],
-                  ),
+                  change: burndownChangeLabel(entry.kind),
                   remaining: entry.totals!.remainingPoints,
                   planned: entry.totals!.points,
                 }))}
@@ -518,4 +514,21 @@ export function SprintReports({
       ) : null}
     </Text>
   );
+}
+
+function burndownChangeLabel(kind: SprintLedgerEntry["kind"]) {
+  switch (kind) {
+    case "scope":
+      return translate("Scope changed");
+    case "estimate":
+      return translate("Estimate changed");
+    case "status":
+      return translate("Task status changed");
+    case "start":
+      return translate("Sprint started");
+    case "complete":
+      return translate("Sprint completed");
+    case "update":
+      return translate("Sprint updated");
+  }
 }

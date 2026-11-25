@@ -46,7 +46,7 @@ export function MemberModelSection({
           />
         }
       />
-      {modelError ? <InlineError>{modelError}</InlineError> : null}
+      {modelError ? <InlineError details={modelError} /> : null}
     </div>
   );
 }

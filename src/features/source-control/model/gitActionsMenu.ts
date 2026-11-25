@@ -1,5 +1,6 @@
 import type { GitOperation } from "../../../platform/tauri/fs";
 import type { ExplorerMenuItem } from "../../files";
+import { t } from "../../../shared/i18n/git";
 import { operationLabel } from "./commitActions";
 
 /** What the Changes header menu needs to know to enable and label its items. */
@@ -128,7 +129,9 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
       entry("undo-commit", "Undo Last Commit", state.hasCommits),
       entry(
         "abort-operation",
-        state.operation ? `Abort ${operationLabel(state.operation)}` : "Abort Operation",
+        state.operation
+          ? t("Abort {p0}", { p0: operationLabel(state.operation) })
+          : "Abort Operation",
         state.operation !== null,
       ),
       SEP,

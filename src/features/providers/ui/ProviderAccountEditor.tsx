@@ -32,7 +32,7 @@ export function ProviderAccountDialog(props: ComponentProps<typeof ProviderAccou
   return (
     <Modal
       size="sm"
-      title={t(props.editor.adding ? "Add account" : "Edit account")}
+      title={props.editor.adding ? t("Add account") : t("Edit account")}
       initialFocus='input[type="text"]'
       onClose={props.onCancel}
       closeDisabled={props.working && !props.editor.adding}
@@ -83,7 +83,12 @@ export function ProviderAccountEditor({
   }, [needsDefaultKind, onMetadata]);
   const actions = (
     <ModalActions>
-      <Button variant="ghost" disabled={working && !adding} onClick={onCancel}>
+      <Button
+        variant="ghost"
+        disabled={working && !adding}
+        disabledReason={t("Wait for the sign-in to finish.")}
+        onClick={onCancel}
+      >
         {t("Cancel")}
       </Button>
       <Button
@@ -92,10 +97,11 @@ export function ProviderAccountEditor({
         variant="primary"
         tone="accent"
         loading={working}
+        loadingLabel={adding ? t("Waiting for browser…") : undefined}
         disabled={working || incomplete}
-        reserveLabels={adding ? [t("Waiting for browser…"), t("Sign in and add")] : undefined}
+        disabledReason={error}
       >
-        {adding ? (working ? t("Waiting for browser…") : t("Sign in and add")) : t("Save")}
+        {adding ? t("Sign in and add") : t("Save")}
       </Button>
     </ModalActions>
   );
@@ -178,7 +184,9 @@ export function ProviderAccountEditor({
           </div>
         </>
       ) : null}
-      {submitError ? <InlineError>{submitError}</InlineError> : null}
+      {submitError ? (
+        <InlineError details={submitError}>{t("Could not save this account.")}</InlineError>
+      ) : null}
       <ModalFooter>{actions}</ModalFooter>
     </form>
   );

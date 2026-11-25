@@ -160,7 +160,11 @@ export function DesktopHelperSetup({
     <Row
       label={t("Helper")}
       description={t("Helper readiness is separate from OS access and running computer use.")}
-      feedback={message ? <InlineError>{message}</InlineError> : undefined}
+      feedback={
+        message ? (
+          <InlineError details={message}>{t("Could not prepare the helper.")}</InlineError>
+        ) : undefined
+      }
     >
       <Badge
         appearance="subtle"
@@ -175,13 +179,23 @@ export function DesktopHelperSetup({
         </Button>
       ) : helper ? (
         selectedPath !== helper.binaryPath && (
-          <Button type="button" disabled={disabled} onClick={() => onUse(helper)}>
+          <Button
+            type="button"
+            disabled={disabled}
+            disabledReason={t("Wait for the current operation to finish")}
+            onClick={() => onUse(helper)}
+          >
             {t("Use verified helper")}
           </Button>
         )
       ) : (
         (state || message) && (
-          <Button type="button" disabled={disabled} onClick={() => void act("prepare")}>
+          <Button
+            type="button"
+            disabled={disabled}
+            disabledReason={t("Wait for the current operation to finish")}
+            onClick={() => void act("prepare")}
+          >
             {t("Retry")}
           </Button>
         )

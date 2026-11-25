@@ -66,7 +66,7 @@ export function EmailAccountDialog({
   const formId = useId();
   const reasonId = useId();
   const [draft, setDraft] = useState<EmailDraft>(EMPTY);
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The email account could not be saved. Try again."),
   );
   const update = (patch: Partial<EmailDraft>) => setDraft((current) => ({ ...current, ...patch }));
@@ -181,7 +181,7 @@ export function EmailAccountDialog({
           description={t("Stored on this computer. It is not shown again.")}
           onChange={(event) => update({ secret: event.currentTarget.value })}
         />
-        {error ? (
+        {failureTitle ? (
           <InlineError details={details}>
             {t("The email account could not be saved. Try again.")}
           </InlineError>

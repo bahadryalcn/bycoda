@@ -4,9 +4,22 @@ import { InboxProviderMark } from "./InboxProviderMark";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { MessageMultiple } from "../../../shared/ui/icons";
-import { ENABLED_MESSAGING_PROVIDERS, MESSAGING_PROVIDER_LABELS } from "../../messaging";
+import { ENABLED_MESSAGING_PROVIDERS } from "../../messaging";
 
 const MESSAGES_ID = "messages";
+
+function messagingProviderLabel(provider: (typeof ENABLED_MESSAGING_PROVIDERS)[number]): string {
+  switch (provider) {
+    case "email":
+      return t("Email");
+    case "slack":
+      return t("Slack");
+    case "discord":
+      return t("Discord");
+    case "teams":
+      return t("Microsoft Teams");
+  }
+}
 
 export function InboxConnectMenu({
   anchor,
@@ -41,9 +54,7 @@ export function InboxConnectMenu({
                 kind: "item" as const,
                 id: MESSAGES_ID,
                 label: t("Messages"),
-                description: ENABLED_MESSAGING_PROVIDERS.map((provider) =>
-                  t(MESSAGING_PROVIDER_LABELS[provider]),
-                ).join(", "),
+                description: ENABLED_MESSAGING_PROVIDERS.map(messagingProviderLabel).join(", "),
                 icon: <MessageMultiple className="block icon-sm shrink-0" strokeWidth={1.75} />,
               },
             ]

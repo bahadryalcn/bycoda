@@ -552,7 +552,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
           key="load-error"
           context="panel"
           title={t("Couldn’t load changes")}
-          description={error}
+          error={error}
           onRetry={reload}
         />
       </div>
@@ -566,8 +566,8 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
     <div className="flex h-full min-h-0 flex-col">
       {stale && error ? <StaleReviewNotice error={error} onRetry={reload} /> : null}
       {mutationError && (
-        <InlineError inset="row" className="shrink-0">
-          {mutationError}
+        <InlineError inset="row" className="shrink-0" details={mutationError}>
+          {t("Couldn’t update changes")}
         </InlineError>
       )}
       <UnifiedDiffView

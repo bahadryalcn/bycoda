@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "./blockedReason";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -23,7 +24,7 @@ export function SnapchatStoryRemoval({
   const [id, setId] = useState("");
   const [target, setTarget] = useState("");
   const [deleted, setDeleted] = useState(false);
-  const { error, details, is, setError, write } = useAccountWrite(
+  const { failureTitle, details, is, setError, write } = useAccountWrite(
     t("Could not delete the Public Story."),
   );
   const confirmation = useConfirm();
@@ -80,13 +81,16 @@ export function SnapchatStoryRemoval({
             tone="danger"
             size="sm"
             disabled={disabled || pending || !id.trim()}
+            disabledReason={
+              disabled || pending ? accountBlockedReason(disabled) : t("Enter the Story ID first.")
+            }
             loading={pending}
             onClick={() => void remove().catch(() => undefined)}
           >
             {t("Delete")}
           </Button>
         </div>
-        {error ? <InlineError details={details}>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
         {deleted ? (
           <InlineMessage tone="success">{t("Public Story deleted.")}</InlineMessage>
         ) : null}

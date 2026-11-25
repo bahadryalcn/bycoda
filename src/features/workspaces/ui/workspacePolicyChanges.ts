@@ -44,9 +44,9 @@ export function workspacePolicyChanges(
     });
   }
   const limits = [
-    ["budgetBytes", "Directory budget (GiB)", GIB],
-    ["warningRatio", "Warn at (%)", 0.01],
-    ["minimumFreeBytes", "Minimum free space (GiB)", GIB],
+    ["budgetBytes", t("Directory budget (GiB)"), GIB],
+    ["warningRatio", t("Warn at (%)"), 0.01],
+    ["minimumFreeBytes", t("Minimum free space (GiB)"), GIB],
   ] as const;
   for (const [field, label, unit] of limits) {
     if (same(draft.disk[field], saved.disk[field])) continue;
@@ -54,7 +54,7 @@ export function workspacePolicyChanges(
     changes.push({
       id: `disk:${field}`,
       scope: t("Limits"),
-      label: t(label),
+      label,
       detail: Number.isFinite(value) ? String(Math.round(value * 100) / 100) : undefined,
       revert: () => update({ ...draft, disk: { ...draft.disk, [field]: saved.disk[field] } }),
     });

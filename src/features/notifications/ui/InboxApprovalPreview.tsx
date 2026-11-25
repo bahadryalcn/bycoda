@@ -10,12 +10,6 @@ import { Surface } from "../../../shared/ui/Surface";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 import type { InboxApprovalComment, InboxApprovalDetails } from "../model/inboxApprovalDetails";
 
-const EVENTS: Record<string, { label: string; tone: BadgeTone }> = {
-  COMMENT: { label: "Comment", tone: "info" },
-  APPROVE: { label: "Approve", tone: "success" },
-  REQUEST_CHANGES: { label: "Request changes", tone: "warning" },
-};
-
 function lines(comment: InboxApprovalComment) {
   return comment.startLine ? `L${comment.startLine}–${comment.line}` : `L${comment.line}`;
 }
@@ -38,7 +32,12 @@ export function InboxApprovalPreview({
 }) {
   const t = useT();
   const review = details.review;
-  const event = review ? EVENTS[review.event] : undefined;
+  const events: Record<string, { label: string; tone: BadgeTone }> = {
+    COMMENT: { label: t("Comment"), tone: "info" },
+    APPROVE: { label: t("Approve"), tone: "success" },
+    REQUEST_CHANGES: { label: t("Request changes"), tone: "warning" },
+  };
+  const event = review ? events[review.event] : undefined;
   return (
     <Text as="div" size="body" tone="inherit" className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -50,7 +49,7 @@ export function InboxApprovalPreview({
         </Badge>
         {review ? (
           <Badge size="xs" tone={event?.tone ?? "neutral"}>
-            {event ? t(event.label) : review.event}
+            {event ? event.label : review.event}
           </Badge>
         ) : null}
       </div>

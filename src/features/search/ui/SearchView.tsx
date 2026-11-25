@@ -706,7 +706,7 @@ export function SearchView({
             size="inline"
             kind="filtered"
             inset="row"
-            description={t(indexing ? "No indexed matches yet" : "No results")}
+            description={indexing ? t("No indexed matches yet") : t("No results")}
           />
         ) : chatMode ? (
           <>
@@ -919,15 +919,13 @@ function ResultList({
                   leading="inherit"
                   className="app-search-result-kind sr-only"
                 >
-                  {t(
-                    hit.kind === "conversation"
-                      ? "Session"
-                      : hit.kind === "message"
-                        ? "Message"
-                        : hit.kind === "project"
-                          ? "Project"
-                          : "File",
-                  )}
+                  {hit.kind === "conversation"
+                    ? t("Session")
+                    : hit.kind === "message"
+                      ? t("Message")
+                      : hit.kind === "project"
+                        ? t("Project")
+                        : t("File")}
                 </Text>
               </ListRow>
             </Tooltip>

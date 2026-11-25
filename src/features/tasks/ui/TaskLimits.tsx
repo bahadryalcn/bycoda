@@ -35,7 +35,7 @@ export function MachineConcurrency({
       label={
         <span className="inline-flex items-center gap-1">
           {label}
-          {saving ? <Spinner size="xs" /> : null}
+          {saving ? <Spinner size="xs" delay /> : null}
           <InfoPopover>
             {t("Saved immediately for {p0}; it is not part of this task.", {
               p0: limit.machineName,

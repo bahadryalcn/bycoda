@@ -49,7 +49,7 @@ export function MessageReplyComposer({
   const key = replyDraftKey(thread.accountId, thread.id);
   const [draft, setDraft] = useState(() => readReplyDraft(key).body);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
+  const [sendDetails, setSendDetails] = useState<string | null>(null);
   const sendingRef = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
   const body = draft.trim();
@@ -59,7 +59,7 @@ export function MessageReplyComposer({
     if (!body || sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
-    setError("");
+    setSendDetails(null);
     const requestId = beginReplySend(key, body);
     const attempted = readReplyDraft(key);
     try {
@@ -69,7 +69,7 @@ export function MessageReplyComposer({
       onSent(message);
       field.current?.focus();
     } catch (cause) {
-      setError(t("The reply was not sent. {p0}", { p0: errorText(cause) }));
+      setSendDetails(errorText(cause));
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -125,6 +125,7 @@ export function MessageReplyComposer({
             size="sm"
             type="submit"
             disabled={!body}
+            disabledReason={body ? undefined : t("Write a reply first.")}
             loading={sending}
             loadingLabel={t("Sending…")}
             className="shrink-0"
@@ -133,7 +134,9 @@ export function MessageReplyComposer({
           </Button>
         }
       />
-      {error ? <InlineError>{error}</InlineError> : null}
+      {sendDetails !== null ? (
+        <InlineError details={sendDetails}>{t("The reply was not sent.")}</InlineError>
+      ) : null}
     </form>
   );
 }

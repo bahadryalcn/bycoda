@@ -12,6 +12,7 @@ import { WorktreeRow } from "./WorktreeRow";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import { SettingsFeedback } from "../../../shared/ui/settings";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
 import { Plus, RefreshCw } from "../../../shared/ui/icons";
 import { revealPath } from "../../../platform/tauri/fs";
@@ -79,7 +80,7 @@ export function WorktreesPage({
   const [project, setProject] = useState(cwd === "~" ? (projects[0]?.path ?? "") : cwd);
   const { data, error: loadError, refresh } = useProjectWorktrees(project);
   const rawWorktrees = data?.worktrees.filter((tree) => !tree.isMain) ?? [];
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ title: string; details: string }>();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Worktree>();
   const [remoteReview, setRemoteReview] = useState<{
@@ -149,6 +150,7 @@ export function WorktreesPage({
                   motion="none"
                   type="button"
                   disabled={!data}
+                  disabledReason={data ? undefined : t("Loading worktrees…")}
                   onClick={() => setCreating(true)}
                   startIcon={<Plus className="icon-xs" />}
                 >
@@ -169,6 +171,13 @@ export function WorktreesPage({
                       : undefined
                   }
                   disabled={!project || managedDisabled}
+                  disabledReason={
+                    !project
+                      ? t("Open a project first.")
+                      : managedDisabled
+                        ? t("Wait for the current operation to finish")
+                        : undefined
+                  }
                   loading={refreshing || managedBusy || (!!project && !data && !loadError)}
                   loadingLabel={t("Refreshing…")}
                   onClick={async () => {
@@ -220,8 +229,16 @@ export function WorktreesPage({
         }
         renderWorktrees={(query) => (
           <>
-            {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
-            {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
+            {error && (
+              <SettingsFeedback state="error" extra={<ErrorDetails detail={error.details} />}>
+                {error.title}
+              </SettingsFeedback>
+            )}
+            {loadError && (
+              <SettingsFeedback state="error" extra={<ErrorDetails detail={loadError} />}>
+                {t("Couldn’t load worktrees")}
+              </SettingsFeedback>
+            )}
             {!data && !loadError && (
               <LoadingText delay={false} inset="row">
                 {t("Loading worktrees…")}
@@ -324,7 +341,10 @@ export function WorktreesPage({
                           },
                           (failure) => {
                             if (reviewRequest.current === request)
-                              setError(presentRemoteError(failure, { explicit: true }));
+                              setError({
+                                title: t("Couldn’t review the worktree for removal"),
+                                details: presentRemoteError(failure, { explicit: true }),
+                              });
                           },
                         )
                         .finally(() => {
@@ -367,7 +387,11 @@ export function WorktreesPage({
                 !deleteSessions,
                 deleteBranch,
               );
-              if (removed.branchNotice) setError(removed.branchNotice);
+              if (removed.branchNotice)
+                setError({
+                  title: t("The worktree was removed, but its branch was kept."),
+                  details: removed.branchNotice,
+                });
             } finally {
               await refresh();
             }
@@ -415,7 +439,11 @@ export function WorktreesPage({
                 const removed = deleteBranch
                   ? await onRemove(cwd, path, force, !deleteSessions, undefined, true)
                   : await onRemove(cwd, path, force, !deleteSessions);
-                if (removed?.branchNotice) setError(removed.branchNotice);
+                if (removed?.branchNotice)
+                  setError({
+                    title: t("The worktree was removed, but its branch was kept."),
+                    details: removed.branchNotice,
+                  });
                 if (isEqualOrInside(project, path)) {
                   const main = data?.worktrees.find((item) => item.isMain);
                   if (main) setProject(main.path);
@@ -430,7 +458,10 @@ export function WorktreesPage({
                       ),
                     )
                   : error;
-                setError(presentRemoteError(failure, { explicit: true }));
+                setError({
+                  title: t("Couldn’t delete this worktree"),
+                  details: presentRemoteError(failure, { explicit: true }),
+                });
                 throw failure;
               } finally {
                 // The row stays blocked until a fresh listing replaces its saved session IDs.

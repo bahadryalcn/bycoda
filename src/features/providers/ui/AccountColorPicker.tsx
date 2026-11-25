@@ -92,6 +92,7 @@ export function AccountColorPicker({
         ref={trigger}
         type="button"
         disabled={disabled}
+        disabledReason={t("Wait for the current action to finish.")}
         aria-label={t("Color for {p0}: {p1}", { p0: account.label, p1: current.label })}
         aria-expanded={open}
         aria-haspopup="dialog"

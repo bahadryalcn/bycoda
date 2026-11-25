@@ -45,6 +45,7 @@ function SessionRow({
   status,
   working,
   disabled,
+  disabledReason,
   loading,
   title,
   details,
@@ -62,6 +63,8 @@ function SessionRow({
   status?: ReactNode;
   working?: boolean;
   disabled: boolean;
+  /** Why the row cannot open; omit while it is only busy. */
+  disabledReason?: string;
   loading: boolean;
   title?: string;
   details?: readonly ReactNode[];
@@ -73,6 +76,7 @@ function SessionRow({
       motion="none"
       className="w-full min-w-0"
       disabled={disabled}
+      disabledReason={disabledReason}
       loading={loading}
       onClick={onClick}
       tooltip={title}
@@ -185,6 +189,13 @@ export function CrewWorkSessions({
                       : undefined
               }
               disabled={!run.coordinatorSessionId || !canOpen || pending}
+              disabledReason={
+                !run.coordinatorSessionId
+                  ? t("Session unavailable")
+                  : !canOpen
+                    ? t("Opening sessions is not available here.")
+                    : undefined
+              }
               loading={pendingAction === "open:coordinator"}
               onClick={() =>
                 run.coordinatorSessionId && onOpen(run.coordinatorSessionId, "coordinator")
@@ -214,6 +225,13 @@ export function CrewWorkSessions({
                 working={task.status === "running"}
                 status={crewTaskStatusLabel(task.status)}
                 disabled={!ids.worker || !canOpen || pending}
+                disabledReason={
+                  !ids.worker
+                    ? t("Session unavailable")
+                    : !canOpen
+                      ? t("Opening sessions is not available here.")
+                      : undefined
+                }
                 loading={pendingAction === `open:worker:${task.id}`}
                 title={task.title}
                 details={[
@@ -241,6 +259,9 @@ export function CrewWorkSessions({
                   working={review.current}
                   status={crewReviewLabel(review.state)}
                   disabled={!canOpen || pending}
+                  disabledReason={
+                    !canOpen ? t("Opening sessions is not available here.") : undefined
+                  }
                   loading={pendingAction === `open:review:${task.id}`}
                   title={task.title}
                   onClick={() => onOpen(ids.review!, `review:${task.id}`)}

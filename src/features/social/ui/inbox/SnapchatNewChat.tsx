@@ -31,7 +31,7 @@ export function SnapchatNewChat({
   const [text, setText] = useState("");
   const [operation, setOperation] = useState<PendingChat>();
   const [job, setJob] = useState<SocialJob>();
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ title: string; details?: string }>();
   const [friends, setFriends] = useState<{ key: string; page: FriendPage }>();
   const pending = useSocialPending();
   const confirmation = useConfirm();
@@ -42,7 +42,7 @@ export function SnapchatNewChat({
   const friendKey = JSON.stringify([account.id, account.platformId, account.executorId]);
   const friendPage = friends?.key === friendKey ? friends.page : undefined;
   const readFriends = async () => {
-    setError("");
+    setProblem(undefined);
     try {
       await pending.run("friends", async () => {
         const page = await client.request<FriendPage>("snapchat.friends.list", {
@@ -51,7 +51,10 @@ export function SnapchatNewChat({
         setFriends({ key: friendKey, page });
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Could not load Snapchat friends."));
+      setProblem({
+        title: t("Could not load Snapchat friends."),
+        details: cause instanceof Error ? cause.message : undefined,
+      });
     }
   };
   const eligible = /^[a-z][\w.-]{1,30}$/i.test(username.trim().replace(/^@/, "")) && !!text.trim();
@@ -70,7 +73,7 @@ export function SnapchatNewChat({
       await pending.run("message", async () => {
         const requestId = operation?.requestId ?? crypto.randomUUID();
         setOperation({ ...payload, requestId });
-        setError("");
+        setProblem(undefined);
         setJob(undefined);
         try {
           const draft = await client.request<SocialDraft>(
@@ -100,9 +103,10 @@ export function SnapchatNewChat({
           setOperation(undefined);
           setText("");
         } catch (cause) {
-          setError(
-            cause instanceof Error ? cause.message : t("Could not queue the Snapchat message."),
-          );
+          setProblem({
+            title: t("Could not queue the Snapchat message."),
+            details: cause instanceof Error ? cause.message : undefined,
+          });
         }
       });
     },
@@ -122,6 +126,11 @@ export function SnapchatNewChat({
             variant="secondary"
             loading={pending.is("friends")}
             disabled={!editable}
+            disabledReason={
+              operation
+                ? t("A message is waiting to be retried. Retry it first.")
+                : t("Wait for the current action to finish.")
+            }
             onClick={() => void readFriends().catch(() => undefined)}
           >
             {t("Read Snapchat friends")}
@@ -160,11 +169,18 @@ export function SnapchatNewChat({
         />
         <Button
           disabled={!enabled || !eligible || busy}
+          disabledReason={
+            busy
+              ? t("Wait for the current action to finish.")
+              : !enabled
+                ? t("Sending is turned off.")
+                : t("Enter a valid Snapchat username and a message first.")
+          }
           onClick={() => void confirmation.confirm(confirmRequest).catch(() => undefined)}
         >
           {operation ? t("Retry same message") : t("Send message")}
         </Button>
-        {error && <InlineError>{error}</InlineError>}
+        {problem && <InlineError details={problem.details}>{problem.title}</InlineError>}
         {job && <StatusText status={job.status} />}
         {confirmation.renderDialog(confirmRequest)}
       </div>

@@ -13,11 +13,13 @@ export function NoteChatAction({
   projectCwd,
   recents,
   disabled,
+  disabledReason,
   onAdd,
 }: {
   projectCwd?: string;
   recents: RecentProject[];
   disabled?: boolean;
+  disabledReason?: string;
   onAdd: (targetCwd?: string) => void;
 }) {
   useLocale();
@@ -48,6 +50,7 @@ export function NoteChatAction({
         size="sm"
         startIcon={<MessageSquarePlus className="icon-sm" />}
         disabled={disabled}
+        disabledReason={disabledReason}
         onClick={() => onAdd(projectCwd)}
       >
         {t("Add to chat")}

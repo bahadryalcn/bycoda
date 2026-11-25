@@ -189,7 +189,7 @@ export function useVoiceSetup(
       const path = await open({
         directory: key !== "python",
         multiple: false,
-        title: t(key === "python" ? "Choose Python executable" : "Choose model folder"),
+        title: key === "python" ? t("Choose Python executable") : t("Choose model folder"),
       });
       if (
         mounted.current &&

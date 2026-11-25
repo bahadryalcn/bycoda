@@ -10,6 +10,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clickButton,
   clientMock,
@@ -199,7 +200,7 @@ describe("ImportDialog files", () => {
   it("refuses a file over 1 MiB without reading it", async () => {
     const text = vi.fn(async () => "platformId,name\n1,Ada");
     await chosen(clientMock(), { name: "big.csv", size: 1024 * 1024 + 1, text });
-    expect(bodyText()).toContain("The import can be at most 1 MiB.");
+    expect(openErrorDetails()).toContain("The import can be at most 1 MiB.");
     expect(text).not.toHaveBeenCalled();
     expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
     expect(bodyText()).toContain("Choose a file first.");
@@ -207,12 +208,12 @@ describe("ImportDialog files", () => {
 
   it("explains a JSON file that is broken or is not a list", async () => {
     await chosen(clientMock(), textFile("people.json", "{not json"));
-    expect(bodyText()).toContain("The file is not valid JSON.");
+    expect(openErrorDetails()).toContain("The file is not valid JSON.");
 
     pick(textFile("people.json", '{"name":"Ada"}'));
     await flush();
     await flush();
-    expect(bodyText()).toContain("The file must contain a JSON list of people.");
+    expect(openErrorDetails()).toContain("The file must contain a JSON list of people.");
     expect(buttonByText("Import people")?.getAttribute("aria-disabled")).toBe("true");
   });
 

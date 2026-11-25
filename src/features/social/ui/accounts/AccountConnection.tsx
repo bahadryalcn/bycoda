@@ -22,6 +22,7 @@ import type { HostProject } from "../../../connections/public/protocol";
 import { TelegramChannelConnect } from "./platform/TelegramChannelConnect";
 import { XProfileEditor } from "./platform/XProfileEditor";
 import { InstagramAccountTools } from "./platform/InstagramAccountTools";
+import { accountBlockedReason } from "./blockedReason";
 import { useAccountWrite } from "./useAccountWrite";
 import { ChromeSessionConnect } from "./ChromeSessionConnect";
 import "./accounts.css";
@@ -103,7 +104,7 @@ export function AccountConnection({
   const requestedOperations = operations.filter((operation) =>
     operationOptions.includes(operation),
   );
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The connection could not be started. Try again."),
   );
   const usesBrowser = account.connection === "browser";
@@ -183,6 +184,26 @@ export function AccountConnection({
     );
 
   const connectLabel = account.connected ? t("Reconnect") : t("Connect");
+  const blocked = accountBlockedReason(disabled);
+  const signInReason = locked
+    ? blocked
+    : browserPending
+      ? t("Finish the sign-in or stop it first.")
+      : t("Enter the LinkedIn Page ID or URL first.");
+  const chromeReason = locked
+    ? blocked
+    : browserPending
+      ? t("Finish the sign-in or stop it first.")
+      : !onThisComputer
+        ? t("Open this account on the computer it is connected to.")
+        : t("Enter the LinkedIn Page ID or URL first.");
+  const oauthReason = locked
+    ? blocked
+    : xBillingDisabled
+      ? t("Turn on X API billing first.")
+      : !requestedOperations.length
+        ? t("Choose at least one permission.")
+        : t("Enter the organization ID first.");
 
   return (
     <section
@@ -219,6 +240,7 @@ export function AccountConnection({
               browserPending ||
               (needsPageTarget && !resourceId.trim())
             }
+            disabledReason={signInReason}
             onClick={() => void startBrowser().catch(() => undefined)}
           >
             {account.connected ? t("Sign in again in the browser") : t("Sign in in the browser")}
@@ -228,6 +250,7 @@ export function AccountConnection({
             size="sm"
             loading={is("check:browser")}
             disabled={locked || is("check:browser") || is("cancel:browser")}
+            disabledReason={blocked}
             onClick={() => void checkBrowser().catch(() => undefined)}
           >
             {t("Check connection")}
@@ -245,6 +268,7 @@ export function AccountConnection({
               size="sm"
               loading={is("cancel:browser")}
               disabled={disabled}
+              disabledReason={blocked}
               onClick={() => void cancelBrowser().catch(() => undefined)}
             >
               {t("Stop")}
@@ -268,6 +292,7 @@ export function AccountConnection({
           disabled={
             locked || browserPending || !onThisComputer || (needsPageTarget && !resourceId.trim())
           }
+          disabledReason={chromeReason}
           onChanged={() => {
             setBrowser(undefined);
             onBrowserStatusChange?.("connected");
@@ -297,6 +322,7 @@ export function AccountConnection({
                 !requestedOperations.length ||
                 (isOrganization && !/^\d+$/.test(resourceId))
               }
+              disabledReason={oauthReason}
               onClick={() => void startOAuth().catch(() => undefined)}
             >
               {account.connected ? t("Reconnect in browser") : t("Connect in browser")}
@@ -306,6 +332,7 @@ export function AccountConnection({
               size="sm"
               loading={is("check:oauth")}
               disabled={disabled || is("check:oauth")}
+              disabledReason={blocked}
               onClick={() => void checkOAuth().catch(() => undefined)}
             >
               {t("Check connection")}
@@ -325,6 +352,7 @@ export function AccountConnection({
                   label={operationText(operation)}
                   checked={operations.includes(operation)}
                   disabled={locked}
+                  disabledReason={blocked}
                   onChange={(event) =>
                     setOperations((current) =>
                       event.target.checked
@@ -340,6 +368,7 @@ export function AccountConnection({
                   label={t("LinkedIn Live comments")}
                   checked={linkedinLiveComments}
                   disabled={locked}
+                  disabledReason={blocked}
                   onChange={(event) => setLinkedinLiveComments(event.target.checked)}
                 />
               ) : null}
@@ -365,6 +394,7 @@ export function AccountConnection({
               size="sm"
               loading={is(`candidate:${candidate.id}`)}
               disabled={disabled}
+              disabledReason={blocked}
               onClick={() => void chooseCandidate(candidate.id).catch(() => undefined)}
             >
               {candidate.name}
@@ -378,6 +408,7 @@ export function AccountConnection({
           size="sm"
           loading={is("connect:token")}
           disabled={locked}
+          disabledReason={blocked}
           onClick={() => void connectToken().catch(() => undefined)}
         >
           {connectLabel}
@@ -403,7 +434,7 @@ export function AccountConnection({
       {browserPollFailed && !disabled ? (
         <InlineError>{t("Could not reach this computer.")}</InlineError>
       ) : null}
-      {error ? (
+      {failureTitle ? (
         <InlineError details={details}>
           {t("The connection could not be started. Try again.")}
         </InlineError>

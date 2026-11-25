@@ -158,7 +158,12 @@ function ProjectSearchContent({
       })
         .then((result) => {
           if (cancelled) return;
-          setResult({ request, matches: result.matches, truncated: result.truncated, error: null });
+          setResult({
+            request,
+            matches: result.matches,
+            truncated: result.truncated,
+            error: null,
+          });
         })
         .catch((err: unknown) => {
           if (cancelled) return;
@@ -341,6 +346,13 @@ function ProjectSearchContent({
                     label={t("Replace all")}
                     loading={replacing}
                     disabled={!matches.length || !request.query || replacing}
+                    disabledReason={
+                      !request.query
+                        ? t("Enter text to search for.")
+                        : !matches.length
+                          ? t("No matches to replace.")
+                          : undefined
+                    }
                     onClick={() => void replaceAll()}
                   >
                     <Replace className="icon-sm" />
@@ -404,7 +416,11 @@ function ProjectSearchContent({
           </div>
         </div>
       </div>
-      {replaceError ? <InlineError inset="row">{replaceError}</InlineError> : null}
+      {replaceError ? (
+        <InlineError inset="row" details={replaceError}>
+          {t("Could not replace the matches.")}
+        </InlineError>
+      ) : null}
       {replaceSummary ? (
         <Text size="micro" tone="secondary" className="px-3 py-1">
           {replaceSummary}
@@ -421,21 +437,30 @@ function ProjectSearchContent({
           {loading ? (
             <LoadingText delay={false}>{t("Searching…")}</LoadingText>
           ) : error ? (
-            <InlineError>{error}</InlineError>
+            <InlineError details={error}>{t("Could not search this project.")}</InlineError>
           ) : query.trim() ? (
             <span>
               {matchCount === 0
                 ? t("No results")
-                : t(
-                    matchCount === 1
-                      ? fileCount === 1
-                        ? "{p0} result in {p2} file"
-                        : "{p0} result in {p2} files"
-                      : fileCount === 1
-                        ? "{p0} results in {p2} file"
-                        : "{p0} results in {p2} files",
-                    { p0: matchCount, p2: fileCount },
-                  )}
+                : matchCount === 1
+                  ? fileCount === 1
+                    ? t("{p0} result in {p2} file", {
+                        p0: matchCount,
+                        p2: fileCount,
+                      })
+                    : t("{p0} result in {p2} files", {
+                        p0: matchCount,
+                        p2: fileCount,
+                      })
+                  : fileCount === 1
+                    ? t("{p0} results in {p2} file", {
+                        p0: matchCount,
+                        p2: fileCount,
+                      })
+                    : t("{p0} results in {p2} files", {
+                        p0: matchCount,
+                        p2: fileCount,
+                      })}
               {truncated ? t(" (limited)") : ""}
             </span>
           ) : null}

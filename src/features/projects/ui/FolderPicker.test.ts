@@ -227,19 +227,22 @@ describe("project folder browser", () => {
     expect(onPick).toHaveBeenCalledWith(["C:/Users/me/Projects", "C:/Users/me/Notes"]);
   });
 
+  const isBlocked = (el: HTMLElement) =>
+    (el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true";
+
   it("prevents adding a directory whose listing failed and supports recovery", async () => {
     fs.listDir.mockRejectedValueOnce(new Error("Access denied"));
     await render();
-    expect(button("Add").disabled).toBe(true);
+    expect(isBlocked(button("Add"))).toBe(true);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Access denied");
     await click("Try again");
-    expect(button("Add").disabled).toBe(false);
+    expect(isBlocked(button("Add"))).toBe(false);
   });
 
   it("retries failed home discovery instead of refreshing an unknown directory", async () => {
     fs.homeDir.mockRejectedValueOnce(new Error("Home unavailable"));
     await render();
-    expect(button("Add").disabled).toBe(true);
+    expect(isBlocked(button("Add"))).toBe(true);
     expect(fs.listDir).not.toHaveBeenCalled();
     await click("Try again");
     expect(fs.homeDir).toHaveBeenCalledTimes(2);

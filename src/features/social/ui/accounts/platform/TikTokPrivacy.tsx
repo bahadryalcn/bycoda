@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useState } from "react";
 import { useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -28,7 +29,7 @@ export function TikTokPrivacy({
   const [saved, setSaved] = useState<Privacy>();
   const [draft, setDraft] = useState<Privacy>();
   const [uncertain, setUncertain] = useState(false);
-  const { is, write, error, details } = useAccountWrite(
+  const { is, write, failureTitle, details } = useAccountWrite(
     t("Could not read or save TikTok privacy settings."),
   );
   const confirm = useConfirm();
@@ -87,12 +88,17 @@ export function TikTokPrivacy({
           size="sm"
           loading={is("read")}
           disabled={disabled || busy || (dirty && !uncertain)}
+          disabledReason={
+            disabled || busy
+              ? accountBlockedReason(disabled)
+              : t("Save or discard your changes before reading again.")
+          }
           onClick={() => read().catch(() => undefined)}
         >
           {draft ? t("Refresh") : t("Read privacy settings")}
         </Button>
       </div>
-      {!draft && !busy && !error && (
+      {!draft && !busy && !failureTitle && (
         <Text size="caption" tone="secondary">
           {t("Nothing loaded yet. Read it from TikTok to see it here.")}
         </Text>
@@ -113,6 +119,7 @@ export function TikTokPrivacy({
               size="secondary"
               checked={draft.privateAccount}
               disabled={disabled || busy}
+              disabledReason={accountBlockedReason(disabled)}
               onChange={(event) =>
                 setDraft({
                   ...draft,
@@ -148,6 +155,15 @@ export function TikTokPrivacy({
               variant="primary"
               loading={is("save")}
               disabled={disabled || busy || !dirty || uncertain}
+              disabledReason={
+                disabled || busy
+                  ? accountBlockedReason(disabled)
+                  : !dirty
+                    ? t("No changes to save.")
+                    : t(
+                        "TikTok did not confirm this change. Check its current state before trying again.",
+                      )
+              }
               onClick={() =>
                 confirm
                   .confirm({
@@ -185,7 +201,7 @@ export function TikTokPrivacy({
           </div>
         </div>
       )}
-      {error && <InlineError details={details}>{error}</InlineError>}
+      {failureTitle && <InlineError details={details}>{failureTitle}</InlineError>}
       {confirm.dialog}
     </div>
   );

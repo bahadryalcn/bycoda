@@ -35,7 +35,7 @@ export function YouTubeScopeHandoff({
   operation: SocialOperation;
   disabled: boolean;
 }) {
-  const { write, error, details, is } = useAccountWrite(
+  const { write, failureTitle, details, is } = useAccountWrite(
     t("The connection could not be started. Try again."),
   );
   const reconnect = () =>
@@ -54,7 +54,11 @@ export function YouTubeScopeHandoff({
   return (
     <InlineMessage
       tone="warning"
-      extra={error ? <ErrorDetails title={error} detail={details ?? error} /> : undefined}
+      extra={
+        failureTitle ? (
+          <ErrorDetails title={failureTitle} detail={details ?? failureTitle} />
+        ) : undefined
+      }
       action={{
         label: t("Reconnect with this permission"),
         pending: is("youtube-scope"),

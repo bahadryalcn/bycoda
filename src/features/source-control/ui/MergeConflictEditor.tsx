@@ -75,7 +75,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resolved, setResolved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; details?: string } | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const inputGateRef = useRef<ReturnType<typeof installEditorInputGate> | null>(null);
@@ -271,14 +271,18 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
         hasConflictMarkers(view.state.doc.toString())
       ) {
         settled?.();
-        setError(
-          t("Resolve every conflict before saving. Use a source or confirm your edited result."),
-        );
+        setError({
+          title: t(
+            "Resolve every conflict before saving. Use a source or confirm your edited result.",
+          ),
+        });
         return false;
       }
       if (!propsRef.current.canSave()) {
         settled?.();
-        setError(t("The file changed on disk. Reopen it before saving your resolution."));
+        setError({
+          title: t("The file changed on disk. Reopen it before saving your resolution."),
+        });
         return false;
       }
       busyRef.current = true;
@@ -299,7 +303,11 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
         propsRef.current.onDirtyChange(changed);
         return true;
       } catch (error) {
-        if (!disposed) setError(presentRemoteError(error, { explicit: true }));
+        if (!disposed)
+          setError({
+            title: t("Could not save the resolution"),
+            details: presentRemoteError(error, { explicit: true }),
+          });
         return false;
       } finally {
         settled?.();
@@ -377,7 +385,10 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
       setResolved(true);
       propsRef.current.onResolved?.();
     } catch (error) {
-      setError(presentRemoteError(error, { explicit: true }));
+      setError({
+        title: t("Could not stage the file"),
+        details: presentRemoteError(error, { explicit: true }),
+      });
     } finally {
       settled?.();
       busyRef.current = false;
@@ -391,16 +402,23 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
     try {
       const next = nextConflictedFile(await gitConflicts(cwd), displayPath(path, cwd));
       if (next) propsRef.current.onOpenFile?.(`${cwd.replace(/[\\/]+$/, "")}/${next}`);
-      else setError(t("No other conflicted files"));
+      else setError({ title: t("No other conflicted files") });
     } catch (error) {
-      setError(presentRemoteError(error, { explicit: true }));
+      setError({
+        title: t("Could not find the next conflicted file"),
+        details: presentRemoteError(error, { explicit: true }),
+      });
     } finally {
       settled?.();
     }
   };
   return (
     <div className="merge-conflict-editor">
-      {error ? <InlineError className="conflict-editor-status">{error}</InlineError> : null}
+      {error ? (
+        <InlineError className="conflict-editor-status" details={error.details}>
+          {error.title}
+        </InlineError>
+      ) : null}
       {!initial ? (
         <LoadingText className="conflict-editor-status">
           {t("Loading conflict versions")}
@@ -456,6 +474,9 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
                 size="sm"
                 motion="none"
                 disabled={busy || disabled}
+                disabledReason={
+                  busy || disabled ? t("Wait for the current operation to finish") : undefined
+                }
                 onClick={() => void nextFile()}
               >
                 {t("Next file")}
@@ -478,7 +499,15 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
               size="sm"
               motion="none"
               disabled={!initial || disabled || busy || preparing || pending > 0 || resolved}
-              tooltip={pending ? t("Resolve every conflict first") : undefined}
+              disabledReason={
+                !initial || preparing
+                  ? t("Loading conflict versions")
+                  : pending > 0
+                    ? t("Resolve every conflict first")
+                    : (disabled || busy) && !resolved
+                      ? t("Wait for the current operation to finish")
+                      : undefined
+              }
               onClick={() => void stage()}
             >
               {resolved ? t("Staged") : t("Save and stage")}

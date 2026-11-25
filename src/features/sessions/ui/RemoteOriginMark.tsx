@@ -7,10 +7,6 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { Session } from "../model/session";
 
-const STARTED = "Started from a remote connection";
-const RUNNING =
-  "This conversation is running in the background on this computer. New messages appear automatically.";
-
 /** Where a conversation came from: `running` while this computer's host is still answering a
  * remote request, `idle` once it settled, undefined for one started here (and for delegated work). */
 export function remoteOrigin(session: Session): "running" | "idle" | undefined {
@@ -33,8 +29,11 @@ export function RemoteOriginMark({
   const t = useT();
   const running = origin === "running";
   const location = t("This computer");
-  const details = [t(STARTED), location];
-  if (running) details.push(t(RUNNING));
+  const runningText = t(
+    "This conversation is running in the background on this computer. New messages appear automatically.",
+  );
+  const details = [t("Started from a remote connection"), location];
+  if (running) details.push(runningText);
   return (
     <Tooltip
       label={
@@ -58,7 +57,7 @@ export function RemoteOriginMark({
             {location}
           </>
         )}
-        {running ? <WorkingIndicator size="xs" label={t(RUNNING)} /> : null}
+        {running ? <WorkingIndicator size="xs" label={runningText} /> : null}
       </Text>
     </Tooltip>
   );

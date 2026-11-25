@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { showErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -132,8 +133,10 @@ it("keeps external-open progress local, blocks duplicates and allows retry after
   expect(document.activeElement).toBe(button);
   await act(async () => reject(new Error("Application unavailable")));
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    "Application unavailable",
+    "Couldn’t open the file in its default app",
   );
+  await showErrorDetails(container);
+  expect(document.body.textContent).toContain("Application unavailable");
   mocks.open.mockResolvedValue(undefined);
   await act(async () => button.click());
   expect(mocks.open).toHaveBeenCalledTimes(2);

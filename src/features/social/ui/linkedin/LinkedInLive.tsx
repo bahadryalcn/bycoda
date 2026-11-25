@@ -22,6 +22,7 @@ import { useAccountWrite } from "../accounts/useAccountWrite";
 import { LinkedInHandoff } from "./LinkedInHandoff";
 import { LinkedInLiveComments } from "./LinkedInLiveComments";
 import "./linkedin.css";
+import { linkedInBusyReason } from "./linkedinReasons";
 
 type Props = {
   account: SocialAccount;
@@ -42,7 +43,9 @@ export function LinkedInLive({ account, client, disabled }: Props) {
 
 function LinkedInLiveAccount({ account, client, disabled }: Props) {
   const [status, setStatus] = useState<LinkedInLiveStatus>();
-  const { error, is, write } = useAccountWrite(t("Could not update LinkedIn Live."));
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("Could not update LinkedIn Live."),
+  );
   const accountId = account.id;
   const connectionRequired = !account.connected || status?.state === "reconnect";
   const pending = is("status") || is("save") || is("clear");
@@ -105,6 +108,7 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
               description={t("Check that this account is allowed to go live.")}
               action={t("Check Live eligibility")}
               disabled={is("open")}
+              disabledReason={t("Wait for the current action to finish.")}
               onOpen={() => open(LINKEDIN_LIVE_ACCESS)}
             />
           </ul>
@@ -118,6 +122,7 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
               variant="ghost"
               size="sm"
               disabled={disabled || pending}
+              disabledReason={linkedInBusyReason(disabled)}
               loading={is("status")}
               onClick={() => void refreshStatus().catch(() => undefined)}
             >
@@ -130,15 +135,14 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
             <Text as="p">{t("Credentials stored for event {p0}.", { p0: status.eventId })}</Text>
           ) : status?.state === "missing" ? (
             <Text as="p">{t("No LinkedIn Live credentials stored.")}</Text>
-          ) : (
-            <Text as="p" size="secondary" tone="muted">
-              {t("Paste the event ID, stream URL and stream key from LinkedIn Live Studio.")}
-            </Text>
-          )}
+          ) : null}
           <form onSubmit={save}>
             <FieldGroup variant="bare" disabled={disabled || pending || connectionRequired}>
               <TextField
                 label={t("LinkedIn event ID")}
+                description={t(
+                  "Paste the event ID, stream URL and stream key from LinkedIn Live Studio.",
+                )}
                 name="eventId"
                 inputMode="numeric"
                 pattern="[1-9][0-9]{0,24}"
@@ -169,6 +173,7 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
                     tone="danger"
                     size="sm"
                     disabled={disabled || pending}
+                    disabledReason={linkedInBusyReason(disabled)}
                     loading={is("clear")}
                     onClick={() => void clear().catch(() => undefined)}
                   >
@@ -178,7 +183,7 @@ function LinkedInLiveAccount({ account, client, disabled }: Props) {
               </div>
             </FieldGroup>
           </form>
-          {error ? <InlineError>{error}</InlineError> : null}
+          {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
         </div>
         {account.accountType === "organization" && account.connection === "oauth" ? (
           <LinkedInLiveComments

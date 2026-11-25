@@ -83,7 +83,7 @@ export function CrewsTeams({
           />
         </div>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error} /> : null}
       {crews.length === 0 ? (
         <EmptyState
           context="panel"

@@ -16,6 +16,18 @@ import { BackgroundGenerator } from "./BackgroundGenerator";
 import { generatorSession } from "./themeGeneratorSession";
 import styles from "./GradientStrip.module.css";
 
+/** Names of the built-in gradient presets, one literal per preset id. */
+function presetNames(): Record<string, string> {
+  return {
+    aurora: t("Aurora"),
+    ocean: t("Ocean"),
+    dusk: t("Dusk"),
+    forest: t("Forest"),
+    ember: t("Ember"),
+    rose: t("Rose"),
+  };
+}
+
 function ColorStop({
   index,
   color,
@@ -104,6 +116,7 @@ export function GradientStrip({
     },
     [],
   );
+  const presetLabels = presetNames();
   const angleLocked = value.style !== "linear";
   return (
     <div className={styles.editor}>
@@ -170,7 +183,7 @@ export function GradientStrip({
                 edit({ enabled: true, style, colors, angle, strength });
               }}
             >
-              {t(preset.label)}
+              {presetLabels[preset.id] ?? preset.label}
             </Button>
           ))}
         </div>

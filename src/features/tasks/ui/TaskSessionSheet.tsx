@@ -142,13 +142,11 @@ export function TaskSessionSheet({
                   ) : undefined
                 }
               >
-                {t(
-                  session.status === "running"
-                    ? "Running"
-                    : session.status === "interrupted"
-                      ? "Interrupted"
-                      : "Idle",
-                )}
+                {session.status === "running"
+                  ? t("Running")
+                  : session.status === "interrupted"
+                    ? t("Interrupted")
+                    : t("Idle")}
               </Badge>
             ) : null}
           </span>

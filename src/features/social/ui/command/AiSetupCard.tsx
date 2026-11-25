@@ -75,6 +75,7 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
           size="sm"
           loading={busy}
           disabled={!choice.provider}
+          disabledReason={t("Choose a model first.")}
           onClick={() => {
             if (choice.provider)
               onSave({

@@ -382,6 +382,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
               motion="none"
               loading={creating}
               disabled={!loaded}
+              disabledReason={t("Loading notes…")}
               onClick={() => void onCreate()}
             >
               <Plus className="icon-sm" strokeWidth={1.75} />
@@ -1088,6 +1089,8 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         <Alert
           tone="danger"
           className="session-note-alert"
+          title={t("Could not save note")}
+          extra={<ErrorDetails title={t("Could not save note")} detail={saveError} />}
           action={{
             label: t("Retry"),
             onClick: () => {
@@ -1145,10 +1148,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
               }
             },
           }}
-        >
-          {t("Could not save: ")}
-          {saveError}
-        </Alert>
+        />
       ) : null}
       <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-note-actions")}>
         <CopyButton
@@ -1165,6 +1165,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           iconOnly
           label={t("Add to chat")}
           disabled={!hasBody}
+          disabledReason={t("Write something in the note first.")}
           onClick={sendToChat}
         >
           <MessageSquarePlus className="icon-sm" />
@@ -1209,6 +1210,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           iconOnly
           label={t("Delete note")}
           disabled={preparing || deleting}
+          disabledReason={preparing ? t("Preparing checkpoint…") : t("Deleting…")}
           onClick={requestDelete}
         >
           <Trash2 className="icon-sm" />

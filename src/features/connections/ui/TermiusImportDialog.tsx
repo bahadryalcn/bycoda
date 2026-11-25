@@ -21,6 +21,7 @@ import type { ServerRecord } from "../model/serverInventory";
 import { refreshServerInventory } from "../model/serverInventory";
 import {
   termiusDuplicate,
+  termiusText,
   termiusNeedsReview,
   type TermiusPreview,
   type TermiusOutcome,
@@ -40,7 +41,7 @@ export function TermiusImportDialog({
   const [profilePath, setProfilePath] = useState("");
   const [importKeys, setImportKeys] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const [importMessage, setImportMessage] = useState<string>();
   const [outcome, setOutcome] = useState<TermiusOutcome>();
   const pending = useRef(false);
   const ticket = useRef<string | undefined>(undefined);
@@ -58,7 +59,7 @@ export function TermiusImportDialog({
     if (pending.current || (source === "path" && !profilePath.trim())) return;
     pending.current = true;
     setBusy(true);
-    setError(undefined);
+    setImportMessage(undefined);
     try {
       const profile =
         source === "folder"
@@ -93,9 +94,9 @@ export function TermiusImportDialog({
       );
     } catch (cause) {
       if (mounted.current)
-        setError(
+        setImportMessage(
           typeof cause === "string"
-            ? cause
+            ? termiusText(cause)
             : t("Could not read Termius. Close Termius and try again."),
         );
     } finally {
@@ -114,7 +115,7 @@ export function TermiusImportDialog({
     if (pending.current || !preview || !selected.size) return;
     pending.current = true;
     setBusy(true);
-    setError(undefined);
+    setImportMessage(undefined);
     try {
       const result = await invoke<TermiusOutcome>("termius_import_apply", {
         ticket: preview.ticket,
@@ -129,8 +130,10 @@ export function TermiusImportDialog({
       }
     } catch (cause) {
       if (mounted.current)
-        setError(
-          typeof cause === "string" ? cause : t("Could not import Termius records. Try again."),
+        setImportMessage(
+          typeof cause === "string"
+            ? termiusText(cause)
+            : t("Could not import Termius records. Try again."),
         );
     } finally {
       pending.current = false;
@@ -176,10 +179,10 @@ export function TermiusImportDialog({
       }
     >
       <div className="flex min-h-0 flex-col gap-3">
-        {busy && !preview && !error ? (
+        {busy && !preview && !importMessage ? (
           <LoadingText>{t("Scanning this computer…")}</LoadingText>
         ) : null}
-        <Disclosure summary={t("Other location…")} size="sm" defaultOpen={!!error}>
+        <Disclosure summary={t("Other location…")} size="sm" defaultOpen={!!importMessage}>
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="secondary" disabled={busy} onClick={() => void scan("automatic")}>
@@ -207,13 +210,18 @@ export function TermiusImportDialog({
                 spellCheck={false}
                 disabled={busy}
               />
-              <Button type="submit" variant="secondary" disabled={busy || !profilePath.trim()}>
+              <Button
+                type="submit"
+                variant="secondary"
+                disabled={busy || !profilePath.trim()}
+                disabledReason={busy ? t("Wait for the current action to finish.") : undefined}
+              >
                 {t("Scan profile folder")}
               </Button>
             </form>
           </div>
         </Disclosure>
-        {error ? <Alert tone="danger">{t(error)}</Alert> : null}
+        {importMessage ? <Alert tone="danger">{importMessage}</Alert> : null}
         {outcome ? (
           <Alert tone="success">
             {t("Imported {p0} servers. Skipped {p1} existing records. Saved {p2} SSH keys.", {
@@ -259,6 +267,15 @@ export function TermiusImportDialog({
                       aria-description={duplicate ? t("Already in Servers") : undefined}
                       className="mt-1 shrink-0"
                       disabled={busy || duplicate || review}
+                      disabledReason={
+                        busy
+                          ? t("Wait for the current action to finish.")
+                          : duplicate
+                            ? t("Already in Servers")
+                            : review
+                              ? t("Review this record in Termius before importing it.")
+                              : undefined
+                      }
                       checked={selected.has(host.sourceId)}
                       onChange={(event) => {
                         const checked = event.target.checked;
@@ -312,7 +329,7 @@ export function TermiusImportDialog({
                           className="mt-1 list-inside list-disc"
                         >
                           {host.warnings.map((warning, i) => (
-                            <li key={i}>{t(warning)}</li>
+                            <li key={i}>{termiusText(warning)}</li>
                           ))}
                         </Text>
                       ) : null}
@@ -341,7 +358,7 @@ export function TermiusImportDialog({
             ) : null}
             {preview.warnings.map((warning, i) => (
               <Alert key={i} tone="warning">
-                {t(warning)}
+                {termiusText(warning)}
               </Alert>
             ))}
           </>

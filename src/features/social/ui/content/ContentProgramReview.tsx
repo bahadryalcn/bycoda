@@ -237,6 +237,8 @@ export function ContentProgramReview({
               {!sample || sample.targets.some((target) => target.status === "pending") ? (
                 <Button
                   variant="secondary"
+                  loading={busy === "generate"}
+                  loadingLabel={t("Generating…")}
                   disabled={!!disabledReason}
                   disabledReason={disabledReason}
                   onClick={() => change("generate", {}, t("Could not prepare the sample."))}

@@ -70,10 +70,10 @@ export function ConversationThreadList({
           value={scope}
           disabled={clearing}
           options={[
-            ["global", "Global"],
-            ["project", "Project"],
-            ["session", "Session focus"],
-          ].map(([value, label]) => ({ value, label: t(label) }))}
+            { value: "global", label: t("Global") },
+            { value: "project", label: t("Project") },
+            { value: "session", label: t("Session focus") },
+          ]}
           onValueChange={setScope}
         />
         {scope !== "global" && (
@@ -143,6 +143,7 @@ export function ConversationThreadList({
               variant="item"
               selected={threadId === thread.id}
               disabled={clearing || summaryRefreshing}
+              disabledReason={t("Wait for the current action to finish.")}
               onClick={() => {
                 setThreadId(thread.id);
                 onShowTranscript();

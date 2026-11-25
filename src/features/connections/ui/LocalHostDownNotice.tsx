@@ -2,6 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Play } from "../../../shared/ui/icons";
 import { startLocalHost, useLocalHostState } from "../model/localHostService";
 import { errorText } from "../../../shared/lib/errors";
@@ -25,7 +26,7 @@ export function LocalHostStartButton({
       await startLocalHost();
       onStarted?.();
     } catch (reason) {
-      onError?.(t(errorText(reason)));
+      onError?.(errorText(reason));
     } finally {
       setStarting(false);
     }
@@ -105,9 +106,17 @@ export function LocalHostDownNotice({
       }}
       dismissLabel={t("Dismiss")}
       onDismiss={notice.dismiss}
+      extra={
+        notice.error ? (
+          <ErrorDetails
+            title={t("The host on this computer could not be started.")}
+            detail={notice.error}
+          />
+        ) : undefined
+      }
     >
       {notice.error
-        ? t(notice.error)
+        ? t("The host on this computer could not be started.")
         : t("Tasks, sessions and sync on this computer are unavailable until it starts.")}
     </Alert>
   );

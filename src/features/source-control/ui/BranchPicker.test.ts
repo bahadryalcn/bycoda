@@ -90,7 +90,7 @@ it("shows fetch failures inside the branch picker and allows retry", async () =>
   await act(async () => container.querySelector("button")!.click());
   const fetch = document.querySelector<HTMLButtonElement>('[aria-label="Fetch"]')!;
   await act(async () => fetch.click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Remote unavailable");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Couldn’t fetch");
   expect(fetch.disabled).toBe(false);
   await act(async () => fetch.click());
   expect(gitFetch).toHaveBeenCalledTimes(2);

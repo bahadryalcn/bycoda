@@ -5,6 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
@@ -12,7 +13,7 @@ import type { RecentProject } from "../../projects/model/recents";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { defaultSessionChoice } from "../../sessions/model/models";
 import { ModelPicker } from "../../sessions/ui/ModelPicker";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 
 /**
  * On-demand assistant entry. It opens above the page, so it never competes with the
@@ -43,7 +44,7 @@ export function AutomationAssistant({
     {},
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [outcome, setOutcome] = useState<{ summary: string; details: string } | null>(null);
   const mounted = useRef(true);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Tracks this dialog's lifetime so its pending external delivery cannot clear or close a replacement draft.
   useEffect(() => {
@@ -58,7 +59,7 @@ export function AutomationAssistant({
     const submitted = latest.current;
     if (busy) return;
     setBusy(true);
-    setError("");
+    setOutcome(null);
     try {
       // General mode uses the user's default folder, never the selected repository.
       const target = scope === "project" ? project : await invoke<string>("default_cwd");
@@ -85,7 +86,8 @@ export function AutomationAssistant({
       )
         onClose();
     } catch (reason) {
-      setError(presentRemoteError(reason, { explicit: true }));
+      const { message, details } = describeRemoteError(reason);
+      setOutcome({ summary: message, details });
     } finally {
       setBusy(false);
     }
@@ -159,7 +161,17 @@ export function AutomationAssistant({
             </span>
           </div>
         </div>
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {outcome ? (
+          <Alert
+            tone="danger"
+            title={outcome.summary}
+            extra={
+              outcome.details ? (
+                <ErrorDetails title={outcome.summary} detail={outcome.details} />
+              ) : undefined
+            }
+          />
+        ) : null}
       </div>
     </Modal>
   );

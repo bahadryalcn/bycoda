@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 type Props = {
   /** The name both projects would show. */
@@ -78,7 +78,7 @@ export function ProjectNameConflictDialog({
             setError(null);
           }}
         />
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? <InlineError details={error}>{t("This name cannot be used.")}</InlineError> : null}
       </form>
     </Modal>
   );

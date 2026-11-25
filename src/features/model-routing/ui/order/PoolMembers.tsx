@@ -49,6 +49,7 @@ function MemberFrame({
         tooltip={t("Drag to reorder")}
         shortcut="Alt+↑ / Alt+↓"
         disabled={count < 2}
+        disabledReason={t("Add another model to reorder.")}
         onPointerDown={(event) => sortable.onItemPointerDown(id, event)}
         onKeyDown={(event) => sortable.onItemKeyDown(id, event)}
       >

@@ -257,13 +257,6 @@ function Marker({
   );
 }
 
-const statusText: Record<StepperStatus, string> = {
-  complete: "Completed",
-  current: "",
-  upcoming: "Pending",
-  error: "Error",
-};
-
 export function Stepper({
   steps,
   current,
@@ -282,6 +275,12 @@ export function Stepper({
   const label = labelProp === undefined ? t("Progress") : labelProp;
   const completeLabel = completeLabelProp === undefined ? t("Completed") : completeLabelProp;
   const statusId = useId();
+  const statusText: Record<StepperStatus, string> = {
+    complete: t("Completed"),
+    current: "",
+    upcoming: t("Pending"),
+    error: t("Error"),
+  };
   const reduced = useReducedMotion() ?? false;
   const count = steps.length;
   const active = Math.min(Math.max(Math.round(current), 0), count);
@@ -384,7 +383,8 @@ export function Stepper({
               <span className={styles.text}>
                 <span className={styles.label}>{step.label}</span>
                 <span id={`${statusId}-${index}`} className={styles.srOnly}>
-                  {statusText[status] ? t(statusText[status]) : ""}
+                  {statusText[status]}
+                  {/* oxlint-disable-next-line bycoda/no-raw-error-text -- step.error is caller-written step copy, not a caught exception */}
                   {detail ? ` ${detail}` : ""}
                 </span>
                 <SwapText

@@ -162,7 +162,6 @@ export function MachineUnavailable({
     <EmptyState
       data-machine-unavailable={reason}
       context={size}
-      role="status"
       className="h-full"
       // The scene is for the page; a compact panel carries no art.
       icon={

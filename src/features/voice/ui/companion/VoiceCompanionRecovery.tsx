@@ -46,7 +46,11 @@ export function VoiceCompanionRecovery({
       ) : null}
       <VoiceReturnCallNotice notice={returnNotice} onTalk={onTalkNow} />
       {briefing.retryable && (
-        <Button disabled={!briefing.canRetry} onClick={briefing.retry}>
+        <Button
+          disabled={!briefing.canRetry}
+          disabledReason={t("Retry once the microphone is live and voice is listening.")}
+          onClick={briefing.retry}
+        >
           {t("Retry briefing")}
         </Button>
       )}

@@ -45,6 +45,7 @@ function PublicationPage({
   client,
   account,
   disabled,
+  blockedReason,
   canDelete,
   target,
   parent,
@@ -52,6 +53,8 @@ function PublicationPage({
   client: SocialClient;
   account: SocialAccount;
   disabled: boolean;
+  /** Why `disabled` is true: shown on the blocked controls. */
+  blockedReason: string;
   canDelete: boolean;
   target: SnapchatContentTarget;
   parent?: SnapchatContentItem;
@@ -60,7 +63,7 @@ function PublicationPage({
   const [uncertainId, setUncertainId] = useState<string>();
   const [selected, setSelected] = useState<SnapchatContentItem>();
   const confirmation = useConfirm();
-  const { error, is, write } = useAccountWrite(t("Could not load posts."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not load posts."));
   const loading = is("read") || is("more");
   const busy = loading || is("delete");
   const read = async (cursor?: string) => {
@@ -128,19 +131,20 @@ function PublicationPage({
           variant="secondary"
           size="sm"
           disabled={disabled || busy}
+          disabledReason={disabled ? blockedReason : t("Wait for the current action to finish.")}
           loading={is("read")}
           onClick={() => void requestPage().catch(() => undefined)}
         >
           {page ? t("Refresh") : t("Read publications")}
         </Button>
       </div>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {uncertainId ? (
         <InlineMessage tone="warning">
           {t("Snapchat outcome uncertain. Check the account before trying again.")}
         </InlineMessage>
       ) : null}
-      {!loading && !error && page?.items.length === 0 && !page.partial && !page.cursor ? (
+      {!loading && !failureTitle && page?.items.length === 0 && !page.partial && !page.cursor ? (
         <EmptyState size="inline" context="list" title={t("No Snapchat publications found.")} />
       ) : null}
       {page?.items.map((item) => (
@@ -165,6 +169,7 @@ function PublicationPage({
                 client={client}
                 account={account}
                 disabled={disabled}
+                blockedReason={blockedReason}
                 canDelete={false}
                 target={target}
                 parent={item}
@@ -177,6 +182,15 @@ function PublicationPage({
                   tone="danger"
                   size="sm"
                   disabled={disabled || busy || !canDelete || !!uncertainId}
+                  disabledReason={
+                    disabled
+                      ? blockedReason
+                      : busy
+                        ? t("Wait for the current action to finish.")
+                        : uncertainId
+                          ? t("Snapchat outcome uncertain. Check the account before trying again.")
+                          : t("This account cannot delete publications here.")
+                  }
                   onClick={() => void remove(item).catch(() => undefined)}
                 >
                   {t("Delete")}
@@ -210,6 +224,9 @@ function AccountPublications({
   const [target, setTarget] = useState<SnapchatContentTarget>("spotlight");
   const read = capabilities.find((item) => item.operation === "profile.read");
   const deletion = capabilities.find((item) => item.operation === "delete");
+  const blockedReason = executorMismatch
+    ? t("This account is connected on another computer.")
+    : t("Wait until this computer is online.");
   const canRead = account.connection !== "browser" && read?.status === "available";
   const canDelete =
     !account.paused &&
@@ -250,6 +267,7 @@ function AccountPublications({
             client={client}
             account={account}
             disabled={disabled}
+            blockedReason={blockedReason}
             canDelete={canDelete}
             target={target}
           />

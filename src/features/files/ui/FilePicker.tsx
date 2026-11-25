@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { FilePickerError } from "./FilePickerError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
@@ -471,8 +472,8 @@ export function FilePicker({
           </Text>
         ) : null}
         {empty && !rankingPending && !(error && !files.length) ? (
-          <Text role="status" as="p" size="caption" tone="secondary" className="px-3 pb-3 pt-1">
-            {empty}
+          <Text as="p" size="caption" tone="secondary" className="px-3 pb-3 pt-1">
+            <LiveText text={empty} />
           </Text>
         ) : paletteMode ? (
           <ActionList

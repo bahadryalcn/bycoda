@@ -8,7 +8,7 @@ import {
 } from "../model/contributeFlow";
 
 /**
- * Progress and result of the clone-and-open contribution flow, which the user starts from
+ * Result of the clone-and-open contribution flow, which the user starts from
  * Settings → About. There is no unsolicited invitation. Hidden when no repository is configured.
  */
 export function ContributePrompt() {
@@ -17,9 +17,6 @@ export function ContributePrompt() {
   const repository = PRODUCT_IDENTITY.repositoryUrl;
 
   if (!repository) return null;
-  if (flow.status === "cloning") {
-    return <Toast tone="info" title={t("Cloning…")} durationMs={null} width="lg" />;
-  }
   if (flow.status === "opened") {
     return (
       <Toast

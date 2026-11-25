@@ -72,13 +72,15 @@ export function AssistantFoldersSettings({
     <>
       <Row
         label={t("Assistant folders")}
-        description={t(
+        description={
           !showPermissionControls
-            ? "Choose the folders the assistant can use."
+            ? t("Choose the folders the assistant can use.")
             : draft.allowChangesWithoutAsking
-              ? "The assistant can read and change these folders without asking."
-              : "The assistant can read these folders without asking. Changes need your approval.",
-        )}
+              ? t("The assistant can read and change these folders without asking.")
+              : t(
+                  "The assistant can read these folders without asking. Changes need your approval.",
+                )
+        }
         stacked
       >
         <div className={styles.list}>
@@ -115,6 +117,11 @@ export function AssistantFoldersSettings({
               size="sm"
               startIcon={<FolderPlus className="icon-sm" />}
               disabled={state.pending || draft.paths.length >= ASSISTANT_FOLDERS_MAX}
+              disabledReason={
+                draft.paths.length >= ASSISTANT_FOLDERS_MAX
+                  ? t("The folder limit is reached. Remove a folder first.")
+                  : undefined
+              }
               onClick={() => void add()}
             >
               {t("Add folder…")}
@@ -157,13 +164,14 @@ export function AssistantFoldersSettings({
           </Row>
         </>
       )}
-      {state.error && (
+      {state.problem && (
         <InlineError
+          details={state.problem.details}
           retry={
             state.conflict ? { onRetry: () => void state.reload(), label: t("Reload") } : undefined
           }
         >
-          {state.error}
+          {state.problem.message}
         </InlineError>
       )}
     </>

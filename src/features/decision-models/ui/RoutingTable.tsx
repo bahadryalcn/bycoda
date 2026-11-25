@@ -279,6 +279,7 @@ export function RoutingTable({
                               disabled={
                                 busy || !route?.sourceIds.length || (parseThreshold(text) ?? 0) <= 0
                               }
+                              disabledReason={t("The value is already at its minimum.")}
                               onClick={() =>
                                 changeThreshold(
                                   task,
@@ -300,6 +301,7 @@ export function RoutingTable({
                               disabled={
                                 busy || !route?.sourceIds.length || (parseThreshold(text) ?? 1) >= 1
                               }
+                              disabledReason={t("The value is already at its maximum.")}
                               onClick={() =>
                                 changeThreshold(
                                   task,
@@ -324,6 +326,7 @@ export function RoutingTable({
                         iconOnly
                         label={t("Reset to automatic")}
                         disabled={busy || retainedPending}
+                        disabledReason={t("Wait for the current save to finish.")}
                         onClick={() => {
                           setDraft((current) => resetRoute(current, task));
                           setThresholdText((current) => {
@@ -348,6 +351,7 @@ export function RoutingTable({
                       variant="ghost"
                       size="sm"
                       disabled={busy || retainedPending}
+                      disabledReason={t("Wait for the current save to finish.")}
                       onClick={() => setEditingTask(task)}
                     >
                       {t("Customize")}

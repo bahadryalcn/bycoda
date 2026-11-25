@@ -59,7 +59,7 @@ export function ConversationView({
   const invalidate = useInboxInvalidate(client);
   const applyTags = useSavedInboxTags(client);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [saveFailed, setSaveFailed] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const [statusOpen, setStatusOpen] = useState(false);
   const statusButton = useRef<HTMLButtonElement>(null);
@@ -117,12 +117,12 @@ export function ConversationView({
 
   const run = async (task: () => Promise<unknown>): Promise<boolean> => {
     setSaving(true);
-    setError("");
+    setSaveFailed(false);
     try {
       await task();
       return true;
     } catch {
-      setError(t("Could not save this change. Try again."));
+      setSaveFailed(true);
       return false;
     } finally {
       setSaving(false);
@@ -266,6 +266,13 @@ export function ConversationView({
             variant="secondary"
             size="sm"
             disabled={saving || tagsFull || !tagDraft.trim()}
+            disabledReason={
+              tagsFull
+                ? t("This conversation has the most tags it can have.")
+                : saving
+                  ? t("Wait for the current action to finish.")
+                  : t("Enter a tag first.")
+            }
             onClick={() => void addTag().catch(() => undefined)}
           >
             {t("Add")}
@@ -299,13 +306,13 @@ export function ConversationView({
           {t("Could not load the timeline.")}
         </InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {saveFailed ? <InlineError>{t("Could not save this change. Try again.")}</InlineError> : null}
 
       {item?.person && timeline.hasNextPage ? (
         <Button
           variant="secondary"
           size="sm"
-          disabled={timeline.isFetchingNextPage}
+          loading={timeline.isFetchingNextPage}
           onClick={() => {
             void loadOlder().catch(() => undefined);
           }}

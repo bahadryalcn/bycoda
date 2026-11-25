@@ -171,7 +171,11 @@ export function WorkspaceManagedRow({
                   {caption}
                 </Text>
               </Tooltip>
-              {pinError && <InlineError className="break-words">{pinError}</InlineError>}
+              {pinError && (
+                <InlineError className="break-words" details={pinError}>
+                  {t("Could not change the pin")}
+                </InlineError>
+              )}
             </span>
           </span>
         }

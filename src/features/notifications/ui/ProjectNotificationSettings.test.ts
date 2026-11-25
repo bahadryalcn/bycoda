@@ -349,7 +349,7 @@ it("shows unreadable saved choices as unavailable, pauses edits and recovers on 
   const issues = checkbox("Issues and Linear tasks for me/private");
   expect(issues.hasAttribute("disabled")).toBe(true);
   const mute = container.querySelector<HTMLButtonElement>('[aria-label="Mute notifications"]')!;
-  expect(mute.disabled).toBe(true);
+  expect(mute.getAttribute("aria-disabled") === "true").toBe(true);
 
   localStorage.setItem("bycoda.projectNotifications.v1", "{}");
   await act(async () => {
@@ -359,7 +359,7 @@ it("shows unreadable saved choices as unavailable, pauses edits and recovers on 
   });
   expect(container.textContent).not.toContain("could not be read");
   expect(checkbox("Issues and Linear tasks for me/private").hasAttribute("disabled")).toBe(false);
-  expect(mute.disabled).toBe(false);
+  expect(mute.getAttribute("aria-disabled") === "true").toBe(false);
 });
 
 it("names each category switch by its category and the list region without repeating the project", async () => {

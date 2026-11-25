@@ -35,7 +35,7 @@ export type AiModelSettingsProps = {
  */
 export function AiModelSettings({ client, policies, onChanged }: AiModelSettingsProps) {
   const [scope, setScope] = useState<PolicyScope>("global");
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The AI model could not be saved. Try again."),
   );
   const own = readScope(policies, scope).agent;
@@ -67,10 +67,10 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
         />
       }
       feedback={
-        error ? (
-          <InlineError details={details}>{error}</InlineError>
+        failureTitle ? (
+          <InlineError details={details}>{failureTitle}</InlineError>
         ) : is("ai.model") ? (
-          <LoadingText delay={false}>{t("Saving…")}</LoadingText>
+          <LoadingText>{t("Saving…")}</LoadingText>
         ) : null
       }
     >

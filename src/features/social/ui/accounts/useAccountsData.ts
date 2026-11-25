@@ -12,8 +12,8 @@ import { useRequestToken } from "./useRequestToken";
 export type AccountsData = {
   loading: boolean;
   /** A plain sentence when the accounts could not be read. */
-  error: string;
-  /** The Host text behind `error`, for the Details popover. */
+  failureTitle: string;
+  /** The Host text behind `failureTitle`, for the Details popover. */
   errorDetails?: string;
   snapshot?: SocialSnapshot;
   projects: HostProject[];
@@ -143,7 +143,7 @@ export function useAccountsData(input: {
   };
   return {
     loading,
-    error,
+    failureTitle: error,
     errorDetails,
     snapshot,
     projects,

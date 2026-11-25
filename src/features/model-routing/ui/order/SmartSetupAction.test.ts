@@ -77,7 +77,7 @@ async function mount(run = false) {
 }
 const primary = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Prepare setup draft",
+    (button) => button.textContent === "Prepare setup draft" || button.textContent === "Planning…",
   )!;
 async function planWithAi(container: HTMLElement) {
   const options = [...container.querySelectorAll<HTMLButtonElement>("button")].find(

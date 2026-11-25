@@ -235,7 +235,7 @@ export const ChangeRow = memo(function ChangeRow({
         <div
           role="gridcell"
           data-action-slot="collapse"
-          className="flex shrink-0 items-center gap-1 pointer-fine:pr-2"
+          className="flex shrink-0 items-center gap-1 pointer-fine:pe-2"
         >
           {kind === "unstaged" && !busy ? (
             <InlineAction

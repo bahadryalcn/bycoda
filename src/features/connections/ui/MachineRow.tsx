@@ -272,6 +272,9 @@ export function MachineRow({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           disabled={busy || revoking}
+          disabledReason={
+            busy || revoking ? t("Wait for the current action to finish.") : undefined
+          }
           onClick={(event) => onToggleMenu(event.currentTarget)}
           type="button"
         >

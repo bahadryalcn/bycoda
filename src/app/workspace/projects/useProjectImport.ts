@@ -1,10 +1,18 @@
 import { errorText } from "../../../shared/lib/errors";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
   withRoomPrivacyMutation,
   type PrivacyMutationToken,
 } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import type { Session } from "../../../features/sessions/model/session";
 import {
@@ -122,7 +130,7 @@ export function useProjectImport({
       toast.show({
         tone: "danger",
         title,
-        message: errorText(error),
+        extra: createElement(ErrorDetails, { detail: errorText(error) }),
       });
     }
   }, [openProjects]);

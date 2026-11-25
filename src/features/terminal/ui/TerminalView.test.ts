@@ -954,9 +954,8 @@ it("shows failed SSH startup as a closed terminal and discards pending input", a
       ),
     );
     expect(host.querySelector('[role="status"]')?.textContent).toContain("Terminal closed");
-    expect(host.querySelector('[role="status"]')?.textContent).toContain(
-      "SSH authentication failed",
-    );
+    // The raw reason waits behind the shared Details control.
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("Details");
     await act(async () => xterm.instances.at(-1)!.dataHandler!("late\r"));
     expect(pty.writePty).not.toHaveBeenCalled();
   } finally {

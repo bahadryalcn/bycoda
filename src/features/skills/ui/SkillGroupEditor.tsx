@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Divider } from "../../../shared/ui/Divider";
@@ -159,7 +160,12 @@ export function SkillGroupEditor({
       </div>
       {error ? (
         <div className={styles.groupEditorNote}>
-          <Alert tone="danger">{error}</Alert>
+          <Alert
+            tone="danger"
+            extra={<ErrorDetails detail={error} title={t("Could not update the group.")} />}
+          >
+            {t("Could not update the group.")}
+          </Alert>
         </div>
       ) : null}
       {missing.length ? (

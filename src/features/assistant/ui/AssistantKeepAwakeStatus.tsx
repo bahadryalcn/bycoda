@@ -45,8 +45,12 @@ export function AssistantKeepAwakeStatus({
   // Error and normal copy are separate shared controls: each mounts with its role, so no node swaps role.
   if (state?.error)
     return (
-      <InlineError className={styles.muted} data-assistant-keep-awake={keepAwake}>
-        {label} · {state.error}
+      <InlineError
+        className={styles.muted}
+        data-assistant-keep-awake={keepAwake}
+        details={state.error}
+      >
+        {label}
       </InlineError>
     );
   return (

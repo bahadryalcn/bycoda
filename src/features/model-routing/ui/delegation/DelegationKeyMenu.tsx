@@ -28,6 +28,7 @@ export function DelegationKeyMenu({
         type="button"
         startIcon={<Plus />}
         disabled={disabled}
+        disabledReason={t("Wait for the current save to finish.")}
         aria-haspopup="menu"
         expanded={open}
         onClick={() => setOpen((next) => !next)}

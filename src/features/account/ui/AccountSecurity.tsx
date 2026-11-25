@@ -5,7 +5,6 @@ import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -88,17 +87,17 @@ export function AccountSecurity({ user }: { user: User }) {
       <Group
         title={t("Sign-in")}
         description={t("bycoda never sees your password; your sign-in provider checks it.")}
-        feedback={error ? <InlineError>{error}</InlineError> : undefined}
+        feedback={
+          error ? (
+            <InlineError details={error}>{t("Could not open the account page.")}</InlineError>
+          ) : undefined
+        }
       >
         <Row label={t("Sign-in methods")}>
           {user.signInMethods.length ? (
-            <BadgeList
-              label={t("Sign-in methods")}
-              items={user.signInMethods.map((method) => ({
-                id: method,
-                label: signInMethodLabel(method),
-              }))}
-            />
+            <Text size="body" tone="muted">
+              {user.signInMethods.map((method) => signInMethodLabel(method)).join(", ")}
+            </Text>
           ) : (
             <Text size="body" tone="muted">
               {t("None recorded")}

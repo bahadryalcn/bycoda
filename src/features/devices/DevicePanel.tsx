@@ -34,7 +34,8 @@ import { DeviceNotices } from "./ui/DeviceNotices";
 import { DEVICE_STILL_MIN_GAP_MS } from "../../shared/model/host-contracts/native-devices";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
-import { Disclosure } from "../../shared/ui/Disclosure";
+import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { FailureState } from "../../shared/ui/FailureState";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
 import { Progress } from "../../shared/ui/Progress";
@@ -1367,28 +1368,22 @@ function DevicePanelSurface({
       aria-busy={busy || loadingDevices || discoveryFailure.pending}
     >
       {shownError && !discoveryShownCentrally && status && (
-        <Disclosure
-          {...surfaceAttributes(
-            { frame: "danger", edge: "bottom", tone: "danger" },
-            "device-panel-error",
-          )}
-          role="alert"
-          size="sm"
-          summary={
-            readableDeviceError(shownError) ??
-            (discoveryError
-              ? t("Could not load devices")
-              : actionCompleted
-                ? t("Action completed; screen unavailable")
-                : shownErrorOperation === "capture"
-                  ? t("Device screen unavailable")
-                  : t("Device action failed"))
-          }
-        >
-          <OutputBlock size="micro" tone="primary" leading="inherit">
-            {shownError}
-          </OutputBlock>
-        </Disclosure>
+        <div className="device-panel-error">
+          <Alert
+            tone="danger"
+            title={
+              readableDeviceError(shownError) ??
+              (discoveryError
+                ? t("Could not load devices")
+                : actionCompleted
+                  ? t("Action completed; screen unavailable")
+                  : shownErrorOperation === "capture"
+                    ? t("Device screen unavailable")
+                    : t("Device action failed"))
+            }
+            extra={<ErrorDetails detail={shownError} />}
+          />
+        </div>
       )}
       {!status && !shownError && operation !== "status" && (
         <LoadingText size="caption" leading="inherit" inset="panel">
@@ -1970,6 +1965,9 @@ function DevicePanelSurface({
                       label={t("Add marked image to draft")}
                       loading={operation === "addImage"}
                       disabled={unavailable("addImage")}
+                      disabledReason={t(
+                        "Wait for the current device action to finish, or set up the device first.",
+                      )}
                       onClick={addImage}
                     >
                       <MessageSquarePlus className="icon-sm" aria-hidden />
@@ -2224,6 +2222,9 @@ function DevicePanelSurface({
               ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
                 loading={operation === "openApp"}
                 onClick={() => action({ type: "openApp", app: app.trim() })}
               >
@@ -2250,6 +2251,9 @@ function DevicePanelSurface({
                 disabled={unavailable(
                   "type",
                   canControlDevice && !annotating && !!text && !textError,
+                )}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
                 )}
                 loading={operation === "type"}
                 onClick={() => action({ type: "type", text })}
@@ -2278,6 +2282,9 @@ function DevicePanelSurface({
               />
               <Button
                 disabled={unavailable("press", canControlDevice && !annotating && coordinatesValid)}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
                 loading={operation === "press"}
                 onClick={() => action({ type: "press", x, y })}
               >
@@ -2314,6 +2321,9 @@ function DevicePanelSurface({
                     endX <= 20000 &&
                     endY <= 20000,
                 )}
+                disabledReason={t(
+                  "Wait for the current device action to finish, or set up the device first.",
+                )}
                 loading={operation === "swipe"}
                 onClick={() => action({ type: "swipe", x, y, endX, endY })}
               >
@@ -2330,6 +2340,9 @@ function DevicePanelSurface({
                       key={direction}
                       variant="ghost"
                       disabled={!controlEnabled || !screenSize.width || captureFailed}
+                      disabledReason={t(
+                        "Wait for the current device action to finish, or set up the device first.",
+                      )}
                       onClick={() => directionalSwipe(direction)}
                     >
                       {t(
@@ -2387,6 +2400,9 @@ function DevicePanelSurface({
                   variant="primary"
                   loading={operation === "addImage"}
                   disabled={unavailable("addImage")}
+                  disabledReason={t(
+                    "Wait for the current device action to finish, or set up the device first.",
+                  )}
                   onClick={addImage}
                 >
                   {t("Add marked image to draft")}
@@ -2402,6 +2418,9 @@ function DevicePanelSurface({
                   <Button
                     loading={operation === "addImage"}
                     disabled={unavailable("addImage")}
+                    disabledReason={t(
+                      "Wait for the current device action to finish, or set up the device first.",
+                    )}
                     onClick={() => {
                       const attachment = draft.transferOperation!;
                       void execute(

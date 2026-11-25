@@ -199,15 +199,15 @@ export function QuickDeleteWorktreeDialog({
           <Checkbox
             size="caption"
             label={t("Also delete branch {p0}", { p0: tree.branch })}
-            description={
+            checked={deleteBranch && !branchDeleteBlock(tree)}
+            disabled={busy || !!branchDeleteBlock(tree)}
+            disabledReason={
               branchDeleteBlock(tree) === "unpushed"
                 ? t("It has unpushed commits.")
                 : branchDeleteBlock(tree) === "default"
                   ? t("It is the default branch.")
                   : undefined
             }
-            checked={deleteBranch && !branchDeleteBlock(tree)}
-            disabled={busy || !!branchDeleteBlock(tree)}
             onChange={(event) =>
               setBranchConsent(
                 event.target.checked && tree.branch

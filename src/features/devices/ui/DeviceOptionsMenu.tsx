@@ -67,8 +67,8 @@ export function DeviceOptionsMenu({
               disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("closed")}
+              startIcon={<Minimize2 className="icon-sm" aria-hidden />}
             >
-              <Minimize2 className="icon-sm" aria-hidden />
               {t("Fold device")}
             </Button>
             <Button
@@ -77,8 +77,8 @@ export function DeviceOptionsMenu({
               disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("half-open")}
+              startIcon={<Smartphone className="icon-sm" aria-hidden />}
             >
-              <Smartphone className="icon-sm" aria-hidden />
               {t("Half-open device")}
             </Button>
             <Button
@@ -87,8 +87,8 @@ export function DeviceOptionsMenu({
               disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("open")}
+              startIcon={<Maximize2 className="icon-sm" aria-hidden />}
             >
-              <Maximize2 className="icon-sm" aria-hidden />
               {t("Unfold device")}
             </Button>
           </>
@@ -99,8 +99,8 @@ export function DeviceOptionsMenu({
           disabledReason={inspect.disabledReason}
           loading={inspect.loading}
           onClick={inspect.onClick}
+          startIcon={<Accessibility className="icon-sm" aria-hidden />}
         >
-          <Accessibility className="icon-sm" aria-hidden />
           {t("Accessibility snapshot")}
         </Button>
         <Button
@@ -119,8 +119,8 @@ export function DeviceOptionsMenu({
             disabled={addDevice.disabled}
             disabledReason={addDevice.disabledReason}
             onClick={addDevice.onClick}
+            startIcon={<MessageSquarePlus className="icon-sm" aria-hidden />}
           >
-            <MessageSquarePlus className="icon-sm" aria-hidden />
             {t("Add device to conversation")}
           </Button>
         )}

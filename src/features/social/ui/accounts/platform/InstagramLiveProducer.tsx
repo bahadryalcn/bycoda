@@ -27,7 +27,7 @@ export function InstagramLiveProducer({
 }) {
   const [live, setLive] = useState<InstagramLiveState>();
   const [notice, setNotice] = useState<string>();
-  const { is, write, error, details } = useAccountWrite(
+  const { is, write, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const confirmation = useConfirm();
@@ -75,6 +75,7 @@ export function InstagramLiveProducer({
           size="sm"
           loading={is("open")}
           disabled={live?.windowOpen}
+          disabledReason={t("The producer window is already open.")}
           onClick={() => run("open")}
         >
           {t("Open Instagram Live Producer")}
@@ -93,6 +94,7 @@ export function InstagramLiveProducer({
             size="sm"
             loading={is("capture")}
             disabled={live.state === "unknown"}
+            disabledReason={t("Instagram Live result is uncertain. Check the producer window.")}
             onClick={() => run("capture")}
           >
             {t("Capture Instagram stream credentials")}
@@ -102,6 +104,7 @@ export function InstagramLiveProducer({
             size="sm"
             loading={is("start")}
             disabled={!live.canStart}
+            disabledReason={t("Capture the stream credentials first.")}
             onClick={() => reviewed("start", t("Start Instagram live"))}
           >
             {t("Start Instagram live")}
@@ -111,6 +114,7 @@ export function InstagramLiveProducer({
             size="sm"
             loading={is("end")}
             disabled={live.state !== "live"}
+            disabledReason={t("Instagram is not live.")}
             onClick={() => reviewed("end", t("End Instagram live"))}
           >
             {t("End Instagram live")}
@@ -120,6 +124,11 @@ export function InstagramLiveProducer({
             size="sm"
             loading={is("close")}
             disabled={live.state === "live" || live.state === "unknown"}
+            disabledReason={
+              live.state === "live"
+                ? t("End the live video before closing.")
+                : t("Instagram Live result is uncertain. Check the producer window.")
+            }
             onClick={() => run("close")}
           >
             {t("Close")}
@@ -137,7 +146,7 @@ export function InstagramLiveProducer({
         </Button>
       ) : null}
       {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

@@ -8,6 +8,7 @@ import { Text } from "../../../shared/ui/Text";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { terminalText } from "../../../shared/lib/terminalText";
 import { MatchText, MAX_MATCH_POSITIONS } from "../../../shared/ui/MatchText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -16,7 +17,7 @@ import { ListRow } from "../../../shared/ui/ListRow";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { Folder, MessageSquare, SlidersHorizontal } from "../../../shared/ui/icons";
+import { Archive, Folder, MessageSquare, SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { DEFAULT_CHAT_FILTERS } from "../model/chatSearch";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -30,18 +31,31 @@ import {
   type ChatScope,
 } from "../model/chatSearch";
 
-const SCOPE_LABEL: Record<ChatScope, string> = {
-  everywhere: "Everywhere",
-  group: "This group",
-  project: "This project",
-};
+const SCOPES: ChatScope[] = ["everywhere", "group", "project"];
+function scopeLabel(scope: ChatScope): string {
+  switch (scope) {
+    case "everywhere":
+      return t("Everywhere");
+    case "group":
+      return t("This group");
+    case "project":
+      return t("This project");
+  }
+}
 
-const RANGE_LABEL: Record<ChatDateRange, string> = {
-  any: "Any time",
-  week: "Past week",
-  month: "Past month",
-  year: "Past year",
-};
+const RANGES: ChatDateRange[] = ["any", "week", "month", "year"];
+function rangeLabel(range: ChatDateRange): string {
+  switch (range) {
+    case "any":
+      return t("Any time");
+    case "week":
+      return t("Past week");
+    case "month":
+      return t("Past month");
+    case "year":
+      return t("Past year");
+  }
+}
 
 export function ChatFilterBar({
   filters,
@@ -72,7 +86,7 @@ export function ChatFilterBar({
         onClick={() => setFilterOpen((value) => !value)}
       >
         <SlidersHorizontal className="icon-sm" />
-        <span>{t(SCOPE_LABEL[filters.scope])}</span>
+        <span>{scopeLabel(filters.scope)}</span>
         {active ? <Badge variant="dot" tone="info" label={t("Filters active")} /> : null}
       </Button>
       {filterOpen ? (
@@ -88,9 +102,9 @@ export function ChatFilterBar({
               fieldSize="sm"
               value={filters.scope}
               onValueChange={(scope) => onChange({ ...filters, scope: scope as ChatScope })}
-              options={(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => ({
+              options={SCOPES.map((scope) => ({
                 value: scope,
-                label: t(SCOPE_LABEL[scope]),
+                label: scopeLabel(scope),
                 disabled: scope === "group" && !inGroup,
               }))}
             />
@@ -116,9 +130,9 @@ export function ChatFilterBar({
               fieldSize="sm"
               value={filters.range}
               onValueChange={(range) => onChange({ ...filters, range: range as ChatDateRange })}
-              options={(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => ({
+              options={RANGES.map((range) => ({
                 value: range,
-                label: t(RANGE_LABEL[range]),
+                label: rangeLabel(range),
               }))}
             />
             <Checkbox
@@ -133,6 +147,7 @@ export function ChatFilterBar({
               variant="ghost"
               size="sm"
               disabled={!active}
+              disabledReason={t("No filters are set.")}
               onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}
             >
               {t("Reset")}
@@ -318,9 +333,15 @@ export function ChatSearchResults({
                   </Text>
                   <span className="flex flex-wrap items-center gap-1.5 @max-[560px]/search:basis-full @max-[560px]/search:ps-6">
                     {session.archived ? (
-                      <Badge size="sm" appearance="subtle" className="shrink-0">
-                        {t("Archived")}
-                      </Badge>
+                      <Tooltip asChild label={t("Archived")}>
+                        <span
+                          role="img"
+                          aria-label={t("Archived conversation")}
+                          className="shrink-0"
+                        >
+                          <Archive className="icon-sm" />
+                        </span>
+                      </Tooltip>
                     ) : null}
                     {session.hitCount > 0 ? (
                       <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">

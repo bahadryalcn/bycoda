@@ -34,7 +34,7 @@ export function LiveSection({
         <Heading id={titleId} size="section">
           {title}
         </Heading>
-        {status ? <div className="ml-auto min-w-0">{status}</div> : null}
+        {status ? <div className="ms-auto min-w-0">{status}</div> : null}
       </div>
       {children}
     </Surface>

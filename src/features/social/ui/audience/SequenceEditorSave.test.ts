@@ -214,9 +214,9 @@ describe("SequenceEditor save", () => {
     expect(bodyText()).toContain("Add at least one step.");
 
     for (let count = 0; count < 10; count += 1) {
-      if (!buttonByText("Add step")?.disabled) clickButton("Add step");
+      if (!isBlocked(buttonByText("Add step"))) clickButton("Add step");
     }
-    expect(buttonByText("Add step")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Add step"))).toBe(true);
     expect(bodyText()).toContain("Step 10");
     expect(bodyText()).not.toContain("Step 11");
   });
@@ -240,9 +240,9 @@ describe("SequenceEditor save", () => {
   it("limits a step to four variants", async () => {
     await renderEditor(clientMock());
     for (let count = 0; count < 4; count += 1) clickButton("Add variant");
-    expect(buttonByText("Add variant")?.disabled).toBe(true);
+    expect(isBlocked(buttonByText("Add variant"))).toBe(true);
     clickButton("Remove variant");
-    expect(buttonByText("Add variant")?.disabled).toBe(false);
+    expect(isBlocked(buttonByText("Add variant"))).toBe(false);
   });
 
   it("stays open with the Host reason and the typed text when saving fails", async () => {

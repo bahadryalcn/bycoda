@@ -199,7 +199,10 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   async function createFolder() {
     const name = newName?.trim();
     if (!name || /[/\\]/.test(name) || name === "." || name === "..") {
-      setError({ message: t("Enter a folder name without path separators."), details: "" });
+      setError({
+        message: t("Enter a folder name without path separators."),
+        details: "",
+      });
       return;
     }
     await run(async () => {
@@ -292,6 +295,13 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               aria-label={t("Parent folder")}
               shortcut="Backspace"
               disabled={busy || !directory || pathKey(parent) === pathKey(directory)}
+              disabledReason={
+                busy
+                  ? t("Wait for the current operation to finish")
+                  : !directory
+                    ? t("Choose a folder first.")
+                    : t("Already at the top folder.")
+              }
               onClick={() => navigate(parent)}
             >
               <ArrowLeft className="icon-md" />
@@ -327,6 +337,13 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               type="button"
               shortcut="Mod+Enter"
               disabled={busy || loading || !directory || loadFailed}
+              disabledReason={
+                busy
+                  ? t("Wait for the current operation to finish")
+                  : loading
+                    ? t("Loading folders…")
+                    : t("Open a folder that can be loaded first.")
+              }
               onClick={pick}
             >
               {t("Add")}
@@ -345,6 +362,9 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               motion="none"
               type="button"
               disabled={busy || !home}
+              disabledReason={
+                busy ? t("Wait for the current operation to finish") : t("Not available right now.")
+              }
               onClick={() => navigate(home)}
             >
               {t("Home folder")}
@@ -529,6 +549,13 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               motion="none"
               type="button"
               disabled={busy || loading || !directory}
+              disabledReason={
+                busy
+                  ? t("Wait for the current operation to finish")
+                  : loading
+                    ? t("Loading folders…")
+                    : t("Choose a folder first.")
+              }
               onClick={() => {
                 setNewName("");
                 setError(undefined);
@@ -559,6 +586,13 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               tooltip={managerLabel}
               tooltipDetails={[prettyCwd(directory)]}
               disabled={busy || loading || !directory}
+              disabledReason={
+                busy
+                  ? t("Wait for the current operation to finish")
+                  : loading
+                    ? t("Loading folders…")
+                    : t("Choose a folder first.")
+              }
               onClick={() => void run(() => openPathWithDefaultApp(directory))}
             >
               <FolderOpen className="icon-sm" />

@@ -222,9 +222,11 @@ export function QuickModelSelector({
                   return (
                     <InlineAction
                       reveal={favorited ? "always" : "interaction"}
-                      label={t(favorited ? "Remove {p1} from favorites" : "Add {p1} to favorites", {
-                        p1: item.name,
-                      })}
+                      label={
+                        favorited
+                          ? t("Remove {p1} from favorites", { p1: item.name })
+                          : t("Add {p1} to favorites", { p1: item.name })
+                      }
                       onClick={() => {
                         const next = favorited
                           ? favorites.filter((id) => id !== item.id)
@@ -256,7 +258,7 @@ export function QuickModelSelector({
         }}
       >
         <span>{t("Model")}</span>
-        <Text size="inherit" tone="inherit" truncate className="ml-auto">
+        <Text size="inherit" tone="inherit" truncate className="ms-auto">
           {model.name}
         </Text>
       </Button>

@@ -31,6 +31,8 @@ import type { AcpRegistryEntry, GenericAcpConfig, GenericAcpSummary } from "../m
 // Stable keys: each operation's label is translated at render time, never looked up dynamically.
 type BusyKind = "" | "reload" | "registry" | "saving" | "removing" | "installing";
 type StatusKind = "" | "draft" | "saved";
+/** The action whose failure the settings show: a busy action, the first load or an install cancel. */
+type FailedAction = BusyKind | "load" | "cancel";
 
 export function GenericAcpSettings({
   cwd = "",
@@ -120,7 +122,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     setEnvText("");
     setDraftDirty(false);
   };
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{ action: FailedAction; detail: string } | null>(null);
+  const error = failure?.detail ?? "";
   const [busy, setBusy] = useState<BusyKind>("");
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusKind>("");
@@ -163,7 +166,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         setConfigs(result);
       })
       .catch((reason) => {
-        if (!cancelled) setError(errorText(reason));
+        if (!cancelled) setFailure({ action: "load", detail: errorText(reason) });
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -180,7 +183,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       return;
     }
     busyRef.current = true;
-    setError("");
+    setFailure(null);
     setStatus("");
     setBusy(label);
     let completed = false;
@@ -197,7 +200,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       }
     } catch (reason) {
       if (activeRef.current) {
-        setError(errorText(reason));
+        setFailure({ action: label, detail: errorText(reason) });
       }
       // A confirmation owns its failure state. A refresh failure after the
       // mutation completed remains a list error, not a failed deletion.
@@ -227,6 +230,24 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         return t("Loading ACP registry…");
       default:
         return t("Loading ACP agents…");
+    }
+  };
+  const failureTitle = () => {
+    switch (failure?.action) {
+      case "load":
+        return t("Could not load the ACP agents.");
+      case "registry":
+        return t("Could not load the ACP registry.");
+      case "saving":
+        return t("Could not save the ACP agent.");
+      case "removing":
+        return t("Could not remove the ACP agent.");
+      case "installing":
+        return t("Could not install the ACP agent.");
+      case "cancel":
+        return t("Could not cancel the installation.");
+      default:
+        return t("Could not reload the ACP agents.");
     }
   };
   const statusLabel = () =>
@@ -281,7 +302,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       if (activeRef.current) {
         cancelingInstallRef.current = "";
         setCancelingInstallId("");
-        setError(errorText(reason));
+        setFailure({ action: "cancel", detail: errorText(reason) });
       }
     }
   };
@@ -327,8 +348,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         {error && (
           <Alert
             tone="danger"
-            title={t("ACP operation failed.")}
-            extra={<ErrorDetails detail={error} title={t("ACP operation failed.")} />}
+            title={failureTitle()}
+            extra={<ErrorDetails detail={error} title={failureTitle()} />}
           />
         )}
         {configs.map((config) => (
@@ -524,8 +545,14 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 </AdvancedSettings>
               </div>
               <div className="flex items-center gap-2 sm:col-span-2">
-                <Button className="shrink-0" disabled={loading || !!busy} type="submit">
-                  {busy === "saving" ? t("Saving…") : t("Save agent")}
+                <Button
+                  className="shrink-0"
+                  loading={busy === "saving"}
+                  loadingLabel={t("Saving…")}
+                  disabled={loading || !!busy}
+                  type="submit"
+                >
+                  {t("Save agent")}
                 </Button>
                 <Button
                   className="shrink-0"
@@ -618,13 +645,11 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                           <Button
                             className="shrink-0"
                             tone="danger"
-                            disabled={cancelingInstallId === entry.id}
                             loading={cancelingInstallId === entry.id}
+                            loadingLabel={t("Stopping installation…")}
                             onClick={() => void cancelInstallation(entry.id)}
                           >
-                            {cancelingInstallId === entry.id
-                              ? t("Stopping installation…")
-                              : t("Stop installation")}
+                            {t("Stop installation")}
                           </Button>
                         ) : null}
                       </div>

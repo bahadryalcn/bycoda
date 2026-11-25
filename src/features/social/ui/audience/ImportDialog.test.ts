@@ -6,6 +6,7 @@ import {
   ACCOUNT,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clientMock,
   flush,
@@ -89,6 +90,6 @@ describe("ImportDialog", () => {
     await flush();
     chooseFile("people.pdf", "not a table");
     await flush();
-    expect(bodyText()).toContain("Choose a CSV, Excel (.xlsx) or JSON file.");
+    expect(openErrorDetails()).toContain("Choose a CSV, Excel (.xlsx) or JSON file.");
   });
 });

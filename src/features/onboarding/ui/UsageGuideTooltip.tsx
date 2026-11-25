@@ -93,12 +93,13 @@ export function UsageGuideTooltip({
               variant="secondary"
               size="sm"
               disabled={index === 0}
+              disabledReason={t("This is the first step.")}
             >
               {t("Back")}
             </Button>
           ) : null}
           <Button {...withoutTitle(primaryProps)} size="sm">
-            {t(isLastStep ? "Done" : "Next")}
+            {isLastStep ? t("Done") : t("Next")}
           </Button>
         </div>
       </footer>

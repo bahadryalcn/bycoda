@@ -2,6 +2,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text, textAttributes } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { useFormat, useT } from "../../../shared/i18n";
 import { useId, useRef, useState } from "react";
@@ -140,7 +141,14 @@ export function ContextMeter({
       ) : null}
       <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}>
         <DescriptionList size="sm" className="context-meter-metrics">
-          <DescriptionItem term={t("Response speed")}>{tps ?? t("Unavailable")}</DescriptionItem>
+          <DescriptionItem term={t("Response speed")}>
+            {tps ?? t("Unavailable")}
+            {tps ? (
+              <InfoTooltip className="ms-1 align-middle">
+                {t("Average speed includes tools and waiting.")}
+              </InfoTooltip>
+            ) : null}
+          </DescriptionItem>
           {sessionUsage ? (
             <DescriptionItem term={t("Cost")}>
               {formatCostWith(sessionUsage.costUsd, format)}
@@ -152,11 +160,6 @@ export function ContextMeter({
             </DescriptionItem>
           ) : null}
         </DescriptionList>
-        {tps ? (
-          <Text as="p" size="caption" tone="secondary" className="context-meter-hint">
-            {t("Average speed includes tools and waiting.")}
-          </Text>
-        ) : null}
       </div>
       {agents.size > 0 ? (
         <section
@@ -200,6 +203,7 @@ export function ContextMeter({
             variant="secondary"
             type="button"
             disabled={compactDisabled}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => {
               closeActions();
               onCompact();
@@ -207,11 +211,6 @@ export function ContextMeter({
           >
             {t("Compact now")}
           </Button>
-          {compactDisabled ? (
-            <Text as="p" size="inherit" tone="secondary" className="context-meter-hint">
-              {t("Wait for the current operation to finish")}
-            </Text>
-          ) : null}
         </div>
       ) : null}
     </Text>

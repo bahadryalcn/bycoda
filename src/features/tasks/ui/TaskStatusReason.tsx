@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert, type AlertTone } from "../../../shared/ui/Alert";
-import { TASK_INPUT_REQUIRED, type HostTask } from "../model/hostTasks";
+import { type HostTask } from "../model/hostTasks";
 import { taskRequiresInstructions, taskReviewFailureCount } from "../model/taskRules";
 import type { TaskStatusLine, TaskStatusTone } from "../model/taskStatusLine";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -50,7 +50,9 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
     ) : null;
   }
   const nextStep = taskRequiresInstructions(task)
-    ? t(TASK_INPUT_REQUIRED)
+    ? t(
+        "Update the task description before retrying: explain what changed, provide the missing evidence, or revise the requirement.",
+      )
     : status.kind === "takeover" && task.status === "blocked"
       ? t(
           "A fresh AI session will inspect the previous attempts and continue the retained work automatically when capacity is available.",

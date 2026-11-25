@@ -161,8 +161,12 @@ describe("file tab context menu", () => {
     await pick("Open in default app");
 
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
-      "No application can open this file",
+      "Couldn’t open the file in its default app",
     );
+    await act(async () =>
+      document.body.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!.click(),
+    );
+    expect(document.body.textContent).toContain("No application can open this file");
   });
 
   it.each(["left", "right"] as const)(

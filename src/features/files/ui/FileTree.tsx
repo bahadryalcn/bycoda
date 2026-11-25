@@ -20,6 +20,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
@@ -130,11 +131,11 @@ import {
   type TreeSelectionModifiers,
 } from "../model/treeSelection";
 // Status is never colour-only: each state also carries a letter marker.
-const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
-  modified: { mark: "M", label: "Modified" },
-  added: { mark: "A", label: "Added" },
-  untracked: { mark: "U", label: "Untracked" },
-  deleted: { mark: "D", label: "Deleted" },
+const GIT_STATUS_MARK: Record<string, { mark: string }> = {
+  modified: { mark: "M" },
+  added: { mark: "A" },
+  untracked: { mark: "U" },
+  deleted: { mark: "D" },
 };
 const GIT_STATUS_TONE: Record<string, "warning" | "added" | "removed"> = {
   modified: "warning",
@@ -334,7 +335,7 @@ function FileTreeInner({
   const [clip, setClip] = useState<Clip | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
-  const [opError, setOpError] = useState<string | null>(null);
+  const [opNotice, setOpNotice] = useState<string | null>(null);
   const [operationPending, setOperationPending] = useState(false);
   // An inline create/rename that has been submitted and is waiting on the filesystem.
   const [editPending, setEditPending] = useState(false);
@@ -439,7 +440,7 @@ function FileTreeInner({
   const copyPathText = async (value: string) => {
     setCopyNotice(null);
     setCopyFailedText(null);
-    setOpError(null);
+    setOpNotice(null);
     try {
       const { copied, error } = await copyAsyncWithFeedback(copyFeedback.copyAsync, () =>
         copyText(value),
@@ -452,7 +453,7 @@ function FileTreeInner({
         void reportFailure(error, {
           toast: {
             show: ({ message }) => {
-              if (activeRoot.current === cwd) setOpError(message);
+              if (activeRoot.current === cwd) setOpNotice(message);
             },
           },
         });
@@ -773,7 +774,7 @@ function FileTreeInner({
     setMenu,
     setOperationPending,
     setEditPending,
-    setOpError,
+    setOpError: setOpNotice,
     setCopyNotice,
     setCopyFailedText,
   });
@@ -822,8 +823,6 @@ function FileTreeInner({
     (operationPending || editPending
       ? t("Wait for the current file operation to finish")
       : undefined);
-  const createLabel = (label: string) =>
-    createBlockedReason ? `${label} (${createBlockedReason})` : label;
   // Visible name of a folder in this tree: the root keeps its display identity (worktree/branch label).
   const parentLabel = (path: string) => (path === cwd ? name : basename(path));
   const headerRef = useRef<HTMLDivElement>(null);
@@ -1087,8 +1086,9 @@ function FileTreeInner({
             {/* Creation, then tree management, then view/search; narrow headers fold the last two into the menu. */}
             <InlineAction
               reveal="always"
-              label={createLabel(t("New file"))}
+              label={t("New file")}
               disabled={Boolean(createBlockedReason)}
+              disabledReason={createBlockedReason}
               data-explorer-action="new-file"
               onClick={() => runHeaderAction("new-file")}
             >
@@ -1096,8 +1096,9 @@ function FileTreeInner({
             </InlineAction>
             <InlineAction
               reveal="always"
-              label={createLabel(t("New folder"))}
+              label={t("New folder")}
               disabled={Boolean(createBlockedReason)}
+              disabledReason={createBlockedReason}
               data-explorer-action="new-folder"
               onClick={() => runHeaderAction("new-folder")}
             >
@@ -1185,30 +1186,24 @@ function FileTreeInner({
           {hiddenSelectedPaths.length ? (
             // Only the hidden part of a selection needs a notice: a destructive action would reach it.
             <Text
-              role="status"
               data-explorer-selection-scope
               as="div"
               size="caption"
               tone="secondary"
               className="px-2 py-1"
             >
-              {t("Selection includes hidden items")}: {hiddenSelectedPaths.length}
+              <LiveText
+                text={`${t("Selection includes hidden items")}: ${hiddenSelectedPaths.length}`}
+              />
             </Text>
           ) : null}
           {copyNotice ? <MoveRecoveryNotice notice={copyNotice} /> : null}
           {operationPending ? (
-            <Text
-              role="status"
-              as="div"
-              size="caption"
-              tone="secondary"
-              className="flex items-center gap-2 px-3 py-1"
-            >
-              <Spinner size="sm" />
-              {t("Working…")}
-            </Text>
+            <div className="px-3 py-1">
+              <LoadingText>{t("Working…")}</LoadingText>
+            </div>
           ) : null}
-          {opError ? (
+          {opNotice ? (
             <InlineError
               className="mx-2 my-1"
               action={
@@ -1217,12 +1212,13 @@ function FileTreeInner({
                   : undefined
               }
             >
-              {opError}
+              {opNotice}
             </InlineError>
           ) : null}
           {activeRefreshFailure && refreshError && !refreshFailureShownCentrally ? (
             <InlineError
               className="mx-2 my-1"
+              details={refreshError}
               action={{
                 label: t("Retry"),
                 pending: operationPending,
@@ -1232,7 +1228,7 @@ function FileTreeInner({
                 },
               }}
             >
-              {t("File change saved. Refresh failed.")} {refreshError}
+              {t("File change saved. Refresh failed.")}
             </InlineError>
           ) : null}
           {search ?? (
@@ -1430,15 +1426,18 @@ function TreeChildren({
       ) : null}
       {!error && !loading && entries !== null && visible.length === 0 && !show ? (
         <Text
-          role="status"
           data-explorer-empty
           as="p"
           size="caption"
           tone="muted"
-          className="py-1 pr-2"
+          className="py-1 pe-2"
           style={pad}
         >
-          {entries.length ? t("Only excluded files in this folder") : t("This folder is empty")}
+          <LiveText
+            text={
+              entries.length ? t("Only excluded files in this folder") : t("This folder is empty")
+            }
+          />
           {entries.length ? (
             <Button variant="link" size="sm" onClick={() => saveShowExcludedFiles(true)}>
               {t("Show excluded files")}
@@ -1451,7 +1450,7 @@ function TreeChildren({
       {show && ctx.creating && !ctx.creating.isDir ? row : null}
       {renderSiblings(files, folders.length)}
       {hidden > 0 ? (
-        <Text as="p" size="caption" tone="secondary" className="flex gap-3 pr-2" style={pad}>
+        <Text as="p" size="caption" tone="secondary" className="flex gap-3 pe-2" style={pad}>
           <Button size="sm" variant="ghost" onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}>
             {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
           </Button>
@@ -1527,6 +1526,14 @@ const TreeNode = memo(function TreeNode({
   });
   const gitTone = gitStatus ? GIT_STATUS_TONE[gitStatus] : undefined;
   const gitMark = gitStatus ? GIT_STATUS_MARK[gitStatus] : undefined;
+  const gitLabel =
+    gitStatus === "modified"
+      ? t("Modified")
+      : gitStatus === "added"
+        ? t("Added")
+        : gitStatus === "untracked"
+          ? t("Untracked")
+          : t("Deleted");
 
   useEffect(() => {
     if (!entry.isDir || !open || cached) return;
@@ -1624,7 +1631,7 @@ const TreeNode = memo(function TreeNode({
           </TreeRowLabel>
           {gitMark ? (
             <TreeRowTrailing>
-              <Tooltip label={entry.isDir ? t("Contains changes") : t(gitMark.label)} asChild>
+              <Tooltip label={entry.isDir ? t("Contains changes") : gitLabel} asChild>
                 <Text size="inherit" tone={gitTone ?? "inherit"} weight="medium">
                   {entry.isDir ? "•" : gitMark.mark}
                 </Text>

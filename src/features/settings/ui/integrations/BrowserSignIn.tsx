@@ -194,18 +194,15 @@ export function BrowserSignIn({
         <Button
           variant={signedIn || phase.kind === "done" ? "secondary" : "primary"}
           stableWidth
-          reserveLabels={[t("Starting sign-in…")]}
           loading={phase.kind === "starting"}
+          loadingLabel={t("Starting sign-in…")}
           disabled={disabled}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={() => {
             begin().catch(() => undefined);
           }}
         >
-          {phase.kind === "starting"
-            ? t("Starting sign-in…")
-            : signedIn || phase.kind === "done"
-              ? t("Sign in again")
-              : signInLabel(purpose)}
+          {signedIn || phase.kind === "done" ? t("Sign in again") : signInLabel(purpose)}
         </Button>
       </div>
       {phase.kind === "done" && phase.identity ? (

@@ -320,7 +320,7 @@ describe("LocalInstallWizard", () => {
     });
     mocks.plan.mockRejectedValueOnce(new Error("Disk unavailable"));
     await renderWizard(client);
-    expect(buttonByText("Install")?.disabled).toBe(true);
+    expect(buttonByText("Install")?.getAttribute("aria-disabled")).toBe("true");
     expect(mocks.install).not.toHaveBeenCalled();
     clickButton("Retry");
     await settleDecisionUi();

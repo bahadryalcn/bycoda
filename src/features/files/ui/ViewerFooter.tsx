@@ -54,7 +54,7 @@ export function OpenInDefaultAppButton({
       }
       onClick={onOpen}
     >
-      {t(localCopy ? "Open local copy" : "Open in default app")}
+      {localCopy ? t("Open local copy") : t("Open in default app")}
     </Button>
   );
 }

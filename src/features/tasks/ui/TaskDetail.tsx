@@ -23,12 +23,14 @@ import {
   taskDisplayStatus,
 } from "./TaskStatusLine";
 import { TaskStatusReason } from "./TaskStatusReason";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { taskStateText } from "../model/taskTextLabels";
+import { runtimeModeLabel } from "../model/runtimeModeLabel";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Fragment, type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { Pencil, Sparkles, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
 import { TaskReviewNotes } from "./TaskReviewNotes";
 import { TaskAcceptanceEvidence } from "./TaskAcceptanceEvidence";
 import { TaskBudgetUsage } from "./TaskBudgetControls";
@@ -157,7 +159,7 @@ export function TaskDetail({
             "flex min-h-9 shrink-0 items-center gap-2 px-3 py-1",
           )}
         >
-          {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
+          {actions.pending ? <Spinner size="xs" delay label={t("Loading…")} /> : null}
           <Badge
             data-task-status={status.kind}
             tone={status.tone}
@@ -177,7 +179,7 @@ export function TaskDetail({
           <TaskActions
             task={task}
             standalone
-            className="task-detail-actions ml-auto justify-end"
+            className="task-detail-actions ms-auto justify-end"
             {...actions}
           />
           <Button
@@ -290,9 +292,7 @@ export function TaskDetail({
           <TaskStatusReason task={task} status={status} />
           <TaskOwnerNotices task={task} />
           {task.deliveryNote ? (
-            <Text as="p" size="caption" tone="warning" role="status" className="break-words">
-              {task.deliveryNote}
-            </Text>
+            <InlineMessage tone="warning">{task.deliveryNote}</InlineMessage>
           ) : null}
           {isEditing ? null : <TaskDetailInstructions prompt={task.prompt} />}
           {planning ? (
@@ -339,12 +339,12 @@ export function TaskDetail({
               {task.completedAt ? (
                 <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
               ) : null}
-              <DetailRow label={t("Completion")}>{t(workspace.completion)}</DetailRow>
-              <DetailRow label={t("Delivery")}>{t(workspace.delivery)}</DetailRow>
+              <DetailRow label={t("Completion")}>{taskStateText(workspace.completion)}</DetailRow>
+              <DetailRow label={t("Delivery")}>{taskStateText(workspace.delivery)}</DetailRow>
               {task.continueUntilDone ? (
                 <DetailRow label={t("Execution")}>{t("Keep fixing until done")}</DetailRow>
               ) : null}
-              <DetailRow label={t("Access")}>{t(RUNTIME_MODE_LABEL[task.runtimeMode])}</DetailRow>
+              <DetailRow label={t("Access")}>{runtimeModeLabel(task.runtimeMode)}</DetailRow>
               <DetailRow label={t("Time limit")}>
                 {task.inheritMaxRunMinutes && task.runtimeLimitResolvedAt === undefined
                   ? t("Default")

@@ -59,6 +59,9 @@ export function FolderModelDialog({
   );
   const flow = useAddAndTest({ onAdd: (input) => onAdd(input), onTest });
   const locked = flow.busy || flow.done;
+  const lockedReason = flow.done
+    ? t("This model is already added.")
+    : t("Wait for the current step to finish.");
   const close = useDecisionDialogClose(
     !flow.done && (path !== "" || name !== "" || runtimePath !== "" || adapter !== "systemone"),
     flow.busy,
@@ -218,7 +221,15 @@ export function FolderModelDialog({
             <Button
               variant="primary"
               loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
               disabled={scanning || locked || (!runtimePath.trim() && !selected.endpoint)}
+              disabledReason={
+                locked
+                  ? lockedReason
+                  : scanning
+                    ? t("Wait for the scan to finish.")
+                    : t("Enter the runtime program first.")
+              }
               onClick={submit}
             >
               {t("Add and test")}
@@ -246,6 +257,7 @@ export function FolderModelDialog({
               variant="ghost"
               size="sm"
               disabled={locked || scanning}
+              disabledReason={locked ? lockedReason : t("Wait for the scan to finish.")}
               onClick={() => void browse().catch(() => undefined)}
             >
               {t("Choose folder…")}
@@ -257,6 +269,7 @@ export function FolderModelDialog({
             variant="secondary"
             loading={scanning}
             disabled={locked || scanning}
+            disabledReason={locked ? lockedReason : undefined}
             onClick={() => void inspect(path).catch(() => undefined)}
           >
             {t("Scan folder")}
@@ -315,6 +328,7 @@ export function FolderModelDialog({
                       variant="ghost"
                       size="sm"
                       disabled={locked}
+                      disabledReason={lockedReason}
                       onClick={() => {
                         void pickPath({ title: t("Choose the runtime program") }).then(
                           (value) => {
@@ -344,9 +358,6 @@ export function FolderModelDialog({
               </div>
             </Disclosure>
           </>
-        ) : null}
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
         ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {flow.outcome ? (

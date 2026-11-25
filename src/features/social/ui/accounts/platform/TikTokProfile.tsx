@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useState } from "react";
 import { useFormat, useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -50,7 +51,7 @@ export function TikTokProfile({
   const [avatar, setAvatar] = useState<File>();
   const [unconfirmed, setUnconfirmed] = useState(false);
   const confirmation = useConfirm();
-  const { write, error, details, is } = useAccountWrite(
+  const { write, failureTitle, details, is } = useAccountWrite(
     t("Could not read or save the TikTok profile."),
   );
   const patch: Partial<Record<ProfileField, string>> = {};
@@ -130,12 +131,17 @@ export function TikTokProfile({
           size="sm"
           loading={is("read")}
           disabled={disabled || busy || (dirty && !unconfirmed)}
+          disabledReason={
+            disabled || busy
+              ? accountBlockedReason(disabled)
+              : t("Save or discard your changes before reading again.")
+          }
           onClick={() => read().catch(() => undefined)}
         >
           {draft ? t("Refresh") : t("Read profile")}
         </Button>
       </div>
-      {!draft && !busy && !error && (
+      {!draft && !busy && !failureTitle && (
         <Text size="caption" tone="secondary">
           {t("Nothing loaded yet. Read it from TikTok to see it here.")}
         </Text>
@@ -232,6 +238,17 @@ export function TikTokProfile({
               size="sm"
               variant="primary"
               disabled={disabled || !dirty || busy || unconfirmed || !draft.name.trim()}
+              disabledReason={
+                disabled || busy
+                  ? accountBlockedReason(disabled)
+                  : !dirty
+                    ? t("No changes to save.")
+                    : unconfirmed
+                      ? t(
+                          "TikTok did not confirm this change. Check its current state before trying again.",
+                        )
+                      : t("Enter a profile name first.")
+              }
               loading={is("save")}
             >
               {t("Save profile")}
@@ -252,7 +269,7 @@ export function TikTokProfile({
           </div>
         </form>
       )}
-      {error && <InlineError details={details}>{error}</InlineError>}
+      {failureTitle && <InlineError details={details}>{failureTitle}</InlineError>}
       {confirmation.dialog}
     </div>
   );

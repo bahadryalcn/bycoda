@@ -117,7 +117,7 @@ export function SessionRowStatus({
               "session-row-status-label",
             )}
           >
-            {t(kind === "retrying" ? "Retrying" : "Failed")}
+            {kind === "retrying" ? t("Retrying") : t("Failed")}
           </span>
         </>
       ) : kind === "interrupted" ? (

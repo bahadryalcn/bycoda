@@ -62,6 +62,13 @@ afterEach(async () => {
   host.remove();
   vi.unstubAllGlobals();
 });
+const detailsText = async () => {
+  for (const trigger of [...document.querySelectorAll("button")].filter(
+    (entry) => entry.textContent === "Details",
+  ))
+    await act(async () => trigger.click());
+  return document.body.textContent ?? "";
+};
 const button = (name: string) =>
   [...document.querySelectorAll("button")].find((item) =>
     item.textContent?.trim().startsWith(name),
@@ -77,7 +84,8 @@ it.each([false, true])(
     native.queue = { intents: stale ? [intent] : [], error: "Queue read unavailable" };
     await act(async () => root.render(createElement(SshRunbookQueue)));
     await act(async () => button("SSH reviews").click());
-    expect(document.body.textContent).toContain("Queue read unavailable");
+    expect(document.body.textContent).toContain("Could not update the SSH review queue.");
+    expect(await detailsText()).toContain("Queue read unavailable");
     expect(document.body.textContent).not.toContain("No pending SSH reviews.");
     expect(document.body.textContent).not.toContain("SSH reviews · 0");
     if (stale) expect(document.body.textContent).toContain("Nightly · r4");
@@ -100,7 +108,7 @@ it("refuses a changed native runbook revision before opening the execution surfa
   native.list.mockResolvedValue([{ id: "book", revision: 5, targetIds: [server.id] }]);
   await open();
   await act(async () => button("Review execution").click());
-  expect(document.body.textContent).toContain("Runbook changed. Refresh and review again.");
+  expect(await detailsText()).toContain("Runbook changed. Refresh and review again.");
   expect(native.rendered).toBeUndefined();
   expect(native.invoke).toHaveBeenCalledExactlyOnceWith("server_inventory_list");
 });
@@ -143,7 +151,7 @@ it("retains the visible native intent and error message when dismiss fails", asy
   native.dismiss.mockRejectedValueOnce(new Error("not dismissed"));
   await open();
   await act(async () => button("Dismiss").click());
-  expect(document.body.textContent).toContain("not dismissed");
+  expect(await detailsText()).toContain("not dismissed");
   expect(document.body.textContent).not.toContain("Error: not dismissed");
   expect(document.body.textContent).toContain("Nightly · r4");
   expect(native.refresh).not.toHaveBeenCalled();

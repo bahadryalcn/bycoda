@@ -30,11 +30,12 @@ describe("SkillsPage error copy", () => {
       "SKILL.md is missing.",
       "Other machine",
       "Could not save the skill preference. {p0}",
-      "Could not open the folder: {p0}",
-      "Could not delete {p0}. {p1}",
     ]) {
       expect(en).toHaveProperty([key]);
       expect(source).toContain(`t("${key}"`);
     }
+    // Raw causes sit behind Details; the visible sentences are fixed translated keys.
+    for (const key of ["Could not open the folder.", "Could not delete {p0}."])
+      expect(source).toContain(`t("${key}"`);
   });
 });

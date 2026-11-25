@@ -99,12 +99,12 @@ export function AssistantSessions({
           context="panel"
           kind={filtered ? "filtered" : "empty"}
           icon={filtered ? undefined : <MessageSquare className="icon-md" aria-hidden="true" />}
-          title={t(filtered ? "No matching sessions" : "No sessions from assistant jobs yet")}
-          description={t(
+          title={filtered ? t("No matching sessions") : t("No sessions from assistant jobs yet")}
+          description={
             filtered
-              ? "Try a different search or clear the filters."
-              : "Sessions that assistant jobs start appear here with their context usage.",
-          )}
+              ? t("Try a different search or clear the filters.")
+              : t("Sessions that assistant jobs start appear here with their context usage.")
+          }
           resetLabel={t("Clear filters")}
           onReset={filtered ? onReset : undefined}
           action={!filtered && onJobs ? { label: t("View jobs"), onClick: onJobs } : undefined}
@@ -226,9 +226,10 @@ function ManagedSessionRow({
         {error && (
           <InlineError
             {...surfaceAttributes({ frame: "pane", edge: "block-end" }, styles.feedback)}
+            details={error}
             retry={{ onRetry: () => void refresh(), pending: loading }}
           >
-            {t(error)}
+            {t("Could not load this session.")}
           </InlineError>
         )}
       </div>

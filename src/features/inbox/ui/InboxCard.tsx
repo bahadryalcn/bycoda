@@ -65,7 +65,11 @@ export const InboxCard = memo(function InboxCard({
   }, []);
   const status = inboxStatusMark(item);
   const kindLabel =
-    item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
+    item.kind === "pr"
+      ? item.provider === "gitlab"
+        ? t("Merge request")
+        : t("Pull request")
+      : t("Issue");
   const hasTime = hasInboxRelativeTime(item.updatedAt);
   const tracker = item.provider === "linear" || item.provider === "jira";
   const jira = item.provider === "jira";
@@ -93,13 +97,13 @@ export const InboxCard = memo(function InboxCard({
 
   const sessionLabel =
     relatedSessionCount > 0
-      ? t(relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads", {
-          p0: relatedSessionCount,
-        })
+      ? relatedSessionCount === 1
+        ? t("{p0} related thread", { p0: relatedSessionCount })
+        : t("{p0} related threads", { p0: relatedSessionCount })
       : "";
   const statusWord = jira
     ? statusLabel
-    : `${t(status.label)}${attentionLabel ? ` · ${t(attentionLabel)}` : ""}`;
+    : `${status.label}${attentionLabel ? ` · ${attentionLabel}` : ""}`;
   const reference = inboxItemRef(item);
   const secondary = [reference, source].filter(Boolean).join(" · ");
   // The status word shows only where it carries more than the icon: a tracker's own workflow
@@ -146,9 +150,9 @@ export const InboxCard = memo(function InboxCard({
           aria-current={active ? "true" : undefined}
           selected={active}
           aria-label={[
-            `${t(status.label)} ${t(kindLabel).toLocaleLowerCase()} ${reference}: ${item.title}`,
+            `${status.label} ${kindLabel.toLocaleLowerCase()} ${reference}: ${item.title}`,
             source,
-            attentionLabel ? t(attentionLabel) : "",
+            attentionLabel,
             unseen ? t("Unread") : "",
             item.labels.map((label) => label.name).join(", "),
             sessionLabel,
@@ -210,6 +214,7 @@ export const InboxCard = memo(function InboxCard({
         </Button>
         {comfortable && item.labels.length > 0 ? (
           <div className="min-w-0 px-2 pb-2">
+            {/* ui-drift-ignore: row-text-badge -- the provider's own issue labels are the row's content, not a status tag; they carry the provider color dot. */}
             <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
           </div>
         ) : null}

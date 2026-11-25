@@ -11,14 +11,6 @@ import { liveStreamRequest } from "../model/liveStreamClient";
 import type { LiveStreamFeedback } from "../hooks/useLiveStream";
 import { LiveSection } from "./LiveSection";
 
-const connectionLabel = {
-  idle: "Disconnected",
-  connecting: "Connecting",
-  connected: "Connected",
-  reconnecting: "Reconnecting",
-  offline: "Offline",
-  error: "Connection failed",
-} as const;
 const connectionTone: Record<LiveStreamStatus["connection"]["status"], StatusTextTone> = {
   idle: "idle",
   connecting: "running",
@@ -43,6 +35,30 @@ export function LiveStreamConnection({
   const channel = channelDraft ?? (connection.platform === "tiktok" ? connection.channel : "");
   const connected = ["connecting", "connected", "reconnecting"].includes(connection.status);
   const detail = feedback.error("connect", "disconnect", "demo");
+  const connectionLabel = {
+    idle: t("Disconnected"),
+    connecting: t("Connecting"),
+    connected: t("Connected"),
+    reconnecting: t("Reconnecting"),
+    offline: t("Offline"),
+    error: t("Connection failed"),
+  };
+  // The host sends these notes as English text; each one maps to its own translation.
+  const connectionNotes: Record<string, string> = {
+    "This channel is offline. Waiting for its live stream.": t(
+      "This channel is offline. Waiting for its live stream.",
+    ),
+    "The TikTok signing service is rate-limiting requests. Retrying shortly.": t(
+      "The TikTok signing service is rate-limiting requests. Retrying shortly.",
+    ),
+    "Could not read TikTok LIVE. Check the channel name and connection. Retrying shortly.": t(
+      "Could not read TikTok LIVE. Check the channel name and connection. Retrying shortly.",
+    ),
+    "TikTok LIVE disconnected. Reconnecting shortly.": t(
+      "TikTok LIVE disconnected. Reconnecting shortly.",
+    ),
+    "Live streaming could not save its state.": t("Live streaming could not save its state."),
+  };
 
   return (
     <LiveSection
@@ -52,7 +68,7 @@ export function LiveStreamConnection({
         <StatusText tone={connectionTone[connection.status]}>
           {connection.platform === "demo" && connected
             ? t("Demo running")
-            : t(connectionLabel[connection.status])}
+            : connectionLabel[connection.status]}
         </StatusText>
       }
     >
@@ -111,6 +127,11 @@ export function LiveStreamConnection({
           variant="ghost"
           startIcon={<Play />}
           disabled={connected || feedback.busy}
+          disabledReason={
+            connected
+              ? t("The live source is already connected.")
+              : t("Wait for the current live stream action to finish.")
+          }
           loading={feedback.pending("demo")}
           onClick={() =>
             feedback.run({
@@ -131,7 +152,9 @@ export function LiveStreamConnection({
         <InlineError details={detail}>{t("Could not update the live source")}</InlineError>
       ) : null}
       {connection.detail ? (
-        <InlineMessage tone="neutral">{t(connection.detail)}</InlineMessage>
+        <InlineMessage tone="neutral">
+          {connectionNotes[connection.detail] ?? connection.detail}
+        </InlineMessage>
       ) : null}
     </LiveSection>
   );

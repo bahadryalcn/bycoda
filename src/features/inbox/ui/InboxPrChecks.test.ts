@@ -81,19 +81,6 @@ const render = (element: React.ReactElement) => {
   return container;
 };
 
-/** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
-async function tooltipText(element: HTMLElement): Promise<string> {
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerover", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 520));
-  });
-  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
-  await act(async () => {
-    element.dispatchEvent(new Event("pointerout", { bubbles: true }));
-  });
-  return text;
-}
-
 const buttonByLabel = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 const rowToggle = (name: string) =>
@@ -601,7 +588,6 @@ it("names the per-state counts on the tab for color-blind-safe reading", async (
   const button = tab.querySelector<HTMLButtonElement>('button[role="tab"]');
   expect(button?.getAttribute("aria-label")).toBe("Checks: 2 failed, 1 passed");
   expect(button?.getAttribute("title")).toBeNull();
-  expect(await tooltipText(button!)).toBe("Checks: 2 failed, 1 passed");
   expect(button?.textContent).toContain("Checks");
   expect(button?.textContent).toContain("2");
 

@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { useFormat, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
@@ -111,7 +112,14 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
                   {failure.candidate.firstPrompt}
                 </Text>
                 {" — "}
-                {failure.reason ? importFailureMessage(t, failure.reason) : failure.error}
+                {failure.reason ? (
+                  importFailureMessage(t, failure.reason)
+                ) : (
+                  <>
+                    {t("The conversation could not be imported.")}{" "}
+                    <ErrorDetails title={failure.candidate.firstPrompt} detail={failure.error} />
+                  </>
+                )}
               </Text>
             ))}
           </ul>

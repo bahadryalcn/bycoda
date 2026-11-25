@@ -60,7 +60,7 @@ function TunnelNotices({
               : undefined
           }
         >
-          {t(issueCopy[state.issue])}
+          {issueCopy(state.issue)}
         </Alert>
       ) : null}
     </>
@@ -259,6 +259,13 @@ export function ExternalTunnelsPanel({
             type="button"
             aria-haspopup="dialog"
             disabled={!loaded || loading || !ordered.length}
+            disabledReason={
+              !loaded || loading
+                ? t("Wait for the status check to finish.")
+                : !ordered.length
+                  ? t("Add a computer first.")
+                  : undefined
+            }
             onClick={share}
           >
             <Plus aria-hidden className="icon-sm" />

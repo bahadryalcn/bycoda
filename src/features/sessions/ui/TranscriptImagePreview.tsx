@@ -17,7 +17,7 @@ import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
 import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
 import { mediaKind } from "../../files/public/mediaPreview";
-import { REVEAL_LABEL } from "../../files/public/explorerMenuItems";
+import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 
 /** Image formats a transcript file click previews in a dialog before any tab opens. */
 const PREVIEW_IMAGE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)$/i;
@@ -221,7 +221,11 @@ export function TranscriptImagePreview({
   const remote = resolved.startsWith(REMOTE_PATH_PREFIX) || !!cwd?.startsWith(REMOTE_PATH_PREFIX);
   const localRevealPath = useLocalExplorerPath(resolved);
   const canReveal = !remote || (resolved.startsWith(REMOTE_PATH_PREFIX) && !!localRevealPath);
-  const revealLabel = t(REVEAL_LABEL);
+  const revealLabel = IS_MAC
+    ? t("Reveal in Finder")
+    : IS_WIN
+      ? t("Reveal in File Explorer")
+      : t("Open containing folder");
   const name = basename(path);
 
   const actions = (

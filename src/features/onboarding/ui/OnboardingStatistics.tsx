@@ -1,7 +1,9 @@
-import { useSyncExternalStore } from "react";
+import { useId, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
   getStatsChoice,
@@ -14,13 +16,26 @@ import {
 export function OnboardingStatistics() {
   useLocale();
   const choice = useSyncExternalStore(subscribeAnonymousStats, getStatsChoice);
+  const disclosureTitle = useId();
   return (
     <>
       <OnboardingHeading title={t("Statistics")} />
       <div className="onboarding-scroll">
-        <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
-          {statsDisclosure()}
-        </Text>
+        {/* The consent disclosure is its own section, read in full before the choice below it. */}
+        <Surface
+          as="section"
+          variant="card"
+          padding="md"
+          aria-labelledby={disclosureTitle}
+          data-stats-disclosure
+        >
+          <SectionLabel as="h3" labelId={disclosureTitle} className="onboarding-section-title">
+            {t("What is sent")}
+          </SectionLabel>
+          <Text as="p" size="secondary" tone="secondary" leading="normal">
+            {statsDisclosure()}
+          </Text>
+        </Surface>
         <div className="onboarding-actions">
           <SegmentedControl
             label={t("Statistics")}

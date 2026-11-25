@@ -15,6 +15,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
 import { LinkedInHandoff } from "./LinkedInHandoff";
 import "./linkedin.css";
+import { linkedInBusyReason } from "./linkedinReasons";
 
 type Props = {
   account: SocialAccount;
@@ -39,7 +40,9 @@ function LinkedInCreatorAccount({ account, client, disabled }: Props) {
   const [result, setResult] = useState<{ state: "draft"; url: string }>();
   const [inspect, setInspect] = useState(false);
   const { confirm, dialog } = useConfirm();
-  const { error, is, write } = useAccountWrite(t("Could not open LinkedIn publishing."));
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("Could not open LinkedIn publishing."),
+  );
   const canPrepare = account.accountType === "member" && account.connection === "browser";
   const disabledWrite = disabled || is("handoff") || is("prepare") || inspect || !!result;
 
@@ -89,12 +92,14 @@ function LinkedInCreatorAccount({ account, client, disabled }: Props) {
               description={t("Write and publish an article.")}
               action={t("Open article publishing")}
               disabled={disabled || is("handoff")}
+              disabledReason={linkedInBusyReason(disabled)}
               onOpen={() => void open("article").catch(() => undefined)}
             />
             <LinkedInHandoff
               description={t("Create a newsletter or publish an issue.")}
               action={t("Open newsletter publishing")}
               disabled={disabled || is("handoff")}
+              disabledReason={linkedInBusyReason(disabled)}
               onOpen={() => void open("newsletter").catch(() => undefined)}
             />
           </ul>
@@ -141,7 +146,7 @@ function LinkedInCreatorAccount({ account, client, disabled }: Props) {
             {t("Check the draft on LinkedIn before trying again.")}
           </InlineMessage>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       </div>
       {dialog}
     </Disclosure>

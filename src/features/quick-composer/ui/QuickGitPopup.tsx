@@ -91,7 +91,11 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
         void invoke("quick_git_fit", { id: request.id, height }).catch(() => undefined);
       }}
     >
-      {error ? <InlineError inset="row">{error}</InlineError> : null}
+      {error ? (
+        <InlineError inset="row" details={error}>
+          {t("Could not apply the workspace choice.")}
+        </InlineError>
+      ) : null}
       {host && request ? (
         <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
       ) : null}

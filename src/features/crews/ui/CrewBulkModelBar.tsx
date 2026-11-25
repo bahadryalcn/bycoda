@@ -85,6 +85,15 @@ export function CrewBulkModelBar({
             disabled={
               disabled || pending || !targetCount || (choice.kind === "fixed" && !candidate)
             }
+            disabledReason={
+              !targetCount
+                ? noun === "members"
+                  ? t("Select at least one member first.")
+                  : t("Select at least one profile first.")
+                : choice.kind === "fixed" && !candidate
+                  ? t("Choose a model first.")
+                  : undefined
+            }
             onClick={() => {
               void apply();
             }}

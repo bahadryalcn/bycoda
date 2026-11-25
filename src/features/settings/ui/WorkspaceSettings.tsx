@@ -76,7 +76,7 @@ export function ExactGitRewindSetting() {
       )}
       feedback={
         pending ? (
-          <SettingsFeedback state="loading" immediate={isSaving}>
+          <SettingsFeedback state="loading">
             {isSaving ? t("Saving…") : t("Loading…")}
           </SettingsFeedback>
         ) : error ? (

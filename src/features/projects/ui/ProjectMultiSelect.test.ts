@@ -75,7 +75,7 @@ it("owns the submitted new-group draft until the privacy mutation finishes", asy
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     expect(input.disabled).toBe(true);
-    expect(button("Cancel").disabled).toBe(true);
+    expect(button("Cancel").getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       input
         .closest("form")!

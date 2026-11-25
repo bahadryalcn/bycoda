@@ -193,9 +193,9 @@ it.each(["en", "reprompt"] as const)(
       (button) =>
         button.textContent === (target === "reprompt" ? "Apply prompt" : "Apply translation"),
     )!;
-    expect(apply.disabled).toBe(true);
+    expect(apply.getAttribute("aria-disabled")).toBe("true");
     await act(async () => finish("Complete output"));
-    expect(apply.disabled).toBe(false);
+    expect(apply.getAttribute("aria-disabled")).toBeNull();
     expect(document.body.textContent).not.toContain(label);
   },
 );

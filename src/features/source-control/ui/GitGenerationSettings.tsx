@@ -106,8 +106,13 @@ export function GitCommitGenerationActions({
           size="xs"
           motion="none"
           iconOnly
-          label={t(generating ? "Stop commit message generation" : "Generate commit message")}
+          label={generating ? t("Stop commit message generation") : t("Generate commit message")}
           disabled={!generating && !canGenerate}
+          disabledReason={
+            !generating && !canGenerate
+              ? t("Change a file first, then generate a commit message.")
+              : undefined
+          }
           onClick={generating ? cancel : generate}
         >
           {generating ? <X className="icon-sm" /> : <WandSparkles className="icon-sm" />}

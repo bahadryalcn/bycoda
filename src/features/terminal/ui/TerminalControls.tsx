@@ -200,7 +200,7 @@ export function TerminalControls({
       ) : null}
       {snippets && sshConnectionId ? (
         <Modal
-          title={t(initialCommand === undefined ? "Saved SSH commands" : "Save command")}
+          title={initialCommand === undefined ? t("Saved SSH commands") : t("Save command")}
           onClose={closeSnippets}
           fitViewport
         >
@@ -210,9 +210,9 @@ export function TerminalControls({
                 {t("Refresh")}
               </Button>
               {/* The hint explains why Insert is unavailable; it is silent while insertion works. */}
-              {shell.error || !canInsert ? (
+              {shell.notice || !canInsert ? (
                 <Text size="caption" tone="muted">
-                  {(shell.error ? t(shell.error) : "") ||
+                  {shell.notice ||
                     t(
                       "Insert commands at an empty shell prompt. Press Enter in the terminal to run.",
                     )}

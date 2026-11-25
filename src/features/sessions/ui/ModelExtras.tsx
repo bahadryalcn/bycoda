@@ -27,6 +27,7 @@ import {
   settingValue,
   type SettingGroupId,
 } from "../model/modelPickerData";
+import { catalogText } from "../model/catalogText";
 import { isDelegationSetting, isMultiSetting } from "../model/crossDelegation";
 import {
   decodeSubagents,
@@ -136,6 +137,7 @@ export function ModelExtrasPanel({
   values,
   onSettingsChange,
   disabled = false,
+  disabledReason,
   title,
   leading,
   compact = false,
@@ -145,6 +147,8 @@ export function ModelExtrasPanel({
   values: Record<string, string>;
   onSettingsChange: (values: Record<string, string>) => void;
   disabled?: boolean;
+  /** Translated reason shown on the Reset button while the extras are locked. */
+  disabledReason?: string;
   /** Replaces the "<harness> · Extras" heading. */
   title?: string;
   /** Rendered before the heading, e.g. a back button. */
@@ -165,7 +169,7 @@ export function ModelExtrasPanel({
     const inactive = isInactive(setting.id);
     const modified = value !== (isDelegationSetting(setting) ? "" : setting.value) && !inactive;
     const descriptionId = `${id}-${setting.id}-help`;
-    const label = t(settingLabel(setting));
+    const label = catalogText(t, settingLabel(setting));
     const update = (next: string) => {
       if (disabled) return;
       // Off is an absent delegation key, never a stored empty value.
@@ -204,9 +208,9 @@ export function ModelExtrasPanel({
             </Text>
             {setting.description ? (
               <>
-                <InfoPopover>{t(setting.description)}</InfoPopover>
+                <InfoPopover>{catalogText(t, setting.description)}</InfoPopover>
                 <span id={descriptionId} hidden>
-                  {t(setting.description)}
+                  {catalogText(t, setting.description)}
                 </span>
               </>
             ) : null}
@@ -235,6 +239,7 @@ export function ModelExtrasPanel({
               setting={setting}
               values={effective}
               disabled={disabled || inactive}
+              disabledReason={disabledReason}
               onChange={update}
             />
           ) : ["advisor", "subagentModel", "crossAdvisor"].includes(setting.id) ? (
@@ -268,7 +273,7 @@ export function ModelExtrasPanel({
             >
               {setting.options.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {t(option.label)}
+                  {catalogText(t, option.label)}
                 </option>
               ))}
             </NativeSelect>
@@ -303,6 +308,7 @@ export function ModelExtrasPanel({
                 variant="ghost"
                 type="button"
                 disabled={disabled}
+                disabledReason={disabledReason}
                 onClick={() => {
                   if (!disabled) onSettingsChange(defaultModelSettings(current));
                 }}
@@ -316,7 +322,9 @@ export function ModelExtrasPanel({
       <div className="space-y-3 px-3 pt-2 pb-3">
         {groups.map((group) => (
           <section key={group.id}>
-            {group.title && <SectionLabel className="mb-1">{t(group.title)}</SectionLabel>}
+            {group.title && (
+              <SectionLabel className="mb-1">{catalogText(t, group.title)}</SectionLabel>
+            )}
             <div className="space-y-0.5">
               {group.settings.map((setting) => renderSetting(setting))}
             </div>
@@ -343,6 +351,7 @@ export function ModelExtras({
   values,
   onSettingsChange,
   disabled = false,
+  disabledReason,
   onClose,
   showSummary = false,
 }: {
@@ -351,6 +360,8 @@ export function ModelExtras({
   values: Record<string, string>;
   onSettingsChange: (values: Record<string, string>) => void;
   disabled?: boolean;
+  /** Translated reason the extras are locked. */
+  disabledReason?: string;
   onClose?: () => void;
   showSummary?: boolean;
 }) {
@@ -383,12 +394,15 @@ export function ModelExtras({
         label={t("Extras")}
         tooltip={
           showSummary && changed > 0
-            ? active.map((setting) => t(settingValueLabel(setting, effective))).join(" · ")
+            ? active
+                .map((setting) => catalogText(t, settingValueLabel(setting, effective)))
+                .join(" · ")
             : undefined
         }
         aria-haspopup="dialog"
         expanded={open}
         disabled={disabled}
+        disabledReason={disabledReason}
         onClick={() => setOpen((v) => !v)}
         data-extras-trigger
         className="shrink-0"
@@ -423,6 +437,7 @@ export function ModelExtras({
             values={values}
             onSettingsChange={onSettingsChange}
             disabled={disabled}
+            disabledReason={disabledReason}
           />
         </Popover>
       )}
@@ -441,7 +456,7 @@ export function TogglePill({
 }) {
   const t = useT();
   const on = settingValue(setting, values) === "true";
-  const label = t(settingLabel(setting));
+  const label = catalogText(t, settingLabel(setting));
   return (
     <Button
       variant="chip"

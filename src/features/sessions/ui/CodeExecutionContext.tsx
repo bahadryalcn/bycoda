@@ -196,6 +196,9 @@ export function CodeRunButton({
       label={t("Run in terminal")}
       className="markdown-code-copy markdown-code-run"
       disabled={incomplete || !code.trim()}
+      disabledReason={
+        incomplete ? t("Wait until the code block is complete.") : t("There is no code to run.")
+      }
       onClick={() => execute(code.replace(/\r?\n$/, ""), shellKind)}
     >
       <Play aria-hidden className="icon-sm" />

@@ -1,6 +1,8 @@
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { useT } from "../../../shared/i18n";
@@ -44,7 +46,7 @@ export function RemoteShellSuggestions({
   const t = useT();
   const [selection, setSelection] = useState({ prefix: "", value: "" });
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [acceptFailure, setAcceptFailure] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const snapshot = shell.state?.status === "suggestions" ? shell.state : undefined;
@@ -72,7 +74,7 @@ export function RemoteShellSuggestions({
       return;
     pending.current = true;
     setBusy(true);
-    setError("");
+    setAcceptFailure("");
     await acceptSuggestion(
       shell,
       value,
@@ -80,7 +82,7 @@ export function RemoteShellSuggestions({
         onClose();
         terminal?.focus();
       },
-      (reason) => setError(String(reason)),
+      (reason) => setAcceptFailure(String(reason)),
       () => {
         pending.current = false;
         setBusy(false);
@@ -151,7 +153,9 @@ export function RemoteShellSuggestions({
         ref={host}
         className={styles.command}
         tabIndex={selectionMode ? 0 : undefined}
-        aria-label={t(selectionMode ? "Remote suggestion selection" : "Remote suggestion preview")}
+        aria-label={
+          selectionMode ? t("Remote suggestion selection") : t("Remote suggestion preview")
+        }
         onKeyDown={(event) => {
           if (!selectionMode || isImeComposition(event.nativeEvent)) return;
           event.stopPropagation();
@@ -195,14 +199,20 @@ export function RemoteShellSuggestions({
         ) : null}
         {/* Passive previews stay a fixed list; status text would resize them per pause. */}
         {selectionMode && shell.waiting ? (
-          <Text as="p" size="caption" tone="muted" role="status" className={styles.hint}>
-            {t("Waiting for the shell prompt…")}
-          </Text>
+          <LiveText
+            size="caption"
+            tone="muted"
+            className={styles.hint}
+            text={t("Waiting for the shell prompt…")}
+          />
         ) : null}
-        {(selectionMode && shell.error) || error ? (
-          <Text as="p" size="caption" tone="muted" role="status" className={styles.hint}>
-            {t((selectionMode && shell.error) || error)}
-          </Text>
+        {selectionMode && shell.notice && !shell.noticeDetails ? (
+          <LiveText size="caption" tone="muted" className={styles.hint} text={shell.notice} />
+        ) : null}
+        {selectionMode && shell.notice && shell.noticeDetails ? (
+          <InlineError details={shell.noticeDetails}>{shell.notice}</InlineError>
+        ) : acceptFailure ? (
+          <InlineError details={acceptFailure}>{t("Could not insert the command.")}</InlineError>
         ) : null}
         {snapshot || retained?.suggestions.length ? (
           <div className={styles.list}>

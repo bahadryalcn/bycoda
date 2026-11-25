@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n/core";
 import type { AdoptedDivergence, Block, Session } from "../../sessions";
 import { isTurnInterruptMessage } from "../../sessions/public/inFlight";
 import { sessionActivityAt } from "../../sessions/public/sessionActivity";
@@ -137,15 +138,18 @@ export function desktopCopyOf(
 export const ADOPTED_RUNNING_REASON =
   "This conversation is running in the background on this computer. New messages appear automatically.";
 /** Flagged without a proven divergence: the other computer's latest turn has not arrived yet. */
-export const ADOPTED_UNSYNCED_MESSAGE = "This conversation is catching up with the local Host.";
+export const adoptedUnsyncedMessage = () =>
+  t("This conversation is catching up with the local Host.");
 /** A proven divergence: both computers added to the conversation after the version they last shared. */
-export const ADOPTED_CHOICE_MESSAGE =
-  "This conversation was changed on two computers. Choose the version to keep.";
+export const adoptedChoiceMessage = () =>
+  t("This conversation was changed on two computers. Choose the version to keep.");
 /** What each answer costs, shown with the choice so no answer discards work unseen. */
-export const ADOPTED_CHOICE_CONSEQUENCES =
-  "Keep this discards the other computer's changes. Keep other discards the changes made here. Keep both keeps everything.";
-export const ADOPTED_DISCARD_QUESTION =
-  "Discard the other computer's changes and keep this version? Keep both saves them instead.";
+export const adoptedChoiceConsequences = () =>
+  t(
+    "Keep this discards the other computer's changes. Keep other discards the changes made here. Keep both keeps everything.",
+  );
+export const adoptedDiscardQuestion = () =>
+  t("Discard the other computer's changes and keep this version? Keep both saves them instead.");
 export const ADOPTED_POLL_VISIBLE_MS = 5_000;
 export const ADOPTED_POLL_HIDDEN_MS = 20_000;
 

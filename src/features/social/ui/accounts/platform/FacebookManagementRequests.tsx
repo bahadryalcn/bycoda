@@ -213,6 +213,11 @@ export function FacebookManagementRequests({
                   variant="ghost"
                   size="sm"
                   disabled={item.status === "submitted" || work.is(item.id)}
+                  disabledReason={
+                    item.status === "submitted"
+                      ? t("This request was already submitted.")
+                      : t("Wait for the current change to finish.")
+                  }
                   onClick={() => void dismiss(item).catch(() => undefined)}
                 >
                   {t("Dismiss")}
@@ -222,7 +227,9 @@ export function FacebookManagementRequests({
           ))}
         </ul>
       ) : null}
-      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
+      {work.failureTitle ? (
+        <InlineError details={work.details}>{work.failureTitle}</InlineError>
+      ) : null}
       {confirm.dialog}
     </section>
   );

@@ -125,7 +125,9 @@ it("holds a known undelivered command failure for grace without replay", async (
     await act(async () => vi.advanceTimersByTimeAsync(2_999));
     expect(document.querySelector('[role="alert"]')).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("busy right now");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not run the command.",
+    );
     expect(document.body.textContent).not.toContain("Command status unknown");
     expect(start).not.toHaveBeenCalled();
   } finally {

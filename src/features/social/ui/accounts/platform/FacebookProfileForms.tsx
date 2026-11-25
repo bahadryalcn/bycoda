@@ -24,7 +24,7 @@ export function FacebookProfilePhotos({ account, client }: Props) {
   const [kind, setKind] = useState("avatar");
   const [file, setFile] = useState<File>();
   const [saved, setSaved] = useState(false);
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("Could not save this change. Try again."),
   );
   const confirm = useConfirm();
@@ -98,12 +98,13 @@ export function FacebookProfilePhotos({ account, client }: Props) {
         className="self-start"
         loading={is("photo")}
         disabled={!file}
+        disabledReason={t("Choose a file first.")}
         onClick={() => void save().catch(() => undefined)}
       >
         {t("Save")}
       </Button>
       {saved ? <InlineMessage tone="info">{t("Saved")}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirm.dialog}
     </div>
   );
@@ -122,7 +123,7 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
   const [visibility, setVisibility] = useState("show");
   const [saved, setSaved] = useState(false);
   const {
-    error,
+    failureTitle,
     details: errorDetails,
     is,
     write,
@@ -269,12 +270,13 @@ export function FacebookPersonalProfileForm({ account, client }: Props) {
         className="self-start"
         loading={is("profile")}
         disabled={!valid || saved}
+        disabledReason={saved ? t("Already saved.") : t("Fill in the fields above.")}
         onClick={() => void save().catch(() => undefined)}
       >
         {t("Save profile")}
       </Button>
       {saved ? <InlineMessage tone="info">{t("Saved")}</InlineMessage> : null}
-      {error ? <InlineError details={errorDetails}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={errorDetails}>{failureTitle}</InlineError> : null}
       {confirm.dialog}
     </div>
   );

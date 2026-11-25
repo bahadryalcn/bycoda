@@ -65,6 +65,7 @@ function RefreshDevicesButton({
       variant="ghost"
       label={t("Refresh devices")}
       disabled={disabled && !pending}
+      disabledReason={disabled && !pending ? t("Wait for the status check to finish.") : undefined}
       aria-disabled={pending || undefined}
       aria-busy={pending || undefined}
       onClick={refresh}
@@ -298,6 +299,7 @@ export function PairedDevicesPanel({
               variant="primary"
               aria-haspopup="dialog"
               disabled={ordered.length === 0}
+              disabledReason={ordered.length === 0 ? t("Add a computer first.") : undefined}
               onClick={openPairing}
             >
               <Plus aria-hidden className="icon-sm" />

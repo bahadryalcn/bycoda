@@ -26,7 +26,7 @@ export function InstagramInsightsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const [mediaId, setMediaId] = useState("");
@@ -103,7 +103,7 @@ export function InstagramInsightsPanel({
           })}
         </InlineMessage>
       ) : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
     </FieldGroup>
   );
 }

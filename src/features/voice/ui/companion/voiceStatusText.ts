@@ -16,19 +16,12 @@ export function voiceStatusText(state: {
     if (phase === "replying") return t("Preparing a reply…");
     if (muted) return t("Connected · Microphone off");
     if (phase === "speaking") return t("Receiving speech…");
-    return t(hearingInput ? "Microphone is receiving sound" : "Listening");
+    return hearingInput ? t("Microphone is receiving sound") : t("Listening");
   }
-  return t(
-    status === "reconnecting"
-      ? "Reconnecting…"
-      : status === "sleeping"
-        ? "Asleep"
-        : status === "ready"
-          ? "Ready. Microphone is off."
-          : status === "connecting"
-            ? realtime
-              ? "Connecting voice…"
-              : "Preparing local voice…"
-            : "Ready to connect",
-  );
+  if (status === "reconnecting") return t("Reconnecting…");
+  if (status === "sleeping") return t("Asleep");
+  if (status === "ready") return t("Ready. Microphone is off.");
+  if (status === "connecting")
+    return realtime ? t("Connecting voice…") : t("Preparing local voice…");
+  return t("Ready to connect");
 }

@@ -345,7 +345,7 @@ describe("ActivityDock", () => {
   describe("stopping", () => {
     const stopButtons = () =>
       [...container.querySelectorAll<HTMLButtonElement>("button:not([data-dock-stop-all])")].filter(
-        (button) => /^Stop(ping)? /.test(button.getAttribute("aria-label") ?? ""),
+        (button) => /^Stop(ping)?[ …]/.test(button.getAttribute("aria-label") ?? ""),
       );
     const expand = () =>
       act(() => container.querySelector<HTMLButtonElement>("button[data-dock-toggle]")?.click());
@@ -366,7 +366,7 @@ describe("ActivityDock", () => {
       expect(await tooltipText(button)).toBe("Stop this subagent");
       await act(async () => button.click());
       expect(onStopAgent).toHaveBeenCalledWith(expect.objectContaining({ callId: "a1" }));
-      expect(stopButtons()[0].disabled).toBe(true);
+      expect(stopButtons()[0].getAttribute("aria-disabled")).toBe("true");
       expect(visibleSessionTestText(stopButtons()[0])).toBe("Stopping…");
       finish();
     });
@@ -388,7 +388,7 @@ describe("ActivityDock", () => {
       const labels = [...button.querySelectorAll("[data-reserve]")].map((node) =>
         node.getAttribute("data-reserve"),
       );
-      expect(labels).toEqual(["Stop", "Stopping…", "Retry stop"]);
+      expect(labels).toEqual(["Stop", "Retry stop", "Stopping…"]);
       expect(dock()?.querySelector('[role="status"].sr-only')?.textContent).toContain(
         "Could not stop it. Try again.",
       );

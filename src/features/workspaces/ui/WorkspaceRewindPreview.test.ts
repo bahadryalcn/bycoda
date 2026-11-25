@@ -75,7 +75,7 @@ it("arms one timer for the expiry instead of ticking every second", async () => 
   expect(host.textContent).not.toContain("has expired");
   await act(async () => vi.advanceTimersByTime(2_000));
   expect(host.textContent).toContain("This rewind preview has expired.");
-  expect(applyButton()?.disabled).toBe(true);
+  expect(applyButton()?.getAttribute("aria-disabled")).toBe("true");
   expect(vi.getTimerCount()).toBe(0);
   expect(onApply).not.toHaveBeenCalled();
 });
@@ -92,6 +92,6 @@ it("opens already expired and never applies", async () => {
     ),
   );
   expect(host.textContent).toContain("This rewind preview has expired.");
-  expect(applyButton()?.disabled).toBe(true);
+  expect(applyButton()?.getAttribute("aria-disabled")).toBe("true");
   expect(vi.getTimerCount()).toBe(0);
 });

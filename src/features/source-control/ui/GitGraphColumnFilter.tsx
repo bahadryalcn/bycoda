@@ -59,6 +59,11 @@ export function GitGraphColumnFilter({
             <Button
               variant="ghost"
               disabled={!Object.values(filters).some((value) => value.trim())}
+              disabledReason={
+                Object.values(filters).some((value) => value.trim())
+                  ? undefined
+                  : t("No filter is applied.")
+              }
               onClick={() => onChange(EMPTY_HISTORY_FILTERS)}
             >
               {t("Reset")}

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Select } from "../../../shared/ui/Select";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -145,9 +145,7 @@ export function ProjectDiscoveryStatus({
   state: ReturnType<typeof useTaskMachineProjects>;
 }) {
   return state.error ? (
-    <InlineMessage tone="warning" live="assertive" retry={{ onRetry: state.retry }}>
-      {state.error}
-    </InlineMessage>
+    <InlineError live="assertive" retry={{ onRetry: state.retry }} details={state.error} />
   ) : state.loading ? (
     <LoadingText>{t("Loading projects…")}</LoadingText>
   ) : null;
@@ -255,6 +253,7 @@ export function AutoMergeField({
       description={t("Automatic merge is suspended. Review changes to renew approval.")}
       checked={checked}
       disabled={disabled || !checked}
+      disabledReason={t("Automatic merge is suspended. Review changes to renew approval.")}
       onChange={(event) => {
         if (!event.target.checked) onChange(false);
       }}

@@ -1,5 +1,6 @@
 import { Button } from "../../../../shared/ui/Button";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useEffect, useState } from "react";
@@ -44,10 +45,10 @@ function triggerText(trigger: SocialRule["trigger"]): string {
  */
 export function ReplyRules({ client, account, projects, disabled }: ReplyRulesProps) {
   const [rules, setRules] = useState<SocialRule[]>();
-  const [loadError, setLoadError] = useState("");
+  const [loadProblem, setLoadProblem] = useState<{ title: string; details?: string }>();
   const [attempt, setAttempt] = useState(0);
   const [proposal, setProposal] = useState<RuleSimplifySuggestion>();
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The rule could not be changed. Try again."),
   );
   const confirmation = useConfirm();
@@ -58,11 +59,15 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
     client.sectionSnapshot({ section: "rules" }).then(
       (response) => {
         if (!alive) return;
-        setLoadError("");
+        setLoadProblem(undefined);
         setRules((response.snapshot?.rules ?? []).filter((rule) => rule.accountId === account.id));
       },
-      () => {
-        if (alive) setLoadError(t("The reply rules could not be read. Try again."));
+      (reason) => {
+        if (alive)
+          setLoadProblem({
+            title: t("The reply rules could not be read. Try again."),
+            details: presentRemoteError(reason, { explicit: true }),
+          });
       },
     );
     return () => {
@@ -141,8 +146,13 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
           </Button>
         </div>
       ) : null}
-      {loadError ? (
-        <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
+      {loadProblem ? (
+        <InlineError
+          details={loadProblem.details}
+          retry={{ onRetry: reload, label: t("Try again") }}
+        >
+          {loadProblem.title}
+        </InlineError>
       ) : null}
       {rules?.length === 0 ? (
         <EmptyState
@@ -190,7 +200,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
           ))}
         </div>
       ) : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

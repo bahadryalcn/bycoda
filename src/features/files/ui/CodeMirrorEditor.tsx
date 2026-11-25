@@ -1276,7 +1276,7 @@ function StandardCodeMirrorEditor({
         />
         {formatError ? (
           <InlineError inset="row" className="shrink-0" details={formatError.message}>
-            {t(formatError.saved ? "Saved, but formatting failed." : "Formatting failed.")}
+            {formatError.saved ? t("Saved, but formatting failed.") : t("Formatting failed.")}
           </InlineError>
         ) : null}
         {contextError ? (
@@ -1295,8 +1295,14 @@ function StandardCodeMirrorEditor({
           </InlineError>
         ) : null}
         {blameOn && blameError ? (
-          <InlineError text={{ wrap: "anywhere" }} live="polite" inset="row" className="shrink-0">
-            {t("Blame unavailable: {p0}", { p0: blameError })}
+          <InlineError
+            text={{ wrap: "anywhere" }}
+            live="polite"
+            inset="row"
+            className="shrink-0"
+            details={blameError}
+          >
+            {t("Blame unavailable.")}
           </InlineError>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>
@@ -1408,6 +1414,7 @@ function DiffChunkNav({
           iconOnly
           label={t("Previous change")}
           disabled={total === 0 || index <= 0}
+          disabledReason={t("No earlier change.")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onPrev}
         >
@@ -1428,6 +1435,7 @@ function DiffChunkNav({
           iconOnly
           label={t("Next change")}
           disabled={total === 0 || index >= total - 1}
+          disabledReason={t("No later change.")}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onNext}
         >

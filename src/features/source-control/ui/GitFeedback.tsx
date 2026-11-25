@@ -1,6 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -17,7 +18,7 @@ import { requestWorktreeManagement } from "../model/worktreeManagement";
 
 export function GitLoading({ text }: { text: string }) {
   useLocale();
-  return <LoadingText inset="row">{t(text)}</LoadingText>;
+  return <LoadingText inset="row">{text}</LoadingText>;
 }
 
 export function GitCommitGenerationNotice({
@@ -35,10 +36,15 @@ export function GitCommitGenerationNotice({
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
       <InlineMessage tone="warning" className="me-auto flex-1 self-center">
-        {t(result.changesUpdated ? "Changes updated. Review the message." : "AI message ready.")}
+        {result.changesUpdated ? t("Changes updated. Review the message.") : t("AI message ready.")}
       </InlineMessage>
       {result.suggestion && (
-        <Button size="xs" onClick={onUse} disabled={disabled}>
+        <Button
+          size="xs"
+          onClick={onUse}
+          disabled={disabled}
+          disabledReason={disabled ? t("Wait for the current operation to finish") : undefined}
+        >
           {t("Use AI message")}
         </Button>
       )}
@@ -137,6 +143,7 @@ function GitFeedbackContent({
               <Button
                 loading={saving}
                 disabled={saved}
+                disabledReason={saved ? t("Already saved to your notes.") : undefined}
                 onClick={async () => {
                   if (notePending.current || saved) return;
                   notePending.current = true;
@@ -153,7 +160,7 @@ function GitFeedbackContent({
                   }
                 }}
               >
-                {t(saved ? "Saved" : "Add to notes")}
+                {saved ? t("Saved") : t("Add to notes")}
               </Button>
               <Button
                 onClick={() => {
@@ -188,11 +195,11 @@ function GitFeedbackContent({
               {detail}
             </OutputBlock>
             {saved ? (
-              <Text role="status" as="p" size="inherit" tone="secondary">
-                {t("Saved")}
-              </Text>
+              <LiveText size="inherit" tone="secondary" className="block" text={t("Saved")} />
             ) : null}
-            {copyError ? <InlineError>{copyError}</InlineError> : null}
+            {copyError ? (
+              <InlineError details={copyError}>{t("Could not save note")}</InlineError>
+            ) : null}
             {branchInWorktree && cwd ? (
               <Button variant="link" onClick={() => requestWorktreeManagement(cwd)}>
                 {t("Manage worktrees…")}

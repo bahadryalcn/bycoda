@@ -6,10 +6,10 @@ import { useEffect, useRef, useState } from "react";
 import type { Session } from "../../sessions";
 import { getSessions, setSessions } from "../../sessions/public/sessionsStore";
 import {
-  ADOPTED_CHOICE_CONSEQUENCES,
-  ADOPTED_CHOICE_MESSAGE,
-  ADOPTED_DISCARD_QUESTION,
-  ADOPTED_UNSYNCED_MESSAGE,
+  adoptedChoiceConsequences,
+  adoptedChoiceMessage,
+  adoptedDiscardQuestion,
+  adoptedUnsyncedMessage,
   keepAdoptedDivergence,
   type AdoptedResolution,
 } from "../model/adoptedSessions";
@@ -73,10 +73,12 @@ export function AdoptedSessionNotice({
         conflicted: !!session.adoptedSyncConflict,
         text:
           resolution === "keep-both" && branched
-            ? "Both versions are kept. This computer's version is saved as a new conversation in project history."
+            ? t(
+                "Both versions are kept. This computer's version is saved as a new conversation in project history.",
+              )
             : resolution === "keep-other"
-              ? "Conversation synced. The other computer's version was kept."
-              : "Conversation synced.",
+              ? t("Conversation synced. The other computer's version was kept.")
+              : t("Conversation synced."),
       });
     } catch (reason) {
       if (pending.current !== attempt) return;
@@ -98,7 +100,7 @@ export function AdoptedSessionNotice({
   // answer. Nothing is replaced or copied until they do.
   const choosing =
     !!session.adoptedSyncConflict && !!session.adoptedDivergence && !session.adoptedDivergence.keep;
-  const failure =
+  const problem =
     feedback?.failure ??
     (session.adoptedSyncConflict && !choosing && automaticFailure
       ? describeRemoteError(automaticFailure)
@@ -126,6 +128,11 @@ export function AdoptedSessionNotice({
     !choosing &&
     (!!session.adoptedSyncConflict || !!feedback?.failure || refreshing);
   const syncBlocked = refreshing || session.busy;
+  const syncBlockedReason = refreshing
+    ? t("Wait for the current action to finish.")
+    : session.busy
+      ? t("Wait for the running response to finish.")
+      : undefined;
   // Up to three follow-ups: the two structured slots plus one Button in `extra`.
   const noticeActions: Pick<AlertProps, "action" | "secondaryAction" | "extra"> = confirming
     ? {
@@ -142,6 +149,7 @@ export function AdoptedSessionNotice({
             size="sm"
             onClick={() => void refresh("keep-both")}
             disabled={syncBlocked}
+            disabledReason={syncBlockedReason}
             aria-busy={refreshing}
           >
             {t("Keep both")}
@@ -175,6 +183,7 @@ export function AdoptedSessionNotice({
               size="sm"
               onClick={() => setConfirmingId(session.id)}
               disabled={refreshing}
+              disabledReason={refreshing ? t("Wait for the current action to finish.") : undefined}
             >
               {t("Keep this")}
             </Button>
@@ -195,8 +204,8 @@ export function AdoptedSessionNotice({
           }
         : {};
   const failureDetails =
-    failure?.details && failure.details !== failure.message ? (
-      <ErrorDetails title={failure.message} detail={failure.details} />
+    problem?.details && problem.details !== problem.message ? (
+      <ErrorDetails title={problem.message} detail={problem.details} />
     ) : undefined;
   return (
     <div className={NOTICE_SLOT}>
@@ -208,15 +217,15 @@ export function AdoptedSessionNotice({
       >
         <div className="min-w-0 space-y-1">
           {session.adoptedSyncConflict ? (
-            <div>{t(choosing ? ADOPTED_CHOICE_MESSAGE : ADOPTED_UNSYNCED_MESSAGE)}</div>
+            <div>{choosing ? adoptedChoiceMessage() : adoptedUnsyncedMessage()}</div>
           ) : null}
           {choosing ? (
             <Text as="div" size="inherit">
-              {t(confirming ? ADOPTED_DISCARD_QUESTION : ADOPTED_CHOICE_CONSEQUENCES)}
+              {confirming ? adoptedDiscardQuestion() : adoptedChoiceConsequences()}
             </Text>
           ) : null}
-          {failure ? <div>{failure.message}</div> : null}
-          {feedback && !feedback.failure ? <div>{t(feedback.text)}</div> : null}
+          {problem ? <div>{problem.message}</div> : null}
+          {feedback && !feedback.failure ? <div>{feedback.text}</div> : null}
         </div>
       </Alert>
     </div>

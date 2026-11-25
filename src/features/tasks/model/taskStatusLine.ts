@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n";
+import { catalogText } from "../../sessions/public/catalogText";
 import type { HostTask, TaskOwnerNotice } from "./hostTasks";
 import {
   MAX_TASK_REPAIR_ATTEMPTS,
@@ -110,7 +111,12 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
 
   if (active && task.needsInput) return line("needs_input", "warning", t("Needs input"));
   if (task.status === "queued" && task.modelRoutingWait?.reason)
-    return line("waiting", "neutral", t("Waiting"), firstSentence(t(task.modelRoutingWait.reason)));
+    return line(
+      "waiting",
+      "neutral",
+      t("Waiting"),
+      firstSentence(catalogText(t, task.modelRoutingWait.reason)),
+    );
   if (task.status !== "blocked" && taskRequiresInstructions(task))
     return line(
       "needs_instructions",
@@ -174,7 +180,9 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
           "finished_with_notes",
           task.completedWithFindings ? "warning" : "success",
           notices > 0
-            ? t(notices === 1 ? "Completed · {p0} note" : "Completed · {p0} notes", { p0: notices })
+            ? notices === 1
+              ? t("Completed · {p0} note", { p0: notices })
+              : t("Completed · {p0} notes", { p0: notices })
             : t("Completed with open findings"),
           undefined,
           notices,

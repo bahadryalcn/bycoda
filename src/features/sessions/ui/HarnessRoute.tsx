@@ -32,7 +32,7 @@ export function HandoffFileCount({ files, className }: { files?: number; classNa
   if (files == null || files <= 0) return null;
   return (
     <Text as="div" size="micro" tone="secondary" className={className}>
-      {t(files === 1 ? "{p0} file" : "{p0} files", { p0: files })}
+      {files === 1 ? t("{p0} file", { p0: files }) : t("{p0} files", { p0: files })}
     </Text>
   );
 }

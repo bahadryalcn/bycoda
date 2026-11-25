@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Badge } from "../../../shared/ui/Badge";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
@@ -226,10 +227,10 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
         </Button>
       </div>
       {unavailable ? (
-        <Text size="caption" tone="secondary" className={styles.fallback} role="status">
+        <InlineMessage tone="warning">
           {t("Source changed or unavailable. The saved quote is preserved.")}
           <span className={styles.excerpt}>{citation.text}</span>
-        </Text>
+        </InlineMessage>
       ) : null}
       {anchor ? (
         <Popover

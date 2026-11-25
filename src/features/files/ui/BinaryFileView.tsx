@@ -376,7 +376,7 @@ function UnsupportedFile({ path, size }: { path: string; size: number }) {
     <DocumentMessage
       title={t("{p0} can’t be previewed", { p0: basename(path) })}
       action={{
-        label: t(localCopy ? "Open local copy" : "Open in default app"),
+        label: localCopy ? t("Open local copy") : t("Open in default app"),
         onClick: openAction.open,
         pending: openAction.opening,
       }}
@@ -385,7 +385,6 @@ function UnsupportedFile({ path, size }: { path: string; size: number }) {
           <Button
             size="sm"
             variant="ghost"
-            disabled={revealing}
             loading={revealing}
             startIcon={<Folder className="icon-xs" strokeWidth={1.75} />}
             onClick={() => void reveal()}

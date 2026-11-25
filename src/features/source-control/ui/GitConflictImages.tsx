@@ -6,11 +6,8 @@ import { formatFileSize } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { conflictImage, type StageSide } from "../model/conflictCompare";
 
-const SIDE_LABEL: Record<StageSide, string> = {
-  base: "Base",
-  ours: "Current",
-  theirs: "Incoming",
-};
+const sideLabel = (side: StageSide) =>
+  side === "base" ? t("Base") : side === "ours" ? t("Current") : t("Incoming");
 
 // Icons and sprites this small are scaled up with hard pixel edges so the two
 // versions can be told apart; larger images keep smooth scaling.
@@ -45,7 +42,7 @@ function ImageSide({
   const image = useMemo(() => conflictImage(stages, side), [stages, side]);
   const [natural, setNatural] = useState<{ src: string; w: number; h: number } | null>(null);
   const size = image.status === "image" && natural?.src === image.src ? natural : null;
-  const label = t(SIDE_LABEL[side]);
+  const label = sideLabel(side);
   return (
     <figure
       {...surfaceAttributes(

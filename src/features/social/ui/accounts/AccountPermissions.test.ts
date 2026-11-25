@@ -9,6 +9,11 @@ import type { SocialClient } from "../../model/socialClient";
 import { socialQueryScope } from "../../model/socialQuery";
 import { AccountPermissions } from "./AccountPermissions";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 let element: HTMLDivElement, root: Root, cache: QueryClient;
 
 beforeEach(() => {
@@ -121,7 +126,7 @@ it("saves the Assistant grant against the version that was read", async () => {
 it("sends no expected version for a first grant and keeps drafting dependent on reading", async () => {
   const request = vi.fn(async () => ({}));
   render(request);
-  expect(checkbox(ASSISTANT, "Prepare drafts").disabled).toBe(true);
+  expect(isBlocked(checkbox(ASSISTANT, "Prepare drafts"))).toBe(true);
   act(() => checkbox(ASSISTANT, "Can read").click());
   expect(checkbox(ASSISTANT, "Prepare drafts").disabled).toBe(false);
   act(() => checkbox(ASSISTANT, "Prepare drafts").click());
@@ -222,12 +227,12 @@ it("says why access cannot be saved and keeps the edit when the Host refuses it"
 it("locks every permission while the Host is offline", () => {
   render(vi.fn(), { disabled: true });
   for (const input of element.querySelectorAll<HTMLInputElement>("input[type=checkbox]"))
-    expect(input.disabled).toBe(true);
+    expect(isBlocked(input)).toBe(true);
   const save = [...element.querySelectorAll("button")].filter((node) =>
     ["Save permissions", "Save project access"].includes(node.textContent ?? ""),
   );
   expect(save).toHaveLength(2);
-  for (const node of save) expect(node.disabled).toBe(true);
+  for (const node of save) expect(isBlocked(node)).toBe(true);
 });
 
 it("keeps the card free of a loose help button", () => {

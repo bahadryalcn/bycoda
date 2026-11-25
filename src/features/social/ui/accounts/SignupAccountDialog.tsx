@@ -22,6 +22,7 @@ import {
   registrationFieldLabel,
   registrationFieldProblem,
   registrationProfile,
+  signupMessageText,
   signupProblem,
   signupStatus,
   signupStepLabel,
@@ -72,8 +73,8 @@ export function SignupAccountDialog({
   const [accountId, setAccountId] = useState<string | undefined>(existingAccountId);
   const [workflow, setWorkflow] = useState<SocialBrowserWorkflow | undefined>(initialWorkflow);
   const [draft, setDraft] = useState<Partial<Record<SocialRegistrationField, string>>>({});
-  const [pollError, setPollError] = useState("");
-  const { error, details, is, write } = useAccountWrite(
+  const [pollNotice, setPollNotice] = useState("");
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The signup could not be started. Try again."),
   );
   const live = isSignupLive(workflow);
@@ -88,11 +89,11 @@ export function SignupAccountDialog({
       try {
         const state = await client.browserWorkflowStatus(accountId);
         if (!isCurrent()) return;
-        setPollError("");
+        setPollNotice("");
         const next = latestSignup(state, accountId);
         if (next) setWorkflow(next);
       } catch (error) {
-        if (isCurrent()) setPollError(t("The signup status could not be read. Retrying."));
+        if (isCurrent()) setPollNotice(t("The signup status could not be read. Retrying."));
         throw error;
       }
     },
@@ -257,10 +258,10 @@ export function SignupAccountDialog({
           </div>
         ) : null}
         {ownerInstruction ? (
-          <Text as="p">{t(ownerInstruction)}</Text>
+          <Text as="p">{signupMessageText(ownerInstruction)}</Text>
         ) : status && registration?.message ? (
           <Text as="p" tone="muted" size="caption" wrap="anywhere">
-            {t(registration.message)}
+            {signupMessageText(registration.message)}
           </Text>
         ) : null}
         {live && registration?.blockers.length ? (
@@ -309,8 +310,8 @@ export function SignupAccountDialog({
           />
         ) : null}
         {problem ? <InlineMessage tone="warning">{problem}</InlineMessage> : null}
-        {pollError ? <InlineMessage tone="warning">{pollError}</InlineMessage> : null}
-        {error ? (
+        {pollNotice ? <InlineMessage tone="warning">{pollNotice}</InlineMessage> : null}
+        {failureTitle ? (
           <InlineError details={details}>
             {live
               ? t("The signup could not continue.")

@@ -63,9 +63,10 @@ async function click(label: string) {
 it("validates the chosen executable before adding it and keeps picker cancellation harmless", async () => {
   await render();
   expect(
-    [...document.querySelectorAll("button")].find((node) => node.textContent === "Add provider")!
-      .disabled,
-  ).toBe(true);
+    [...document.querySelectorAll("button")]
+      .find((node) => node.textContent === "Add provider")!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   mock.pick.mockResolvedValueOnce(null).mockResolvedValueOnce("D:/custom/codex.exe");
   await click("Choose executable");
   expect(saved).not.toHaveBeenCalled();

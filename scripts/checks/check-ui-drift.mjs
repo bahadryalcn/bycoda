@@ -54,6 +54,7 @@ export const ruleScopes = {
   "arbitrary-ui-token-override": "TSX in src/app and src/features (excluding tests)",
   "aria-label-without-role": "TSX in src/app and src/features (excluding tests)",
   "duplicate-feedback-channel": viewScope,
+  "button-manual-pending": "TSX in src/app and src/features (excluding tests)",
   "nested-card": "TSX in src/app, src/features, src/shared (excluding tests)",
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
   "nested-surface": "TSX in src/app, src/features, src/shared (excluding tests)",
@@ -87,6 +88,8 @@ export const rules = {
     "aria-label on a div without a semantic role (use a named semantic element or associate the label with its intended control)",
   "duplicate-feedback-channel":
     "one operation or disabled action repeats the same message across feedback channels (keep one visible owner and associate its message with the control when needed)",
+  "button-manual-pending":
+    "Button shows its pending state by hand (use loading with loadingLabel instead of a label swap, and startIcon instead of an icon child)",
   "nested-card":
     "card Surface or surfaceAttributes({ variant: card }) nested lexically inside another card (use page or inset)",
   "hover-only-reveal":

@@ -519,6 +519,9 @@ export function McpServerDetail({
                     variant="secondary"
                     loading={managedBusy === "edit"}
                     disabled={configLocked || !!managedBusy}
+                    disabledReason={
+                      configLockedReason ?? t("Wait for the current operation to finish")
+                    }
                     onClick={() => void changeManaged("edit")}
                   >
                     {t("Edit")}
@@ -528,6 +531,9 @@ export function McpServerDetail({
                     tone="danger"
                     loading={managedBusy === "remove"}
                     disabled={configLocked || !!managedBusy}
+                    disabledReason={
+                      configLockedReason ?? t("Wait for the current operation to finish")
+                    }
                     onClick={() => void changeManaged("remove")}
                   >
                     {t("Remove")}

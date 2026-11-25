@@ -5,6 +5,11 @@ import { expect, it, vi } from "vitest";
 import type { SocialClient } from "../../model/socialClient";
 import { ChromeSessionConnect } from "./ChromeSessionConnect";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 function setup(tabs = [{ id: "tab", title: "Owner X", site: "x.com" }]) {
   const client = {
     browserChromeTabs: vi.fn(async () => ({ tabs })),
@@ -20,6 +25,7 @@ function setup(tabs = [{ id: "tab", title: "Owner X", site: "x.com" }]) {
         client: client as unknown as SocialClient,
         accountId: "account",
         disabled: false,
+        disabledReason: "Not available.",
         onChanged,
       }),
     ),
@@ -41,7 +47,7 @@ function setup(tabs = [{ id: "tab", title: "Owner X", site: "x.com" }]) {
 it("requires explicit consent before discovery and verifies the selected account", async () => {
   const f = setup();
   try {
-    expect(f.button("Find Chrome tabs").disabled).toBe(true);
+    expect(isBlocked(f.button("Find Chrome tabs"))).toBe(true);
     expect(f.node.textContent).toContain("other tabs and profile data");
     await act(async () =>
       f.node.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),

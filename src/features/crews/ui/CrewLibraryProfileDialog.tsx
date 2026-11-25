@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -183,7 +183,7 @@ export function CrewLibraryProfileDialog({
     >
       <FieldGroup variant="bare" disabled={pending}>
         <div className="flex min-w-0 flex-col gap-3">
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? <InlineError details={error} /> : null}
           <CrewMemberForm
             cwd={cwd}
             agent={agent}

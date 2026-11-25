@@ -2,10 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BackgroundSessionTarget } from "../../tasks";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { FailureState } from "../../../shared/ui/FailureState";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -77,6 +76,8 @@ export function CrewWorkManager({
       return next;
     });
   const pending = pendingAction !== null;
+  // The presented (translated or classified) read failure; the raw text goes behind Details.
+  const { visibleError: loadNotice } = state;
   const pendingGate = useRef(false);
   const [actionError, setActionError] = useState<CrewActionError>();
   // A failure to reach the machine is retired once the machine answers a read again.
@@ -210,7 +211,7 @@ export function CrewWorkManager({
               <FailureState
                 context="panel"
                 title={t("Could not load crews")}
-                description={state.visibleError}
+                description={loadNotice}
                 error={state.errorDetails}
                 onRetry={() => state.refetch()}
               />
@@ -222,15 +223,10 @@ export function CrewWorkManager({
           <div className="px-4 pb-4">
             {data.catalogError || (state.visibleError && !refreshShownCentrally) ? (
               <div className="pb-3">
-                <Alert
-                  tone="warning"
-                  action={{
-                    label: t("Retry"),
-                    onClick: () => void state.refetch(),
-                  }}
-                >
-                  {data.catalogError ?? state.visibleError}
-                </Alert>
+                <InlineError
+                  details={data.catalogError ?? state.visibleError}
+                  retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+                />
               </div>
             ) : null}
             {actionError ? (
@@ -297,26 +293,16 @@ export function CrewWorkManager({
                   </div>
                 ) : null}
                 {data.catalogError ? (
-                  <Alert
-                    tone="warning"
-                    action={{
-                      label: t("Retry"),
-                      onClick: () => void state.refetch(),
-                    }}
-                  >
-                    {data.catalogError}
-                  </Alert>
+                  <InlineError
+                    details={data.catalogError}
+                    retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+                  />
                 ) : null}
                 {state.visibleError && !refreshShownCentrally ? (
-                  <Alert
-                    tone="warning"
-                    action={{
-                      label: t("Retry"),
-                      onClick: () => void state.refetch(),
-                    }}
-                  >
-                    {state.visibleError}
-                  </Alert>
+                  <InlineError
+                    details={state.visibleError}
+                    retry={{ onRetry: () => void state.refetch(), label: t("Retry") }}
+                  />
                 ) : null}
                 {selected?.coordinatorSessionId && renderCoordinator ? (
                   <div

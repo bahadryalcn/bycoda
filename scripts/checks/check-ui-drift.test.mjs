@@ -1211,6 +1211,27 @@ test("tooltip aria-labels and paired gate branches use matching text only", () =
     ),
     1,
   );
+  assert.equal(
+    count(
+      "button-manual-pending",
+      'const View = ({ saving }) => <Button loading={saving}>{saving ? t("Saving…") : t("Save")}</Button>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "button-manual-pending",
+      'const View = ({ busy }) => <Button loading={busy}><Play className="icon-sm" />{t("Start")}</Button>;',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      "button-manual-pending",
+      'const View = ({ busy, open }) => <><Button loading={busy} loadingLabel={t("Starting…")} startIcon={<Play />}>{t("Start")}</Button><Button>{open ? t("Rename…") : t("Open…")}</Button><Button iconOnly label="Run" loading={busy}><Play /></Button><Button variant="item" loading={busy}><Play />{t("Crew")}</Button></>;',
+    ),
+    0,
+  );
   const adapter = 'import { gateProps, DisabledReason } from "../social/ui/common/DisabledReason";';
   const view =
     'const View = ({ connected, busy }) => <DisabledReason {...gateProps(connected ? { disabled: false } : { disabled: true, disabledReason: busy ? t("Checking") : t("Unavailable") })}>{connected ? t("Ready") : busy ? t("Checking") : t("Offline")}</DisabledReason>;';

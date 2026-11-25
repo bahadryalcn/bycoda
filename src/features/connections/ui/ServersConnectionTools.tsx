@@ -8,7 +8,7 @@ import { useId, useRef, useState } from "react";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { SshIdentityField } from "./SshIdentityField";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { FolderOpen, Terminal, Lock } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
@@ -135,9 +135,9 @@ export function ServersConnectionTools({
         </div>
         <div className="min-w-0 px-4 py-4">
           {error && !security ? (
-            <Alert tone="danger" className="mbe-3">
-              {error}
-            </Alert>
+            <InlineError details={error} className="mbe-3">
+              {t("Could not complete this action.")}
+            </InlineError>
           ) : null}
           <TabPanel value="connection" keepMounted>
             {canAssignKey ? (
@@ -259,8 +259,12 @@ export function ServersConnectionTools({
                   {t("SSH group settings")}
                 </Button>
               ) : null}
-              <Button variant="secondary" loading={busy} onClick={() => setSecurity(true)}>
-                <Lock aria-hidden className="icon-sm" />
+              <Button
+                variant="secondary"
+                loading={busy}
+                startIcon={<Lock aria-hidden className="icon-sm" />}
+                onClick={() => setSecurity(true)}
+              >
                 {t("SSH settings")}
               </Button>
             </div>

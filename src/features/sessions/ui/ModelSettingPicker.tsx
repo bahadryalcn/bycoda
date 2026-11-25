@@ -25,6 +25,7 @@ import {
   type DelegationOption,
   isMultiSetting,
 } from "../model/crossDelegation";
+import { catalogText } from "../model/catalogText";
 import { settingLabel } from "../model/modelPickerData";
 import type { ModelSetting } from "../model/models";
 import { HARNESS_TITLE } from "../model/session";
@@ -66,7 +67,7 @@ export function ModelSettingPicker({
   const selection = bulk ? { ...values, [setting.id]: draft } : values;
   const modelCount = bulk ? decodeSubagents(draft).length : 0;
   const multi = isMultiSetting(setting);
-  const label = t(settingLabel(setting));
+  const label = catalogText(t, settingLabel(setting));
   const needle = query.trim().toLocaleLowerCase();
   const settingOptions: DelegationOption[] = setting.options;
   const entries = settingOptions
@@ -100,7 +101,9 @@ export function ModelSettingPicker({
     ({ option, accountKey }) =>
       (!bulk || !accountFilter || accountFilter === accountKey) &&
       (!needle ||
-        `${t(option.label)} ${option.accountLabel ?? ""}`.toLocaleLowerCase().includes(needle)),
+        `${catalogText(t, option.label)} ${option.accountLabel ?? ""}`
+          .toLocaleLowerCase()
+          .includes(needle)),
   );
   const groups = new Map<string | undefined, typeof shown>();
   for (const entry of shown) {
@@ -122,8 +125,9 @@ export function ModelSettingPicker({
       value: option.value,
       title:
         bulk && !accountShownInFilter
-          ? delegationShortLabel(setting, option.value, t(option.label))
-          : (option.modelLabel ?? delegationShortLabel(setting, option.value, t(option.label))),
+          ? delegationShortLabel(setting, option.value, catalogText(t, option.label))
+          : (option.modelLabel ??
+            delegationShortLabel(setting, option.value, catalogText(t, option.label))),
       accessibleLabel: option.modelLabel
         ? [option.modelLabel, group, !bulk ? option.accountLabel : option.detail]
             .filter(Boolean)

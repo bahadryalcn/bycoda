@@ -84,7 +84,7 @@ export function AccountDetail({
 }: AccountDetailProps) {
   const [openedAt] = useState(Date.now);
   const [browserStatus, setBrowserStatus] = useState<string>();
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The account could not be changed. Try again."),
   );
   const confirmation = useConfirm();
@@ -224,7 +224,7 @@ export function AccountDetail({
           />
         ) : null}
       </div>
-      {error ? (
+      {failureTitle ? (
         <InlineError details={details}>
           {t("The account could not be changed. Try again.")}
         </InlineError>

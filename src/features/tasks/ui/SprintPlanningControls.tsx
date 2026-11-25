@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -185,7 +186,7 @@ export function SprintPlanningControls({
         >
           {failures.map((row) => (
             <li key={row.id}>
-              {row.title}: {row.error}
+              <InlineError details={`${row.title}: ${row.error}`} />
             </li>
           ))}
         </Text>

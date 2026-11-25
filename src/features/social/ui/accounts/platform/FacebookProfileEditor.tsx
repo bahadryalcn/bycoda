@@ -47,7 +47,7 @@ export function FacebookProfileEditor({
     username?: string;
   }>({});
   const [notice, setNotice] = useState("");
-  const { error, details, write, is } = useAccountWrite(
+  const { failureTitle, details, write, is } = useAccountWrite(
     t("Could not save this change. Try again."),
   );
   const confirm = useConfirm();
@@ -279,13 +279,18 @@ export function FacebookProfileEditor({
             ? !Object.values(browserPatch).some((value) => value.trim())
             : reviewRequired || (!Object.keys(patch).length && emails === undefined)
         }
+        disabledReason={
+          !browser && reviewRequired
+            ? t("Read the profile again before saving.")
+            : t("No changes to save.")
+        }
         loading={is("save")}
         onClick={() => void save().catch(() => undefined)}
       >
         {t("Save profile")}
       </Button>
       {notice ? <InlineMessage tone="info">{notice}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirm.dialog}
     </section>
   );

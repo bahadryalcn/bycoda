@@ -208,7 +208,9 @@ export function ProviderBinaryControl({
     <Button
       className="shrink-0"
       loading={operation === "choose"}
+      startIcon={<FolderOpen className="icon-sm" />}
       disabled={working}
+      disabledReason={t("Wait for the current operation to finish")}
       onClick={() => {
         if (inspectionBusy.current) return;
         const generation = ++request.current;
@@ -240,7 +242,6 @@ export function ProviderBinaryControl({
           });
       }}
     >
-      <FolderOpen className="icon-sm" />
       {t("Choose executable")}
     </Button>
   );
@@ -249,6 +250,7 @@ export function ProviderBinaryControl({
       <Button
         className="shrink-0"
         disabled={working}
+        disabledReason={t("Wait for the current operation to finish")}
         onClick={() => {
           if (inline) {
             onCancel?.();
@@ -266,6 +268,7 @@ export function ProviderBinaryControl({
           className="shrink-0"
           loading={operation === "auto"}
           disabled={working}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={() => void useAuto()}
         >
           {t("Use auto-detected path")}
@@ -276,9 +279,13 @@ export function ProviderBinaryControl({
         type="submit"
         form={formId}
         loading={operation === "save"}
+        loadingLabel={t("Checking path…")}
         disabled={working || (inline && !draft.trim())}
+        disabledReason={
+          working ? t("Wait for the current operation to finish") : t("Enter the CLI path first.")
+        }
       >
-        {working ? t("Checking path…") : inline ? t("Add provider") : t("Save path")}
+        {inline ? t("Add provider") : t("Save path")}
       </Button>
     </ModalActions>
   );
@@ -339,9 +346,11 @@ export function ProviderBinaryControl({
         aria-expanded={open}
         aria-controls={`${provider}-binary-popover`}
         aria-haspopup="dialog"
-        tooltip={t(restartRequired ? "{p0} CLI path (restart required)" : "{p0} CLI path", {
-          p0: title,
-        })}
+        tooltip={
+          restartRequired
+            ? t("{p0} CLI path (restart required)", { p0: title })
+            : t("{p0} CLI path", { p0: title })
+        }
         onClick={() => {
           if (open) {
             dismiss(true);
@@ -356,7 +365,11 @@ export function ProviderBinaryControl({
       >
         <FolderOpen className="icon-sm" strokeWidth={1.75} />
         {showLabel
-          ? t(missing ? (provider === "acp" ? "Add provider" : "Set up") : "CLI setup")
+          ? missing
+            ? provider === "acp"
+              ? t("Add provider")
+              : t("Set up")
+            : t("CLI setup")
           : null}
       </Button>
       {open ? (
@@ -403,10 +416,12 @@ export function ProviderBinaryControl({
                     <Button
                       className="shrink-0"
                       disabled={working}
-                      aria-label={t(
-                        overridden ? "Retry {p0} configured path" : "Retry {p0} auto-detect",
-                        { p0: title },
-                      )}
+                      disabledReason={t("Wait for the current operation to finish")}
+                      aria-label={
+                        overridden
+                          ? t("Retry {p0} configured path", { p0: title })
+                          : t("Retry {p0} auto-detect", { p0: title })
+                      }
                       onClick={() => void inspect(overridden ? draft.trim() || null : null)}
                     >
                       <RefreshCw className="icon-sm" strokeWidth={1.75} />
@@ -417,6 +432,7 @@ export function ProviderBinaryControl({
                     className="shrink-0"
                     aria-label={t("Open {p0} CLI location", { p0: title })}
                     disabled={!inspection}
+                    disabledReason={t("Checking the selected CLI…")}
                     onClick={() => {
                       if (inspection) {
                         void revealPath(inspection.path).catch((cause) => {
@@ -432,6 +448,7 @@ export function ProviderBinaryControl({
                     className="shrink-0"
                     aria-label={t("Edit {p0} CLI path", { p0: title })}
                     disabled={working}
+                    disabledReason={t("Wait for the current operation to finish")}
                     onClick={() => setEditing(true)}
                   >
                     <Pencil className="icon-sm" strokeWidth={1.75} />

@@ -11,6 +11,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Text } from "../../../shared/ui/Text";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { deleteTask, moveTask, startTask, type BoardTask } from "../model/taskClient";
+import { taskStateText } from "../model/taskTextLabels";
 import {
   bulkTaskKey,
   groupTaskBulkResults,
@@ -66,9 +67,11 @@ export function TaskBulkToolbar({
   const resultGroups = groupTaskBulkResults(results);
   const eligibility = (action: TaskBulkAction) =>
     chosen.filter((task) => !taskBulkUnavailable(task, action));
+  const blockedReason =
+    busy || disabled ? t("Wait for the current operation to finish") : undefined;
   const unavailableReason = (action: TaskBulkAction) =>
     chosen.length && !eligibility(action).length
-      ? t(taskBulkUnavailable(chosen[0], action) ?? "Unavailable")
+      ? taskStateText(taskBulkUnavailable(chosen[0], action) ?? "Unavailable")
       : undefined;
 
   const run = async (action: TaskBulkAction, retry = false) => {
@@ -158,6 +161,7 @@ export function TaskBulkToolbar({
           checked={tasks.length > 0 && chosen.length === tasks.length}
           indeterminate={chosen.length > 0 && chosen.length < tasks.length}
           disabled={busy || disabled || !tasks.length}
+          disabledReason={tasks.length ? blockedReason : undefined}
           onChange={(event) =>
             changeSelection(new Set(event.currentTarget.checked ? tasks.map(bulkTaskKey) : []))
           }
@@ -185,7 +189,7 @@ export function TaskBulkToolbar({
               disabledReason={unavailableReason(action)}
               onClick={() => run(action).catch(report)}
             >
-              {t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
+              {action === "start" ? t("Start") : action === "stop" ? t("Stop") : t("Retry")}
               <Badge size="xs" variant="count">
                 {eligibility(action).length}
               </Badge>
@@ -216,6 +220,7 @@ export function TaskBulkToolbar({
         <Button
           variant="ghost"
           disabled={busy || disabled || !chosen.length}
+          disabledReason={chosen.length ? blockedReason : undefined}
           onClick={() => changeSelection(new Set())}
         >
           {t("Clear selection")}
@@ -254,9 +259,9 @@ export function TaskBulkToolbar({
           {resultGroups.map((group, index) => (
             <div key={index} className="task-bulk-result-group">
               <Text as="p" size="caption" tone={group.status === "failed" ? "danger" : "secondary"}>
-                {t(group.status === "failed" ? "Failed" : "Skipped")}
+                {group.status === "failed" ? t("Failed") : t("Skipped")}
                 {": "}
-                {group.reason ? t(group.reason) : null}
+                {group.reason ? taskStateText(group.reason) : null}
               </Text>
               <BadgeList
                 label={t("Tasks")}
@@ -277,6 +282,7 @@ export function TaskBulkToolbar({
           variant="secondary"
           loading={activeAction === "retry-failed"}
           disabled={busy || disabled}
+          disabledReason={blockedReason}
           onClick={() => run(lastAction, true).catch(report)}
         >
           {t("Repeat on failed tasks")}

@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n/core";
+import { errorText } from "../../../shared/lib/errors";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import type { RemoteConnectionStatus } from "./remoteConnection";
 import { classifySshFailure, parseSshStartFailure } from "./sshFailure";
@@ -14,6 +15,11 @@ export function sanitizeConnectionError(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.length > 200 ? truncateGraphemes(cleaned, 198) : cleaned;
+}
+
+/** A failed step as the translated title the owner reads plus its sanitized raw text for Details. */
+export function connectionProblem(title: string, reason: unknown) {
+  return { title, details: sanitizeConnectionError(errorText(reason)) };
 }
 
 /** The machine answered 403 for its route: a proxy or origin header, not the pairing. */

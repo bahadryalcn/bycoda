@@ -99,6 +99,7 @@ export function JiraBoardToolbar(props: Props) {
         type="button"
         loading={props.loading}
         disabled={props.refreshDisabled}
+        disabledReason={t("Wait for the current action to finish.")}
         onClick={props.onRefresh}
       >
         <RefreshCw className="icon-sm" strokeWidth={1.75} />

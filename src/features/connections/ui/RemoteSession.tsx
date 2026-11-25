@@ -5,7 +5,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Button } from "../../../shared/ui/Button";
-import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { RemoteSessionFrame, RemoteSessionContent } from "./RemoteSessionFrame";
 import { FailureState } from "../../../shared/ui/FailureState";
@@ -128,7 +128,6 @@ import {
   publishRemoteSessionActionSource,
 } from "../model/remoteSessionActions";
 import {
-  HOST_UPDATE_NOTICE,
   SESSION_PROVIDER_ACCOUNT,
   SESSION_REWIND,
   SESSION_SHELL,
@@ -292,7 +291,6 @@ export function RemoteSession({
     return (
       <FailureState
         context={compactPresentation ? "list" : "page"}
-        role="status"
         description={t(
           "This project’s machine details are missing. Add the project again from the project rail.",
         )}
@@ -382,13 +380,9 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
               <Alert
                 tone="warning"
                 action={{ label: t("Retry"), onClick: retry }}
-                extra={
-                  fitsOneLine(state.error) ? undefined : (
-                    <ErrorDetails title={review} detail={state.error} />
-                  )
-                }
+                extra={<ErrorDetails title={review} detail={state.error} />}
               >
-                {fitsOneLine(state.error) ? `${review} ${state.error}` : review}
+                {review}
               </Alert>
             )}
             {issues.length ? (
@@ -2510,7 +2504,9 @@ function ConnectedRemoteSession({
       return false;
     }
     if (!descriptor.capabilities.includes(SESSION_SHELL)) {
-      setError(t(HOST_UPDATE_NOTICE));
+      setError(
+        t("Update bycoda Host in Machines settings to use this on projects on another machine."),
+      );
       return false;
     }
     if (sendingRef.current || preparingRef.current) return false;
@@ -4327,11 +4323,9 @@ function ConnectedRemoteSession({
       <RemoteSessionFrame compact={compactPresentation}>
         {followUpPreparing || sending ? (
           <LoadingText delay={false} inset="panel" className="shrink-0">
-            {t(
-              sending
-                ? "Waiting for the host to confirm your request."
-                : "Preparing the message and attachments…",
-            )}
+            {sending
+              ? t("Waiting for the host to confirm your request.")
+              : t("Preparing the message and attachments…")}
           </LoadingText>
         ) : null}
         {uploadProgress ? (

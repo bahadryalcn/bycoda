@@ -4,6 +4,8 @@ import { Text } from "../../../shared/ui/Text";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -399,9 +401,12 @@ export function CreateSkillForm({
         }}
       />
       {parentClosed ? (
-        <Text as="p" size="micro" tone="secondary" role="status" className="mb-2">
-          {t("Preparing session checkpoint. Your draft is kept.")}
-        </Text>
+        <LiveText
+          size="micro"
+          tone="secondary"
+          className="mb-2 block"
+          text={t("Preparing session checkpoint. Your draft is kept.")}
+        />
       ) : null}
       {/* Without a local project the skill can only be personal, so there is nothing to choose. */}
       {project ? (
@@ -418,7 +423,14 @@ export function CreateSkillForm({
           ]}
         />
       ) : null}
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {error ? (
+        <Alert
+          tone="danger"
+          extra={<ErrorDetails detail={error} title={t("Could not create the skill.")} />}
+        >
+          {t("Could not create the skill.")}
+        </Alert>
+      ) : null}
       <div className="flex items-center justify-end gap-1">
         <Button
           variant="ghost"
@@ -432,8 +444,22 @@ export function CreateSkillForm({
         >
           {t("Cancel")}
         </Button>
-        <Button variant="primary" size="sm" type="submit" disabled={!valid || busy || parentClosed}>
-          {busy ? t("Creating…") : t("Create")}
+        <Button
+          variant="primary"
+          size="sm"
+          type="submit"
+          loading={busy}
+          loadingLabel={t("Creating…")}
+          disabled={!valid || busy || parentClosed}
+          disabledReason={
+            parentClosed
+              ? t("Preparing session checkpoint. Your draft is kept.")
+              : !valid
+                ? t("Enter a valid skill name first.")
+                : undefined
+          }
+        >
+          {t("Create")}
         </Button>
       </div>
     </form>

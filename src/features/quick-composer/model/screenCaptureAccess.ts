@@ -10,9 +10,10 @@ const SCREEN_RECORDING_DENIED = "screen-recording-permission-required";
 
 /** A failure shown in the composer: its copy, and the recovery UI the failure calls for. */
 export type QuickNotice = {
-  message: string;
-  /** What could not be done (translated). With it, `message` is the reason; a long reason waits behind Details. */
-  title?: string;
+  /** The visible sentence (translated): what could not be done, or a warning written for users. */
+  title: string;
+  /** Raw reason behind the failure; it only appears behind Details. */
+  message?: string;
   recovery?: "screen-recording";
 };
 
@@ -35,16 +36,16 @@ function attachmentFailureMessage(failure: AttachmentFailure): string {
  */
 export function captureNotice(reason: unknown): QuickNotice {
   if (reason instanceof AttachmentFailureError) {
-    return { message: attachmentFailureMessage(reason.failure) };
+    return { title: attachmentFailureMessage(reason.failure) };
   }
   const code = errorText(reason);
   if (code === SCREEN_RECORDING_DENIED) {
     return {
-      message: t(
+      title: t(
         "Screenshots need Screen Recording access. Review access to set it up, then try again.",
       ),
       recovery: "screen-recording",
     };
   }
-  return { message: code };
+  return { title: t("Could not read attachments."), message: code };
 }

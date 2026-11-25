@@ -596,26 +596,22 @@ function PaneTreeComponent({
           "move",
           ev,
           over.id === fromId
-            ? t(
-                over.edge === "left"
-                  ? "Split left with a new session"
-                  : over.edge === "right"
-                    ? "Split right with a new session"
-                    : over.edge === "top"
-                      ? "Split above with a new session"
-                      : "Split below with a new session",
-              )
+            ? over.edge === "left"
+              ? t("Split left with a new session")
+              : over.edge === "right"
+                ? t("Split right with a new session")
+                : over.edge === "top"
+                  ? t("Split above with a new session")
+                  : t("Split below with a new session")
             : over.edge === "center"
               ? t("Add as pane tab")
-              : t(
-                  over.edge === "left"
-                    ? "Place left"
-                    : over.edge === "right"
-                      ? "Place right"
-                      : over.edge === "top"
-                        ? "Place above"
-                        : "Place below",
-                ),
+              : over.edge === "left"
+                ? t("Place left")
+                : over.edge === "right"
+                  ? t("Place right")
+                  : over.edge === "top"
+                    ? t("Place above")
+                    : t("Place below"),
         );
       };
 
@@ -710,7 +706,7 @@ function PaneTreeComponent({
           const maximizeButton = canMaximize ? (
             <Button
               iconOnly
-              label={t(maximum ? "Restore panel layout" : "Maximize panel")}
+              label={maximum ? t("Restore panel layout") : t("Maximize panel")}
               variant="ghost"
               motion="none"
               type="button"

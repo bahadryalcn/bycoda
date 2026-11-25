@@ -49,8 +49,12 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
       fitViewport
     >
       {error ? (
-        <InlineError inset="row" retry={{ onRetry: () => setRetry((value) => value + 1) }}>
-          {error}
+        <InlineError
+          inset="row"
+          details={error}
+          retry={{ onRetry: () => setRetry((value) => value + 1) }}
+        >
+          {t("Could not read Claude Code conversations.")}
         </InlineError>
       ) : sessions === null ? (
         <LoadingText inset="panel">{t("Reading…")}</LoadingText>
@@ -68,7 +72,7 @@ export function ClaudeSessionPicker({ cwd, providerAccountId, onPick, onClose }:
                 layout="stacked"
                 variant="item"
                 type="button"
-                className="w-full flex-col text-left"
+                className="w-full flex-col text-start"
                 onClick={() => onPick(session)}
               >
                 <ClampText as="span" lines={2} expandable={false} size="body">

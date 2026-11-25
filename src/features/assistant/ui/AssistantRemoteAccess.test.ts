@@ -85,7 +85,7 @@ it("does not turn a failed paired Host read into an empty list", async () => {
         }),
       ),
     );
-    expect(container.textContent).toContain("Could not load paired Hosts");
+    expect(container.textContent).toContain("Could not load machines.");
     expect(container.textContent).not.toContain("No other paired Host is available.");
   } finally {
     await act(async () => root.unmount());

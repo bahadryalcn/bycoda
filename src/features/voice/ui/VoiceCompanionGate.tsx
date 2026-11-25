@@ -35,7 +35,7 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
           <Button
             iconOnly
             variant={slot ? "ghost" : undefined}
-            label={t(error ? "Retry" : "Set up voice")}
+            label={error ? t("Retry") : t("Set up voice")}
             tooltip={error || undefined}
             loading={loading}
             onClick={() => (snapshot ? setSetup(true) : void refresh())}

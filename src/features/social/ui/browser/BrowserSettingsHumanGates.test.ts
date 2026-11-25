@@ -7,6 +7,11 @@ import type { BrowserSettings as BrowserSettingsValue } from "../../model/social
 import type { SocialClient } from "../../model/socialClient";
 import { BrowserSettings } from "../accounts/BrowserSettings";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 /**
  * Consent gates of browser-driven work, seen from the account's Browser card: a waiting screen
  * is shown as "Waiting for you", the live view never acts for the owner, and desktop control
@@ -184,14 +189,14 @@ it("blocks saving allowed desktop control until the owner names the computer, th
   });
   // Nothing left to save is obvious from the untouched form: no sentence, the button is just off.
   expect(element.textContent).not.toContain("No changes to save.");
-  expect(button("Save browser settings").disabled).toBe(true);
+  expect(isBlocked(button("Save browser settings"))).toBe(true);
 });
 
 it("blocks every change and explains why when this computer is not connected", async () => {
   const { client, set } = clientWith();
   await mount(client, { disabled: true });
-  expect(desktopSwitch().disabled).toBe(true);
-  expect(button("Open live view").disabled).toBe(true);
+  expect(isBlocked(desktopSwitch())).toBe(true);
+  expect(isBlocked(button("Open live view"))).toBe(true);
   expect(button("Save browser settings").getAttribute("aria-disabled")).toBe("true");
   expect(await tooltipText(button("Save browser settings"))).toContain(
     "Connect to this computer to change this account.",

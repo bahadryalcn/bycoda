@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SettingsFeedback } from "../../../shared/ui/settings";
@@ -12,6 +13,7 @@ import {
   type LocalDictationModel,
   type LocalModelJob,
 } from "../model/localDictationModels";
+import { knownLocalModelMessage } from "../model/voiceEngineMessages";
 import { voiceRuntimeSettings, type VoiceSettings } from "../model/voiceSettings";
 
 const STATUS_POLL_MS = 1000;
@@ -28,7 +30,9 @@ export function LocalDictationModels({
 }) {
   const [models, setModels] = useState<LocalDictationModel[]>([]);
   const [job, setJob] = useState<LocalModelJob>({ state: "idle" });
-  const [error, setError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
+  /** Raw host text behind a failed model action, shown only in Details. */
+  const [errorDetail, setErrorDetail] = useState("");
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<{
@@ -52,7 +56,7 @@ export function LocalDictationModels({
           localDictationModels.status(),
         ]);
         if (!active) return;
-        if (failures > 0) setError("");
+        if (failures > 0) setActionNotice("");
         failures = 0;
         setModels(next);
         setJob(state);
@@ -68,7 +72,7 @@ export function LocalDictationModels({
       } catch {
         if (!active) return;
         setLoading(false);
-        setError(t("Could not load local models."));
+        setActionNotice(t("Could not load local models."));
         // Bounded retries with backoff; the last known job stays visible. "Try again" re-arms polling after the limit.
         if (working && failures < MAX_STATUS_RETRIES) {
           failures += 1;
@@ -89,7 +93,8 @@ export function LocalDictationModels({
     if (starting.current) return;
     starting.current = true;
     setPending({ action, id: model.id });
-    setError("");
+    setActionNotice("");
+    setErrorDetail("");
     setCancelState(null);
     try {
       const state = await localDictationModels.start(
@@ -98,10 +103,11 @@ export function LocalDictationModels({
         voiceRuntimeSettings({ ...settings, natural: false }),
       );
       setJob(state);
-      setError("");
+      setActionNotice("");
       setRevision((value) => value + 1);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Model action failed."));
+      setActionNotice(t("Model action failed."));
+      setErrorDetail(cause instanceof Error ? cause.message : "");
     } finally {
       starting.current = false;
       setPending(null);
@@ -131,7 +137,7 @@ export function LocalDictationModels({
   }
   async function cancel() {
     setCancelState("requesting");
-    setError("");
+    setActionNotice("");
     try {
       const next = await localDictationModels.cancel();
       setJob(next);
@@ -139,9 +145,12 @@ export function LocalDictationModels({
       setRevision((value) => value + 1);
     } catch {
       setCancelState(null);
-      setError(t("Could not request cancellation. Try again."));
+      setActionNotice(t("Could not request cancellation. Try again."));
     }
   }
+  const hostText = errorDetail || job.detail || "";
+  const knownText = knownLocalModelMessage(hostText);
+  const headline = knownText || actionNotice || t("Model action failed.");
   return (
     <>
       {dialog}
@@ -149,9 +158,16 @@ export function LocalDictationModels({
         id="dictation-local-models"
         label={t("Local transcription models")}
         feedback={
-          error || job.state === "error" ? (
-            <SettingsFeedback state="error">
-              {t(error || job.detail || "Model action failed.")}
+          actionNotice || job.state === "error" ? (
+            <SettingsFeedback
+              state="error"
+              extra={
+                hostText && !knownText ? (
+                  <ErrorDetails title={headline} detail={hostText} />
+                ) : undefined
+              }
+            >
+              {headline}
             </SettingsFeedback>
           ) : job.state === "ready" && job.action === "test" ? (
             <SettingsFeedback state="success">
@@ -169,12 +185,12 @@ export function LocalDictationModels({
             {t("Use automatic selection")}
           </Button>
         ) : null}
-        {error ? (
+        {actionNotice ? (
           <Button
             variant="ghost"
             onClick={() => {
               setLoading(true);
-              setError("");
+              setActionNotice("");
               setRevision((value) => value + 1);
             }}
           >
@@ -193,6 +209,7 @@ export function LocalDictationModels({
           <Button
             variant="ghost"
             disabled={cancelState !== null}
+            disabledReason={t("Cancellation was already requested.")}
             loading={cancelState === "requesting"}
             loadingLabel={t("Requesting cancellation…")}
             onClick={() => void cancel()}
@@ -202,7 +219,7 @@ export function LocalDictationModels({
         ) : null}
       </Row>
       {loading ? <LoadingText>{t("Loading models…")}</LoadingText> : null}
-      {!loading && !error && !models.length ? (
+      {!loading && !actionNotice && !models.length ? (
         <EmptyState size="inline" description={t("No local transcription models found.")} />
       ) : null}
       {models.map((model) => (

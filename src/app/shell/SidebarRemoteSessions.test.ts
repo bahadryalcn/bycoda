@@ -188,7 +188,7 @@ it("refreshes within the cache TTL, retains rows on failure and retries to a ver
   await act(async () => refreshButton.click());
   expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Current conversation");
-  expect(refreshButton.disabled).toBe(true);
+  expect(refreshButton.getAttribute("aria-disabled")).toBe("true");
   await act(async () => refuse(new Error("permission denied reading sessions")));
   expect(document.body.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Showing last loaded data");

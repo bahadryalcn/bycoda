@@ -106,6 +106,13 @@ function LiveStreamCredentials({
               variant="secondary"
               type="submit"
               disabled={feedback.busy || streamLocked || !status.obs.configured}
+              disabledReason={
+                !status.obs.configured
+                  ? t("Set up OBS in step 2 first.")
+                  : streamLocked
+                    ? t("Stop the current stream before changing its credentials.")
+                    : t("Wait for the current live stream action to finish.")
+              }
               loading={streamPending}
               success={feedback.succeeded("obs-credentials")}
               successLabel={t("Saved")}

@@ -12,17 +12,6 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Text } from "../../../shared/ui/Text";
 import { LiveSection } from "./LiveSection";
 
-const eventLabel = {
-  comment: "Comment",
-  gift: "Gift",
-  like: "Like",
-  join: "Viewer joined",
-  follow: "Follow",
-  share: "Share",
-  viewers: "Viewers",
-  "stream-end": "Live stream ended",
-} as const;
-
 export function LiveStreamActivity({
   status,
   report,
@@ -32,6 +21,16 @@ export function LiveStreamActivity({
 }) {
   const t = useT();
   const { formatDate, formatNumber } = useFormat();
+  const eventLabel = {
+    comment: t("Comment"),
+    gift: t("Gift"),
+    like: t("Like"),
+    join: t("Viewer joined"),
+    follow: t("Follow"),
+    share: t("Share"),
+    viewers: t("Viewers"),
+    "stream-end": t("Live stream ended"),
+  };
   const latestEvents = status.events.slice(-12).reverse();
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -44,8 +43,8 @@ export function LiveStreamActivity({
               <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2" key={event.id}>
                 <Text size="caption" weight="medium">
                   {event.name
-                    ? t("{p0} · {p1}", { p0: event.name, p1: t(eventLabel[event.kind]) })
-                    : t(eventLabel[event.kind])}
+                    ? t("{p0} · {p1}", { p0: event.name, p1: eventLabel[event.kind] })
+                    : eventLabel[event.kind]}
                 </Text>
                 <Text size="caption" tone="secondary">
                   {formatDate(event.at, { timeStyle: "short" })}

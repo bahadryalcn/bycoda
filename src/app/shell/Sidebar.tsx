@@ -213,6 +213,7 @@ import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessio
 import { orchestrationTaskLabelCode } from "../../features/orchestration/model/orchestrationSummary";
 import { orchestrationTaskLabelTextWith } from "../../features/orchestration/ui/orchestrationTaskLabelText";
 import { orderedSessionActionIds } from "../../features/sessions/model/sessionSelection";
+import { paneEdgeLabel } from "./paneEdgeLabel";
 import { paneDropFromPoint, setExternalPaneDrop } from "../../features/workspace/model/paneDrop";
 import type { PaneEdge } from "../../features/workspace/model/layout";
 import {
@@ -380,6 +381,7 @@ import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { detailTooltipFrame, Tooltip, TOOLTIP_DELAY_MS } from "../../shared/ui/Tooltip";
 import { Spinner } from "../../shared/ui/Spinner";
+import { LoadingText } from "../../shared/ui/LoadingText";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
 import { IconButton } from "./TitleBar";
@@ -444,13 +446,6 @@ const MIN_WIDTH = SESSION_SIDEBAR_WIDTH_MIN;
 const MAX_WIDTH = SESSION_SIDEBAR_WIDTH_MAX;
 const DEFAULT_WIDTH = SESSION_SIDEBAR_WIDTH_DEFAULT;
 const REMINDERS_COLOR = themePalette.hexf59e0b;
-
-const TAB_LABELS: Record<SidebarTabId, string> = {
-  sessions: "Sessions",
-  inbox: "Inbox",
-  files: "Explorer",
-  changes: "Changes",
-};
 
 const COMPACT_TAB_ICONS: Record<SidebarTabId, typeof PanelLeft> = {
   sessions: Chatting,
@@ -759,6 +754,12 @@ function SidebarComponent({
 }: Props) {
   "use memo";
   const t = useT();
+  const tabLabels: Record<SidebarTabId, string> = {
+    sessions: t("Sessions"),
+    inbox: t("Inbox"),
+    files: t("Explorer"),
+    changes: t("Changes"),
+  };
   const format = useFormat();
   const remoteProject = isRemoteProjectPath(cwd);
   // One repository on several machines lists every copy's sessions in this project's list.
@@ -1017,9 +1018,15 @@ function SidebarComponent({
         {/* The count alone is not announced with its meaning; the live region carries the localized total. */}
         <LiveText
           className="sr-only"
-          text={t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
-            p0: workingSessionCount,
-          })}
+          text={
+            workingSessionCount === 1
+              ? t("{p0} working session", {
+                  p0: workingSessionCount,
+                })
+              : t("{p0} working sessions", {
+                  p0: workingSessionCount,
+                })
+          }
         />
       </>
     ) : null;
@@ -1376,7 +1383,13 @@ function SidebarComponent({
       try {
         remoteTarget = globalRemoteTarget(session);
       } catch (error) {
-        toast.show({ tone: "warning", message: errorText(error) });
+        toast.show({
+          tone: "warning",
+          message: t("Could not complete this action."),
+          extra: (
+            <ErrorDetails title={t("Could not complete this action.")} detail={errorText(error)} />
+          ),
+        });
         return;
       }
       const { target, listed, available } = remoteTarget;
@@ -1815,7 +1828,7 @@ function SidebarComponent({
     saveSidebarTabOrder(next);
   };
   const sortable = useAnimatedReorder(visibleTabs, onTabsReorder, "x", undefined, {
-    label: (itemId) => t(TAB_LABELS[itemId]),
+    label: (itemId) => tabLabels[itemId],
   });
   const [viewTabMenu, setViewTabMenu] = useState<{
     x: number;
@@ -2226,13 +2239,11 @@ function SidebarComponent({
       ? undefined
       : {
           label: remoteMenuSession
-            ? t(
-                remoteMenuView?.state === "settling"
-                  ? "Cancel settle"
-                  : remoteMenuUndo
-                    ? "Un-settle"
-                    : "Settle",
-              )
+            ? remoteMenuView?.state === "settling"
+              ? t("Cancel settle")
+              : remoteMenuUndo
+                ? t("Un-settle")
+                : t("Settle")
             : globalSettle.label,
           run: () => runGlobalSessionAction(globalMenuSession, "settle"),
         }
@@ -3981,9 +3992,13 @@ function SidebarComponent({
   const hasChangeStats = changeAdditions > 0 || changeDeletions > 0;
   const changedFilesText =
     changeFileCount > 0
-      ? t(changeFileCount === 1 ? "{p0} changed file" : "{p0} changed files", {
-          p0: changeFileCount,
-        })
+      ? changeFileCount === 1
+        ? t("{p0} changed file", {
+            p0: changeFileCount,
+          })
+        : t("{p0} changed files", {
+            p0: changeFileCount,
+          })
       : "";
   const changeChurnText = hasChangeStats
     ? [
@@ -3993,16 +4008,17 @@ function SidebarComponent({
         .filter(Boolean)
         .join(", ")
     : "";
-  const changesLabel = [TAB_LABELS.changes, changeScopeLabel, changedFilesText, changeChurnText]
+  const changesLabel = [tabLabels.changes, changeScopeLabel, changedFilesText, changeChurnText]
     .filter(Boolean)
     .join(", ");
   // The Sessions badge counts working sessions, not all sessions.
   const sessionsLabel = workingSessionCount
-    ? `${TAB_LABELS.sessions}, ${t(
-        workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
-        { p0: workingSessionCount },
-      )}`
-    : TAB_LABELS.sessions;
+    ? `${tabLabels.sessions}, ${
+        workingSessionCount === 1
+          ? t("{p0} working session", { p0: workingSessionCount })
+          : t("{p0} working sessions", { p0: workingSessionCount })
+      }`
+    : tabLabels.sessions;
 
   const workspaceTabItems = visibleTabs.map((itemId) => {
     const isChangesTab = itemId === "changes";
@@ -4011,7 +4027,7 @@ function SidebarComponent({
       ? changesLabel
       : itemId === "sessions"
         ? sessionsLabel
-        : TAB_LABELS[itemId];
+        : tabLabels[itemId];
     const tabDetails = isChangesTab
       ? changesTooltipDetails({
           translate: t,
@@ -4024,9 +4040,13 @@ function SidebarComponent({
         })
       : itemId === "sessions" && workingSessionCount > 0
         ? [
-            t(workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions", {
-              p0: workingSessionCount,
-            }),
+            workingSessionCount === 1
+              ? t("{p0} working session", {
+                  p0: workingSessionCount,
+                })
+              : t("{p0} working sessions", {
+                  p0: workingSessionCount,
+                }),
           ]
         : [];
     return (
@@ -4059,7 +4079,7 @@ function SidebarComponent({
           }
           data-workspace-tab-churn={isChangesTab && hasChangeStats ? "" : undefined}
           aria-label={label}
-          tooltip={TAB_LABELS[itemId]}
+          tooltip={tabLabels[itemId]}
           tooltipWhen="overflow"
           tooltipDetails={tabDetails}
           tooltipWide
@@ -4083,7 +4103,7 @@ function SidebarComponent({
               leading="snug"
               className="workspace-tab-label block whitespace-nowrap"
             >
-              {TAB_LABELS[itemId]}
+              {tabLabels[itemId]}
             </Text>
           </span>
           {/* Outside the label so the churn outlives it: the icon already names the tab. */}
@@ -4433,6 +4453,11 @@ function SidebarComponent({
                 selectionNavigationIds.length === 0 ||
                 selectedSessionIds.size === selectionNavigationIds.length
               }
+              disabledReason={
+                selectionNavigationIds.length === 0
+                  ? t("No sessions to select.")
+                  : t("Everything shown is already selected.")
+              }
               onClick={selectAllListedSessions}
               className="disabled:pointer-events-none"
             >
@@ -4468,6 +4493,7 @@ function SidebarComponent({
                   <BulkBarAction
                     label={allSelectedPinned ? t("Unpin") : t("Pin")}
                     disabled={deleting}
+                    disabledReason={deleting ? t("Deleting…") : undefined}
                     onClick={() => {
                       if (lastSessionsOpen) pinGlobalSessions(selectedSessions, !allSelectedPinned);
                       else pinSessions(selectedOrderedIds, !allSelectedPinned);
@@ -4480,6 +4506,13 @@ function SidebarComponent({
                   <BulkBarAction
                     label={allSelectedArchived ? t("Unarchive") : t("Archive")}
                     disabled={deleting || selectedCrewManaged}
+                    disabledReason={
+                      deleting
+                        ? t("Deleting…")
+                        : selectedCrewManaged
+                          ? t("Managed from Crews")
+                          : undefined
+                    }
                     onClick={() => {
                       if (lastSessionsOpen)
                         archiveGlobalSessions(selectedSessions, !allSelectedArchived);
@@ -4493,6 +4526,13 @@ function SidebarComponent({
                   <BulkBarAction
                     label={deleting ? t("Deleting…") : t("Delete")}
                     disabled={deleting || selectedCrewManaged}
+                    disabledReason={
+                      deleting
+                        ? t("Deleting…")
+                        : selectedCrewManaged
+                          ? t("Managed from Crews")
+                          : undefined
+                    }
                     danger
                     onClick={() => {
                       if (lastSessionsOpen) deleteGlobalSelection(selectedOrderedIds);
@@ -4711,20 +4751,13 @@ function SidebarComponent({
                 ) : remoteProject &&
                   projectSessions.length === 0 &&
                   !["ready", "empty"].includes(remote.dataState.phase) ? null : pendingFirstLoad ? (
-                  <Text
-                    role="status"
-                    as="p"
-                    size="caption"
-                    tone="secondary"
-                    className="flex items-center gap-2 px-3 py-2"
-                  >
-                    <Spinner className="shrink-0" />
+                  <LoadingText inset="row" delay={false}>
                     {remoteLoading
                       ? remote.machine
                         ? t("Loading sessions from {p0}…", { p0: remote.machine.name })
                         : t("Connecting to this project’s machine…")
                       : t("Loading sessions…")}
-                  </Text>
+                  </LoadingText>
                 ) : remoteProject && remote.failed && projectSessions.length === 0 ? (
                   <Alert tone="danger">
                     <p>
@@ -4930,13 +4963,11 @@ function SidebarComponent({
                     kind: "item",
                     id: "settle",
                     label: remoteMenuSession
-                      ? t(
-                          remoteMenuView?.state === "settling"
-                            ? "Cancel settle"
-                            : remoteMenuUndo
-                              ? "Un-settle"
-                              : "Settle",
-                        )
+                      ? remoteMenuView?.state === "settling"
+                        ? t("Cancel settle")
+                        : remoteMenuUndo
+                          ? t("Un-settle")
+                          : t("Settle")
                       : globalSettle.label,
                   },
                   {
@@ -4965,7 +4996,7 @@ function SidebarComponent({
           x={viewTabMenu.x}
           y={viewTabMenu.y}
           items={viewTabMenuItems}
-          ariaLabel={`${t(TAB_LABELS[viewTabMenu.tabId])} tab actions`}
+          ariaLabel={`${tabLabels[viewTabMenu.tabId]} tab actions`}
           onPick={onViewTabMenuPick}
           onClose={() => setViewTabMenu(null)}
         />
@@ -6129,12 +6160,14 @@ function BulkBarAction({
   label,
   danger = false,
   disabled = false,
+  disabledReason,
   onClick,
   children,
 }: {
   label: string;
   danger?: boolean;
   disabled?: boolean;
+  disabledReason?: string;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -6148,6 +6181,7 @@ function BulkBarAction({
       motion="none"
       type="button"
       disabled={disabled}
+      disabledReason={disabledReason}
       onClick={onClick}
       className="grid place-items-center disabled:pointer-events-none"
     >
@@ -6556,7 +6590,9 @@ const SessionCard = memo(function SessionCard({
       needsInputLabel={
         orchestration
           ? t("Needs input")
-          : t(inputKind === "question" ? "Question" : "Need approval")
+          : inputKind === "question"
+            ? t("Question")
+            : t("Need approval")
       }
       time={<RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />}
     />
@@ -6565,11 +6601,11 @@ const SessionCard = memo(function SessionCard({
   const linkedWorkItem = session.linkedWorkItem;
   const linkedUpdateDot = linkedUpdate ? (
     <Tooltip
-      label={t(
+      label={
         linkedWorkItem?.kind === "pr"
-          ? "Linked PR updated since this session"
-          : "Linked issue updated since this session",
-      )}
+          ? t("Linked PR updated since this session")
+          : t("Linked issue updated since this session")
+      }
     >
       <StatusDot label={t("Linked work item updated")} />
     </Tooltip>
@@ -6581,15 +6617,26 @@ const SessionCard = memo(function SessionCard({
       type="button"
       data-no-drag
       data-tauri-drag-region="false"
-      tooltip={t(
+      tooltip={
         linkedWorkItem.kind === "pr"
-          ? "Open PR #{p1} beside this session ({p2}-click for GitHub)"
-          : "Open issue #{p1} beside this session ({p2}-click for GitHub)",
-        { p1: linkedWorkItem.number, p2: MOD },
-      )}
-      aria-label={t(linkedWorkItem.kind === "pr" ? "Open PR #{p1}" : "Open issue #{p1}", {
-        p1: linkedWorkItem.number,
-      })}
+          ? t("Open PR #{p1} beside this session ({p2}-click for GitHub)", {
+              p1: linkedWorkItem.number,
+              p2: MOD,
+            })
+          : t("Open issue #{p1} beside this session ({p2}-click for GitHub)", {
+              p1: linkedWorkItem.number,
+              p2: MOD,
+            })
+      }
+      aria-label={
+        linkedWorkItem.kind === "pr"
+          ? t("Open PR #{p1}", {
+              p1: linkedWorkItem.number,
+            })
+          : t("Open issue #{p1}", {
+              p1: linkedWorkItem.number,
+            })
+      }
       onMouseEnter={() => {
         if (onOpenWorkItem) prefetchGithubWorkItem(session.cwd, linkedWorkItem);
       }}
@@ -6748,7 +6795,7 @@ const SessionCard = memo(function SessionCard({
       } else {
         const over = paneDropFromPoint(lastX, lastY);
         if (!over || over.id === session.id) preview.move(point, { action: "blocked", bounds });
-        else preview.move(point, { label: t("Place {p0}", { p0: t(over.edge) }) });
+        else preview.move(point, { label: t("Place {p0}", { p0: paneEdgeLabel(over.edge, t) }) });
       }
     };
 
@@ -7058,7 +7105,7 @@ const SessionCard = memo(function SessionCard({
           </span>
         ) : null}
         {remoteSession || copyMachine ? (
-          <Tooltip label={remoteLabel} asChild>
+          <Tooltip details={[remoteLabel]} asChild>
             <Text role="img" aria-label={remoteLabel} size="inherit" tone="secondary">
               <MachineIcon className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
             </Text>
@@ -7104,7 +7151,7 @@ const SessionCard = memo(function SessionCard({
         tone="secondary"
         className="session-row-branch flex min-w-0 items-center gap-1"
       >
-        <span className="sr-only">{t(worktree ? "Worktree" : "Branch")}</span>
+        <span className="sr-only">{worktree ? t("Worktree") : t("Branch")}</span>
         <Text as="span" truncate size="inherit" tone="inherit">
           <SessionSearchText text={branchText} />
         </Text>
@@ -7117,7 +7164,7 @@ const SessionCard = memo(function SessionCard({
       <InlineAction
         className={className}
         reveal={markPinned ? "always" : "interaction"}
-        label={t(session.pinned ? "Unpin" : "Pin")}
+        label={session.pinned ? t("Unpin") : t("Pin")}
         aria-pressed={!!session.pinned}
         motion="none"
         data-no-drag
@@ -7193,7 +7240,7 @@ const SessionCard = memo(function SessionCard({
     <span className="relative flex shrink-0 items-center gap-0">
       {workItemBadge}
       {session.automationId ? (
-        <Tooltip label={t("Started by an automation")}>
+        <Tooltip details={[t("Started by an automation")]}>
           <Text
             data-automation-icon
             role="img"
@@ -7210,24 +7257,34 @@ const SessionCard = memo(function SessionCard({
         <div className="relative shrink-0">
           <InlineAction
             reveal="always"
-            label={t(
+            label={
               orchestration.tasks.length === 1
-                ? "Orchestrator, {p0} subagent, {p2} done"
-                : "Orchestrator, {p0} subagents, {p2} done",
-              { p0: orchestration.tasks.length, p2: orchestrationDone },
-            )}
+                ? t("Orchestrator, {p0} subagent, {p2} done", {
+                    p0: orchestration.tasks.length,
+                    p2: orchestrationDone,
+                  })
+                : t("Orchestrator, {p0} subagents, {p2} done", {
+                    p0: orchestration.tasks.length,
+                    p2: orchestrationDone,
+                  })
+            }
             motion="none"
             type="button"
             data-no-drag
             data-tauri-drag-region="false"
             data-orchestration-icon
             title=""
-            aria-label={t(
+            aria-label={
               orchestration.tasks.length === 1
-                ? "Orchestrator, {p0} subagent, {p2} done"
-                : "Orchestrator, {p0} subagents, {p2} done",
-              { p0: orchestration.tasks.length, p2: orchestrationDone },
-            )}
+                ? t("Orchestrator, {p0} subagent, {p2} done", {
+                    p0: orchestration.tasks.length,
+                    p2: orchestrationDone,
+                  })
+                : t("Orchestrator, {p0} subagents, {p2} done", {
+                    p0: orchestration.tasks.length,
+                    p2: orchestrationDone,
+                  })
+            }
             {...orchestrationHover.trigger}
             onClick={(event) => {
               orchestrationHover.close();
@@ -7520,7 +7577,7 @@ const SessionCard = memo(function SessionCard({
             </DescriptionItem>
             {branchText ? (
               <DescriptionItem
-                term={t(worktree ? "Worktree" : "Branch")}
+                term={worktree ? t("Worktree") : t("Branch")}
                 icon={<BranchIcon className="icon-xs shrink-0" strokeWidth={1.75} />}
               >
                 <Text as="span" truncate size="inherit" tone="inherit" className="min-w-0">

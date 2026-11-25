@@ -171,15 +171,15 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
   }));
   const prefix =
     trigger.scheduleKind === "hourly"
-      ? "Every hour at"
+      ? t("Every hour at")
       : trigger.scheduleKind === "daily"
-        ? "Every day at"
+        ? t("Every day at")
         : trigger.scheduleKind === "weekdays"
-          ? "Every weekday at"
-          : "Every week on";
+          ? t("Every weekday at")
+          : t("Every week on");
   return (
     <>
-      <span>{t(prefix)}</span>
+      <span>{prefix}</span>
       {trigger.scheduleKind === "weekly" ? (
         <>
           <TriggerPill
@@ -214,7 +214,7 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
           ? gmtOffsetLabel()
           : (executionTimeZone ?? t("Execution host timezone unavailable"))}
       </Text>
-      <Text size="inherit" tone="muted" className="ml-1">
+      <Text size="inherit" tone="muted" className="ms-1">
         {executionTimeZone === undefined
           ? nextRunPreview(nextAt)
           : executionTimeZone && nextAt

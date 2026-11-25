@@ -193,6 +193,7 @@ export function ScanSettings({
             size="sm"
             loading={saving || scanning}
             disabled={!loaded || saving || scanning}
+            disabledReason={loaded ? undefined : t("Wait for the settings to load.")}
             onClick={save}
           >
             {dirty ? t("Save and scan") : t("Scan with these settings")}

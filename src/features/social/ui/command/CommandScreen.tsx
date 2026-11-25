@@ -65,7 +65,11 @@ export function CommandScreen({
       {modelRequired ? (
         <AiSetupCard busy={state.busy === "model"} onSave={state.saveModel} />
       ) : null}
-      {state.error && !modelRequired ? <InlineError>{state.error}</InlineError> : null}
+      {state.error && !modelRequired ? (
+        <InlineError details={state.error}>
+          {t("The request could not be completed. Try again.")}
+        </InlineError>
+      ) : null}
       {/* Four empty tiles say nothing, so the row appears once there is something to count. */}
       {state.summary &&
       state.summary.sentToday +

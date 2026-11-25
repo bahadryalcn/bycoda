@@ -205,7 +205,7 @@ export function WorktreePicker({
                   : undefined
               }
             >
-              {t(error ? "Couldn’t select worktree" : "Couldn’t load worktrees")}
+              {error ? t("Couldn’t select worktree") : t("Couldn’t load worktrees")}
             </InlineError>
           )}
           <Text
@@ -234,6 +234,13 @@ export function WorktreePicker({
               motion="none"
               type="button"
               disabled={busy || worktreeRemoved}
+              disabledReason={
+                worktreeRemoved
+                  ? t("This worktree was removed.")
+                  : busy
+                    ? t("Wait for the current operation to finish")
+                    : undefined
+              }
               fullWidth
               align="start"
               startIcon={<GitBranch className="icon-sm" />}

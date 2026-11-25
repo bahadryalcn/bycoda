@@ -4,7 +4,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
-import { ErrorDetails, errorHeadline, fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { WandSparkles, X } from "../../../shared/ui/icons";
@@ -115,6 +115,13 @@ export function SwitchBranchDialog({
             motion="none"
             type="button"
             disabled={Boolean(busy) || generating}
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : generating
+                  ? t("Generating message…")
+                  : undefined
+            }
             onClick={onCancel}
           >
             {t("Cancel")}
@@ -142,6 +149,13 @@ export function SwitchBranchDialog({
             type="button"
             loading={busy === "stash"}
             disabled={Boolean(busy) || generating}
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : generating
+                  ? t("Generating message…")
+                  : undefined
+            }
             onClick={onStash}
           >
             {t("Stash & switch")}
@@ -200,6 +214,7 @@ export function SwitchBranchDialog({
                 generating ? t("Stop commit message generation") : t("Generate commit message")
               }
               disabled={Boolean(busy)}
+              disabledReason={busy ? t("Wait for the current operation to finish") : undefined}
               onClick={() => (generating ? cancelGenerate() : void generate())}
               className="self-end"
             >
@@ -213,17 +228,18 @@ export function SwitchBranchDialog({
         </div>
 
         {generateError ? (
-          <Alert tone="danger" title={t("Couldn’t generate a commit message")}>
-            {generateError}
-          </Alert>
+          <Alert
+            tone="danger"
+            title={t("Couldn’t generate a commit message")}
+            extra={<ErrorDetails detail={generateError} />}
+          />
         ) : null}
         {error ? (
           <Alert
             tone="danger"
-            extra={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
-          >
-            {fitsOneLine(error) ? error : errorHeadline(error)}
-          </Alert>
+            title={t("Couldn’t switch branch")}
+            extra={<ErrorDetails detail={error} />}
+          />
         ) : null}
       </div>
     </Modal>

@@ -345,7 +345,9 @@ export function MediaView({
           />
         ) : null}
         {openAction.error ? (
-          <InlineError className="basis-full">{openAction.error}</InlineError>
+          <InlineError className="basis-full" details={openAction.error}>
+            {t("Couldn’t open the file in its default app")}
+          </InlineError>
         ) : null}
       </ViewerFooter>
     </div>

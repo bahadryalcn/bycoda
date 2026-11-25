@@ -69,6 +69,7 @@ function ConnectedDockApproval({
           motion="none"
           loading={decision.sessionAction.pending}
           disabled={decision.sessionAction.disabled}
+          disabledReason={decision.sessionAction.disabled ? reason : undefined}
           tooltip={decision.sessionAction.tooltip}
           onClick={decision.sessionAction.onClick}
         >

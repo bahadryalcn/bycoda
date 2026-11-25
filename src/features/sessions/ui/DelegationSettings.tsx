@@ -16,6 +16,7 @@ import {
   delegationShortLabel,
   type DelegationOption,
 } from "../model/crossDelegation";
+import { catalogText } from "../model/catalogText";
 import type { ModelSetting } from "../model/models";
 import type { HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
@@ -40,6 +41,7 @@ export function DelegationSubagentsControl({
   setting,
   values,
   disabled,
+  disabledReason,
   onChange,
   appearance = "ghost",
 }: {
@@ -47,6 +49,8 @@ export function DelegationSubagentsControl({
   setting: ModelSetting;
   values: Record<string, string>;
   disabled: boolean;
+  /** Translated reason the control is disabled. */
+  disabledReason?: string;
   onChange: (value: string) => void;
   /** `field` matches the bordered selects beside it on settings rows. */
   appearance?: "ghost" | "field";
@@ -60,7 +64,7 @@ export function DelegationSubagentsControl({
       {t("Automatic")}
     </Badge>
   ) : (
-    t(crossDelegationSummary(setting, values))
+    catalogText(t, crossDelegationSummary(setting, values))
   );
   const firstPicked = setting.options.find(
     (option) => option.value && delegationOptionSelected(setting, values, option.value),
@@ -100,6 +104,7 @@ export function DelegationSubagentsControl({
           aria-haspopup="menu"
           expanded={open}
           disabled={disabled}
+          disabledReason={disabledReason}
           onClick={() => setOpen((next) => !next)}
           className="w-[52%] max-w-46 min-w-0 shrink-0"
         >

@@ -4,7 +4,7 @@ import { draftFromTemplate, type Automation } from "./automations";
 import type { InboxItem } from "../../inbox/model/githubTasks";
 import {
   AUTOMATION_TEMPLATE_CATEGORIES,
-  AUTOMATION_TEMPLATES,
+  automationTemplates,
   templatesForCategory,
 } from "./automationTemplates";
 
@@ -26,11 +26,11 @@ describe("automation templates", () => {
     for (const category of AUTOMATION_TEMPLATE_CATEGORIES) {
       expect(templatesForCategory(category.id).length).toBeGreaterThan(0);
     }
-    expect(AUTOMATION_TEMPLATES.every((template) => template.prompt.trim())).toBe(true);
+    expect(automationTemplates().every((template) => template.prompt.trim())).toBe(true);
   });
 
   it("only uses inbox events that actually fire", () => {
-    for (const template of AUTOMATION_TEMPLATES) {
+    for (const template of automationTemplates()) {
       if (
         template.trigger.kind === "time" ||
         template.trigger.kind === "tasks" ||
@@ -46,13 +46,13 @@ describe("automation templates", () => {
   });
 
   it("gives every template a unique id", () => {
-    const ids = AUTOMATION_TEMPLATES.map((template) => template.id);
+    const ids = automationTemplates().map((template) => template.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
 
 describe("auto-fix GitHub issues template", () => {
-  const template = AUTOMATION_TEMPLATES.find(
+  const template = automationTemplates().find(
     (candidate) => candidate.id === "autofix-github-issues",
   );
 

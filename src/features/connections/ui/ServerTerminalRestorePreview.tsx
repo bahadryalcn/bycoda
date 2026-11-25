@@ -34,10 +34,18 @@ export function ServerTerminalRestorePreview({
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedTabs = restore.tabs.filter((tab) => selected.has(tab.tabId));
+  const waitReason =
+    pending !== undefined
+      ? t("Wait for the current action to finish.")
+      : !inventoryReady
+        ? t("Wait for the server list to load.")
+        : undefined;
   if (!restore.tabs.length) return null;
   return (
     <Text as="div" tone="inherit" className="flex flex-col gap-2">
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not open the saved SSH tab.")}</InlineError>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Checkbox
           label={
@@ -48,6 +56,7 @@ export function ServerTerminalRestorePreview({
           checked={selectedTabs.length === restore.tabs.length}
           indeterminate={selectedTabs.length > 0 && selectedTabs.length < restore.tabs.length}
           disabled={pending !== undefined || !inventoryReady}
+          disabledReason={waitReason}
           onChange={(event) =>
             setSelected(new Set(event.target.checked ? restore.tabs.map((tab) => tab.tabId) : []))
           }
@@ -56,6 +65,7 @@ export function ServerTerminalRestorePreview({
           <Button
             variant="ghost"
             disabled={pending !== undefined || !inventoryReady}
+            disabledReason={waitReason}
             onClick={() => {
               // Only saved tab references go; servers and open terminals are untouched, so no confirmation.
               for (const tab of selectedTabs) onRemove(tab.tabId);
@@ -85,6 +95,7 @@ export function ServerTerminalRestorePreview({
                 aria-label={t("Select saved tab {p0}", { p0: index + 1 })}
                 checked={selected.has(tab.tabId)}
                 disabled={pending !== undefined || !inventoryReady}
+                disabledReason={waitReason}
                 onChange={(event) => {
                   const checked = event.target.checked;
                   setSelected((previous) => {
@@ -103,7 +114,7 @@ export function ServerTerminalRestorePreview({
                     : ""}
                 </Text>
                 <Text as="p" size="inherit" tone="muted">
-                  {target ?? t(inventoryReady ? "Unavailable" : "Loading…")}
+                  {target ?? (inventoryReady ? t("Unavailable") : t("Loading…"))}
                 </Text>
               </div>
               {server && target ? (
@@ -112,6 +123,7 @@ export function ServerTerminalRestorePreview({
                   variant="ghost"
                   label={t("Connect")}
                   disabled={!inventoryReady || pending !== undefined}
+                  disabledReason={waitReason}
                   loading={pending === tab.tabId}
                   onClick={async () => {
                     if (pending !== undefined) return;
@@ -134,6 +146,7 @@ export function ServerTerminalRestorePreview({
                 variant="ghost"
                 label={t("Remove")}
                 disabled={pending !== undefined || !inventoryReady}
+                disabledReason={waitReason}
                 onClick={() => onRemove(tab.tabId)}
               >
                 <X className="icon-sm" />

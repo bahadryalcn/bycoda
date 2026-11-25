@@ -14,9 +14,9 @@ import "./IntegrationsSettings.css";
 type Integration = {
   /** Tab value and the `SETTINGS_INDEX` reveal id of the card. */
   id: string;
-  name: string;
+  name: () => string;
   capability: "inbox" | "messages";
-  description: string;
+  description: () => string;
   icon: ReactNode;
   render: (active: boolean) => ReactNode;
 };
@@ -36,33 +36,34 @@ const ALL_INTEGRATIONS: readonly Integration[] = [
   })),
   {
     id: "email",
-    name: "Email",
+    name: () => t("Email"),
     capability: "messages",
-    description: "Read and reply to mail from Gmail, Yahoo, iCloud or any IMAP/SMTP account.",
+    description: () =>
+      t("Read and reply to mail from Gmail, Yahoo, iCloud or any IMAP/SMTP account."),
     icon: <MessagingProviderMark provider="email" className="icon-md shrink-0" />,
     render: () => <EmailAccountsSettings />,
   },
   {
     id: "slack",
-    name: "Slack",
+    name: () => t("Slack"),
     capability: "messages",
-    description: "Read your Slack channels and direct messages, and reply from bycoda.",
+    description: () => t("Read your Slack channels and direct messages, and reply from bycoda."),
     icon: <MessagingProviderMark provider="slack" className="icon-md shrink-0" />,
     render: () => <SlackSettings />,
   },
   {
     id: "discord",
-    name: "Discord",
+    name: () => t("Discord"),
     capability: "messages",
-    description: "Read the Discord channels you list and reply as your bot.",
+    description: () => t("Read the Discord channels you list and reply as your bot."),
     icon: <MessagingProviderMark provider="discord" className="icon-md shrink-0" />,
     render: () => <DiscordSettings />,
   },
   {
     id: "teams",
-    name: "Microsoft Teams",
+    name: () => t("Microsoft Teams"),
     capability: "messages",
-    description: "Read your Teams chats and reply with your Microsoft account.",
+    description: () => t("Read your Teams chats and reply with your Microsoft account."),
     icon: <MessagingProviderMark provider="teams" className="icon-md shrink-0" />,
     render: () => <TeamsSettings />,
   },
@@ -105,15 +106,15 @@ export function IntegrationsPage() {
           onChange={setActive}
           options={INTEGRATIONS.map((item) => ({
             value: item.id,
-            label: t(item.name),
+            label: item.name(),
             icon: item.icon,
-            keywords: t(item.description),
+            keywords: item.description(),
           }))}
         />
         {INTEGRATIONS.map((item) => (
           <div key={item.id} hidden={active !== item.id}>
             <div className="settings-topics">
-              <Group layout="full" id={item.id} title={t("Connection")} info={t(item.description)}>
+              <Group layout="full" id={item.id} title={t("Connection")} info={item.description()}>
                 {active === item.id || visited.has(item.id)
                   ? item.render(active === item.id)
                   : null}

@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "./blockedReason";
 import { useState } from "react";
 import type { SnapchatDeleteInput } from "../../../../integrations/social/snapchat-content";
 import type { SnapchatProfilePatch } from "../../../../integrations/social/snapchat-profile";
@@ -33,16 +34,16 @@ type Review = {
 function details(review: Review) {
   if (review.action === "delete")
     return [
-      ["Target", review.input.target],
-      ["ID", review.input.id],
+      [t("Target"), review.input.target],
+      [t("ID"), review.input.id],
     ] as const;
   const patch = review.input.patch ?? {};
   return [
-    ["Profile name", patch.name],
-    ["About", patch.bio],
-    ["Profile picture", patch.avatarUploadId],
-    ["Website", patch.website],
-    ["Category", patch.category],
+    [t("Profile name"), patch.name],
+    [t("About"), patch.bio],
+    [t("Profile picture"), patch.avatarUploadId],
+    [t("Website"), patch.website],
+    [t("Category"), patch.category],
   ] as const;
 }
 
@@ -74,7 +75,7 @@ export function SnapchatReviews({
   const [selected, setSelected] = useState<Review>();
   const confirmation = useConfirm();
   const {
-    error,
+    failureTitle,
     details: errorDetails,
     is,
     write,
@@ -104,7 +105,7 @@ export function SnapchatReviews({
     details(item).map(([label, value]) =>
       typeof value === "string" ? (
         <Text key={label} as="p" size="secondary" wrap="anywhere">
-          {t(label)} · {value || t("Empty")}
+          {label} · {value || t("Empty")}
         </Text>
       ) : null,
     );
@@ -144,19 +145,20 @@ export function SnapchatReviews({
             variant={reviews ? "secondary" : "primary"}
             size="sm"
             disabled={disabled || is("decision")}
+            disabledReason={accountBlockedReason(disabled)}
             loading={is("read")}
             onClick={() => void write("read", read).catch(() => undefined)}
           >
             {t("Refresh")}
           </Button>
-          {!reviews && !is("read") && !error ? (
+          {!reviews && !is("read") && !failureTitle ? (
             <Text as="span" size="caption" tone="muted">
               {t("Changes the assistant proposes for Snapchat wait here for your approval.")}
             </Text>
           ) : null}
         </div>
-        {error ? <InlineError details={errorDetails}>{error}</InlineError> : null}
-        {!error && !is("read") && !is("decision") && reviews?.length === 0 ? (
+        {failureTitle ? <InlineError details={errorDetails}>{failureTitle}</InlineError> : null}
+        {!failureTitle && !is("read") && !is("decision") && reviews?.length === 0 ? (
           <EmptyState size="inline" context="list" title={t("Nothing to review.")} />
         ) : null}
         {reviews?.length ? (
@@ -174,7 +176,7 @@ export function SnapchatReviews({
                 <DescriptionList size="sm">
                   {details(item).map(([label, value]) =>
                     typeof value === "string" ? (
-                      <DescriptionItem key={label} term={t(label)}>
+                      <DescriptionItem key={label} term={label}>
                         {value || t("Empty")}
                       </DescriptionItem>
                     ) : null,
@@ -191,6 +193,13 @@ export function SnapchatReviews({
                       size="sm"
                       variant="primary"
                       disabled={disabled || !canApprove || is("read") || is("decision")}
+                      disabledReason={
+                        disabled || !canApprove
+                          ? disabled
+                            ? accountBlockedReason(true)
+                            : t("Connect and resume this account before approving.")
+                          : accountBlockedReason(false)
+                      }
                       onClick={() => void confirm(item).catch(() => undefined)}
                     >
                       {t("Approve")}
@@ -200,6 +209,7 @@ export function SnapchatReviews({
                     size="sm"
                     variant="ghost"
                     disabled={disabled || is("read")}
+                    disabledReason={accountBlockedReason(disabled)}
                     loading={is("decision")}
                     onClick={() => void decide(item, false).catch(() => undefined)}
                   >

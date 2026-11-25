@@ -13,8 +13,8 @@ import type {
 } from "../../../shared/model/host-contracts/assistant";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import { assistantRequest } from "./assistantClient";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { unconfirmedError } from "./unconfirmedOutcome";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+import { t } from "../../../shared/i18n";
 
 export type ManualProject = { id?: string; path: string; name: string };
 export type ManualState = NonNullable<AssistantResponse["manual"]>;
@@ -52,11 +52,19 @@ export function manualEnrollmentVersion(
   return grants.find((grant) => grant.sessionId === sessionId)?.version ?? 0;
 }
 
-const reason = (cause: unknown) => {
+/** A failure as the translated sentence plus optional raw text for Details. */
+type ManualProblem = { message: string; details?: string };
+
+const reason = (cause: unknown): ManualProblem => {
   const message = errorText(cause);
   return message === "The assistant already has 100 active manual supervision grants."
-    ? "No more conversations can be enrolled. Revoke supervision before adding another."
-    : presentRemoteError(cause, { explicit: true });
+    ? {
+        message: t(
+          "No more conversations can be enrolled. Revoke supervision before adding another.",
+        ),
+        // No raw details: the Host's text carries the global enrollment count.
+      }
+    : describeRemoteError(cause);
 };
 
 export function useManualSupervision(
@@ -80,7 +88,7 @@ export function useManualSupervision(
   dataRef.current = data;
   const [pending, setPending] = useState("");
   const [stopping, setStopping] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ManualProblem | null>(null);
   const epoch = useRef(0),
     busy = useRef(false),
     offPending = useRef(false),
@@ -109,7 +117,7 @@ export function useManualSupervision(
   }
   function sourceRequest(input: AssistantRequest) {
     if (!sourceEnvironmentId || current.current.environmentId !== sourceEnvironmentId)
-      throw new Error("The assistant Host identity is unavailable. Refresh before retrying.");
+      throw new Error(t("The assistant Host identity is unavailable. Refresh before retrying."));
     return assistantRequest(input, sourceEnvironmentId);
   }
   useEffect(() => {
@@ -129,7 +137,7 @@ export function useManualSupervision(
     setStored({ environmentId: sourceEnvironmentId, data: null });
     setPending("");
     setStopping(false);
-    setError("");
+    setError(null);
   }, [sourceEnvironmentId]);
   useEffect(() => {
     if (!sourceEnvironmentId || !snapshot?.manualPolicy || offPending.current) return;
@@ -153,7 +161,7 @@ export function useManualSupervision(
     const generation = ++epoch.current;
     busy.current = true;
     setPending(key);
-    setError("");
+    setError(null);
     try {
       const response = await request();
       if (
@@ -163,7 +171,7 @@ export function useManualSupervision(
       )
         return;
       if (!response.manual)
-        throw unconfirmedError("Manual supervision", "Refresh before retrying.");
+        throw new Error(t("Manual supervision could not be confirmed. Refresh before retrying."));
       adopt(response.manual);
       return true;
     } catch (cause) {
@@ -245,7 +253,7 @@ export function useManualSupervision(
     offPending.current = true;
     setPending("");
     setStopping(true);
-    setError("");
+    setError(null);
     try {
       const result = await sourceRequest({
         op: "manual.policy",
@@ -260,7 +268,7 @@ export function useManualSupervision(
       )
         return;
       if (!result.manual || result.manual.policy.enabled)
-        throw new Error("Manual supervision could not be turned off. Refresh and retry.");
+        throw new Error(t("Manual supervision could not be turned off. Refresh and retry."));
       adopt(result.manual);
     } catch (cause) {
       if (mounted.current && generation === epoch.current) setError(reason(cause));
@@ -276,7 +284,7 @@ export function useManualSupervision(
     data,
     pending: sameSource ? pending : "",
     stopping: sameSource && stopping,
-    error: sameSource ? error : "",
+    problem: sameSource ? error : null,
     refresh,
     enroll,
     revoke,

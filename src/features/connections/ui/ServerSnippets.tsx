@@ -57,7 +57,7 @@ function ServerSnippetsForm({
       ? initialCommand
       : "",
   );
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState<"" | "saved" | "copied" | "inserted">("");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
@@ -75,7 +75,7 @@ function ServerSnippetsForm({
       try {
         setSnippets(loadSshSnippets(serverId));
       } catch {
-        setError(t("Couldn’t load saved commands."));
+        setProblem(t("Couldn’t load saved commands."));
       }
     };
     load();
@@ -112,9 +112,9 @@ function ServerSnippetsForm({
               <EmptyState
                 size="inline"
                 kind={snippets.length ? "filtered" : undefined}
-                description={t(
-                  snippets.length ? "No matching commands." : "No saved commands yet.",
-                )}
+                description={
+                  snippets.length ? t("No matching commands.") : t("No saved commands yet.")
+                }
                 onReset={snippets.length ? () => setSearch("") : undefined}
               />
             ) : null}
@@ -131,7 +131,7 @@ function ServerSnippetsForm({
                       setSelected(snippet);
                       setName(snippet.name);
                       setCommand(snippet.command);
-                      setError("");
+                      setProblem("");
                       setNotice("");
                     }}
                   >
@@ -149,7 +149,7 @@ function ServerSnippetsForm({
           onSubmit={(event) => {
             event.preventDefault();
             if (busy) return;
-            setError("");
+            setProblem("");
             setNotice("");
             try {
               const saved = saveSshSnippet({
@@ -165,10 +165,10 @@ function ServerSnippetsForm({
             } catch (reason) {
               if (reason instanceof DuplicateSshSnippetError) {
                 if (createOnly && onAlreadySaved) onAlreadySaved();
-                else setError(t("Command already saved."));
+                else setProblem(t("Command already saved."));
                 return;
               }
-              setError(
+              setProblem(
                 t(
                   "Couldn’t save this command. Reload a changed command and use one line without terminal controls.",
                 ),
@@ -211,7 +211,7 @@ function ServerSnippetsForm({
                   setName("");
                   setCommand("");
                   setNotice("");
-                  setError("");
+                  setProblem("");
                 }}
               >
                 {t("New command")}
@@ -247,13 +247,13 @@ function ServerSnippetsForm({
                 onClick={async () => {
                   if (!selected || busy) return;
                   setBusy(true);
-                  setError("");
+                  setProblem("");
                   setNotice("");
                   try {
                     await insertSshSnippet(selected, serverId, copyText);
                     setNotice("copied");
                   } catch {
-                    setError(t("Couldn’t copy this command. Review and save it first."));
+                    setProblem(t("Couldn’t copy this command. Review and save it first."));
                   } finally {
                     setBusy(false);
                   }
@@ -276,13 +276,13 @@ function ServerSnippetsForm({
                 onClick={async () => {
                   if (!selected || busy) return;
                   setBusy(true);
-                  setError("");
+                  setProblem("");
                   setNotice("");
                   try {
                     await insertSshSnippet(selected, serverId, onInsert);
                     setNotice("inserted");
                   } catch {
-                    setError(
+                    setProblem(
                       t(
                         "Couldn’t insert this command. Review it and open the target terminal first.",
                       ),
@@ -303,7 +303,7 @@ function ServerSnippetsForm({
           {t("This shared template changed. Review and save it before inserting.")}
         </Text>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {problem ? <InlineError>{problem}</InlineError> : null}
       <LiveText
         text={notice === "inserted" ? t("Inserted. Press Enter in the terminal to run.") : ""}
         size="caption"

@@ -171,7 +171,9 @@ describe("links in sent messages", () => {
       container.querySelector<HTMLAnchorElement>("[data-user-link-preview]")!.click(),
     );
 
-    expect(document.body.textContent).toContain(failure);
+    // The raw Host text sits behind the notice's Details link; the visible line names the failure.
+    expect(document.body.textContent).toContain("Couldn’t open the file in its default app");
+    expect(document.body.textContent).toContain("Details");
     expect(openUrl).not.toHaveBeenCalled();
   });
 

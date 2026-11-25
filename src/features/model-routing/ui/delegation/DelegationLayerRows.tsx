@@ -31,6 +31,38 @@ const ORDER: readonly string[] = [
   IMAGE_MODELS_KEY,
 ];
 
+/** The translated text of a delegation setting or option label that the catalog supplies in English. */
+function delegationText(translate: ReturnType<typeof useT>, label: string): string {
+  switch (label) {
+    case "Subagents":
+      return translate("Subagents");
+    case "Advisor":
+      return translate("Advisor");
+    case "Image models":
+      return translate("Image models");
+    case "Subagent max effort":
+      return translate("Subagent max effort");
+    case "Automatic":
+      return translate("Automatic");
+    case "Off":
+      return translate("Off");
+    case "Low":
+      return translate("Low");
+    case "Medium":
+      return translate("Medium");
+    case "High":
+      return translate("High");
+    case "Xhigh":
+      return translate("Xhigh");
+    case "Max":
+      return translate("Max");
+    case "Ultra":
+      return translate("Ultra");
+    default:
+      return label;
+  }
+}
+
 /**
  * The delegation rows of one layer. The global layer always shows every key; an override shows
  * only the keys it sets, each with a Remove, and an Add menu for the rest.
@@ -67,7 +99,7 @@ export function DelegationLayerRows({
     ? ORDER.flatMap((key) => {
         const setting = byId.get(key);
         return setting && values[key] === undefined && seed(setting, inherited) !== undefined
-          ? [{ key, label: t(setting.label), value: seed(setting, inherited)! }]
+          ? [{ key, label: delegationText(t, setting.label), value: seed(setting, inherited)! }]
           : [];
       })
     : [];
@@ -75,7 +107,7 @@ export function DelegationLayerRows({
     <>
       {shown.map((key) => {
         const setting = byId.get(key)!;
-        const label = t(setting.label);
+        const label = delegationText(t, setting.label);
         return (
           <Row
             key={key}
@@ -85,6 +117,7 @@ export function DelegationLayerRows({
             onReset={() => onSet(key, undefined)}
             resetLabel={t("Remove {p0} override", { p0: label })}
             disabled={disabled}
+            disabledReason={t("Wait for the current save to finish.")}
           >
             <DelegationControl
               setting={setting}
@@ -169,7 +202,7 @@ function DelegationControl({
           disabled={disabled}
           options={setting.options
             .filter((option) => SUBAGENT_EFFORT_LEVELS.includes(option.value))
-            .map((option) => ({ value: option.value, label: t(option.label) }))}
+            .map((option) => ({ value: option.value, label: delegationText(t, option.label) }))}
           onValueChange={onSet}
         />
       </div>

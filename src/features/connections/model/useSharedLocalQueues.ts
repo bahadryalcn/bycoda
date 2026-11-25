@@ -790,9 +790,7 @@ export function useSharedLocalQueues(
               current.observed = queue;
               setQueueHoldReason(
                 session.id,
-                queue.status === "paused"
-                  ? (latest.queue.holdReason ?? (latest.notice ? t(latest.notice) : undefined))
-                  : undefined,
+                queue.status === "paused" ? (latest.queue.holdReason ?? latest.notice) : undefined,
               );
               // Becoming able to send changes no queue field, yet the dispatcher must look again.
               const ready = client.canDrain() && !lateSettlementPossible(session.id);

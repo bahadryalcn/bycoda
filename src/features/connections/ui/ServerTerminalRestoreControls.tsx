@@ -122,6 +122,7 @@ export function ServerTerminalRestoreControls({
         </div>
         {state.saveStatus === "failed" ? (
           <InlineError
+            details={state.saveError}
             retry={
               state.canRetrySave
                 ? { onRetry: () => void serverTerminalRestoreState.retrySave() }
@@ -129,7 +130,6 @@ export function ServerTerminalRestoreControls({
             }
           >
             {t("Couldn’t save SSH tabs.")}
-            {state.saveError ? ` ${state.saveError}` : ""}
           </InlineError>
         ) : null}
         {state.loadFailed ? (

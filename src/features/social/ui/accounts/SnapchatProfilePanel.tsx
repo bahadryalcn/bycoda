@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "./blockedReason";
 import { useState } from "react";
 import type {
   SnapchatMonetizationStatus,
@@ -11,6 +12,7 @@ import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FileField } from "../../../../shared/ui/FileField";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Surface } from "../../../../shared/ui/Surface";
@@ -70,7 +72,7 @@ export function SnapchatProfilePanel({
   const [status, setStatus] = useState<SnapchatMonetizationStatus>();
   const [checkBeforeSaving, setCheckBeforeSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The profile could not be verified. Read the profile again before saving."),
   );
   const confirmation = useConfirm();
@@ -81,6 +83,13 @@ export function SnapchatProfilePanel({
     !account.accessApproved ||
     (browser ? account.paused : capability?.status !== "available");
   const blocked = disabled || !onThisComputer || connectionBlocked;
+  const blockedReason = disabled
+    ? accountBlockedReason(true)
+    : !onThisComputer
+      ? t("Open this account on the computer it is connected to.")
+      : connectionBlocked
+        ? capability?.reason || t("Connection needed")
+        : accountBlockedReason(false);
   const hasProfile = profile?.hasPublicProfile === true;
   const read = () =>
     write("read", async () => {
@@ -159,6 +168,7 @@ export function SnapchatProfilePanel({
               size="sm"
               variant={profile ? "secondary" : "primary"}
               disabled={blocked || busy}
+              disabledReason={blockedReason}
               loading={is("read")}
               onClick={() => void read().catch(() => undefined)}
             >
@@ -169,6 +179,7 @@ export function SnapchatProfilePanel({
                 size="sm"
                 variant="secondary"
                 disabled={blocked || busy}
+                disabledReason={blockedReason}
                 loading={is("monetization")}
                 onClick={() =>
                   void write("monetization", async () =>
@@ -185,7 +196,7 @@ export function SnapchatProfilePanel({
               {t("Read the profile to see it and edit it here.")}
             </Text>
           ) : null}
-          {error ? <InlineError details={details}>{error}</InlineError> : null}
+          {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
           {saved ? <InlineMessage tone="success">{t("Changes saved.")}</InlineMessage> : null}
           {status ? (
             <Surface variant="inset" padding="sm" className="social-sc-group">
@@ -243,9 +254,16 @@ export function SnapchatProfilePanel({
           ) : profile && canEdit ? (
             <>
               <div className="social-sc-group">
-                <SectionLabel variant="inline" size="secondary" as="h4">
-                  {t("Profile details")}
-                </SectionLabel>
+                <div className="social-card-head">
+                  <SectionLabel variant="inline" size="secondary" as="h4">
+                    {t("Profile details")}
+                  </SectionLabel>
+                  {!hasProfile ? (
+                    <InfoPopover className="shrink-0">
+                      {t("Add the rest of the profile after it is created.")}
+                    </InfoPopover>
+                  ) : null}
+                </div>
                 <TextField
                   label={labels.name()}
                   value={current("name")}
@@ -287,11 +305,7 @@ export function SnapchatProfilePanel({
                       }}
                     />
                   </>
-                ) : (
-                  <Text as="p" size="secondary" tone="muted">
-                    {t("Add the rest of the profile after it is created.")}
-                  </Text>
-                )}
+                ) : null}
               </div>
               <div className="social-sc-actions">
                 <Button
@@ -299,6 +313,13 @@ export function SnapchatProfilePanel({
                   size="sm"
                   loading={is("write")}
                   disabled={blocked || busy || !canSave}
+                  disabledReason={
+                    blocked || busy
+                      ? blockedReason
+                      : checkBeforeSaving
+                        ? t("Read the profile again before saving.")
+                        : t("No changes to save.")
+                  }
                   onClick={() => void confirmation.confirm(confirmRequest).catch(() => undefined)}
                 >
                   {hasProfile ? t("Save changes") : t("Create Public Profile")}

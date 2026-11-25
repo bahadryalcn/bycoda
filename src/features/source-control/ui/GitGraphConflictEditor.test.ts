@@ -90,10 +90,10 @@ it("does not stage while markers remain, and writes the chosen result to the fil
       ?.getAttribute("data-origin"),
   ).toContain("Current side of conflict markers");
   expect(
-    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "Save and stage",
-    )?.disabled,
-  ).toBe(true);
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Save and stage")
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
   await click("Accept Incoming");
   await click("Save and stage");
   expect(writeTextFile).toHaveBeenCalledWith(stages.path, "theirs\n");
@@ -116,7 +116,7 @@ it("keeps the result after a stage error and safely retries the same file", asyn
   await click("Accept Incoming");
   vi.mocked(gitStageFile).mockRejectedValueOnce(new Error("Index temporarily locked"));
   await click("Save and stage");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Index temporarily locked");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Could not stage the file");
   expect(onResolved).not.toHaveBeenCalled();
   vi.mocked(readTextFile).mockResolvedValue("theirs\n");
   await click("Save and stage");
@@ -191,10 +191,10 @@ it("keeps only the chosen whole-file action loading and rejects duplicate pendin
   expect(document.activeElement).toBe(incoming);
   expect(host.querySelectorAll('button[aria-busy="true"]')).toHaveLength(1);
   expect(
-    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-      (node) => node.textContent === "Use current",
-    )!.disabled,
-  ).toBe(true);
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Use current")!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   await act(async () => reject(new Error("Index locked")));
   expect(incoming.getAttribute("aria-busy")).not.toBe("true");
   expect(document.activeElement).toBe(incoming);

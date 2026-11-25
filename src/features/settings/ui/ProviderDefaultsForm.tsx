@@ -39,10 +39,10 @@ import type { ProviderSessionDefaults } from "../../sessions/public/projectProvi
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
 import {
   RUNTIME_MODES,
-  RUNTIME_MODE_LABEL,
   runtimeModeUnavailableReason,
   type RuntimeMode,
 } from "../../sessions/public/session";
+import { modelSettingText } from "../model/modelSettingText";
 import { ProviderDefaultExtras, inheritedChoiceLabel } from "./ProviderDefaultExtras";
 import { Group, Row, Select, Toggle } from "../../../shared/ui/settings";
 
@@ -65,6 +65,16 @@ function modelDisplayName(harness: HarnessId, id: string | undefined): string {
  * One provider's new-conversation defaults. Every change is reported to the page, which keeps
  * it as a pending change until Save; nothing here writes storage.
  */
+/** The permission-mode names, one literal per mode. */
+function runtimeModeLabelMap(): Record<RuntimeMode, string> {
+  return {
+    supervised: t("Supervised"),
+    "auto-accept-edits": t("Auto-accept edits"),
+    auto: t("Auto"),
+    "full-access": t("Full access"),
+  };
+}
+
 export function ProviderDefaultsForm({
   harness,
   selectedModel,
@@ -113,6 +123,7 @@ export function ProviderDefaultsForm({
   };
 }) {
   useLocale();
+  const runtimeModeLabels = runtimeModeLabelMap();
   const delegationUsage = useSyncExternalStore(
     subscribeRateLimits,
     getAllRateLimits,
@@ -175,7 +186,7 @@ export function ProviderDefaultsForm({
           icon: <WandSparkles className="icon-sm" />,
           label: inheritedChoiceLabel(
             inheritedDefaults?.effort
-              ? t(
+              ? modelSettingText(
                   effort.options.find((option) => option.value === inheritedDefaults.effort)
                     ?.label ?? inheritedDefaults.effort,
                 )
@@ -193,7 +204,7 @@ export function ProviderDefaultsForm({
           : []),
         ...ascendingEffortOptions(effort.options).map((option) => ({
           ...option,
-          label: t(option.label),
+          label: modelSettingText(option.label),
         })),
       ]
     : [];
@@ -292,7 +303,7 @@ export function ProviderDefaultsForm({
                 {
                   value: "",
                   label: inheritedChoiceLabel(
-                    inheritedRuntimeMode ? t(RUNTIME_MODE_LABEL[inheritedRuntimeMode]) : undefined,
+                    inheritedRuntimeMode ? runtimeModeLabels[inheritedRuntimeMode] : undefined,
                     validInheritedRuntimeMode,
                   ),
                   icon: <WandSparkles className="icon-sm" />,
@@ -302,7 +313,7 @@ export function ProviderDefaultsForm({
                   ? [
                       {
                         value: scopeDefaults.runtimeMode,
-                        label: `${t(RUNTIME_MODE_LABEL[scopeDefaults.runtimeMode])} (${t("Unavailable")})`,
+                        label: `${runtimeModeLabels[scopeDefaults.runtimeMode]} (${t("Unavailable")})`,
                       },
                     ]
                   : []),
@@ -311,7 +322,7 @@ export function ProviderDefaultsForm({
                     const Icon = RUNTIME_MODE_ICONS[mode];
                     return {
                       value: mode,
-                      label: t(RUNTIME_MODE_LABEL[mode]),
+                      label: runtimeModeLabels[mode],
                       icon: (
                         <Icon
                           className="icon-sm"

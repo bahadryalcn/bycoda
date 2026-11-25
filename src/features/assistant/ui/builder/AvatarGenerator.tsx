@@ -85,6 +85,7 @@ export function AvatarGenerator({
           loading={busy}
           loadingLabel={t("Drawing…")}
           disabled={!trimmed}
+          disabledReason={trimmed ? undefined : t("Describe the avatar first.")}
           onClick={() => start()}
         >
           {t("Generate avatar")}

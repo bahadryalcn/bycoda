@@ -268,19 +268,19 @@ export function GitGraphWorkspace({
   };
   const run = async (label: string, action: () => Promise<unknown>) => {
     if (!supported || busy) return false;
-    if (dirty && label !== "Saving conflict resolution…" && label !== "Resolving conflict…") {
+    if (dirty && label !== t("Saving conflict resolution…") && label !== t("Resolving conflict…")) {
       if (!(await confirmGitAction(discardConflictCopy()))) return false;
       dirtyChanged(false);
       setConflict(null);
     }
     try {
-      await withGitOperation(cwd, t(label), action);
+      await withGitOperation(cwd, label, action);
       return true;
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
         // The progress label names the action that failed ("Fetching…" -> "Fetching failed").
-        title: t("{p0} failed", { p0: t(label).replace(/…$/, "") }),
+        title: t("{p0} failed", { p0: label.replace(/…$/, "") }),
         detail: presentRemoteError(error, { explicit: true }),
         retry: async () => {
           await run(label, action);
@@ -311,24 +311,40 @@ export function GitGraphWorkspace({
     !(conflict && (busy === t("Saving conflict resolution…") || busy === t("Resolving conflict…")));
   // One short sync action leads the header (Pull when behind, Push when ahead, otherwise Fetch);
   // the other two live in the actions menu.
+  const hostReason = !supported
+    ? t("Update bycoda Host in Machines settings to use this on projects on another machine.")
+    : busy
+      ? t("Wait for the current operation to finish")
+      : undefined;
+  const operationReason = index.data?.operation
+    ? t("Finish the current Git operation first.")
+    : undefined;
   const syncActions = {
     fetch: {
       label: t("Fetch"),
       count: 0,
+      reason: hostReason ?? (index.data?.remote ? undefined : t("No remotes")),
       disabled: !supported || !!busy || !index.data?.remote,
-      run: () => void run("Fetching…", () => gitFetch(cwd)),
+      pending: t("Fetching…"),
+      run: () => void run(t("Fetching…"), () => gitFetch(cwd)),
     },
     pull: {
       label: t("Pull"),
       count: index.data?.behind ?? 0,
+      reason:
+        hostReason ??
+        (index.data?.upstream ? operationReason : t("This branch has no upstream branch.")),
       disabled: !supported || !!busy || !index.data?.upstream || !!index.data?.operation,
-      run: () => void run("Pulling…", () => gitPull(cwd)),
+      pending: t("Pulling…"),
+      run: () => void run(t("Pulling…"), () => gitPull(cwd)),
     },
     push: {
       label: t("Push"),
       count: index.data?.ahead ?? 0,
+      reason: hostReason ?? (index.data?.remote ? operationReason : t("No remotes")),
       disabled: !supported || !!busy || !index.data?.remote || !!index.data?.operation,
-      run: () => void run("Pushing…", () => gitPush(cwd)),
+      pending: t("Pushing…"),
+      run: () => void run(t("Pushing…"), () => gitPush(cwd)),
     },
   };
   const primarySync: keyof typeof syncActions = index.data?.behind
@@ -337,6 +353,7 @@ export function GitGraphWorkspace({
       ? "push"
       : "fetch";
   const primary = syncActions[primarySync];
+  const primaryPending = !!busy && busy === primary.pending;
   return (
     <Text
       ref={workspaceRef}
@@ -368,14 +385,19 @@ export function GitGraphWorkspace({
         }
         primaryAction={
           <>
-            {showBusy ? <LoadingText className="me-1">{busy}</LoadingText> : null}
+            {showBusy && !primaryPending ? (
+              <LoadingText className="me-1">{busy}</LoadingText>
+            ) : null}
             <Button
               size="sm"
               variant="ghost"
               motion="none"
               type="button"
               disabled={primary.disabled}
+              disabledReason={primary.disabled ? primary.reason : undefined}
               onClick={primary.run}
+              loading={primaryPending}
+              loadingLabel={primary.pending}
               className={ACTION}
             >
               {primary.label}
@@ -395,6 +417,7 @@ export function GitGraphWorkspace({
               aria-haspopup="menu"
               aria-expanded={!!actionAnchor}
               disabled={!supported || !!busy}
+              disabledReason={!supported || busy ? hostReason : undefined}
               onClick={(event) => setActionAnchor(actionAnchor ? null : event.currentTarget)}
             >
               <MoreHorizontal className="icon-md" />
@@ -458,9 +481,9 @@ export function GitGraphWorkspace({
           onClose={() => setActionAnchor(null)}
           onPick={(id) => {
             setActionAnchor(null);
-            if (id === "stage") void run("Staging…", () => gitStageAll(cwd));
-            else if (id === "unstage") void run("Unstaging…", () => gitUnstageAll(cwd));
-            else if (id === "stash") void run("Stashing…", () => gitStash(cwd));
+            if (id === "stage") void run(t("Staging…"), () => gitStageAll(cwd));
+            else if (id === "unstage") void run(t("Unstaging…"), () => gitUnstageAll(cwd));
+            else if (id === "stash") void run(t("Stashing…"), () => gitStash(cwd));
             else if (id === "fetch" || id === "pull" || id === "push") syncActions[id].run();
           }}
         />

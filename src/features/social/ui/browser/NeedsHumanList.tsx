@@ -143,7 +143,7 @@ export function NeedsHumanList({
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={busyId === item.id}
+                loading={busyId === item.id}
                 onClick={() => void done(item.id)}
               >
                 {t("I'm done")}

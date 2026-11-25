@@ -59,7 +59,7 @@ export function LocalHostVersionPrompt({
             const result = await updateBundledHostNow();
             if (result?.state === "failed" || result?.state === "deferred")
               throw new Error(
-                t(result.message ?? "The host on this computer could not be updated."),
+                result.message ?? t("The host on this computer could not be updated."),
               );
           },
         };

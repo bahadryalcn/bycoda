@@ -88,17 +88,17 @@ export function GitGraphBranches({
       return;
     }
     if (id === "delete") {
-      await run("Deleting branch…", () => deleteLocalBranch(cwd, branch.name));
+      await run(t("Deleting branch…"), () => deleteLocalBranch(cwd, branch.name));
       return;
     }
     if (id === "delete-remote" && branch.remote) {
       if (await confirmGitAction(deleteRemoteBranchCopy(ref)))
-        await run("Deleting remote branch…", () =>
+        await run(t("Deleting remote branch…"), () =>
           gitDeleteRemoteBranch(cwd, branch.remote!, branch.name),
         );
       return;
     }
-    await run("Updating branches…", () =>
+    await run(t("Updating branches…"), () =>
       id === "merge"
         ? gitMerge(cwd, ref)
         : id === "rebase"
@@ -134,7 +134,7 @@ export function GitGraphBranches({
     {
       kind: "item",
       id: branch.remote ? "delete-remote" : "delete",
-      label: t(branch.remote ? "Delete from remote…" : "Delete Branch…"),
+      label: branch.remote ? t("Delete from remote…") : t("Delete Branch…"),
       danger: true,
       disabled: branch.current && !branch.remote,
     },
@@ -154,6 +154,7 @@ export function GitGraphBranches({
             motion="none"
             type="button"
             disabled={disabled}
+            disabledReason={disabled ? t("Wait for the current operation to finish") : undefined}
             onClick={() => create("HEAD")}
           >
             <Plus className="icon-sm" />
@@ -191,7 +192,7 @@ export function GitGraphBranches({
                 count={branches.filter((b) => !!b.remote === remote).length}
                 onExpandedChange={() => setCollapsed({ ...collapsed, [group]: !collapsed[group] })}
               >
-                {t(remote ? "Remotes" : "Local")}
+                {remote ? t("Remotes") : t("Local")}
               </SectionLabel>
               {open
                 ? branches
@@ -212,6 +213,13 @@ export function GitGraphBranches({
                             motion="none"
                             type="button"
                             disabled={disabled || current}
+                            disabledReason={
+                              disabled
+                                ? t("Wait for the current operation to finish")
+                                : current
+                                  ? t("This is the current branch.")
+                                  : undefined
+                            }
                             label={t("Switch to {p0}", { p0: reference(branch) })}
                             align="start"
                             onClick={() => void pick("checkout", branch)}
@@ -268,7 +276,7 @@ export function GitGraphBranches({
       ) : null}
       {naming ? (
         <RefNameDialog
-          title={t(naming.rename ? "Rename branch" : "New branch")}
+          title={naming.rename ? t("Rename branch") : t("New branch")}
           label={t("Branch name")}
           placeholder={t("feature/my-branch")}
           initialValue={naming.rename ? naming.reference : ""}
@@ -277,7 +285,7 @@ export function GitGraphBranches({
           error={nameError}
           onCancel={() => setNaming(null)}
           onSubmit={(name) =>
-            void run("Updating branches…", async () => {
+            void run(t("Updating branches…"), async () => {
               try {
                 if (naming.rename) await gitRenameBranch(cwd, naming.reference, name);
                 else await gitCreateBranchFrom(cwd, name, naming.reference);

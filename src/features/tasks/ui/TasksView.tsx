@@ -876,11 +876,9 @@ function TasksContent({
     >
       {taskReveal && handledTaskReveal !== taskReveal.token ? (
         <Alert tone={board.pending ? "info" : "warning"}>
-          {t(
-            board.pending
-              ? "Loading task…"
-              : "This task is unavailable on its original machine and project.",
-          )}
+          {board.pending
+            ? t("Loading task…")
+            : t("This task is unavailable on its original machine and project.")}
         </Alert>
       ) : null}
       <TaskToolbar
@@ -974,11 +972,10 @@ function TasksContent({
         problem={
           problemMessage
             ? {
-                label: t(
+                label:
                   boardIssue || hostStopped || !actionError
-                    ? "Connection issue"
-                    : "Task action failed",
-                ),
+                    ? t("Connection issue")
+                    : t("Task action failed"),
                 message: problemMessage,
                 details: technicalDetails,
                 updatedAt: boardDataState.updatedAt,
@@ -1064,7 +1061,7 @@ function TasksContent({
           machines={machines}
           todoCapable={todoCapable}
           saving={saving}
-          error={error}
+          notice={error}
           sprintName={currentSprint?.name}
           onClose={() => setDraft(null)}
           onSave={(mode, saved) => void onSave(mode, saved)}
@@ -1100,7 +1097,7 @@ function TasksContent({
           acting={Boolean(acting)}
           busy={deliveryBusy}
           valid={deliveryValid}
-          error={error}
+          notice={error}
           onChange={setDeliveryWorkspace}
           onBusyChange={setDeliveryBusy}
           onChecksChange={patchDeliveryChecks}

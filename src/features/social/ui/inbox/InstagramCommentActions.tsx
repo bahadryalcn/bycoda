@@ -19,7 +19,9 @@ export function InstagramCommentActions({
   thread: SocialThread;
 }) {
   const confirmation = useConfirm();
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, failureTitle, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const [completed, setCompleted] = useState<string>();
   const inbound = thread.events.filter((event) => event.direction === "inbound");
   const target = inbound[inbound.length - 1];
@@ -44,6 +46,11 @@ export function InstagramCommentActions({
             size="sm"
             tone={action === "delete" ? "danger" : "neutral"}
             disabled={completed === "delete" || completed === "like"}
+            disabledReason={
+              completed === "delete"
+                ? t("This comment was deleted.")
+                : t("You already liked this comment.")
+            }
             loading={is(action)}
             onClick={() => {
               void confirmation
@@ -83,7 +90,7 @@ export function InstagramCommentActions({
       </div>
       {completed ? <InlineMessage tone="success">{t("Instagram updated.")}</InlineMessage> : null}
       {!browser ? <InstagramModerationReviews client={client} threadId={thread.id} /> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </Disclosure>
   );

@@ -100,8 +100,8 @@ function LimitFields({
   const effective = effectiveForScope(policies, scope);
   const fields = limitFields();
   const [drafts, setDrafts] = useState<Drafts>(() => unsaved ?? draftsOf(stored));
-  const [localError, setLocalError] = useState("");
-  const { error, details, is, write } = useAccountWrite(
+  const [localMessage, setLocalMessage] = useState("");
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The limits could not be saved. Try again."),
   );
 
@@ -117,13 +117,13 @@ function LimitFields({
     for (const field of fields) {
       const result = parseCharacterLimit(drafts[field.key]);
       if (!result.ok) {
-        setLocalError(result.message);
+        setLocalMessage(result.message);
         return;
       }
       if (result.value === undefined) delete next[field.key];
       else next[field.key] = result.value;
     }
-    setLocalError("");
+    setLocalMessage("");
     void write("policy.limits", () => savePolicyScope(client, policies, scope, next))
       .then((result) => {
         if (result === undefined) return;
@@ -160,9 +160,9 @@ function LimitFields({
       <Button type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
         {t("Save limits")}
       </Button>
-      {localError ? (
-        <InlineError>{localError}</InlineError>
-      ) : error ? (
+      {localMessage ? (
+        <InlineError>{localMessage}</InlineError>
+      ) : failureTitle ? (
         <InlineError details={details}>
           {t("The limits could not be saved. Try again.")}
         </InlineError>

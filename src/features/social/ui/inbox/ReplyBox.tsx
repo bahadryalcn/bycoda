@@ -58,10 +58,15 @@ function ThreadReplyBox({ client, thread }: ReplyBoxProps) {
   const projectFacts = useInboxProjectFacts(client, thread.projectId);
   const invalidate = useInboxInvalidate(client);
   const state = inboxReplyState(client, thread.id);
-  const { draft, busy, error, errorDetail, queued, operation } = useSyncExternalStore(
-    state.subscribe,
-    state.snapshot,
-  );
+  // `summary` is the stored translated sentence; the Host text stays in `errorDetail`.
+  const {
+    draft,
+    busy,
+    error: summary,
+    errorDetail,
+    queued,
+    operation,
+  } = useSyncExternalStore(state.subscribe, state.snapshot);
   const receipt = operation?.job;
   const terminalReceipt = canEditAfterReceipt(receipt?.status);
   const { text } = draft;
@@ -256,6 +261,11 @@ function ThreadReplyBox({ client, thread }: ReplyBoxProps) {
           label={t("Send privately on Instagram")}
           checked={!!draft.instagramPrivateReply}
           disabled={!!busy || !!operation}
+          disabledReason={
+            operation
+              ? t("This reply was already started. Edit or retry it first.")
+              : t("Wait for the current action to finish.")
+          }
           onChange={(event) =>
             changeDraft({
               ...draft,
@@ -383,8 +393,8 @@ function ThreadReplyBox({ client, thread }: ReplyBoxProps) {
           {t("Try again")}
         </Button>
       ) : null}
-      {error ? <InlineError details={errorDetail || undefined}>{error}</InlineError> : null}
-      {!error && (terminalReceipt || receipt?.status === "review") ? (
+      {summary ? <InlineError details={errorDetail || undefined}>{summary}</InlineError> : null}
+      {!summary && (terminalReceipt || receipt?.status === "review") ? (
         <InlineError
           details={receipt?.error ? redactDiagnosticText(receipt.error) : undefined}
           action={{ label: t("Activity history"), onClick: () => setActivityOpen(true) }}

@@ -50,7 +50,13 @@ export function ServerForwards({
     targetHost: "127.0.0.1",
     targetPort: "",
   });
-  const { statuses, statusError, verified, refresh } = useForwardStatuses(server.id, active);
+  // `statusMessage` is the status hook's own translated sentence, not raw error text.
+  const {
+    statuses,
+    statusError: statusMessage,
+    verified,
+    refresh,
+  } = useForwardStatuses(server.id, active);
   const [busyState, setBusyState] = useState({ source: server.id, value: "" });
   const [errorState, setErrorState] = useState({ source: server.id, value: "" });
   const busy = busyState.source === server.id ? busyState.value : "";
@@ -141,7 +147,7 @@ export function ServerForwards({
                 </Text>
                 {!verified || stopping || unknown ? (
                   <Badge size="sm" tone="neutral">
-                    {t(verified && stopping ? "Stopping" : "Status unknown")}
+                    {verified && stopping ? t("Stopping") : t("Status unknown")}
                   </Badge>
                 ) : reconnecting ? (
                   <Badge size="sm" tone="neutral">
@@ -171,6 +177,9 @@ export function ServerForwards({
                   <Button
                     loading={busy === rule.id}
                     disabled={Boolean(busy) || stopping}
+                    disabledReason={
+                      busy || stopping ? t("Wait for the current action to finish.") : undefined
+                    }
                     onClick={() =>
                       void run(rule.id, async () => {
                         if (running) return stopSshForward(runtimeId);
@@ -311,7 +320,12 @@ export function ServerForwards({
               </>
             ) : null}
             <div className="col-span-full flex flex-wrap items-center justify-end gap-2">
-              <Button type="submit" loading={busy === "save"} disabled={Boolean(busy)}>
+              <Button
+                type="submit"
+                loading={busy === "save"}
+                disabled={Boolean(busy)}
+                disabledReason={busy ? t("Wait for the current action to finish.") : undefined}
+              >
                 {t("Save rule")}
               </Button>
             </div>
@@ -320,8 +334,8 @@ export function ServerForwards({
         {error ? (
           <InlineError details={error}>{t("Port forwarding action failed")}</InlineError>
         ) : null}
-        {statusError ? (
-          <InlineError retry={{ onRetry: () => refresh(server.id) }}>{statusError}</InlineError>
+        {statusMessage ? (
+          <InlineError retry={{ onRetry: () => refresh(server.id) }}>{statusMessage}</InlineError>
         ) : null}
       </div>
     </>

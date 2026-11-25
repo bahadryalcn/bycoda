@@ -29,7 +29,6 @@ import {
   HOST_STEWARDS,
   type HostSteward,
   type HostStewardInput,
-  type StewardRunStatus,
 } from "./hostStewards";
 import type { BoardTask } from "./taskClient";
 import { taskClientErrors } from "./taskClientErrors";
@@ -73,14 +72,6 @@ export type StewardDraft = {
   /** Merge the tasks it creates once their checks pass. */
   autoMerge: boolean;
   enabled: boolean;
-};
-
-export const STEWARD_STATUS_LABELS: Record<StewardRunStatus, string> = {
-  running: "Running",
-  succeeded: "Succeeded",
-  failed: "Failed",
-  skipped: "Skipped",
-  cancelled: "Stopped",
 };
 
 /** Machines whose host runs stewards, this computer's included. */

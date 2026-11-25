@@ -125,6 +125,11 @@ export function LocalInstallWizard({
           label: t("Install"),
           loading: installing,
           disabled: installing || !modelId || !readyToInstall || result !== null,
+          disabledReason: installing
+            ? t("Wait for the install to finish.")
+            : !modelId
+              ? t("Choose a model first.")
+              : t("Check the install requirements first."),
           onClick: install,
         }
       : offer === "api" || planBlocked
@@ -156,6 +161,7 @@ export function LocalInstallWizard({
               variant="primary"
               loading={primary.loading}
               disabled={primary.disabled}
+              disabledReason={primary.disabledReason}
               onClick={primary.onClick}
             >
               {primary.label}
@@ -243,9 +249,10 @@ export function LocalInstallWizard({
                   variant="secondary"
                   size="sm"
                   loading={local.cancelling}
+                  loadingLabel={t("Cancelling…")}
                   onClick={local.cancel}
                 >
-                  {local.cancelling ? t("Cancelling…") : t("Cancel install")}
+                  {t("Cancel install")}
                 </Button>
               </div>
             ) : null}

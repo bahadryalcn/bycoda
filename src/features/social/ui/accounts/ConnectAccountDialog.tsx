@@ -82,7 +82,7 @@ export function ConnectAccountDialog({
   const [picked, setPicked] = useState<string[]>(() =>
     initialProjectId ? [initialProjectId] : [],
   );
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The account could not be added. Try again."),
   );
 
@@ -128,6 +128,9 @@ export function ConnectAccountDialog({
   };
   // An empty name is obvious from the required field, so the button is off without a sentence.
   const blocked = !name.trim() || !accountType;
+  const blockedReason = !name.trim()
+    ? t("Enter a name first.")
+    : t("Choose an account type first.");
 
   const submit = () =>
     void write("create", () =>
@@ -151,7 +154,12 @@ export function ConnectAccountDialog({
       size="md"
       footer={
         <ModalActions>
-          <Button variant="ghost" disabled={is("create")} onClick={onClose}>
+          <Button
+            variant="ghost"
+            disabled={is("create")}
+            disabledReason={t("Wait for the account to be created.")}
+            onClick={onClose}
+          >
             {t("Cancel")}
           </Button>
           <Button
@@ -160,6 +168,7 @@ export function ConnectAccountDialog({
             variant="primary"
             loading={is("create")}
             disabled={blocked}
+            disabledReason={blockedReason}
           >
             {t("Connect")}
           </Button>
@@ -235,7 +244,7 @@ export function ConnectAccountDialog({
             </Button>
           </div>
         ) : null}
-        {error ? (
+        {failureTitle ? (
           <InlineError details={details}>
             {t("The account could not be added. Try again.")}
           </InlineError>

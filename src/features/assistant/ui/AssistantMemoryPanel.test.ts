@@ -10,7 +10,7 @@ it.each(["", "missing"])("does not call a failed memory read empty for query %s"
       query,
       searching: false,
       pending: false,
-      searchError: createElement("p", null, "Read failed"),
+      searchError: "Read failed",
       errorFor: vi.fn(),
       onQuery: vi.fn(),
       onAdd: vi.fn(),
@@ -19,7 +19,7 @@ it.each(["", "missing"])("does not call a failed memory read empty for query %s"
       onDelete: vi.fn(),
     }),
   );
-  expect(html).toContain("Read failed");
+  expect(html).toContain("Could not search memory.");
   expect(html).not.toContain("Nothing saved here yet");
   expect(html).not.toContain("No results");
 });

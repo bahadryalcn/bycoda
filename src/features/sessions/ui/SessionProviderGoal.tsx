@@ -10,13 +10,13 @@ import { CircleDot, Pause, Play } from "../../../shared/ui/icons";
 
 export type SessionProviderGoalCommand = "/goal pause" | "/goal resume" | "/goal clear";
 
-const GOAL_STATUS: Record<SessionGoal["status"], { label: string; tone: TextTone }> = {
-  active: { label: "Pursuing goal", tone: "primary" },
-  paused: { label: "Goal paused", tone: "secondary" },
-  blocked: { label: "Goal blocked", tone: "warning" },
-  usageLimited: { label: "Goal hit a usage limit", tone: "warning" },
-  budgetLimited: { label: "Goal reached its token budget", tone: "warning" },
-  complete: { label: "Goal complete", tone: "success" },
+const GOAL_TONE: Record<SessionGoal["status"], TextTone> = {
+  active: "primary",
+  paused: "secondary",
+  blocked: "warning",
+  usageLimited: "warning",
+  budgetLimited: "warning",
+  complete: "success",
 };
 
 /** Native goal state and owner actions beside the current work, independent of the draft. */
@@ -41,7 +41,15 @@ export function SessionProviderGoal({
     goal.providerSessionId !== session.providerSessionId
   )
     return null;
-  const status = GOAL_STATUS[goal.status];
+  const statusLabels: Record<SessionGoal["status"], string> = {
+    active: t("Pursuing goal"),
+    paused: t("Goal paused"),
+    blocked: t("Goal blocked"),
+    usageLimited: t("Goal hit a usage limit"),
+    budgetLimited: t("Goal reached its token budget"),
+    complete: t("Goal complete"),
+  };
+  const statusLabel = statusLabels[goal.status];
   const usage: string[] = [];
   if (goal.tokensUsed !== undefined && goal.tokensUsed > 0) {
     usage.push(
@@ -78,14 +86,14 @@ export function SessionProviderGoal({
         expanded={open}
         opens="up"
         aria-haspopup="dialog"
-        aria-label={t(status.label)}
+        aria-label={statusLabel}
         startIcon={<CircleDot className="icon-sm" aria-hidden />}
         onClick={() => {
           setFailed(false);
           setOpen(!open);
         }}
       >
-        {t(goal.status === "active" ? "Goal" : status.label)}
+        {goal.status === "active" ? t("Goal") : statusLabel}
       </Button>
       {open ? (
         <Popover
@@ -102,8 +110,14 @@ export function SessionProviderGoal({
           className="flex min-w-0 flex-col gap-3"
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Text as="span" size="caption" weight="medium" tone={status.tone} wrap="anywhere">
-              {t(status.label)}
+            <Text
+              as="span"
+              size="caption"
+              weight="medium"
+              tone={GOAL_TONE[goal.status]}
+              wrap="anywhere"
+            >
+              {statusLabel}
             </Text>
             {usage.length ? (
               <Text as="span" size="caption" tone="secondary" className="tabular-nums">
@@ -134,7 +148,7 @@ export function SessionProviderGoal({
                 disabledReason={disabledReason}
                 onClick={() => run(active ? "/goal pause" : "/goal resume")}
               >
-                {t(active ? "Pause" : "Resume goal")}
+                {active ? t("Pause") : t("Resume goal")}
               </Button>
             ) : null}
           </div>

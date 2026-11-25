@@ -90,9 +90,9 @@ export function ToolDiffPreview({
         aria-label={
           onOpen
             ? t("Open {p0}", { p0: label })
-            : t(preview.contentOnly ? "Preview written content: {p1}" : "Preview changes: {p1}", {
-                p1: label,
-              })
+            : preview.contentOnly
+              ? t("Preview written content: {p1}", { p1: label })
+              : t("Preview changes: {p1}", { p1: label })
         }
         aria-haspopup="dialog"
         aria-expanded={open}

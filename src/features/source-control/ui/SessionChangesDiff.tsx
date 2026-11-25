@@ -259,7 +259,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
           key="load-error"
           context="panel"
           title={t("Couldn’t load session changes")}
-          description={error}
+          error={error}
           onRetry={reload}
         />
       </div>

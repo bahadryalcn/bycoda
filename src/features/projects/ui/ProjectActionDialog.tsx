@@ -12,7 +12,7 @@ import { projectActionPresetIO } from "../model/projectActionCatalog";
 import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import type { RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Field } from "../../../shared/ui/Field";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Check, CodeBlock, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
 import {
@@ -38,13 +38,6 @@ const icons = {
   code: CodeBlock,
   globe: Globe,
   wrench: Wrench,
-};
-const labels = {
-  play: "Run",
-  terminal: "Terminal",
-  code: "Code",
-  globe: "Web",
-  wrench: "Build",
 };
 const examples = [
   {
@@ -108,13 +101,26 @@ export function ProjectActionDialog({
       live = false;
     };
   }, [cwd, editing]);
+  const iconLabels: Record<ProjectAction["icon"], string> = {
+    play: t("Run"),
+    terminal: t("Terminal"),
+    code: t("Code"),
+    globe: t("Web"),
+    wrench: t("Build"),
+  };
+  const exampleNames: Record<string, string> = {
+    "Dev server": t("Dev server"),
+    "Run tests": t("Run tests"),
+    "Build project": t("Build project"),
+  };
+  const presetName = (name: string) => (detected.length ? name : (exampleNames[name] ?? name));
   const added = new Set(actions.map((item) => item.command.trim()));
   const chips = detected.length ? detected.slice(0, CHIP_LIMIT) : examples;
   const more = detected.slice(CHIP_LIMIT);
   const applyPreset = ({ name, command, icon, url, devServer }: (typeof chips)[number]) =>
     setDraft({
       ...draft,
-      name: detected.length ? name : t(name),
+      name: presetName(name),
       command,
       icon,
       url,
@@ -193,7 +199,7 @@ export function ProjectActionDialog({
         <div className="space-y-3">
           {!editing ? (
             <div className="flex flex-wrap items-center gap-1.5">
-              <Text size="caption" tone="muted" className="mr-1">
+              <Text size="caption" tone="muted" className="me-1">
                 {detected.length
                   ? t("Scripts from {p0}", { p0: detected[0].source })
                   : t("Examples")}
@@ -204,9 +210,14 @@ export function ProjectActionDialog({
                   key={preset.name}
                   variant="secondary"
                   disabled={added.has(preset.command.trim())}
+                  disabledReason={
+                    added.has(preset.command.trim())
+                      ? t("This script is already added.")
+                      : undefined
+                  }
                   aria-label={
                     added.has(preset.command.trim())
-                      ? `${detected.length ? preset.name : t(preset.name)}: ${t("Added")}`
+                      ? `${presetName(preset.name)}: ${t("Added")}`
                       : undefined
                   }
                   tooltip={detected.length ? preset.command : undefined}
@@ -215,7 +226,7 @@ export function ProjectActionDialog({
                   {added.has(preset.command.trim()) ? (
                     <Check className="icon-sm" aria-hidden="true" />
                   ) : null}
-                  {detected.length ? preset.name : t(preset.name)}
+                  {presetName(preset.name)}
                 </Button>
               ))}
               {more.length ? (
@@ -250,7 +261,7 @@ export function ProjectActionDialog({
                     const Choice = icons[icon];
                     return {
                       value: icon,
-                      label: t(labels[icon]),
+                      label: iconLabels[icon],
                       icon: <Choice className="size-4" aria-hidden="true" />,
                     };
                   })}
@@ -312,8 +323,10 @@ export function ProjectActionDialog({
               aria-invalid={!validActionUrl(draft.url)}
             />
           </div>
-          {shortcutError || shortcutHint ? (
-            <InlineMessage tone="warning">{shortcutError || shortcutHint}</InlineMessage>
+          {shortcutError ? (
+            <InlineError details={shortcutError}>{t("This shortcut cannot be used.")}</InlineError>
+          ) : shortcutHint ? (
+            <InlineMessage tone="warning">{shortcutHint}</InlineMessage>
           ) : null}
           <div className="space-y-2.5">
             <Checkbox

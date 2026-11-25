@@ -102,7 +102,8 @@ it("shows a failed resolution inline and lets the owner choose again", async () 
   try {
     mocks.resolve.mockRejectedValueOnce(new Error("Host unreachable"));
     await view.choose("Mark as delivered");
-    expect(view.container.textContent).toContain("Host unreachable");
+    expect(view.container.textContent).toContain("Could not record this choice.");
+    expect(view.container.textContent).not.toContain("Host unreachable");
     await view.choose("Mark as delivered");
     expect(mocks.resolve).toHaveBeenCalledTimes(2);
   } finally {

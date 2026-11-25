@@ -16,6 +16,7 @@ export type { PromptTemplate } from "./model/promptTemplates";
 export type { QueueActionResult, QueueRemoval } from "./model/queueAction";
 export type { LiveSessionInfo } from "./model/recentSessions";
 export type * as projectlessApi from "./public/projectless";
+export type * as catalogTextApi from "./public/catalogText";
 export type {
   AdoptedDivergence,
   Attachment,

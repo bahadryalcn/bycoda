@@ -49,6 +49,17 @@ function RangeEditor({
   minuteStep,
 }: RangePickerProps & { close: () => void; clear: ReactNode; withTime: boolean }) {
   const t = useT();
+  // The default presets' labels, translated at a literal call site; a custom preset shows its own label.
+  const presetLabels: Record<string, string> = {
+    Today: t("Today"),
+    Yesterday: t("Yesterday"),
+    "Last 7 days": t("Last 7 days"),
+    "Last 30 days": t("Last 30 days"),
+    "This month": t("This month"),
+    "Last month": t("Last month"),
+    "This quarter": t("This quarter"),
+    "Year to date": t("Year to date"),
+  };
   const today = useToday();
   const mode = withTime ? "datetime" : "date";
   const serialize = (date: Date) => (withTime ? toLocalDateTime(date) : dateKey(date));
@@ -151,7 +162,7 @@ function RangeEditor({
                 }
               }}
             >
-              {t(preset.label)}
+              {presetLabels[preset.label] ?? preset.label}
             </Button>
           ))}
         </div>

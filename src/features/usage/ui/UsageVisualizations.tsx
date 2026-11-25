@@ -30,7 +30,7 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
-import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
+import { UsageProviderIdentity, usageLabel, usageProviderLabel } from "./UsageProviderIdentity";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./UsageVisualizations.css";
 import {
@@ -38,17 +38,11 @@ import {
   formatMetric,
   formatMetricTick,
   formatUsagePercent,
-  metricNames,
+  metricName,
   ContinuousUsageTable,
 } from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
-const ENGLISH_USAGE_LABELS = ["Unknown folder", "Not in a group", "Other", "Default account"];
-/** Labels the usage model emits as English constants; real folder and account names pass through. */
-export function usageLabel(label: string): string {
-  return ENGLISH_USAGE_LABELS.includes(label) ? t(label) : label;
-}
-
 /** A chart series name with its icon: the provider's, or the model's when the series are models. */
 function SeriesIdentity({ item, dimension }: { item: UsageBreakdown; dimension?: UsageDimension }) {
   const label = usageProviderLabel(usageLabel(item.label));
@@ -560,7 +554,7 @@ export function TimeDistribution({
         >
           <div className="usage-section-heading">
             <Heading size="item" level={3}>
-              {t(metricNames[metric])}
+              {metricName(metric)}
             </Heading>
             <Select
               hideLabel
@@ -577,7 +571,7 @@ export function TimeDistribution({
             />
           </div>
           <BarChart
-            label={`${t(intervalMode === "clock" ? "Hour of day" : "Usage over time")} · ${t(metricNames[metric])}`}
+            label={`${intervalMode === "clock" ? t("Hour of day") : t("Usage over time")} · ${metricName(metric)}`}
             period={`${dateLabel(window.start)} – ${dateLabel(window.end - 1)}`}
             data={intervalMode === "clock" ? hours : intervalBars}
             height={190}
@@ -643,6 +637,7 @@ export function TimeDistribution({
               iconOnly
               label={t("Previous week")}
               disabled={page === 0}
+              disabledReason={t("This is the first week of the period.")}
               onClick={() => setWeekOffset((value) => value + 1)}
             >
               <ChevronLeft className="icon-sm" />
@@ -652,6 +647,7 @@ export function TimeDistribution({
               iconOnly
               label={t("Next week")}
               disabled={page === weekStarts.length - 1}
+              disabledReason={t("This is the last week of the period.")}
               onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
             >
               <ChevronRight className="icon-sm" />
@@ -709,6 +705,7 @@ export function TimeDistribution({
                     className="usage-hour-cell"
                     textTone={amount > 0 && amount / maximum > 0.75 ? "on-solid" : "primary"}
                     disabled={outside}
+                    disabledReason={t("Outside the selected period.")}
                     tabIndex={effectiveFocus === key ? 0 : -1}
                     data-level={
                       amount === 0

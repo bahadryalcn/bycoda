@@ -61,19 +61,16 @@ export function RemoteDataStatus({
   const failure = state.error ? classifyRemoteError(state.error) : undefined;
   const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
   // A busy machine is retried in the background; its failure is not an error yet.
-  const { pending, visibleError } = useGracedFailure({
+  // `presented` is the grace hook's translated sentence; the raw text stays in `errorView`.
+  const { pending, visibleError: presented } = useGracedFailure({
     error: state.error,
     retry: disabled || !autoRetry ? undefined : onRefresh,
     loading: state.phase === "loading" || state.phase === "refreshing",
     scope: cwd,
   });
   const refreshing = state.phase === "loading" || state.phase === "refreshing";
-  const phase = visibleError && refreshing ? "error" : state.phase;
-  const noticeKey = JSON.stringify([
-    phase,
-    state.error ?? visibleError ?? "",
-    state.updatedAt ?? 0,
-  ]);
+  const phase = presented && refreshing ? "error" : state.phase;
+  const noticeKey = JSON.stringify([phase, state.error ?? presented ?? "", state.updatedAt ?? 0]);
   // A machine-level notice cannot explain a failed data/service operation.
   if (
     !machineName &&
@@ -87,7 +84,6 @@ export function RemoteDataStatus({
   // The classified, localized reason; the raw transport text stays behind Details.
   const replacedError = !!state.error && isTransientTransportError(state.error);
   const errorView = state.error ? describeRemoteError(state.error) : undefined;
-  const shownError = visibleError;
   const busy = pending || refreshing;
   const needsAttention = !pending && (phase === "error" || phase === "stale");
   const message =
@@ -132,9 +128,7 @@ export function RemoteDataStatus({
       pending ||
       (state.phase === "loading" && loadingShown) ||
       (state.phase === "refreshing" && onRefresh !== undefined);
-    const icon = spinning ? (
-      <Spinner />
-    ) : machineName ? (
+    const restIcon = machineName ? (
       <Server aria-hidden className="icon-sm" />
     ) : (
       <Check aria-hidden className="icon-sm" />
@@ -162,13 +156,17 @@ export function RemoteDataStatus({
             tooltip={detail}
             onClick={onRefresh}
             disabled={disabled || busy}
+            disabledReason={
+              disabled || busy ? t("Wait for the current action to finish.") : undefined
+            }
+            loading={spinning}
           >
-            {icon}
+            {restIcon}
           </Button>
         ) : (
           <Tooltip label={detail}>
-            <span aria-label={detail} role="img">
-              {icon}
+            <span aria-label={message} role="img">
+              {spinning ? <Spinner /> : restIcon}
             </span>
           </Tooltip>
         )}
@@ -201,9 +199,9 @@ export function RemoteDataStatus({
         message={
           <span data-remote-data-state={phase} aria-busy={busy}>
             {message}
-            {shownError && fitsOneLine(shownError) ? (
+            {presented && fitsOneLine(presented) ? (
               <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
-                {shownError}
+                {presented}
               </Text>
             ) : null}
           </span>
@@ -227,12 +225,7 @@ export function RemoteDataStatus({
     );
   }
   return (
-    <Alert
-      data-remote-data-state={phase}
-      aria-busy={busy}
-      tone={tone}
-      icon={busy ? <Spinner /> : undefined}
-    >
+    <Alert data-remote-data-state={phase} aria-busy={busy} tone={tone}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <span>{message}</span>
@@ -242,25 +235,25 @@ export function RemoteDataStatus({
                 p0: new Date(state.updatedAt!).toLocaleString(getLocale()),
               })}
             >
-              <Text size="inherit" tone="muted" className="ml-1">
+              <Text size="inherit" tone="muted" className="ms-1">
                 · {time}
               </Text>
             </Tooltip>
           ) : null}
-          {shownError ? (
+          {presented ? (
             <>
-              {fitsOneLine(shownError) ? (
+              {fitsOneLine(presented) ? (
                 <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
-                  {shownError}
+                  {presented}
                 </Text>
               ) : (
                 <p className="mt-1">
-                  <ErrorDetails title={message} detail={shownError} />
+                  <ErrorDetails title={message} detail={presented} />
                 </p>
               )}
-              {replacedError && fitsOneLine(shownError) && errorView?.details !== shownError ? (
+              {replacedError && fitsOneLine(presented) && errorView?.details !== presented ? (
                 <p className="mt-1">
-                  <ErrorDetails title={message} detail={errorView?.details ?? shownError} />
+                  <ErrorDetails title={message} detail={errorView?.details ?? presented} />
                 </p>
               ) : null}
             </>
@@ -271,6 +264,9 @@ export function RemoteDataStatus({
             type="button"
             onClick={onRefresh}
             disabled={disabled || busy}
+            disabledReason={
+              disabled || busy ? t("Wait for the current action to finish.") : undefined
+            }
             aria-label={retryLabel}
             variant="ghost"
             iconOnly

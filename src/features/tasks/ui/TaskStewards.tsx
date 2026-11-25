@@ -110,6 +110,7 @@ function StewardsPanel({
           type="button"
           onClick={onAdd}
           disabled={draft != null}
+          disabledReason={t("Finish or close the open steward form first.")}
           startIcon={<Plus className="icon-sm" strokeWidth={1.75} />}
         >
           {t("Add steward")}

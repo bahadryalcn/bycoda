@@ -42,9 +42,10 @@ export function GrokLimits({ refresh }: { refresh: number }) {
       {loading && !windows.length ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
       {limits.error ? (
         <InlineError
+          details={limits.error}
           retry={{ onRetry: () => void loadRateLimits("grok", "default", true), pending: loading }}
         >
-          {limits.error}
+          {t("Usage unavailable")}
         </InlineError>
       ) : null}
     </section>

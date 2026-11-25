@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
 import { SubagentChatComposer } from "./SubagentMessageForm";
 import { newSession, type Attachment } from "../model/session";
+import { openErrorDetails } from "./errorDetails.fixture";
 
 const ownerComposer = vi.hoisted(() => ({ props: undefined as unknown }));
 vi.mock("./Composer", () => ({
@@ -99,7 +100,8 @@ it("keeps the draft and says so when a send was rejected", () => {
 
 it("shows the open error and keeps the form usable", () => {
   render(relay({ mode: "direct", onOpenConversation: vi.fn(), openError: "Session is gone" }));
-  expect(container.textContent).toContain("Session is gone");
+  expect(container.textContent).toContain("Could not open this session.");
+  expect(openErrorDetails(container)).toContain("Session is gone");
   expect(buttonLabels()).toContain("Send");
 });
 
@@ -112,7 +114,7 @@ it("disables Send for an empty draft or a blocked child", () => {
   render(relay({ mode: "direct", blockedReason: "The child session is not ready." }));
   expect(container.textContent).toContain("The child session is not ready.");
   const blocked = [...container.querySelectorAll("button")].find((b) => b.textContent === "Send");
-  expect(blocked?.disabled).toBe(true);
+  expect(blocked?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("announces the Ctrl/Cmd+Enter send shortcut on the message box", () => {

@@ -1,7 +1,7 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import { useMicrophonePermission } from "./useMicrophonePermission";
-import { microphoneBlockedMessage } from "../model/microphoneAccess";
+import { isMicrophoneBlocked, microphoneBlockedMessage } from "../model/microphoneAccess";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -32,7 +32,7 @@ export function MicrophoneInputSettings() {
   // only path that asks for it, so an unknown list must not look like an unplugged device.
   const [unidentified, setUnidentified] = useState(false);
   const [state, setState] = useState<MicrophoneRecordingState>("idle");
-  const [error, setError] = useState("");
+  const [testMessage, setTestMessage] = useState("");
   const recording = useRef<MicrophoneRecording | undefined>(undefined);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the devicechange listener attached only while microphone settings are mounted, without requesting capture.
   useEffect(() => {
@@ -61,7 +61,7 @@ export function MicrophoneInputSettings() {
   useEffect(() => {
     const controller = new MicrophoneRecording((next, message) => {
       setState(next);
-      setError(message ?? "");
+      setTestMessage(message ?? "");
     });
     recording.current = controller;
     return () => {
@@ -84,7 +84,7 @@ export function MicrophoneInputSettings() {
     !devices.some((device) => device.deviceId === settings.microphoneId);
   // Permission shows up only when something is wrong: a failed test, or a passive denial.
   const denied = useMicrophonePermission() === "denied";
-  const problem = error ? t(error) : denied ? microphoneBlockedMessage() : "";
+  const problem = testMessage || (denied ? microphoneBlockedMessage() : "");
   return (
     <Row
       id="voice-microphone-input"
@@ -101,7 +101,7 @@ export function MicrophoneInputSettings() {
         problem ? (
           <>
             <SettingsFeedback state="error">{problem}</SettingsFeedback>
-            <MicrophoneRecoveryAction message={error || problem} />
+            <MicrophoneRecoveryAction blocked={isMicrophoneBlocked(problem)} />
           </>
         ) : undefined
       }
@@ -138,6 +138,15 @@ export function MicrophoneInputSettings() {
           ) : (
             <Button
               disabled={busy || !!missing || microphoneInUse}
+              disabledReason={
+                microphoneInUse
+                  ? t("Stop voice or dictation before recording a microphone test.")
+                  : missing
+                    ? t(
+                        "The selected microphone is unavailable. Select another input device or reconnect it, then try again.",
+                      )
+                    : t("A microphone test is already running.")
+              }
               loading={state === "requesting"}
               onClick={() => void recording.current?.record(settings.microphoneId)}
             >

@@ -277,7 +277,7 @@ it("chooses the dictation language from the composer and disables it while liste
   await act(async () => element.querySelector("button")!.click());
   await act(async () => mock.callbacks.state("listening"));
   expect(mock.args[0]).toBe("tr");
-  expect(options().disabled).toBe(true);
+  expect(options().getAttribute("aria-disabled")).toBe("true");
 });
 
 it("joins the microphone and its language choice in one group", async () => {

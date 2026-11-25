@@ -5,8 +5,8 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
-import { MonitorSmartphone, Server, RefreshCw } from "../../../shared/ui/icons";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Check, MonitorSmartphone, Server, RefreshCw } from "../../../shared/ui/icons";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { t } from "../../../shared/i18n";
 import { type ShellProfiles } from "../../terminal/public/terminalProfiles";
 import { RevealedSetting, settingDomId } from "../../../shared/ui/settings";
@@ -107,9 +107,12 @@ export function HostShellRow({
             {kind === "remote" ? (
               <Server aria-label={t("Remote server")} className="icon-sm" />
             ) : kind === "synced" ? (
-              <Tooltip label={t("Local sync")} asChild>
-                <MonitorSmartphone aria-label={t("Local sync")} className="icon-sm" />
-              </Tooltip>
+              <InfoTooltip
+                label={t("Local sync")}
+                icon={<MonitorSmartphone aria-hidden className="icon-sm" />}
+              >
+                {t("Local sync")}
+              </InfoTooltip>
             ) : (
               <MonitorSmartphone aria-hidden className="icon-sm" />
             )}
@@ -152,6 +155,7 @@ export function HostShellRow({
               label={refreshLabel}
               loading={loading}
               disabled={refreshDisabled || loading}
+              disabledReason={t("Wait for the current operation to finish")}
               onClick={onRefresh}
             >
               <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
@@ -164,6 +168,7 @@ export function HostShellRow({
             expanded={expanded}
             aria-controls={detailPanel}
             disabled={!listed || noShells}
+            disabledReason={noShells ? t("No shells found") : t("Wait for the shell list to load.")}
             onClick={() => setOpen((current) => !current)}
           />
         </div>
@@ -209,13 +214,19 @@ export function HostShellRow({
                     </Text>
                   </div>
                   {profile.id === effectiveId ? (
-                    <Badge>{t("Default")}</Badge>
+                    <InfoTooltip
+                      label={t("Default")}
+                      icon={<Check aria-hidden className="icon-sm" />}
+                    >
+                      {t("Default")}
+                    </InfoTooltip>
                   ) : (
                     <Button
                       variant="ghost"
                       size="sm"
                       type="button"
                       disabled={disabled || loading}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => onChoose(profile.id)}
                     >
                       {t("Set as default")}

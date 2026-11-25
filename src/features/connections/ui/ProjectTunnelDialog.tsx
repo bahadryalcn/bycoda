@@ -79,11 +79,9 @@ export function ProjectTunnelDialog({
             },
           }}
         >
-          {t(
-            update
-              ? "Update bycoda Host on this computer to manage external tunnels."
-              : "The selected computer could not be reached.",
-          )}
+          {update
+            ? t("Update bycoda Host on this computer to manage external tunnels.")
+            : t("The selected computer could not be reached.")}
         </Alert>
       ) : (
         <LoadingText>{t("Checking tunnel access…")}</LoadingText>

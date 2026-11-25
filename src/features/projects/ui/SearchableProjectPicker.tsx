@@ -218,6 +218,7 @@ export function SearchableProjectPicker({
         motion="none"
         type="button"
         disabled={disabled}
+        disabledReason={disabled ? t("Not available right now.") : undefined}
         tooltip={inProject ? cwd : undefined}
         aria-label={inProject ? t("{p0}, current project {p1}", { p0: action, p1: label }) : choose}
         selected={open || appearance === "filled"}
@@ -287,7 +288,7 @@ export function SearchableProjectPicker({
                   closePicker();
                   onOpenProject();
                 }}
-                className="flex w-full items-center gap-2.5 text-left"
+                className="flex w-full items-center gap-2.5 text-start"
               >
                 <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
                 <span>{t("New project")}</span>

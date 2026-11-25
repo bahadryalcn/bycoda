@@ -134,7 +134,7 @@ export function BranchPicker({
   const [busy, setBusy] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [checkoutBusy] = useGitPanelState(cwd, "busy");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; details: string } | null>(null);
   const [blockedFiles, setBlockedFiles] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [creatingFrom, setCreatingFrom] = useState(false);
@@ -275,7 +275,7 @@ export function BranchPicker({
         setBlocked(pending);
         return;
       }
-      setError(message);
+      setError({ title: t("Couldn’t switch branch"), details: message });
       setBusy(false);
       if (source === "picker") search.current?.focus();
     }
@@ -488,6 +488,11 @@ export function BranchPicker({
                     loading={fetching}
                     loadingLabel={t("Fetching…")}
                     disabled={busy || !!checkoutBusy || !enabled}
+                    disabledReason={
+                      busy || checkoutBusy
+                        ? t("Wait for the current operation to finish")
+                        : undefined
+                    }
                     onClick={async () => {
                       if (busy || checkoutBusy || !enabled) return;
                       setBusy(true);
@@ -497,7 +502,7 @@ export function BranchPicker({
                         await withGitOperation(cwd, "Fetching…", () => gitFetch(cwd));
                         notifyGitChanged(cwd, "refs");
                       } catch (err) {
-                        setError(failMessage(err));
+                        setError({ title: t("Couldn’t fetch"), details: failMessage(err) });
                       } finally {
                         setBusy(false);
                         setFetching(false);
@@ -541,6 +546,13 @@ export function BranchPicker({
                 align="start"
                 startIcon={<GitBranch className="icon-md" strokeWidth={1.75} />}
                 disabled={busy || !projectBranches?.branches.length}
+                disabledReason={
+                  busy
+                    ? t("Wait for the current operation to finish")
+                    : !projectBranches?.branches.length
+                      ? t("No branches")
+                      : undefined
+                }
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setOpen(false);
@@ -564,12 +576,13 @@ export function BranchPicker({
           />
           {error ? (
             <InlineError
+              details={error.details}
               {...surfaceAttributes(
                 { frame: "pane", edge: "top" },
                 "max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap px-2.5 py-2",
               )}
             >
-              {error}
+              {error.title}
             </InlineError>
           ) : null}
         </PickerPopover>

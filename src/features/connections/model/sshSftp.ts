@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "../../../shared/i18n";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 
 export type SftpEntry = { name: string; kind: "file" | "directory" | "symlink" };
@@ -81,6 +82,29 @@ export type SftpRecovery = {
   totalBytes?: number;
   publication?: "unknown" | "completed";
 };
+/** The desktop reports a transfer phase as English text; an unknown one is shown as sent. */
+export function sftpPhaseLabel(phase: string): string {
+  switch (phase) {
+    case "download":
+      return t("download");
+    case "upload":
+      return t("upload");
+    case "verify remote content":
+      return t("verify remote content");
+    case "resume download":
+      return t("resume download");
+    case "verify upload prefix":
+      return t("verify upload prefix");
+    case "resume upload":
+      return t("resume upload");
+    case "verify completed upload":
+      return t("verify completed upload");
+    case "complete":
+      return t("complete");
+    default:
+      return phase;
+  }
+}
 export function validSftpProgress(value: unknown): value is SftpProgress {
   if (!value || typeof value !== "object") return false;
   const event = value as SftpProgress;

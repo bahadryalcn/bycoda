@@ -195,26 +195,29 @@ export function ProviderStatusGroup({
         <Code size="caption" tone="secondary" className="tabular-nums">
           {version}
         </Code>
-        <Tooltip label={hint ?? status}>
-          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
-          <span tabIndex={0} role="img" aria-label={status}>
-            <StatusIcon
-              className="icon-sm shrink-0"
-              tone={
-                busy || notFound
-                  ? "secondary"
-                  : run.status === "failed"
-                    ? "danger"
-                    : check?.status === "behind"
-                      ? "accent"
-                      : check?.status === "current"
-                        ? "success"
-                        : "secondary"
-              }
-              aria-hidden
-            />
-          </span>
-        </Tooltip>
+        {/* While work runs, its own control shows the progress; the mark would say it twice. */}
+        {run.status === "updating" || busy ? null : (
+          <Tooltip label={hint ?? status}>
+            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
+            <span tabIndex={0} role="img" aria-label={status}>
+              <StatusIcon
+                className="icon-sm shrink-0"
+                tone={
+                  busy || notFound
+                    ? "secondary"
+                    : run.status === "failed"
+                      ? "danger"
+                      : check?.status === "behind"
+                        ? "accent"
+                        : check?.status === "current"
+                          ? "success"
+                          : "secondary"
+                }
+                aria-hidden
+              />
+            </span>
+          </Tooltip>
+        )}
         <div className="provider-inventory-actions">
           {!notFound && check?.status === "behind" ? (
             <Button
@@ -223,7 +226,7 @@ export function ProviderStatusGroup({
               tone="accent"
               onClick={() => void runHarnessUpdate(check)}
               loading={run.status === "updating"}
-              disabled={run.status === "updating"}
+              loadingLabel={t("Updating…")}
               tooltip={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
             >
               {t("Update")}
@@ -246,6 +249,7 @@ export function ProviderStatusGroup({
               label={checkLabel}
               loading={busy}
               disabled={busy || run.status === "updating"}
+              disabledReason={t("Wait for the update to finish.")}
               onClick={onCheck}
             >
               <RefreshCw className="icon-sm" aria-hidden />

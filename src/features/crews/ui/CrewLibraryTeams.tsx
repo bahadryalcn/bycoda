@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuAction } from "../../../shared/ui/dropdownMenuModel";
@@ -86,6 +87,11 @@ export function CrewMemberTeamMenu({
         expanded={open}
         loading={assignment.busy === agent.id}
         disabled={assignment.busy !== null}
+        disabledReason={
+          assignment.busy !== null && assignment.busy !== agent.id
+            ? t("Wait for the current operation to finish")
+            : undefined
+        }
         onClick={() => {
           assignment.clearError(agent.id);
           setOpen(true);
@@ -170,6 +176,15 @@ export function CrewBulkTeamAdd({
         expanded={open}
         loading={assignment.busy === "bulk"}
         disabled={assignment.busy !== null || !selected.length || !definitions.length}
+        disabledReason={
+          assignment.busy !== null && assignment.busy !== "bulk"
+            ? t("Wait for the current operation to finish")
+            : !selected.length
+              ? t("Select at least one member first.")
+              : !definitions.length
+                ? t("Create a crew first.")
+                : undefined
+        }
         onClick={() => {
           setResult(null);
           assignment.clearError("bulk");
@@ -197,7 +212,7 @@ export function CrewBulkTeamAdd({
       ) : null}
       {failure ? (
         <div className="basis-full">
-          <Alert tone="danger">{failure}</Alert>
+          <InlineError details={failure} />
         </div>
       ) : null}
       {result?.added.length ? (

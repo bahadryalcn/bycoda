@@ -20,6 +20,7 @@ import { phonePairingApi } from "../model/phonePairingApi";
 import { usePhonePairing } from "../model/usePhonePairing";
 import type { RemoteMachine } from "../model/protocol";
 import { PhonePairingDialog } from "./PhonePairingDialog";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { issueCopy, providerName, stateCopy } from "./tunnelCopy";
 import type { TunnelSession } from "./useTunnelSession";
 
@@ -174,8 +175,8 @@ function TunnelRow({
           )}
         </div>
       </div>
-      <StatusText tone={stateTone[tunnel.state]} role="status">
-        {t(stateCopy[tunnel.state])}
+      <StatusText tone={stateTone[tunnel.state]}>
+        <LiveText text={stateCopy(tunnel.state)} />
       </StatusText>
       {publicUrl || tunnel.issue || tunnel.canStop || canCheckAgain ? (
         <div className="external-tunnel-details">
@@ -193,9 +194,9 @@ function TunnelRow({
           ) : null}
           {tunnel.issue ? (
             tunnel.state === "error" ? (
-              <InlineError>{t(issueCopy[tunnel.issue])}</InlineError>
+              <InlineError>{issueCopy(tunnel.issue)}</InlineError>
             ) : (
-              <InlineMessage tone="warning">{t(issueCopy[tunnel.issue])}</InlineMessage>
+              <InlineMessage tone="warning">{issueCopy(tunnel.issue)}</InlineMessage>
             )
           ) : null}
           {publicUrl || tunnel.canStop || canCheckAgain ? (
@@ -214,6 +215,11 @@ function TunnelRow({
                   type="button"
                   className="shrink-0"
                   disabled={state.pending || tunnel.state === "stopping"}
+                  disabledReason={
+                    state.pending || tunnel.state === "stopping"
+                      ? t("Wait for the current action to finish.")
+                      : undefined
+                  }
                   loading={state.pending && action === `stop:${tunnel.id}`}
                   onClick={() => void run(`stop:${tunnel.id}`, () => controller.stop(tunnel.id))}
                 >

@@ -299,6 +299,9 @@ export function OnboardingAgents({
                 <Button
                   aria-label={t("Sign in to {p0}", { p0: title })}
                   disabled={restartRequired}
+                  disabledReason={
+                    restartRequired ? t("CLI path saved · restart required") : undefined
+                  }
                   onClick={() => onSignIn(provider)}
                   variant="secondary"
                   type="button"

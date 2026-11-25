@@ -88,6 +88,11 @@ export function GitCommitBlameView({
                     truncate
                     className="min-w-0 flex-1"
                     disabled={!openCommit?.has(entry.sha)}
+                    disabledReason={
+                      openCommit?.has(entry.sha)
+                        ? undefined
+                        : t("This commit is not in the loaded history.")
+                    }
                     onClick={() => openCommit?.open(entry.sha)}
                     tooltip={entry.summary}
                     tooltipDetails={[
@@ -101,14 +106,10 @@ export function GitCommitBlameView({
                   </Button>
                 ) : null}
               </Text>
-              <Text
-                size="inherit"
-                tone="muted"
-                className="w-10 shrink-0 pr-2 text-right select-none"
-              >
+              <Text size="inherit" tone="muted" className="w-10 shrink-0 pe-2 text-end select-none">
                 {entry.line}
               </Text>
-              <Text size="inherit" tone="primary" className="pr-3">
+              <Text size="inherit" tone="primary" className="pe-3">
                 {lines[entry.line - 1] ?? ""}
               </Text>
             </div>

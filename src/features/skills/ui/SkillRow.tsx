@@ -117,6 +117,7 @@ export function SkillRow({
           aria-expanded={selected}
           tooltip=""
           disabled={disabled}
+          disabledReason={t("Wait until the skill is saved.")}
           onKeyDown={(event) => {
             if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
               event.preventDefault();
@@ -178,8 +179,14 @@ export function SkillRow({
             : cell.state === "missing"
               ? t("Missing on {p0}", { p0: cell.name })
               : t("Checking {p0}", { p0: cell.name });
+        const stateLabel =
+          cell.state === "present"
+            ? t("Installed")
+            : cell.state === "missing"
+              ? t("Missing")
+              : t("Checking");
         return (
-          <Tooltip key={key} label={label} asChild>
+          <Tooltip key={key} label={cell.name} details={[stateLabel]} asChild>
             <Text
               as="span"
               size="inherit"

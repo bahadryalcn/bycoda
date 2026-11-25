@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
 import {
@@ -159,8 +160,11 @@ export function SshConfigurationConnectReview({
           <Alert
             tone="danger"
             action={{ label: t("Retry"), onClick: () => setRevision((value) => value + 1) }}
+            extra={
+              <ErrorDetails title={t("Could not review the SSH configuration.")} detail={error} />
+            }
           >
-            {error}
+            {t("Could not review the SSH configuration.")}
           </Alert>
         ) : (
           <LoadingText />

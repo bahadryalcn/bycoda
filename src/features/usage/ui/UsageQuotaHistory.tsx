@@ -17,7 +17,7 @@ import {
 import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import type { UsageFilters, UsageWindow } from "../model/usageAnalytics";
 import { quotaPlotPoints } from "../model/quotaPlotPoints";
-import { usageLabel } from "./UsageVisualizations";
+import { usageLabel } from "./UsageProviderIdentity";
 import { UsageProviderIdentity, usageProviderLabel } from "./UsageProviderIdentity";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
 

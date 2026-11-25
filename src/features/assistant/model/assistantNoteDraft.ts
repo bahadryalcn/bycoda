@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type {
   AssistantNote,
   AssistantRequest,
@@ -105,7 +106,7 @@ export class AssistantNoteDraft {
       this.storage.setItem(`${this.key}:record`, JSON.stringify(this.draft));
     } catch {
       throw new Error(
-        "The note draft could not be saved on this device. Keep this editor open and retry.",
+        t("The note draft could not be saved on this device. Keep this editor open and retry."),
       );
     }
   }
@@ -142,7 +143,7 @@ export class AssistantNoteDraft {
         const inspected = await request({ op: "notes.get", id: intent.id }, intent.environmentId);
         if (!("note" in inspected))
           throw new Error(
-            "The note save could not be verified. Keep the original draft and retry.",
+            t("The note save could not be verified. Keep the original draft and retry."),
           );
         const prior = inspected.note;
         // Null also covers an owner deleting a committed note after its reply was
@@ -155,14 +156,16 @@ export class AssistantNoteDraft {
         if (prior) {
           if (matches(prior, intent)) return prior;
           if (prior.updatedAt !== intent.expectedUpdatedAt || intent.expectedUpdatedAt === 0)
-            throw new Error("This note changed on the computer. Refresh it before saving.");
+            throw new Error(t("This note changed on the computer. Refresh it before saving."));
         }
       }
       // The exact native create0 / optimistic edit version is rechecked at commit.
       const { environmentId, ...payload } = intent;
       const result = await request({ op: "notes.save", ...payload }, environmentId);
       if (!result.note || !matches(result.note, intent))
-        throw new Error("The note save could not be verified. Keep the original draft and retry.");
+        throw new Error(
+          t("The note save could not be verified. Keep the original draft and retry."),
+        );
       return result.note;
     })().finally(() => {
       this.pending = undefined;

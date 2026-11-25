@@ -21,7 +21,7 @@ export function AssistantManagedBadge({
       <ManagedBadge compact={compact} manual={"supervisionId" in management} />
     ) : (
       <ManagementMark
-        label={t("supervisionId" in management ? "Supervision recorded" : "Managed session")}
+        label={"supervisionId" in management ? t("Supervision recorded") : t("Managed session")}
         compact={compact}
       />
     )

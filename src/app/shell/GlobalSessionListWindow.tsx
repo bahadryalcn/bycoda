@@ -13,18 +13,18 @@ import { projectKey } from "../../shared/lib/paths";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { SessionListWindow, type SessionListRow } from "./sessionListWindow";
 
-const STATE_LABELS: Record<SessionRowStatusKind, string> = {
-  failed: "Failed",
-  retrying: "Retrying",
-  interrupted: "Interrupted",
-  input: "Needs approval",
-  working: "Working",
-  waiting: "Waiting",
-  opening: "Loading sessions…",
-  done: "Done",
-  draft: "Draft",
-  idle: "Idle",
-};
+const stateLabels = (t: ReturnType<typeof useT>): Record<SessionRowStatusKind, string> => ({
+  failed: t("Failed"),
+  retrying: t("Retrying"),
+  interrupted: t("Interrupted"),
+  input: t("Needs approval"),
+  working: t("Working"),
+  waiting: t("Waiting"),
+  opening: t("Loading sessions…"),
+  done: t("Done"),
+  draft: t("Draft"),
+  idle: t("Idle"),
+});
 
 type SessionRow = Extract<SessionListRow, { kind: "session" }>;
 type GlobalRow = SessionRow | { kind: "heading"; key: string; label: string };
@@ -77,7 +77,7 @@ export function GlobalSessionListWindow({
     if (view.groupBy !== "none" && sessions.length) {
       const label =
         view.groupBy === "state"
-          ? t(STATE_LABELS[key as SessionRowStatusKind])
+          ? stateLabels(t)[key as SessionRowStatusKind]
           : key === "~"
             ? t("No project")
             : projectDisplayNameFrom(sessions[0].cwd, labels);

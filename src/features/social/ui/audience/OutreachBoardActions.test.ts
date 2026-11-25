@@ -8,6 +8,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   buttonsByText,
   clickButton,
@@ -145,7 +146,7 @@ describe("OutreachBoard start and pause", () => {
     const onChanged = await open(mock);
     clickButton("Start");
     await flush();
-    expect(bodyText()).toContain("Starting needs the owner's approval.");
+    expect(openErrorDetails()).toContain("Starting needs the owner's approval.");
     expect(bodyText()).toContain("Draft");
     expect(buttonByText("Start")?.disabled).toBe(false);
     expect(onChanged).not.toHaveBeenCalled();
@@ -228,7 +229,7 @@ describe("OutreachBoard results", () => {
         }),
       }),
     );
-    expect(bodyText()).toContain("Outreach is unavailable.");
+    expect(openErrorDetails()).toContain("Outreach is unavailable.");
     expect(bodyText()).not.toContain("Loading sequences");
   });
 });

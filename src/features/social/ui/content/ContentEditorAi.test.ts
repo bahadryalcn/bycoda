@@ -128,7 +128,7 @@ describe("Ask AI gate", () => {
 
   it("disables the whole entry while another editor action runs", () => {
     render({ disabled: true });
-    expect(button("Ask AI")?.disabled).toBe(true);
+    expect(button("Ask AI")?.getAttribute("aria-disabled")).toBe("true");
   });
 });
 
@@ -195,7 +195,15 @@ describe("Ask AI result", () => {
       throw new Error("The AI agent is not ready.");
     });
     await ask();
-    expect(text()).toContain("The AI agent is not ready.");
+    expect(text()).toContain("AI could not write the post.");
+    act(() =>
+      element
+        .querySelector<HTMLButtonElement>('[role="alert"] button[aria-haspopup="dialog"]')
+        ?.click(),
+    );
+    expect(document.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+      "The AI agent is not ready.",
+    );
     expect(text()).not.toContain("Fresh idea");
     expect(onUse).not.toHaveBeenCalled();
   });

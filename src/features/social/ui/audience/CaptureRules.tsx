@@ -243,7 +243,9 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
         {t("Your rules")}
       </SectionLabel>
 
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not complete this action.")}</InlineError>
+      ) : null}
       {rules === undefined && !error ? (
         <LoadingText delay={false} className="audience-muted">
           {t("Loading rules…")}

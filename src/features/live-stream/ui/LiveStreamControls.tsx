@@ -151,7 +151,9 @@ export function LiveStreamControls({
             variant="secondary"
             startIcon={activity?.needsPlatformConfirmation ? <Check /> : <Square />}
             disabled={feedback.busy || starting || stopping || !activity}
+            disabledReason={t("Wait for the current live stream action to finish.")}
             loading={stopping}
+            loadingLabel={t("Stopping…")}
             onClick={stop}
           >
             {activity?.needsPlatformConfirmation
@@ -171,7 +173,19 @@ export function LiveStreamControls({
               requiresManualCredentials ||
               !hasSelection
             }
+            disabledReason={
+              !obs.configured
+                ? t("Set up OBS in step 2 first.")
+                : managed
+                  ? t("A live stream is already running.")
+                  : !hasSelection
+                    ? t("Choose where to stream first.")
+                    : requiresManualCredentials
+                      ? t("Enter the stream key in step 3 first.")
+                      : t("Wait for the current live stream action to finish.")
+            }
             loading={starting}
+            loadingLabel={t("Starting…")}
             onClick={start}
           >
             {picked.length > 1
@@ -215,7 +229,9 @@ export function LiveStreamControls({
         </InlineMessage>
       ) : activity?.state === "streaming" && destinations.length === 0 ? (
         <StatusText tone="done">{t("Streaming")}</StatusText>
-      ) : activity?.state === "starting" || activity?.state === "stopping" ? (
+      ) : (activity?.state === "starting" && !starting) ||
+        (activity?.state === "stopping" && !stopping) ? (
+        // The pressed action already shows this progress beside its spinner.
         <StatusText tone="running">
           {activity.state === "starting" ? t("Starting…") : t("Stopping…")}
         </StatusText>

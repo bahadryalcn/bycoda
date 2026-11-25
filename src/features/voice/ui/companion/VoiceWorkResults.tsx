@@ -16,18 +16,14 @@ import { voiceActionLabel } from "../VoiceToolActivityPanel";
 
 const status = z.enum(["done", "failed", "interrupted"]);
 const count = z.number().int().nonnegative();
-const statusView = {
-  done: ["done", "Completed"],
-  failed: ["failed", "Failed"],
-  interrupted: ["needs-you", "Unknown"],
-} as const;
 
 const ActionsContext = createContext<readonly VoiceLiveAction[]>([]);
 
 function ResultStatus({ value }: { value: VoiceLiveResultStatus }) {
   const t = useT();
-  const [tone, label] = statusView[value];
-  return <StatusText tone={tone}>{t(label)}</StatusText>;
+  if (value === "done") return <StatusText tone="done">{t("Completed")}</StatusText>;
+  if (value === "failed") return <StatusText tone="failed">{t("Failed")}</StatusText>;
+  return <StatusText tone="needs-you">{t("Unknown")}</StatusText>;
 }
 
 function ResultSection({
@@ -89,7 +85,7 @@ export function CheckResultBody(props: {
 }) {
   const t = useT();
   return (
-    <ResultSection title={t(props.kind === "build" ? "Build" : "Checks")} value={props.status} />
+    <ResultSection title={props.kind === "build" ? t("Build") : t("Checks")} value={props.status} />
   );
 }
 

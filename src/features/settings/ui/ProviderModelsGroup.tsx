@@ -6,6 +6,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
+import { Check } from "../../../shared/ui/icons";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import {
@@ -114,6 +116,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
               variant="ghost"
               onClick={enableAll}
               disabled={bulkModels.every((model) => isModelEnabled(model.id))}
+              disabledReason={t("Every model is already enabled.")}
             >
               {filterFree ? t("Enable all free") : t("Enable all")}
             </Button>
@@ -124,6 +127,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
               variant="ghost"
               onClick={onlyDefault}
               disabled={enabledCount === 1 && Boolean(keptModel && isModelEnabled(keptModel.id))}
+              disabledReason={t("Only the default model is enabled.")}
             >
               {t("Only default")}
             </Button>
@@ -164,9 +168,13 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
                   <span className="provider-model-name">
                     <ModelLabel model={model.id} harness={model.harness} name={model.name} />
                     {model.id === defaultId ? (
-                      <Badge size="sm" className="shrink-0">
+                      <InfoTooltip
+                        label={t("Default")}
+                        className="shrink-0"
+                        icon={<Check aria-hidden className="icon-sm" />}
+                      >
                         {t("Default")}
-                      </Badge>
+                      </InfoTooltip>
                     ) : null}
                     {model.free ? (
                       <Badge size="sm" tone="success" className="shrink-0">

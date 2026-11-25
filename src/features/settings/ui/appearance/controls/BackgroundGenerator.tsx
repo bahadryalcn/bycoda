@@ -1,5 +1,6 @@
 import { useEffect, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../../shared/ui/Button";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
@@ -85,8 +86,15 @@ export function BackgroundGenerator({
         </Button>
       </div>
       {failure !== null ? (
-        <SettingsFeedback state="error">
-          {t("Gradient generation failed. Try again.")} {failure}
+        <SettingsFeedback
+          state="error"
+          extra={
+            failure ? (
+              <ErrorDetails title={t("Gradient generation failed. Try again.")} detail={failure} />
+            ) : undefined
+          }
+        >
+          {t("Gradient generation failed. Try again.")}
         </SettingsFeedback>
       ) : null}
     </div>

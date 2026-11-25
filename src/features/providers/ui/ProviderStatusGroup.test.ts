@@ -135,6 +135,7 @@ it("uses failure glyph with a retained successful version check", () => {
 
 it("disables version checks while the same CLI is updating", () => {
   updateState.updating = true;
+  updateState.catalogRefresh = "initial";
   try {
     const html = renderToStaticMarkup(
       createElement(ProviderStatusGroup, {
@@ -148,9 +149,13 @@ it("disables version checks while the same CLI is updating", () => {
     const document = new DOMParser().parseFromString(html, "text/html");
     const check = document.querySelector('button[aria-label="Check for updates: Codex"]');
     expect(check).not.toBeNull();
-    expect(check?.hasAttribute("disabled")).toBe(true);
+    expect(check?.getAttribute("aria-disabled")).toBe("true");
+    // The progress lives in the action itself; no second status mark beside it.
+    expect(document.querySelector('[role="img"][aria-label="Updating…"]')).toBeNull();
+    expect(document.querySelector('button[aria-busy="true"]')?.textContent).toContain("Updating…");
   } finally {
     updateState.updating = false;
+    updateState.catalogRefresh = "unchanged";
   }
 });
 

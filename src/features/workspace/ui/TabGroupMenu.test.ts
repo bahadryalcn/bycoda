@@ -102,7 +102,11 @@ it.each(["save", "remove"])(
     renderMenu(vi.fn(), { logoProject: "/repo", logoPath: "/existing.png", onClose, onLogoChange });
     const label = action === "save" ? "Change project logo" : "Remove project logo";
     await act(async () => button(label).click());
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain("maximum 2 MB");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not update the project logo.",
+    );
+    await act(async () => button("Details: Could not update the project logo.").click());
+    expect(document.body.textContent).toContain("maximum 2 MB");
     expect(onClose).not.toHaveBeenCalled();
     expect(onLogoChange).not.toHaveBeenCalled();
     if (action === "save") vi.mocked(pickAndSetProjectLogo).mockResolvedValueOnce("/new.png");

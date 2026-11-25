@@ -17,7 +17,6 @@ export function PermissionRestartButton({ variant }: { variant?: ButtonVariant }
     <Button
       variant={variant}
       loading={state === "pending"}
-      disabled={state === "pending"}
       reserveLabels={[t("Retry")]}
       onClick={restart}
     >

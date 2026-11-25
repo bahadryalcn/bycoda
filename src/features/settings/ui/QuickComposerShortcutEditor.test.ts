@@ -103,9 +103,7 @@ it.each([
   { key: "Escape", code: "Escape", keyCode: 229 },
   { key: "k", code: "KeyK", metaKey: true, keyCode: 229 },
   { key: "Delete", code: "Delete", isComposing: true },
-  { key: "Delete", code: "Delete", repeat: true },
-  { key: "k", code: "KeyK", metaKey: true, repeat: true },
-])("keeps capture unchanged for IME and repeat events: %j", async (init) => {
+])("keeps capture unchanged for IME events: %j", async (init) => {
   const onApply = vi.fn();
   const onDisable = vi.fn();
   await act(async () =>
@@ -130,6 +128,36 @@ it.each([
   expect(onDisable).not.toHaveBeenCalled();
   expect(recorder.getAttribute("aria-pressed")).toBe("true");
   expect(event.defaultPrevented).toBe(false);
+});
+
+it.each([
+  { key: "Delete", code: "Delete", repeat: true },
+  { key: "k", code: "KeyK", metaKey: true, repeat: true },
+])("swallows the repeats of a held key without recording them: %j", async (init) => {
+  const onApply = vi.fn();
+  const onDisable = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ShortcutEditor, {
+        name: "Test",
+        display: "Ctrl+K",
+        resetVisible: false,
+        onApply,
+        onDisable,
+        onReset: vi.fn(),
+      }),
+    ),
+  );
+  const recorder = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Test shortcut"]',
+  )!;
+  await act(async () => recorder.click());
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  await act(async () => recorder.dispatchEvent(event));
+  expect(onApply).not.toHaveBeenCalled();
+  expect(onDisable).not.toHaveBeenCalled();
+  expect(recorder.getAttribute("aria-pressed")).toBe("true");
+  expect(event.defaultPrevented).toBe(true);
 });
 
 it.each([false, true])(

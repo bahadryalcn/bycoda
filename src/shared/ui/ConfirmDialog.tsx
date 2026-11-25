@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useT } from "../i18n";
-import { Alert } from "./Alert";
+import { InlineError } from "./InlineError";
 import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
 import { AlertCircle, CircleX } from "./icons";
@@ -400,11 +400,7 @@ export function ConfirmDialog({
             />
           </div>
         ) : null}
-        {error ? (
-          <Alert tone="danger" className="break-words">
-            {error}
-          </Alert>
-        ) : null}
+        {error ? <InlineError details={error} className="break-words" /> : null}
       </div>
     </Modal>
   );

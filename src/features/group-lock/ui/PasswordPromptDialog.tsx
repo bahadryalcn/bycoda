@@ -1,4 +1,3 @@
-import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -8,10 +7,7 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { CooldownNotice } from "./CooldownNotice";
-import {
-  isTransientTransportError,
-  presentRemoteError,
-} from "../../connections/public/remoteFailure";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** The live cool-down notice; rendered from the running timer, never stored. */
 export function cooldownMessage(remainingMs: number): string | null {
@@ -34,9 +30,7 @@ export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): 
 
 /** A thrown check or save failure as the user reads it; Host transport codes never show raw. */
 export function promptErrorMessage(reason: unknown): string {
-  return isTransientTransportError(reason)
-    ? presentRemoteError(reason, { explicit: true })
-    : t(errorText(reason));
+  return presentRemoteError(reason, { explicit: true });
 }
 
 /** What to tell the user when the password was right but the change was not fully saved. */
@@ -103,7 +97,7 @@ export function PasswordPromptDialog({
   const formId = useId();
   const alive = useRef(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const cooldown = useCooldown(lockCooldownMs());
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- tracks prompt lifetime to discard verification completions after unmount
@@ -114,7 +108,7 @@ export function PasswordPromptDialog({
     };
   }, []);
 
-  const message = cooldownMessage(cooldown.remainingMs) ?? error;
+  const message = cooldownMessage(cooldown.remainingMs) ?? notice;
   const hasMessage = message != null;
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the password input becoming editable after a failed verification.
@@ -127,19 +121,19 @@ export function PasswordPromptDialog({
     const password = input.current?.value ?? "";
     if (busy || cooldown.remainingMs > 0) return;
     if (!password) {
-      setError(t("Enter your lock password."));
+      setNotice(t("Enter your lock password."));
       input.current?.focus();
       return;
     }
     setBusy(true);
-    setError(null);
+    setNotice(null);
     try {
       const result = await verify(password);
       if (!alive.current) return;
       if (input.current) input.current.value = "";
       if (result.ok) {
         if (result.incomplete) {
-          setError(incompleteMessage(result.incomplete));
+          setNotice(incompleteMessage(result.incomplete));
           return;
         }
         onDone();
@@ -148,11 +142,11 @@ export function PasswordPromptDialog({
       if (result.reason === "wrong") await pause(WRONG_PASSWORD_DELAY_MS);
       if (!alive.current) return;
       if (result.retryAfterMs > 0) cooldown.start(result.retryAfterMs);
-      setError(verifyFailureMessage(result, result.retryAfterMs));
+      setNotice(verifyFailureMessage(result, result.retryAfterMs));
     } catch (reason) {
       // A thrown failure is not a refused password: keep it typed so the retry is one click.
       if (!alive.current) return;
-      setError(promptErrorMessage(reason));
+      setNotice(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -174,6 +168,7 @@ export function PasswordPromptDialog({
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
+            aria-describedby={cooldown.remainingMs > 0 ? "lock-password-error" : undefined}
             variant="primary"
             tone={danger ? "danger" : "neutral"}
             loading={busy}

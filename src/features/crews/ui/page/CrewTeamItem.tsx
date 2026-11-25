@@ -94,9 +94,9 @@ export function CrewTeamItem({
           <Text as="p" tone="muted" truncate>
             {[
               scope,
-              t(crew.agents.length === 1 ? "{p0} member" : "{p0} members", {
-                p0: crew.agents.length,
-              }),
+              crew.agents.length === 1
+                ? t("{p0} member", { p0: 1 })
+                : t("{p0} members", { p0: crew.agents.length }),
             ].join(" · ")}
           </Text>
           {execution === "working" || attention || work ? (

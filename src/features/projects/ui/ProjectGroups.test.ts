@@ -402,7 +402,13 @@ it("keeps the group and failed projects retryable after a partial removal", asyn
   await act(async () => button("Delete").click());
   expect(loadProjectGroups()).toHaveLength(1);
   expect(loadProjectGroupAssignments()).toEqual({ [pathKey("/work/personal")]: "clients" });
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Removal failed");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Couldn’t delete this project.",
+  );
+  await act(async () =>
+    document.body.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("Removal failed");
   remove.mockImplementation(async () => {});
   await act(async () => button("Delete").click());
   expect(remove.mock.calls.map(([path]) => path)).toEqual([

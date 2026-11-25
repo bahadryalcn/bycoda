@@ -1,3 +1,4 @@
+import { catalogText } from "../model/catalogText";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { flushSync } from "react-dom";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
@@ -101,7 +102,7 @@ async function runQueueAction(
     setFeedback({
       error: true,
       actionId: id,
-      text: t(presentRemoteError(error, { explicit: true })),
+      text: presentRemoteError(error, { explicit: true }),
     });
     return false;
   } finally {
@@ -235,7 +236,7 @@ export function MessageQueue({
       setFeedback({
         error: true,
         actionId: "admission",
-        text: t(presentRemoteError(error, { explicit: true })),
+        text: presentRemoteError(error, { explicit: true }),
       }),
     );
   };
@@ -468,10 +469,10 @@ export function MessageQueue({
                 loading={pendingAction === "resume"}
                 loadingLabel={t("Resuming…")}
                 onClick={() => trigger("resume", onResume)}
+                startIcon={<Play className="icon-sm" />}
                 className="shrink-0"
               >
-                <Play className="icon-sm" />
-                {pendingAction === "resume" ? t("Resuming…") : t("Resume")}
+                {t("Resume")}
               </Button>
             ) : null}
           </Text>
@@ -507,7 +508,7 @@ export function MessageQueue({
               onClick={() => trigger("takeover", () => takeOverSharedLocalQueue(sessionId))}
               className="shrink-0"
             >
-              {pendingAction === "takeover" ? t("Taking over…") : t("Take over")}
+              {t("Take over")}
             </Button>
           </Text>
         ) : null}
@@ -555,14 +556,14 @@ export function MessageQueue({
                       : undefined)
               }
               loading={pendingAction === "resume"}
-              loadingLabel={t("Resuming…")}
+              loadingLabel={t("Sending…")}
               onClick={() =>
                 trigger("resume", onResume ?? (onSteer ? () => onSteer(messages[0].id) : undefined))
               }
+              startIcon={<Play className="icon-sm" />}
               className="shrink-0"
             >
-              <Play className="icon-sm" />
-              {pendingAction === "resume" ? t("Sending…") : t("Send next")}
+              {t("Send next")}
             </Button>
           </Text>
         ) : null}
@@ -601,7 +602,7 @@ export function MessageQueue({
             className="px-1 pb-1"
             size="caption"
             tone="secondary"
-            text={t(queueDelivery.detail)}
+            text={catalogText(t, queueDelivery.detail)}
           />
         ) : null}
         <div
@@ -667,7 +668,7 @@ export function MessageQueue({
                 : undefined;
             const targetLabel =
               target && summary
-                ? [summary.model, accountLabel, summary.effort && t(summary.effort)]
+                ? [summary.model, accountLabel, summary.effort && catalogText(t, summary.effort)]
                     .filter(Boolean)
                     .join(" · ")
                 : undefined;
@@ -690,7 +691,7 @@ export function MessageQueue({
                 () => "",
               ).trim() ||
               citations.map(chatCitationPreview).filter(Boolean).join(" · ") ||
-              t(files === 1 ? "1 attachment" : "{p0} attachments", { p0: files });
+              (files === 1 ? t("1 attachment") : t("{p0} attachments", { p0: files }));
             return (
               <Text
                 key={message.id}
@@ -773,11 +774,11 @@ export function MessageQueue({
                       </OverflowTooltip>
                       {routeNote ? (
                         <InfoTooltip
-                          label={t(
+                          label={
                             route === "switch"
-                              ? "Steer switches provider"
-                              : "Steer restarts with this model",
-                          )}
+                              ? t("Steer switches provider")
+                              : t("Steer restarts with this model")
+                          }
                           icon={<ArrowLeftRight className="icon-sm" aria-hidden="true" />}
                           className="shrink-0"
                         >

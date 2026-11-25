@@ -558,12 +558,9 @@ export function SurfaceTabs({
     void action.catch((error) => {
       console.error(`Failed to run file-tab action ${id}:`, error);
       setFileActionError(
-        t(
-          id === "open-default"
-            ? "Could not open the file in its default app: {p0}"
-            : "Could not complete the file action: {p0}",
-          { p0: String(error) },
-        ),
+        id === "open-default"
+          ? t("Could not open the file in its default app: {p0}", { p0: String(error) })
+          : t("Could not complete the file action: {p0}", { p0: String(error) }),
       );
     });
   };
@@ -812,7 +809,7 @@ export function SurfaceTabs({
         />
       ) : null}
       {fileActionError ? (
-        <FileActionError message={fileActionError} onDismiss={() => setFileActionError(null)} />
+        <FileActionError details={fileActionError} onDismiss={() => setFileActionError(null)} />
       ) : null}
     </PaneHeader>
   );

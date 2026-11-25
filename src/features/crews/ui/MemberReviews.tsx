@@ -68,6 +68,7 @@ function MemberReviews({
   failure: RemoteErrorView;
   onRetry: () => void;
 }) {
+  const { message: summary, details } = failure;
   const performance = memberPerformance(candidates);
   const byModel = new Map(performance.perModel.map((m) => [`${m.harness}/${m.model}`, m]));
   return (
@@ -79,8 +80,8 @@ function MemberReviews({
         <LoadingText delay={false}>{t("Loading reviews…")}</LoadingText>
       ) : status === "error" ? (
         // The presented reason is the visible text; the raw Host message sits behind Details.
-        <InlineError details={failure.details} retry={{ onRetry }}>
-          {failure.message}
+        <InlineError details={details} retry={{ onRetry }}>
+          {summary}
         </InlineError>
       ) : candidates.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No reviewed work yet")} />

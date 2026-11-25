@@ -330,7 +330,7 @@ it("preserves drafts across services, offers every provider in the picker, and r
   expect(gitlabToken()?.value).toBe("unsaved-draft");
   const lastId = INTEGRATIONS[INTEGRATIONS.length - 1]!;
   await pick(lastId.id);
-  expect(trigger().getAttribute("aria-label")).toContain(lastId.name);
+  expect(trigger().getAttribute("aria-label")).toContain(lastId.name());
   await act(async () => root.render(render("jira")));
   expect(trigger().getAttribute("aria-label")).toContain("Jira");
 });

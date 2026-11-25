@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { captureAssistantHostRead } from "./assistantHostRead";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
 import { previewVoice } from "../../voice/model/voicePreview";
@@ -20,10 +21,11 @@ export async function listenAssistantBriefing(
   environmentId?: string,
 ) {
   signal.throwIfAborted();
-  if (!canRead()) throw new Error("Briefing details are unavailable in the current project scope.");
-  if (output && !output.signal.aborted) throw new Error("Another briefing is already playing.");
+  if (!canRead())
+    throw new Error(t("Briefing details are unavailable in the current project scope."));
+  if (output && !output.signal.aborted) throw new Error(t("Another briefing is already playing."));
   if (isVoiceConversationActive())
-    throw new Error("Finish the voice conversation before listening to the briefing.");
+    throw new Error(t("Finish the voice conversation before listening to the briefing."));
   const controller = new AbortController();
   output = controller;
   const stop = () => controller.abort();
@@ -38,20 +40,20 @@ export async function listenAssistantBriefing(
     const current = await owner.snapshot();
     controller.signal.throwIfAborted();
     if (!canRead(current))
-      throw new Error("Briefing details are unavailable in the current project scope.");
+      throw new Error(t("Briefing details are unavailable in the current project scope."));
     if (
       !current?.profile.setupComplete ||
       !current.profile.voiceSetupComplete ||
       !current.profile.name.trim()
     )
-      throw new Error("Set up voice before listening to the briefing.");
+      throw new Error(t("Set up voice before listening to the briefing."));
     if (!current.briefing || current.briefing.id !== id)
-      throw new Error("The briefing changed. Open the current briefing and try again.");
+      throw new Error(t("The briefing changed. Open the current briefing and try again."));
     const languageHint =
       current.profile.language === "auto" ? (current.lastSpokenLanguage ?? undefined) : undefined;
     const language = current.profile.language === "auto" ? languageHint : current.profile.language;
     if (!language || !voiceLanguageCode(language))
-      throw new Error("Speak once or choose a language before listening.");
+      throw new Error(t("Speak once or choose a language before listening."));
     const text = current.briefing.text;
     if (
       current.memory.some(
@@ -64,10 +66,10 @@ export async function listenAssistantBriefing(
       )
     )
       throw new Error(
-        "The briefing conflicts with a current rule. Read the current notes instead.",
+        t("The briefing conflicts with a current rule. Read the current notes instead."),
       );
     if (isVoiceConversationActive())
-      throw new Error("Finish the voice conversation before listening to the briefing.");
+      throw new Error(t("Finish the voice conversation before listening to the briefing."));
     clearTimeout(timer);
     timer = setTimeout(
       () => controller.abort(new Error("Briefing playback timed out.")),

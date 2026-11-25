@@ -3,8 +3,10 @@ import { useJiraDragEdgeScroll, type DragPoint } from "../hooks/useJiraDragEdgeS
 import { JiraBoardToolbar } from "./JiraBoardToolbar";
 import { StatusText } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InboxLoadError } from "./InboxLoadError";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SkeletonBar } from "../../../shared/ui/Skeleton";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -473,7 +475,8 @@ export function JiraBoardView({
           ? t("Ranking is unavailable while projects are hidden.")
           : t("Ranking is unavailable until all board groups and pages are loaded and current.")
       : undefined;
-  const activity = readingTransitions ? t("Loading…") : busy ? t("Saving to Jira…") : notice;
+  const pendingText = readingTransitions ? t("Loading…") : busy ? t("Saving to Jira…") : undefined;
+  const activity = pendingText ? undefined : notice;
 
   async function mutate(action: () => Promise<void>) {
     if (operation.current || readOperation.current) return;
@@ -829,6 +832,7 @@ export function JiraBoardView({
             iconOnly
             label={t("Drag {p0}", { p0: issue.identifier })}
             disabled={locked}
+            disabledReason={t("Wait for the board to finish updating.")}
             motion="none"
             tooltip={rankHint}
             data-jira-drag-handle=""
@@ -1067,13 +1071,17 @@ export function JiraBoardView({
         text={loading ? t("Loading Jira board…") : readingGroup ? t("Loading issues…") : ""}
       />
       {backlogUnavailable && (mode === "planning" || scope === "backlog") ? (
-        <Text as="p" size="inherit" tone="secondary" className="jira-board-hint">
+        <InlineMessage tone="info" className="jira-board-notice">
           {t(
             "Backlog is not enabled for this Jira board. Enable it in Jira board settings to use backlog planning. Available board issues remain visible.",
           )}
-        </Text>
+        </InlineMessage>
       ) : null}
-      {activity ? (
+      {pendingText ? (
+        <Text as="div" size="caption" tone="secondary" className="jira-board-status">
+          <LoadingText>{pendingText}</LoadingText>
+        </Text>
+      ) : activity ? (
         <Text as="div" size="caption" tone="secondary" className="jira-board-status">
           <LiveText text={activity} />
         </Text>

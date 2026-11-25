@@ -157,6 +157,7 @@ export function InboxAccountActions({
         variant="ghost"
         label={t("Account actions")}
         disabled={disabled}
+        disabledReason={t("Wait for the current operation to finish")}
         loading={loading}
         aria-haspopup="menu"
         aria-expanded={Boolean(anchor)}

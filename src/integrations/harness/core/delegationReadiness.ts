@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n/core";
 import { invokeProviderCommand } from "./child";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
@@ -44,14 +45,18 @@ export function delegationFallback(settings: Settings, ready: boolean, harness?:
   return advisor ? `${subagents} ${advisor}` : subagents;
 }
 
-/** The owner's notice for a fallback: the guidance above addresses the model, this the owner.
+/** The owner's notice for a fallback, translated: the guidance above addresses the model, this the owner.
  * It names the cause and that the next message after the Host answers recovers on its own. */
 export function delegationNotice(guidance: string) {
   if (guidance === ADVISOR_LOST)
-    return "The advisor is off for this message because bycoda Host is not responding.";
+    return t("The advisor is off for this message because bycoda Host is not responding.");
   return guidance.includes("use your built-in subagents")
-    ? "bycoda Host is not responding, so this message uses the provider's built-in subagents. Host subagents return once it responds."
-    : "Subagents are off for this message because bycoda Host is not responding. They return once it responds.";
+    ? t(
+        "bycoda Host is not responding, so this message uses the provider's built-in subagents. Host subagents return once it responds.",
+      )
+    : t(
+        "Subagents are off for this message because bycoda Host is not responding. They return once it responds.",
+      );
 }
 
 /** One bridge question within five seconds; a hung or failed backend answers false. */

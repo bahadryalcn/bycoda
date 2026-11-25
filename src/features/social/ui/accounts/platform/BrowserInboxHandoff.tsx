@@ -5,6 +5,7 @@ import { InlineError, InlineMessage } from "../../../../../shared/ui/InlineError
 import { usePollingRefresh } from "../../../hooks/usePollingRefresh";
 import type { SocialBrowserWorkflow } from "../../../model/socialBrowser";
 import type { SocialClient } from "../../../model/socialClient";
+import { accountBlockedReason } from "../blockedReason";
 import { useAccountWrite } from "../useAccountWrite";
 
 function isRunning(workflow?: SocialBrowserWorkflow | null) {
@@ -27,7 +28,7 @@ export function BrowserInboxHandoff({
 }) {
   const [workflow, setWorkflow] = useState<SocialBrowserWorkflow | null>();
   const [statusError, setStatusError] = useState(false);
-  const { error, details, is, write } = useAccountWrite(t("Could not open the link."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not open the link."));
   const active = isRunning(workflow);
   const checking = workflow === undefined && !statusError;
   const loadWorkflow = async (id?: string) => {
@@ -64,6 +65,11 @@ export function BrowserInboxHandoff({
         size="sm"
         className="self-start"
         disabled={disabled || active || is("cancel")}
+        disabledReason={
+          active && !disabled
+            ? t("The browser window is already open.")
+            : accountBlockedReason(disabled)
+        }
         loading={(checking && !disabled) || is("open")}
         onClick={() =>
           void write("open", async () => {
@@ -79,6 +85,7 @@ export function BrowserInboxHandoff({
           size="sm"
           className="self-start"
           disabled={disabled}
+          disabledReason={accountBlockedReason(disabled)}
           loading={is("cancel")}
           onClick={() =>
             void write("cancel", async () => {
@@ -107,7 +114,7 @@ export function BrowserInboxHandoff({
       {["failed", "expired", "interrupted"].includes(workflow?.status ?? "") ? (
         <InlineError>{t("Could not open the link. Try again.")}</InlineError>
       ) : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
     </div>
   );
 }

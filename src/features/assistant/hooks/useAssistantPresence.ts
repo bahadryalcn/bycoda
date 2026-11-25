@@ -3,7 +3,10 @@ import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
 import type { DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { AssistantPresenceIndicator } from "../ui/AssistantPresenceIndicator";
-import { assistantPresencePresentation } from "../model/assistantPresencePresentation";
+import {
+  assistantPresenceLabel,
+  assistantPresencePresentation,
+} from "../model/assistantPresencePresentation";
 import {
   canSetAssistantPresence,
   emptyAssistantPresence,
@@ -106,9 +109,7 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
   const state = assistantPresencePresentation(view.status?.state).state;
   // The mark is the owner's choice; the trigger and badge show the effective state.
   const selected = selectedAssistantPresence(view.status);
-  const label = t(
-    view.pending || busy ? "Updating availability…" : assistantPresencePresentation(state).label,
-  );
+  const label = view.pending || busy ? t("Updating availability…") : assistantPresenceLabel(state);
   const items: DropdownMenuItem[] = [
     {
       kind: "group",
@@ -117,7 +118,7 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
       items: (["present", "away", "dnd"] as const).map((choice) => ({
         kind: "item",
         id: choice,
-        label: t(assistantPresencePresentation(choice).label),
+        label: assistantPresenceLabel(choice),
         icon: createElement(AssistantPresenceIndicator, { state: choice, markOnly: true }),
         checked: selected === choice,
         selectionRole: "radio",

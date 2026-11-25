@@ -273,7 +273,7 @@ export function UnifiedDiffView({
             aria-label={t("Diff view")}
             className="flex shrink-0 items-center gap-0.5"
           >
-            <DiffLayoutToggle className="mr-0.5" />
+            <DiffLayoutToggle className="me-0.5" />
             {files.length > 1 ? (
               <>
                 <Button
@@ -295,6 +295,7 @@ export function UnifiedDiffView({
                   motion="none"
                   type="button"
                   disabled={open.size === 0}
+                  disabledReason={open.size === 0 ? t("All files are collapsed.") : undefined}
                   onClick={() => setOpen(new Set())}
                 >
                   <FoldVertical className="icon-sm" strokeWidth={1.75} />
@@ -1476,7 +1477,7 @@ const DiffLineRow = memo(function DiffLineRow({
           <span className={`pointer-events-none absolute inset-0 ${gutterTint}`} />
         ) : null}
         <span
-          className={`relative block w-full pr-2 text-right font-mono diff-meta-text leading-none tabular-nums ${gutterText}`}
+          className={`relative block w-full pe-2 text-end font-mono diff-meta-text leading-none tabular-nums ${gutterText}`}
         >
           {number ?? ""}
         </span>
@@ -1508,7 +1509,7 @@ const DiffLineRow = memo(function DiffLineRow({
             selected={stageVisible}
             data-gutter-action="stage"
             data-retained-action={stageVisible ? "true" : "false"}
-            className="absolute top-0.5 left-full z-1 ml-0.5"
+            className="absolute top-0.5 left-full z-1 ms-0.5"
           >
             <InlineAction
               label={t("Stage hunk")}
@@ -1531,7 +1532,7 @@ const DiffLineRow = memo(function DiffLineRow({
       {/* Width is counted in minWidthCh. select-none keeps the glyph and the
           screen-reader cue out of copied code. */}
       <span
-        className={`w-7 shrink-0 select-none pl-3 font-mono diff-code-text leading-none font-medium ${gutterText}`}
+        className={`w-7 shrink-0 select-none ps-3 font-mono diff-code-text leading-none font-medium ${gutterText}`}
       >
         <span aria-hidden="true">{added ? "+" : deleted ? "−" : ""}</span>
         {added || deleted ? (
@@ -1539,7 +1540,7 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-mono diff-code-text leading-none ${line.kind === "context" ? "text-(--ui-text-secondary)" : "text-content"}`}
+        className={`whitespace-pre pe-3 font-mono diff-code-text leading-none ${line.kind === "context" ? "text-(--ui-text-secondary)" : "text-content"}`}
       >
         {renderLineText(line, tokens)}
       </span>

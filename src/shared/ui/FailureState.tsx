@@ -266,6 +266,7 @@ export function FailureState({
         {error !== undefined && details && (
           <div id={detailsId} className={styles.details}>
             <pre ref={preview} tabIndex={0} aria-label={t("Error details")}>
+              {/* oxlint-disable-next-line bycoda/no-raw-error-text -- this is the shared Details view the rule points to */}
               {shown}
             </pre>
             {truncated && !showAll ? (

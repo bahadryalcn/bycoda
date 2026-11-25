@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -62,6 +63,7 @@ function PhoneApprovalDialog({
   current: () => boolean;
   onSettle: (value: boolean) => void;
 }) {
+  const t = useT();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -95,6 +97,7 @@ function PhoneApprovalDialog({
             type="button"
             variant="ghost"
             disabled={pending}
+            disabledReason={pending ? t("Wait for the current action to finish.") : undefined}
             onClick={() => onSettle(false)}
           >
             {request.cancelLabel}
@@ -115,7 +118,9 @@ function PhoneApprovalDialog({
       <Text as="p" wrap="anywhere">
         {request.message}
       </Text>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not complete this action.")}</InlineError>
+      ) : null}
     </Modal>
   );
 }

@@ -96,7 +96,7 @@ export function SkillMachinesPanel({
               ) : null}
             </Text>
             <div className={styles.machineActions}>
-              {saving ? <Spinner size="xs" label={t("Saving…")} /> : null}
+              {saving ? <Spinner size="xs" delay label={t("Saving…")} /> : null}
               {entry && !here ? (
                 <Button variant="ghost" size="sm" onClick={() => onView(entry)}>
                   {t("View")}

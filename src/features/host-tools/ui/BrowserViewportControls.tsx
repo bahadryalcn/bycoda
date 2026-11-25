@@ -7,10 +7,12 @@ import { RotateCcw } from "../../../shared/ui/icons";
 
 type Viewport = { width: number; height: number };
 const presets = [
-  { value: "1280x720", label: "Desktop", width: 1280, height: 720 },
-  { value: "768x1024", label: "Tablet", width: 768, height: 1024 },
-  { value: "390x844", label: "Phone", width: 390, height: 844 },
+  { value: "1280x720", width: 1280, height: 720 },
+  { value: "768x1024", width: 768, height: 1024 },
+  { value: "390x844", width: 390, height: 844 },
 ];
+const presetName = (value: string) =>
+  value === "1280x720" ? t("Desktop") : value === "768x1024" ? t("Tablet") : t("Phone");
 
 /** Explicit page resizing; the owner keys this editor by Host dimensions to reset its draft. */
 export function BrowserViewportControls({
@@ -50,7 +52,7 @@ export function BrowserViewportControls({
         options={[
           ...presets.map((preset) => ({
             value: preset.value,
-            label: `${t(preset.label)} (${preset.width} × ${preset.height})`,
+            label: `${presetName(preset.value)} (${preset.width} × ${preset.height})`,
           })),
           ...(!presets.some((preset) => preset.value === value)
             ? [{ value, label: `${t("Custom")} (${viewport.width} × ${viewport.height})` }]

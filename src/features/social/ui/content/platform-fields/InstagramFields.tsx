@@ -108,6 +108,11 @@ function InstagramTags({
       <Button
         size="sm"
         disabled={!targets.length || tags.length >= 20}
+        disabledReason={
+          tags.length >= 20
+            ? t("An Instagram post can have at most 20 tags.")
+            : t("Attach an image to tag people.")
+        }
         onClick={() =>
           onChange([
             ...tags,

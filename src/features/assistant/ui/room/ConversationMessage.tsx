@@ -2,10 +2,10 @@ import { Text } from "../../../../shared/ui/Text";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import type { MessageTimelineItem } from "../../../../shared/ui/MessageTimeline";
-import { Badge } from "../../../../shared/ui/Badge";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { Trash2 } from "../../../../shared/ui/icons";
+import { Trash2, TriangleAlert } from "../../../../shared/ui/icons";
 import { assistantChatItem } from "./AssistantChat";
 import styles from "./Conversation.module.css";
 import { recordedActionLabel } from "./recordedActionLabels";
@@ -48,7 +48,9 @@ export function conversationMessageItem({
       <>
         {message.ownerQuestionId && (
           <Text size="caption" tone="secondary" leading="inherit">
-            {t(message.ownerQuestionAction === "snooze" ? "Question postponed" : "Answer recorded")}
+            {message.ownerQuestionAction === "snooze"
+              ? t("Question postponed")
+              : t("Answer recorded")}
           </Text>
         )}
         {!!message.toolActions?.length && (
@@ -58,9 +60,15 @@ export function conversationMessageItem({
                 <li key={action.id}>
                   <span>{recordedActionLabel(action.action)}</span>
                   {action.status === "completed" ? null : (
-                    <Badge size="xs" tone="warning">
-                      {t("Outcome unknown")}
-                    </Badge>
+                    <Tooltip
+                      asChild
+                      label={t("Outcome unknown")}
+                      details={[t("The Host has not confirmed that this action finished.")]}
+                    >
+                      <span role="img" aria-label={t("Outcome unknown")}>
+                        <TriangleAlert className="icon-xs" tone="warning" />
+                      </span>
+                    </Tooltip>
                   )}
                 </li>
               ))}

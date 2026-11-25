@@ -1,6 +1,7 @@
 import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
+import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import type { IconComponent } from "../../shared/ui/icons";
@@ -33,6 +34,7 @@ export function RailAction({
   ariaLabel,
   guide,
 }: Props) {
+  const t = useT();
   const currentShortcut = useKeybindingShortcut(command ?? "");
   const shortcut = command ? currentShortcut : fallbackShortcut;
   // The Button's own shared tooltip: the name plus the live binding as key caps, right of
@@ -70,6 +72,7 @@ export function RailAction({
           : undefined
       }
       disabled={!onClick}
+      disabledReason={!onClick ? t("Not available yet.") : undefined}
       aria-label={ariaLabel ?? label}
       className="relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center"
       trailing={

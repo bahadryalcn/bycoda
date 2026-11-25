@@ -19,7 +19,7 @@ export function SearchSourceChips({
   return (
     <ol
       data-search-sources
-      className={`m-0 flex min-w-0 list-none flex-wrap gap-1 p-0 pb-1 ${inset ? "pl-5" : ""}`}
+      className={`m-0 flex min-w-0 list-none flex-wrap gap-1 p-0 pb-1 ${inset ? "ps-5" : ""}`}
     >
       {sources.map((source, index) => (
         <li key={source.url} className="flex min-w-0 max-w-full">

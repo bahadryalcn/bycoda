@@ -128,7 +128,7 @@ it("installs only after explicit click with selected project and provider", asyn
     undefined,
   );
   expect(onInstalled).toHaveBeenCalledOnce();
-  expect(installButton().disabled).toBe(true);
+  expect(installButton().getAttribute("aria-disabled")).toBe("true");
   // One state per row: the button says Installed and no second "Installed" notice repeats it.
   const row = installButton().closest("li")!;
   expect(row.textContent!.match(/Installed/g)).toHaveLength(1);
@@ -206,7 +206,8 @@ it("hides skills already installed on the selected computer and names other mach
   });
   expect(names()).toEqual(["frontend-design"]);
   expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label="Install frontend-design"]')
-      ?.disabled,
-  ).toBe(true);
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Install frontend-design"]')
+      ?.getAttribute("aria-disabled"),
+  ).toBe("true");
 });

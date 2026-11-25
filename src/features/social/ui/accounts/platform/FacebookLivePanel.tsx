@@ -128,7 +128,7 @@ export function FacebookLivePanel({
           {broadcast === undefined ? t("Load live video") : t("Refresh")}
         </Button>
       </div>
-      {broadcast === undefined && !work.is("list") && !work.error ? (
+      {broadcast === undefined && !work.is("list") && !work.failureTitle ? (
         <Text as="p" size="secondary" tone="muted">
           {t("Load your latest live video to start it, end it or read its comments.")}
         </Text>
@@ -225,6 +225,11 @@ export function FacebookLivePanel({
             variant="primary"
             className="self-start"
             disabled={!title.trim() || uncertain}
+            disabledReason={
+              !title.trim()
+                ? t("Enter a title first.")
+                : t("Refresh the live video before trying again.")
+            }
             loading={work.is("create")}
             onClick={() => void mutate("create").catch(() => undefined)}
           >
@@ -294,7 +299,9 @@ export function FacebookLivePanel({
           {t("Refresh the live video before trying again.")}
         </InlineMessage>
       ) : null}
-      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
+      {work.failureTitle ? (
+        <InlineError details={work.details}>{work.failureTitle}</InlineError>
+      ) : null}
       {confirm.dialog}
     </section>
   );

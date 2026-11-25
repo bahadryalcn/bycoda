@@ -88,7 +88,7 @@ export function FileSection({
             >
               {title}
             </Text>
-            <Text size="caption" tone="secondary" className="ml-1 shrink-0 tabular-nums">
+            <Text size="caption" tone="secondary" className="ms-1 shrink-0 tabular-nums">
               {countLabel ?? count}
             </Text>
           </Button>

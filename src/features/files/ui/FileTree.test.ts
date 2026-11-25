@@ -426,7 +426,9 @@ describe("FileTree render isolation", () => {
       expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === command)).toHaveLength(1);
       failures.delete(cwd);
       await act(async () =>
-        container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
+        [...container.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+          .find((item) => item.textContent === "Retry")!
+          .click(),
       );
       expect(container.querySelector('[role="alert"]')).toBeNull();
       expect(row("new-entry")).not.toBeNull();
@@ -468,6 +470,9 @@ describe("FileTree render isolation", () => {
       reveal.click();
     });
     expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === "reveal_path")).toHaveLength(1);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
     expect(
       [...container.querySelectorAll('[role="status"]')].some((status) =>
         status.textContent?.includes("Working…"),

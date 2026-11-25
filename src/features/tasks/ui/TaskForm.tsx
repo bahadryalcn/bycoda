@@ -589,7 +589,7 @@ export function TaskForm({
             }
             loading={saving && submitMode !== "todo"}
           >
-            {t(isEdit ? "Save" : "Start")}
+            {isEdit ? t("Save") : t("Start")}
           </Button>
         </ModalActions>
       </ModalFooter>

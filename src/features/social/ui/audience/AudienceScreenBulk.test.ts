@@ -10,6 +10,7 @@ import {
   STATIC_LIST,
   asClient,
   bodyText,
+  openErrorDetails,
   buttonByText,
   clickButton,
   clickMenuItem,
@@ -385,7 +386,7 @@ describe("AudienceScreen list scope", () => {
       .mockResolvedValueOnce({ items: [ada] });
     render({ people: { ...clientMock().people, list } });
     await loaded();
-    expect(bodyText()).toContain("Host is busy.");
+    expect(openErrorDetails()).toContain("Host is busy.");
 
     clickButton("Try again");
     await loaded();

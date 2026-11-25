@@ -40,13 +40,13 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
   const confirm = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<"current" | "next" | "confirm">(
     mode === "change" ? "current" : "next",
   );
   const fail = (field: "current" | "next" | "confirm", message: string) => {
     setErrorField(field);
-    setError(message);
+    setNotice(message);
     ({ current, next, confirm })[field].current?.focus();
   };
   const cooldown = useCooldown(mode === "change" ? lockCooldownMs() : 0);
@@ -59,7 +59,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     };
   }, []);
 
-  const message = cooldownMessage(cooldown.remainingMs) ?? error;
+  const message = cooldownMessage(cooldown.remainingMs) ?? notice;
   const hasMessage = message != null;
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the current or new password field becoming editable after a failed verification.
@@ -97,7 +97,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     }
     setBusy(true);
     setErrorField(mode === "change" ? "current" : "next");
-    setError(null);
+    setNotice(null);
     try {
       if (mode === "change") {
         const result = await changeLockPassword(currentPassword, password);
@@ -106,7 +106,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           if (result.reason === "wrong") await pause(WRONG_PASSWORD_DELAY_MS);
           if (!alive.current) return;
           if (result.retryAfterMs > 0) cooldown.start(result.retryAfterMs);
-          setError(verifyFailureMessage(result, result.retryAfterMs));
+          setNotice(verifyFailureMessage(result, result.retryAfterMs));
           return;
         }
       } else {
@@ -121,7 +121,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
       // A lost Host result is not a refused password: keep the fields typed so the retry is one
       // click, as the unlock prompt does. Any other failure clears the secrets.
       if (!isTransientTransportError(reason)) clear();
-      setError(promptErrorMessage(reason));
+      setNotice(promptErrorMessage(reason));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -143,6 +143,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
+            aria-describedby={cooldown.remainingMs > 0 ? "set-lock-password-error" : undefined}
             variant="primary"
             loading={busy}
           >
@@ -207,7 +208,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           size="micro"
           tone="muted"
           leading="snug"
-          className="flex list-disc flex-col gap-1 pl-4"
+          className="flex list-disc flex-col gap-1 ps-4"
         >
           <li>
             {t("This hides locked groups inside ")}

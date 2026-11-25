@@ -12,6 +12,8 @@ import {
   effectiveRoleChoice,
   MODEL_ROLE_GROUPS,
   MODEL_ROLE_METADATA,
+  modelRoleGroupLabel,
+  modelRoleLabel,
 } from "../../model/modelRoutingRoles";
 import {
   MODEL_ROUTING_PREVIEW_POLL_MS,
@@ -91,12 +93,12 @@ export function ModelRolesGroups({
         </InlineMessage>
       ) : null}
       {MODEL_ROLE_GROUPS.map((group) => (
-        <Group key={group} title={t(group)} layout="full">
+        <Group key={group} title={modelRoleGroupLabel(group)} layout="full">
           {MODEL_ROLE_METADATA.filter((item) => item.group === group).map((item) => (
             <ModelRoleRow
               key={item.role}
               role={item.role}
-              label={item.labelKey}
+              label={modelRoleLabel(item.labelKey)}
               pools={pools}
               seed={entries[0]}
               preview={previewOf(item.role)}

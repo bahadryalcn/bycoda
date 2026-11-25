@@ -105,20 +105,20 @@ function DataExportRow() {
       label={t("Export your data")}
       descriptionVisible
       description={
-        status === "pending"
-          ? t("Preparing your export…")
-          : status === "ready"
-            ? t("Ready. The file holds your profile, devices, active time and settings.")
-            : status === "failed"
-              ? t("The export failed. Try again.")
-              : status === "expired"
-                ? t("The export expired. Request a new one.")
-                : undefined
+        status === "ready"
+          ? t("Ready. The file holds your profile, devices, active time and settings.")
+          : status === "failed"
+            ? t("The export failed. Try again.")
+            : status === "expired"
+              ? t("The export expired. Request a new one.")
+              : undefined
       }
       info={status ? undefined : t("A JSON file with everything bycoda stores about your account.")}
       feedback={
         error || follow.isError ? (
-          <InlineError>{error || t("Could not check the export.")}</InlineError>
+          <InlineError details={error || undefined}>
+            {error ? t("Could not complete the export request.") : t("Could not check the export.")}
+          </InlineError>
         ) : undefined
       }
     >
@@ -136,6 +136,7 @@ function DataExportRow() {
           variant="secondary"
           size="sm"
           loading={request.isPending || status === "pending"}
+          loadingLabel={t("Preparing your export…")}
           onClick={() => run(() => request.mutateAsync())}
         >
           {t("Request export")}

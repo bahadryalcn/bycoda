@@ -70,7 +70,7 @@ it("keeps reviewed-head confirmation and local progress without duplicate mutati
   confirm.focus();
   await act(async () => confirm.click());
   expect(confirm.getAttribute("aria-busy")).toBe("true");
-  expect(confirm.textContent).toBe("Merge pull request");
+  expect(confirm.textContent).toBe("Merging…");
   expect(document.activeElement).toBe(confirm);
   await act(async () => confirm.click());
   expect(githubPrAction).toHaveBeenCalledExactlyOnceWith(

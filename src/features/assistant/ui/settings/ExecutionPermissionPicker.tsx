@@ -1,11 +1,7 @@
 import { t } from "../../../../shared/i18n";
+import { runtimeModeHint, runtimeModeLabel } from "../../model/runtimeModeText";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
-import {
-  RUNTIME_MODE_HINT,
-  RUNTIME_MODE_LABEL,
-  RUNTIME_MODES,
-  type RuntimeMode,
-} from "../../../sessions/public/session";
+import { RUNTIME_MODES, type RuntimeMode } from "../../../sessions/public/session";
 import { RUNTIME_MODE_ICONS } from "../../../sessions/public/runtimeModeOptions";
 import { ProfileRow } from "./SettingsProfileRow";
 
@@ -20,7 +16,7 @@ export function ExecutionPermissionPicker({
   return (
     <ProfileRow
       label={t("Execution permissions")}
-      description={`${t(RUNTIME_MODE_LABEL[value])}: ${t(RUNTIME_MODE_HINT[value])}`}
+      description={`${runtimeModeLabel(value)}: ${runtimeModeHint(value)}`}
     >
       {() => (
         <SegmentedControl
@@ -30,7 +26,7 @@ export function ExecutionPermissionPicker({
             const Icon = RUNTIME_MODE_ICONS[mode];
             return {
               value: mode,
-              label: t(RUNTIME_MODE_LABEL[mode]),
+              label: runtimeModeLabel(mode),
               icon: (
                 <Icon
                   className="icon-sm"

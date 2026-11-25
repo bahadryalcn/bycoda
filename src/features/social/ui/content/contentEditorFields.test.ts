@@ -160,7 +160,11 @@ describe("ContentEditorFields accounts", () => {
     const snapshot = snapshotOf([x, noAccess]);
     render({}, { snapshot });
     expect(accountBox("Studio LinkedIn")?.disabled).toBe(true);
-    expect(element.textContent).not.toContain("No access to this project");
+    // The reason is the checkbox's accessible description, never visible text.
+    const described = accountBox("Studio LinkedIn")?.getAttribute("aria-describedby");
+    const description = described ? element.querySelector(`[id="${described}"]`) : null;
+    expect(description?.className).toContain("sr-only");
+    expect(description?.textContent).toContain("No access to this project");
     const reason = element.querySelector<HTMLButtonElement>(
       'button[aria-label="Studio LinkedIn: Help"]',
     );

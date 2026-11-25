@@ -1,6 +1,6 @@
 import { t } from "../../../shared/i18n";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { LOCKED_NOTIFICATION_TEXT } from "./attention";
+import { lockedNotificationText } from "./attention";
 import type { ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import {
   recordNotificationHistory,
@@ -117,7 +117,7 @@ export function logNotification(entry: {
     ...(entry.session?.harness ? { harness: entry.session.harness } : {}),
     title: entry.locked ? "" : entry.title,
     label: entry.locked
-      ? t(LOCKED_NOTIFICATION_TEXT)
+      ? lockedNotificationText()
       : distinctLabel(entry.title, entry.label).slice(0, 2000),
     kind: entry.kind,
     occurredAt: entry.occurredAt,

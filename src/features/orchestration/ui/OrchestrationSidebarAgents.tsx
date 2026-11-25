@@ -6,7 +6,7 @@ import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useContext, useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useId, useRef, useState, useSyncExternalStore } from "react";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { orchestrator } from "../model/orchestration";
@@ -60,6 +60,7 @@ export function OrchestrationSidebarAgents({
     if (isOpen && revealed === sessionId) workers.inspect(null);
   };
   // A saved run has no live entry, so the card stays read-only after a reload.
+  const reasonId = useId();
   const run = runs.find((entry) => entry.leadId === leadId);
   const stopping = !!run?.tasks.some(
     (task) => task.status === "running" || task.status === "cancelling",
@@ -242,14 +243,28 @@ export function OrchestrationSidebarAgents({
       {run?.status === "paused" && (
         <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "mt-1.5 space-y-1.5 pt-1.5")}>
           {resumeBlocker && (
-            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
+            <Text
+              as="p"
+              id={`${reasonId}-blocker`}
+              size="micro"
+              tone="warning"
+              leading="relaxed"
+              className="px-0.5"
+            >
               {t("{p0} is still running in this project.", {
                 p0: resumeBlocker.title || t("Another conversation"),
               })}
             </Text>
           )}
           {stopping || leadBusy ? (
-            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
+            <Text
+              as="p"
+              id={`${reasonId}-wait`}
+              size="micro"
+              tone="warning"
+              leading="relaxed"
+              className="px-0.5"
+            >
               {stopping
                 ? t("Stopping interrupted work before this run can resume.")
                 : t(
@@ -272,6 +287,14 @@ export function OrchestrationSidebarAgents({
               variant="ghost"
               type="button"
               disabled={pending || stopping || leadBusy || !!resumeBlocker}
+              aria-describedby={
+                [
+                  resumeBlocker && `${reasonId}-blocker`,
+                  (stopping || leadBusy) && `${reasonId}-wait`,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined
+              }
               loading={pendingAction === "resume"}
               // The paragraphs above already say why Resume waits, so only the enabled state hints.
               tooltip={

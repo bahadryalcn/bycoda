@@ -62,6 +62,7 @@ export function ThemeNameDialog({
             loading={busy}
             loadingLabel={t("Saving…")}
             disabled={!clean}
+            disabledReason={t("Enter a name.")}
             onClick={run}
           >
             {confirmLabel}

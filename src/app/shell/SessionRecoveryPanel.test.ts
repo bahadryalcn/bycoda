@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { openErrorDetails } from "../../features/sessions/ui/errorDetails.fixture";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -153,7 +154,7 @@ describe("session recovery navigation", () => {
       await Promise.resolve();
     });
     expect(container.textContent).toContain("Could not verify this session.");
-    expect(container.textContent).toContain("history temporarily offline");
+    expect(openErrorDetails(container)).toContain("history temporarily offline");
     vi.mocked(getSession).mockResolvedValue(sessions[0]);
     await click("Retry verification");
     await act(async () => {

@@ -299,15 +299,15 @@ describe("Explorer inline name editor", () => {
     await enter();
     expect(created).toHaveLength(1);
     expect(nameInput()?.readOnly).toBe(true);
-    expect(header("new-file").disabled).toBe(true);
-    expect(header("new-file").getAttribute("aria-label")).toContain(
+    expect(header("new-file").getAttribute("aria-disabled")).toBe("true");
+    expect(header("new-file").getAttribute("aria-description")).toContain(
       "Wait for the current file operation to finish",
     );
     await act(async () => {
       release();
     });
     expect(nameInput()).toBeNull();
-    expect(header("new-file").disabled).toBe(false);
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
     expect(created).toHaveLength(1);
   });
 
@@ -322,7 +322,7 @@ describe("Explorer inline name editor", () => {
     const alert = container.querySelector("[data-name-row] [role='alert']");
     expect(alert?.textContent).toBe("Permission denied");
     expect(nameInput()?.getAttribute("aria-describedby")).toContain(alert!.id);
-    expect(header("new-file").disabled).toBe(false);
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
     gate.fail = null;
     await enter();
     expect(created.map((item) => item.name)).toEqual(["blocked.ts", "blocked.ts"]);
@@ -400,15 +400,17 @@ describe("Explorer create availability", () => {
     expect(container.textContent).toContain("Can’t reach");
     expect(reads).not.toHaveBeenCalled();
     for (const action of ["new-file", "new-folder"]) {
-      expect(header(action).disabled).toBe(true);
-      expect(header(action).getAttribute("aria-label")).toContain("This machine is unreachable");
+      expect(header(action).getAttribute("aria-disabled")).toBe("true");
+      expect(header(action).getAttribute("aria-description")).toContain(
+        "This machine is unreachable",
+      );
     }
 
     // Recovery: the notice goes and creating works again.
     await act(async () => notifyRemoteRecovered("machine-1"));
     await act(async () => recordRemoteConnection("machine-1"));
     expect(container.textContent).not.toContain("Can’t reach");
-    expect(header("new-file").disabled).toBe(false);
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
   });
 
   it("waits before showing the shared notice when an offline tree has no data", async () => {
@@ -469,14 +471,14 @@ describe("Explorer create availability", () => {
     await act(async () => {
       reportRemoteLoad(remoteCwd(), "files", new Error("Unsupported host method"));
     });
-    expect(header("new-folder").getAttribute("aria-label")).toContain(
+    expect(header("new-folder").getAttribute("aria-description")).toContain(
       "Update the host to change files",
     );
   });
 
   it("keeps creating available for a reachable root", async () => {
     await mount(null);
-    expect(header("new-file").disabled).toBe(false);
-    expect(header("new-file").getAttribute("aria-label")).not.toContain("(");
+    expect(header("new-file").getAttribute("aria-disabled")).toBeNull();
+    expect(header("new-file").getAttribute("aria-description")).toBeNull();
   });
 });

@@ -218,7 +218,7 @@ ${next.error}`
         }
       : sshFields(false);
     const parsed = machine ? undefined : parseMachineDraft(fields);
-    if (parsed && !parsed.ok) return setError(t(parsed.error));
+    if (parsed && !parsed.ok) return setError(parsed.error);
     submitting.current = true;
     submittedAddDraft.current = machine || plan ? undefined : addDraft;
     afterEdit.current = edited;
@@ -312,7 +312,7 @@ ${next.error}`
   const save = async () => {
     if (!editing || busy) return;
     const parsed = parseMachineDraft(sshFields(true));
-    if (!parsed.ok) return setError(t(parsed.error));
+    if (!parsed.ok) return setError(parsed.error);
     const impact = editImpact(editing, parsed.value);
     if (!impact.changed) return closeForm();
     setBusy(true);
@@ -435,6 +435,9 @@ ${next.error}`
               <Button
                 variant="primary"
                 disabled={busy || revoking}
+                disabledReason={
+                  busy || revoking ? t("Wait for the current action to finish.") : undefined
+                }
                 aria-haspopup="dialog"
                 onClick={startAdd}
               >
@@ -465,13 +468,7 @@ ${next.error}`
             />
           ) : null}
           {busy && jobId && (
-            <Surface
-              variant="card"
-              padding="lg"
-              className="flex flex-col gap-3"
-              role="status"
-              ref={progress}
-            >
+            <Surface variant="card" padding="lg" className="flex flex-col gap-3" ref={progress}>
               <Text wrap="anywhere" as="div" size="secondary" tone="primary" weight="medium">
                 {connectionName}
               </Text>

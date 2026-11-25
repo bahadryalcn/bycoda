@@ -7,7 +7,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { goalKey } from "../model/goalClient";
 import { TASK_COLUMNS } from "../model/hostTasks";
 import { ALL_GOALS } from "./TaskGoals";
-import { COLUMN_LABELS } from "./TaskBoardColumns";
+import { columnLabel } from "../model/taskColumnLabel";
 
 type Option = { value: string; label: string; description?: string; pinned?: boolean };
 
@@ -95,7 +95,7 @@ export function TaskToolbarFilters({
                 { value: "all", label: t("All") },
                 ...TASK_COLUMNS.map((status) => ({
                   value: status,
-                  label: t(COLUMN_LABELS[status]),
+                  label: columnLabel(status),
                 })),
                 ...(values.status === "verifying"
                   ? [{ value: "verifying", label: t("Verifying") }]

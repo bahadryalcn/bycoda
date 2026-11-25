@@ -150,9 +150,10 @@ export function TaskToolbar({
             value: "backlog",
             label: t("Tasks"),
             count: newReviewNotes || undefined,
-            countLabel: t(newReviewNotes === 1 ? "{p0} new review note" : "{p0} new review notes", {
-              p0: newReviewNotes,
-            }),
+            countLabel:
+              newReviewNotes === 1
+                ? t("{p0} new review note", { p0: newReviewNotes })
+                : t("{p0} new review notes", { p0: newReviewNotes }),
           },
           { value: "sprints", label: t("Sprints") },
         ]}

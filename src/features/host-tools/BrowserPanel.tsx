@@ -1,3 +1,4 @@
+import { limitationText } from "./model/browserLimitations";
 import { errorText } from "../../shared/lib/errors";
 import {
   isLocalBrowserAddress,
@@ -11,6 +12,7 @@ import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { LiveText } from "../../shared/ui/LiveText";
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Alert } from "../../shared/ui/Alert";
 import { Heading } from "../../shared/ui/Heading";
 import { PanelHeader } from "../../shared/ui/PanelHeader";
@@ -198,7 +200,7 @@ function ProjectBrowserPanel({
   ]);
   const currentCaptures = useRef(captures);
   currentCaptures.current = captures;
-  const [limitation, setLimitation] = useState("");
+  const [limitation, setLimitation] = useState<{ message: string; details?: string } | null>(null);
   const [notice, setNotice] = useState("");
   const alive = useRef(false);
   const pending = useRef(false);
@@ -303,7 +305,7 @@ function ProjectBrowserPanel({
     setSelection(undefined);
     setSelectionOpen(false);
     setHover(undefined);
-    setLimitation("");
+    setLimitation(null);
     hoverVersion.current++;
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = undefined;
@@ -488,7 +490,7 @@ function ProjectBrowserPanel({
       latest.current = result;
       setState(result);
       if (method === "browser.annotation.select")
-        setLimitation(result.limitation ? t(result.limitation) : "");
+        setLimitation(result.limitation ? { message: limitationText(result.limitation) } : null);
       if (result.selection) {
         if (
           result.selection.sessionId !== sessionId ||
@@ -500,7 +502,7 @@ function ProjectBrowserPanel({
           setSelection(result.selection);
           setSelectionOpen(true);
           setHover(undefined);
-          setLimitation("");
+          setLimitation(null);
           await displayFrame({
             src: `data:${result.selection.screenshot.mimeType};base64,${result.selection.screenshot.data}`,
             width: result.selection.screenshot.width,
@@ -557,11 +559,17 @@ function ProjectBrowserPanel({
         .then((result) => {
           if (result && mode.current && hoverVersion.current === version) {
             setHover(result.hover);
-            setLimitation(result.limitation ? t(result.limitation) : "");
+            setLimitation(
+              result.limitation ? { message: limitationText(result.limitation) } : null,
+            );
           }
         })
         .catch((cause) => {
-          if (alive.current && mode.current) setLimitation(errorText(cause));
+          if (alive.current && mode.current)
+            setLimitation({
+              message: t("Could not inspect the element."),
+              details: errorText(cause),
+            });
         })
         .finally(() => {
           hoverReading.current = false;
@@ -1263,10 +1271,12 @@ function ProjectBrowserPanel({
           <Button
             motion="none"
             type="button"
-            disabled={busy || state?.runtime?.installing}
+            disabled={busy}
+            loading={!!state?.runtime?.installing}
+            loadingLabel={t("Installing browser…")}
             onClick={() => void action(() => request("browser.setup"))}
           >
-            {state?.runtime?.installing ? t("Installing browser…") : t("Set up host browser")}
+            {t("Set up host browser")}
           </Button>
         </Text>
       ) : null}
@@ -1279,7 +1289,18 @@ function ProjectBrowserPanel({
       ) : null}
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
         <div {...surfaceAttributes({ radius: "none" }, "host-browser-stage")}>
-          {limitation && !localPage ? <Alert tone="info">{limitation}</Alert> : null}
+          {limitation && !localPage ? (
+            <Alert
+              tone={limitation.details ? "warning" : "info"}
+              extra={
+                limitation.details ? (
+                  <ErrorDetails title={limitation.message} detail={limitation.details} />
+                ) : undefined
+              }
+            >
+              {limitation.message}
+            </Alert>
+          ) : null}
           {localPage ? (
             <LocalBrowserSurface
               page={localPage}
@@ -1701,6 +1722,13 @@ function ProjectBrowserPanel({
           ) : (
             <BrowserStartPage
               disabled={busy || selecting || (setupRequired && !localPreviewAvailable)}
+              disabledReason={
+                busy
+                  ? t("Working on the host…")
+                  : selecting
+                    ? t("Finish selecting an element first.")
+                    : t("Set up the browser above to start previewing websites.")
+              }
               onOpen={(target) => {
                 setUrl(target);
                 void action(() => openWebsite(target));
@@ -1797,6 +1825,7 @@ function ProjectBrowserPanel({
               <BrowserInspectorNavigation
                 element={selection.element}
                 disabled={!canInput}
+                disabledReason={inputDisabledReason}
                 onTraverse={(direction, ancestorIndex) =>
                   void action(() =>
                     request("browser.annotation.traverse", {
@@ -1813,6 +1842,7 @@ function ProjectBrowserPanel({
               {selection && captures.length < 8 ? (
                 <Button
                   disabled={!canInput}
+                  disabledReason={inputDisabledReason}
                   onClick={() => {
                     setCaptures((items) => [
                       ...items.filter((item) => item.id !== selection.id),
@@ -1831,6 +1861,10 @@ function ProjectBrowserPanel({
                 type="button"
                 variant="primary"
                 disabled={!canInput || uncertainDelivery}
+                disabledReason={
+                  inputDisabledReason ??
+                  t("Check whether the earlier delivery arrived before adding again.")
+                }
                 onClick={() => {
                   if (selection) {
                     setCaptures((items) => [
@@ -1896,6 +1930,7 @@ function ProjectBrowserPanel({
                   type="button"
                   variant="ghost"
                   disabled={!canInput}
+                  disabledReason={inputDisabledReason}
                   onClick={() =>
                     void action(async () => {
                       await request("browser.annotation.clear", { captureId: selection.id });

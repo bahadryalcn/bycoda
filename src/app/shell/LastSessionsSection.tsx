@@ -92,14 +92,14 @@ export function useLastSessionsRows({
   return { prefs, update: handleUpdate, rows, hasRows: rows.length > 0, refresh };
 }
 
-const STATUS_LABEL: Record<RecentSessionStatus, string> = {
-  retrying: "Retrying",
-  failed: "Failed",
-  interrupted: "Interrupted",
-  working: "Working",
-  input: "Needs input",
-  done: "Done",
-};
+const statusLabels = (t: ReturnType<typeof useT>): Record<RecentSessionStatus, string> => ({
+  retrying: t("Retrying"),
+  failed: t("Failed"),
+  interrupted: t("Interrupted"),
+  working: t("Working"),
+  input: t("Needs input"),
+  done: t("Done"),
+});
 
 const STATUS_DOT: Record<RecentSessionStatus, StatusDotProps["tone"]> = {
   retrying: "warning",
@@ -326,6 +326,7 @@ function SessionRow({
     : "";
   const time = formatRelative(row.updatedAt, now);
   const status = row.status;
+  const statusLabel = status ? statusLabels(t)[status] : "";
   // Text left unsent in another session's composer; the open session shows its own.
   const draft = useUnsentComposerDraft(row.id, !selected);
   const remoteProject = useRemoteProject(row.remote ? row.cwd : "");
@@ -337,7 +338,7 @@ function SessionRow({
     model ? `${agent} · ${model}` : agent,
     draft ? t("Draft") : "",
     status
-      ? t(STATUS_LABEL[status])
+      ? statusLabel
       : time && `Last activity ${new Date(row.updatedAt).toLocaleString(locale)}`,
   ]
     .filter(Boolean)
@@ -363,7 +364,7 @@ function SessionRow({
           project,
           agent,
           draft ? t("Draft") : "",
-          status ? t(STATUS_LABEL[status]) : time,
+          status ? statusLabel : time,
         ]
           .filter(Boolean)
           .join(", ")}
@@ -420,13 +421,13 @@ function SessionRow({
             strokeWidth={1.75}
           />
         ) : status ? (
-          <Tooltip label={t(STATUS_LABEL[status])}>
+          <Tooltip label={statusLabel}>
             {status === "working" ? (
-              <span role="img" aria-label={t(STATUS_LABEL[status])}>
+              <span role="img" aria-label={statusLabel}>
                 <WorkingIndicator variant="dot" />
               </span>
             ) : (
-              <StatusDot label={t(STATUS_LABEL[status])} tone={STATUS_DOT[status]} />
+              <StatusDot label={statusLabel} tone={STATUS_DOT[status]} />
             )}
           </Tooltip>
         ) : null}

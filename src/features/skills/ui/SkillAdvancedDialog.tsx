@@ -86,7 +86,9 @@ export function SkillAdvancedDialog({ cwd, onClose }: { cwd: string; onClose: ()
             </Button>
           </div>
         ))}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? (
+          <InlineError details={error}>{t("Could not open the folder.")}</InlineError>
+        ) : null}
       </div>
     </Modal>
   );

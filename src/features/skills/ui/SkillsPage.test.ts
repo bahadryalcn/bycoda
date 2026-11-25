@@ -348,12 +348,12 @@ describe("Settings skill preview", () => {
     await click("Project guide");
     edit("---\nname: guide\n---\n\n# Updated instructions\n");
     await click("Save");
-    await click("Save");
+    await click("Saving…");
     expect(invoke.mock.calls.filter(([command]) => command === "write_text_file")).toHaveLength(1);
     await act(async () => pending.resolve());
     expect(disk).toBe("---\nname: guide\n---\n\n# Updated instructions\n");
     expect(container.textContent).not.toContain("Skill saved.");
-    expect(button("Saved").disabled).toBe(true);
+    expect(button("Saved").getAttribute("aria-disabled")).toBe("true");
     // Success shows on the Save control itself, not as a toast or a footer status.
     expect(container.querySelector("footer")).toBeNull();
     edit("# Another draft");
@@ -373,8 +373,12 @@ describe("Settings skill preview", () => {
     });
     await click("Save");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      failure === "disk changed" ? "changed on disk" : "Access denied",
+      failure === "disk changed" ? "changed on disk" : "Could not save the skill.",
     );
+    if (failure !== "disk changed") {
+      await click("Details: Could not save the skill.");
+      expect(document.body.textContent).toContain("Access denied");
+    }
     expect(container.querySelector(".cm-content")?.textContent).toContain("Keep this draft");
     expect(button("Save").disabled).toBe(false);
     if (failure === "disk changed")
@@ -438,7 +442,7 @@ describe("Settings skill preview", () => {
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "skill_delete"),
     ).toHaveLength(1);
     await act(async () => pending.reject(new Error("Access denied")));
-    expect(container.textContent).toContain("Could not delete Project guide. Access denied");
+    expect(container.textContent).toContain("Could not delete Project guide.");
     expect(button("Project guide")).toBeDefined();
     await click("Actions for Project guide");
     expect(button("Delete Project guide").disabled).toBe(false);

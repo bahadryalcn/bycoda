@@ -82,17 +82,10 @@ export function CrewWorkDetail({
     crewActivityKnown(run) &&
     !running &&
     !run.tasks.some((task) => task.status === "queued");
-  // The running action is named next to its controls, not only by a spinner.
+  // The pressed buttons carry their own pending label; only a stop already sent (button hidden)
+  // keeps a line naming it while the cancellation settles.
   const pendingText =
-    pendingAction === `pause:${run.id}`
-      ? run.status === "paused"
-        ? t("Resuming…")
-        : t("Pausing…")
-      : pendingAction === `stop:${run.id}` || (stopping && running)
-        ? t("Stopping…")
-        : pendingAction === `delete:${run.id}`
-          ? t("Deleting…")
-          : "";
+    stopping && running && pendingAction !== `stop:${run.id}` ? t("Stopping…") : "";
   const openCoordinator = (key: string) => ({
     label: key.startsWith("answer:") ? t("Answer") : t("Open session"),
     disabled: !run.coordinatorSessionId || !canOpen || pending,
@@ -117,6 +110,7 @@ export function CrewWorkDetail({
               size="sm"
               disabled={pending}
               loading={pendingAction === `pause:${run.id}`}
+              loadingLabel={run.status === "paused" ? t("Resuming…") : t("Pausing…")}
               label={run.status === "paused" ? t("Resume work") : t("Pause new assignments")}
               startIcon={
                 run.status === "paused" ? (
@@ -136,6 +130,7 @@ export function CrewWorkDetail({
                 size="sm"
                 disabled={pending}
                 loading={pendingAction === `stop:${run.id}`}
+                loadingLabel={t("Stopping…")}
                 startIcon={<Square className="icon-sm" />}
                 label={t("Stop work")}
                 onClick={() =>
@@ -224,6 +219,7 @@ export function CrewWorkDetail({
             size="sm"
             disabled={pending || !canRemove}
             loading={pendingAction === `delete:${run.id}`}
+            loadingLabel={t("Deleting…")}
             startIcon={<Trash2 className="icon-sm" />}
             disabledReason={canRemove ? undefined : t("Stop work before deleting it.")}
             onClick={() =>

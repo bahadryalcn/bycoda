@@ -99,12 +99,14 @@ export function CrewsPage({
       ? {
           label: t("New member"),
           disabled: !state.data,
+          reason: t("Wait for the crews to load first."),
           onClick: () => setNewMemberOpen(true),
         }
       : tab === "work"
         ? {
             label: t("New work"),
             disabled: !definitions?.length,
+            reason: t("Create a crew first."),
             onClick: () =>
               setDialog({
                 kind: "start",
@@ -117,6 +119,7 @@ export function CrewsPage({
         : {
             label: t("New crew"),
             disabled: !state.data,
+            reason: t("Wait for the crews to load first."),
             onClick: () => setDialog({ kind: "edit", createScope: "project" }),
           };
   return (
@@ -140,6 +143,7 @@ export function CrewsPage({
               variant="primary"
               startIcon={<Plus className="icon-sm" />}
               disabled={header.disabled}
+              disabledReason={header.disabled ? header.reason : undefined}
               onClick={header.onClick}
             >
               {header.label}

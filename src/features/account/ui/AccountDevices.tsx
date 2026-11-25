@@ -7,9 +7,10 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Laptop, Smartphone } from "../../../shared/ui/icons";
+import { Check, Laptop, Smartphone } from "../../../shared/ui/icons";
 import { Group, Row } from "../../../shared/ui/settings";
 import { useDevices } from "../hooks/useAccountData";
 
@@ -123,7 +124,14 @@ export function AccountDevices({
                 validate={(next) => (next.trim() ? null : t("Enter a name."))}
                 onSave={(next) => rename.mutateAsync({ id: device.id, name: next.trim() })}
               />
-              {isThis ? <Badge tone="accent">{t("This computer")}</Badge> : null}
+              {isThis ? (
+                <InfoTooltip
+                  label={t("This computer")}
+                  icon={<Check className="icon-sm" aria-hidden />}
+                >
+                  {t("This computer")}
+                </InfoTooltip>
+              ) : null}
               {channel ? <Badge>{channel}</Badge> : null}
             </span>
           }
@@ -167,7 +175,12 @@ export function AccountDevices({
             </Button>
           ) : undefined
         }
-        feedback={status ?? (error ? <InlineError>{error}</InlineError> : undefined)}
+        feedback={
+          status ??
+          (error ? (
+            <InlineError details={error}>{t("Could not sign the device out.")}</InlineError>
+          ) : undefined)
+        }
       >
         {rows(desktops)}
       </Group>

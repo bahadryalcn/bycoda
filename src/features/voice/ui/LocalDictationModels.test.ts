@@ -182,10 +182,10 @@ describe("model action recovery", () => {
     await click("Cancel", host);
     expect(host.textContent).toContain("Cancellation requested");
     expect(
-      [...host.querySelectorAll("button")].find(
-        (button) => button.textContent === "Cancellation requested",
-      )!.disabled,
-    ).toBe(true);
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Cancellation requested")!
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
     job = { state: "ready", id: "small", action: "test" };
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(host.textContent).toContain("Model loaded successfully on CPU");

@@ -33,13 +33,14 @@ import {
   shortcutTokens,
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
+import { keybindingCommandLabel, keybindingWhenLabel } from "./keybindingLabels";
 import { DESKTOP_STOP_COMMAND, DESKTOP_TALK_ROW, requireGlobal } from "./desktopStopKeybinding";
 import { APPEARANCE_SETTINGS_INDEX } from "./appearanceSettingsIndex";
 import { PRIVACY_SETTINGS_INDEX } from "./privacySettingsIndex";
 import { GENERAL_SETTINGS_INDEX } from "./generalSettingsIndex";
 import { TERMINAL_SETTINGS_INDEX } from "./terminalSettingsIndex";
 import {
-  INTEGRATIONS_CONTROL_LABELS,
+  integrationsControlLabels,
   INTEGRATIONS_SETTINGS_INDEX,
 } from "./integrationsSettingsIndex";
 const SECTION_KEY = "bycoda.settingsSection";
@@ -659,29 +660,29 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   ...[
     {
       id: "workspace-tasks",
-      label: "Tasks",
+      label: () => t("Tasks"),
       keywords: "tasks workspace navigation show hide görev",
     },
     {
       id: "workspace-automations",
-      label: "Automations",
+      label: () => t("Automations"),
       keywords: "automations workspace navigation show hide otomasyon",
     },
     {
       id: "workspace-inbox",
-      label: "Inbox",
+      label: () => t("Inbox"),
       keywords: "inbox workspace navigation show hide gelen kutusu",
     },
     {
       id: "workspace-social",
-      label: "Social Media",
+      label: () => t("Social Media"),
       keywords: "social media workspace navigation show hide sosyal medya",
     },
   ].map((item) => ({
     id: item.id,
     section: "workspace" as const,
     get label() {
-      return t(item.label);
+      return item.label();
     },
     keywords: item.keywords,
   })),
@@ -1084,180 +1085,180 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     {
       id: "file-access-permissions",
       section: "groupLock",
-      label: "Advanced: file access and agent permissions",
+      label: () => t("Advanced: file access and agent permissions"),
       keywords: "file access permission approval rules native consent dosya erişim izin onay",
     },
     {
       id: "worktree-location",
       section: "worktrees",
-      label: "Advanced: worktree location and deletion",
+      label: () => t("Advanced: worktree location and deletion"),
       keywords: "worktree folder path location delete root konum klasör yol silme",
     },
     {
       id: "archived-projects",
       section: "archive",
-      label: "Archived projects",
+      label: () => t("Archived projects"),
       keywords: "restore delete archived project geri yükle sil arşiv proje",
     },
     {
       id: "archived-conversations",
       section: "archive",
-      label: "Archived conversations",
+      label: () => t("Archived conversations"),
       keywords: "restore delete archived conversation session geri yükle sil arşiv sohbet oturum",
     },
     {
       id: "keep-awake-duration",
       section: "general",
-      label: "After agents finish",
+      label: () => t("After agents finish"),
       keywords: "sleep awake duration hold minutes uyku süre",
     },
     {
       id: "policy-language",
       section: "policies",
-      label: "Policy language",
+      label: () => t("Policy language"),
       keywords: "documents language offline english turkish politika belge dil",
     },
     {
       id: "theme-palettes",
       section: "appearance",
-      label: "Theme palettes",
+      label: () => t("Theme palettes"),
       keywords: "theme palette colors preset tint lightness accent tema palet renk hazır",
     },
     {
       id: "saved-themes",
       section: "appearance",
-      label: "Saved themes",
+      label: () => t("Saved themes"),
       keywords: "save look appearance preset custom theme name restore tema kaydet görünüm",
     },
     {
       id: "background-library",
       section: "appearance",
-      label: "Background image library",
+      label: () => t("Background image library"),
       keywords: "images generated history gallery wallpaper saved again kütüphane görsel arka plan",
     },
     {
       id: "getting-started",
       section: "policies",
-      label: "Getting started",
+      label: () => t("Getting started"),
       keywords: "setup onboarding guide help kurulum başlangıç",
     },
     {
       id: "group-lock-startup",
       section: "groupLock",
-      label: "Lock on startup",
+      label: () => t("Lock on startup"),
       keywords: "privacy password launch gizlilik parola başlangıç",
     },
     {
       id: "group-lock-idle",
       section: "groupLock",
-      label: "Lock when idle",
+      label: () => t("Lock when idle"),
       keywords: "inactivity timeout password boşta süre parola",
     },
     {
       id: "group-unlock-together",
       section: "groupLock",
-      label: "Unlock groups together",
+      label: () => t("Unlock groups together"),
       keywords: "unlock all password gruplar kilit birlikte",
     },
     {
       id: "acp-agents",
       section: "providers",
-      label: "ACP agents",
+      label: () => t("ACP agents"),
       keywords: "generic executable command agent id name acp ajan çalıştırılabilir",
     },
     {
       id: "acp-advanced",
       section: "providers",
-      label: "ACP arguments, environment and model context",
+      label: () => t("ACP arguments, environment and model context"),
       keywords:
         "json arguments environment authentication context tokens argüman ortam kimlik bağlam",
     },
     {
       id: "acp-registry",
       section: "providers",
-      label: "Browse ACP Registry",
+      label: () => t("Browse ACP Registry"),
       keywords: "registry install discover acp katalog keşfet kur",
     },
     {
       id: "ollama-models",
       section: "providers",
-      label: "Local models (Ollama)",
+      label: () => t("Local models (Ollama)"),
       keywords: "ollama local model opencode offline download pull yerel model indir",
     },
     {
       id: "ollama-port",
       section: "providers",
-      label: "Ollama port",
+      label: () => t("Ollama port"),
       keywords: "ollama port address host OLLAMA_HOST 11434 adres",
     },
     {
       id: "account-limits",
       section: "usage",
-      label: "Provider account limit",
+      label: () => t("Provider account limit"),
       keywords: "quota weekly session reset account limits kota hafta oturum hesap sınır",
     },
     {
       id: "cost-overview",
       section: "usage",
-      label: "Cost by project and day",
+      label: () => t("Cost by project and day"),
       keywords:
         "range cost tokens input output cache api estimates dates project model provider maliyet gün tarih aralık tahmin token",
     },
     {
       id: "terminal-account-profiles",
       section: "providers",
-      label: "Terminal account profiles",
+      label: () => t("Terminal account profiles"),
       keywords:
         "discover connect directory folder cli sign in profile terminal hesap profil klasör keşfet",
     },
     {
       id: "code-theme",
       section: "appearance",
-      label: "Code theme",
+      label: () => t("Code theme"),
       keywords: "syntax highlighting github dark dracula code theme kod tema renk",
     },
     {
       id: "code-font-size",
       section: "appearance",
-      label: "Code font size",
+      label: () => t("Code font size"),
       keywords: "code text size px kod yazı boyut",
     },
     {
       id: "terminal-font",
       section: "appearance",
-      label: "Terminal font",
+      label: () => t("Terminal font"),
       keywords:
         "terminal font family typeface yazı tipi monospace cascadia jetbrains same as code font",
     },
     {
       id: "terminal-font-size",
       section: "appearance",
-      label: "Terminal font size",
+      label: () => t("Terminal font size"),
       keywords: "terminal zoom ctrl wheel size büyüt küçült tekerlek boyut",
     },
     {
       id: "terminal-font-weight",
       section: "appearance",
-      label: "Terminal font weight",
+      label: () => t("Terminal font weight"),
       keywords: "terminal weight bold regular medium kalınlık stil",
     },
     {
       id: "terminal-line-height",
       section: "appearance",
-      label: "Terminal line spacing",
+      label: () => t("Terminal line spacing"),
       keywords: "terminal line height spacing satır aralık",
     },
     {
       id: "skill-folders",
       section: "skills",
-      label: "Advanced: catalog visibility and skill folders",
+      label: () => t("Advanced: catalog visibility and skill folders"),
       keywords: "skills personal project folders hidden catalog beceri kişisel proje klasör gizli",
     },
   ].map((item) => ({
     id: item.id,
     section: item.section as SettingsSectionId,
     get label() {
-      return t(item.label);
+      return item.label();
     },
     keywords: item.keywords,
   })),
@@ -1279,23 +1280,31 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: `${harness} ${HARNESS_TITLE[harness]} executable binary path install cli yol kurulum`,
   })),
   ...[
-    { id: "finished", label: "Agent finished", keywords: "finished complete done ajan tamamlandı" },
-    { id: "input", label: "Needs your input", keywords: "approval question input onay soru" },
+    {
+      id: "finished",
+      label: () => t("Agent finished"),
+      keywords: "finished complete done ajan tamamlandı",
+    },
+    {
+      id: "input",
+      label: () => t("Needs your input"),
+      keywords: "approval question input onay soru",
+    },
     {
       id: "failed",
-      label: "Failed or usage limit",
+      label: () => t("Failed or usage limit"),
       keywords: "failure error quota limit hata sınır",
     },
     {
       id: "taskbar",
-      label: "Taskbar badge and flash",
+      label: () => t("Taskbar badge and flash"),
       keywords: "windows badge flash taskbar rozet görev çubuğu",
     },
   ].map((item) => ({
     id: `notification-event-${item.id}`,
     section: "notifications" as const,
     get label() {
-      return t(item.label);
+      return item.label();
     },
     keywords: item.keywords,
   })),
@@ -1348,93 +1357,108 @@ export function settingsRevealAnchor(anchor: string | null): string | null {
 }
 
 /** Labels of controls inside a group target, searched in both UI and source language. */
-const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
-  "git-generation-default": ["Default generation model"],
-  theme: ["Theme and colors", "System", "Light", "Dark"],
-  "theme-palettes": ["Blue", "Violet", "Pink", "Red", "Orange", "Green"],
-  "canvas-background": ["Pure", "Tinted"],
-  "file-access": ["File access", "Change file access"],
-  "file-access-permissions": ["File access"],
-  "import-history": ["Import Claude Code and Codex sessions"],
-  "file-tabs": ["Beside chat", "Top bar"],
-  "collapsed-project-rail": ["Icon rail", "Hidden"],
-  "session-list": [
-    "Row density",
-    "Compact",
-    "Standard",
-    "Detailed",
-    "Show model",
-    "Show branch",
-    "Group after holding",
-  ],
-  "diff-colors": ["Red & green", "Blue & orange", "Blue & orange · stronger"],
-  "chat-width": ["Comfortable", "Wide", "Full width"],
-  "interface-font": ["System default"],
-  "transcript-layout": ["Full width", "Chat"],
-  "composer-spelling": ["Queue", "Steer"],
-  "model-controls": [
-    "Compact",
-    "Show active choices",
-    "Advanced conversation settings",
-    "Continuation and model options",
-  ],
-  "streaming-text-mode": ["Paced (default)", "Immediate with adaptive fade"],
-  "crew-growth": ["Color with context", "Grow with context"],
-  "chat-background": ["Empty only", "All sessions"],
-  "live-background": ["Neural tree", "Latent face", "Thought weaver", "ASCII mask"],
-  "format-on-save": ["Editor", "Advanced editor settings"],
-  "diff-view": ["Editor", "Unified", "Code review"],
-  "models-delegation": ["Subagents", "Advisor", "Subagent max effort", "Image models"],
-  "agent-clis": [
-    "Agent CLIs",
-    "Model",
-    "Default provider",
-    "Default model",
-    "Effort",
-    "Permissions",
-    "Default extras",
-    "Show in picker",
-    "Apply defaults to",
-    "Global",
-  ],
-  "provider-accounts": [
-    "Accounts",
-    "Default account",
-    "Provider CLI profile",
-    "Shared CLI profile",
-    "Isolated profile",
-  ],
-  "acp-agents": ["Agent id", "Name", "Executable path"],
-  "acp-advanced": [
-    "Arguments (JSON array)",
-    "Environment (JSON object; blank preserves stored values)",
-    "ACP authentication method id (optional)",
-    "Context window tokens (optional)",
-  ],
-  "prompt-templates": ["Template name", "Template trigger", "Template text"],
-  "cost-overview": ["Cost range", "Estimated cost", "Input", "Output", "Cache"],
-  "daily-summary": ["Daily summary time"],
-  "terminal-available-shells": ["Advanced terminal settings", "This computer · Available shells"],
-  "group-lock-options": ["Advanced: automatic locking"],
-  "claude-hooks": ["Advanced provider options"],
-  "archived-projects": ["Restore", "Delete"],
-  "archived-conversations": ["Restore", "Delete"],
-  "project-notifications": [
-    "Mute",
-    "Reminders",
-    "Pull requests / Merge requests",
-    "Issues and Linear tasks",
-    "Agent approvals and questions",
-    "Agent failures and usage limits",
-  ],
-  ...INTEGRATIONS_CONTROL_LABELS,
-  "group-lock-password": [
-    "Change password…",
-    "Remove password…",
-    "Forgot password…",
-    "Set lock password…",
-  ],
-};
+function settingsControlLabels(): Record<string, readonly string[]> {
+  return {
+    "git-generation-defaultt(": [")Default generation modelt("],
+    theme: [")Theme and colorst(", ")Systemt(", ")Lightt(", ")Darkt("],
+    ")theme-palettest(": [")Bluet(", ")Violett(", ")Pinkt(", ")Redt(", ")Oranget(", ")Greent("],
+    ")canvas-backgroundt(": [")Puret(", ")Tintedt("],
+    ")file-accesst(": [")File accesst(", ")Change file accesst("],
+    ")file-access-permissionst(": [")File accesst("],
+    ")import-historyt(": [")Import Claude Code and Codex sessionst("],
+    ")file-tabst(": [")Beside chatt(", ")Top bart("],
+    ")collapsed-project-railt(": [")Icon railt(", ")Hiddent("],
+    ")session-listt(": [
+      ")Row densityt(",
+      ")Compactt(",
+      ")Standardt(",
+      ")Detailedt(",
+      ")Show modelt(",
+      ")Show brancht(",
+      ")Group after holdingt(",
+    ],
+    ")diff-colorst(": [")Red & greent(", ")Blue & oranget(", ")Blue & orange · strongert("],
+    ")chat-widtht(": [")Comfortablet(", ")Widet(", ")Full widtht("],
+    ")interface-fontt(": [")System defaultt("],
+    ")transcript-layoutt(": [")Full widtht(", ")Chatt("],
+    ")composer-spellingt(": [")Queuet(", ")Steert("],
+    ")model-controlst(": [
+      ")Compactt(",
+      ")Show active choicest(",
+      ")Advanced conversation settingst(",
+      ")Continuation and model optionst(",
+    ],
+    ")streaming-text-modet(": [")Paced (default)t(", ")Immediate with adaptive fadet("],
+    ")crew-growtht(": [")Color with contextt(", ")Grow with contextt("],
+    ")chat-backgroundt(": [")Empty onlyt(", ")All sessionst("],
+    ")live-backgroundt(": [
+      ")Neural treet(",
+      ")Latent facet(",
+      ")Thought weavert(",
+      ")ASCII maskt(",
+    ],
+    ")format-on-savet(": [")Editort(", ")Advanced editor settingst("],
+    ")diff-viewt(": [")Editort(", ")Unifiedt(", ")Code reviewt("],
+    ")models-delegationt(": [
+      ")Subagentst(",
+      ")Advisort(",
+      ")Subagent max effortt(",
+      ")Image modelst(",
+    ],
+    ")agent-clist(": [
+      ")Agent CLIst(",
+      ")Modelt(",
+      ")Default providert(",
+      ")Default modelt(",
+      ")Effortt(",
+      ")Permissionst(",
+      ")Default extrast(",
+      ")Show in pickert(",
+      ")Apply defaults tot(",
+      ")Globalt(",
+    ],
+    ")provider-accountst(": [
+      ")Accountst(",
+      ")Default accountt(",
+      ")Provider CLI profilet(",
+      ")Shared CLI profilet(",
+      ")Isolated profilet(",
+    ],
+    ")acp-agentst(": [")Agent idt(", ")Namet(", ")Executable patht("],
+    ")acp-advancedt(": [
+      ")Arguments (JSON array)t(",
+      ")Environment (JSON object; blank preserves stored values)t(",
+      ")ACP authentication method id (optional)t(",
+      ")Context window tokens (optional)t(",
+    ],
+    ")prompt-templatest(": [")Template namet(", ")Template triggert(", ")Template textt("],
+    ")cost-overviewt(": [")Cost ranget(", ")Estimated costt(", ")Inputt(", ")Outputt(", ")Cachet("],
+    ")daily-summaryt(": [")Daily summary timet("],
+    ")terminal-available-shellst(": [
+      ")Advanced terminal settingst(",
+      ")This computer · Available shellst(",
+    ],
+    ")group-lock-optionst(": [")Advanced: automatic lockingt("],
+    ")claude-hookst(": [")Advanced provider optionst("],
+    ")archived-projectst(": [")Restoret(", ")Deletet("],
+    ")archived-conversationst(": [")Restoret(", ")Deletet("],
+    ")project-notificationst(": [
+      ")Mutet(",
+      ")Reminderst(",
+      ")Pull requests / Merge requestst(",
+      ")Issues and Linear taskst(",
+      ")Agent approvals and questionst(",
+      ")Agent failures and usage limitst(",
+    ],
+    ...integrationsControlLabels(),
+    ")group-lock-passwordt(": [
+      ")Change password…t(",
+      ")Remove password…t(",
+      ")Forgot password…t(",
+      ")Set lock password…",
+    ],
+  };
+}
 
 /** Ranks a label/keyword pair against a lowercased needle; `null` means no match. */
 function matchScore(needle: string, label: string, keywords?: string): number | null {
@@ -1466,17 +1490,18 @@ export function searchSettings(
     ...currentKeybindings().map((row) => ({
       id: keybindingSettingId(row.command),
       section: "keybindings" as const,
-      label: t(row.command),
-      keywords: `${row.command} ${row.keys ?? ""} ${t(row.when)} ${row.when}`,
+      label: keybindingCommandLabel(row.command),
+      keywords: `${row.command} ${row.keys ?? ""} ${keybindingWhenLabel(row.when)} ${row.when}`,
     })),
   ];
+  const controlLabels = settingsControlLabels();
   for (const entry of entries) {
     const controls = entry.id.startsWith("cli-path-")
-      ? ["CLI path and installation", "Executable path", "Installation help"]
-      : (SETTINGS_CONTROL_LABELS[entry.id] ?? []);
+      ? [t("CLI path and installation"), t("Executable path"), t("Installation help")]
+      : (controlLabels[entry.id] ?? []);
     const scores = [
       matchScore(needle, entry.label, entry.keywords),
-      ...controls.map((label) => matchScore(needle, t(label))),
+      ...controls.map((label) => matchScore(needle, label)),
     ].filter((score): score is number => score != null);
     if (scores.length === 0) continue;
     const score = Math.min(...scores);
@@ -2643,10 +2668,10 @@ export function filterKeybindings(rows: KeybindingRow[], query: string): Keybind
   return rows.filter(
     (row) =>
       row.command.toLowerCase().includes(needle) ||
-      t(row.command).toLowerCase().includes(needle) ||
+      keybindingCommandLabel(row.command).toLowerCase().includes(needle) ||
       row.keys.toLowerCase().includes(needle) ||
       row.when.toLowerCase().includes(needle) ||
-      t(row.when).toLowerCase().includes(needle),
+      keybindingWhenLabel(row.when).toLowerCase().includes(needle),
   );
 }
 

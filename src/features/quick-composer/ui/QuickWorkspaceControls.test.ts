@@ -182,7 +182,7 @@ it("recovers from failure to open a popup and disables controls outside reposito
   expect(onOpenChange).toHaveBeenLastCalledWith(false);
   bridge.repo = false;
   await render();
-  expect(button("Choose branch").disabled).toBe(true);
+  expect(button("Choose branch").getAttribute("aria-disabled")).toBe("true");
   expect(button("Workspace Current checkout").getAttribute("aria-disabled")).toBe("true");
   expect(button("Workspace Current checkout").getAttribute("aria-description")).toBe("No repo");
 });

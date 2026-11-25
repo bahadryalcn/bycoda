@@ -315,6 +315,7 @@ export function SecondOpinionButton({
           aria-haspopup="menu"
           aria-expanded={open}
           disabled={disabled}
+          disabledReason={disabled ? label : undefined}
           onClick={() => {
             if (disabled) return;
             setOpen((value) => !value);

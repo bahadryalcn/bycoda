@@ -76,17 +76,18 @@ export function VoiceCompanionControls({
       <MessageSquare className="icon-sm" />
     </Button>
   );
+  const connectingLabel = status === "reconnecting" ? t("Stop") : t("Cancel");
   if (connecting)
     return (
       <div className={styles.callDock}>
         <Button
           shape="pill"
           size="lg"
-          label={t(status === "reconnecting" ? "Stop" : "Cancel")}
+          label={connectingLabel}
           startIcon={<X className="icon-sm" />}
           onClick={onClose}
         >
-          {t(status === "reconnecting" ? "Stop" : "Cancel")}
+          {connectingLabel}
         </Button>
       </div>
     );
@@ -106,7 +107,7 @@ export function VoiceCompanionControls({
           onClick={onStart}
           startIcon={<Mic className="icon-sm" />}
         >
-          {t(status === "idle" ? "Start voice" : "Talk")}
+          {status === "idle" ? t("Start voice") : t("Talk")}
         </Button>
         {status !== "idle" && (
           <Button
@@ -144,6 +145,7 @@ export function VoiceCompanionControls({
           variant={muted ? "secondary" : "primary"}
           tone={muted ? "danger" : undefined}
           disabled={status !== "live"}
+          disabledReason={t("Voice is not connected yet.")}
           pressed={muted}
           onClick={onToggleMute}
         >

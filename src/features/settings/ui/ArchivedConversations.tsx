@@ -190,6 +190,7 @@ export function ArchivedConversations({
                       className="shrink-0"
                       loading={!!pending[`unarchive:${session.id}`]}
                       disabled={!!pending[`delete:${session.id}`]}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() =>
                         void run(`unarchive:${session.id}`, () =>
                           onArchiveSession(session.id, false),

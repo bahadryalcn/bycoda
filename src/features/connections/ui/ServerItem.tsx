@@ -231,7 +231,7 @@ export function ServerItem({
       motion="none"
       controlHeight="auto"
       padding={{ inline: "none", block: "none" }}
-      className="server-identity min-w-0 flex-1 flex-col items-stretch gap-0 text-left"
+      className="server-identity min-w-0 flex-1 flex-col items-stretch gap-0 text-start"
       {...rowProps}
       onClick={onClick}
     >
@@ -284,6 +284,7 @@ export function ServerItem({
           {badges.length > 0 ? (
             <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-2">
               <span className="pointer-events-auto min-w-0" onContextMenu={onContextMenu}>
+                {/* ui-drift-ignore: row-text-badge -- the owner's own tags are the card's content, not a status tag. */}
                 <BadgeList label={t("Tags")} size="xs" items={badges} />
               </span>
               {status ? <span className="flex shrink-0 items-center">{status}</span> : null}

@@ -33,7 +33,7 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
     handle: string;
     following: boolean;
   }>();
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The profile could not be verified. Read the profile again before saving."),
   );
 
@@ -97,7 +97,6 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
         size="sm"
         className="self-start"
         loading={is("read")}
-        disabled={is("read")}
         onClick={read}
       >
         {t("Read profile")}
@@ -166,7 +165,7 @@ export function XProfileEditor({ client, accountId }: XProfileEditorProps) {
             : t("Not following @{p0}", { p0: followed.handle })}
         </InlineMessage>
       ) : null}
-      {error ? (
+      {failureTitle ? (
         <InlineError details={details} retry={{ onRetry: read, label: t("Read profile") }}>
           {t("The profile could not be verified. Read the profile again before saving.")}
         </InlineError>

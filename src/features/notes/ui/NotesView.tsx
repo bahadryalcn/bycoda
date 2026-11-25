@@ -842,6 +842,7 @@ export function NotesView({
             label={t("Select notes")}
             pressed={selectionMode}
             disabled={bulkDeleting}
+            disabledReason={t("Deleting…")}
             onClick={() => {
               setSelectionMode((current) => !current);
               setCheckedIds(new Set());
@@ -997,6 +998,7 @@ export function NotesView({
           <Checkbox
             aria-label={t("Select all filtered notes")}
             disabled={bulkDeleting || visible.length === 0}
+            disabledReason={bulkDeleting ? t("Deleting…") : t("No notes to select.")}
             checked={visible.length > 0 && visible.every((note) => checkedIds.has(note.id))}
             indeterminate={
               visible.some((note) => checkedIds.has(note.id)) &&
@@ -1021,6 +1023,7 @@ export function NotesView({
           <Button
             tone="danger"
             disabled={checkedIds.size === 0 || bulkDeleting}
+            disabledReason={bulkDeleting ? t("Deleting…") : t("Select a note first.")}
             onClick={() => setDeleteTargets(notes.filter((note) => checkedIds.has(note.id)))}
           >
             <Trash2 className="icon-sm" />
@@ -1029,6 +1032,7 @@ export function NotesView({
           <Button
             variant="ghost"
             disabled={bulkDeleting}
+            disabledReason={t("Deleting…")}
             onClick={() => {
               setSelectionMode(false);
               setCheckedIds(new Set());
@@ -1185,6 +1189,7 @@ export function NotesView({
                         aria-label={t("Select note: {p0}", { p0: row.note.title })}
                         checked={checkedIds.has(row.note.id)}
                         disabled={bulkDeleting}
+                        disabledReason={t("Deleting…")}
                         onChange={() => toggleChecked(row.note.id)}
                       />
                     ) : null}
@@ -1321,9 +1326,14 @@ export function NotesView({
             </Text>
           ) : null}
           {detailError ? (
-            <Alert tone="danger" className="">
-              {t("Could not load or update notes: ")}
-              {detailError}{" "}
+            <Alert
+              tone="danger"
+              className=""
+              title={t("Could not load or update notes.")}
+              extra={
+                <ErrorDetails title={t("Could not load or update notes.")} detail={detailError} />
+              }
+            >
               <Button
                 variant="ghost"
                 size="sm"
@@ -2106,6 +2116,7 @@ function NoteEditor({
                 projectCwd={sourceCwd ?? activeCwd}
                 recents={recents}
                 disabled={!canAddToChat}
+                disabledReason={t("Write something in the note first.")}
                 onAdd={(targetCwd) => onAddToChat(draft, targetCwd)}
               />
               <Button
@@ -2231,6 +2242,7 @@ function NoteEditor({
                 type="button"
                 loading={saveAction === "retry"}
                 disabled={recovering || (saving && saveAction !== "retry")}
+                disabledReason={recovering ? t("Saving recovery copy…") : t("Saving…")}
                 onClick={() => void saveFromAction("retry")}
                 textDecoration="rest-underline"
                 className="shrink-0"

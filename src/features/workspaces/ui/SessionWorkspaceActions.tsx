@@ -307,13 +307,14 @@ export function SessionWorkspaceActions({
       )}
       {error && !connectionIssueHandled && (
         <InlineError
+          details={error}
           retry={{
             onRetry: reload,
             label: t("Retry workspace"),
             disabled: !!pending,
           }}
         >
-          {error}
+          {t("Couldn’t refresh workspace status")}
         </InlineError>
       )}
       {menu && workspace && (

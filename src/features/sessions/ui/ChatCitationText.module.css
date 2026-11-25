@@ -39,9 +39,6 @@
   width: 13px;
   height: 13px;
 }
-.fallback {
-  display: block;
-}
 .excerpt {
   display: block;
   white-space: pre-wrap;

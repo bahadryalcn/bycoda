@@ -170,7 +170,7 @@ export function CommitDiff({ cwd, sha }: Props) {
 
           context="panel"
           title={t("Couldn’t load commit")}
-          description={error}
+          error={error}
           onRetry={() => setRetry((value) => value + 1)}
         />
       </div>

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Settings } from "../../../shared/ui/icons";
 import { t, useFormat } from "../../../shared/i18n";
-import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
+import { saveVoiceTurnEndChoice, voiceTurnChoiceFailedText } from "../model/voiceTurnPolicy";
 import {
   Group,
   Select,
@@ -73,7 +73,7 @@ export function VoiceConversationStyle({
         descriptionVisible={manual}
         feedback={
           turnChoiceError ? (
-            <SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>
+            <SettingsFeedback state="error">{voiceTurnChoiceFailedText()}</SettingsFeedback>
           ) : undefined
         }
       >

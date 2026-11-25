@@ -22,6 +22,7 @@ import {
   QueueRunLeasePendingError,
 } from "../../../../features/connections/model/sharedQueue";
 import { t } from "../../../../shared/i18n";
+import { catalogText } from "../../../../features/sessions/model/catalogText";
 
 /** Conversations whose send is waiting for its lease, by the generation that owns the wait. */
 const starting = new Map<string, number>();
@@ -150,7 +151,7 @@ export function gateRunLease(
         else options?.onSendRejected?.();
         const message =
           outcome.kind === "waiting"
-            ? t(outcome.text)
+            ? catalogText(t, outcome.text)
             : outcome.text === "Check the conversation on its Host before resuming."
               ? t("Check the conversation on its Host before resuming.")
               : outcome.text;

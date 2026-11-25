@@ -4,7 +4,7 @@ import type { PendingChange } from "../../../../shared/ui/settings";
 
 type Key = keyof AssistantProfilePatch;
 
-/** What the owner calls each profile field; fields that share one control share one label. */
+/** The change group of each profile field; fields that share one control share one group, named by its English label. */
 const LABEL: Partial<Record<Key, string>> = {
   name: "Assistant name",
   avatar: "Avatar",
@@ -52,6 +52,78 @@ const LABEL: Partial<Record<Key, string>> = {
   criticalExclusions: "Access",
 };
 
+/** The translated group title for a change group id (the English field label). */
+function groupLabel(group: string): string {
+  switch (group) {
+    case "Assistant name":
+      return t("Assistant name");
+    case "Avatar":
+      return t("Avatar");
+    case "Show title":
+      return t("Show title");
+    case "How should I address you?":
+      return t("How should I address you?");
+    case "How often to use your name":
+      return t("How often to use your name");
+    case "Tone":
+      return t("Tone");
+    case "Allow profanity":
+      return t("Allow profanity");
+    case "Persona":
+      return t("Persona");
+    case "Language":
+      return t("Language");
+    case "Speak job updates while voice is connected":
+      return t("Speak job updates while voice is connected");
+    case "Start a conversation":
+      return t("Start a conversation");
+    case "Autonomy":
+      return t("Autonomy");
+    case "Plan approval":
+      return t("Plan approval");
+    case "Confirm jobs before starting":
+      return t("Confirm jobs before starting");
+    case "Answer routine worker questions":
+      return t("Answer routine worker questions");
+    case "Job execution":
+      return t("Job execution");
+    case "Daily token budget":
+      return t("Daily token budget");
+    case "When present":
+      return t("When present");
+    case "When away":
+      return t("When away");
+    case "Task done":
+      return t("Task done");
+    case "Needs input":
+      return t("Needs input");
+    case "Telegram":
+      return t("Telegram");
+    case "Keep awake while jobs run":
+      return t("Keep awake while jobs run");
+    case "Keep awake while away":
+      return t("Keep awake while away");
+    case "Idle after":
+      return t("Idle after");
+    case "Away after":
+      return t("Away after");
+    case "Stall timeout":
+      return t("Stall timeout");
+    case "Active hours":
+      return t("Active hours");
+    case "Quiet hours":
+      return t("Quiet hours");
+    case "Cost and context":
+      return t("Cost and context");
+    case "Access":
+      return t("Access");
+    case "Other changes":
+      return t("Other changes");
+    default:
+      return group;
+  }
+}
+
 function detail(value: unknown): string | undefined {
   if (typeof value === "boolean") return value ? t("On") : t("Off");
   if (typeof value === "number") return String(value);
@@ -82,7 +154,7 @@ export function assistantChanges(input: AssistantChangeInput): PendingChange[] {
   }
   const changes: PendingChange[] = [...groups].map(([label, keys]) => ({
     id: `profile:${label}`,
-    label: t(label),
+    label: groupLabel(label),
     detail: keys.length === 1 ? detail(draft[keys[0]!]) : undefined,
     // Access edits renew a native consent that only Discard clears.
     revert:

@@ -43,7 +43,7 @@ export function Timeline({
       messages={{
         today: t("Today"),
         yesterday: t("Yesterday"),
-        unit: (count) => t(count === 1 ? "Timeline update" : "Timeline updates"),
+        unit: (count) => (count === 1 ? t("Timeline update") : t("Timeline updates")),
         newUpdate: (text) => t("New update: {p0}", { p0: text }),
       }}
       formatRelativeTime={(at) => ({ short: clockFormat.format(new Date(at)), long: "" })}

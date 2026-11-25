@@ -109,6 +109,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
     | "subtle-ring"
     | "border-ring";
   loading?: boolean;
+  /** Translated pending text ("Updating…"). A text action shows it beside the spinner, in place
+   *  of the label, so the progress never needs a sibling badge; its width is reserved up front. */
   loadingLabel?: string;
   /** Confirmed by the operation owner; clear when the draft or target changes. Pending wins. */
   success?: boolean;
@@ -252,6 +254,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
 /**
  * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item`, `tab` and `chip` (quiet compact icon plus readable value for machine, project, checkout, branch and model pickers: no border or fill until hover), with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
  * Icon-only buttons need `iconOnly` and a `label` (accessible name; no tooltip unless `tooltip`, `shortcut` or `tooltipDetails` is passed).
+ * While `loading`, a text action shows a start spinner beside its label, or beside `loadingLabel` ("Saving…") when given; its width is reserved at rest. The pending action is the progress indicator: show no separate saving notice, badge or card for it.
  * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. At rest the button shows only its label (no reserved icon slot); the confirmed width, check included, is reserved inside the label. Clear success when its draft or target changes.
  * @group actions
  * @use Any click that runs an action, opens something or navigates. Use variant="chip" for a compact icon and readable value. Give icon-only actions an accessible name and reserve tooltips for shortcuts, reasons or details. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
@@ -336,16 +339,37 @@ export function Button({
 }: ButtonProps) {
   const loading = loadingProp ?? false;
   const confirmed = success && !!successLabel && !loading;
-  const contentLabel = confirmed ? successLabel : children;
+  // A text action keeps saying what it does while pending (Arc ActionButton): the spinner takes
+  // the start slot and the label, or the pending text ("Saving…") when given, stays readable.
+  // Only icon-only, item, tab, media and composite-content actions fall back to a centered spinner.
+  const canShowPending =
+    loadingProp !== undefined &&
+    !iconOnly &&
+    variant !== "item" &&
+    variant !== "tab" &&
+    layout !== "media" &&
+    (loadingLabel != null || typeof children === "string" || typeof children === "number");
+  const pendingText = loading && canShowPending;
+  const pendingLabel = loadingLabel ?? children;
+  const contentLabel = pendingText ? pendingLabel : confirmed ? successLabel : children;
   // With a start icon the check replaces it in the same slot. Without one nothing is reserved
   // at rest: the check overlays the start of the label, inside the width the success ghost
   // reserves (icon included), so completion never shifts neighbouring actions.
   const overlayCheck = confirmed && startIcon == null;
+  const overlaySpinner = pendingText && startIcon == null;
   const leadingIcon = confirmed && startIcon != null ? <Check className="icon-sm" /> : startIcon;
   const canCollapseLabel = collapseLabel === "container" && startIcon != null && !iconOnly;
   const [announcerMounted, setAnnouncerMounted] = useState(false);
   if (confirmed && !announcerMounted) setAnnouncerMounted(true);
-  const reservedLabels = successLabel ? [...(reserveLabels ?? []), successLabel] : reserveLabels;
+  const stateLabels = [
+    ...(successLabel ? [successLabel] : []),
+    // Reserve the pending text with its spinner up front so pressing never widens the action.
+    ...(canShowPending && startIcon == null ? [String(pendingLabel)] : []),
+    ...(canShowPending && startIcon != null && loadingLabel ? [loadingLabel] : []),
+  ];
+  const reservedLabels = stateLabels.length
+    ? [...(reserveLabels ?? []), ...stateLabels]
+    : reserveLabels;
   const labelMeasure = useRef<HTMLSpanElement>(null);
   const [labelWidth, setLabelWidth] = useState(0);
   const reserveLabel = stableWidth ?? (loadingProp !== undefined || !!reservedLabels?.length);
@@ -393,6 +417,8 @@ export function Button({
     !iconOnly &&
     !structural &&
     layout !== "media";
+  // Only an action that cannot show its pending text hides the label under a centered spinner.
+  const centeredSpinner = loading && !inlineProgress && !pendingText;
   const native =
     structural ||
     variant === "caption" ||
@@ -740,11 +766,15 @@ export function Button({
           <span
             ref={labelMeasure}
             className={styles.stableLabel}
-            data-confirm-icon={overlayCheck || undefined}
+            data-confirm-icon={overlayCheck || overlaySpinner || undefined}
           >
             {overlayCheck ? (
               <span className={styles.confirmIcon} aria-hidden="true">
                 <Check className="icon-sm" />
+              </span>
+            ) : overlaySpinner ? (
+              <span className={styles.confirmIcon} aria-hidden="true">
+                <span className={`${arcStyles.spinner} ${styles.pendingSpinner}`} />
               </span>
             ) : null}
             {contentLabel}
@@ -754,7 +784,7 @@ export function Button({
               key={index}
               className={styles.labelGhost}
               data-reserve={text}
-              data-reserve-icon={startIcon == null && text === successLabel ? "" : undefined}
+              data-reserve-icon={startIcon == null && stateLabels.includes(text) ? "" : undefined}
               aria-hidden="true"
             />
           ))}
@@ -814,7 +844,7 @@ export function Button({
             className={[
               arcStyles.labelSlot,
               styles.nativeContent,
-              loading && !inlineProgress ? arcStyles.loadingLabel : "",
+              centeredSpinner ? arcStyles.loadingLabel : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -822,7 +852,7 @@ export function Button({
             {content}
           </span>
         )}
-        {loading && !inlineProgress ? (
+        {centeredSpinner ? (
           <span
             className={structural ? styles.structuralLoader : arcStyles.loader}
             aria-hidden="true"
@@ -839,7 +869,7 @@ export function Button({
       {...attributes}
       variant={arcVariant}
       size={size}
-      loading={loading && !inlineProgress}
+      loading={centeredSpinner}
       overlay={badgeSlot}
       className={controlClasses}
     >

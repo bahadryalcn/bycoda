@@ -28,7 +28,7 @@ import { useT } from "../../shared/i18n";
 import { TOOL_IDS, type WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { Button } from "../../shared/ui/Button";
-import { ErrorDetails, fitsOneLine } from "../../shared/ui/ErrorDetails";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { useSshRunbookQueue } from "../../features/connections/model/sshRunbookQueue";
@@ -74,19 +74,6 @@ export function ToolHeader({ children }: { children: ReactNode }) {
   return navigation?.active ? <ToolNavigation /> : children;
 }
 
-const labels = {
-  servers: "Servers",
-  social: "Social Media",
-  tasks: "Tasks",
-  automations: "Automations",
-  crews: "Crews",
-  "live-stream": "Live streaming",
-  inbox: "Inbox",
-  notes: "Notes",
-  "conversation-tools": "Conversation tools",
-  terminal: "Terminal",
-  assistant: "Set up",
-};
 const icons = {
   servers: Server,
   social: Globe,
@@ -153,8 +140,20 @@ async function openToolWindow(
 export function ToolNavigation() {
   const t = useT();
   const assistant = useAssistantIdentity();
-  const label = (tool: WorkspaceToolId) =>
-    tool === "assistant" ? assistant.room : t(labels[tool]);
+  const labels: Record<WorkspaceToolId, string> = {
+    servers: t("Servers"),
+    social: t("Social Media"),
+    tasks: t("Tasks"),
+    automations: t("Automations"),
+    crews: t("Crews"),
+    "live-stream": t("Live streaming"),
+    inbox: t("Inbox"),
+    notes: t("Notes"),
+    "conversation-tools": t("Conversation tools"),
+    terminal: t("Terminal"),
+    assistant: assistant.room,
+  };
+  const label = (tool: WorkspaceToolId) => labels[tool];
   const sshReviews = useSshRunbookQueue();
   const openSshReviews = useContext(OpenSshReviewsContext);
   const navigation = useContext(ToolNavigationContext);
@@ -323,16 +322,8 @@ export function ToolNavigation() {
       )}
       {error ? (
         <Alert tone="danger" data-tauri-drag-region="false">
-          {fitsOneLine(error) ? (
-            <span>
-              {t("Could not open window")}: {error}
-            </span>
-          ) : (
-            <>
-              <span>{t("Could not open window")}</span>
-              <ErrorDetails title={t("Could not open window")} detail={error} />
-            </>
-          )}
+          <span>{t("Could not open window")}</span>
+          <ErrorDetails title={t("Could not open window")} detail={error} />
           <Button variant="ghost" motion="none" onClick={() => setError("")}>
             {t("Dismiss")}
           </Button>

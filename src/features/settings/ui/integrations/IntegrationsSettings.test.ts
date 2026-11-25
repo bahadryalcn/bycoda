@@ -133,10 +133,10 @@ it("retains account and new-account drafts while switching and locks pending sav
   await click("Save and test connection");
   expect(
     [...container.querySelectorAll<HTMLButtonElement>('[role="listitem"] button')].every(
-      (item) => item.disabled,
+      (item) => item.disabled || item.getAttribute("aria-disabled") === "true",
     ),
   ).toBe(true);
-  expect(button("Add account")?.disabled).toBe(true);
+  expect(button("Add account")?.getAttribute("aria-disabled")).toBe("true");
   await act(async () => finish(account()));
   await edit(1);
   expect(visibleInput().value).toBe("Draft B");
@@ -172,7 +172,7 @@ it("applies a late form completion only to its original account", async () => {
   await act(async () => callbacks.get("acct-2")!.onSavingChange!(false));
   expect(
     [...container.querySelectorAll<HTMLButtonElement>('[role="listitem"] button')].every(
-      (item) => item.disabled,
+      (item) => item.disabled || item.getAttribute("aria-disabled") === "true",
     ),
   ).toBe(true);
   await act(async () => callbacks.get("acct-1")!.onSavingChange!(false));

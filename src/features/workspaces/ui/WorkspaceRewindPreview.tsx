@@ -153,7 +153,7 @@ export function WorkspaceRewindPreview({
   };
   return (
     <Modal
-      title={t(plan.direction === "undo" ? "Undo rewind" : "Rewind conversation and files")}
+      title={plan.direction === "undo" ? t("Undo rewind") : t("Rewind conversation and files")}
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -168,9 +168,16 @@ export function WorkspaceRewindPreview({
             tone="warning"
             loading={pending}
             disabled={pending || plan.blockers.length > 0 || expired}
+            disabledReason={
+              plan.blockers.length > 0
+                ? t("Resolve the listed blockers first.")
+                : expired
+                  ? t("This preview expired. Close it and open it again.")
+                  : undefined
+            }
             onClick={() => void apply()}
           >
-            {t(plan.direction === "undo" ? "Undo" : "Rewind")}
+            {plan.direction === "undo" ? t("Undo") : t("Rewind")}
           </Button>
         </ModalActions>
       }

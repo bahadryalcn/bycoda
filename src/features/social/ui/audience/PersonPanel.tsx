@@ -124,7 +124,9 @@ export function PersonPanel({
           {t("Loading person…")}
         </LoadingText>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? (
+        <InlineError details={error}>{t("Could not save this change. Try again.")}</InlineError>
+      ) : null}
       {person && detail ? (
         <div className="audience-panel-body">
           <header className="audience-person">

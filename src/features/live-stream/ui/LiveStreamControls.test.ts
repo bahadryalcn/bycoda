@@ -95,7 +95,7 @@ it("shows uncertain provider state and requires owner acknowledgement before cle
         "Save a manual server and key under Stream credentials",
       ),
     );
-    expect(button("Start streaming", container)?.disabled).toBe(true);
+    expect(button("Start streaming", container)?.getAttribute("aria-disabled")).toBe("true");
   } finally {
     await act(async () => root.unmount());
     container.remove();

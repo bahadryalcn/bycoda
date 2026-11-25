@@ -18,13 +18,15 @@ export type WorkspaceContext = {
   machineId?: string;
   ownerProjectId?: string;
 };
-export const WORKSPACE_UPDATE_REQUIRED =
-  "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.";
 
 /** Stable classification for UI recovery actions, independent of translated copy. */
 export class WorkspaceCapabilityError extends Error {
   constructor() {
-    super(t(WORKSPACE_UPDATE_REQUIRED));
+    super(
+      t(
+        "Update bycoda Host on this project's machine to use managed workspaces. Your project checkout will not be used as a fallback.",
+      ),
+    );
     this.name = "WorkspaceCapabilityError";
   }
 }

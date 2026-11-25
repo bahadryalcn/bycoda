@@ -2,6 +2,7 @@ import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Surface } from "../../../shared/ui/Surface";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Fragment, useState } from "react";
@@ -212,7 +213,7 @@ export function GoalCard({
           </Text>
         </div>
         <div className="goal-card-actions">
-          {pending ? <Spinner size="xs" tone="secondary" className="mx-1.5" /> : null}
+          {pending ? <Spinner size="xs" tone="secondary" delay className="mx-1.5" /> : null}
           {onOpenPlanner ? (
             <Button variant="secondary" size="sm" onClick={onOpenPlanner}>
               {t("Open planner")}
@@ -244,9 +245,7 @@ export function GoalCard({
         </div>
       </ActionHost>
       {goal.status === "blocked" && reason ? (
-        <Text as="p" size="caption" tone="danger" leading="inherit" className="goal-card-reason">
-          {reason}
-        </Text>
+        <InlineError className="goal-card-reason" details={reason} />
       ) : null}
       {/* Disclosure keeps its body mounted while closed, so a replan draft survives collapsing. */}
       {hasDetails ? (

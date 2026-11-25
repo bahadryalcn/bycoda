@@ -227,6 +227,11 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
             size="sm"
             startIcon={<Plus className="icon-sm" aria-hidden="true" />}
             disabled={saving || steps.length >= MAX_STEPS}
+            disabledReason={
+              steps.length >= MAX_STEPS
+                ? t("A sequence can have at most {p0} steps.", { p0: MAX_STEPS })
+                : t("Wait for the current action to finish.")
+            }
             onClick={() => setSteps((current) => [...current, newStepDraft(newId("step"))])}
           >
             {t("Add step")}

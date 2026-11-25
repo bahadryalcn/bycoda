@@ -240,6 +240,13 @@ export function ContentMediaField({
             variant="secondary"
             size="sm"
             disabled={disabled || busy || media.length >= 4 || !photoUrl.trim()}
+            disabledReason={
+              disabled || busy
+                ? t("Wait for the current action to finish.")
+                : media.length >= 4
+                  ? t("A TikTok photo post can have at most 4 photos.")
+                  : t("Enter a photo URL first.")
+            }
             onClick={addTikTokPhotoUrl}
           >
             {t("Add")}
@@ -259,6 +266,7 @@ export function ContentMediaField({
                 iconOnly
                 label={t("Remove {p0}", { p0: item.name })}
                 disabled={disabled || busy}
+                disabledReason={t("Wait for the current action to finish.")}
                 onClick={() => remove(item)}
               >
                 <X className="icon-sm" aria-hidden />

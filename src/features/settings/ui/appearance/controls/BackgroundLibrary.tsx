@@ -111,6 +111,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   {...surfaceAttributes({ variant: "selected", radius: "row" }, styles.tile)}
                   selected={image.id === currentId}
                   disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                  disabledReason={t("Wait for the current operation to finish")}
                   loading={applyingId === image.id}
                   loadingLabel={t("Applying…")}
                   selectionIndicator="accent-ring"
@@ -147,6 +148,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   )}
                   label={t("Delete image")}
                   disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                  disabledReason={t("Wait for the current operation to finish")}
                   onClick={() => remove(image)}
                 >
                   <Trash2 />

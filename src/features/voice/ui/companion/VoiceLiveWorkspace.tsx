@@ -70,7 +70,7 @@ export function VoiceLiveWorkspace({
         <Button
           iconOnly
           variant="ghost"
-          label={t(expanded ? "Restore panel layout" : "Maximize panel")}
+          label={expanded ? t("Restore panel layout") : t("Maximize panel")}
           pressed={expanded}
           onClick={() => setExpanded((value) => !value)}
           className={styles.resultsSizeToggle}

@@ -1,6 +1,7 @@
 import { Code } from "../../shared/ui/Code";
 import { Text } from "../../shared/ui/Text";
 import { t, useLocale } from "../../shared/i18n/technical";
+import { limitationText } from "./model/browserLimitations";
 import type {
   BrowserAnnotation,
   BrowserAnnotationAttachment,
@@ -49,10 +50,10 @@ export function BrowserAnnotationDetails({
         {element.interaction ? (
           <>
             <DescriptionItem term={t("Disabled")}>
-              {t(element.interaction.disabled ? "Yes" : "No")}
+              {element.interaction.disabled ? t("Yes") : t("No")}
             </DescriptionItem>
             <DescriptionItem term={t("Keyboard focusable")}>
-              {t(element.interaction.focusable ? "Yes" : "No")}
+              {element.interaction.focusable ? t("Yes") : t("No")}
             </DescriptionItem>
           </>
         ) : null}
@@ -71,12 +72,12 @@ export function BrowserAnnotationDetails({
       </DescriptionList>
       {element.boxModelLimitation ? (
         <Text as="p" size="caption" tone="secondary">
-          {t(element.boxModelLimitation)}
+          {limitationText(element.boxModelLimitation)}
         </Text>
       ) : null}
       {element.layout?.limitation ? (
         <Text as="p" size="caption" tone="secondary">
-          {t(element.layout.limitation)}
+          {limitationText(element.layout.limitation)}
         </Text>
       ) : null}
       <Disclosure summary={t("Computed styles")} size="sm">

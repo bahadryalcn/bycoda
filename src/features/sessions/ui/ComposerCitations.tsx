@@ -56,7 +56,7 @@ export function ComposerCitations({
         }
       : null,
   );
-  const [error, setError] = useState("");
+  const [unavailable, setUnavailable] = useState(false);
   const localDrafts = useRef(new Map<string, string>());
   const commentDrafts = drafts ?? localDrafts;
   const editingCitation = citations.find((c) => c.id === editing?.id);
@@ -91,13 +91,12 @@ export function ComposerCitations({
     if (
       !highlightChatCitation(citation, {
         navigate,
-        onUnavailable: () =>
-          setError(t("Source changed or unavailable. The saved quote is preserved.")),
+        onUnavailable: () => setUnavailable(true),
       }) &&
       navigate
     )
-      setError(t("Source changed or unavailable. The saved quote is preserved."));
-    else if (navigate) setError("");
+      setUnavailable(true);
+    else if (navigate) setUnavailable(false);
   };
   return (
     <div className={hasRows ? styles.root : undefined} role="group" aria-label={t("Quoted reply")}>
@@ -161,6 +160,7 @@ export function ComposerCitations({
                     variant="ghost"
                     size="sm"
                     disabled={disabled}
+                    disabledReason={t("Action unavailable.")}
                     onClick={(event) => editComment(citation, event.currentTarget)}
                   >
                     <Pencil />
@@ -171,6 +171,7 @@ export function ComposerCitations({
                     variant="ghost"
                     size="sm"
                     disabled={disabled}
+                    disabledReason={t("Action unavailable.")}
                     onClick={() => removeCitation(index)}
                   >
                     <X />
@@ -179,7 +180,11 @@ export function ComposerCitations({
               ),
           )
         : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {unavailable ? (
+        <InlineError>
+          {t("Source changed or unavailable. The saved quote is preserved.")}
+        </InlineError>
+      ) : null}
       {editing && editingCitation ? (
         <Popover
           anchor={editing.anchor}
@@ -232,6 +237,7 @@ export function ComposerCitations({
                   iconOnly
                   label={t("Remove citation")}
                   disabled={disabled}
+                  disabledReason={t("Action unavailable.")}
                   onClick={() => {
                     removeCitation(citations.indexOf(editingCitation));
                     closeEditor();
@@ -254,6 +260,7 @@ export function ComposerCitations({
                 size="sm"
                 variant="primary"
                 disabled={disabled}
+                disabledReason={t("Action unavailable.")}
                 onClick={() => {
                   onChange(
                     citations.map((c) =>

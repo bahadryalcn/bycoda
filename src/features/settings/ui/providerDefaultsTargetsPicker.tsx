@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import {
   PickerList,
   PickerFooter,
@@ -58,6 +58,7 @@ export function DefaultsTargetsPicker({
   const anchor = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
+  const doneReasonId = useId();
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("");
   const hasOverrides = values.some((value) => value !== "global");
@@ -183,11 +184,17 @@ export function DefaultsTargetsPicker({
           ) : null}
           <PickerFooter align="between">
             {mode === "projects" ? (
-              <Text size="caption" tone="secondary">
-                {t("{p0} selected", { p0: values.filter((value) => value !== "global").length })}
+              <Text size="caption" tone="secondary" id={doneReasonId}>
+                {hasOverrides
+                  ? t("{p0} selected", { p0: values.filter((value) => value !== "global").length })
+                  : t("Choose at least one project.")}
               </Text>
             ) : null}
-            <Button onClick={() => setOpen(false)} disabled={mode === "projects" && !hasOverrides}>
+            <Button
+              onClick={() => setOpen(false)}
+              disabled={mode === "projects" && !hasOverrides}
+              aria-describedby={mode === "projects" ? doneReasonId : undefined}
+            >
               {t("Done")}
             </Button>
           </PickerFooter>

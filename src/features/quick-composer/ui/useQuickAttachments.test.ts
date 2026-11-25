@@ -116,7 +116,7 @@ it("writes just the available slot when several files are pasted into an almost 
     } as never);
     await vi.waitFor(() =>
       expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({ message: expect.stringContaining("20") }),
+        expect.objectContaining({ title: expect.stringContaining("20") }),
       ),
     );
   });
@@ -353,7 +353,10 @@ it("attaches a screenshot and preserves the draft on cancellation or failure", a
     await api.takeScreenshot();
   });
   expect(api.files).toHaveLength(1);
-  expect(onError).toHaveBeenLastCalledWith({ message: "Capture failed" });
+  expect(onError).toHaveBeenLastCalledWith({
+    title: "Could not read attachments.",
+    message: "Capture failed",
+  });
   expect(api.loading).toBe(false);
 });
 
@@ -368,8 +371,7 @@ it("reports a screen-recording block as a recoverable notice and keeps the draft
   });
   expect(api.files).toEqual(kept);
   expect(onError).toHaveBeenLastCalledWith({
-    message:
-      "Screenshots need Screen Recording access. Review access to set it up, then try again.",
+    title: "Screenshots need Screen Recording access. Review access to set it up, then try again.",
     recovery: "screen-recording",
   });
 });
@@ -419,6 +421,7 @@ it("shows a recoverable error when persisting a pasted image fails", async () =>
     } as never);
     await vi.waitFor(() => {
       expect(onError).toHaveBeenLastCalledWith({
+        title: "Could not read attachments.",
         message: "Could not attach pasted.png: Disk full. Paste or attach the file again.",
       });
       expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
@@ -426,6 +429,7 @@ it("shows a recoverable error when persisting a pasted image fails", async () =>
   });
   expect(api.files).toEqual([]);
   expect(onError).toHaveBeenLastCalledWith({
+    title: "Could not read attachments.",
     message: "Could not attach pasted.png: Disk full. Paste or attach the file again.",
   });
   expect(api.loading).toBe(false);

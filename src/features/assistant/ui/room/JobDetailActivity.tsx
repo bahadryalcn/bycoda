@@ -55,8 +55,11 @@ export function JobDetailActivity({ jobId, request }: { jobId: string; request: 
     );
   if (state.status === "error")
     return (
-      <InlineError retry={{ onRetry: () => setAttempt((value) => value + 1) }}>
-        {t(state.message)}
+      <InlineError
+        details={state.message}
+        retry={{ onRetry: () => setAttempt((value) => value + 1) }}
+      >
+        {t("Could not load job details.")}
       </InlineError>
     );
   if (!state.items.length)

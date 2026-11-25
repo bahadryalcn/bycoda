@@ -374,6 +374,7 @@ export function WorkspaceSourceControl({
             iconOnly
             label={t("Refresh source control")}
             disabled={!enabled}
+            disabledReason={enabled ? undefined : t("Source control is not active for this view.")}
             onClick={refreshAll}
           >
             <RefreshCw className="icon-sm" />

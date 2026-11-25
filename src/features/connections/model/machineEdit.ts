@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import type { RemoteMachine } from "./protocol";
 
 /** The fields of a saved SSH machine that can be edited, as the form holds them.
@@ -45,24 +46,24 @@ export function parseMachineDraft(
   if (!validTarget(target))
     return {
       ok: false,
-      error: "Enter an SSH hostname or alias, such as user@my-mac-mini, and a valid port.",
+      error: t("Enter an SSH hostname or alias, such as user@my-mac-mini, and a valid port."),
     };
   const other = draft.alternate?.trim() ?? "";
   if (other && !validTarget(other))
     return {
       ok: false,
-      error: "Enter the other address like the first, such as user@100.64.0.5.",
+      error: t("Enter the other address like the first, such as user@100.64.0.5."),
     };
   const text = draft.port.trim();
   const port = text ? Number(text) : null;
   if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535))
-    return { ok: false, error: "The SSH port must be a number from 1 to 65535." };
+    return { ok: false, error: t("The SSH port must be a number from 1 to 65535.") };
   const remotePort = draft.remotePort === undefined ? undefined : Number(draft.remotePort.trim());
   if (
     remotePort !== undefined &&
     (!Number.isInteger(remotePort) || remotePort < 1 || remotePort > 65535)
   )
-    return { ok: false, error: "The Host port must be a number from 1 to 65535." };
+    return { ok: false, error: t("The Host port must be a number from 1 to 65535.") };
   return {
     ok: true,
     value: {

@@ -39,7 +39,14 @@ export function RemoveMachineDialog({
       size="md"
       footer={
         <ModalActions>
-          <Button stableWidth type="button" variant="ghost" disabled={revoking} onClick={onCancel}>
+          <Button
+            stableWidth
+            type="button"
+            variant="ghost"
+            disabled={revoking}
+            disabledReason={revoking ? t("Removal is in progress.") : undefined}
+            onClick={onCancel}
+          >
             {t("Cancel")}
           </Button>
           <Button

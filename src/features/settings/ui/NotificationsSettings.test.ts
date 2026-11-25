@@ -153,7 +153,7 @@ it("keeps a rejected preference unchanged and retries beside its initiating cont
 it("offers read-only recovery for unavailable permission status", async () => {
   permission.value = "unavailable";
   await act(async () => root.render(createElement(NotificationAlerts)));
-  expect(container.textContent).toContain("Status unavailable");
+  expect(container.querySelector('[aria-label="Status unavailable"]')).not.toBeNull();
   permission.value = "granted";
   const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Check again",

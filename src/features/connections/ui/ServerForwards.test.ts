@@ -215,7 +215,7 @@ it("keeps a stopping forward fenced and offers a stop retry for an unknown outco
   const stopping = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Stopping"),
   );
-  expect(stopping?.disabled).toBe(true);
+  expect(stopping?.getAttribute("aria-disabled")).toBe("true");
   expect(
     [...container.querySelectorAll("button")].find((button) => button.textContent === "Remove")
       ?.disabled,

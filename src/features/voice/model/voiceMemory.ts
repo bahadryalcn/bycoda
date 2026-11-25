@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 
@@ -55,16 +56,16 @@ export type MemoryResult = { saved: true; id: string } | { saved: false; error: 
 /** Adds a note. A full list refuses the save; it never drops a saved note to make room. */
 export function rememberVoiceNote(text: unknown, now = Date.now()): MemoryResult {
   const memory = loadVoiceMemory();
-  if (!memory.enabled) return { saved: false, error: "Memory is turned off in Settings." };
+  if (!memory.enabled) return { saved: false, error: t("Memory is turned off in Settings.") };
   const clean = typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
-  if (!clean) return { saved: false, error: "The note is empty." };
-  if (clean.length > MEMORY_LIMITS.text) return { saved: false, error: "The note is too long." };
+  if (!clean) return { saved: false, error: t("The note is empty.") };
+  if (clean.length > MEMORY_LIMITS.text) return { saved: false, error: t("The note is too long.") };
   const existing = memory.notes.find(
     (note) => note.text.toLocaleLowerCase() === clean.toLocaleLowerCase(),
   );
   if (existing) return { saved: true, id: existing.id };
   if (memory.notes.length >= MEMORY_LIMITS.notes)
-    return { saved: false, error: "Memory is full. Forget a note to make room." };
+    return { saved: false, error: t("Memory is full. Forget a note to make room.") };
   const id = newId(memory.notes);
   saveVoiceMemory({ ...memory, notes: [...memory.notes, { id, text: clean, at: now }] });
   return { saved: true, id };
@@ -73,7 +74,7 @@ export function rememberVoiceNote(text: unknown, now = Date.now()): MemoryResult
 export function forgetVoiceNote(id: unknown): { forgotten: boolean; error?: string } {
   const memory = loadVoiceMemory();
   if (typeof id !== "string" || !memory.notes.some((note) => note.id === id))
-    return { forgotten: false, error: "No saved note has this id." };
+    return { forgotten: false, error: t("No saved note has this id.") };
   saveVoiceMemory({ ...memory, notes: memory.notes.filter((note) => note.id !== id) });
   return { forgotten: true };
 }

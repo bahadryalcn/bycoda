@@ -1,5 +1,6 @@
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { TimePicker } from "../../../../shared/ui/TimePicker";
@@ -35,6 +36,7 @@ import {
   weekdayLabels,
   workingHoursError,
 } from "./accountsModel";
+import { accountBlockedReason } from "./blockedReason";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -116,9 +118,9 @@ function payloadFrom(draft: Draft): { ok: true; policy: object } | { ok: false; 
 export function AutonomySettings({ client, account, disabled, onChanged }: AutonomySettingsProps) {
   const [policy, setPolicy] = useState<AutonomyPolicy>();
   const [draft, setDraft] = useState<Draft>();
-  const [loadError, setLoadError] = useState("");
-  const [formError, setFormError] = useState("");
-  const { error, details, is, write } = useAccountWrite(
+  const [loadProblem, setLoadProblem] = useState<{ title: string; details?: string }>();
+  const [formMessage, setFormMessage] = useState("");
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The autonomy settings could not be saved. Try again."),
   );
   const confirmation = useConfirm();
@@ -132,8 +134,12 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         setPolicy(value);
         setDraft(draftFrom(value));
       },
-      () => {
-        if (alive) setLoadError(t("The autonomy settings could not be read. Try again."));
+      (reason) => {
+        if (alive)
+          setLoadProblem({
+            title: t("The autonomy settings could not be read. Try again."),
+            details: presentRemoteError(reason, { explicit: true }),
+          });
       },
     );
     return () => {
@@ -147,8 +153,8 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
         aria-label={t("Autonomy")}
       >
-        {loadError ? (
-          <InlineError>{loadError}</InlineError>
+        {loadProblem ? (
+          <InlineError details={loadProblem.details}>{loadProblem.title}</InlineError>
         ) : (
           <LoadingText delay={false} className="social-muted">
             {t("Loading…")}
@@ -204,10 +210,10 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
 
   const save = () => {
     if (!built.ok) {
-      setFormError(built.message);
+      setFormMessage(built.message);
       return;
     }
-    setFormError("");
+    setFormMessage("");
     void write("autonomy", () =>
       client.request<AutonomyPolicy>("autonomy.set", {
         accountId: account.id,
@@ -318,6 +324,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
             {weekdayLabels(getLocale()).map(({ day, label }) => (
               <Checkbox
                 disabled={disabled || is("autonomy")}
+                disabledReason={accountBlockedReason(disabled)}
                 checked={draft.hours.days.includes(day)}
                 onChange={(event) =>
                   setDraft({
@@ -354,8 +361,8 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
           {t("Save autonomy")}
         </Button>
       </div>
-      {formError ? <InlineError>{formError}</InlineError> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {formMessage ? <InlineError>{formMessage}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </section>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -119,8 +119,16 @@ export function AddProjectToMachineDialog({
   }, [sourceCwd]);
 
   const chosenUrl = choices[protocol];
+  const busyReason = t("Wait for the current action to finish.");
+  const unavailableReason = t("That machine is not available.");
   const ready =
     !unavailable && !loadingParent && !!parent.trim() && (target.kind === "local" || !!machine);
+
+  const cloneBlockedReason = unavailable
+    ? unavailableReason
+    : !parent.trim() && !loadingParent
+      ? t("Enter the folder to clone into.")
+      : t("Wait for the folder to load.");
 
   const clone = async () => {
     if (busy.current || !ready) return;
@@ -210,6 +218,7 @@ export function AddProjectToMachineDialog({
               type="button"
               variant="secondary"
               disabled={running || unavailable}
+              disabledReason={running ? busyReason : unavailable ? unavailableReason : undefined}
               onClick={() => void locate()}
             >
               <FolderOpen className="icon-md" />
@@ -221,11 +230,19 @@ export function AddProjectToMachineDialog({
             type="button"
             variant="ghost"
             disabled={running}
+            disabledReason={running ? busyReason : undefined}
             onClick={() => onDone(undefined)}
           >
             {t("Cancel")}
           </Button>
-          <Button type="submit" form={formId} variant="primary" loading={running} disabled={!ready}>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            loading={running}
+            disabled={!ready}
+            disabledReason={ready ? undefined : cloneBlockedReason}
+          >
             {t("Clone")}
           </Button>
         </ModalActions>
@@ -247,7 +264,7 @@ export function AddProjectToMachineDialog({
           />
         ) : target.kind === "remote" && !machine ? (
           machinesError ? (
-            <Alert tone="danger">{machinesError}</Alert>
+            <InlineError details={machinesError}>{t("Could not load the computers.")}</InlineError>
           ) : (
             <LoadingText>{t("Loading…")}</LoadingText>
           )
@@ -302,6 +319,7 @@ export function AddProjectToMachineDialog({
                         label={relative}
                         checked={checked.has(relative)}
                         disabled={running}
+                        disabledReason={running ? busyReason : undefined}
                         onChange={(event) => {
                           const next = new Set(checked);
                           if (event.target.checked) next.add(relative);
@@ -323,7 +341,11 @@ export function AddProjectToMachineDialog({
             ) : null}
           </>
         )}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <InlineError details={error}>
+            {t("Could not add the project to this computer.")}
+          </InlineError>
+        ) : null}
       </form>
     </Modal>
   );

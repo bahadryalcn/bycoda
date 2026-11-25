@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -106,6 +106,8 @@ function AddRemoteProjectForm({
   const [newName, setNewName] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const busy = loading || creating || opening;
+  const busyReason = busy ? t("Wait for the current action to finish.") : undefined;
   const alive = useRef(true);
   const requestVersion = useRef(0);
   const requestedPath = useRef<string | undefined>(undefined);
@@ -338,7 +340,7 @@ function AddRemoteProjectForm({
           <nav aria-label={t("Locations")} className="flex flex-wrap items-center gap-1">
             <Button
               type="button"
-              disabled={loading || creating || opening}
+              disabled={busy}
               onClick={() => void browse(directory?.home)}
               variant="ghost"
             >
@@ -348,7 +350,7 @@ function AddRemoteProjectForm({
               <Button
                 key={root.path}
                 type="button"
-                disabled={loading || creating || opening}
+                disabled={busy}
                 onClick={() => void browse(root.path)}
                 variant="ghost"
               >
@@ -357,7 +359,16 @@ function AddRemoteProjectForm({
             ))}
             <Button
               type="button"
-              disabled={!directory || loading || creating || opening || !!browseError}
+              disabled={!directory || busy || !!browseError}
+              disabledReason={
+                busy
+                  ? busyReason
+                  : browseError
+                    ? t("This folder could not be read. Choose another location first.")
+                    : !directory
+                      ? t("Wait for the folders to load.")
+                      : undefined
+              }
               onClick={() => setNewName("")}
               variant="ghost"
             >
@@ -390,6 +401,7 @@ function AddRemoteProjectForm({
               <Button
                 type="button"
                 disabled={creating}
+                disabledReason={busyReason}
                 onClick={() => setNewName(null)}
                 variant="secondary"
               >
@@ -418,17 +430,13 @@ function AddRemoteProjectForm({
           >
             <div className="p-1">
               {directory?.parent ? (
-                <FolderRow
-                  name=".."
-                  disabled={creating || opening || loading}
-                  onOpen={() => void browse(directory.parent!)}
-                />
+                <FolderRow name=".." busy={busy} onOpen={() => void browse(directory.parent!)} />
               ) : null}
               {directory?.entries.map((entry) => (
                 <FolderRow
                   key={entry.path}
                   name={entry.name}
-                  disabled={creating || opening || loading}
+                  busy={busy}
                   onOpen={() => void browse(entry.path)}
                 />
               ))}
@@ -445,7 +453,9 @@ function AddRemoteProjectForm({
               ) : null}
             </div>
           </Surface>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
+          {error ? (
+            <InlineError details={error}>{t("Could not open or create the folder.")}</InlineError>
+          ) : null}
         </>
       )}
       <ModalFooter>
@@ -466,10 +476,10 @@ function AddRemoteProjectForm({
             </Button>
           ) : loaded && machine ? (
             <Button
-              reserveLabels={[t("Opening…")]}
               type="submit"
               form={formId}
               loading={opening}
+              loadingLabel={t("Opening…")}
               disabled={
                 creating ||
                 newName !== null ||
@@ -478,9 +488,20 @@ function AddRemoteProjectForm({
                 !!machinesError ||
                 !path.trim()
               }
+              disabledReason={
+                busy
+                  ? busyReason
+                  : newName !== null
+                    ? t("Create or cancel the new folder first.")
+                    : browseError || machinesError
+                      ? t("This folder could not be read. Choose another location first.")
+                      : !path.trim()
+                        ? t("Enter a folder path first.")
+                        : undefined
+              }
               variant="primary"
             >
-              {opening ? t("Opening…") : t("Open")}
+              {t("Open")}
             </Button>
           ) : null}
         </ModalActions>
@@ -489,18 +510,10 @@ function AddRemoteProjectForm({
   );
 }
 
-function FolderRow({
-  name,
-  onOpen,
-  disabled,
-}: {
-  name: string;
-  onOpen: () => void;
-  disabled?: boolean;
-}) {
+function FolderRow({ name, onOpen, busy }: { name: string; onOpen: () => void; busy?: boolean }) {
   useLocale();
   return (
-    <Button type="button" onClick={onOpen} disabled={disabled} variant="item" fullWidth>
+    <Button type="button" onClick={onOpen} disabled={busy} variant="item" fullWidth>
       <Folder className="icon-sm shrink-0" tone="muted" strokeWidth={1.75} />
       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
         {name}

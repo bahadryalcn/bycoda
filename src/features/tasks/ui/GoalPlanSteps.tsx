@@ -2,7 +2,6 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { type ReactNode, useState } from "react";
 import { t } from "../../../shared/i18n";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Check, RotateCcw } from "../../../shared/ui/icons";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -48,16 +47,9 @@ export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
                 {task.dependsOn.length ? (
                   <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
                     <span className="shrink-0">{t("After")}</span>
-                    <BadgeList
-                      label={t("After")}
-                      size="xs"
-                      max={2}
-                      className="min-w-0"
-                      items={task.dependsOn.map((key, position) => {
-                        const title = titleOf(key);
-                        return { id: `${position}:${title}`, label: title };
-                      })}
-                    />
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                      {task.dependsOn.map((key) => titleOf(key)).join(", ")}
+                    </Text>
                   </Text>
                 ) : null}
               </span>

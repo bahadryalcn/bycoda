@@ -185,12 +185,12 @@ it("groups sessions under their job and keeps a skeleton while the first record 
 });
 
 it("keeps unavailable manual policy unknown and offers refresh recovery", async () => {
-  const refresh = vi.fn(async () => {});
+  const refresh = vi.fn(async (): Promise<true | undefined> => undefined);
   const controller: ManualSupervisionController = {
     data: null,
     pending: "",
     stopping: false,
-    error: "",
+    problem: null,
     chief: true,
     refresh,
     enroll: vi.fn(),
@@ -222,7 +222,7 @@ it("keeps disabled supervision compact during a background refresh", async () =>
     data: { policy: { enabled: false, version: 1, projectIds: [] }, grants: [], candidates: [] },
     pending: "list",
     stopping: false,
-    error: "",
+    problem: null,
     chief: true,
     refresh: vi.fn(),
     enroll: vi.fn(),

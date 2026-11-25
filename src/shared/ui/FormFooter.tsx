@@ -41,7 +41,7 @@ export function useFormFooter({
   return {
     footer: (
       <ModalActions
-        start={error ? <InlineError>{error}</InlineError> : undefined}
+        start={error ? <InlineError details={error} /> : undefined}
         reason={visibleReason}
       >
         <Button variant="ghost" disabled={saving} onClick={onCancel}>

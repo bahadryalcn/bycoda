@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { lazy, Suspense, useEffect, useState } from "react";
 import {
   finishOnboarding,
@@ -170,13 +171,17 @@ export function OnboardingHost({
       onClose={() => setAccessError("")}
       footer={
         <ModalActions>
-          <Button disabled={accessBusy} onClick={setupAccess} variant="secondary" type="button">
+          <Button loading={accessBusy} onClick={setupAccess} variant="secondary" type="button">
             {t("Retry")}
           </Button>
         </ModalActions>
       }
     >
-      <Alert tone="danger">{accessError}</Alert>
+      <Alert
+        tone="danger"
+        title={t("Could not set up file access.")}
+        extra={<ErrorDetails title={t("Could not set up file access.")} detail={accessError} />}
+      />
     </Modal>
   ) : guide?.view === "tour" ? (
     <Suspense fallback={null}>

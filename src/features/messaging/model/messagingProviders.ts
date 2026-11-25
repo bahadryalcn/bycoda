@@ -1,4 +1,4 @@
-import { MESSAGING_PROVIDER_LABELS } from "./messageThreads";
+import { isKnownMessagingProvider } from "./messageThreads";
 import type { MessagingProvider } from "./messagingTypes";
 
 /**
@@ -12,5 +12,4 @@ export const isMessagingProviderEnabled = (provider: string): boolean =>
 
 /** A known messaging provider that is not offered right now; other ids are not messaging. */
 export const isPausedMessagingProvider = (id: string): boolean =>
-  Object.prototype.hasOwnProperty.call(MESSAGING_PROVIDER_LABELS, id) &&
-  !isMessagingProviderEnabled(id);
+  isKnownMessagingProvider(id) && !isMessagingProviderEnabled(id);

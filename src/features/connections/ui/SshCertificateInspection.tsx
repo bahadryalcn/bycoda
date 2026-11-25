@@ -41,6 +41,13 @@ export function SshCertificateInspection({
           size="sm"
           variant="ghost"
           disabled={disabled || busy || !reference.trim()}
+          disabledReason={
+            disabled
+              ? t("Wait for the current action to finish.")
+              : !reference.trim() && !busy
+                ? t("Enter a certificate path first.")
+                : undefined
+          }
           loading={busy}
           onClick={async () => {
             if (pending.current || disabled || !reference.trim()) return;

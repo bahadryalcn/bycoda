@@ -75,7 +75,7 @@ export function ServersTerminalWorkspace({
   const [active, setActive] = useState<string | null>(null);
   const closingRef = useRef(new Set<string>());
   const [closing, setClosing] = useState<Set<string>>(new Set());
-  const [closeError, setCloseError] = useState("");
+  const [closeNotice, setCloseNotice] = useState<{ title: string; details?: string }>();
   const removeTerminal = (id: string) => {
     const snapshot = terminalSnapshot.current;
     const index = snapshot.findIndex((value) => value.id === id);
@@ -104,7 +104,7 @@ export function ServersTerminalWorkspace({
     if (!terminal) return;
     closingRef.current.add(id);
     setClosing(new Set(closingRef.current));
-    setCloseError("");
+    setCloseNotice(undefined);
     try {
       const ended = terminal.lifecycle === "exited" || terminal.lifecycle === "closed";
       if (
@@ -114,7 +114,10 @@ export function ServersTerminalWorkspace({
         return;
       removeTerminal(id);
     } catch (reason) {
-      setCloseError(sanitizeConnectionError(errorText(reason)));
+      setCloseNotice({
+        title: t("Could not close the terminal."),
+        details: sanitizeConnectionError(errorText(reason)),
+      });
     } finally {
       closingRef.current.delete(id);
       setClosing(new Set(closingRef.current));
@@ -153,7 +156,7 @@ export function ServersTerminalWorkspace({
   // Never replace an open review: a mobile one owns the phone's resolve callback and busy lock.
   const requestConfigurationReview = (next: NonNullable<typeof configurationReview>) => {
     if (configurationRef.current || mobileReviewBusy.current) {
-      setCloseError(t("Finish the open SSH review first."));
+      setCloseNotice({ title: t("Finish the open SSH review first.") });
       return false;
     }
     setConfigurationReview((configurationRef.current = next));
@@ -309,7 +312,7 @@ export function ServersTerminalWorkspace({
           resolve("cancelled");
       });
     else {
-      setCloseError("");
+      setCloseNotice(undefined);
       return (await launch(server, replacingPendingId)) ? "accepted" : "cancelled";
     }
   };
@@ -379,7 +382,11 @@ export function ServersTerminalWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {proxyApproval.dialog}
         <SshRunbookQueue openRequest={reviewQueueRequest} />
-        {closeError ? <InlineError inset="row">{closeError}</InlineError> : null}
+        {closeNotice ? (
+          <InlineError inset="row" details={closeNotice.details}>
+            {closeNotice.title}
+          </InlineError>
+        ) : null}
         <div
           id="servers-inventory-content"
           tabIndex={-1}
@@ -713,7 +720,10 @@ export function ServersTerminalWorkspace({
                   mobile?.resolve(false);
                   configurationReview.handoff?.reject(reason);
                   if (!configurationReview.handoff)
-                    setCloseError(sanitizeConnectionError(errorText(reason)));
+                    setCloseNotice({
+                      title: t("Could not open the SSH connection."),
+                      details: sanitizeConnectionError(errorText(reason)),
+                    });
                 },
               );
               setConfigurationReview(undefined);

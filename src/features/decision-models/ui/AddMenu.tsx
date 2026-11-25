@@ -54,6 +54,7 @@ export function AddMenu({
         variant="primary"
         size="sm"
         disabled={disabled}
+        disabledReason={disabled ? t("Wait for the current change to finish.") : undefined}
         aria-haspopup="menu"
         aria-expanded={anchor !== null}
         startIcon={<Plus aria-hidden="true" />}

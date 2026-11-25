@@ -2,7 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { kindLabel, platformLabel, platformVersionLabel, stateLabel } from "../model/deviceLabels";
@@ -79,16 +79,13 @@ export function DeviceBar({
           />
         </div>
       ) : (
-        <Text
-          as="p"
+        <LiveText
           size="caption"
           tone="secondary"
           leading="relaxed"
           className="device-panel-bar-text"
-          role="status"
-        >
-          {loading ? t("Loading devices…") : discoveryFailed ? t("Unknown") : t("No devices")}
-        </Text>
+          text={loading ? t("Loading devices…") : discoveryFailed ? t("Unknown") : t("No devices")}
+        />
       )}
       <span className="device-panel-bar-actions">
         <Button

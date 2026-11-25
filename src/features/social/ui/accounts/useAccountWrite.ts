@@ -4,9 +4,9 @@ import { useSocialPending } from "../../hooks/useSocialPending";
 
 /**
  * One write at a time for a settings card: which action is pending and the last failed write.
- * `error` is the translated `failure` title (empty when nothing failed, or when the machine
+ * `failureTitle` is the translated `failure` title (empty when nothing failed, or when the machine
  * connection failure is already shown centrally); `details` is the Host's own text when it gave
- * one. Render both: `<InlineError details={details}>{error}</InlineError>`. `setError` replaces
+ * one. Render both: `<InlineError details={details}>{failureTitle}</InlineError>`. `setError` replaces
  * the title with a caller-owned sentence and drops the details.
  */
 export function useAccountWrite(failure: string) {
@@ -29,7 +29,7 @@ export function useAccountWrite(failure: string) {
     }
   };
   return {
-    error: state.error,
+    failureTitle: state.error,
     details: state.details,
     setError,
     is: pending.is,

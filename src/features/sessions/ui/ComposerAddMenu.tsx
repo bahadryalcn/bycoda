@@ -12,6 +12,7 @@ export function ComposerAddMenu({
   usageGuide,
   align = "end",
   disabled = false,
+  disabledReason,
   uploadUnavailable,
   skillPrefix,
   onUpload,
@@ -24,6 +25,8 @@ export function ComposerAddMenu({
   /** Menu edge aligned to the button: `start` when the button opens a toolbar. */
   align?: "start" | "end";
   disabled?: boolean;
+  /** Why the whole menu is off while `disabled`. */
+  disabledReason?: string;
   /** Why upload is off; the item stays visible and says so. */
   uploadUnavailable?: string;
   /** The skill trigger shown in the hint; no Skills item without one. */
@@ -43,6 +46,7 @@ export function ComposerAddMenu({
         label={t("Add files or skills")}
         data-usage-guide={usageGuide}
         disabled={disabled}
+        disabledReason={disabledReason ?? t("Action unavailable.")}
         selected={open}
         aria-haspopup="menu"
         aria-expanded={open}

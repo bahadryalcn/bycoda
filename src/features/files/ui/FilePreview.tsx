@@ -96,7 +96,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
           <Button
             variant="ghost"
             hoverUnderline
-            className="min-w-0 flex-1 text-left font-mono"
+            className="min-w-0 flex-1 text-start font-mono"
             truncate
             tooltip={path}
             tooltipWhen={path === label ? "overflow" : "always"}
@@ -187,7 +187,7 @@ function PreviewLine({
       )}
     >
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <Text size="micro" tone="muted" className="w-7 shrink-0 pr-1 text-right font-mono">
+      <Text size="micro" tone="muted" className="w-7 shrink-0 pe-1 text-end font-mono">
         {line.number ?? " "}
       </Text>
       {showGutter ? (
@@ -205,7 +205,7 @@ function PreviewLine({
         tone="inherit"
         leading="relaxed"
         truncate={!scrollable}
-        className={`min-w-0 flex-1 pr-2 font-mono ${scrollable ? "whitespace-pre" : ""}`}
+        className={`min-w-0 flex-1 pe-2 font-mono ${scrollable ? "whitespace-pre" : ""}`}
       >
         {highlight(line.text, line.kind === "context")}
       </Text>

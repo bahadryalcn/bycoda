@@ -187,7 +187,7 @@ function ImageLightboxContent({
               </div>
             ) : unavailable ? (
               <div className="flex max-w-[40rem] flex-col items-center gap-3 text-center">
-                <InlineError overlay>{error}</InlineError>
+                <InlineError overlay details={error} />
                 {onRetry ? (
                   <Button
                     ref={retryRef}

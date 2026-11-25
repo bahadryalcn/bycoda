@@ -12,6 +12,7 @@ import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMen
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
 import { Toast } from "../../shared/ui/ToastRegion";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { Copy } from "../../shared/ui/icons";
 
 type Props = { agents: LiveAgent[]; onSelectAgent: (id: string) => void };
@@ -196,7 +197,8 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         <Toast
           tone="danger"
           durationMs={null}
-          message={windowError}
+          message={t("Could not complete this action.")}
+          extra={<ErrorDetails title={t("Could not complete this action.")} detail={windowError} />}
           onDismiss={() => setWindowError(null)}
         />
       ) : null}

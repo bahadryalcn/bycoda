@@ -35,7 +35,9 @@ export function InstagramModerationReviews({
 }) {
   const [page, setPage] = useState<Page>();
   const confirmation = useConfirm();
-  const { write, is, error } = useAccountWrite(t("Instagram could not complete this action."));
+  const { write, is, failureTitle, details } = useAccountWrite(
+    t("Instagram could not complete this action."),
+  );
   const load = async (before?: string) => {
     const current = await client.request<Page>("instagram.comments.requests.list", {
       threadId,
@@ -117,6 +119,7 @@ export function InstagramModerationReviews({
                     size="sm"
                     loading={is(request.id)}
                     disabled={request.commentText === undefined}
+                    disabledReason={t("The comment is unavailable, so it cannot be approved.")}
                     onClick={() => decide(request, "approve")}
                   >
                     {t("Approve")}
@@ -125,6 +128,7 @@ export function InstagramModerationReviews({
                     variant="ghost"
                     size="sm"
                     disabled={is(request.id)}
+                    disabledReason={t("Wait for the current action to finish.")}
                     onClick={() => decide(request, "dismiss")}
                   >
                     {t("Dismiss")}
@@ -144,11 +148,11 @@ export function InstagramModerationReviews({
         </ul>
       ) : null}
       {page?.next ? (
-        <Button variant="ghost" size="sm" disabled={is("read")} onClick={() => read(page.next)}>
+        <Button variant="ghost" size="sm" loading={is("read")} onClick={() => read(page.next)}>
           {t("Load more")}
         </Button>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

@@ -70,6 +70,7 @@ export function VoiceTurnControl({
           variant="secondary"
           label={t("Finish turn")}
           disabled={muted}
+          disabledReason={t("Unmute the microphone to finish your turn.")}
           onClick={onFinish}
         >
           <Check className="icon-sm" />

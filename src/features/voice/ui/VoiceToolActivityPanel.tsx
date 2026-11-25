@@ -13,13 +13,13 @@ import { subscribeVoiceSecond } from "../model/voicePresentationTimers";
 import type { VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import styles from "./VoiceToolActivityPanel.module.css";
 
-const STATUS: Record<VoiceToolActivityEntry["state"], string> = {
-  running: "Running",
-  "waiting-owner": "Waiting for you",
-  returned: "Done",
-  failed: "Failed",
-  uncertain: "Result unknown. Check before retrying.",
-};
+const statusLabels = (): Record<VoiceToolActivityEntry["state"], string> => ({
+  running: t("Running"),
+  "waiting-owner": t("Waiting for you"),
+  returned: t("Done"),
+  failed: t("Failed"),
+  uncertain: t("Result unknown. Check before retrying."),
+});
 
 const STATUS_TONE: Record<VoiceToolActivityEntry["state"], TextTone> = {
   running: "secondary",
@@ -56,7 +56,7 @@ export function VoiceToolActivityPanel({
     return subscribeVoiceSecond(() => refresh((value) => value + 1));
   }, [running]);
   if (!entries.length) return null;
-  const label = t(running ? "Taking action…" : "Voice actions");
+  const label = running ? t("Taking action…") : t("Voice actions");
   return (
     <>
       <Button
@@ -133,7 +133,7 @@ export function VoiceToolActivityPanel({
                       tone={STATUS_TONE[entry.state]}
                       wrap="anywhere"
                     >
-                      {t(STATUS[entry.state])}
+                      {statusLabels()[entry.state]}
                     </Text>
                     {entry.target ? (
                       <Text as="div" size="caption" tone="muted" wrap="anywhere">

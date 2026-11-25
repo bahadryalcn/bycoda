@@ -29,8 +29,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { saveSshConnection, type ServerRecord, type SshEndpoint } from "../model/serverInventory";
-import { errorText } from "../../../shared/lib/errors";
-import { sanitizeConnectionError } from "../model/remoteConnection";
+import { connectionProblem } from "../model/connectionReason";
 import type { SshTerminalOpenResult } from "./serversTerminalContext";
 
 /** Stores endpoint references only. Password and private key material never enter this form. */
@@ -133,7 +132,7 @@ export function SshServerEditor({
     validSshEndpointPreview(endpoint);
   const [saving, setSaving] = useState(false);
   const savingLock = useRef(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<{ title: string; details?: string }>();
   const [portError, setPortError] = useState("");
   const formId = useId();
   // A saved new server or quick connection must not reopen pre-filled. Edits keep their draft.
@@ -190,11 +189,11 @@ export function SshServerEditor({
           }
           savingLock.current = true;
           setSaving(true);
-          setError("");
+          setProblem(undefined);
           let phase: "save" | "connect" = "save";
           try {
             if (!valid) {
-              setError(t("Enter a valid SSH endpoint."));
+              setProblem({ title: t("Enter a valid SSH endpoint.") });
               return;
             }
             let saved: ServerRecord | undefined;
@@ -225,8 +224,13 @@ export function SshServerEditor({
             } else if (saved) onSaved?.(saved);
             if (!onConnect) clearDraft();
           } catch (reason) {
-            setError(
-              `${phase === "connect" ? t("Couldn’t open this SSH connection.") : t("Couldn’t save the SSH server.")} ${sanitizeConnectionError(errorText(reason))}`,
+            setProblem(
+              connectionProblem(
+                phase === "connect"
+                  ? t("Couldn’t open this SSH connection.")
+                  : t("Couldn’t save the SSH server."),
+                reason,
+              ),
             );
           } finally {
             savingLock.current = false;
@@ -352,11 +356,11 @@ export function SshServerEditor({
                   onChange={(event) => setProxyPort(event.target.value)}
                 />
                 <Text as="p" size="caption" tone="muted">
-                  {t(
-                    proxyScheme === "https"
-                      ? "HTTPS verifies the proxy certificate and hostname before connecting."
-                      : "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.",
-                  )}
+                  {proxyScheme === "https"
+                    ? t("HTTPS verifies the proxy certificate and hostname before connecting.")
+                    : t(
+                        "The upstream connection uses plain HTTP. Basic credentials require separate approval for each operation.",
+                      )}
                 </Text>
                 {proxyConflict ? (
                   <InlineError live="polite">
@@ -377,7 +381,7 @@ export function SshServerEditor({
             label={t("Save connection")}
           />
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {problem ? <InlineError details={problem.details}>{problem.title}</InlineError> : null}
       </form>
     </Sheet>
   );

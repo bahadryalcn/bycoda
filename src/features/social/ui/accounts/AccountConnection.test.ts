@@ -6,6 +6,11 @@ import type { Capability, SocialAccount } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { AccountConnection } from "./AccountConnection";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 const openExternal = vi.hoisted(() => vi.fn(async (_url: string) => undefined));
 vi.mock("../../../../platform/tauri/openExternal", () => ({ openExternal }));
 vi.mock("./platform/TelegramChannelConnect", () => ({
@@ -188,10 +193,10 @@ it("keeps an organization account from starting until the numeric organization I
     account: account({ platform: "linkedin", accountType: "organization" }),
   });
   const start = () => button("Connect in browser");
-  expect(start()?.disabled).toBe(true);
+  expect(isBlocked(start())).toBe(true);
   const field = element.querySelector<HTMLInputElement>('input:not([type="checkbox"])');
   typeInto(field, "12ab");
-  expect(start()?.disabled).toBe(true);
+  expect(isBlocked(start())).toBe(true);
   typeInto(field, "123456");
   expect(start()?.disabled).toBe(false);
   await act(async () => start()?.click());
@@ -357,8 +362,8 @@ it("starts nothing while the Host is offline", () => {
     disabled: true,
   });
   expect(button("Connect")).toBeUndefined();
-  expect(button("Reconnect in browser")?.disabled).toBe(true);
-  expect(button("Check connection")?.disabled).toBe(true);
+  expect(isBlocked(button("Reconnect in browser"))).toBe(true);
+  expect(isBlocked(button("Check connection"))).toBe(true);
   expect(client.oauthBegin).not.toHaveBeenCalled();
 });
 
@@ -396,7 +401,7 @@ it("offers one connection flow and no capability-row shortcut around organizatio
     capabilities: [expiredPublish],
   });
   expect(button("Connect")).toBeUndefined();
-  expect(button("Connect in browser")?.disabled).toBe(true);
+  expect(isBlocked(button("Connect in browser"))).toBe(true);
   expect(client.oauthBegin).not.toHaveBeenCalled();
 });
 
@@ -446,7 +451,7 @@ it("requires a LinkedIn Page target for browser organizations", async () => {
     }),
   });
   const start = button("Sign in in the browser")!;
-  expect(start.disabled).toBe(true);
+  expect(isBlocked(start)).toBe(true);
   typeInto(
     element.querySelector<HTMLInputElement>('input:not([type="checkbox"])'),
     "https://www.linkedin.com/company/example/",

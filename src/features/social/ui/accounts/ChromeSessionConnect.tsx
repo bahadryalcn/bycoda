@@ -21,22 +21,26 @@ export function ChromeSessionConnect({
   accountId,
   resourceId,
   disabled,
+  disabledReason,
   onChanged,
 }: {
   client: SocialClient;
   accountId: string;
   resourceId?: string;
   disabled: boolean;
+  /** Why `disabled` is on; shown on each blocked control. */
+  disabledReason: string;
   onChanged(): void;
 }) {
   const [allowed, setAllowed] = useState(false);
   const [tabs, setTabs] = useState<SocialChromeTab[]>();
   const [selected, setSelected] = useState("");
   const [connected, setConnected] = useState(false);
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("Could not connect to Chrome. Try again."),
   );
   const busy = is("chrome:tabs") || is("chrome:connect");
+  const waiting = t("Wait for the Chrome request to finish.");
   const find = () =>
     void write("chrome:tabs", async () => {
       setConnected(false);
@@ -66,6 +70,7 @@ export function ChromeSessionConnect({
             )}
             checked={allowed}
             disabled={disabled || busy}
+            disabledReason={disabled ? disabledReason : waiting}
             onChange={(event) => {
               setAllowed(event.target.checked);
               setTabs(undefined);
@@ -91,6 +96,13 @@ export function ChromeSessionConnect({
             variant="secondary"
             size="sm"
             disabled={disabled || !allowed || busy}
+            disabledReason={
+              disabled
+                ? disabledReason
+                : !allowed
+                  ? t("Allow access to your Chrome profile first.")
+                  : waiting
+            }
             loading={is("chrome:tabs")}
             onClick={find}
           >
@@ -121,6 +133,15 @@ export function ChromeSessionConnect({
               variant="primary"
               size="sm"
               disabled={disabled || !allowed || !selected || busy}
+              disabledReason={
+                disabled
+                  ? disabledReason
+                  : !allowed
+                    ? t("Allow access to your Chrome profile first.")
+                    : busy
+                      ? waiting
+                      : t("Choose a Chrome tab first.")
+              }
               loading={is("chrome:connect")}
               onClick={connect}
             >
@@ -142,7 +163,7 @@ export function ChromeSessionConnect({
             )}
           </InlineMessage>
         ) : null}
-        {error ? <InlineError details={details}>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       </div>
     </Disclosure>
   );

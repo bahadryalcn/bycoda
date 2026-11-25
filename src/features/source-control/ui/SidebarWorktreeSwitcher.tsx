@@ -203,6 +203,7 @@ export function SidebarWorktreeSwitcher({
         expanded={open}
         aria-busy={pending || creating}
         disabled={creating}
+        disabledReason={creating ? t("Creating worktree") : undefined}
         endIcon={
           pending || creating ? (
             <Spinner
@@ -296,6 +297,7 @@ export function SidebarWorktreeSwitcher({
             <InlineError
               inset="row"
               className="shrink-0"
+              details={creationError || switchError || error}
               retry={
                 error
                   ? {
@@ -306,7 +308,11 @@ export function SidebarWorktreeSwitcher({
                   : undefined
               }
             >
-              {creationError || switchError || error}
+              {creationError
+                ? t("Couldn’t create worktree")
+                : switchError
+                  ? t("Couldn’t switch worktree")
+                  : t("Couldn’t load worktrees")}
             </InlineError>
           ) : null}
           {canCreate ? (
@@ -319,7 +325,6 @@ export function SidebarWorktreeSwitcher({
                 align="start"
                 loading={creating}
                 startIcon={<Plus className="icon-md" strokeWidth={1.75} />}
-                disabled={creating}
                 onClick={() => void create()}
                 tooltip={t("Create worktree {p0}", { p0: createName })}
                 tooltipWhen="overflow"
@@ -355,13 +360,13 @@ function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
   return (
     <Tooltip label={label}>
       <Text
-        aria-label={label}
         size="caption"
         tone="secondary"
         className="flex shrink-0 items-center gap-1 tabular-nums"
       >
+        <span className="sr-only">{label}</span>
         {stats.busy ? <Spinner size="xs" /> : null}
-        {stats.tabs}
+        <span aria-hidden>{stats.tabs}</span>
       </Text>
     </Tooltip>
   );

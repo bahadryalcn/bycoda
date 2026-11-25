@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Alert } from "../../../shared/ui/Alert";
+import { FailureAlert } from "./FailureAlert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
@@ -48,7 +49,7 @@ export function CrewTaskPicker({
         <InfoPopover label={t("Crews unavailable")} className="shrink-0">
           <p>
             {crews.error && !centrally
-              ? crews.error.message
+              ? t("Could not load the crews for this project.")
               : t("This host cannot run tasks with a crew. Connect an updated host to use crews.")}
           </p>
           {crews.error && !centrally ? (
@@ -82,16 +83,16 @@ export function CrewTaskPicker({
       />
       {loading && <LoadingText>{t("Loading crews…")}</LoadingText>}
       {crews.error && !centrally && (
-        <Alert
+        <FailureAlert
           tone="warning"
+          title={t("Could not load the crews for this project.")}
+          detail={crews.error.message}
           action={{
             label: t("Retry"),
             pending: crews.isFetching,
             onClick: () => void crews.refetch(),
           }}
-        >
-          {crews.error.message}
-        </Alert>
+        />
       )}
       {value && !valid && !loading && !crews.error && (
         <Alert tone="warning">{t("Connect an updated host and choose an available crew.")}</Alert>

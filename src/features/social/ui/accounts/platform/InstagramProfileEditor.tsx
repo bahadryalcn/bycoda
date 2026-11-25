@@ -28,7 +28,7 @@ export function InstagramProfileEditor({
   const [avatar, setAvatar] = useState<File>();
   const [saved, setSaved] = useState(false);
   const { confirm, dialog } = useConfirm();
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const busy = is("read") || is("save");
@@ -81,6 +81,7 @@ export function InstagramProfileEditor({
           size="sm"
           loading={is("read")}
           disabled={Boolean(draft) && (Boolean(avatar) || Object.keys(patch).length > 0)}
+          disabledReason={t("Save or discard your changes before reading again.")}
           onClick={read}
         >
           {draft ? t("Refresh") : t("Read Instagram profile")}
@@ -127,6 +128,7 @@ export function InstagramProfileEditor({
               size="sm"
               loading={is("save")}
               disabled={!avatar && !Object.keys(patch).length}
+              disabledReason={t("No changes to save.")}
               onClick={save}
             >
               {t("Save Instagram profile")}
@@ -135,7 +137,7 @@ export function InstagramProfileEditor({
         </>
       ) : null}
       {saved ? <InlineMessage tone="success">{t("Instagram updated.")}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {dialog}
     </FieldGroup>
   );

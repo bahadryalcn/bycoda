@@ -16,15 +16,6 @@ import {
   type PresentedView,
 } from "./presentedContext";
 
-const statusLabel = {
-  accepted: "Accepted",
-  queued: "Queued",
-  running: "Running",
-  pending: "Pending",
-  completed: "Completed",
-  returned: "Result",
-} as const satisfies Record<VoicePresentedActionResponse["status"], string>;
-
 const statusTone = {
   accepted: "running",
   queued: "running",
@@ -64,10 +55,18 @@ function PressFeedback({ press }: { press: PresentedPress }) {
       </InlineError>
     );
   }
+  const label: Record<VoicePresentedActionResponse["status"], string> = {
+    accepted: t("Accepted"),
+    queued: t("Queued"),
+    running: t("Running"),
+    pending: t("Pending"),
+    completed: t("Completed"),
+    returned: t("Result"),
+  };
   const status = press.response?.status ?? "completed";
   return (
     <div className="grid min-w-0 gap-1.5">
-      <StatusText tone={statusTone[status]}>{t(statusLabel[status])}</StatusText>
+      <StatusText tone={statusTone[status]}>{label[status]}</StatusText>
       {press.response?.preview && (
         <OutputBlock frame="filled" size="secondary" scroll className="max-h-48 p-2">
           {press.response.preview}

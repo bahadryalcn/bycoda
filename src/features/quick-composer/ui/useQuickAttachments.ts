@@ -111,7 +111,7 @@ export function useQuickAttachments(
       const capacity = beginAttachmentRead(currentFiles, new Set());
       const files = await read(capacity);
       const message = capacity.notice();
-      if (message && alive.current) onError({ message });
+      if (message && alive.current) onError({ title: message });
       return files;
     },
   );
@@ -218,7 +218,7 @@ export function useQuickAttachments(
             before.length + picked.length >= MAX_ATTACHMENTS &&
             alive.current
           )
-            onError({ message: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
+            onError({ title: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
           return picked;
         });
         const stored = await accepted.stage("stored", () =>
@@ -361,7 +361,7 @@ export function useQuickAttachments(
     ]
       .filter(Boolean)
       .join(" ");
-    if (message && alive.current) onError({ message });
+    if (message && alive.current) onError({ title: message });
     return incoming;
   };
   const clipboard = async (text: string, accepted: QuickPreparation, previous?: Promise<void>) => {
@@ -490,7 +490,7 @@ export function useQuickAttachments(
         const previous = queueRef.current.tail;
         void collect(async (accepted) => {
           const result = await clipboard("", accepted, previous);
-          if (result.warning && alive.current) onError({ message: result.warning });
+          if (result.warning && alive.current) onError({ title: result.warning });
           return result.files;
         }, true);
       }
@@ -501,7 +501,7 @@ export function useQuickAttachments(
     void collect(async (accepted) => {
       const result = await clipboard(text, accepted);
       accepted.apply(() => {
-        if (result.warning && alive.current) onError({ message: result.warning });
+        if (result.warning && alive.current) onError({ title: result.warning });
         if (result.files.length || result.warning) {
           if (captured) dropPastedText(captured, text);
         } else if (captured) insertRestoredText(captured, text);
@@ -588,7 +588,7 @@ export function useQuickAttachments(
       return collect(async (accepted) => {
         if (currentFiles().length >= MAX_ATTACHMENTS) {
           if (alive.current)
-            onError({ message: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
+            onError({ title: t("You can attach up to {p0} files.", { p0: MAX_ATTACHMENTS }) });
           return [];
         }
         captured = await accepted.once("screen-selection", () =>

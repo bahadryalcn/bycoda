@@ -23,7 +23,7 @@ export function InstagramPostsPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const queryClient = useQueryClient();
@@ -94,6 +94,13 @@ export function InstagramPostsPanel({
           size="sm"
           variant="primary"
           disabled={!url || Boolean(deletion)}
+          disabledReason={
+            !url
+              ? t("Enter a post link first.")
+              : deletion === "deleted"
+                ? t("This post is already deleted.")
+                : t("Deletion needs review. Open the post to check it.")
+          }
           loading={is(t("Edit Instagram caption"))}
           onClick={() => changePost("caption", t("Edit Instagram caption"))}
         >
@@ -104,6 +111,15 @@ export function InstagramPostsPanel({
           variant="secondary"
           tone="danger"
           disabled={!url || status.isFetching || Boolean(deletion)}
+          disabledReason={
+            !url
+              ? t("Enter a post link first.")
+              : deletion === "deleted"
+                ? t("This post is already deleted.")
+                : deletion
+                  ? t("Deletion needs review. Open the post to check it.")
+                  : t("Checking the post…")
+          }
           loading={is(t("Delete Instagram post"))}
           onClick={() => changePost("delete", t("Delete Instagram post"))}
         >
@@ -126,7 +142,7 @@ export function InstagramPostsPanel({
       ) : null}
       {deletion === "deleted" ? <InlineMessage tone="success">{t("Deleted")}</InlineMessage> : null}
       {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

@@ -6,7 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
+import { isMicrophoneBlocked, microphoneBlockedMessage } from "../model/microphoneAccess";
 import {
   Minimize2,
   Mic,
@@ -77,13 +79,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   useLocale();
   const settings = useVoiceSettings();
   const [state, setState] = useState<VoiceOverlayState | null>(null);
-  const [menuError, setMenuError] = useState("");
-  const compact = settings.compact && !state?.choice && !state?.jobReview && !menuError;
+  const [menuNotice, setMenuNotice] = useState("");
+  const compact = settings.compact && !state?.choice && !state?.jobReview && !menuNotice;
   function menuFailed() {
-    setMenuError(t("The menu could not be opened. Try again."));
+    setMenuNotice(t("The menu could not be opened. Try again."));
   }
   function changeTurnMode(manual: boolean) {
-    setMenuError("");
+    setMenuNotice("");
     send(manual ? "manualTurnEnd" : "automaticTurnEnd");
   }
   const level = useRef(0);
@@ -150,7 +152,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       })
       .catch(() => {
         if (!disposed)
-          setMenuError(t("Voice window could not connect. Return to the app and retry."));
+          setMenuNotice(t("Voice window could not connect. Return to the app and retry."));
       });
     return () => {
       disposed = true;
@@ -195,7 +197,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   function emitOwner(event: string, payload: unknown, onFailure?: () => void) {
     void emitTo(owner, event, payload).catch(() => {
       onFailure?.();
-      setMenuError(OWNER_UNREACHABLE());
+      setMenuNotice(OWNER_UNREACHABLE());
     });
   }
   function send(command: VoiceOverlayCommand) {
@@ -261,7 +263,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const startDisabledReason = state
     ? t("Select a workspace or session to start voice.")
     : t("Connecting voice…");
-  const micLabel = t(canTalk ? (status === "idle" ? "Start voice" : "Talk") : "Mute microphone");
+  const micLabel = canTalk
+    ? status === "idle"
+      ? t("Start voice")
+      : t("Talk")
+    : t("Mute microphone");
   // One close: the floating window returns to the app and voice keeps running,
   // matching the native close. Disconnect stays an explicit body action.
   const backLabel = t("Return voice companion to the app");
@@ -494,13 +500,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   )}
                 </div>
               </div>
-              {menuError && (
+              {menuNotice && (
                 <InlineError
                   className={styles.feedback}
                   text={{ size: "caption", tone: "secondary", leading: "inherit" }}
-                  action={{ label: t("Dismiss"), onClick: () => setMenuError("") }}
+                  action={{ label: t("Dismiss"), onClick: () => setMenuNotice("") }}
                 >
-                  {menuError}
+                  {menuNotice}
                 </InlineError>
               )}
               {side === "inline" ? questions : null}
@@ -532,9 +538,13 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   </InlineError>
                   {!isActionableVoiceError(state.error) && (
                     <div className={styles.feedback}>
-                      <Text as="p" size="inherit" tone="secondary" leading="normal">
-                        {state.error}
-                      </Text>
+                      {isMicrophoneBlocked(state.error) ? (
+                        <Text as="p" size="inherit" tone="secondary" leading="normal">
+                          {microphoneBlockedMessage()}
+                        </Text>
+                      ) : (
+                        <ErrorDetails title={voiceErrorTitle(state.error)} detail={state.error} />
+                      )}
                     </div>
                   )}
                 </>
@@ -567,7 +577,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                     onClick={() => send("start")}
                     startIcon={<Mic className="icon-sm" />}
                   >
-                    {t(status === "idle" ? "Start voice" : "Talk")}
+                    {status === "idle" ? t("Start voice") : t("Talk")}
                   </Button>
                   {status !== "idle" && (
                     <Button

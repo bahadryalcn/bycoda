@@ -31,6 +31,7 @@ export function SocialShortcut({
   return (
     <Button
       disabled={socialLocked}
+      disabledReason={t("Wait for the current Social Media action to finish.")}
       variant={responsiveRail ? "item" : "ghost"}
       motion="none"
       {...(compact || rail ? { iconOnly: true, label: t("Social Media") } : { iconOnly: false })}

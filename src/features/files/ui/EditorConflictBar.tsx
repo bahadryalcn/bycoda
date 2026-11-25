@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
@@ -53,26 +54,21 @@ export function EditorConflictBar({
     >
       {count > 0 ? (
         <>
-          <Text
+          <LiveText
             size="inherit"
             tone="warning"
             weight="medium"
             className="tabular-nums"
-            role="status"
-          >
-            {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
-          </Text>
+            text={count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
+          />
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
-              <Text
-                wrap="anywhere"
+              <LiveText
                 size="inherit"
                 tone="secondary"
-                className="min-w-0 mr-1"
-                role="status"
-              >
-                {fileNote}
-              </Text>
+                className="min-w-0 me-1 wrap-anywhere"
+                text={fileNote}
+              />
             ) : null}
             {nextFile}
             <Button
@@ -104,37 +100,32 @@ export function EditorConflictBar({
               {t("Couldn’t mark the file as resolved")}
             </InlineError>
           ) : (
-            <Text
+            <LiveText
               size="inherit"
               tone="secondary"
-              wrap="anywhere"
-              className="min-w-0 flex-1"
-              role="status"
-            >
-              {t("All conflicts resolved")}
-            </Text>
+              className="min-w-0 flex-1 wrap-anywhere"
+              text={t("All conflicts resolved")}
+            />
           )}
           <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
-              <Text
-                wrap="anywhere"
+              <LiveText
                 size="inherit"
                 tone="secondary"
-                className="min-w-0"
-                role="status"
-              >
-                {fileNote}
-              </Text>
+                className="min-w-0 wrap-anywhere"
+                text={fileNote}
+              />
             ) : null}
             {nextFile}
             <Button
               size="sm"
               variant="ghost"
-              disabled={marking}
+              loading={marking}
+              loadingLabel={t("Staging…")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
             >
-              {marking ? t("Staging…") : t("Mark resolved")}
+              {t("Mark resolved")}
             </Button>
           </div>
         </>

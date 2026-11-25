@@ -49,7 +49,8 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
     const threadId = targetThreadId(target);
     if (threadId) setChosen(threadId);
   }
-  const [settingsError, setSettingsError] = useState("");
+  /** A translated sentence about the last failed settings or check action; empty when none failed. */
+  const [settingsProblem, setSettingsProblem] = useState("");
   const [checking, setChecking] = useState(false);
   const [savingRefresh, setSavingRefresh] = useState(false);
 
@@ -104,12 +105,12 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
 
   const toggleAutoRefresh = async (next: boolean) => {
     setSavingRefresh(true);
-    setSettingsError("");
+    setSettingsProblem("");
     try {
       await api.setAutoRefresh(next);
       await invalidate({ reference: true });
     } catch {
-      setSettingsError(t("Could not change auto-refresh. Try again."));
+      setSettingsProblem(t("Could not change auto-refresh. Try again."));
     } finally {
       setSavingRefresh(false);
     }
@@ -118,7 +119,7 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
   // Asks each connected account for new activity, then reloads the list. Failures are counted, not hidden.
   const checkNow = async () => {
     setChecking(true);
-    setSettingsError("");
+    setSettingsProblem("");
     try {
       const results = await Promise.allSettled(
         accounts
@@ -126,7 +127,7 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
           .map((account) => client.request("inbox.sync", { accountId: account.id })),
       );
       if (results.some((result) => result.status === "rejected"))
-        setSettingsError(t("Some accounts could not be checked. Open an account to see why."));
+        setSettingsProblem(t("Some accounts could not be checked. Open an account to see why."));
       await invalidate({ reference: true });
     } finally {
       setChecking(false);
@@ -135,7 +136,7 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
 
   return (
     <section className="inbox-screen" aria-label={t("Inbox")}>
-      {settingsError ? <InlineError>{settingsError}</InlineError> : null}
+      {settingsProblem ? <InlineError>{settingsProblem}</InlineError> : null}
       <UnreadableNotice
         accounts={unreadable}
         names={names}
@@ -166,7 +167,7 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
             loadingLabel={t("Checking…")}
             onClick={() =>
               void checkNow().catch(() =>
-                setSettingsError(t("Could not load the inbox. Try again.")),
+                setSettingsProblem(t("Could not load the inbox. Try again.")),
               )
             }
           >

@@ -125,16 +125,18 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const live = p.status === "live";
   const canTalk = p.status === "idle" || p.status === "sleeping" || p.status === "ready";
   const connecting = p.status === "connecting" || p.status === "reconnecting";
-  const micLabel = t(canTalk ? (p.status === "idle" ? "Start voice" : "Talk") : "Mute microphone");
-  const toggleLabel = t(
-    p.compact
-      ? "Expand voice companion"
-      : p.fullScreen
-        ? "Exit full screen"
-        : p.onToggleFullScreen
-          ? "Full screen"
-          : "Compact voice companion",
-  );
+  const micLabel = canTalk
+    ? p.status === "idle"
+      ? t("Start voice")
+      : t("Talk")
+    : t("Mute microphone");
+  const toggleLabel = p.compact
+    ? t("Expand voice companion")
+    : p.fullScreen
+      ? t("Exit full screen")
+      : p.onToggleFullScreen
+        ? t("Full screen")
+        : t("Compact voice companion");
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
   const [chatRequest, setChatRequest] = useState<{ workPanelRequest?: number }>();

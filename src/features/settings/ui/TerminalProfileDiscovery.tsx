@@ -255,6 +255,7 @@ export function TerminalProfileDiscovery({
               <Button
                 aria-label={t("Find terminal profiles")}
                 loading={activeOperation === "find"}
+                loadingLabel={t("Working…")}
                 disabled={disabled || busy}
                 disabledReason={
                   disabled
@@ -272,11 +273,18 @@ export function TerminalProfileDiscovery({
                   })
                 }
               >
-                {activeOperation === "find" ? t("Working…") : t("Find terminal profiles")}
+                {t("Find terminal profiles")}
               </Button>
               <Button
                 loading={activeOperation === "choose"}
                 disabled={disabled || busy}
+                disabledReason={
+                  disabled
+                    ? t(
+                        "Wait for the current account operation to finish, then discover or connect a terminal profile.",
+                      )
+                    : t("Wait for the current operation to finish")
+                }
                 onClick={() =>
                   void run("choose", async (current) => {
                     const path = await open({
@@ -324,6 +332,15 @@ export function TerminalProfileDiscovery({
                       </div>
                       <Button
                         disabled={(connected && !onConnected) || disabled || busy}
+                        disabledReason={
+                          connected && !onConnected
+                            ? t("This profile is already connected.")
+                            : disabled
+                              ? t(
+                                  "Wait for the current account operation to finish, then discover or connect a terminal profile.",
+                                )
+                              : t("Wait for the current operation to finish")
+                        }
                         loading={activeOperation === profile.id}
                         onClick={() =>
                           void run(profile.id, (current) => connect(profile.path, current))

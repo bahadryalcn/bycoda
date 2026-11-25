@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 
@@ -54,13 +55,13 @@ export class MicrophoneRecording {
       recorder.onerror = () => {
         if (generation !== this.generation) return;
         this.reset();
-        this.changed("idle", "Microphone recording failed. Try again.");
+        this.changed("idle", t("Microphone recording failed. Try again."));
       };
       recorder.onstop = () => {
         if (generation !== this.generation) return;
         this.releaseCapture();
         if (!chunks.length) {
-          this.changed("idle", "No microphone audio was recorded. Try again.");
+          this.changed("idle", t("No microphone audio was recorded. Try again."));
           return;
         }
         this.url = URL.createObjectURL(
@@ -94,7 +95,7 @@ export class MicrophoneRecording {
     };
     player.onerror = () => {
       if (generation === this.generation)
-        this.changed("ready", "Audio playback failed. Record another test.");
+        this.changed("ready", t("Audio playback failed. Record another test."));
     };
     try {
       await player.play();
@@ -102,7 +103,7 @@ export class MicrophoneRecording {
       else player.pause();
     } catch {
       if (generation === this.generation)
-        this.changed("ready", "Audio playback failed. Record another test.");
+        this.changed("ready", t("Audio playback failed. Record another test."));
     }
   }
 

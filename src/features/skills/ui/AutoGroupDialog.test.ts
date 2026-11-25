@@ -124,10 +124,17 @@ it("keeps existing groups after a generation failure and allows retry", async ()
   await render();
   vi.mocked(autoGroupSkills).mockRejectedValueOnce(new Error("Provider unavailable"));
   await click("Group with AI");
-  expect(container.textContent).toContain("Provider unavailable");
-  expect(container.textContent).not.toContain("Error: Provider unavailable");
+  expect(container.textContent).toContain("Could not group the skills.");
+  expect(container.textContent).not.toContain("Provider unavailable");
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Details: Could not group the skills."]')!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("Provider unavailable");
+  expect(document.body.textContent).not.toContain("Error: Provider unavailable");
   expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
   await click("Group with AI");
   expect(document.body.textContent).toContain("Review skill groups");
-  expect(container.textContent).not.toContain("Provider unavailable");
+  expect(document.body.textContent).not.toContain("Provider unavailable");
 });

@@ -1,3 +1,4 @@
+import { modelSettingText } from "../model/modelSettingText";
 import { EffortScale } from "../../../shared/ui/EffortScale";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
@@ -55,7 +56,7 @@ function inheritedSegment(inherited: string | undefined, valid: boolean) {
 function speedLabel(value: string, label: string): string {
   if (value === "true" || value === "fast") return t("Fast");
   if (value === "false" || value === "default") return t("Standard");
-  return t(label);
+  return modelSettingText(label);
 }
 
 export function ProviderDefaultExtras({
@@ -124,21 +125,24 @@ export function ProviderDefaultExtras({
               {
                 value: "",
                 label: inheritedChoiceLabel(
-                  inheritedLabel ? t(inheritedLabel) : undefined,
+                  inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
                   Boolean(inheritedOption),
                 ),
               },
               ...(savedIsUnavailable
                 ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
                 : []),
-              ...setting.options.map((option) => ({ value: option.value, label: t(option.label) })),
+              ...setting.options.map((option) => ({
+                value: option.value,
+                label: modelSettingText(option.label),
+              })),
             ]
           : [];
         return (
           <Row
             key={setting.id}
-            label={t(setting.label)}
-            description={setting.description ? t(setting.description) : undefined}
+            label={modelSettingText(setting.label)}
+            description={setting.description ? modelSettingText(setting.description) : undefined}
             modified={saved != null || legacy != null}
             onReset={() => {
               const nextExtras = { ...scopeDefaults.extras };
@@ -154,11 +158,11 @@ export function ProviderDefaultExtras({
             {compact ? (
               setting.id === "autoCompact" && !savedIsUnavailable ? (
                 <SegmentedControl
-                  label={t(setting.label)}
+                  label={modelSettingText(setting.label)}
                   value={saved ?? ""}
                   options={[
                     inheritedSegment(
-                      inheritedLabel ? t(inheritedLabel) : undefined,
+                      inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
                       Boolean(inheritedOption),
                     ),
                     ...compactOptions
@@ -179,7 +183,7 @@ export function ProviderDefaultExtras({
                   hideLabel
                   label={t("{p0} default {p1}", {
                     p0: HARNESS_TITLE[harness],
-                    p1: t(setting.label),
+                    p1: modelSettingText(setting.label),
                   })}
                   value={saved ?? ""}
                   options={compactOptions}
@@ -200,7 +204,7 @@ export function ProviderDefaultExtras({
                   }
                 />
                 <EffortScale
-                  label={t(setting.label)}
+                  label={modelSettingText(setting.label)}
                   showLabel={false}
                   showValue={Boolean(subagentEffortCeiling(effectiveValues[setting.id]))}
                   value={subagentEffortCeiling(effectiveValues[setting.id]) || ""}
@@ -209,7 +213,7 @@ export function ProviderDefaultExtras({
                     .filter((option) => SUBAGENT_EFFORT_LEVELS.includes(option.value))
                     .map((option) => ({
                       value: option.value,
-                      label: t(option.label),
+                      label: modelSettingText(option.label),
                     }))}
                   onValueChange={(next) => {
                     const nextExtras = { ...scopeDefaults.extras };
@@ -233,7 +237,7 @@ export function ProviderDefaultExtras({
               <DelegationSubagentsControl
                 label={t("{p0} default {p1}", {
                   p0: HARNESS_TITLE[harness],
-                  p1: t(setting.label),
+                  p1: modelSettingText(setting.label),
                 })}
                 setting={setting}
                 values={effectiveValues}
@@ -249,14 +253,14 @@ export function ProviderDefaultExtras({
               />
             ) : (setting.id === "fast" || setting.id === "serviceTier") && !savedIsUnavailable ? (
               <SegmentedControl
-                label={t(setting.label)}
+                label={modelSettingText(setting.label)}
                 value={saved ?? ""}
                 options={[
                   inheritedSegment(
                     inheritedOption
                       ? speedLabel(inheritedOption.value, inheritedOption.label)
                       : inheritedLabel
-                        ? t(inheritedLabel)
+                        ? modelSettingText(inheritedLabel)
                         : undefined,
                     Boolean(inheritedOption),
                   ),
@@ -283,7 +287,7 @@ export function ProviderDefaultExtras({
                 hideLabel
                 label={t("{p0} default {p1}", {
                   p0: HARNESS_TITLE[harness],
-                  p1: t(setting.label),
+                  p1: modelSettingText(setting.label),
                 })}
                 value={
                   delegation
@@ -301,7 +305,7 @@ export function ProviderDefaultExtras({
                   {
                     value: "",
                     label: inheritedChoiceLabel(
-                      inheritedLabel ? t(inheritedLabel) : undefined,
+                      inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
                       Boolean(inheritedOption) || inherited === "null",
                     ),
                   },

@@ -34,13 +34,30 @@ import {
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 
 const commands = [
-  ["bold", "Bold", Bold],
-  ["italic", "Italic", Italic],
-  ["code", "Code", CodeBlock],
-  ["bullet", "Bullet list", ListBullet],
-  ["numbered", "Numbered list", ListNumbered],
-  ["link", "Link", Link],
+  ["bold", Bold],
+  ["italic", Italic],
+  ["code", CodeBlock],
+  ["bullet", ListBullet],
+  ["numbered", ListNumbered],
+  ["link", Link],
 ] as const;
+
+function commandLabel(command: (typeof commands)[number][0]): string {
+  switch (command) {
+    case "bold":
+      return t("Bold");
+    case "italic":
+      return t("Italic");
+    case "code":
+      return t("Code");
+    case "bullet":
+      return t("Bullet list");
+    case "numbered":
+      return t("Numbered list");
+    case "link":
+      return t("Link");
+  }
+}
 
 export function JiraCommentEditor({
   value,
@@ -66,6 +83,9 @@ export function JiraCommentEditor({
   const [imageError, setImageError] = useRetainedState(`${draftIdentity}:image-error`, "");
   const [reading, setReading] = useRetainedState(`${draftIdentity}:image-reading`, false);
   const locked = disabled || reading;
+  const lockedReason = reading
+    ? t("Reading the image…")
+    : t("Wait for the comment to finish sending.");
   const addPaths = async (paths: string[]) => {
     if (locked || readPending.current) return;
     if (images.length + paths.length > 8) {
@@ -221,15 +241,16 @@ export function JiraCommentEditor({
               className="self-start flex-wrap"
               aria-label={t("Markdown formatting")}
             >
-              {commands.map(([command, label, Icon]) => (
+              {commands.map(([command, Icon]) => (
                 <Button
                   key={command}
                   type="button"
                   variant="ghost"
                   size="sm"
                   iconOnly
-                  label={t(label)}
+                  label={commandLabel(command)}
                   disabled={locked}
+                  disabledReason={lockedReason}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => run(command)}
                 >
@@ -279,6 +300,7 @@ export function JiraCommentEditor({
                 iconOnly
                 label={t("Remove {p0}", { p0: image.name })}
                 disabled={locked}
+                disabledReason={lockedReason}
                 onClick={() => onImages(images.filter((item) => item.id !== image.id))}
               >
                 <X className="icon-xs" />

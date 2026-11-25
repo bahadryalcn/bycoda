@@ -205,6 +205,7 @@ function CreateToken({
               form={formId}
               loading={busy}
               disabled={uncertain}
+              disabledReason={t("Refresh the token list before trying again.")}
             >
               {t("Create token")}
             </Button>
@@ -435,6 +436,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             label={t("Refresh tokens")}
             loading={loading}
             disabled={revoking !== null}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void refresh()}
           >
             <RefreshCw className="icon-sm" strokeWidth={1.75} />
@@ -442,6 +444,13 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           <Button
             variant="primary"
             disabled={!data?.projects.length || loading || !!errorTitle || revoking !== null}
+            disabledReason={
+              !data?.projects.length && !loading && !errorTitle
+                ? t("Open a project to create a token.")
+                : errorTitle && !loading
+                  ? t("Refresh the token list before trying again.")
+                  : t("Wait for the current operation to finish")
+            }
             onClick={() => setCreating(true)}
           >
             {t("Create token")}

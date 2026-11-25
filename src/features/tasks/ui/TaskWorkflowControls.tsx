@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { catalogText } from "../../sessions/public/catalogText";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -67,8 +68,13 @@ function ScopedTemplateMenu({ scope, draft, templateId, busy, onApply }: Templat
   const [error, setError] = useState<{ details?: string } | null>(null);
   const all = [...BUILTIN_TASK_WORKFLOWS, ...profiles];
   const custom = profiles.find((profile) => profile.id === templateId);
-  const profileName = (profile: TaskWorkflowProfile) =>
-    BUILTIN_TASK_WORKFLOWS.includes(profile) ? t(profile.name) : profile.name;
+  const profileName = (profile: TaskWorkflowProfile) => {
+    if (!BUILTIN_TASK_WORKFLOWS.includes(profile)) return profile.name;
+    if (profile.id === "preset-bug-fix") return t("Bug fix");
+    if (profile.id === "preset-source-research") return t("Source research");
+    if (profile.id === "preset-ui-change") return t("UI change");
+    return profile.name;
+  };
   const selected = all.find((profile) => profile.id === templateId);
   const close = () => {
     setOpen(false);
@@ -312,13 +318,11 @@ export function TaskResourceFields({
                     : "neutral"
               }
             >
-              {t(
-                report.state === "ready"
-                  ? "Ready"
-                  : report.state === "blocked"
-                    ? "Preparation blocked"
-                    : "Preparation not verified",
-              )}
+              {report.state === "ready"
+                ? t("Ready")
+                : report.state === "blocked"
+                  ? t("Preparation blocked")
+                  : t("Preparation not verified")}
             </InlineMessage>
           ) : null}
           <Button
@@ -326,6 +330,7 @@ export function TaskResourceFields({
             size="xs"
             aria-label={t("Add resource")}
             disabled={requirements.length >= 40}
+            disabledReason={t("A task can have at most 40 resources.")}
             onClick={() => {
               setRowKeys(appendRequirementRowKey(rowKeys, requirements.length));
               onChange([...requirements, { kind: "source", id: "", required: true }]);
@@ -389,17 +394,17 @@ export function TaskResourceFields({
         );
       })}
       {error ? (
-        <InlineError retry={retry ? { onRetry: retry } : undefined}>{error}</InlineError>
+        <InlineError retry={retry ? { onRetry: retry } : undefined} details={error} />
       ) : null}
       {report?.items
         .filter((item) => item.state !== "ready" || item.detail)
         .map((item) => (
           <Text as="div" size="caption" tone="secondary" key={item.key} className="break-words">
-            {t(item.label)}
+            {catalogText(t, item.label)}
             {!item.required ? ` (${t("Optional")})` : ""}
             {item.detail
               ? ` · ${item.detail}`
-              : ` · ${t(item.state === "blocked" ? "Unavailable" : "Not checked")}`}
+              : ` · ${item.state === "blocked" ? t("Unavailable") : t("Not checked")}`}
           </Text>
         ))}
     </div>

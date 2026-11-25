@@ -43,7 +43,7 @@ export function OnboardingAccount() {
         ) : null}
         {signedOut ? (
           <>
-            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
+            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-note">
               {t(
                 "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.",
               )}

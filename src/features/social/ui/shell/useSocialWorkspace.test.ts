@@ -97,7 +97,7 @@ it("connects this computer, lists the Hosts and reads the first Host's scheduler
   expect(latest.client).not.toBeNull();
   expect(latest.loaded).toBe(true);
   expect(latest.shell).toEqual({ hostOnline: true, unreachable: false, aiStopped: false });
-  expect(latest.error).toBe("");
+  expect(latest.problem).toBe("");
   expect(mocks.sectionSnapshot).toHaveBeenCalledWith("m1", { section: "accounts", limit: 1 });
 });
 
@@ -111,11 +111,11 @@ it("shows no connection error while Hosts are still being discovered", async () 
       : Promise.resolve({}),
   );
   await mount();
-  expect(latest.error).toBe("");
+  expect(latest.problem).toBe("");
   expect(latest.loaded).toBe(false);
   await act(async () => release(machines));
   await flush();
-  expect(latest.error).toBe("");
+  expect(latest.problem).toBe("");
   expect(latest.machineId).toBe("m1");
 });
 
@@ -143,7 +143,7 @@ it("keeps working when the authority status or the local connect fails", async (
   });
   await mount();
   expect(latest.machineId).toBe("m1");
-  expect(latest.error).toBe("");
+  expect(latest.problem).toBe("");
 });
 
 it("falls back to this computer when the saved Host no longer exists", async () => {
@@ -158,7 +158,7 @@ it("explains that no Host is connected and exposes no client", async () => {
   await mount();
   expect(latest.machineId).toBe("");
   expect(latest.client).toBeNull();
-  expect(latest.error).toContain("Connect a bycoda Host for Social Media.");
+  expect(latest.problem).toContain("Connect a bycoda Host for Social Media.");
   expect(mocks.sectionSnapshot).not.toHaveBeenCalled();
 });
 
@@ -168,14 +168,14 @@ it("reports a discovery failure and recovers after an explicit retry", async () 
     return undefined;
   });
   await mount();
-  expect(latest.error).toBe("Could not connect to the bycoda Host.");
+  expect(latest.problem).toBe("Could not connect to the bycoda Host.");
   expect(latest.client).toBeNull();
   mocks.invoke.mockImplementation(async (command: string) =>
     command === "remote_machines" ? machines : {},
   );
   await act(async () => latest.retry());
   await flush();
-  expect(latest.error).toBe("");
+  expect(latest.problem).toBe("");
   expect(latest.machineId).toBe("m1");
   expect(latest.loaded).toBe(true);
 });

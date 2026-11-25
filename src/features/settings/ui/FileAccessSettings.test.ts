@@ -79,7 +79,7 @@ it("reports unavailable status after an initial read failure without implying co
   const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Change file access…",
   )!;
-  expect(change.disabled).toBe(true);
+  expect(change.getAttribute("aria-disabled")).toBe("true");
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Retry",
   )!;
@@ -140,7 +140,7 @@ it("ignores a read that finishes after the surface closed", async () => {
   const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Change file access"),
   )!;
-  expect(change.disabled).toBe(true);
+  expect(change.getAttribute("aria-disabled")).toBe("true");
   await act(async () => root.unmount());
   await act(async () => finish("all-files"));
   expect(errors).not.toHaveBeenCalled();

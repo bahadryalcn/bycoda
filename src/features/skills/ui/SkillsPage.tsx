@@ -20,6 +20,7 @@ import { useSkillGroupView } from "./useSkillGroupView";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { SkillList } from "./SkillList";
 import { TextField } from "../../../shared/ui/TextField";
@@ -201,8 +202,10 @@ export function SkillsPage({
   const policySaving = policyTarget !== null;
   const policyPending = useRef(false);
   // Only failures are reported; successful actions show their result in the list itself.
-  const [actionError, setActionError] = useState<string | null>(null);
-  const clearFeedback = () => setActionError(null);
+  const [actionIssue, setActionIssue] = useState<{ message: string; details?: string } | null>(
+    null,
+  );
+  const clearFeedback = () => setActionIssue(null);
   const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
   // Path of the skill being copied to the other machine, if any.
   const [transferring, setTransferring] = useState<string | null>(null);
@@ -243,13 +246,17 @@ export function SkillsPage({
     const content = draft;
     savePending.current = true;
     setSaving(true);
-    setActionError(null);
+    setActionIssue(null);
     try {
       // Refuse to overwrite an edit made outside this screen since it was read.
-      if ((await readTextFile(path)) !== (draftBases[path] ?? previewText))
-        throw new Error(
-          t("SKILL.md changed on disk. Reopen the skill before saving; your draft is kept."),
-        );
+      if ((await readTextFile(path)) !== (draftBases[path] ?? previewText)) {
+        setActionIssue({
+          message: t(
+            "SKILL.md changed on disk. Reopen the skill before saving; your draft is kept.",
+          ),
+        });
+        return;
+      }
       await writeTextFile(path, content);
       setPreviewText(content);
       setDraftBases((current) => ({ ...current, [path]: content }));
@@ -264,7 +271,7 @@ export function SkillsPage({
       setSavedDocument({ path, content });
       requestRefresh("local");
     } catch (err) {
-      setActionError(errorText(err));
+      setActionIssue({ message: t("Could not save the skill."), details: errorText(err) });
     } finally {
       savePending.current = false;
       setSaving(false);
@@ -609,7 +616,7 @@ export function SkillsPage({
         invalidateSkills();
         window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
       }
-      setActionError(null);
+      setActionIssue(null);
     } catch (error) {
       setPolicyErrors((current) => ({
         ...current,
@@ -624,16 +631,16 @@ export function SkillsPage({
   };
 
   const onReveal = (path: string): void => {
-    setActionError(null);
+    setActionIssue(null);
     void revealItemInDir(path).catch((err: unknown) => {
-      setActionError(t("Could not open the folder: {p0}", { p0: errorText(err) }));
+      setActionIssue({ message: t("Could not open the folder."), details: errorText(err) });
     });
   };
 
   const onCopyPath = (path: string): void => {
-    setActionError(null);
+    setActionIssue(null);
     void copyText(path).catch(() => {
-      setActionError(t("Could not copy the path to the clipboard."));
+      setActionIssue({ message: t("Could not copy the path to the clipboard.") });
     });
   };
 
@@ -664,7 +671,7 @@ export function SkillsPage({
   ): Promise<void> => {
     if (deletePending.current || transferPending.current || savePending.current) return;
     if (drafts[skill.path] !== undefined) {
-      setActionError(t("Save or discard the draft before transferring."));
+      setActionIssue({ message: t("Save or discard the draft before transferring.") });
       return;
     }
     transferPending.current = true;
@@ -676,7 +683,7 @@ export function SkillsPage({
       targetCwd: "",
       ...(to ? { targetMachine: to.environmentId } : {}),
     };
-    setActionError(null);
+    setActionIssue(null);
     setTransferring(skill.path);
     try {
       try {
@@ -697,9 +704,13 @@ export function SkillsPage({
       }
       requestRefresh(to?.environmentId ?? "local");
     } catch (err) {
-      setActionError(
-        `${t("Copy could not be confirmed for {p0} on {p1}. Check the target before trying again.", { p0: skill.name, p1: targetName })} ${presentRemoteError(err, { explicit: true })}`,
-      );
+      setActionIssue({
+        message: t(
+          "Copy could not be confirmed for {p0} on {p1}. Check the target before trying again.",
+          { p0: skill.name, p1: targetName },
+        ),
+        details: presentRemoteError(err, { explicit: true }),
+      });
       requestRefresh(to?.environmentId ?? "local");
     } finally {
       transferPending.current = false;
@@ -714,7 +725,7 @@ export function SkillsPage({
     if (deletePending.current) return;
     deletePending.current = true;
     setDeleting(skill.path);
-    setActionError(null);
+    setActionIssue(null);
     try {
       const confirmed = await confirmInApp({
         title: t("Delete {p0} from {p1}?", {
@@ -742,12 +753,10 @@ export function SkillsPage({
       setActionsMenu((current) => (current?.skill.path === skill.path ? null : current));
       requestRefresh(machine?.environmentId ?? "local");
     } catch (err) {
-      setActionError(
-        t("Could not delete {p0}. {p1}", {
-          p0: skill.name,
-          p1: presentRemoteError(err, { explicit: true }),
-        }),
-      );
+      setActionIssue({
+        message: t("Could not delete {p0}.", { p0: skill.name }),
+        details: presentRemoteError(err, { explicit: true }),
+      });
     } finally {
       deletePending.current = false;
       setDeleting(null);
@@ -812,15 +821,20 @@ export function SkillsPage({
       ];
     if (!failure) return [];
     return [
-      <InlineError key={id} action={{ label: t("Retry"), onClick: () => requestRefresh(id) }}>
-        {failure}
-      </InlineError>,
+      <InlineError
+        key={id}
+        details={failure}
+        action={{ label: t("Retry"), onClick: () => requestRefresh(id) }}
+      />,
     ];
   });
-  const actionFeedback = actionError ? (
+  const actionFeedback = actionIssue ? (
     <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.feedback)}>
-      <InlineError secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}>
-        {actionError}
+      <InlineError
+        details={actionIssue.details}
+        secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}
+      >
+        {actionIssue.message}
       </InlineError>
     </div>
   ) : null;
@@ -900,7 +914,14 @@ export function SkillsPage({
         </header>
         {groupError ? (
           <div className={styles.feedback}>
-            <Alert tone="danger">{groupError}</Alert>
+            <Alert
+              tone="danger"
+              extra={
+                <ErrorDetails detail={groupError} title={t("Could not change the skill group.")} />
+              }
+            >
+              {t("Could not change the skill group.")}
+            </Alert>
           </div>
         ) : null}
         <SkillList
@@ -998,7 +1019,7 @@ export function SkillsPage({
                   />
                 ) : null}
                 {policyTarget === JSON.stringify([shownOn, previewSkill.path]) ? (
-                  <Spinner size="xs" label={t("Saving…")} />
+                  <Spinner size="xs" delay label={t("Saving…")} />
                 ) : null}
                 <Button
                   ref={closePreview}
@@ -1110,6 +1131,11 @@ export function SkillsPage({
                       successLabel={t("Saved")}
                       tooltip={t("Save (Ctrl/Cmd+S)")}
                       disabled={!dirty || previewText === null}
+                      disabledReason={
+                        previewText === null
+                          ? t("The skill file is still loading.")
+                          : t("There are no changes to save.")
+                      }
                       onClick={() => void onSave()}
                     >
                       {t("Save")}

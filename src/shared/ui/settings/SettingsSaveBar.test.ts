@@ -202,7 +202,7 @@ it("runs one save while another is in flight", async () => {
   const onSave = vi.fn(() => new Promise<boolean>((resolve) => (finish = resolve)));
   await render([{ id: "a", label: "Effort" }], { onSave });
   await click(button("Save"));
-  await click(button("Save"));
+  await click(button("Saving…"));
   expect(onSave).toHaveBeenCalledOnce();
   expect(pendingSources()[0]!.pending).toBe(true);
   await act(async () => finish(true));

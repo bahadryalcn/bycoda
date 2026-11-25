@@ -11,6 +11,15 @@ import { buildLocalSessionLink, type LocalSessionReference } from "../model/loca
 import { NoteEditablePreview } from "../../notes/ui/NoteEditablePreview";
 import { TranscriptSessionId } from "./TranscriptSessionId";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return (
+    document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Details"]')?.textContent ?? ""
+  );
+}
+
 const openWeb = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../connections/model/workspaceUrls", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../connections/model/workspaceUrls")>()),
@@ -201,7 +210,8 @@ describe("local references in the actual Markdown pipeline", () => {
     vi.mocked(navigation.open).mockRejectedValueOnce(new Error("Wrong local profile"));
     await render(`[Target](${href})`);
     await act(async () => host.querySelector<HTMLAnchorElement>("a")!.click());
-    expect(host.textContent).toContain("Wrong local profile");
+    expect(host.textContent).toContain("Could not open this session.");
+    expect(await rawDetails(host)).toContain("Wrong local profile");
     await act(async () =>
       [...host.querySelectorAll("button")]
         .find((button) => button.textContent === "Retry")!
@@ -248,10 +258,10 @@ describe("local references in the actual Markdown pipeline", () => {
     expect(navigation.open).toHaveBeenCalledTimes(1);
     expect(navigation.resolve).not.toHaveBeenCalled();
     expect(link.getAttribute("aria-busy")).toBe("true");
-    expect(details.disabled).toBe(true);
+    expect(details.getAttribute("aria-disabled")).toBe("true");
     await act(async () => finish());
     expect(link.hasAttribute("aria-busy")).toBe(false);
-    expect(details.disabled).toBe(false);
+    expect(details.getAttribute("aria-disabled")).not.toBe("true");
     await act(async () => details.click());
     expect(document.body.textContent).toContain("Current title");
   });
@@ -276,11 +286,12 @@ describe("local references in the actual Markdown pipeline", () => {
     await act(async () => beside.click());
     expect(beside.getAttribute("aria-busy")).toBe("true");
     expect(openSession.hasAttribute("aria-busy")).toBe(false);
-    expect(openSession.disabled).toBe(true);
+    expect(openSession.getAttribute("aria-disabled")).toBe("true");
     await act(async () => fail(new Error("Target unavailable")));
-    expect(dialog.textContent).toContain("Target unavailable");
+    expect(dialog.textContent).toContain("Could not open this session.");
+    expect(await rawDetails(dialog)).toContain("Target unavailable");
     expect(beside.hasAttribute("aria-busy")).toBe(false);
-    expect(beside.disabled).toBe(false);
+    expect(beside.getAttribute("aria-disabled")).not.toBe("true");
     await act(async () => beside.click());
     expect(navigation.open).toHaveBeenCalledTimes(2);
     expect(navigation.open).toHaveBeenLastCalledWith(reference, { beside: true });
@@ -353,7 +364,8 @@ describe("local references in the actual Markdown pipeline", () => {
       host.querySelector<HTMLButtonElement>('[aria-label="Session details"]')!.click(),
     );
     const dialog = document.querySelector('[role="dialog"][aria-label="Session details"]')!;
-    expect(dialog.textContent).toContain("Session is unavailable");
+    expect(dialog.textContent).toContain("Could not load session details.");
+    expect(await rawDetails(dialog)).toContain("Session is unavailable");
     await act(async () =>
       [...dialog.querySelectorAll("button")]
         .find((button) => button.textContent === "Retry")!

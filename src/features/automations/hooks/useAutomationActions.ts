@@ -56,12 +56,10 @@ type Params = {
  */
 /** One full sentence per count, so each language keeps its own grammar. */
 export function unreachableNotice(names: string[]): string {
-  return t(
-    names.length === 1
-      ? "{p0} isn’t reachable right now, so its automations may be out of date."
-      : "{p0} aren’t reachable right now, so their automations may be out of date.",
-    { p0: names.join(", ") },
-  );
+  const p0 = names.join(", ");
+  return names.length === 1
+    ? t("{p0} isn’t reachable right now, so its automations may be out of date.", { p0 })
+    : t("{p0} aren’t reachable right now, so their automations may be out of date.", { p0 });
 }
 
 export function useAutomationActions({
@@ -85,16 +83,24 @@ export function useAutomationActions({
   const [deleting, setDeleting] = useState<string | null>(null);
   const togglingRef = useRef(new Set<string>());
   const [toggling, setToggling] = useState<Set<string>>(() => new Set());
-  const [failure, setFailure] = useState<{ message: string; stamp: unknown } | null>(null);
+  const [failure, setFailure] = useState<{
+    message: string;
+    title: string | null;
+    stamp: unknown;
+  } | null>(null);
   const stampRef = useRef(errorStamp);
   useEffect(() => {
     stampRef.current = errorStamp;
   }, [errorStamp]);
   const actionError = failure && Object.is(failure.stamp, errorStamp) ? failure.message : null;
-  const setActionError = (message: string | null) =>
-    setFailure(message === null ? null : { message, stamp: stampRef.current });
-  const failWith = (reason: unknown) =>
-    setActionError(presentRemoteError(reason, { explicit: true }));
+  const actionErrorTitle = actionError ? (failure?.title ?? null) : null;
+  /** `title` names the failed operation; without it the view shows its generic headline. */
+  const setActionError = (message: string | null, title?: string) =>
+    setFailure(
+      message === null ? null : { message, title: title ?? null, stamp: stampRef.current },
+    );
+  const failWith = (reason: unknown, title: string) =>
+    setActionError(presentRemoteError(reason, { explicit: true }), title);
   const refreshAccepted = () => refreshHost().catch(() => undefined);
 
   const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
@@ -115,7 +121,7 @@ export function useAutomationActions({
       setActionError(null);
       if (saved.host) await refreshAccepted();
     } catch (reason: unknown) {
-      failWith(reason);
+      failWith(reason, t("Could not save the automation."));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -136,7 +142,7 @@ export function useAutomationActions({
       const run = await createManualAutomationRun(automation.id);
       await onLaunch(automation, run);
     } catch (reason: unknown) {
-      failWith(reason);
+      failWith(reason, t("Could not run the automation."));
     } finally {
       runningRef.current.delete(key);
       const remaining = [...runningRef.current].pop() ?? null;
@@ -178,7 +184,7 @@ export function useAutomationActions({
       setDraft((current) => (current?.id === automation.id ? null : current));
       setSelectedId((current) => (current === automationKey(automation) ? null : current));
     } catch (reason: unknown) {
-      failWith(reason);
+      failWith(reason, t("Could not delete the automation."));
     } finally {
       setDeleting(null);
     }
@@ -203,7 +209,7 @@ export function useAutomationActions({
       }
       await setAutomationEnabled(automation, enabled);
     } catch (reason: unknown) {
-      failWith(reason);
+      failWith(reason, t("Could not update the automation."));
     } finally {
       togglingRef.current.delete(key);
       setToggling(new Set(togglingRef.current));
@@ -217,6 +223,7 @@ export function useAutomationActions({
     deleting,
     toggling,
     actionError,
+    actionErrorTitle,
     setActionError,
     onSave,
     onRun,

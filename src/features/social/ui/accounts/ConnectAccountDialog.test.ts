@@ -6,6 +6,11 @@ import type { HostProject } from "../../../connections/model/protocol";
 import type { SocialClient } from "../../model/socialClient";
 import { ConnectAccountDialog } from "./ConnectAccountDialog";
 
+/** A control with a reason stays focusable: blocked is `disabled` or `aria-disabled`. */
+const isBlocked = (
+  node: { disabled?: boolean; getAttribute(name: string): string | null } | null | undefined,
+) => Boolean(node?.disabled) || node?.getAttribute("aria-disabled") === "true";
+
 vi.mock("../../../../shared/ui/Modal", () => ({
   Modal: (props: { title: string; children: ReactNode; footer: ReactNode }) =>
     createElement(
@@ -125,7 +130,7 @@ it("defaults to browser for X and asks for a name before it connects", () => {
   expect(
     element.querySelector('button[aria-label="How to connect: Browser sign-in"]'),
   ).not.toBeNull();
-  expect(button("Connect")?.disabled).toBe(true);
+  expect(isBlocked(button("Connect"))).toBe(true);
   expect(document.body.textContent).not.toContain("Enter a name for this account.");
 });
 

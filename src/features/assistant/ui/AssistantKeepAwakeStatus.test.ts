@@ -34,6 +34,12 @@ it("does not claim native activation from a requested policy and retains native 
       ),
     );
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Sleep prevention is unavailable on this Host",
+    );
+    // The raw native error sits behind the Details popover.
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+    await act(async () => trigger?.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "Native helper unavailable",
     );
     expect(container.textContent).not.toContain("Keeping this computer awake");

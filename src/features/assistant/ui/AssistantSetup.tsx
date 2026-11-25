@@ -35,16 +35,35 @@ import styles from "./AssistantSetup.module.css";
 
 const DRAFT_KEY = "bycoda.assistant.setup-draft";
 class SetupReadinessError extends Error {}
-const labels = {
-  identity: "Identity",
-  voice: "Voice provider",
-  speaker: "Speaker",
-  microphone: "Microphone",
-  workmode: "Work mode",
-  presence: "Presence and hours",
-  review: "Review",
-} as const;
-type StepId = keyof typeof labels;
+const STEP_IDS = [
+  "identity",
+  "voice",
+  "speaker",
+  "microphone",
+  "workmode",
+  "presence",
+  "review",
+] as const;
+type StepId = (typeof STEP_IDS)[number];
+/** The translated step name; call it while rendering. */
+function stepLabel(id: StepId): string {
+  switch (id) {
+    case "identity":
+      return t("Identity");
+    case "voice":
+      return t("Voice provider");
+    case "speaker":
+      return t("Speaker");
+    case "microphone":
+      return t("Microphone");
+    case "workmode":
+      return t("Work mode");
+    case "presence":
+      return t("Presence and hours");
+    case "review":
+      return t("Review");
+  }
+}
 // Numeric drafts predate grouped setup. Preserve their content and resume in the owning step.
 const legacySteps: StepId[] = [
   "identity",
@@ -60,7 +79,7 @@ const legacySteps: StepId[] = [
 ];
 function draftStep(value: unknown): StepId | undefined {
   if (typeof value === "number" && Number.isInteger(value)) return legacySteps[value];
-  if (typeof value === "string" && Object.prototype.hasOwnProperty.call(labels, value))
+  if (typeof value === "string" && (STEP_IDS as readonly string[]).includes(value))
     return value as StepId;
   return undefined;
 }
@@ -219,6 +238,22 @@ export function AssistantSetup({
       current ? { ...current, patch: { ...current.patch, ...next } } : current,
     );
   }
+  /** Why Start or Next cannot be used yet; undefined when the step is complete. */
+  function invalidReason() {
+    if (step === "voice" || (step === "review" && voiceOnly))
+      return providerVerified ? undefined : t("Verify the voice provider first.");
+    if (step === "identity" && voice)
+      return patch.name?.trim() ? undefined : t("Enter a name first.");
+    if (step === "identity" || step === "workmode" || step === "review") {
+      if (!patch.name?.trim()) return t("Enter a name first.");
+      if (
+        !Number.isInteger(patch.dailyTokenBudget) ||
+        (patch.dailyTokenBudget ?? 0) < ASSISTANT_MIN_DAILY_TOKEN_BUDGET
+      )
+        return t("Set a larger daily token budget first.");
+    }
+    return undefined;
+  }
   function valid() {
     if (step === "voice") return providerVerified;
     if (step === "review" && voiceOnly) return providerVerified;
@@ -339,7 +374,7 @@ export function AssistantSetup({
   }
   return (
     <Modal
-      title={t(voice ? "Voice setup" : "Set up")}
+      title={voice ? t("Voice setup") : t("Set up")}
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -355,6 +390,7 @@ export function AssistantSetup({
               <Button
                 variant="ghost"
                 disabled={pending || index === 0}
+                disabledReason={index === 0 ? t("This is the first step.") : undefined}
                 onClick={() => setDraft({ ...draft, step: steps[index - 1] })}
               >
                 {t("Back")}
@@ -365,12 +401,21 @@ export function AssistantSetup({
                 variant="primary"
                 loading={pending}
                 disabled={!valid() || (voice && !providerVerified)}
+                disabledReason={
+                  invalidReason() ??
+                  (voice && !providerVerified ? t("Verify the voice provider first.") : undefined)
+                }
                 onClick={() => void finish()}
               >
                 {t("Start")}
               </Button>
             ) : (
-              <Button variant="primary" disabled={!valid()} onClick={next}>
+              <Button
+                variant="primary"
+                disabled={!valid()}
+                disabledReason={invalidReason()}
+                onClick={next}
+              >
                 {t("Next")}
               </Button>
             )}
@@ -400,7 +445,7 @@ export function AssistantSetup({
               <Stepper
                 steps={steps.map((id) => ({
                   id,
-                  label: t(labels[id]),
+                  label: stepLabel(id),
                   description: id === "speaker" || id === "microphone" ? t("Optional") : undefined,
                 }))}
                 current={index}

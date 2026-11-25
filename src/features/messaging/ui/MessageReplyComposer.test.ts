@@ -132,7 +132,11 @@ describe("MessageReplyComposer", () => {
     render(onSent);
 
     await pressSend();
-    expect(container.textContent).toContain("network down");
+    expect(container.textContent).toContain("The reply was not sent.");
+    // The raw failure sits behind the Details popover.
+    const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]');
+    await act(async () => trigger?.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("network down");
     expect(container.querySelector("textarea")?.value).toBe("Hello");
     expect(onSent).not.toHaveBeenCalled();
 

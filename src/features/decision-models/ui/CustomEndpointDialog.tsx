@@ -95,7 +95,13 @@ export function CustomEndpointDialog({
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done ? null : (
-            <Button variant="primary" loading={flow.busy} disabled={flow.busy} onClick={submit}>
+            <Button
+              variant="primary"
+              loading={flow.busy}
+              loadingLabel={flow.phase === "testing" ? t("Testing…") : t("Saving…")}
+              disabled={flow.busy}
+              onClick={submit}
+            >
               {t("Add and test")}
             </Button>
           )}
@@ -152,9 +158,6 @@ export function CustomEndpointDialog({
           disabled={locked}
           onChange={(event) => setAuthHeader(event.target.value)}
         />
-        {flow.phase === "testing" ? (
-          <InlineMessage tone="info">{t("Testing the connection…")}</InlineMessage>
-        ) : null}
         {flow.failure !== null ? <ErrorNotice error={flow.failure} /> : null}
         {flow.outcome ? (
           <InlineMessage tone={flow.outcome.tone}>{flow.outcome.text}</InlineMessage>

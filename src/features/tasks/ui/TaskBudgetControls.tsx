@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import "./task-form.css";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -111,7 +112,7 @@ export function TaskBudgetUsage({
       <Text as="p" tone="muted" size="inherit">
         {t("Run usage")}
         {nearing ? (
-          <Text tone="warning" size="inherit" className="ml-2">
+          <Text tone="warning" size="inherit" className="ms-2">
             {t("Run budget is nearing its limit.")}
           </Text>
         ) : null}
@@ -138,11 +139,7 @@ export function TaskBudgetUsage({
           </DescriptionItem>
         </DescriptionList>
       ) : null}
-      {stop ? (
-        <Text as="p" tone="warning" size="inherit" role="status" className="break-words">
-          {stop}
-        </Text>
-      ) : null}
+      {stop ? <InlineMessage tone="warning">{stop}</InlineMessage> : null}
     </Text>
   );
 }

@@ -354,10 +354,16 @@ export function dockStateLabel(dock: ActivityDock): string {
 
 function plural(count: number, noun: string): string {
   if (noun === "background task")
-    return t(count === 1 ? "{p0} background task" : "{p0} background tasks", { p0: count });
+    return count === 1
+      ? t("{p0} background task", { p0: count })
+      : t("{p0} background tasks", { p0: count });
   if (noun === "background agent")
-    return t(count === 1 ? "{p0} background agent" : "{p0} background agents", { p0: count });
+    return count === 1
+      ? t("{p0} background agent", { p0: count })
+      : t("{p0} background agents", { p0: count });
   if (noun === "background command")
-    return t(count === 1 ? "{p0} background command" : "{p0} background commands", { p0: count });
-  return t(count === 1 ? "{p0} command" : "{p0} commands", { p0: count });
+    return count === 1
+      ? t("{p0} background command", { p0: count })
+      : t("{p0} background commands", { p0: count });
+  return count === 1 ? t("{p0} command", { p0: count }) : t("{p0} commands", { p0: count });
 }

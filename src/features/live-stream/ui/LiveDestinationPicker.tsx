@@ -27,6 +27,7 @@ export function LiveDestinationPicker({
         label={t("{p0} · {p1}", { p0: platformNames[entry.platform], p1: entry.label })}
         checked={selected.includes(entry.accountId)}
         disabled={disabled}
+        disabledReason={t("Wait for the current live stream action to finish.")}
         onChange={() => onToggle(entry.accountId)}
       />
     ));
@@ -58,6 +59,7 @@ export function LiveDestinationPicker({
           label={t("Configured OBS server")}
           checked={selected.includes(CONFIGURED_OBS)}
           disabled={disabled}
+          disabledReason={t("Wait for the current live stream action to finish.")}
           onChange={() => onToggle(CONFIGURED_OBS)}
         />
         <Text size="caption" tone="secondary">

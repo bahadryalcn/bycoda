@@ -128,7 +128,7 @@ export function GroupGitPopover({
                 type="button"
                 tooltip={path}
                 onClick={() => onSelect(path)}
-                className="flex w-full flex-wrap items-center gap-2 text-left"
+                className="flex w-full flex-wrap items-center gap-2 text-start"
               >
                 <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0 flex-1">
                   {basename(path)}
@@ -155,9 +155,11 @@ export function GroupGitPopover({
                       {detail.branch ?? t("detached")}
                     </Text>
                     <Tooltip
-                      label={t(detail.files === 1 ? "{p0} changed file" : "{p0} changed files", {
-                        p0: detail.files,
-                      })}
+                      label={
+                        detail.files === 1
+                          ? t("{p0} changed file", { p0: detail.files })
+                          : t("{p0} changed files", { p0: detail.files })
+                      }
                       asChild
                     >
                       <Text size="inherit" tone={detail.files > 0 ? "warning" : "inherit"}>

@@ -49,7 +49,9 @@ it("blocks saved look application while an image change is pending", () => {
       }),
     ),
   );
-  expect(container.querySelector<HTMLButtonElement>(".theme-saved-apply")!.disabled).toBe(true);
+  expect(
+    container.querySelector<HTMLButtonElement>(".theme-saved-apply")!.getAttribute("aria-disabled"),
+  ).toBe("true");
 });
 afterEach(() => {
   act(() => root.render(null));

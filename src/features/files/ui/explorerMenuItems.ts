@@ -6,11 +6,13 @@ import type { ExplorerMenuItem } from "./ExplorerMenu";
 import type { Clip, MenuTarget } from "./fileTreeSupport";
 import { parentPath } from "../../../shared/lib/paths";
 
-export const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open containing folder";
+/** The platform's name for showing a file in its folder. */
+export const revealLabel = () =>
+  IS_MAC
+    ? t("Reveal in Finder")
+    : IS_WIN
+      ? t("Reveal in File Explorer")
+      : t("Open containing folder");
 
 /** Menu item ids that mutate the filesystem or start another operation: disabled while one runs. */
 export const BUSY_MENU_ITEMS = [
@@ -171,7 +173,7 @@ export function explorerItems(
           },
         ]
       : []),
-    { kind: "item", id: "reveal", label: t(REVEAL_LABEL) },
+    { kind: "item", id: "reveal", label: revealLabel() },
   ];
 }
 
@@ -257,7 +259,7 @@ export function explorerHeaderItems(
     {
       kind: "item",
       id: "reveal",
-      label: t(REVEAL_LABEL),
+      label: revealLabel(),
       disabled: Boolean(busyReason),
       icon: icon("reveal"),
     },

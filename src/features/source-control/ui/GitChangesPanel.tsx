@@ -138,7 +138,8 @@ import { GitCommitGenerationNotice, GitFeedback } from "./GitFeedback";
 import { usePrStatus } from "../hooks/usePrStatus";
 import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
 import { Button } from "../../../shared/ui/Button";
-import { Spinner } from "../../../shared/ui/Spinner";
+import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
@@ -262,6 +263,7 @@ export function GitChangesPanel({
   // Shared across the header and the changed-files list so no two Git
   // mutations ever run against the same checkout at once.
   const [busy, setBusy] = useGitPanelState(cwd, "busy");
+  const busyReason = busy ? t("Wait for the current operation to finish") : undefined;
   const [status, setStatus] = useGitPanelState(cwd, "status");
   // The step a running action is on ("Pushing…"), shown beside the spinner.
   const [pending, setPending] = useGitPanelState(cwd, "pending");
@@ -520,21 +522,16 @@ export function GitChangesPanel({
           )}
           {repository?.pointer}
           {busy && !localProgressVisible ? (
-            <Text
-              role="status"
+            <LoadingText size="micro" tone="secondary" className="wrap-anywhere">
+              {pending ?? busyLabel(busy)}
+            </LoadingText>
+          ) : !busy && status ? (
+            <LiveText
               size="micro"
               tone="secondary"
-              className="flex min-w-0 items-center gap-1"
-            >
-              <Spinner size="xs" className="shrink-0" />
-              <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
-                {pending ?? busyLabel(busy)}
-              </Text>
-            </Text>
-          ) : !busy && status ? (
-            <Text role="status" size="micro" tone="secondary" wrap="anywhere" className="min-w-0">
-              {status}
-            </Text>
+              className="min-w-0 wrap-anywhere"
+              text={status}
+            />
           ) : null}
           <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
             {repository ? (
@@ -565,6 +562,7 @@ export function GitChangesPanel({
                   iconOnly
                   label={t("Refresh source control")}
                   disabled={!enabled || !!busy}
+                  disabledReason={busyReason}
                   loading={loading}
                   loadingLabel={t("Refreshing…")}
                   onClick={() => {
@@ -583,6 +581,7 @@ export function GitChangesPanel({
                   iconOnly
                   label={t("Manage worktrees…")}
                   disabled={!enabled || !!busy}
+                  disabledReason={busyReason}
                   onClick={() => requestWorktreeManagement(cwd)}
                 >
                   <FolderTree aria-hidden className="icon-sm" />
@@ -623,6 +622,7 @@ export function GitChangesPanel({
           variant="ghost"
           size="sm"
           disabled={!enabled || !!busy}
+          disabledReason={busyReason}
           onClick={async () => {
             if (!(await confirmGitAction(trustRepositoryCopy(cwd)))) return;
             setBusy("trust");
@@ -851,12 +851,10 @@ function ChangedFiles({
     !!index?.branch && !!index.defaultBranch && index.branch === index.defaultBranch;
   const committing = busy === "commit" || busy === "pr";
   const canGenerate = files.length > 0 && !committing;
-  const fail = (error: unknown, operation = "Git operation failed") => {
+  const fail = (error: unknown, operation = t("Git operation failed")) => {
     setGitFeedback(cwd, {
       kind: "error",
-      get title() {
-        return t(operation);
-      },
+      title: operation,
       detail: presentRemoteError(error, { explicit: true }),
     });
   };
@@ -972,10 +970,10 @@ function ChangedFiles({
           fail(
             error,
             action === "stage"
-              ? "Couldn’t stage changes"
+              ? t("Couldn’t stage changes")
               : action === "unstage"
-                ? "Couldn’t unstage changes"
-                : "Couldn’t discard changes",
+                ? t("Couldn’t unstage changes")
+                : t("Couldn’t discard changes"),
           );
         }
       });
@@ -1024,10 +1022,10 @@ function ChangedFiles({
           fail(
             error,
             action === "stage"
-              ? "Couldn’t stage changes"
+              ? t("Couldn’t stage changes")
               : action === "unstage"
-                ? "Couldn’t unstage changes"
-                : "Couldn’t discard changes",
+                ? t("Couldn’t unstage changes")
+                : t("Couldn’t discard changes"),
           );
         }
       });
@@ -1078,10 +1076,10 @@ function ChangedFiles({
         fail(
           error,
           action === "stage"
-            ? "Couldn’t stage changes"
+            ? t("Couldn’t stage changes")
             : action === "unstage"
-              ? "Couldn’t unstage changes"
-              : "Couldn’t discard changes",
+              ? t("Couldn’t unstage changes")
+              : t("Couldn’t discard changes"),
         );
       } finally {
         setBusy(null);
@@ -1109,7 +1107,10 @@ function ChangedFiles({
           if (action === "stage") await gitStageFile(cwd, relative);
           else await gitUnstageFile(cwd, relative);
         } catch (error) {
-          fail(error, action === "stage" ? "Couldn’t stage changes" : "Couldn’t unstage changes");
+          fail(
+            error,
+            action === "stage" ? t("Couldn’t stage changes") : t("Couldn’t unstage changes"),
+          );
         }
       });
       queue.tail = task;
@@ -1209,7 +1210,7 @@ function ChangedFiles({
             retry: () =>
               retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
           });
-        else fail(error, "Couldn’t commit changes");
+        else fail(error, t("Couldn’t commit changes"));
         onMutated();
       } finally {
         setBusy(null);
@@ -1244,7 +1245,7 @@ function ChangedFiles({
         onMutated();
         reloadPr();
       } catch (error) {
-        fail(error, canPublish ? "Couldn’t publish branch" : "Couldn’t synchronize changes");
+        fail(error, canPublish ? t("Couldn’t publish branch") : t("Couldn’t synchronize changes"));
         onMutated();
       } finally {
         setBusy(null);
@@ -1539,6 +1540,7 @@ function ChangedFiles({
             variant="ghost"
             motion="none"
             disabled={!fileQuery}
+            disabledReason={fileQuery ? undefined : t("No file filter is applied.")}
             onClick={() => setFileQuery("")}
             className="mt-2"
           >

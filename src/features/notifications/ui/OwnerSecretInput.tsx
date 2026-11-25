@@ -1,3 +1,4 @@
+import { ownerPromptLabel } from "../model/ownerPromptLabels";
 import { Text } from "../../../shared/ui/Text";
 import { useState, type FormEvent } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
@@ -99,10 +100,15 @@ export function OwnerSecretForm({ request }: { request: OwnerSecretInput }) {
           type="button"
           onClick={() => cancelOwnerSecretInput(request.id)}
         >
-          {t(request.cancelLabel)}
+          {ownerPromptLabel(t, request.cancelLabel)}
         </Button>
-        <Button size="sm" type="submit" disabled={!value || tooLong}>
-          {t(request.confirmLabel)}
+        <Button
+          size="sm"
+          type="submit"
+          disabled={!value || tooLong}
+          disabledReason={tooLong ? t("The secret is too long.") : t("Enter the secret first.")}
+        >
+          {ownerPromptLabel(t, request.confirmLabel)}
         </Button>
       </div>
     </form>

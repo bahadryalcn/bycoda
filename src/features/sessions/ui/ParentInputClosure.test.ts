@@ -222,7 +222,7 @@ it("gates real queue save and picker admission while Escape/cancel remains usabl
     ),
   );
   const add = document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!;
-  expect(add.disabled).toBe(true);
+  expect(add.disabled || add.getAttribute("aria-disabled") === "true").toBe(true);
   await act(async () => add.click());
   expect(document.body.querySelector('[role="menuitem"]')).toBeNull();
   expect(save).not.toHaveBeenCalled();

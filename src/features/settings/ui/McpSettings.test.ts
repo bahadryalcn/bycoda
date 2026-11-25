@@ -176,7 +176,7 @@ it("keeps a configuration draft open when discovery loses its server", async () 
   expect(rowButton("docs")).toBeNull();
   expect(sheet()?.querySelector("textarea")?.value).toBe(draft);
   expect(sheet()?.textContent).toContain("Unavailable");
-  expect(sheetButtons("Save")[0]?.disabled).toBe(true);
+  expect(sheetButtons("Save")[0]?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("groups providers that share a name into one row and keeps progress on the exact action", async () => {
@@ -1098,9 +1098,9 @@ it("reads the entry when JSON opens and saves with the loaded revision", async (
   });
   expect(configArea().value).toBe("{}");
   const save = () => sheetButtons("Save")[0];
-  expect(save().disabled).toBe(true);
+  expect(save().getAttribute("aria-disabled")).toBe("true");
   await type(configArea(), '{"url":"https://new.example"}');
-  expect(save().disabled).toBe(false);
+  expect(save().getAttribute("aria-disabled")).not.toBe("true");
   const discovery = invoke.getMockImplementation()!;
   invoke.mockImplementation(async (command: string, args: unknown) =>
     command === "mcp_server_config_write"

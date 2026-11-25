@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/public/recents";
@@ -82,11 +83,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
                 : t("Conversation deleted.")
         }
         extra={
-          status.error ? (
-            <Text size="caption" tone="inherit">
-              {status.error}
-            </Text>
-          ) : undefined
+          status.error ? <ErrorDetails title={status.title} detail={status.error} /> : undefined
         }
         actions={
           pending ? undefined : (

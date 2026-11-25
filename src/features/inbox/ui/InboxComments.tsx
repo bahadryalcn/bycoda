@@ -158,10 +158,14 @@ export function InboxComments({
       thread.commits && isReviewEvent(comment) ? total : total + 1 + comment.replies.length,
     0,
   );
-  const label = t(count === 1 ? "{p0} comment" : "{p0} comments", { p0: formatNumber(count) });
-  const commitLabel = t(commitCount === 1 ? "{p0} commit" : "{p0} commits", {
-    p0: formatNumber(commitCount),
-  });
+  const label =
+    count === 1
+      ? t("{p0} comment", { p0: formatNumber(count) })
+      : t("{p0} comments", { p0: formatNumber(count) });
+  const commitLabel =
+    commitCount === 1
+      ? t("{p0} commit", { p0: formatNumber(commitCount) })
+      : t("{p0} commits", { p0: formatNumber(commitCount) });
 
   return (
     <section {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex flex-col gap-3 pt-5")}>
@@ -443,7 +447,7 @@ function InboxComment({
   const review = githubReviewStateLabel(comment.state);
   const location = commentLocation(comment);
   const resolvedLabel = t("Resolved");
-  const meta = [review ? t(review) : "", location, comment.resolved ? resolvedLabel : ""].filter(
+  const meta = [review, location, comment.resolved ? resolvedLabel : ""].filter(
     (part) => part.length > 0,
   );
   const hasBody = comment.body.trim().length > 0;
@@ -656,15 +660,15 @@ function InboxTimelineComment({
   if (isReviewEvent(comment)) {
     const verb =
       state === "APPROVED"
-        ? "approved"
+        ? t("approved")
         : state === "CHANGES_REQUESTED"
-          ? "requested changes"
+          ? t("requested changes")
           : state === "DISMISSED"
-            ? "had a review dismissed"
-            : "reviewed";
+            ? t("had a review dismissed")
+            : t("reviewed");
     return (
       <TimelineStop first={first} last={last} node={<InboxReviewBadge state={state} />}>
-        <TimelineEventLine name={author} action={t(verb)} at={comment.createdAt} />
+        <TimelineEventLine name={author} action={verb} at={comment.createdAt} />
       </TimelineStop>
     );
   }
@@ -816,8 +820,9 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
           tooltip={commit.url ? t("Open commit") : commit.messageHeadline}
           tooltipWhen={commit.url ? "always" : "overflow"}
           disabled={!commit.url}
+          disabledReason={t("This commit has no link.")}
           onClick={() => openUrlSafely(commit.url)}
-          className="w-full min-w-0 text-left"
+          className="w-full min-w-0 text-start"
         >
           <Text as="span" size="inherit" tone="secondary" truncate className="min-w-0 flex-1">
             {commit.messageHeadline}

@@ -39,6 +39,15 @@ import { Composer } from "./Composer";
 import type { WorkspaceMode } from "../model/session";
 import { setLanguagePreference } from "../../../shared/i18n";
 
+async function rawDetails(scope: ParentNode = document): Promise<string> {
+  const trigger = scope.querySelector<HTMLButtonElement>(
+    '[data-workspace-creation-status] button[aria-haspopup="dialog"]',
+  );
+  if (!trigger) return "";
+  await act(async () => trigger.click());
+  return document.querySelector<HTMLElement>('[role="dialog"]')?.textContent ?? "";
+}
+
 let container: HTMLDivElement;
 let root: Root;
 let submit: ReturnType<typeof vi.fn>;
@@ -118,7 +127,8 @@ it.each([false, true])(
       reason: "waiting-for-sessions",
     };
     await draw({ hideTopBar, workspaceMode: "worktree" });
-    expect(container.textContent).toContain(
+    expect(container.textContent).toContain("Could not prepare the workspace.");
+    expect(await rawDetails(container)).toContain(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
     expect(button("Send")?.getAttribute("aria-disabled")).toBe("true");
@@ -175,7 +185,7 @@ it("keeps update recovery available when the owner changes language while the er
   };
   await draw();
   await act(async () => setLanguagePreference("tr"));
-  expect(container.textContent).toContain("etkin oturumların bitmesini bekliyor");
+  expect(await rawDetails(container)).toContain("etkin oturumların bitmesini bekliyor");
   const useCurrent = button("Geçerli çalışma dizinini kullan");
   expect(useCurrent).toBeDefined();
   await act(async () => useCurrent!.click());

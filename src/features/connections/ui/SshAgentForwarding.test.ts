@@ -68,6 +68,16 @@ it("reviews the explicit current target and approves exactly once without saving
   expect(close).toHaveBeenCalledOnce();
   expect(native.invoke).toHaveBeenCalledTimes(1);
 });
+/** The raw text behind the alert's Details link: opens it, reads the page, closes it again. */
+const detailsText = async () => {
+  const trigger = [...document.querySelectorAll("button")].find(
+    (entry) => entry.textContent === "Details",
+  )!;
+  await act(async () => trigger.click());
+  const text = document.body.textContent ?? "";
+  await act(async () => trigger.click());
+  return text;
+};
 it("replaces an expired review with a fresh one, never approving on its own", async () => {
   vi.useFakeTimers();
   await render();
@@ -88,8 +98,9 @@ it("reviews a changed endpoint again and approves only what the native side retu
   await render(changed);
   expect(native.invoke).toHaveBeenCalledTimes(2);
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-    "Agent forwarding target changed.",
+    "Could not review the SSH agent target.",
   );
+  expect(await detailsText()).toContain("Agent forwarding target changed.");
   expect(blocked(button("Approve and connect"))).toBe(true);
   await act(async () => button("Approve and connect").click());
   expect(approve).not.toHaveBeenCalled();
@@ -108,19 +119,19 @@ it("rejects unavailable, malformed or mismatched native targets with one error a
   });
   await render();
   expect(blocked(button("Approve and connect"))).toBe(true);
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("target changed");
+  expect(await detailsText()).toContain("target changed");
   native.invoke.mockResolvedValue({ ...review(), agentAvailable: false });
   await act(async () => button("Retry").click());
   expect(blocked(button("Approve and connect"))).toBe(true);
   expect(approve).not.toHaveBeenCalled();
   native.invoke.mockRejectedValue(new Error("Agent forwarding through jumps is unavailable"));
   await act(async () => button("Retry").click());
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("through jumps");
+  expect(await detailsText()).toContain("through jumps");
   expect(approve).not.toHaveBeenCalled();
   native.invoke.mockResolvedValue({ reviewId: "malformed" });
   await act(async () => button("Retry").click());
   expect(blocked(button("Approve and connect"))).toBe(true);
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("review is unavailable");
+  expect(await detailsText()).toContain("review is unavailable");
 });
 it("ignores late answers after target changes or unmount", async () => {
   let finish!: (value: unknown) => void;

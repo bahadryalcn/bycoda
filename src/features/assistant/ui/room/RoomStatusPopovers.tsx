@@ -70,20 +70,20 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
                 setSettings(true);
               }}
             >
-              {t(snapshot.usage.estimated ? "About {p0} tokens today" : "{p0} tokens today", {
-                p0: formatNumber(snapshot.usage.total),
-              })}
+              {snapshot.usage.estimated
+                ? t("About {p0} tokens today", { p0: formatNumber(snapshot.usage.total) })
+                : t("{p0} tokens today", { p0: formatNumber(snapshot.usage.total) })}
             </Button>
             <Select
               hideLabel
               label={t("Presence")}
               value={snapshot.presence.state}
               options={[
-                ["present", "I'm here"],
-                ["away", "Away"],
-                ["dnd", "Do not disturb"],
-                ["idle", "Idle"],
-              ].map(([value, label]) => ({ value, label: t(label) }))}
+                { value: "present", label: t("I'm here") },
+                { value: "away", label: t("Away") },
+                { value: "dnd", label: t("Do not disturb") },
+                { value: "idle", label: t("Idle") },
+              ]}
               disabled={Boolean(pending)}
               onValueChange={(state) =>
                 mutate("presence", t("Updating…"), {
@@ -94,6 +94,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
             />
             <Button
               disabled={Boolean(pending)}
+              disabledReason={t("Wait for the current action to finish.")}
               loading={pending?.key === "presence.return"}
               onClick={returnToAssistant}
             >

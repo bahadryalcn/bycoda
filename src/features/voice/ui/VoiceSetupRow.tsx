@@ -25,11 +25,11 @@ export function VoiceSetupRow({
 }) {
   const { installing, busy, ready, visibleError, pythonMissing, message, detail } = setup;
   const paths: [PathKey, string, string][] = [
-    ["python", "Python", "voice-python"],
-    ["whisperPath", "Speech recognition model", "voice-whisper"],
+    ["python", t("Python"), "voice-python"],
+    ["whisperPath", t("Speech recognition model"), "voice-whisper"],
     // Only VoxCPM2 uses a model folder the owner can choose.
     ...(settings.natural && settings.engine === "voxcpm2"
-      ? [["ttsPath", "Natural voice model", "voice-tts"] as [PathKey, string, string]]
+      ? [["ttsPath", t("Natural voice model"), "voice-tts"] as [PathKey, string, string]]
       : []),
   ];
   return (
@@ -121,12 +121,12 @@ export function VoiceSetupRow({
         <Modal title={t("Locate voice files")} size="md" onClose={setup.closeLocate}>
           <div className={styles.locations}>
             {paths.map(([key, label, id]) => (
-              <Row key={key} id={id} label={t(label)} stacked>
+              <Row key={key} id={id} label={label} stacked>
                 <div className={styles.path}>
                   <TextField
-                    label={t(label)}
+                    label={label}
                     hideLabel
-                    aria-label={t(label)}
+                    aria-label={label}
                     value={settings[key]}
                     placeholder={t("Automatic detection")}
                     onChange={(event) => {
@@ -136,6 +136,11 @@ export function VoiceSetupRow({
                   />
                   <Button
                     disabled={installing || setup.browsing !== null}
+                    disabledReason={
+                      installing
+                        ? t("Wait for the installation to finish.")
+                        : t("Wait for the open file dialog to close.")
+                    }
                     loading={setup.browsing === key}
                     onClick={() => setup.browse(key)}
                   >

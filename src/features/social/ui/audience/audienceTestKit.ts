@@ -70,6 +70,15 @@ export function clickButton(text: string): void {
   act(() => button.click());
 }
 
+/** The Host text of a failure. It sits behind the shared Details disclosure of the visible title. */
+export function openErrorDetails(): string {
+  const trigger = document.body.querySelector<HTMLButtonElement>(
+    '[role="alert"] button[aria-haspopup="dialog"]',
+  );
+  act(() => trigger?.click());
+  return document.body.querySelector('[aria-label="Error details"]')?.textContent ?? "";
+}
+
 export function bodyText(): string {
   return document.body.textContent ?? "";
 }

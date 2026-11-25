@@ -188,7 +188,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
     <>
       {preview}
       {openError ? (
-        <FileActionError message={openError} onDismiss={() => setOpenError(undefined)} />
+        <FileActionError details={openError} onDismiss={() => setOpenError(undefined)} />
       ) : null}
     </>
   );
@@ -272,15 +272,16 @@ function GithubWorkItemPreview({
   });
 
   const itemTitle = item?.title.trim();
-  const kindLabel = t(workItem.kind === "pr" ? "Pull request" : "Issue");
-  const openLabel = t(
-    workItem.kind === "pr" ? "Open pull request #{p1} in {p2}{p3}" : "Open issue #{p1} in {p2}{p3}",
-    {
-      p1: workItem.number,
-      p2: workItem.repo,
-      p3: itemTitle ? `: ${itemTitle}` : "",
-    },
-  );
+  const kindLabel = workItem.kind === "pr" ? t("Pull request") : t("Issue");
+  const openParams = {
+    p1: workItem.number,
+    p2: workItem.repo,
+    p3: itemTitle ? `: ${itemTitle}` : "",
+  };
+  const openLabel =
+    workItem.kind === "pr"
+      ? t("Open pull request #{p1} in {p2}{p3}", openParams)
+      : t("Open issue #{p1} in {p2}{p3}", openParams);
 
   return (
     <>

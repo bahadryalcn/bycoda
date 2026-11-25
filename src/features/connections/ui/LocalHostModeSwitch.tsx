@@ -2,7 +2,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Switch } from "../../../shared/ui/Switch";
 import { Text } from "../../../shared/ui/Text";
 import { hostModeSwitchView, useHostLifecycleMode } from "../model/hostLifecycleMode";
@@ -19,7 +20,7 @@ export function LocalHostModeSwitch() {
   const { confirm, dialog } = useConfirm();
   if (!status) return null;
   const view = hostModeSwitchView(status);
-  const error = failure ?? view.error;
+  const rawError = failure ?? view.lastError;
   const switchNow = async () => {
     if (!view.pending) return;
     const approved = await confirm({
@@ -56,13 +57,15 @@ export function LocalHostModeSwitch() {
       {/* One status line: switching, or the change waiting for idle with its way to force it. */}
       {switching || view.pending ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2">
-          <Text tone="muted" as="span">
-            {switching
-              ? t("Switching…")
-              : view.pending === "service"
+          {switching ? (
+            <LoadingText tone="muted">{t("Switching…")}</LoadingText>
+          ) : (
+            <Text tone="muted" as="span">
+              {view.pending === "service"
                 ? t("Turning on when running sessions finish")
                 : t("Turning off when running sessions finish")}
-          </Text>
+            </Text>
+          )}
           {!switching ? (
             <Button variant="link" size="sm" onClick={() => void switchNow()}>
               {t("Switch now")}
@@ -70,7 +73,13 @@ export function LocalHostModeSwitch() {
           ) : null}
         </div>
       ) : null}
-      {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}
+      {rawError ? (
+        <InlineError details={rawError}>
+          {t("Could not change how this computer runs the host.")}
+        </InlineError>
+      ) : view.mismatchNotice ? (
+        <InlineMessage tone="danger">{view.mismatchNotice}</InlineMessage>
+      ) : null}
       {dialog}
     </div>
   );

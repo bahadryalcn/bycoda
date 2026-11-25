@@ -135,7 +135,6 @@ export function GroupLockSettings({
           size="sm"
           variant="ghost"
           loading={Boolean(pendingWrites[id])}
-          disabled={Boolean(pendingWrites[id])}
           loadingLabel={t("Checking…")}
           onClick={() => retryOption(id)}
         >
@@ -156,12 +155,11 @@ export function GroupLockSettings({
     ? listedGroups.filter((group) => group.name.toLocaleLowerCase().includes(groupSearch))
     : listedGroups;
   const searchable = listedGroups.length >= 6;
-  const groupSummary = t(
+  const summaryCounts = { p0: listedGroups.length, p1: protectedCount, p2: lockedCount };
+  const groupSummary =
     listedGroups.length === 1
-      ? "{p0} group · {p1} protected · {p2} locked"
-      : "{p0} groups · {p1} protected · {p2} locked",
-    { p0: listedGroups.length, p1: protectedCount, p2: lockedCount },
-  );
+      ? t("{p0} group · {p1} protected · {p2} locked", summaryCounts)
+      : t("{p0} groups · {p1} protected · {p2} locked", summaryCounts);
 
   const toggleLockable = (id: string, name: string, on: boolean) => {
     if (!on) setDialog({ kind: "remove-lock", id, name });
@@ -267,14 +265,11 @@ export function GroupLockSettings({
           <Button
             className="shrink-0"
             disabled={!hasLockable}
+            disabledReason={t("Protect or hide a group first to use Lock all groups.")}
             loading={Boolean(pendingWrites["lock-all"])}
             loadingLabel={t("Updating…")}
             startIcon={<Lock className="icon-sm" />}
-            tooltip={
-              hasLockable
-                ? t("Also hides groups that are temporarily visible.")
-                : t("Protect or hide a group first to use Lock all groups.")
-            }
+            tooltip={hasLockable ? t("Also hides groups that are temporarily visible.") : undefined}
             onClick={() =>
               commit("lock-all", async () => {
                 await lockAllGroups();
@@ -295,7 +290,6 @@ export function GroupLockSettings({
               size="sm"
               variant="ghost"
               loading={Boolean(pendingWrites["lock-all"])}
-              disabled={Boolean(pendingWrites["lock-all"])}
               loadingLabel={t("Checking…")}
               onClick={() =>
                 commit(

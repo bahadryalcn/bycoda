@@ -77,7 +77,6 @@ export function TaskAttemptHistory({
                 <Button
                   variant="ghost"
                   type="button"
-                  disabled={isOpeningSession(entry.workerSessionId)}
                   loading={isOpeningSession(entry.workerSessionId)}
                   onClick={() => onOpenSession(entry.workerSessionId!)}
                 >
@@ -88,7 +87,6 @@ export function TaskAttemptHistory({
                 <Button
                   variant="ghost"
                   type="button"
-                  disabled={isOpeningSession(entry.reviewerSessionId)}
                   loading={isOpeningSession(entry.reviewerSessionId)}
                   onClick={() => onOpenSession(entry.reviewerSessionId)}
                 >

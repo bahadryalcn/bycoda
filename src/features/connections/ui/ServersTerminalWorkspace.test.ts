@@ -867,6 +867,9 @@ it("Delete requests the same close policy and preserves a terminal when confirma
   expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
   expect(events.unmounted).toEqual([]);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not close the terminal.",
+  );
+  expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
     "fixture confirmation unavailable",
   );
 });

@@ -10,19 +10,49 @@ import { RecoveryBoundary } from "../../shared/ui/RecoveryBoundary";
 import { SurfaceLoading } from "../../shared/ui/SurfaceLoading";
 import { SkeletonBar } from "../../shared/ui/Skeleton";
 
+type NavigationName =
+  | "Search"
+  | "Settings"
+  | "Assistant"
+  | "Conversation tools"
+  | "Terminal"
+  | "Crews"
+  | "Live streaming"
+  | "Servers"
+  | "Inbox"
+  | "Notes"
+  | "Social Media"
+  | "Tasks"
+  | "Automations";
+
 /** A pending page must not hide the workspace's navigation and session tree. */
 export function NavigationBoundary({
   name,
   onBack,
   children,
 }: {
-  name: string;
+  name: NavigationName;
   onBack: () => void;
   children: ReactNode;
 }) {
   useLocale();
   const t = useT();
-  const label = t(name);
+  const labels: Record<NavigationName, string> = {
+    Search: t("Search"),
+    Settings: t("Settings"),
+    Assistant: t("Assistant"),
+    "Conversation tools": t("Conversation tools"),
+    Terminal: t("Terminal"),
+    Crews: t("Crews"),
+    "Live streaming": t("Live streaming"),
+    Servers: t("Servers"),
+    Inbox: t("Inbox"),
+    Notes: t("Notes"),
+    "Social Media": t("Social Media"),
+    Tasks: t("Tasks"),
+    Automations: t("Automations"),
+  };
+  const label = labels[name];
   // The one h1 of a routed screen: the route's name. Visible titles inside are h2 and below.
   return (
     <>

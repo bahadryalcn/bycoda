@@ -25,7 +25,7 @@ type ProposalState = {
   machine?: RemoteMachine;
   proposal?: AutomationProposal;
   saved?: HostAutomation;
-  error?: string;
+  notice?: string;
   /** Once dispatched, retries inspect the same ID before any create-only send. */
   saveAttempted?: boolean;
   saveInput?: ReturnType<typeof AutomationSavePayloadSchema.parse>;
@@ -59,7 +59,7 @@ export function openAutomationProposal(session: Session, request: string): boole
       operationId: "unresolved",
       automationId: "",
       status: "failed",
-      error: "Automation creation receipts are unavailable. No new automation was created.",
+      notice: "Automation creation receipts are unavailable. No new automation was created.",
     });
     return true;
   }
@@ -104,7 +104,7 @@ export function openAutomationProposal(session: Session, request: string): boole
         operationId: "unresolved",
         automationId: "",
         status: "failed",
-        error:
+        notice:
           "The original automation creation receipt could not be read. No new automation was created.",
       });
     }
@@ -123,7 +123,7 @@ export function openAutomationProposal(session: Session, request: string): boole
       publish({
         ...state,
         status: "failed",
-        error: presentRemoteError(error, { explicit: true }),
+        notice: presentRemoteError(error, { explicit: true }),
       });
   });
   return true;
@@ -214,7 +214,7 @@ export async function saveAutomationProposal() {
     modelChoice: { kind: "default" as const },
     enabled: true,
   };
-  publish({ ...original, status: "saving", error: undefined, saveAttempted: true });
+  publish({ ...original, status: "saving", notice: undefined, saveAttempted: true });
   try {
     // Persist the exact create-only input before transport. Reload/reopen recovers this receipt,
     // not a new ID or the latest session/model/Host selection. Storage failure sends nothing.
@@ -286,7 +286,7 @@ export async function saveAutomationProposal() {
         status: "failed",
         saveInput: automation,
         saveAttempted: true,
-        error: presentRemoteError(error, { explicit: true }),
+        notice: presentRemoteError(error, { explicit: true }),
       });
   }
 }

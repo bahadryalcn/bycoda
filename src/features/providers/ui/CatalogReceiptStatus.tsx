@@ -93,7 +93,6 @@ export function CatalogRefreshButton({ harness }: { harness: HarnessId }) {
           : t("Refresh")
       }
       loading={receipt?.status === "refreshing"}
-      disabled={receipt?.status === "refreshing"}
       onClick={() => {
         refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
       }}

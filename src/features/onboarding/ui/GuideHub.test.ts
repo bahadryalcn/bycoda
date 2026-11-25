@@ -54,7 +54,7 @@ it("reveals a topic's surface through the shared action request and closes", asy
 it("explains project-only topics instead of offering a silent no-op", async () => {
   await render("~");
   await act(async () => button("Changes & Git").click());
-  expect(button("Open changes").disabled).toBe(true);
+  expect(button("Open changes").getAttribute("aria-disabled")).toBe("true");
   expect(document.body.textContent).toContain("Open a project first.");
   await act(async () => button("Terminal").click());
   expect(button("Open the terminal").disabled).toBe(false);

@@ -90,7 +90,13 @@ export function MemberAppearancePicker({
           <Button size="sm" variant="secondary" onClick={() => onChange(shuffledAvatar())}>
             {t("Shuffle")}
           </Button>
-          <Button size="sm" variant="ghost" disabled={!chosen} onClick={() => onChange(undefined)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!chosen}
+            disabledReason={!chosen ? t("Nothing has been changed yet.") : undefined}
+            onClick={() => onChange(undefined)}
+          >
             {t("Reset")}
           </Button>
         </div>

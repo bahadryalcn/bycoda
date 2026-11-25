@@ -2,7 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -158,12 +158,8 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
           />
         </div>
       </div>
-      {error ? <InlineError>{error}</InlineError> : null}
-      {message ? (
-        <Text as="p" size="caption" tone="inherit" role="status">
-          {message}
-        </Text>
-      ) : null}
+      {error ? <InlineError details={error} /> : null}
+      {message ? <InlineMessage tone="success">{message}</InlineMessage> : null}
       <div className="flex items-center gap-1">
         <Button type="submit" loading={busy}>
           {t("Save evaluation")}

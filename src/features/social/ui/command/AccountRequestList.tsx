@@ -45,7 +45,7 @@ export function AccountRequestList({
     workflow?: SocialBrowserWorkflow;
   }>();
   const [signinFailed, setSigninFailed] = useState<string>();
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("The request could not be updated. Try again."),
   );
 
@@ -129,8 +129,8 @@ export function AccountRequestList({
         <InlineError retry={{ onRetry: () => void refresh(), label: t("Try again") }}>
           {t("Account requests could not be loaded.")}
         </InlineError>
-      ) : error ? (
-        <InlineError details={details}>{error}</InlineError>
+      ) : failureTitle ? (
+        <InlineError details={details}>{failureTitle}</InlineError>
       ) : null}
       {signinFailed ? (
         <InlineError

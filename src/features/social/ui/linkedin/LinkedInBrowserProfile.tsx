@@ -15,6 +15,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
 import { LinkedInHandoff } from "./LinkedInHandoff";
 import "./linkedin.css";
+import { linkedInBusyReason } from "./linkedinReasons";
 
 type Section = "headline" | "about";
 type ProfileValue = { section: Section; value: string };
@@ -32,7 +33,7 @@ export function LinkedInBrowserProfile({
   const [before, setBefore] = useState<ProfileValue>();
   const [value, setValue] = useState("");
   const [blocked, setBlocked] = useState(false);
-  const { error, is, write } = useAccountWrite(t("Could not save changes."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not save changes."));
   const confirm = useConfirm();
   const member = account.accountType === "member" && account.connection === "browser";
   const page = account.accountType === "organization";
@@ -118,6 +119,11 @@ export function LinkedInBrowserProfile({
                   size="sm"
                   className="self-start"
                   disabled={blocked || before.value === value}
+                  disabledReason={
+                    blocked
+                      ? t("Read the profile again before saving.")
+                      : t("Change the text first.")
+                  }
                   loading={is("save")}
                   onClick={() => void save().catch(() => undefined)}
                 >
@@ -177,12 +183,13 @@ export function LinkedInBrowserProfile({
                 action={t("Open")}
                 ariaLabel={t("Open {p0} on LinkedIn", { p0: item.label })}
                 disabled={disabled || busy}
+                disabledReason={linkedInBusyReason(disabled)}
                 onOpen={() => void open(item.section).catch(() => undefined)}
               />
             ))}
           </ul>
         </div>
-        {error ? <InlineError>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       </div>
       {confirm.dialog}
     </Disclosure>

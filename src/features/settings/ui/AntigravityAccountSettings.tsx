@@ -3,6 +3,8 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { RevealedSetting, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../shared/lib/errors";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
@@ -48,7 +50,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
     setHandledReveal(revealed);
     if (revealed === "antigravity-account") setExpanded(true);
   }
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ title: string; detail?: string } | null>(null);
   const busy = useRef(false);
   const available = isHarnessAvailable("antigravity");
 
@@ -61,13 +63,17 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       await probeHarnessAvailability({ force });
       if (!isHarnessAvailable("antigravity")) return;
       const models = await discoverAntigravityModels();
-      if (!models.length)
-        throw new Error(
-          "No Antigravity models were returned. Run agy in a terminal to sign in, then check again.",
-        );
+      if (!models.length) {
+        setError({
+          title: t(
+            "No Antigravity models were returned. Run agy in a terminal to sign in, then check again.",
+          ),
+        });
+        return;
+      }
       setHarnessModels("antigravity", models);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not check Antigravity CLI.");
+      setError({ title: t("Could not check Antigravity CLI."), detail: errorText(reason) });
     } finally {
       busy.current = false;
       setChecking(false);
@@ -148,11 +154,25 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           </Code>
         </>
       )}
-      {checking ? <SettingsFeedback state="loading">{t("Checking…")}</SettingsFeedback> : null}
-      {!checking && (!available || error) ? (
-        <Button onClick={() => void checkInstallation()}>{t("Retry")}</Button>
+      {!available || error ? (
+        <Button
+          loading={checking}
+          loadingLabel={t("Checking…")}
+          onClick={() => void checkInstallation()}
+        >
+          {t("Retry")}
+        </Button>
       ) : null}
-      {error ? <SettingsFeedback state="error">{t(error)}</SettingsFeedback> : null}
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          extra={
+            error.detail ? <ErrorDetails title={error.title} detail={error.detail} /> : undefined
+          }
+        >
+          {error.title}
+        </SettingsFeedback>
+      ) : null}
     </Text>
   );
   if (embedded)

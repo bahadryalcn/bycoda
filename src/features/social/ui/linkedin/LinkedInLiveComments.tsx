@@ -17,6 +17,7 @@ import type { SocialClient } from "../../model/socialClient";
 import type { LinkedInManagementReview } from "../../../../integrations/social/adapters/linkedin-manage";
 import { useAccountWrite } from "../accounts/useAccountWrite";
 import "./linkedin.css";
+import { linkedInBusyReason } from "./linkedinReasons";
 
 export function LinkedInLiveComments({
   accountId,
@@ -40,7 +41,9 @@ export function LinkedInLiveComments({
   const [prepared, setPrepared] = useState<LinkedInManagementReview>();
   const [sent, setSent] = useState(false);
   const { confirm, dialog } = useConfirm();
-  const { error, is, write } = useAccountWrite(t("Could not load LinkedIn Live comments."));
+  const { failureTitle, details, is, write } = useAccountWrite(
+    t("Could not load LinkedIn Live comments."),
+  );
   const busy = is("comments") || is("prepare") || is("reply");
   const load = (offset = 0) =>
     write("comments", async () => {
@@ -144,12 +147,13 @@ export function LinkedInLiveComments({
             className="self-start"
             loading={is("comments")}
             disabled={!LINKEDIN_LIVE_EVENT_ID.test(eventId)}
+            disabledReason={t("Enter a valid LinkedIn event ID first.")}
           >
             {t("Load comments")}
           </Button>
         </FieldGroup>
       </form>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {page?.comments.length ? (
         <ul className="social-li-list">
           {page.comments.map((comment) => (
@@ -172,6 +176,7 @@ export function LinkedInLiveComments({
                   size="sm"
                   className="self-start"
                   disabled={disabled || busy}
+                  disabledReason={linkedInBusyReason(disabled)}
                   onClick={() => {
                     setReplyTo(comment);
                     setSent(false);
@@ -192,6 +197,11 @@ export function LinkedInLiveComments({
           size="sm"
           className="self-start"
           disabled={disabled || busy || !!replyTo}
+          disabledReason={
+            replyTo && !disabled && !busy
+              ? t("Finish or cancel the reply first.")
+              : linkedInBusyReason(disabled)
+          }
           onClick={() => void load(page.nextOffset).catch(() => undefined)}
         >
           {t("Next")}
@@ -216,6 +226,9 @@ export function LinkedInLiveComments({
               variant="primary"
               size="sm"
               disabled={!text.trim() || (prepared !== undefined && prepared.state !== "review")}
+              disabledReason={
+                !text.trim() ? t("Write a reply first.") : t("This reply was already submitted.")
+              }
               onClick={() => void reviewReply().catch(() => undefined)}
             >
               {t("Review change")}

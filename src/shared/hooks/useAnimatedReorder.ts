@@ -30,8 +30,9 @@ function itemLabel(node: HTMLElement | undefined) {
   return text.length > 60 ? `${text.slice(0, 59)}…` : text || t("Item");
 }
 
-function describePosition(label: string, index: number, count: number, message: string) {
-  return t(message, { p0: label, p1: index + 1, p2: count });
+/** Slot values of the position announcements: the item name, its 1-based position and the count. */
+function position(label: string, index: number, count: number) {
+  return { p0: label, p1: index + 1, p2: count };
 }
 
 /**
@@ -117,14 +118,12 @@ export function useAnimatedReorder<T extends string>(
       if (from < 0) return false;
       const name = spokenName(id);
       if (to < 0 || to >= items.length) {
-        announceDrag(
-          describePosition(name, from, items.length, "{p0} stays at position {p1} of {p2}"),
-        );
+        announceDrag(t("{p0} stays at position {p1} of {p2}", position(name, from, items.length)));
         return false;
       }
       restoreFocusAfterMove(nodes.current.get(id));
       latest.current.onReorder(moveItem(items, from, to), id);
-      announceDrag(describePosition(name, to, items.length, "Moved {p0} to position {p1} of {p2}"));
+      announceDrag(t("Moved {p0} to position {p1} of {p2}", position(name, to, items.length)));
       return true;
     },
     [spokenName],
@@ -137,7 +136,11 @@ export function useAnimatedReorder<T extends string>(
       event: Pick<
         KeyboardEvent,
         "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "defaultPrevented"
-      > & { isComposing?: boolean; preventDefault(): void; stopPropagation(): void },
+      > & {
+        isComposing?: boolean;
+        preventDefault(): void;
+        stopPropagation(): void;
+      },
     ) => {
       if (event.defaultPrevented || event.isComposing) return false;
       const delta = keyboardMoveDelta(event, axis);
@@ -282,7 +285,7 @@ export function useAnimatedReorder<T extends string>(
           destination = next;
           preview(next);
           announceDrag(
-            describePosition(spokenName(id), next, items.length, "{p0}, position {p1} of {p2}"),
+            t("{p0}, position {p1} of {p2}", position(spokenName(id), next, items.length)),
           );
         }
       }
@@ -332,11 +335,9 @@ export function useAnimatedReorder<T extends string>(
           handle.style.transition = "none";
           handle.dataset.dragging = "true";
           announceDrag(
-            describePosition(
-              spokenName(id),
-              from,
-              items.length,
+            t(
               "Picked up {p0}, position {p1} of {p2}. Escape cancels.",
+              position(spokenName(id), from, items.length),
             ),
           );
         }
@@ -368,11 +369,9 @@ export function useAnimatedReorder<T extends string>(
         if (!commit) {
           endExternalDrop();
           announceDrag(
-            describePosition(
-              spokenName(id),
-              from,
-              items.length,
+            t(
               "Move cancelled. {p0} stays at position {p1} of {p2}.",
+              position(spokenName(id), from, items.length),
             ),
           );
         }
@@ -393,14 +392,15 @@ export function useAnimatedReorder<T extends string>(
           });
           if (commit)
             announceDrag(
-              describePosition(
-                spokenName(id),
-                to,
-                items.length,
-                to === from
-                  ? "{p0} stays at position {p1} of {p2}"
-                  : "Moved {p0} to position {p1} of {p2}",
-              ),
+              to === from
+                ? t(
+                    "{p0} stays at position {p1} of {p2}",
+                    position(spokenName(id), to, items.length),
+                  )
+                : t(
+                    "Moved {p0} to position {p1} of {p2}",
+                    position(spokenName(id), to, items.length),
+                  ),
             );
         };
         finishSettling.current = finish;
@@ -444,5 +444,12 @@ export function useAnimatedReorder<T extends string>(
   );
 
   const consumeClick = useCallback(() => performance.now() < suppressClickUntil.current, []);
-  return { draggingId, setItemRef, onItemPointerDown, onItemKeyDown, moveBy, consumeClick };
+  return {
+    draggingId,
+    setItemRef,
+    onItemPointerDown,
+    onItemKeyDown,
+    moveBy,
+    consumeClick,
+  };
 }

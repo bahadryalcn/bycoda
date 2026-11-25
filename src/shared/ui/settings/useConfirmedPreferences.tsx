@@ -117,9 +117,8 @@ export function useConfirmedPreferences() {
 
   const feedback = (id: string): ReactNode =>
     pendingIds[id] ? (
-      <SettingsFeedback state="loading" immediate>
-        {t("Saving…")}
-      </SettingsFeedback>
+      // The control already shows the new value; only a slow save earns a line, after the shared delay.
+      <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
     ) : failedIds[id] ? (
       <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: () => retry(id) }}>
         {t("Could not save changes")}

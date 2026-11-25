@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { FailureAlert } from "./FailureAlert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
@@ -73,7 +75,7 @@ export function CrewEditorBanners({
   onKeepAsNew,
   onLoadLatest,
 }: {
-  error: string;
+  error: { summary: string; details: string } | null;
   catalogError?: string;
   pending: boolean;
   onRetryCatalog: () => void;
@@ -87,16 +89,14 @@ export function CrewEditorBanners({
       {error ? (
         // A failed action must be seen even when the roster is scrolled far down.
         <div ref={(element) => element?.scrollIntoView({ block: "nearest" })}>
-          <Alert tone="danger">{error}</Alert>
+          <FailureAlert title={error.summary} detail={error.details} />
         </div>
       ) : null}
       {catalogError ? (
-        <Alert tone="warning">
-          {catalogError}
-          <Button variant="ghost" disabled={pending} onClick={onRetryCatalog}>
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <InlineError
+          details={catalogError}
+          retry={{ onRetry: onRetryCatalog, disabled: pending, label: t("Retry") }}
+        />
       ) : null}
       {conflict ? (
         <Alert tone="warning">
@@ -109,7 +109,11 @@ export function CrewEditorBanners({
           </p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={onKeepAsNew}>{t("Keep edits as new crew")}</Button>
-            <Button disabled={!onLoadLatest} onClick={onLoadLatest}>
+            <Button
+              disabled={!onLoadLatest}
+              disabledReason={!onLoadLatest ? t("This crew is no longer available.") : undefined}
+              onClick={onLoadLatest}
+            >
               {t("Discard edits and load latest")}
             </Button>
           </div>

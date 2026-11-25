@@ -198,6 +198,9 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
           iconOnly
           label={t("Revert")}
           disabled={!dirty || saving}
+          disabledReason={
+            dirty ? t("Wait for the current operation to finish") : t("No changes to save.")
+          }
           onClick={() => {
             setDraft(loaded.config);
             setSaveError(null);
@@ -210,6 +213,9 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
           size="sm"
           loading={saving}
           disabled={!dirty || disabled || saving}
+          disabledReason={
+            !dirty ? t("No changes to save.") : t("Wait for the current operation to finish")
+          }
           onClick={() => void save()}
         >
           {t("Save")}

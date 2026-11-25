@@ -252,7 +252,7 @@ it.each(["single", "all"])(
       mode === "all" ? "Some read status updates may have saved" : "Could not save read status",
     );
     expect(isInboxEntryUnseen(entry)).toBe(true);
-    expect(markAll.disabled).toBe(false);
+    expect(markAll.getAttribute("aria-disabled")).toBeNull();
     write.mockRestore();
     act(() =>
       (mode === "all"
@@ -261,7 +261,7 @@ it.each(["single", "all"])(
       ).click(),
     );
     expect(isInboxEntryUnseen(entry)).toBe(false);
-    expect(markAll.disabled).toBe(true);
+    expect(markAll.getAttribute("aria-disabled")).toBe("true");
     // The detail panel can independently report an unavailable native bridge.
     // Retrying read status clears its own error without suppressing other errors.
     expect(

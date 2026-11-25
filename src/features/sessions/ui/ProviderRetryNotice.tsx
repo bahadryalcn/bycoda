@@ -47,13 +47,15 @@ export function ProviderRetryNotice({
   const countdown =
     remaining === undefined
       ? undefined
-      : t("Retrying in {p0}", { p0: formatDuration(Math.ceil(remaining / 1000) * 1000) });
+      : t("Retrying in {p0}", {
+          p0: formatDuration(Math.ceil(remaining / 1000) * 1000),
+        });
   // The counter ("2/5") is the notice's own detail; any other text is the provider's raw message.
   const counter = notice.detail && /^\d+\/\d+$/.test(notice.detail) ? notice.detail : undefined;
   const rawMessage = counter ? undefined : notice.detail;
-  const title = t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", {
-    p0: provider,
-  });
+  const title = notice.reconnecting
+    ? t("Reconnecting to {p0}", { p0: provider })
+    : t("{p0} is retrying", { p0: provider });
   const pending = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -83,7 +85,11 @@ export function ProviderRetryNotice({
           {onRefresh ? (
             <NoticeActionButton
               quiet
-              action={{ label: t("Stop"), disabled: refreshing, onClick: onStop }}
+              action={{
+                label: t("Stop"),
+                disabled: refreshing,
+                onClick: onStop,
+              }}
             />
           ) : null}
         </>

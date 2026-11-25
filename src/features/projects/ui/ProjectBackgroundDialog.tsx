@@ -286,11 +286,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                   onValueChange={(next) => updateOpacity("empty", next)}
                   className="min-w-0 flex-1"
                 />
-                <Text
-                  size="caption"
-                  tone="primary"
-                  className="w-10 shrink-0 text-right tabular-nums"
-                >
+                <Text size="caption" tone="primary" className="w-10 shrink-0 text-end tabular-nums">
                   {Math.round(emptyOpacity * 100)}%
                 </Text>
               </div>
@@ -308,11 +304,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                   onValueChange={(next) => updateOpacity("session", next)}
                   className="min-w-0 flex-1"
                 />
-                <Text
-                  size="caption"
-                  tone="primary"
-                  className="w-10 shrink-0 text-right tabular-nums"
-                >
+                <Text size="caption" tone="primary" className="w-10 shrink-0 text-end tabular-nums">
                   {Math.round(sessionOpacity * 100)}%
                 </Text>
               </div>

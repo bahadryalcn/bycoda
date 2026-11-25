@@ -27,7 +27,8 @@ import { useAssistantRoom } from "./assistantRoomContext";
 import { JobDetailActivity } from "./JobDetailActivity";
 import { JobDetailNotes } from "./JobDetailNotes";
 
-const PRIORITY_LABEL = { low: "Low", normal: "Normal", high: "High" } as const;
+const priorityLabel = (priority: "low" | "normal" | "high") =>
+  priority === "low" ? t("Low") : priority === "high" ? t("High") : t("Normal");
 
 /** Job details as a compact end sheet: header, request, meta, then Activity and Notes. */
 export function JobDetailDialog() {
@@ -70,6 +71,11 @@ function JobSheetActions({ job }: { job: AssistantJob }) {
     <>
       <Button
         disabled={!!pending || !environmentId}
+        disabledReason={
+          pending
+            ? t("Wait for the current action to finish.")
+            : t("The assistant's computer is not connected.")
+        }
         onClick={() =>
           environmentId &&
           setJobEdit({
@@ -80,11 +86,16 @@ function JobSheetActions({ job }: { job: AssistantJob }) {
           })
         }
       >
-        {t("Priority")}: {t(PRIORITY_LABEL[priority])}
+        {t("Priority")}: {priorityLabel(priority)}
       </Button>
       {editable && job.goalId && !job.awaitingOwnerRestart && (
         <Button
           disabled={!!pending || !environmentId}
+          disabledReason={
+            pending
+              ? t("Wait for the current action to finish.")
+              : t("The assistant's computer is not connected.")
+          }
           onClick={() =>
             environmentId &&
             setJobEdit({
@@ -280,6 +291,11 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
               <Button
                 variant="link"
                 disabled={!props.onReviewJobTasks || !!pending}
+                disabledReason={
+                  !props.onReviewJobTasks
+                    ? t("Open this job on its own computer")
+                    : t("Wait for the current action to finish.")
+                }
                 loading={pending?.key === `tasks:${job.id}`}
                 onClick={() => reviewJobTasks(job)}
               >
@@ -289,7 +305,12 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
           )}
           {job.sessionIds.map((id, index) => (
             <div key={id}>
-              <Button variant="link" disabled={!onOpenSession} onClick={() => onOpenSession?.(id)}>
+              <Button
+                variant="link"
+                disabled={!onOpenSession}
+                disabledReason={t("Open this job on its own computer")}
+                onClick={() => onOpenSession?.(id)}
+              >
                 {t("Worker session {p0}", { p0: index + 1 })}
               </Button>
             </div>
@@ -298,6 +319,13 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
             <Button
               variant="link"
               disabled={!props.onReviewJobTasks || !!pending || job.kind === "quick" || !job.goalId}
+              disabledReason={
+                !props.onReviewJobTasks
+                  ? t("Open this job on its own computer")
+                  : pending
+                    ? t("Wait for the current action to finish.")
+                    : t("Tasks are not available for this job.")
+              }
               onClick={() => reviewJobTasks(job)}
             >
               {t("Review tasks")}

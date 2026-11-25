@@ -161,7 +161,8 @@ export function useConversationPanelState({
   const clearingRef = useRef(false);
   const searchEpoch = useRef(0);
   const [errorState, setErrorState] = useState({ key: privacy.key, text: "" });
-  const error = errorState.key === privacy.key ? errorState.text : "";
+  /** The message the panel shows, already a sentence written for the owner. */
+  const notice = errorState.key === privacy.key ? errorState.text : "";
   function setError(text: string) {
     setErrorState({ key: privacy.key, text });
   }
@@ -211,7 +212,7 @@ export function useConversationPanelState({
     revision?: number;
     next?: string;
     loading: boolean;
-    error?: string;
+    problem?: string;
   } | null>(null);
   const flushNativeDraft = useCallback(async (id: string) => {
     const state = nativeDrafts.current.get(id);
@@ -476,7 +477,7 @@ export function useConversationPanelState({
     searchEpoch,
     errorState,
     setErrorState,
-    error,
+    notice,
     setError,
     confirm,
     setConfirmState,

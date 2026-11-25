@@ -414,7 +414,7 @@ export function FilePreviewSearch({
               size="caption"
               tone={(query && total === 0) || result.invalid ? "danger" : "muted"}
               truncate
-              className="w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono tabular-nums"
+              className="w-[13ch] shrink-0 overflow-hidden ps-2 text-end font-mono tabular-nums"
             />
           </SearchInputGroup>
           <FindToggle
@@ -445,6 +445,7 @@ export function FilePreviewSearch({
             label={labels.previousMatch}
             shortcut="Mod+Shift+G"
             disabled={total === 0}
+            disabledReason={t("No matches")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => step(-1)}
           >
@@ -457,6 +458,7 @@ export function FilePreviewSearch({
             label={labels.nextMatch}
             shortcut="Mod+G"
             disabled={total === 0}
+            disabledReason={t("No matches")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => step(1)}
           >

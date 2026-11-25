@@ -732,8 +732,9 @@ it("keeps Push progress on its action through remount and prevents duplicate req
   );
   await renderPanel("/sync-feedback");
   const action = () =>
-    [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Push"),
+    // While pending, the action shows its progress text in place of the label.
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.includes("Push") || button.textContent?.includes("Syncing…"),
     )!;
   await act(async () => {
     action().click();
@@ -744,6 +745,7 @@ it("keeps Push progress on its action through remount and prevents duplicate req
   expect(action().disabled).toBe(false);
   expect(container.querySelector('header [role="status"]')).toBeNull();
   await renderPanel("/sync-feedback", false);
+  await act(async () => vi.advanceTimersByTimeAsync(600));
   expect(container.querySelector('header [role="status"]')?.textContent).toBe("Syncing…");
   await renderPanel("/sync-feedback", true);
   expect(container.querySelector('header [role="status"]')).toBeNull();
@@ -1194,6 +1196,7 @@ describe("GitChangesPanel action feedback", () => {
     });
     expect(gitStageFile).toHaveBeenCalledWith(cwd, "change.ts");
     expect(sections()).toEqual(["Staged Changes"]);
+    await act(async () => vi.advanceTimersByTimeAsync(600));
     expect(statusText()).toBe("Staging…");
     expect(workingRows()).toHaveLength(1);
 
@@ -1247,6 +1250,7 @@ describe("GitChangesPanel action feedback", () => {
     await act(async () => finish[0]());
     expect(gitStageFile).toHaveBeenCalledTimes(2);
     expect(vi.mocked(notifyGitChanged)).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(600));
     expect(statusText()).toBe("Staging…");
 
     vi.mocked(gitDiffIndex).mockResolvedValue(
@@ -1402,9 +1406,10 @@ describe("GitChangesPanel navigation", () => {
     );
     expect(gitCommit).not.toHaveBeenCalled();
     expect(
-      container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')
-        ?.disabled,
-    ).toBe(true);
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')
+        ?.getAttribute("aria-disabled"),
+    ).toBe("true");
     await renderPanel("/other-empty");
     await typeMessage("Other checkout");
     await renderPanel(cwd);
@@ -1520,6 +1525,7 @@ describe("GitChangesPanel navigation", () => {
     await act(async () => pull.click());
     await renderPanel("/other-navigation");
     await renderPanel(cwd);
+    await act(async () => vi.advanceTimersByTimeAsync(600));
     expect(status()).toBe("Pulling…");
     await act(async () => finish());
     expect(status()).toBeUndefined();

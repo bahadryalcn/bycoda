@@ -279,6 +279,14 @@ let sharedQueueSupported = false;
 let hostQueue: SharedQueue = { messages: [], revision: 0 };
 let queueReadFailed = false;
 let branchFailure: string | undefined;
+/** Opens every Details disclosure on the page and returns the page text, raw failures included. */
+const detailsText = async () => {
+  for (const trigger of [...document.querySelectorAll("button")].filter(
+    (entry) => entry.textContent === "Details",
+  ))
+    await act(async () => trigger.click());
+  return document.body.textContent ?? "";
+};
 let branchActionFailure: string | undefined;
 // False when a test needs "dev" as a free branch rather than one held by a worktree.
 let devWorktree = true;
@@ -1688,7 +1696,7 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   });
   await render({ ...shell(), workspaceMode: "worktree" });
   await type("Keep this unsent remote message");
-  expect(document.body.textContent).toContain(
+  expect(await detailsText()).toContain(
     "Update bycoda to create managed sessions on this remote Host.",
   );
   expect(byLabel("Send")!.getAttribute("aria-disabled")).toBe("true");
@@ -1804,7 +1812,7 @@ it.each([
     else await sendTransport(kind === "shell" ? "!git status" : "Keep this message");
     expect(commands).toEqual([]);
     expect(remoteSessionFor("shell")).toBeUndefined();
-    expect(document.body.textContent).toContain(
+    expect(await detailsText()).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
   } finally {
@@ -2327,7 +2335,7 @@ it("keeps a failed host branch action in the picker", async () => {
   await act(async () => dev!.click());
   await settle();
   expect(document.body.querySelector('[aria-label="Branch picker"]')).not.toBeNull();
-  expect(document.body.textContent).toContain(branchActionFailure);
+  expect(await detailsText()).toContain(branchActionFailure);
 });
 
 it("locks a started remote session to its worktree like a local session", async () => {

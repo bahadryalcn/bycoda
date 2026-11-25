@@ -155,6 +155,9 @@ export function YouTubeBrowse({
           size="sm"
           variant="ghost"
           disabled={blocked || !ready}
+          disabledReason={
+            blocked ? t("Connect and resume this account first.") : t("Fill in the fields above.")
+          }
           loading={query.isFetching && !query.isFetchingNextPage}
           onClick={refresh}
         >

@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -19,6 +19,26 @@ import sessionStyles from "./AssistantSessions.module.css";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 
+/** The translated reason the Host gives for a conversation that cannot be supervised. */
+function ineligibleReason(reason: string | undefined): string {
+  switch (reason) {
+    case "This conversation belongs to an assistant job.":
+      return t("This conversation belongs to an assistant job.");
+    case "This conversation is an internal orchestration worker.":
+      return t("This conversation is an internal orchestration worker.");
+    case "This conversation is a canonical Crew coordinator.":
+      return t("This conversation is a canonical Crew coordinator.");
+    case "This conversation has a canonical task, planner, review, automation, steward or Crew owner.":
+      return t(
+        "This conversation has a canonical task, planner, review, automation, steward or Crew owner.",
+      );
+    case "This conversation retains a canonical unattended-run author.":
+      return t("This conversation retains a canonical unattended-run author.");
+    default:
+      return t("This conversation is not eligible for supervision.");
+  }
+}
+
 /** Refresh as a quiet icon action; its tooltip is the only label, so it adds no visible text. */
 function RefreshIcon({
   onClick,
@@ -29,6 +49,7 @@ function RefreshIcon({
   loading?: boolean;
   disabled?: boolean;
 }) {
+  const waiting = disabled && !loading;
   return (
     <Button
       iconOnly
@@ -36,6 +57,7 @@ function RefreshIcon({
       label={t("Refresh")}
       loading={loading}
       disabled={disabled}
+      disabledReason={waiting ? t("Wait for the current action to finish.") : undefined}
       onClick={onClick}
     >
       <RefreshCw className="icon-sm" aria-hidden="true" />
@@ -65,7 +87,7 @@ export function ManualSessionSupervision({
   /** Settings shell's single Save: receives the save routine, which throws on failure. */
   saveRef?: { current: (() => Promise<void>) | null };
 }) {
-  const { data, pending, stopping, error, chief } = controller;
+  const { data, pending, stopping, problem, chief } = controller;
   const visible = projects.filter((project) => project.id);
   const projectIds = new Set(visible.map((project) => project.id!));
   const [selected, setSelected] = useState<string[]>(
@@ -77,7 +99,9 @@ export function ManualSessionSupervision({
   const [draftEnabled, setDraftEnabled] = useState<boolean | null>(null);
   const draftMode = settings && !!saveRef;
   const [opening, setOpening] = useState("");
-  const [openError, setOpenError] = useState("");
+  const [openProblem, setOpenProblem] = useState<{ message: string; details?: string } | null>(
+    null,
+  );
   const navigation = useRef(0);
   useEffect(
     () => () => {
@@ -108,17 +132,17 @@ export function ManualSessionSupervision({
   );
   const matching = (title: string) =>
     !query.trim() || title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
-  const status = stopping
-    ? "Turning off…"
-    : error
-      ? "Unknown"
-      : !data && pending
-        ? "Loading…"
-        : !data
-          ? "Unknown"
-          : enabled
-            ? "Enabled"
-            : "Off";
+  // The Turn off button carries the pending state; the badge keeps the last known state meanwhile.
+  const status = problem
+    ? t("Unknown")
+    : !data && pending
+      ? t("Loading…")
+      : !data
+        ? t("Unknown")
+        : enabled
+          ? t("Enabled")
+          : t("Off");
+  const supervising = !problem && !!data && enabled;
   function markDirty() {
     if (!dirty.current) editVersion.current = data?.policy.version ?? null;
     dirty.current = true;
@@ -152,18 +176,17 @@ export function ManualSessionSupervision({
     if (opening || !onOpenSession) return;
     const generation = ++navigation.current;
     setOpening(sessionId);
-    setOpenError("");
+    setOpenProblem(null);
     try {
       if (environmentId) await onOpenSession(sessionId, environmentId);
       else await onOpenSession(sessionId);
     } catch (cause) {
-      if (generation === navigation.current)
-        setOpenError(presentRemoteError(cause, { explicit: true }));
+      if (generation === navigation.current) setOpenProblem(describeRemoteError(cause));
     } finally {
       if (generation === navigation.current) setOpening("");
     }
   }
-  // The controller's request runner reports its own failures in `error`.
+  // The controller's request runner reports its own failures in `problem`.
   const reload = () => void controller.refresh();
   const off = data && (enabled || (pending && pending !== "list") || stopping) && (
     <Button
@@ -172,7 +195,7 @@ export function ManualSessionSupervision({
       size="sm"
       startIcon={<Square className="icon-sm" />}
       loading={stopping}
-      disabled={stopping}
+      loadingLabel={t("Turning off…")}
       onClick={() => void controller.off()}
     >
       {settings ? undefined : t("Turn off supervision")}
@@ -183,7 +206,7 @@ export function ManualSessionSupervision({
     data &&
     !enabled &&
     !grants.length &&
-    !error &&
+    !problem &&
     (!pending || pending === "list") &&
     !stopping;
   if (idle)
@@ -223,6 +246,7 @@ export function ManualSessionSupervision({
       startIcon={<RefreshCw className="icon-sm" />}
       loading={pending === "list"}
       disabled={!!pending || stopping}
+      disabledReason={pending !== "list" ? t("Wait for the current action to finish.") : undefined}
       onClick={reload}
     >
       {t("Refresh")}
@@ -230,6 +254,12 @@ export function ManualSessionSupervision({
   ) : (
     <RefreshIcon loading={pending === "list"} disabled={!!pending || stopping} onClick={reload} />
   );
+  const blockedReason =
+    pending || stopping
+      ? t("Wait for the current action to finish.")
+      : !chief
+        ? t("Manual session supervision needs a work mode that runs jobs.")
+        : t("Manual supervision state is unavailable. Refresh to retry.");
   const chiefNotice = !chief
     ? t("Manual session supervision needs a work mode that runs jobs.")
     : "";
@@ -266,7 +296,11 @@ export function ManualSessionSupervision({
             className={styles.muted}
             text={chiefNotice}
           />
-          {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
+          {problem && (
+            <InlineError className={styles.error} details={problem.details}>
+              {problem.message}
+            </InlineError>
+          )}
           {!data ? (
             pending ? (
               <LoadingText size="caption" delay={false} className={styles.muted}>
@@ -343,6 +377,7 @@ export function ManualSessionSupervision({
                   variant="ghost"
                   size="sm"
                   disabled={selectedVisible.length === visible.length}
+                  disabledReason={t("All projects are already selected.")}
                   onClick={() => {
                     markDirty();
                     setSelected(visible.map((project) => project.id!));
@@ -363,6 +398,7 @@ export function ManualSessionSupervision({
             <Button
               loading={pending === "policy"}
               disabled={!!pending || stopping || !chief || !data}
+              disabledReason={blockedReason}
               onClick={() => void commit(enabled)}
             >
               {t("Save project scope")}
@@ -385,8 +421,8 @@ export function ManualSessionSupervision({
             <Heading size="item" level={2}>
               {t("Manual session supervision")}
             </Heading>
-            <Badge size="sm" tone={status === "Enabled" ? "success" : "neutral"}>
-              {t(status)}
+            <Badge size="sm" tone={supervising ? "success" : "neutral"}>
+              {status}
             </Badge>
           </div>
           <Text as="p" leading="normal" className={sessionStyles.description}>
@@ -410,7 +446,11 @@ export function ManualSessionSupervision({
         className={styles.muted}
         text={chiefNotice}
       />
-      {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
+      {problem && (
+        <InlineError className={styles.error} details={problem.details}>
+          {problem.message}
+        </InlineError>
+      )}
       {!data ? (
         pending ? (
           <LoadingText size="caption" delay={false} className={styles.muted}>
@@ -461,7 +501,7 @@ export function ManualSessionSupervision({
                   leading="inherit"
                   className={styles.muted}
                 >
-                  {t(effective ? "Enrollment saved" : "Supervision paused")}
+                  {effective ? t("Enrollment saved") : t("Supervision paused")}
                 </Text>
                 <LiveText
                   size="caption"
@@ -482,13 +522,14 @@ export function ManualSessionSupervision({
                     leading="inherit"
                     className={styles.muted}
                   >
-                    {t(candidate.reason ?? "This conversation is not eligible for supervision.")}
+                    {ineligibleReason(candidate.reason)}
                   </Text>
                 )}
               </div>
               {onOpenSession && (
                 <Button
                   disabled={!!opening}
+                  disabledReason={t("Wait for the current action to finish.")}
                   loading={opening === grant.sessionId}
                   onClick={() => void open(grant.sessionId)}
                 >
@@ -499,6 +540,13 @@ export function ManualSessionSupervision({
                 <Button
                   loading={pending === `enroll:${candidate.sessionId}`}
                   disabled={!!pending || stopping || !effective || !candidate.eligible}
+                  disabledReason={
+                    pending || stopping
+                      ? t("Wait for the current action to finish.")
+                      : !candidate.eligible
+                        ? ineligibleReason(candidate.reason)
+                        : t("Supervision is paused for this project.")
+                  }
                   onClick={() => void controller.enroll(candidate)}
                 >
                   {t("Enroll again")}
@@ -507,6 +555,7 @@ export function ManualSessionSupervision({
               <Button
                 loading={pending === `revoke:${grant.id}`}
                 disabled={!!pending || stopping}
+                disabledReason={t("Wait for the current action to finish.")}
                 onClick={() => void controller.revoke(grant)}
               >
                 {t("Revoke supervision")}
@@ -542,7 +591,7 @@ export function ManualSessionSupervision({
                     leading="inherit"
                     className={styles.muted}
                   >
-                    {t(candidate.reason ?? "This conversation is not eligible for supervision.")}
+                    {ineligibleReason(candidate.reason)}
                   </Text>
                 )}
                 {candidate.eligible && !inScope && (
@@ -562,6 +611,17 @@ export function ManualSessionSupervision({
                 disabled={
                   !!pending || stopping || !enabled || !chief || !inScope || !candidate.eligible
                 }
+                disabledReason={
+                  pending || stopping
+                    ? t("Wait for the current action to finish.")
+                    : !candidate.eligible
+                      ? ineligibleReason(candidate.reason)
+                      : !chief
+                        ? t("Manual session supervision needs a work mode that runs jobs.")
+                        : !enabled
+                          ? t("Manual session supervision is off.")
+                          : t("Select this project in Settings before enrolling.")
+                }
                 onClick={() => void controller.enroll(candidate)}
               >
                 {t("Enroll conversation")}
@@ -577,7 +637,11 @@ export function ManualSessionSupervision({
           description={t("No visible conversations are available for enrollment.")}
         />
       )}
-      {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
+      {openProblem && (
+        <InlineError className={styles.error} details={openProblem.details}>
+          {openProblem.message}
+        </InlineError>
+      )}
     </section>
   );
 }

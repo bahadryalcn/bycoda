@@ -83,7 +83,7 @@ it("keeps adding actions in the open dialog and persists each action with a new 
     await act(async () => button("Save action").click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(loadProjectActions("C:/project").map((item) => item.name)).toEqual(["test"]);
-    expect(button("test").disabled).toBe(true);
+    expect(button("test").getAttribute("aria-disabled")).toBe("true");
     expect(button("Save action").getAttribute("aria-disabled") === "true").toBe(true);
     expect(document.querySelector<HTMLInputElement>('input[maxlength="80"]')!.value).toBe("");
     await act(async () => button("build").click());

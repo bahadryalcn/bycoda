@@ -45,6 +45,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
             variant="primary"
             loading={draftRecovery.loading}
             disabled={draftRecovery.selectedText === undefined}
+            disabledReason={t("Choose a saved draft first.")}
             onClick={() => void restoreDraftBackup().catch(report)}
           >
             {t("Restore draft")}
@@ -53,7 +54,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
       }
     >
       <div className={styles.recovery}>
-        {draftRecovery.error && <InlineError>{draftRecovery.error}</InlineError>}
+        {draftRecovery.problem && <InlineError>{draftRecovery.problem}</InlineError>}
         <SearchableSelect
           hideLabel
           label={t("Saved draft")}
@@ -98,7 +99,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
             }}
           />
         )}
-        {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && (
+        {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.problem && (
           <EmptyState size="inline" kind="empty" description={t("No saved drafts found.")} />
         )}
       </div>

@@ -65,7 +65,7 @@ it("blocks partial source and executes complete source once despite double click
     });
   try {
     await act(async () => root.render(render(true)));
-    expect(container.querySelector("button")?.disabled).toBe(true);
+    expect(container.querySelector("button")?.getAttribute("aria-disabled")).toBe("true");
     await act(async () => root.render(render(false)));
     await act(async () => {
       container.querySelector("button")!.click();

@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../accounts/blockedReason";
 import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
@@ -90,7 +91,7 @@ function InsightPages<T>({
   renderRow(row: T): ReactNode;
 }) {
   const [page, setPage] = useState<DataPage<T>>();
-  const { error, is, write } = useAccountWrite(failure);
+  const { failureTitle, is, write } = useAccountWrite(failure);
   const loading = is("read") || is("more");
   const read = (cursor?: string) => {
     if (disabled || loading) return;
@@ -119,18 +120,19 @@ function InsightPages<T>({
           size="sm"
           variant="secondary"
           disabled={disabled || loading}
+          disabledReason={accountBlockedReason(disabled)}
           loading={is("read")}
           onClick={() => read()}
         >
           {page ? t("Refresh") : label}
         </Button>
       </div>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError>{failureTitle}</InlineError> : null}
       {page?.context}
       {page?.rows.map((row) => (
         <div key={rowKey(row)}>{renderRow(row)}</div>
       ))}
-      {!error && !loading && page?.rows.length === 0 && !page.partial && !page.nextCursor ? (
+      {!failureTitle && !loading && page?.rows.length === 0 && !page.partial && !page.nextCursor ? (
         <EmptyState size="inline" context="list" title={empty} />
       ) : null}
       <CollectionFooter

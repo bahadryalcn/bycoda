@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { NoticeActionButton } from "./TranscriptNotice";
@@ -31,7 +32,6 @@ export function QueueRemovalNotice({
   return (
     <Text
       as="div"
-      role="status"
       size="caption"
       tone="secondary"
       data-queue-removal
@@ -44,7 +44,7 @@ export function QueueRemovalNotice({
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
     >
-      <span className="min-w-0 break-words">{t("Message removed")}</span>
+      <LiveText className="min-w-0 break-words" text={t("Message removed")} />
       <NoticeActionButton
         quiet
         action={{

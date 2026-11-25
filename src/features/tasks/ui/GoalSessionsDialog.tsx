@@ -9,7 +9,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { taskSessionIds } from "../model/backgroundSession";
 import type { BoardTask } from "../model/taskClient";
-import { STATUS_LABELS } from "./TaskDetail";
+import { taskStatusLabel } from "../model/statusLabels";
 import type { TaskGoalsController } from "./TaskGoalsController";
 import "./task-goals.css";
 
@@ -55,7 +55,7 @@ export function GoalSessionsDialog({
                   {task.title}
                 </Text>
                 <Badge size="sm" appearance="subtle">
-                  {t(STATUS_LABELS[task.status])}
+                  {taskStatusLabel(task.status)}
                 </Badge>
               </div>
               {task.branch ? (

@@ -67,14 +67,16 @@ export function FacebookMonetization({
           {browser ? t("Read monetization status") : t("Read earnings estimates")}
         </Button>
       </div>
-      {!dashboard && !insights && !work.is("load") && !work.error ? (
+      {!dashboard && !insights && !work.is("load") && !work.failureTitle ? (
         <Text as="p" size="secondary" tone="muted">
           {browser
             ? t("Read the status of each Facebook monetization program for this account.")
             : t("Read the earnings Facebook estimates for this Page.")}
         </Text>
       ) : null}
-      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
+      {work.failureTitle ? (
+        <InlineError details={work.details}>{work.failureTitle}</InlineError>
+      ) : null}
       {dashboard?.programs.length || typeof estimate === "number" || estimate ? (
         <DescriptionList size="sm">
           {dashboard?.programs.map(({ program, status, earnings }) => (

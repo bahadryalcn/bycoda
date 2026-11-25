@@ -33,6 +33,7 @@ import {
   settingGridColumns,
   splitPanelSettings,
 } from "../model/modelPanelData";
+import { catalogText } from "../model/catalogText";
 import { settingLabel, settingValue } from "../model/modelPickerData";
 import type { AgentModel, ModelSetting } from "../model/models";
 import { defaultAutoCompactWindow } from "../model/autoCompact";
@@ -95,9 +96,9 @@ export function ModelSettingHelp({
         {setting && help ? (
           <>
             <Text size="inherit" tone="neutral" weight="medium">
-              {t(settingLabel(setting))}
+              {catalogText(t, settingLabel(setting))}
             </Text>{" "}
-            {t(help)}
+            {catalogText(t, help)}
           </>
         ) : null}
       </ClampText>
@@ -106,14 +107,14 @@ export function ModelSettingHelp({
           {descriptions.map((item) => (
             <Text as="p" key={item.id} size="secondary" leading="relaxed">
               <Text size="inherit" weight="medium">
-                {t(settingLabel(item))}
+                {catalogText(t, settingLabel(item))}
               </Text>{" "}
-              {t(helpText(item)!)}
+              {catalogText(t, helpText(item)!)}
             </Text>
           ))}
         </InfoPopover>
       ) : null}
-      {trailing ? <span className="ml-auto flex shrink-0">{trailing}</span> : null}
+      {trailing ? <span className="ms-auto flex shrink-0">{trailing}</span> : null}
     </div>
   );
 }
@@ -197,7 +198,7 @@ export function ModelSettingsColumn({
     const disabled = lockedSetting || (editingSubagents && isSubagentSetting(setting));
     const reason = lockedSetting ? lockReason?.(setting) : undefined;
     return (
-      <Tooltip key={setting.id} label={reason ? t(reason) : undefined}>
+      <Tooltip key={setting.id} label={reason ? catalogText(t, reason) : undefined}>
         <SettingRow
           setting={setting}
           values={values}
@@ -323,9 +324,9 @@ function SettingRow({
   const t = useT();
   const { formatNumber } = useFormat();
   const [open, setOpen] = useState(false);
-  const labels = setting.options.map((option) => t(option.label));
+  const labels = setting.options.map((option) => catalogText(t, option.label));
   const kind = settingControlKind(setting, labels);
-  const label = t(settingLabel(setting));
+  const label = catalogText(t, settingLabel(setting));
   const isCeiling = setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY;
   const rawValue = settingValue(setting, values);
   const value = isCeiling ? subagentEffortCeiling(rawValue) : rawValue;
@@ -334,7 +335,7 @@ function SettingRow({
   const describedBy = help ? `model-setting-help-${setting.id}` : undefined;
   const hiddenHelp = help ? (
     <span id={describedBy} hidden>
-      {t(help)}
+      {catalogText(t, help)}
     </span>
   ) : null;
   const row =
@@ -356,7 +357,7 @@ function SettingRow({
       >
         <span className="inline-flex items-center gap-1">
           {label}
-          {help ? <InfoTooltip label={label}>{t(help)}</InfoTooltip> : null}
+          {help ? <InfoTooltip label={label}>{catalogText(t, help)}</InfoTooltip> : null}
         </span>
       </Text>
       {trailing}
@@ -548,7 +549,7 @@ function SettingRow({
               >
                 <DelegationOptionIcon setting={setting} value={option.value} />
                 <ClampText as="span" lines={2} expandable={false} className="min-w-0 flex-1">
-                  {delegationShortLabel(setting, option.value, t(option.label))}
+                  {delegationShortLabel(setting, option.value, catalogText(t, option.label))}
                 </ClampText>
                 <Button
                   iconOnly
@@ -561,10 +562,16 @@ function SettingRow({
                     advisor
                       ? t("Edit {p0}", { p0: label })
                       : t("Remove {p0}", {
-                          p0: delegationShortLabel(setting, option.value, t(option.label)),
+                          p0: delegationShortLabel(
+                            setting,
+                            option.value,
+                            catalogText(t, option.label),
+                          ),
                         })
                   }
-                  aria-label={advisor ? undefined : t("Remove {p0}", { p0: t(option.label) })}
+                  aria-label={
+                    advisor ? undefined : t("Remove {p0}", { p0: catalogText(t, option.label) })
+                  }
                   aria-describedby={advisor ? describedBy : undefined}
                   aria-haspopup={advisor ? "dialog" : undefined}
                   data-model-setting-field={advisor || undefined}
@@ -629,7 +636,7 @@ function SettingRow({
         >
           {picked[0] ? <DelegationOptionIcon setting={setting} value={picked[0].value} /> : null}
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {picked[0] ? t(picked[0].label) : labels[0]}
+            {picked[0] ? catalogText(t, picked[0].label) : labels[0]}
           </Text>
         </PickButton>
         {hiddenHelp}

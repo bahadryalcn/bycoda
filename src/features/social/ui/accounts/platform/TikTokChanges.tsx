@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useFormat, useT } from "../../../../../shared/i18n";
@@ -78,7 +79,7 @@ export function TikTokChanges({
   const {
     write,
     is,
-    error,
+    failureTitle,
     details: errorDetails,
   } = useAccountWrite(t("Could not complete the TikTok change."));
   const reviewsKey = [...socialQueryScope(client), "tiktok", accountId, "changes"];
@@ -227,6 +228,7 @@ export function TikTokChanges({
           size="sm"
           variant="ghost"
           disabled={disabled || busy}
+          disabledReason={accountBlockedReason(disabled)}
           loading={query.isFetching}
           onClick={() => {
             query.refetch().catch(() => undefined);
@@ -278,6 +280,7 @@ export function TikTokChanges({
                   size="sm"
                   variant="secondary"
                   disabled={disabled || busy}
+                  disabledReason={accountBlockedReason(disabled)}
                   loading={pending === review.id}
                   onClick={() =>
                     confirm
@@ -301,6 +304,7 @@ export function TikTokChanges({
                   size="sm"
                   variant="ghost"
                   disabled={disabled || busy}
+                  disabledReason={accountBlockedReason(disabled)}
                   onClick={() =>
                     confirm
                       .confirm({
@@ -431,13 +435,16 @@ export function TikTokChanges({
             onChange={(event) => onDraftChange({ ...draft, text: event.currentTarget.value })}
           />
         )}
-        {error && <InlineError details={errorDetails}>{error}</InlineError>}
+        {failureTitle && <InlineError details={errorDetails}>{failureTitle}</InlineError>}
         <div className="tiktok-actions">
           <Button
             type="submit"
             variant="primary"
             size="sm"
             disabled={disabled || busy || !canRequest}
+            disabledReason={
+              disabled || busy ? accountBlockedReason(disabled) : t("Fill in the fields above.")
+            }
             loading={is("request")}
           >
             {t("Queue for review")}

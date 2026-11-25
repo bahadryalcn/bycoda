@@ -4,12 +4,12 @@ import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useRef, useState, type ComponentType, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Button } from "../../../../shared/ui/Button";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { Text } from "../../../../shared/ui/Text";
-import { Plus } from "../../../../shared/ui/icons";
+import { Plus, TriangleAlert } from "../../../../shared/ui/icons";
 import { InboxAccountActions, InboxConnectionError } from "../InboxConnectionStatus";
 import { Row, SettingsFeedback } from "../../../../shared/ui/settings";
 import type { SaveInputResult } from "./emailPresets";
@@ -144,12 +144,16 @@ export function MessagingAccountsCard({
                   </div>
                   <div className="settings-collection-actions">
                     {!account.connected ? (
-                      <Badge size="sm" appearance="subtle" tone="warning">
+                      <InfoTooltip
+                        label={t("Credentials missing")}
+                        icon={<TriangleAlert aria-hidden className="icon-sm" />}
+                      >
                         {t("Credentials missing")}
-                      </Badge>
+                      </InfoTooltip>
                     ) : null}
                     <Button
                       disabled={saving.length > 0 || removing !== null || target === account.id}
+                      disabledReason={t("Wait for the current operation to finish")}
                       onClick={() => open(account.id)}
                     >
                       {t("Edit")}
@@ -171,6 +175,7 @@ export function MessagingAccountsCard({
           <div className="integration-actions">
             <Button
               disabled={saving.length > 0 || removing !== null}
+              disabledReason={t("Wait for the current operation to finish")}
               startIcon={<Plus className="icon-sm" />}
               onClick={() => open("new")}
             >
@@ -259,16 +264,14 @@ export function AccountFormActions({
         <Button
           variant="primary"
           stableWidth
-          reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
+          reserveLabels={[t("Retry save and test")]}
           loading={saving}
+          loadingLabel={t("Saving and testing…")}
           disabled={disabled}
+          disabledReason={t("Wait for the current operation to finish")}
           onClick={onSave}
         >
-          {saving
-            ? t("Saving and testing…")
-            : error
-              ? t("Retry save and test")
-              : t("Save and test connection")}
+          {error ? t("Retry save and test") : t("Save and test connection")}
         </Button>
         {onCancel ? (
           <Button disabled={saving} onClick={onCancel}>

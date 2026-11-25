@@ -176,6 +176,7 @@ export function CwdPicker({
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={!enabled}
+        disabledReason={enabled ? undefined : t("Not available right now.")}
         data-tauri-drag-region="false"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {

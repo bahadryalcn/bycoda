@@ -21,7 +21,7 @@ export function InstagramFollowersPanel({
   accountId: string;
   disabled: boolean;
 }) {
-  const { write, is, error, details } = useAccountWrite(
+  const { write, is, failureTitle, details } = useAccountWrite(
     t("Instagram could not complete this action."),
   );
   const confirmation = useConfirm();
@@ -115,7 +115,7 @@ export function InstagramFollowersPanel({
         )
       ) : null}
       {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
-      {error ? <InlineError details={details}>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {confirmation.dialog}
     </FieldGroup>
   );

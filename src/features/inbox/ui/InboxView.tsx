@@ -189,7 +189,7 @@ export function InboxView({
   const queryVisible = useQueryVisible();
   const [refreshAction, setRefreshAction] = useState<"toolbar" | "retry" | null>(null);
   const refreshActionRef = useRef<"toolbar" | "retry" | null>(null);
-  const [readStatusError, setReadStatusError] = useState<string | null>(null);
+  const [readStatusError, setReadStatusError] = useState<"save" | "partial" | null>(null);
   const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
   const seenSaveGeneration = useRef(0);
   const [refresh, setRefresh] = useState(0);
@@ -514,7 +514,7 @@ export function InboxView({
     const applyResult = (saved: boolean) => {
       if (seenSaveGeneration.current !== generation) return;
       setFailedReadItem(saved ? null : item);
-      setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+      setReadStatusError(saved ? null : "save");
     };
     const result = markInboxItemSeen({ key, updatedAt: item.updatedAt });
     if (typeof result === "boolean") applyResult(result);
@@ -686,7 +686,7 @@ export function InboxView({
   const toolbarActions = (
     <ButtonGroup
       aria-label={source === "jira" ? t("Jira view") : t("Inbox")}
-      className="ml-auto shrink-0"
+      className="ms-auto shrink-0"
       onKeyDown={(event) => {
         if (source !== "jira" || !(event.target as HTMLElement).matches("button[data-value]"))
           return;
@@ -742,14 +742,13 @@ export function InboxView({
           variant="ghost"
           type="button"
           disabled={!sourceHasUnseen}
+          disabledReason={t("Everything here is already read.")}
           onClick={() => {
             setFailedReadItem(null);
             const generation = ++seenSaveGeneration.current;
             const applyResult = (saved: boolean) => {
               if (seenSaveGeneration.current === generation)
-                setReadStatusError(
-                  saved ? null : "Some read status updates may have saved. Retry to complete.",
-                );
+                setReadStatusError(saved ? null : "partial");
             };
             const result = markInboxItemsSeen(sourceEntries);
             if (typeof result === "boolean") applyResult(result);
@@ -768,6 +767,7 @@ export function InboxView({
           type="button"
           loading={refreshAction === "toolbar"}
           disabled={refreshAction === "retry"}
+          disabledReason={t("Retrying…")}
           onClick={() => requestRefresh("toolbar")}
           className="shrink-0"
         >
@@ -876,7 +876,9 @@ export function InboxView({
       )}
       {readStatusError ? (
         <Alert tone="danger">
-          {t(readStatusError)}
+          {readStatusError === "save"
+            ? t("Could not save read status. Please try again.")
+            : t("Some read status updates may have saved. Retry to complete.")}
           {failedReadItem ? (
             <Button
               data-inbox-read-retry

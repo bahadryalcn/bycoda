@@ -4,14 +4,14 @@
  * emoji or initials, or empty for the default portrait.
  */
 export const ASSISTANT_AVATAR_PRESETS = [
-  { id: "orb", label: "Orb" },
-  { id: "robot", label: "Robot" },
-  { id: "owl", label: "Owl" },
-  { id: "fox", label: "Fox" },
-  { id: "spark", label: "Spark" },
-  { id: "wave", label: "Wave" },
-  { id: "character", label: "Assistant" },
-  { id: "cat", label: "Cat" },
+  { id: "orb" },
+  { id: "robot" },
+  { id: "owl" },
+  { id: "fox" },
+  { id: "spark" },
+  { id: "wave" },
+  { id: "character" },
+  { id: "cat" },
 ] as const;
 
 export type AssistantAvatarPresetId = (typeof ASSISTANT_AVATAR_PRESETS)[number]["id"];

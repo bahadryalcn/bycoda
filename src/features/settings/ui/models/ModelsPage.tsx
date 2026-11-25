@@ -1,6 +1,8 @@
 import { useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../../shared/i18n";
+import { ErrorDetails } from "../../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../../shared/lib/errors";
 import { HARNESSES, HARNESS_TITLE } from "../../../sessions";
 import type { HarnessId } from "../../../sessions/public/session";
 import type { RecentProject } from "../../../projects/public/recents";
@@ -253,16 +255,21 @@ export function ModelsPage({
   return (
     <div className="settings-topics">
       {/* One failing Host shows one error here; nothing derived from it is shown below. */}
-      {tab === "work" && scope.selected && pickedRouting.error ? (
+      {tab === "work" && scope.selected && pickedRouting.message ? (
         <SettingsHostFailure
           scope={scope}
-          message={pickedRouting.error}
+          message={pickedRouting.message}
           revoked={pickedRouting.revoked}
           onRetry={pickedRouting.retry}
         />
       ) : null}
       {tab === "defaults" && delegation.error ? (
-        <SettingsFeedback state="error">{String(delegation.error)}</SettingsFeedback>
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails detail={errorText(delegation.error)} />}
+        >
+          {t("Could not read the delegation settings.")}
+        </SettingsFeedback>
       ) : null}
       {/* Background work reads top-down: models, groups, who uses what, limits; one Save. */}
       <div id={settingDomId("models-roles")} data-setting-id="models-roles" hidden={tab !== "work"}>

@@ -39,6 +39,11 @@ export function TasksViewRecovery({
             variant="secondary"
             loading={retrying === item.id}
             disabled={retrying !== null && retrying !== item.id}
+            disabledReason={
+              retrying !== null && retrying !== item.id
+                ? t("Wait for the current operation to finish")
+                : undefined
+            }
             onClick={() => onRetry(item)}
           >
             {t("Retry sprint assignment")}

@@ -3,7 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { useRef, useState } from "react";
 import { useNotificationPreferencesView } from "../hooks/useProjectNotificationPreferences";
 import { notificationMuteActions, notificationMuteDeadline } from "./notificationMuteActions";
@@ -26,14 +26,14 @@ type Props = {
 
 export function NotificationMuteControl({ projectIds, onChanged, compact = false }: Props) {
   const t = useT();
-  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const [open, setOpen] = useState<"menu" | "custom" | null>(null);
   const targetKey = JSON.stringify([...new Set(projectIds)].sort());
   const [previousTargetKey, setPreviousTargetKey] = useState(targetKey);
   if (previousTargetKey !== targetKey) {
     setPreviousTargetKey(targetKey);
     setOpen(null);
-    setError(null);
+    setProblem(null);
   }
   const trigger = useRef<HTMLButtonElement>(null);
   const { preferences, muted: mutedIds, unavailable } = useNotificationPreferencesView();
@@ -45,6 +45,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
         ? t("{p0} of {p1} projects muted", { p0: muted.length, p1: projectIds.length })
         : notificationMuteLabel(preferences[projectIds[0]], t);
 
+  const unavailableReason = t("Saved project notification choices could not be read.");
   const menuOpen = open === "custom" || (open === "menu" && !unavailable);
 
   const close = (restoreFocus = true) => {
@@ -55,26 +56,23 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
     if (!projectIds.length || unavailable) return;
     try {
       updateNotificationPreferences(projectIds, { mutedUntil });
-      setError(null);
+      setProblem(null);
       close();
       onChanged?.();
     } catch {
-      setError(t("Could not save notification preferences. Please try again."));
+      setProblem(t("Could not save notification preferences. Please try again."));
     }
   };
 
   return (
     <div className="flex max-w-full flex-wrap items-center justify-end gap-x-3 gap-y-2">
-      {status && !compact ? (
-        <Badge role="status" tone="neutral">
-          {status}
-        </Badge>
-      ) : null}
+      {status && !compact ? <LiveText text={status} size="caption" tone="secondary" /> : null}
       {muted.length ? (
         <Button
           type="button"
           variant="ghost"
           disabled={unavailable}
+          disabledReason={unavailableReason}
           onClick={() => change(undefined)}
         >
           {t("Resume notifications")}
@@ -90,6 +88,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           aria-haspopup={open === "custom" ? "dialog" : "menu"}
           aria-expanded={menuOpen}
           disabled={!projectIds.length || unavailable}
+          disabledReason={projectIds.length ? unavailableReason : t("Choose a project first.")}
           onClick={() => setOpen(open ? null : "menu")}
         >
           <BellOff className="icon-sm" aria-hidden="true" />
@@ -102,15 +101,16 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           aria-haspopup={open === "custom" ? "dialog" : "menu"}
           expanded={menuOpen}
           disabled={!projectIds.length || unavailable}
+          disabledReason={projectIds.length ? unavailableReason : t("Choose a project first.")}
           onClick={() => setOpen(open ? null : "menu")}
         >
           <BellOff className="icon-sm" aria-hidden="true" />
           {t("Mute")}
         </Button>
       )}
-      {error ? (
+      {problem ? (
         <Alert tone="danger" className="w-full">
-          {error}
+          {problem}
         </Alert>
       ) : null}
       {open === "menu" && !unavailable && trigger.current ? (

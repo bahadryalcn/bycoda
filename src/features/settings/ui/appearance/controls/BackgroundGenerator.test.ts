@@ -71,6 +71,10 @@ it("retains actionable failure and draft across remount", async () => {
   act(() => root.unmount());
   mount();
   expect(host.querySelector("input")?.value).toBe("ocean");
-  expect(host.textContent).toContain("Local host unavailable");
   expect(host.textContent).toContain("Try again");
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!;
+  act(() => trigger.click());
+  expect([...document.querySelectorAll('[role="dialog"]')].at(-1)?.textContent).toContain(
+    "Local host unavailable",
+  );
 });

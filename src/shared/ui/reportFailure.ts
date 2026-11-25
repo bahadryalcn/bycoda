@@ -37,8 +37,8 @@ export async function reportFailure(
   },
 ): Promise<void> {
   if (signal?.aborted) return;
-  let failure = policy(error);
-  if (failure.transient) {
+  let presented = policy(error);
+  if (presented.transient) {
     const recovered = await new Promise<boolean>((resolve) => {
       let settled = false;
       const complete = (success: boolean) => {
@@ -52,7 +52,7 @@ export async function reportFailure(
       const abort = () => complete(true);
       const deadline = setTimeout(() => complete(false), FAILURE_GRACE_MS);
       const attempt =
-        failure.notSent && retry
+        presented.notSent && retry
           ? setTimeout(() => {
               Promise.resolve()
                 .then(() => {
@@ -62,8 +62,8 @@ export async function reportFailure(
                   () => complete(true),
                   (reason) => {
                     if (settled) return;
-                    failure = policy(reason);
-                    if (!failure.transient) complete(false);
+                    presented = policy(reason);
+                    if (!presented.transient) complete(false);
                   },
                 );
             }, FAILURE_RETRY_DELAYS_MS[0])
@@ -74,7 +74,7 @@ export async function reportFailure(
   }
   toast.show({
     tone: "danger",
-    message: failure.message,
+    message: presented.message,
     ...(operationId === undefined ? {} : { id: operationId }),
   });
 }

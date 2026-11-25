@@ -228,6 +228,11 @@ export function ChatFolderBrowser({
             label={t("Parent folder")}
             variant="ghost"
             disabled={busy || !parent}
+            disabledReason={
+              busy
+                ? t("Wait for the current file operation to finish")
+                : t("Already in the top folder.")
+            }
             onClick={() => parent && setDirectory(parent)}
           >
             <ArrowUp className="icon-md" />
@@ -240,6 +245,13 @@ export function ChatFolderBrowser({
           <Button
             variant="ghost"
             disabled={busy || !listing?.canOpenFiles}
+            disabledReason={
+              busy
+                ? t("Wait for the current file operation to finish")
+                : t(
+                    "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
+                  )
+            }
             loading={pendingAction === "live"}
             onClick={() => void openLiveFolder()}
           >
@@ -353,6 +365,15 @@ export function ChatFolderBrowser({
                   <Button
                     variant="ghost"
                     disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
+                    disabledReason={
+                      busy
+                        ? t("Wait for the current file operation to finish")
+                        : !listing?.canOpenFiles
+                          ? t(
+                              "This folder is outside registered projects. To access its files, open a shared folder in your file manager.",
+                            )
+                          : t("Not available yet.")
+                    }
                     className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
                     onClick={() => {
                       if (entry.isDir) setDirectory(entry.path);

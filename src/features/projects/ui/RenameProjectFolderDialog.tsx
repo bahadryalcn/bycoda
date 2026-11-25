@@ -42,11 +42,18 @@ export function RenameProjectFolderDialog({
             type="submit"
             form={formId}
             disabled={busy || !!invalid || name === basename(path)}
+            disabledReason={
+              busy
+                ? t("Wait for the current operation to finish")
+                : invalid
+                  ? t("Enter a valid folder name.")
+                  : t("Change the name first.")
+            }
             variant="primary"
             loading={busy}
             loadingLabel={t("Renaming…")}
           >
-            {busy ? t("Renaming…") : t("Rename folder")}
+            {t("Rename folder")}
           </Button>
         </ModalActions>
       }

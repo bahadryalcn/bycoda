@@ -53,7 +53,7 @@ it("shows the effective terminal size and resets only through its owner callback
     await openTools(host);
     expect(
       document
-        .querySelector('[role="status"][aria-label="Terminal font size"]')
+        .querySelector('[aria-label="Terminal font size"] [role="status"]')
         ?.textContent?.trim(),
     ).toBe("19px");
     const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -287,7 +287,8 @@ it("keeps automatic exposure and source choices explicit without requesting on m
     state: undefined,
     preview: undefined,
     waiting: false,
-    error: "",
+    notice: "",
+    noticeDetails: undefined,
     automatic: false,
     source: "commands" as const,
     request: vi.fn(async () => {}),
@@ -383,7 +384,8 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
     },
     preview: undefined,
     waiting: false,
-    error: "",
+    notice: "",
+    noticeDetails: undefined,
     automatic: true,
     source: "commands",
     request: vi.fn(async () => {}),

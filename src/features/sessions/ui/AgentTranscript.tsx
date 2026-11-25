@@ -24,6 +24,7 @@ import {
   useTranscriptActiveBlocksVersion,
 } from "./transcriptVirtualization";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
@@ -1363,7 +1364,7 @@ const Turn = memo(function Turn({
             data-transcript-search-current={isCurrentItem(item) || undefined}
             className={
               rail
-                ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} pl-5 zen-fold-rail`
+                ? `flow-root ${tail ? "pb-0 zen-fold-tail" : "pb-1"} ps-5 zen-fold-rail`
                 : "flow-root pb-1"
             }
           >
@@ -1654,14 +1655,12 @@ function RemoteBlockLoad({
         variant="ghost"
         type="button"
         loading={state === "pending"}
-        disabled={state === "pending"}
+        loadingLabel={t("Loading full output…")}
         onClick={() => void load()}
       >
-        {state === "pending"
-          ? t("Loading full output…")
-          : state === "failed"
-            ? t("Retry")
-            : t("Load full output ({p0} KB)", { p0: Math.max(1, Math.ceil(bytes / 1024)) })}
+        {state === "failed"
+          ? t("Retry")
+          : t("Load full output ({p0} KB)", { p0: Math.max(1, Math.ceil(bytes / 1024)) })}
       </Button>
       {state === "failed" ? (
         <InlineError>{t("Could not load the full output.")}</InlineError>
@@ -2033,9 +2032,8 @@ function SaveNoteButton({
         {showLabel ? <span>{saved ? t("Saved to Notes") : t("Save as note")}</span> : null}
       </Button>
       {error && (
-        <InlineError className="max-w-xs">
-          {t("Could not save note. ")}
-          {error}
+        <InlineError className="max-w-xs" details={error}>
+          {t("Could not save note")}
         </InlineError>
       )}
     </>
@@ -2736,15 +2734,13 @@ function UserMessageBlock({
         </div>
         {block.turnOutcome === "stopped" ? (
           <div className="flex justify-end">
-            <Tooltip label={t("Stopped by you")} asChild>
-              <span
-                role="img"
-                aria-label={t("Stopped by you")}
-                className="text-(--transcript-ink-chrome)"
-              >
-                <Pause className="icon-sm" aria-hidden />
-              </span>
-            </Tooltip>
+            <InfoTooltip
+              label={t("Stopped by you")}
+              className="text-(--transcript-ink-chrome)"
+              icon={<Pause className="icon-sm" aria-hidden />}
+            >
+              {t("Stopped by you")}
+            </InfoTooltip>
           </div>
         ) : null}
         {block.draft ? (

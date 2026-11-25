@@ -153,7 +153,7 @@ const states: Record<
     label: string;
     summary: string;
     /** Translated "{p0} …" count label for several checks in one state. */
-    count: string;
+    count: (p0: string) => string;
     Icon: IconComponent | "spinner";
     color: BadgeTone;
   }
@@ -162,8 +162,10 @@ const states: Record<
     get label() {
       return t("Repairing");
     },
-    summary: "Repair in progress",
-    count: "{p0} repairing",
+    get summary() {
+      return t("Repair in progress");
+    },
+    count: (p0: string) => t("{p0} repairing", { p0 }),
     Icon: "spinner",
     color: active,
   },
@@ -171,8 +173,10 @@ const states: Record<
     get label() {
       return t("Awaiting CI");
     },
-    summary: "Awaiting new CI checks",
-    count: "{p0} awaiting CI",
+    get summary() {
+      return t("Awaiting new CI checks");
+    },
+    count: (p0: string) => t("{p0} awaiting CI", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -180,8 +184,10 @@ const states: Record<
     get label() {
       return t("Refreshing");
     },
-    summary: "Refreshing CI checks",
-    count: "{p0} refreshing",
+    get summary() {
+      return t("Refreshing CI checks");
+    },
+    count: (p0: string) => t("{p0} refreshing", { p0 }),
     Icon: "spinner",
     color: neutral,
   },
@@ -189,8 +195,10 @@ const states: Record<
     get label() {
       return t("Out of date");
     },
-    summary: "CI results are out of date",
-    count: "{p0} out of date",
+    get summary() {
+      return t("CI results are out of date");
+    },
+    count: (p0: string) => t("{p0} out of date", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -198,8 +206,10 @@ const states: Record<
     get label() {
       return t("CI passed");
     },
-    summary: "passed",
-    count: "{p0} passed",
+    get summary() {
+      return t("passed");
+    },
+    count: (p0: string) => t("{p0} passed", { p0 }),
     Icon: CheckCircle,
     color: positive,
   },
@@ -207,8 +217,10 @@ const states: Record<
     get label() {
       return t("Still failing");
     },
-    summary: "still failing",
-    count: "{p0} still failing",
+    get summary() {
+      return t("still failing");
+    },
+    count: (p0: string) => t("{p0} still failing", { p0 }),
     Icon: CircleX,
     color: negative,
   },
@@ -216,8 +228,10 @@ const states: Record<
     get label() {
       return t("CI running");
     },
-    summary: "running",
-    count: "{p0} running",
+    get summary() {
+      return t("running");
+    },
+    count: (p0: string) => t("{p0} running", { p0 }),
     Icon: "spinner",
     color: active,
   },
@@ -225,8 +239,10 @@ const states: Record<
     get label() {
       return t("CI cancelled");
     },
-    summary: "cancelled",
-    count: "{p0} cancelled",
+    get summary() {
+      return t("cancelled");
+    },
+    count: (p0: string) => t("{p0} cancelled", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -234,8 +250,10 @@ const states: Record<
     get label() {
       return t("CI skipped");
     },
-    summary: "skipped",
-    count: "{p0} skipped",
+    get summary() {
+      return t("skipped");
+    },
+    count: (p0: string) => t("{p0} skipped", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -243,8 +261,10 @@ const states: Record<
     get label() {
       return t("Unknown");
     },
-    summary: "unknown",
-    count: "{p0} unknown",
+    get summary() {
+      return t("unknown");
+    },
+    count: (p0: string) => t("{p0} unknown", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -252,8 +272,10 @@ const states: Record<
     get label() {
       return t("Stopped");
     },
-    summary: "Repair stopped",
-    count: "{p0} stopped",
+    get summary() {
+      return t("Repair stopped");
+    },
+    count: (p0: string) => t("{p0} stopped", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -261,8 +283,10 @@ const states: Record<
     get label() {
       return t("Interrupted");
     },
-    summary: "Tracking interrupted",
-    count: "{p0} interrupted",
+    get summary() {
+      return t("Tracking interrupted");
+    },
+    count: (p0: string) => t("{p0} interrupted", { p0 }),
     Icon: CircleDashed,
     color: neutral,
   },
@@ -270,8 +294,10 @@ const states: Record<
     get label() {
       return t("Agent stopped");
     },
-    summary: "Agent could not finish",
-    count: "{p0} agent stopped",
+    get summary() {
+      return t("Agent could not finish");
+    },
+    count: (p0: string) => t("{p0} agent stopped", { p0 }),
     Icon: CircleX,
     color: negative,
   },
@@ -338,9 +364,10 @@ function RepairCard({
   const counts = new Map<RepairState, number>();
   for (const item of group.items) counts.set(item.state, (counts.get(item.state) ?? 0) + 1);
   const lead = repairPriority.find((state) => counts.has(state))!;
-  const label = t(group.items.length === 1 ? "{p0} check" : "{p0} checks", {
-    p0: formatNumber(group.items.length),
-  });
+  const label =
+    group.items.length === 1
+      ? t("{p0} check", { p0: formatNumber(group.items.length) })
+      : t("{p0} checks", { p0: formatNumber(group.items.length) });
   const single = group.items.length === 1 ? group.items[0] : undefined;
   const canShowCheck =
     single?.state === "pass" &&
@@ -371,10 +398,10 @@ function RepairCard({
                     {["pass", "fail", "pending", "cancel", "skipping", "unknown"].includes(state)
                       ? single
                         ? states[state].label
-                        : t(states[state].count, { p0: formatNumber(count) })
+                        : states[state].count(formatNumber(count))
                       : counts.size === 1
-                        ? t(states[state].summary)
-                        : t(states[state].count, { p0: formatNumber(count) })}
+                        ? states[state].summary
+                        : states[state].count(formatNumber(count))}
                   </Badge>
                 ))}
               </Text>
@@ -485,10 +512,7 @@ export function CheckRepairProgress({
           />
         ))}
       </div>
-      <LiveText
-        className="sr-only"
-        text={t(states[lead].count, { p0: formatNumber(totals.get(lead)!) })}
-      />
+      <LiveText className="sr-only" text={states[lead].count(formatNumber(totals.get(lead)!))} />
     </>
   );
 }

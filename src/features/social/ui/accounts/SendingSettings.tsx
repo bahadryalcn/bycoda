@@ -23,7 +23,7 @@ export type SendingSettingsProps = {
  */
 export function SendingSettings({ client, snapshot, hostOnline, onChanged }: SendingSettingsProps) {
   const { confirm, dialog } = useConfirm();
-  const { error, details, is, write } = useAccountWrite(
+  const { failureTitle, details, is, write } = useAccountWrite(
     t("Sending could not be changed. Try again."),
   );
   const offline = hostOnline ? undefined : t("Connect to this computer to change sending.");
@@ -67,7 +67,7 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
         </span>
       }
       feedback={
-        error ? (
+        failureTitle ? (
           <InlineError details={details}>
             {t("Sending could not be changed. Try again.")}
           </InlineError>

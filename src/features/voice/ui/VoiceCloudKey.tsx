@@ -151,6 +151,13 @@ export function VoiceCloudKey({
           loading={busy === "save"}
           loadingLabel={t("Checking key…")}
           disabled={busy !== null || saved === undefined || !key.trim()}
+          disabledReason={
+            busy !== null
+              ? t("Wait for the current key action to finish.")
+              : saved === undefined
+                ? t("Checking the saved key first.")
+                : t("Paste an API key first.")
+          }
         >
           {t("Save")}
         </Button>
@@ -160,6 +167,7 @@ export function VoiceCloudKey({
             variant="ghost"
             loading={busy === "remove"}
             disabled={busy !== null}
+            disabledReason={t("Wait for the current key action to finish.")}
             onClick={() => void apply(null)}
           >
             {t("Remove")}

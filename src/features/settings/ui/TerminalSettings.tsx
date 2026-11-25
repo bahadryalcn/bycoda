@@ -165,9 +165,7 @@ export function TerminalPage() {
                   )}
                 </SettingsFeedback>
               ) : saving ? (
-                <SettingsFeedback state="loading" immediate>
-                  {t("Saving…")}
-                </SettingsFeedback>
+                <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
               ) : problem ? (
                 <SettingsFeedback state="error" extra={<ErrorDetails detail={problem} />}>
                   {t("Could not discover shells. Use Look again to retry.")}
@@ -405,7 +403,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
             ) : null}
           </SettingsFeedback>
         ) : saving || saved ? (
-          <SettingsFeedback state={saved ? "success" : "loading"} immediate>
+          <SettingsFeedback state={saved ? "success" : "loading"} immediate={saved}>
             {saving ? t("Saving…") : loading ? t("Asking the machine…") : t("Saved")}
           </SettingsFeedback>
         ) : null

@@ -55,7 +55,7 @@ function JobDiscussionSource() {
           result.thread?.purpose !== "job-planning" ||
           (result.thread.projectId ?? "") !== projectId
         )
-          throw new Error("The job discussion could not be opened.");
+          throw new Error(t("The job discussion could not be opened."));
         setThread(result.thread);
       })
       .catch((cause: unknown) => {
@@ -108,7 +108,7 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
   const canReview =
     latest?.role === "assistant" &&
     !c.pending &&
-    !c.error &&
+    !c.notice &&
     !draft.trim() &&
     !c.draftSaveError &&
     !c.requestKey.current[c.threadId];
@@ -142,11 +142,11 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
           />
         </div>
       )}
-      {c.error ? (
+      {c.notice ? (
         <InlineError
           retry={{ label: t("Check conversation"), onRetry: () => void c.checkConversation() }}
         >
-          {c.error}
+          {c.notice}
         </InlineError>
       ) : (
         c.draftSaveError && (
@@ -195,6 +195,11 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
               variant="primary"
               startIcon={<CheckList className="icon-sm" />}
               disabled={!canReview || !!room.pending}
+              disabledReason={
+                room.pending || c.pending
+                  ? t("Wait for the current action to finish.")
+                  : t("Review once the assistant has replied and nothing is left to send.")
+              }
               onClick={() => {
                 if (!canReview) return;
                 try {

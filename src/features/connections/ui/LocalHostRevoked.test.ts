@@ -102,6 +102,12 @@ it("keeps the notice and shows the reason when Reconnect fails", async () => {
   await openNotifications();
   await act(async () => reconnectButton()!.click());
   expect(document.body.textContent).toContain("was revoked");
+  expect(document.body.textContent).toContain("Could not reconnect to this computer's Host.");
+  await act(async () =>
+    [...document.body.querySelectorAll("button")]
+      .find((entry) => entry.textContent === "Details")!
+      .click(),
+  );
   expect(document.body.textContent).toContain("The local Host is not installed on this computer");
 });
 

@@ -36,7 +36,9 @@ it("swaps confirmed success in place, gives pending priority and resets when edi
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Saved");
     expect(container.querySelector('[role="status"]')?.className).toBe("sr-only");
     await act(async () => root.render(render(true, true)));
-    expect(button.textContent).toBe("Save");
+    // Pending text sits beside the spinner in place of the label, never a bare spinner.
+    expect(button.textContent).toBe("Saving…");
+    expect(button.querySelector("[data-confirm-icon] > [aria-hidden] > span")).not.toBeNull();
     expect(button.getAttribute("aria-label")).toBe("Saving…");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("");
     await act(async () => root.render(render(false)));

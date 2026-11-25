@@ -329,8 +329,8 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
         </div>
         {editing?.kind === "create" ? renderForm(t("New branch name"), t("Create")) : null}
         {error ? (
-          <InlineError className="max-h-24 overflow-y-auto whitespace-pre-wrap">
-            {error}
+          <InlineError details={error} className="max-h-24 overflow-y-auto whitespace-pre-wrap">
+            {t("Couldn’t update branches")}
           </InlineError>
         ) : null}
         {listed.length === 0 ? (

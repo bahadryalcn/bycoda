@@ -33,10 +33,9 @@ export function AheadBehindCount({
         as="span"
         size="caption"
         tone="secondary"
-        role="img"
-        aria-label={label}
         className={`flex items-center gap-1 tabular-nums ${className ?? ""}`}
       >
+        <span className="sr-only">{label}</span>
         {!hideZero || ahead > 0 ? <span aria-hidden>↑{ahead}</span> : null}
         {!hideZero || behind > 0 ? <span aria-hidden>↓{behind}</span> : null}
       </Text>

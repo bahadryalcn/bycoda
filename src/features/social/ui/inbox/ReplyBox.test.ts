@@ -309,9 +309,9 @@ it("ignores a second press while a send is in flight", async () => {
     button("Send").click();
     button("Send").click();
   });
-  expect(off(button("Send"))).toBe(true);
-  expect(button("Send").getAttribute("aria-description")).toBe("Sending…");
-  await act(async () => button("Send").click());
+  expect(off(button("Sending…"))).toBe(true);
+  expect(button("Sending…").getAttribute("aria-description")).toBe("Sending…");
+  await act(async () => button("Sending…").click());
   expect(fake.writes().filter((call) => call.action === "replies.draft")).toHaveLength(1);
   release(fake.draft);
   await flush();
@@ -514,7 +514,7 @@ it("shows suggestion progress and protects the editor while AI text is pending",
   });
   await mount(fake.client);
   await act(async () => button("Fill with AI").click());
-  expect(button("Fill with AI").getAttribute("aria-busy")).toBe("true");
+  expect(button("Working…").getAttribute("aria-busy")).toBe("true");
   expect(editor().disabled).toBe(true);
   expect(element.textContent).not.toContain("Sending");
   await act(async () => finish({ text: "Prepared reply", factIds: ["f1"] }));
@@ -570,7 +570,7 @@ it("keeps an in-flight operation across remount and reflects completion without 
   await flush();
   await act(async () => root.render(null));
   await mount(fake.client);
-  expect(off(button("Send"))).toBe(true);
+  expect(off(button("Sending…"))).toBe(true);
   expect(editor().value).toBe("Pending through remount");
   await act(async () => {
     finish({ id: "j1", status: "queued" });

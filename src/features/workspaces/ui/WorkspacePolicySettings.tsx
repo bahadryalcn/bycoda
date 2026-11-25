@@ -23,6 +23,7 @@ import { revealPath } from "../../../platform/tauri/fs";
 import type { Session } from "../../sessions/model/session";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
 import { WorkspaceReview } from "./WorkspaceReview";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
@@ -420,13 +421,21 @@ export function WorkspacePolicySettings({
             loading={loading}
             loadingLabel={t("Refreshing…")}
             disabled={saving || removing}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void refresh()}
           >
             {t("Refresh workspace status")}
           </Button>
         </div>
       )}
-      {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+      {error && (
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails title={t("Could not update workspace settings.")} detail={error} />}
+        >
+          {t("Could not update workspace settings.")}
+        </SettingsFeedback>
+      )}
       {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
       {hostUpdateNotice ? (
         <SettingsFeedback state="warning">{hostUpdateNotice}</SettingsFeedback>
@@ -435,11 +444,11 @@ export function WorkspacePolicySettings({
         <section aria-label={t("Worktrees")} className="flex min-w-0 flex-col gap-2">
           {!renderHeader && <Heading size="item">{t("Worktrees")}</Heading>}
           {!onDisk.length && !renderWorktrees ? (
-            <Text as="p" size="caption" tone="secondary" role="status">
+            <InlineMessage tone="neutral" icon={null}>
               {t(
                 "No managed workspace directories yet. Workspaces created by sessions appear here.",
               )}
-            </Text>
+            </InlineMessage>
           ) : (
             <div
               {...surfaceAttributes(
@@ -581,7 +590,14 @@ export function WorkspacePolicySettings({
           onKeepEdits={() => setPolicyConflict(false)}
         />
       )}
-      {revealError && <SettingsFeedback state="error">{revealError}</SettingsFeedback>}
+      {revealError && (
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails title={t("Could not open the folder.")} detail={revealError} />}
+        >
+          {t("Could not open the folder.")}
+        </SettingsFeedback>
+      )}
       {cleanup && (
         <WorkspaceDirectoryRemoval
           workspace={cleanup}

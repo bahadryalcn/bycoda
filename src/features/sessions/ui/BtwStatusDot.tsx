@@ -7,7 +7,7 @@ export function BtwStatusDot({ status }: { status: BtwThread["status"] }) {
   const t = useT();
   return (
     <StatusDot
-      label={t(status === "running" ? "Running" : status === "error" ? "Failed" : "Done")}
+      label={status === "running" ? t("Running") : status === "error" ? t("Failed") : t("Done")}
       tone={status === "running" ? "accent" : status === "error" ? "danger" : "success"}
     />
   );

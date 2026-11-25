@@ -214,9 +214,8 @@ export function MachineForm({
         {t("Cancel")}
       </Button>
       <Button
-        stableWidth
-        reserveLabels={[t("Saving…"), t("Connecting…")]}
         loading={busy}
+        loadingLabel={editing ? t("Saving…") : t("Connecting…")}
         disabled={busy || (ssh ? !draft.target.trim() : !url.trim() || !token)}
         disabledReason={
           busy
@@ -233,7 +232,7 @@ export function MachineForm({
         type="submit"
         form={formId}
       >
-        {editing ? (busy ? t("Saving…") : editAction) : busy ? t("Connecting…") : t("Connect")}
+        {editing ? editAction : t("Connect")}
       </Button>
     </ModalActions>
   );

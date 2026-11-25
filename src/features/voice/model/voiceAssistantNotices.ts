@@ -1,4 +1,3 @@
-import { t } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 
@@ -48,8 +47,8 @@ export function observedRequestIds(observations: readonly unknown[]) {
   return [...ids];
 }
 
-/** Host RPC rejections arrive as strings; keep their reason instead of a generic fallback. */
+/** Host RPC rejections arrive as strings; keep their reason instead of the already translated fallback. */
 export function voiceError(cause: unknown, fallback: string): string {
   const message = cause == null ? "" : errorText(cause).trim();
-  return t(message && message !== "[object Object]" ? message : fallback);
+  return message && message !== "[object Object]" ? message : fallback;
 }

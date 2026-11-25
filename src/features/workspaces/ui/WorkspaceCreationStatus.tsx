@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -40,9 +41,9 @@ export function WorkspaceCreationStatus({
       {error ? (
         <>
           {centrally ? null : (
-            <Text size="inherit" tone="danger" className="min-w-0 flex-1 break-words">
-              {error}
-            </Text>
+            <InlineError live="off" details={error} className="min-w-0 flex-1 break-words">
+              {t("Could not prepare the workspace.")}
+            </InlineError>
           )}
           {onUseCurrentCheckout ? (
             <Button size="sm" variant="secondary" onClick={onUseCurrentCheckout}>

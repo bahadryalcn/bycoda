@@ -204,11 +204,13 @@ function CodeTerminalPresentation({
       <Button
         variant="ghost"
         tone="danger"
+        loading={stopping}
+        loadingLabel={t("Stopping…")}
         disabled={stopping || starting}
         disabledReason={starting ? t("Starting…") : undefined}
         onClick={() => void stopCommand().catch(() => {})}
       >
-        {stopping ? t("Stopping…") : t("Stop")}
+        {t("Stop")}
       </Button>
     ) : null;
   const addResult =
@@ -234,6 +236,9 @@ function CodeTerminalPresentation({
             label={t("Add result to chat when finished")}
             checked={autoReport}
             disabled={reported}
+            disabledReason={
+              reported ? t("Result added to chat. Review and send when ready.") : undefined
+            }
             onChange={(event) => setAutoReport(event.target.checked)}
           />
         ) : null}
@@ -278,8 +283,11 @@ function CodeTerminalPresentation({
           {notStarted ? t("Could not run the command.") : t("Could not confirm command status.")}
         </InlineError>
       ) : actionFailure.visibleError || readFailure.visibleError ? (
-        // Graced failures are already presented sentences ("busy right now"), so they lead.
-        <InlineError>{actionFailure.visibleError ?? readFailure.visibleError}</InlineError>
+        <InlineError details={actionFailure.visibleError ?? readFailure.visibleError}>
+          {actionFailure.visibleError
+            ? t("Could not run the command.")
+            : t("Could not confirm command status.")}
+        </InlineError>
       ) : null}
       {reportError ? (
         <InlineError details={reportError}>
@@ -313,14 +321,21 @@ function CodeTerminalPresentation({
             <Button
               variant="primary"
               tone="danger"
+              loading={stopping}
+              loadingLabel={t("Stopping…")}
               disabled={starting || stopping}
               disabledReason={starting ? t("Starting…") : undefined}
               onClick={closeDialog}
             >
-              {stopping ? t("Stopping…") : t("Stop and close")}
+              {t("Stop and close")}
             </Button>
           ) : (
-            <Button variant="ghost" disabled={stopping} onClick={closeDialog}>
+            <Button
+              variant="ghost"
+              disabled={stopping}
+              disabledReason={stopping ? t("Stopping…") : undefined}
+              onClick={closeDialog}
+            >
               {t("Close")}
             </Button>
           )}

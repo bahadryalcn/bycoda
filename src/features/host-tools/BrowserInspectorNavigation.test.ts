@@ -69,7 +69,7 @@ it("exposes named relative navigation without activating a page element", async 
   );
   expect(onTraverse).toHaveBeenCalledWith("nextSibling");
   await render({ ...element, parentNodeId: undefined });
-  expect(container.querySelector<HTMLButtonElement>('[aria-label="Select parent"]')!.disabled).toBe(
-    true,
-  );
+  const parent = container.querySelector<HTMLButtonElement>('[aria-label="Select parent"]')!;
+  expect(parent.getAttribute("aria-disabled")).toBe("true");
+  expect(parent.getAttribute("aria-description")).toContain("no parent");
 });

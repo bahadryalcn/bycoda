@@ -23,6 +23,22 @@ const STATUS_KEY = ["providers", "ollama", "status"] as const;
 
 type Busy = "" | "start" | "pull" | "cancel" | "save" | "port";
 
+/** The action-specific headline above the technical details of a failed Ollama action. */
+function failureTitle(kind: Busy) {
+  switch (kind) {
+    case "start":
+      return t("Could not start Ollama.");
+    case "pull":
+      return t("Could not download the model.");
+    case "cancel":
+      return t("Could not cancel the download.");
+    case "port":
+      return t("Could not change the Ollama port.");
+    default:
+      return t("Could not save the OpenCode models.");
+  }
+}
+
 const validPort = (value: number) => Number.isInteger(value) && value >= 1 && value <= 65535;
 
 /** The loopback port Ollama listens on. Saving also moves OpenCode's Ollama models to it. */
@@ -72,6 +88,13 @@ function OllamaPortRow({
         <Button
           type="submit"
           disabled={disabled || !validPort(value) || value === port}
+          disabledReason={
+            disabled
+              ? t("Wait for the current action to finish.")
+              : !validPort(value)
+                ? t("Enter a port from 1 to 65535.")
+                : t("The port is unchanged.")
+          }
           loading={saving}
         >
           {t("Save")}
@@ -81,6 +104,7 @@ function OllamaPortRow({
             type="button"
             variant="ghost"
             disabled={disabled}
+            disabledReason={t("Wait for the current action to finish.")}
             onClick={() => void onSave(null)}
           >
             {t("Use default")}
@@ -122,7 +146,8 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
   const status = query.data;
   const loadError = query.error ? errorText(query.error) : "";
   const load = () => void query.refetch();
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{ kind: Busy; detail: string } | null>(null);
+  const error = failure?.detail ?? "";
   const [busy, setBusy] = useState<Busy>("");
   /** The owner's unsaved choice; undefined follows the models saved in the OpenCode config. */
   const [draft, setDraft] = useState<Set<string>>();
@@ -133,12 +158,12 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
   const run = async (kind: Busy, action: () => Promise<OllamaStatus>) => {
     if (busy) return false;
     setBusy(kind);
-    setError("");
+    setFailure(null);
     try {
       queryClient.setQueryData(STATUS_KEY, await action());
       return true;
     } catch (reason) {
-      setError(errorText(reason));
+      setFailure({ kind, detail: errorText(reason) });
       return false;
     } finally {
       setBusy("");
@@ -158,7 +183,9 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
     if (!(await run("save", () => ollamaClient.saveOpencode([...models])))) return;
     setDraft(undefined);
     // OpenCode reloads its config by itself; the app's cached model list is read again.
-    void refreshOpenCodeCatalog().catch((reason: unknown) => setError(errorText(reason)));
+    void refreshOpenCodeCatalog().catch((reason: unknown) =>
+      setFailure({ kind: "save", detail: errorText(reason) }),
+    );
   };
 
   const download = () => {
@@ -176,7 +203,7 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
           {t("Could not load Ollama.")}
         </InlineError>
       );
-    if (error) return <InlineError details={error}>{t("Ollama operation failed.")}</InlineError>;
+    if (failure) return <InlineError details={error}>{failureTitle(failure.kind)}</InlineError>;
     return undefined;
   })();
 
@@ -215,6 +242,11 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
     );
     const configBlocked = status.opencode.config !== "ready";
     const pull = status.pull;
+    const modelsBlockedReason = !opencodeAvailable
+      ? t("Install OpenCode first.")
+      : configBlocked
+        ? t("Fix the OpenCode config first.")
+        : t("Wait for the current action to finish.");
     const notice = !opencodeAvailable ? (
       <SettingsFeedback state="warning">
         {t("Install OpenCode above to use these models.")}
@@ -242,6 +274,7 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
                     appearance="row"
                     checked={selected.has(model.name)}
                     disabled={!!busy || configBlocked || !opencodeAvailable}
+                    disabledReason={modelsBlockedReason}
                     label={model.name}
                     description={modelDetails(model)}
                     onChange={(event) => toggle(model.name, event.target.checked)}
@@ -253,6 +286,7 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
                     appearance="row"
                     checked={selected.has(name)}
                     disabled={!!busy || configBlocked || !opencodeAvailable}
+                    disabledReason={modelsBlockedReason}
                     label={name}
                     description={t("Not downloaded in Ollama")}
                     onChange={(event) => toggle(name, event.target.checked)}

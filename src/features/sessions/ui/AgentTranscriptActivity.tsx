@@ -789,7 +789,7 @@ export function ActivityThinkingRow({
       }
     >
       {open ? (
-        <div className={`min-w-0 pb-2 ${bare ? "" : "pl-5"}`}>
+        <div className={`min-w-0 pb-2 ${bare ? "" : "ps-5"}`}>
           <AgentMarkdown
             className="agent-reasoning"
             text={block.text}
@@ -850,7 +850,7 @@ function ActivityNoteRow({
       summary={
         <>
           {icon}
-          <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
+          <span className="line-clamp-2 min-w-0 flex-1 text-start font-sans text-ui-body font-normal text-(--transcript-ink-chrome)">
             {text}
           </span>
         </>
@@ -863,6 +863,26 @@ function ActivityNoteRow({
       ) : null}
     </Disclosure>
   );
+}
+
+/** The verb of a file or search call, translated through literal keys. */
+function toolActionText(translate: ReturnType<typeof useT>, action: string): string {
+  switch (action) {
+    case "Read":
+      return translate("Read");
+    case "Find":
+      return translate("Find");
+    case "Skill":
+      return translate("Skill");
+    case "List":
+      return translate("List");
+    case "Edit":
+      return translate("Edit");
+    case "Write":
+      return translate("Write");
+    default:
+      return action;
+  }
 }
 
 function ActivityToolRow({
@@ -901,8 +921,6 @@ function ActivityToolRow({
     block.tool?.preview?.kind === "shell" ||
     isExecuteTool(block.tool?.kind, block.text || block.tool?.title);
   const errorOpen = override ?? (command && state === "rejected" && hasResult);
-  const inspectionLabel =
-    block.tool?.preview?.kind === "write" ? "Show changes for {p2}" : "Show output for {p2}";
   const summary = (
     <ToolCallSummary
       label={label}
@@ -951,20 +969,21 @@ function ActivityToolRow({
           chevron="end"
           open={errorOpen}
           onOpenChange={setErrorOpen}
-          summaryLabel={t(
+          summaryLabel={
             errorOpen
               ? errorDetail
-                ? "Hide error details for {p2}"
-                : "Hide output for {p2}"
+                ? t("Hide error details for {p2}", { p2: label })
+                : t("Hide output for {p2}", { p2: label })
               : errorDetail
-                ? "Show error details for {p2}"
-                : inspectionLabel,
-            { p2: label },
-          )}
+                ? t("Show error details for {p2}", { p2: label })
+                : block.tool?.preview?.kind === "write"
+                  ? t("Show changes for {p2}", { p2: label })
+                  : t("Show output for {p2}", { p2: label })
+          }
           summary={rowContent}
         >
           {errorOpen ? (
-            <div className={`min-w-0 py-1 ${bare ? "" : "pl-5"}`}>
+            <div className={`min-w-0 py-1 ${bare ? "" : "ps-5"}`}>
               <ToolInspectionPanel block={block} />
             </div>
           ) : null}
@@ -983,7 +1002,7 @@ function ActivityToolRow({
       ) : null}
       {errorDetail && !errorOpen ? (
         <p
-          className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "pl-5"}`}
+          className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "ps-5"}`}
         >
           {errorSummaryLine(errorDetail)}
         </p>
@@ -1073,16 +1092,27 @@ function BycodaCallRow({
           chevron="end"
           open={errorOpen}
           onOpenChange={setErrorOpen}
-          summaryLabel={t(
+          summaryLabel={
             hasError
               ? errorOpen
-                ? "Hide error details for {p1}: {p2}"
-                : "Show error details for {p1}: {p2}"
+                ? t("Hide error details for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
+                : t("Show error details for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
               : errorOpen
-                ? "Hide output for {p1}: {p2}"
-                : "Show output for {p1}: {p2}",
-            { p1: PRODUCT_IDENTITY.displayName, p2: call.label },
-          )}
+                ? t("Hide output for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
+                : t("Show output for {p1}: {p2}", {
+                    p1: PRODUCT_IDENTITY.displayName,
+                    p2: call.label,
+                  })
+          }
           summary={summary}
         >
           {errorOpen ? <ToolInspectionPanel block={block} /> : null}
@@ -1091,7 +1121,7 @@ function BycodaCallRow({
         <Disclosure variant="step" collapsible={false} summary={summary} />
       )}
       {hasError && block.tool?.detail?.trim() ? (
-        <p className="m-0 line-clamp-2 min-w-0 break-words py-1 pl-5 text-ui-caption text-(--ui-tone-danger-fg)">
+        <p className="m-0 line-clamp-2 min-w-0 break-words py-1 ps-5 text-ui-caption text-(--ui-tone-danger-fg)">
           {errorSummaryLine(block.tool.detail)}
         </p>
       ) : null}
@@ -1252,7 +1282,7 @@ function ToolCallSummary({
         <WorkingIndicator className="min-w-0 flex-1" text={{ size: "body" }} truncate glyph={false}>
           {action && target ? (
             <>
-              {t(action)}{" "}
+              {toolActionText(t, action)}{" "}
               <span className="font-mono text-ui-secondary text-(--transcript-ink-chrome)">
                 {target}
               </span>
@@ -1296,10 +1326,12 @@ function ToolCallSummary({
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
       {working ? (
         <WorkingIndicator className="shrink-0 font-sans" text={{ size: "body" }} glyph={false}>
-          {t(action)}
+          {toolActionText(t, action)}
         </WorkingIndicator>
       ) : (
-        <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{t(action)}</span>
+        <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>
+          {toolActionText(t, action)}
+        </span>
       )}
       {isFile ? (
         canPreview ? (
@@ -1310,7 +1342,7 @@ function ToolCallSummary({
             cwd={cwd}
             onOpen={openFile && filePath ? () => openFile(filePath) : undefined}
             onOpenFile={onOpenFile}
-            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-(--ui-tone-info-fg) ${
+            className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-start hover:text-(--ui-tone-info-fg) ${
               chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
             }`}
           >
@@ -1320,7 +1352,7 @@ function ToolCallSummary({
         ) : canOpen ? (
           <Button
             motion="none"
-            className="-my-0.5 min-w-0 text-left max-w-full flex-1"
+            className="-my-0.5 min-w-0 text-start max-w-full flex-1"
             fullWidth
             variant="item"
             type="button"
@@ -1359,7 +1391,7 @@ function ToolCallSummary({
               </span>
             </span>
           ) : (
-            <span className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}>
+            <span className={`flex min-w-0 flex-1 items-center gap-1.5 ps-1 ${targetTone}`}>
               <span className="min-w-0 truncate">{target}</span>
             </span>
           )}

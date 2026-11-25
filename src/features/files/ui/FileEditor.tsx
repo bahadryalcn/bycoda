@@ -9,13 +9,15 @@ import { t, useLocale } from "../../../shared/i18n/technical";
 import { Folder, Save } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { reportFailure } from "../../../shared/ui/reportFailure";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { revealLabel } from "./explorerMenuItems";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 
 import {
@@ -96,12 +98,6 @@ export { FILE_EDITOR_AUTOSAVE_DELAY_MS } from "../editor/editorTiming";
 
 /** A baseVersion no file stamp equals, so a save before a pending re-read is refused. */
 const UNVERIFIED_DISK_VERSION = "unverified";
-
-const REVEAL_LABEL = IS_MAC
-  ? "Reveal in Finder"
-  : IS_WIN
-    ? "Reveal in File Explorer"
-    : "Open containing folder";
 
 type Props = {
   path: string;
@@ -190,7 +186,7 @@ export function FileEditor({
   const [draftAction, setDraftAction] = useState<"restore" | "replace" | null>(null);
   const draftActionRef = useRef(false);
   const draftViewGeneration = useRef(0);
-  const [draftActionError, setDraftActionError] = useState<string | null>(null);
+  const [draftActionNotice, setDraftActionNotice] = useState<string | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
   const [gitBase, setGitBase] = useState<
@@ -466,7 +462,7 @@ export function FileEditor({
     draftViewGeneration.current += 1;
     setDraftAction(null);
     draftActionRef.current = false;
-    setDraftActionError(null);
+    setDraftActionNotice(null);
     const handle = bindEditorDraftDocument({
       documentId,
       path,
@@ -1206,12 +1202,12 @@ export function FileEditor({
     const generation = draftViewGeneration.current;
     const settled = editorClosure.operation("draft-decision");
     if (!settled) {
-      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      setDraftActionNotice(t("The editor is busy closing or moving. Try again in a moment."));
       return;
     }
     draftActionRef.current = true;
     setDraftAction(decision);
-    setDraftActionError(null);
+    setDraftActionNotice(null);
     try {
       if (decision === "restore" && dirtyRef.current) {
         throw new Error(t("Keep or save your current edits before restoring this draft."));
@@ -1249,7 +1245,7 @@ export function FileEditor({
         await reportFailure(error, {
           toast: {
             show: ({ message }) => {
-              if (generation === draftViewGeneration.current) setDraftActionError(message);
+              if (generation === draftViewGeneration.current) setDraftActionNotice(message);
             },
           },
         });
@@ -1267,12 +1263,12 @@ export function FileEditor({
     const generation = draftViewGeneration.current;
     const settled = editorClosure.operation("draft-retry");
     if (!settled) {
-      setDraftActionError(t("The editor is busy closing or moving. Try again in a moment."));
+      setDraftActionNotice(t("The editor is busy closing or moving. Try again in a moment."));
       return;
     }
     draftActionRef.current = true;
     setDraftAction("replace");
-    setDraftActionError(null);
+    setDraftActionNotice(null);
     try {
       await draftHandleRef.current?.retry();
     } catch (error) {
@@ -1280,7 +1276,7 @@ export function FileEditor({
         await reportFailure(error, {
           toast: {
             show: ({ message }) => {
-              if (generation === draftViewGeneration.current) setDraftActionError(message);
+              if (generation === draftViewGeneration.current) setDraftActionNotice(message);
             },
           },
         });
@@ -1318,18 +1314,9 @@ export function FileEditor({
 
   if (loadState.status !== "ready" || diffPending) {
     return (
-      <UiText
-        role="status"
-        aria-busy
-        as="div"
-        size="caption"
-        tone="muted"
-        className="grid h-full min-w-0 place-items-center p-3"
-      >
-        <span className="max-w-full break-words text-center">
-          {t("Opening {p0}…", { p0: basename(path) })}
-        </span>
-      </UiText>
+      <LoadingText layout="fill" delay={false} className="min-w-0 break-words text-center">
+        {t("Opening {p0}…", { p0: basename(path) })}
+      </LoadingText>
     );
   }
 
@@ -1344,10 +1331,10 @@ export function FileEditor({
       disabledReason={editorClosure.closed() ? t("Preparing checkpoint…") : t("No unsaved changes")}
       loading={saveState.status === "saving"}
       loadingLabel={t("Saving…")}
+      startIcon={<Save className="icon-sm" />}
       onClick={() => void requestSave()}
       className="shrink-0"
     >
-      <Save className="icon-sm" />
       {t("Save")}
     </Button>
   );
@@ -1422,7 +1409,6 @@ export function FileEditor({
     >
       {draftPersistence?.initializationDecisionRequired ? (
         <UiText
-          role="status"
           as="div"
           size="caption"
           tone="primary"
@@ -1431,15 +1417,17 @@ export function FileEditor({
             "flex shrink-0 flex-wrap items-center gap-2 px-2.5 py-1",
           )}
         >
-          <span className="min-w-0 flex-1">
-            {t(
+          <LiveText
+            className="min-w-0 flex-1"
+            text={t(
               "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
             )}
-          </span>
+          />
           <Button
             size="sm"
             variant="secondary"
             disabled={dirty}
+            disabledReason={t("Save or discard your edits first.")}
             loading={draftAction === "restore"}
             onClick={() => void resolveDraft("restore")}
           >
@@ -1450,13 +1438,15 @@ export function FileEditor({
             variant="ghost"
             loading={draftAction === "replace"}
             disabled={draftAction === "restore"}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={() => void resolveDraft("replace")}
           >
             {t("Use current document")}
           </Button>
         </UiText>
       ) : null}
-      {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
+      {draftActionNotice ||
+      (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
         <InlineError
           className="shrink-0"
           action={
@@ -1470,7 +1460,7 @@ export function FileEditor({
               : undefined
           }
         >
-          {draftActionError ??
+          {draftActionNotice ??
             t("Draft recovery copy could not be confirmed. Keep this editor open.")}
         </InlineError>
       ) : null}
@@ -1504,21 +1494,26 @@ export function FileEditor({
         </Alert>
       )}
       {diskError && !diskConflict && !dirty ? (
-        <InlineError className="shrink-0" retry={{ onRetry: () => reloadFromDisk() }}>
-          {diskError}
+        <InlineError
+          className="shrink-0"
+          details={diskError}
+          retry={{ onRetry: () => reloadFromDisk() }}
+        >
+          {t("Couldn’t check the file on disk.")}
         </InlineError>
       ) : null}
       {showDiff && gitDiff?.eolOnly && (
         <UiText
-          role="status"
           as="p"
           size="secondary"
           tone="secondary"
           {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
-          {t("{p0} line-ending changes. Line breaks are normalized in this view.", {
-            p0: gitDiff.kind === "staged" ? t("Staged") : t("Unstaged"),
-          })}
+          <LiveText
+            text={t("{p0} line-ending changes. Line breaks are normalized in this view.", {
+              p0: gitDiff.kind === "staged" ? t("Staged") : t("Unstaged"),
+            })}
+          />
         </UiText>
       )}
       {hasMarkdownShell ? (
@@ -1621,7 +1616,7 @@ export function FileEditor({
           <Button
             size="sm"
             iconOnly
-            label={t(REVEAL_LABEL)}
+            label={revealLabel()}
             variant="ghost"
             onClick={() =>
               void revealInFileManager(path).catch((error: unknown) =>

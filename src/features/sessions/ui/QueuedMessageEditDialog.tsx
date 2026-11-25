@@ -87,7 +87,7 @@ import {
 
 type CutVersion = QueuedEditDraft & { start: number; end: number };
 
-type EditFeedback = { title: string; detail: string };
+type EditFeedback = { title: string; detail?: string };
 
 type Props = {
   parentSessionId?: string;
@@ -179,6 +179,8 @@ function QueueEditContent({
   const [draft, setDraft] = useState<QueuedEditDraft>(() => queuedEditDraft(body));
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [error, setError] = useState<string | EditFeedback | null>(null);
+  // A plain string is an already-written sentence; an object keeps its raw detail behind Details.
+  const feedback = typeof error === "string" ? { title: error } : error;
   const [loadingAttachments, setLoadingAttachments] = useState(0);
   const pendingAttachments = useRef(0);
   const pendingSlots = useRef(new Set<string | symbol>());
@@ -825,6 +827,7 @@ function QueueEditContent({
                   onOpenChange={setAddOpen}
                   align="start"
                   disabled={parentClosed}
+                  disabledReason={t("This queued message is no longer available.")}
                   uploadUnavailable={
                     canAttach || !suggestions
                       ? undefined
@@ -888,13 +891,15 @@ function QueueEditContent({
               {t("Missing files are dropped from the message when you save.")}
             </Text>
           ) : null}
-          {typeof error === "string" ? (
-            <Alert tone="danger">{error}</Alert>
-          ) : error ? (
+          {feedback ? (
             <Alert
               tone="danger"
-              title={error.title}
-              extra={<ErrorDetails title={error.title} detail={error.detail} />}
+              title={feedback.title}
+              extra={
+                feedback.detail ? (
+                  <ErrorDetails title={feedback.title} detail={feedback.detail} />
+                ) : undefined
+              }
             />
           ) : null}
         </div>

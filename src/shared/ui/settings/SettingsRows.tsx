@@ -6,6 +6,7 @@ import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "
 import { FieldLabel } from "../Field";
 import { InlineMessage } from "../InlineError";
 import { Badge } from "../Badge";
+import { LoadingText } from "../LoadingText";
 import { useTooltip } from "../Tooltip";
 import { Button } from "../Button";
 import { Heading } from "../Heading";
@@ -176,28 +177,30 @@ function SettingStatus({ persistence }: Pick<SettingDetails, "persistence">) {
   const t = useT();
   const state = persistence?.state;
   const showSaveHint = persistence?.mode === "explicit";
-  if (!persistence || !(showSaveHint || (state && state !== "idle"))) return null;
+  // An explicit save shows its progress in its own Save action; an automatic one shows a delayed
+  // line, so a quick save never flashes a badge.
+  const saving = state === "saving";
+  const showSaving = saving && !showSaveHint;
+  if (!persistence || !(showSaveHint || (state && state !== "idle" && (!saving || showSaving))))
+    return null;
   return (
     <Text as="div" size="caption" tone="secondary" leading="normal" className="settings-hint">
       {showSaveHint ? <span>{t("Changes require saving")}</span> : null}
-      {state && state !== "idle" ? (
+      {showSaving ? (
+        <LoadingText size="caption" tone="secondary">
+          {t("Saving…")}
+        </LoadingText>
+      ) : null}
+      {state && state !== "idle" && !saving ? (
         <Badge
-          tone={
-            state === "error"
-              ? "danger"
-              : state === "saved"
-                ? "success"
-                : state === "saving"
-                  ? "info"
-                  : "warning"
-          }
+          tone={state === "error" ? "danger" : state === "saved" ? "success" : "warning"}
           role="status"
           aria-live="polite"
           aria-atomic="true"
         >
           {state === "dirty" ? t("Unsaved changes") : null}
-          {state === "saving" ? t("Saving…") : null}
           {state === "saved" ? t("Saved") : null}
+          {/* oxlint-disable-next-line bycoda/no-raw-error-text -- persistence.error is the owner-written ReactNode message, documented as such on SettingsPersistence */}
           {state === "error" ? (persistence.error ?? t("Could not save changes")) : null}
         </Badge>
       ) : null}

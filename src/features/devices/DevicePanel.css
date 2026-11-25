@@ -316,13 +316,12 @@
   min-inline-size: 0;
 }
 /* Feedback strips under the header: tinted, padded, never flush with the pane edge. */
+/* The error strip keeps its height in the panel; the Alert inside owns its own look. */
 .device-panel-error {
   flex: none;
   max-block-size: 120px;
   overflow-y: auto;
-  padding: 8px 12px;
 }
-.device-panel-error pre,
 .device-panel-output {
   max-block-size: 240px;
   overflow: auto;

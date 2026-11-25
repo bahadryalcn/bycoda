@@ -92,6 +92,15 @@ export default function OnboardingDialog({ onFinish, onImported, onOpenProject }
   const { machines } = useRemoteMachines();
   const remotes = remoteProjectMachines(machines);
   const steps = useOnboardingSteps().filter((id) => id !== "Machines" || remotes.length > 0);
+  const stepLabels = {
+    Account: t("Account"),
+    Statistics: t("Statistics"),
+    Workspace: t("Workspace"),
+    Appearance: t("Appearance"),
+    Agents: t("Agents"),
+    Machines: t("Machines"),
+    Projects: t("Projects"),
+  };
   const [currentId, setCurrentId] = useState(steps[0]);
   const step = Math.max(0, steps.indexOf(currentId));
   const current = steps[step];
@@ -183,7 +192,7 @@ export default function OnboardingDialog({ onFinish, onImported, onOpenProject }
             <Stepper
               className="onboarding-stepper"
               label={t("Getting started")}
-              steps={steps.map((label) => ({ id: label, label: t(label) }))}
+              steps={steps.map((id) => ({ id, label: stepLabels[id] }))}
               current={step}
               completed={[...visited].filter((id) => id !== current)}
               selectable="all"
@@ -416,11 +425,11 @@ function Projects({
     <Button
       disabled={busy}
       loading={adding}
+      startIcon={<FolderPlus aria-hidden className="icon-sm" />}
       onClick={() => void addFolders()}
       variant="secondary"
       type="button"
     >
-      <FolderPlus aria-hidden className="icon-sm" />
       {t("Choose project folders")}
     </Button>
   );
@@ -686,11 +695,24 @@ function Projects({
           </Button>
         }
       >
-        <Button disabled={busy || !!summary} onClick={onFinish} variant="ghost" type="button">
+        <Button
+          disabled={busy || !!summary}
+          disabledReason={
+            summary
+              ? t("The import is finished. Use Finish setup.")
+              : t("Wait for the current operation to finish")
+          }
+          onClick={onFinish}
+          variant="ghost"
+          type="button"
+        >
           {t("Skip import")}
         </Button>
         <Button
           disabled={busy || (!summary && !selected.size)}
+          disabledReason={
+            busy ? t("Wait for the current operation to finish") : t("Choose at least one project.")
+          }
           loading={importing}
           onClick={summary ? onFinish : () => void start()}
           reserveLabels={[t("Finish setup"), t("Import {p0} projects", { p0: folders.length })]}

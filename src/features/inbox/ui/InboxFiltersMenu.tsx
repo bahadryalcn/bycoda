@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Select } from "../../../shared/ui/Select";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
 import type { CodeHostScope } from "../model/codeHostScopes";
@@ -334,7 +335,15 @@ export function InboxFiltersMenu({
 
           {source === "gitlab" || source === "azuredevops" ? (
             <div className="grid min-w-0 gap-1.5">
-              {codeHostError ? <Alert tone="danger">{codeHostError}</Alert> : null}
+              {codeHostError ? (
+                <Alert
+                  tone="danger"
+                  title={t("Could not load projects.")}
+                  extra={
+                    <ErrorDetails title={t("Could not load projects.")} detail={codeHostError} />
+                  }
+                />
+              ) : null}
               {codeHostIncomplete ? <Alert tone="warning">{codeHostIncomplete}</Alert> : null}
               {codeHostProjects.length ? (
                 <SectionLabel variant="menu">{t("Projects")}</SectionLabel>

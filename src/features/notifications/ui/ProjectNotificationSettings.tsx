@@ -29,6 +29,7 @@ import {
 import { useNotificationProjects } from "../hooks/useNotificationProjects";
 import {
   NOTIFICATION_CATEGORIES,
+  notificationCategoryLabel,
   loadNotificationPreferences,
   updateNotificationPreferences,
   type NotificationCategory,
@@ -467,12 +468,7 @@ export function ProjectNotificationSettings({
                         >
                           {t("Could not save notification preferences. Please try again.")}
                           <span className="block">
-                            {project.name} ·{" "}
-                            {t(
-                              NOTIFICATION_CATEGORIES.find(
-                                (category) => category.id === error.category,
-                              )?.label ?? error.category,
-                            )}
+                            {project.name} · {notificationCategoryLabel(t, error.category)}
                           </span>
                         </SettingsFeedback>
                       </div>
@@ -500,7 +496,7 @@ export function ProjectNotificationSettings({
                               key={category.id}
                               className="project-notification-category"
                               labelText={{ size: "secondary", tone: "primary", leading: "inherit" }}
-                              label={t(category.label)}
+                              label={notificationCategoryLabel(t, category.id)}
                               labelPosition="start"
                               checked={!preferences[project.id]?.disabled.includes(category.id)}
                               disabled={preferencesUnavailable}

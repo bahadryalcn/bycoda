@@ -130,10 +130,13 @@ try {
   if (!new URLSearchParams(location.search).has("account")) {
     localStorage.setItem("bycoda.onboarding.account.v1", "seen");
   }
-  localStorage.setItem(
-    "bycoda.account.anonymousStats.consent.v2",
-    JSON.stringify({ choice: "off", decidedAt: "2026-01-01T00:00:00.000Z" }),
-  );
+  // `?account&statistics` leaves the question unanswered so the statistics step shows.
+  if (!new URLSearchParams(location.search).has("statistics")) {
+    localStorage.setItem(
+      "bycoda.account.anonymousStats.consent.v2",
+      JSON.stringify({ choice: "off", decidedAt: "2026-01-01T00:00:00.000Z" }),
+    );
+  }
 } catch {
   // Without storage the leading steps stay and the specs fail loudly.
 }

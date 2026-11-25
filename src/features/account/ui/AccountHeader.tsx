@@ -75,7 +75,7 @@ export function AccountHeader({
           })}
         </InlineMessage>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error}>{t("Could not sign out.")}</InlineError> : null}
     </header>
   );
 }

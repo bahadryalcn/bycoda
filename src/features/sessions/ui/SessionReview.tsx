@@ -3,6 +3,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { Surface } from "../../../shared/ui/Surface";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
@@ -315,12 +316,11 @@ function SessionReviewContent({
             as="div"
             size="caption"
             tone="inherit"
-            role="status"
             className="flex items-center gap-2 px-3 py-2.5 text-(--transcript-ink-chrome)"
             data-session-review-receipt={receipt}
           >
             <Check className="icon-sm shrink-0 text-(--ui-tone-success-fg)" aria-hidden />
-            {receipt === "kept" ? t("Changes kept") : t("Changes undone")}
+            <LiveText text={receipt === "kept" ? t("Changes kept") : t("Changes undone")} />
           </Text>
         </Surface>
       </div>
@@ -374,9 +374,9 @@ function SessionReviewContent({
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 py-2 ps-3 pe-2">
           <div className="flex min-w-0 flex-1 items-center gap-2 text-(--transcript-ink-emphasis)">
             <Text as="div" size="body" tone="inherit" truncate className="min-w-0">
-              {t(files.length === 1 ? "{p0} file changed" : "{p0} files changed", {
-                p0: files.length,
-              })}
+              {files.length === 1
+                ? t("{p0} file changed", { p0: files.length })
+                : t("{p0} files changed", { p0: files.length })}
             </Text>
             <DiffStat
               additions={totals.additions}
@@ -393,6 +393,11 @@ function SessionReviewContent({
               type="button"
               tooltip={t("Keep all session changes and dismiss this card")}
               disabled={disabled}
+              disabledReason={
+                acting != null
+                  ? t("Wait for the current action to finish.")
+                  : t("Could not load the changes.")
+              }
               loading={acting === "keep"}
               onClick={() => void run("keep")}
             >
@@ -458,14 +463,14 @@ function SessionReviewContent({
             expanded={expanded}
             chevron="start"
             onClick={() => setExpanded((open) => !open)}
-            className="w-full text-left"
+            className="w-full text-start"
           >
             <span>
               {expanded
                 ? t("Show fewer files")
-                : t(hiddenFileCount === 1 ? "Show {p0} more file" : "Show {p0} more files", {
-                    p0: hiddenFileCount,
-                  })}
+                : hiddenFileCount === 1
+                  ? t("Show {p0} more file", { p0: hiddenFileCount })
+                  : t("Show {p0} more files", { p0: hiddenFileCount })}
             </span>
           </Button>
         ) : null}
@@ -511,7 +516,7 @@ function FileRow({
         tooltip={file.relative}
         tooltipWhen="overflow"
         onClick={() => onOpenDiff(file.path, { sessionId, cwd })}
-        className="w-full min-w-0 text-left"
+        className="w-full min-w-0 text-start"
       >
         <FileTypeIcon name={name} isDir={false} size="md" />
         <Text

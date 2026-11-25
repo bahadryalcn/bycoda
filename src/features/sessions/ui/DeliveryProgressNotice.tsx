@@ -26,6 +26,7 @@ import {
   useDeliveryNoticeDismissed,
 } from "../model/deliveryNoticeDismissal";
 import { deliveryFailureSentence } from "../model/deliveryFailureText";
+import { catalogText } from "../model/catalogText";
 import { getSessions, setSessions } from "../model/sessionsStore";
 import type { QueuedMessage } from "../model/session";
 import {
@@ -57,16 +58,27 @@ export function useQueueDeliveryMessage(sessionId = "", progress?: DeliveryProgr
       ? waiting
       : undefined;
 }
-const labels: Record<DeliveryStage, string> = {
-  syncing: "Synchronizing the message queue…",
-  claiming: "Waiting for queue ownership…",
-  preparing: "Preparing the message and attachments…",
-  provider: "Waiting for the provider to be ready…",
-  confirming: "Sending the message. Waiting for provider confirmation…",
-  accepted: "Message accepted. Follow its progress in the conversation.",
-  rejected: "Queue paused: the last message was not accepted",
-  unknown: "Delivery is not confirmed. Automatic resend is held.",
-  waiting: "Not sent yet. The message stays queued and is retried automatically.",
+const stageLabel = (stage: DeliveryStage, t: ReturnType<typeof useT>): string => {
+  switch (stage) {
+    case "syncing":
+      return t("Synchronizing the message queue…");
+    case "claiming":
+      return t("Waiting for queue ownership…");
+    case "preparing":
+      return t("Preparing the message and attachments…");
+    case "provider":
+      return t("Waiting for the provider to be ready…");
+    case "confirming":
+      return t("Sending the message. Waiting for provider confirmation…");
+    case "accepted":
+      return t("Message accepted. Follow its progress in the conversation.");
+    case "rejected":
+      return t("Queue paused: the last message was not accepted");
+    case "unknown":
+      return t("Delivery is not confirmed. Automatic resend is held.");
+    case "waiting":
+      return t("Not sent yet. The message stays queued and is retried automatically.");
+  }
 };
 export const deliveryIsPending = (stage?: DeliveryStage) =>
   !!stage && !["accepted", "rejected", "unknown", "waiting"].includes(stage);
@@ -166,7 +178,7 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
   )
     return null;
   const pending = deliveryIsPending(progress.stage);
-  const label = t(labels[progress.stage]);
+  const label = stageLabel(progress.stage, t);
   return (
     <Tooltip label={label} asChild>
       <Text
@@ -256,10 +268,10 @@ export function DeliveryProgressNotice({
         : (progress?.detail ?? holdDetail);
   const title =
     noticeOnly && progress?.detail
-      ? t(progress.detail)
+      ? catalogText(t, progress.detail)
       : stage === "paused"
         ? t("Queue paused")
-        : t(labels[stage]);
+        : stageLabel(stage, t);
   const body = raw ? deliveryFailureSentence(raw, t) : undefined;
   const technical = raw && raw.trim() !== body ? raw : undefined;
   const outcomeText = (outcome: DeliveryReviewOutcome) =>
@@ -340,7 +352,11 @@ export function DeliveryProgressNotice({
           <TriangleAlert className="icon-sm" aria-hidden="true" />
           {t("Send again")}
         </Button>
-        {resolveError ? <InlineError>{resolveError}</InlineError> : null}
+        {resolveError ? (
+          <InlineError details={resolveError}>
+            {t("Could not record your choice. Try again.")}
+          </InlineError>
+        ) : null}
       </div>
     );
   }
@@ -369,7 +385,11 @@ export function DeliveryProgressNotice({
             onChoose={choose}
           />
         ) : null}
-        {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
+        {resolveError ? (
+          <InlineError className="mt-1" details={resolveError}>
+            {t("Could not record your choice. Try again.")}
+          </InlineError>
+        ) : null}
       </TranscriptNotice>
     </div>
   );

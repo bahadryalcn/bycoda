@@ -147,7 +147,7 @@ function CheckAnnotation({
               variant="ghost"
               type="button"
               onClick={() => openUrlSafely(fileUrl)}
-              className="-my-1 -mr-1 shrink-0"
+              className="-my-1 -me-1 shrink-0"
             >
               <ExternalLink className="icon-xs" strokeWidth={1.75} />
             </Button>
@@ -179,7 +179,7 @@ function CheckAnnotation({
               <Text
                 size="inherit"
                 tone="secondary"
-                className="w-8 shrink-0 select-none text-right tabular-nums"
+                className="w-8 shrink-0 select-none text-end tabular-nums"
               >
                 {firstLine + index}
               </Text>

@@ -53,6 +53,11 @@ export function ObsControls({
           variant={status.obs.configured ? "secondary" : "primary"}
           startIcon={<MonitorSmartphone />}
           disabled={feedback.busy || managed}
+          disabledReason={
+            managed
+              ? t("Stop the current stream before changing the OBS setup.")
+              : t("Wait for the current live stream action to finish.")
+          }
           loading={setupPending}
           success={feedback.succeeded("obs-setup")}
           successLabel={t("OBS configured")}

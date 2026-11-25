@@ -38,7 +38,6 @@ import { useProjectNotificationPreferences } from "../../notifications/hooks/use
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
-import { LOCKED_NOTIFICATION_TEXT } from "../../notifications/model/attention";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { PendingApprovalNotice } from "../../notifications/model/approvalToast";
 import { LAYER } from "../../../shared/lib/layers";
@@ -534,7 +533,7 @@ function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
       <ToastCard
         className="approval-toast"
         tone="warning"
-        message={t(LOCKED_NOTIFICATION_TEXT)}
+        message={t("A session in a locked group needs attention")}
         durationMs={onDismiss ? POPUP_DURATION : null}
         onDismiss={onDismiss}
       />

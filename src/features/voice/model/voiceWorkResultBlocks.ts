@@ -15,13 +15,14 @@ export type WorkResultSort = (typeof workResultSortKinds)[number];
 export type WorkRecord = { id: string; title: string; status: WorkStatus; source: string };
 export type WorkTableRow = WorkRecord & { statusLabel: string };
 
-const observedResultLabels = {
-  tests: "Test run",
-  build: "Build",
-  checks: "Checks",
-  changes: "Changes",
-  commands: "Commands",
-} as const;
+const observedResultLabels = () =>
+  ({
+    tests: t("Test run"),
+    build: t("Build"),
+    checks: t("Checks"),
+    changes: t("Changes"),
+    commands: t("Commands"),
+  }) as const;
 
 /** Represent each observed summary once and preserve individual voice action receipts. */
 export function observedWorkRecords(results: readonly VoiceLiveResult[]): WorkRecord[] {
@@ -37,7 +38,7 @@ export function observedWorkRecords(results: readonly VoiceLiveResult[]): WorkRe
     return [
       {
         id: `result:${result.kind}`,
-        title: t(observedResultLabels[result.kind]),
+        title: observedResultLabels()[result.kind],
         status: result.status,
         source: t("Commands"),
       },
@@ -45,17 +46,15 @@ export function observedWorkRecords(results: readonly VoiceLiveResult[]): WorkRe
   });
 }
 
-const statusLabels = {
-  all: "All",
-  running: "Working",
-  done: "Completed",
-  failed: "Failed",
-  stopped: "Cancelled",
-  interrupted: "Unknown",
-} as const satisfies Record<WorkFilter, string>;
-
 export function workFilterLabel(value: WorkFilter) {
-  return t(statusLabels[value]);
+  return {
+    all: t("All"),
+    running: t("Working"),
+    done: t("Completed"),
+    failed: t("Failed"),
+    stopped: t("Cancelled"),
+    interrupted: t("Unknown"),
+  }[value];
 }
 
 export function isWorkStatus(value: string | null | undefined): value is WorkStatus {

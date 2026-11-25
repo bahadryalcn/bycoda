@@ -103,7 +103,7 @@ export function DictationButton({
           visual.current?.style.setProperty("--dictation-level", "0");
           if (value === "idle") dictation.current = null;
         },
-        error: (message) => latest.current.onError(t(message)),
+        error: (message) => latest.current.onError(message),
         level: (value) => {
           if (dictation.current !== next) return;
           // Only the tiny visual updates at capture cadence, never the composer.
@@ -202,6 +202,7 @@ export function DictationButton({
         tone={listening ? "danger" : undefined}
         // Preparing can take a while; the button stays clickable so it can be cancelled.
         disabled={disabled}
+        disabledReason={t("Dictation is unavailable right now.")}
         // Keep the caret in the message box while the microphone toggles.
         onMouseDown={(event) => event.preventDefault()}
         onClick={toggle}

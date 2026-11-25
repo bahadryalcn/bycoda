@@ -23,7 +23,7 @@ import { isConfigurationConflict } from "../model/configurationConflict";
 import type { SprintBoardController } from "../model/sprintClient";
 import { workspaceOperationKey, workspaceRequest } from "../../workspaces/public/workspaceClient";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
-import { COLUMN_LABELS } from "./TaskBoardColumns";
+import { columnLabel } from "../model/taskColumnLabel";
 import type { PlanningRecovery, useTaskBoardOperations } from "./useTaskBoardOperations";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 
@@ -107,7 +107,7 @@ export function useTaskMutations({
           (task.status === "review" && column === "queued")) &&
         !(await confirm({
           title: t("Move task"),
-          message: t("Move this task to {p0}?", { p0: t(COLUMN_LABELS[column]) }),
+          message: t("Move this task to {p0}?", { p0: columnLabel(column) }),
           confirmLabel: t("Move"),
           danger: false,
         }))

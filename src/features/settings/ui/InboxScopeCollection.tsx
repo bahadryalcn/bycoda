@@ -88,6 +88,9 @@ export function InboxScopeCollection({
           checked={allMatching}
           indeterminate={selectedMatchingCount > 0 && !allMatching}
           disabled={disabled || matching.length === 0}
+          disabledReason={
+            disabled ? t("Wait for the current operation to finish") : t("Nothing to select.")
+          }
           onChange={(event) =>
             select(
               matching.map((item) => item.id),
@@ -131,6 +134,7 @@ export function InboxScopeCollection({
             <Checkbox
               checked={selected.has(item.id)}
               disabled={disabled}
+              disabledReason={t("Wait for the current operation to finish")}
               onChange={(event) => select([item.id], event.target.checked)}
               label={
                 <>

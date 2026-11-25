@@ -157,6 +157,7 @@ function LocalControl({
           iconOnly
           label={t("Take assistant off this session")}
           disabled={!environmentId}
+          disabledReason={t("Assistant status is unavailable.")}
           onClick={() => void inspect()}
         >
           <Bot className="icon-sm" />
@@ -179,7 +180,11 @@ function LocalControl({
                 "Remove assistant follow-ups from this session. Its task and running worker continue.",
               )}
             </p>
-            {error && <InlineError>{error}</InlineError>}
+            {error && (
+              <InlineError details={error}>
+                {t("Could not update assistant supervision.")}
+              </InlineError>
+            )}
             {detached ? (
               <p role="status">{t("Assistant supervision removed")}</p>
             ) : uncertain ? (
@@ -198,7 +203,7 @@ function LocalControl({
                 {t("Check status")}
               </Button>
             ) : (
-              <Button loading={busy} disabled={!prepared} onClick={() => void detach()}>
+              <Button loading={busy || !prepared} onClick={() => void detach()}>
                 {t("Remove supervision")}
               </Button>
             )}

@@ -94,17 +94,15 @@ export function JobReviewDialog() {
               )
             }
           >
-            {t(
-              jobReviewFrozen
-                ? "Check and retry"
-                : jobReview.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
-                  ? "Save notes"
-                  : jobReview.every(
-                        (row) => row.kind === "quick" && row.quickAction?.kind === "automation",
-                      )
-                    ? "Create automations"
-                    : "Start",
-            )}
+            {jobReviewFrozen
+              ? t("Check and retry")
+              : jobReview.every((row) => row.kind === "quick" && row.quickAction?.kind === "note")
+                ? t("Save notes")
+                : jobReview.every(
+                      (row) => row.kind === "quick" && row.quickAction?.kind === "automation",
+                    )
+                  ? t("Create automations")
+                  : t("Start")}
           </Button>
         </ModalActions>
       }
@@ -159,6 +157,11 @@ export function JobReviewDialog() {
                     variant="ghost"
                     label={t("Remove request")}
                     disabled={jobReviewFrozen || Boolean(pending)}
+                    disabledReason={
+                      jobReviewFrozen
+                        ? t("This request is being checked. Use Check and retry first.")
+                        : t("Wait for the current action to finish.")
+                    }
                     onClick={() =>
                       setJobReview((current) => current!.filter((item) => item.id !== draft.id))
                     }

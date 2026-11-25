@@ -143,6 +143,13 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+const detailsText = async () => {
+  for (const trigger of [...document.querySelectorAll("button")].filter(
+    (entry) => entry.textContent === "Details",
+  ))
+    await act(async () => trigger.click());
+  return document.body.textContent ?? "";
+};
 const button = (name: string) =>
   [...document.querySelectorAll("button")].find((item) => item.textContent === name)!;
 const field = (name: string) => {
@@ -230,7 +237,7 @@ it("preserves revision-conflicted drafts and refuses expired approval", async ()
   native.save.mockRejectedValueOnce(new Error("revision conflict"));
   await act(async () => button("Save runbook").click());
   expect(field("Runbook name").value).toBe("Changed name");
-  expect(document.body.textContent).toContain("revision conflict");
+  expect(await detailsText()).toContain("revision conflict");
   await input("Runbook name", book.name);
   await act(async () => button("Review execution").click());
   vi.spyOn(Date, "now").mockReturnValue(Date.now() + 121000);
@@ -290,7 +297,7 @@ it("backs off failing active-run status polls instead of retrying every second",
     native.status.mockImplementation(async (id: string) => outcome(id, "running"));
     await act(async () => vi.advanceTimersByTimeAsync(24_000));
     expect(native.status).toHaveBeenCalledTimes(4);
-    expect(document.body.textContent).toContain("machine offline");
+    expect(await detailsText()).toContain("machine offline");
     expect(button("Refresh status").disabled).toBe(false);
   } finally {
     vi.useRealTimers();
@@ -361,7 +368,7 @@ it("rejects a review for another saved revision without changing the draft", asy
   await selectSaved();
   await act(async () => button("Review execution").click());
   expect(button("Approve and run")).toBeUndefined();
-  expect(document.body.textContent).toContain("Runbook changed");
+  expect(await detailsText()).toContain("Runbook changed");
   expect(field("SSH script").value).toBe(book.script);
   expect(native.start).not.toHaveBeenCalled();
 });
@@ -417,7 +424,7 @@ it("rejects a stale pending revision before requesting native execution review",
   await act(async () => button("Review").click());
   expect(native.review).not.toHaveBeenCalled();
   expect(native.start).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Runbook changed");
+  expect(await detailsText()).toContain("Runbook changed");
 });
 
 it("revokes earlier target grants when a later proxy approval is cancelled before dispatch", async () => {
@@ -473,7 +480,7 @@ it("retains the original failed-attempt authority on abandon failure then releas
   native.abandon.mockRejectedValueOnce(new Error("abandon response interrupted"));
   await act(async () => button("Abandon pending start").click());
   expect(lastRun).toBe(originalRun);
-  expect(document.body.textContent).toContain("abandon response interrupted");
+  expect(await detailsText()).toContain("abandon response interrupted");
   expect(native.abandon).toHaveBeenCalledWith(originalRun, book.id, 3);
   await act(async () => button("Abandon pending start").click());
   expect(lastRun).toBeUndefined();

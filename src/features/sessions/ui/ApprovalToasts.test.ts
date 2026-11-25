@@ -727,9 +727,10 @@ it("shows a still-pending request once, in the pending card, not in Recent", () 
   expect(card.querySelectorAll(".approval-toast")).toHaveLength(1);
   expect(historyRows()).toHaveLength(1);
   expect(historyRows()[0].textContent).toContain("Request gone");
-  expect(
-    document.querySelector(".notification-sheet-list")!.textContent!.split("Request open"),
-  ).toHaveLength(2);
+  // The card's hidden live announcement repeats the title for assistive tech; count what is shown.
+  const shown = document.querySelector(".notification-sheet-list")!.cloneNode(true) as HTMLElement;
+  shown.querySelectorAll(".sr-only").forEach((node) => node.remove());
+  expect(shown.textContent!.split("Request open")).toHaveLength(2);
 });
 
 it("shows pending requests in their own card above the recent rows", () => {

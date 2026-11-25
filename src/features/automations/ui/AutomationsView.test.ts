@@ -223,8 +223,14 @@ it("shows an initial Host-read failure instead of claiming there are no automati
       }),
     ),
   );
-  await vi.waitFor(() => expect(container.textContent).toContain("Host read failed"));
-  expect(container.textContent).toContain("Automations unavailable");
+  await vi.waitFor(() => expect(container.textContent).toContain("Automations unavailable"));
+  // The raw Host text sits behind the shared Details view.
+  await act(async () =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Show details")!
+      .click(),
+  );
+  expect(container.textContent).toContain("Host read failed");
   expect(container.textContent).not.toContain("Create your first automation");
 });
 
@@ -279,7 +285,8 @@ it("parks assistant navigation behind an unsaved draft and owner filters, then r
       Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
         (button) => button.textContent?.trim() === "Retry",
       )!;
-    expect(retry().disabled).toBe(true);
+    // A gate with a reason stays focusable and reports itself as aria-disabled.
+    expect(retry().getAttribute("aria-disabled")).toBe("true");
     await act(async () =>
       Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
         .find((button) => button.textContent?.trim() === "Reset")!
@@ -436,15 +443,18 @@ it("reports an unreadable automation list as unavailable with a retry instead of
     ),
   );
   await act(async () => {});
-  const unavailable = container.querySelector('[data-kind="unavailable"]');
-  expect(unavailable?.textContent).toContain("Automations unavailable");
-  expect(unavailable?.textContent).toContain("automations.json is locked");
+  expect(container.textContent).toContain("Automations unavailable");
   expect(container.textContent).not.toContain("Create your first automation");
+  await act(async () =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Show details")!
+      .click(),
+  );
   // The detail is shown once, not again in a banner.
   expect(container.textContent?.match(/automations\.json is locked/g)).toHaveLength(1);
   invoke.mockReset();
   invoke.mockResolvedValue([]);
-  const retry = Array.from(unavailable!.querySelectorAll("button")).find(
+  const retry = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
     (node) => node.textContent?.trim() === "Try again",
   )!;
   await act(async () => retry.click());
@@ -878,7 +888,7 @@ it("keeps toggle progress on its automation and allows retry after a failed chan
   expect(toggle.getAttribute("aria-checked")).toBe("true");
   await act(async () =>
     container
-      .querySelector<HTMLButtonElement>('[aria-label="Details: Automation action failed."]')!
+      .querySelector<HTMLButtonElement>('[aria-label="Details: Could not update the automation."]')!
       .click(),
   );
   expect(document.body.textContent).toContain("Automation unavailable");
@@ -964,7 +974,9 @@ it.each([false, true])(
       expect(name.value).toBe("Submitted review");
       await act(async () =>
         container
-          .querySelector<HTMLButtonElement>('[aria-label="Details: Automation action failed."]')!
+          .querySelector<HTMLButtonElement>(
+            '[aria-label="Details: Could not save the automation."]',
+          )!
           .click(),
       );
       expect(document.body.textContent).toContain("Save unavailable");

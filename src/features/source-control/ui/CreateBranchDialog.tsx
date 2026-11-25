@@ -8,7 +8,8 @@ import type { GitBranchInfo } from "../../../platform/tauri/fs";
 
 type Props = {
   busy: boolean;
-  error?: string | null;
+  /** Translated summary of the failure and the raw reason behind it. */
+  error?: { title: string; details: string } | null;
   initialName?: string;
   branches?: GitBranchInfo[];
   initialReference?: string;
@@ -63,7 +64,7 @@ export function CreateBranchDialog({
   return (
     <Modal
       languageDomain="git"
-      title={t(branches ? "New branch from…" : "New branch")}
+      title={branches ? t("New branch from…") : t("New branch")}
       size="sm"
       onClose={() => {
         if (!busy) onCancel();
@@ -121,7 +122,7 @@ export function CreateBranchDialog({
             </datalist>
           </>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error.details}>{error.title}</InlineError> : null}
       </form>
     </Modal>
   );

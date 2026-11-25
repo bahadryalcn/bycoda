@@ -109,7 +109,7 @@ it("loads older replies through the existing child history owner", () => {
 
     state.remote.remoteHistoryLoading = true;
     act(render);
-    expect(button().disabled).toBe(true);
+    expect(button().getAttribute("aria-disabled")).toBe("true");
   } finally {
     act(() => root.unmount());
   }

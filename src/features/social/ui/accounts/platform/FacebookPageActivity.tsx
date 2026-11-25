@@ -145,7 +145,7 @@ export function FacebookPageActivity({
         </StatRow>
       ) : null}
       {!page && work.is("list") ? <LoadingText>{t("Loading…")}</LoadingText> : null}
-      {!page && !work.is("list") && !work.error ? (
+      {!page && !work.is("list") && !work.failureTitle ? (
         <Text as="p" size="secondary" tone="muted">
           {mentions
             ? t("Load mentions to see where people tagged this Page.")
@@ -254,7 +254,9 @@ export function FacebookPageActivity({
           {t("Load more")}
         </Button>
       ) : null}
-      {work.error ? <InlineError details={work.details}>{work.error}</InlineError> : null}
+      {work.failureTitle ? (
+        <InlineError details={work.details}>{work.failureTitle}</InlineError>
+      ) : null}
       {confirm.dialog}
     </section>
   );

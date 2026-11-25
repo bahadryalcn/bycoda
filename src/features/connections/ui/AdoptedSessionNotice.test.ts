@@ -6,7 +6,7 @@ import { expect, it, vi } from "vitest";
 import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { AdoptedSessionNotice } from "./AdoptedSessionNotice";
 import { newSession } from "../../sessions/model/session";
-import { ADOPTED_UNSYNCED_MESSAGE } from "../model/adoptedSessions";
+import { adoptedUnsyncedMessage } from "../model/adoptedSessions";
 import { setAdoptedSyncing } from "../model/adoptedSyncing";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -93,7 +93,7 @@ async function failManualSync(error: Error) {
 
 it("keeps the unfinished-sync row for a session the model flagged", () => {
   expect(renderToString(createElement(AdoptedSessionNotice, { session: flagged() }))).toContain(
-    ADOPTED_UNSYNCED_MESSAGE,
+    adoptedUnsyncedMessage(),
   );
 });
 
@@ -130,11 +130,11 @@ it("shows the automatic failure reason only while sync needs attention", async (
 it("names why a failed manual sync did not finish instead of one generic sentence", async () => {
   const timeout = await failManualSync(new Error("RPC_WS_DEADLINE: sessions.adopted timed out"));
   expect(timeout).toContain("This computer is busy right now. Try again in a moment.");
-  expect(timeout).toContain(ADOPTED_UNSYNCED_MESSAGE);
+  expect(timeout).toContain(adoptedUnsyncedMessage());
   const refused = await failManualSync(
     new Error("Host rejected request: [RPC_AUTHORIZATION] device is not authorized"),
   );
   expect(refused).toContain("device is not authorized");
   expect(refused).not.toContain("Check the connection and try again");
-  expect(refused).toContain(ADOPTED_UNSYNCED_MESSAGE);
+  expect(refused).toContain(adoptedUnsyncedMessage());
 });

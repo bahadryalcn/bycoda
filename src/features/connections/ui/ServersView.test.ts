@@ -503,7 +503,14 @@ it("updates the machine's status from shared host health without losing inventor
   );
   await click("Home Mac");
   const panel = document.body.querySelector('[aria-label="Server details"]')!;
-  expect(panel.textContent).toContain("The machine did not answer");
+  // The reason sits behind Details instead of filling the panel.
+  expect(panel.textContent).not.toContain("The machine did not answer");
+  await act(async () =>
+    [...panel.querySelectorAll("button")]
+      .find((button) => button.textContent === "Details")!
+      .click(),
+  );
+  expect(document.body.textContent).toContain("The machine did not answer");
   expect(document.body.querySelector('[data-server-row][aria-pressed="true"]')).toBeTruthy();
 });
 

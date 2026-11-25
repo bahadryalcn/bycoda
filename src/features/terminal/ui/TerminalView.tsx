@@ -735,12 +735,17 @@ export function TerminalView({
             }
             action={closedAction}
             extra={
-              inputError != null && !inputErrorShownCentrally ? (
-                <ErrorDetails title={t("Input paused")} detail={inputError.message} />
-              ) : undefined
+              <>
+                {startupMessage ? (
+                  <ErrorDetails title={t("Terminal closed")} detail={startupMessage} />
+                ) : null}
+                {inputError != null && !inputErrorShownCentrally ? (
+                  <ErrorDetails title={t("Input paused")} detail={inputError.message} />
+                ) : null}
+              </>
             }
           >
-            {startupMessage ?? (inputError != null ? inputPausedBody : null)}
+            {startupMessage || inputError == null ? null : inputPausedBody}
           </Alert>
         </div>
       ) : inputError !== null ? (

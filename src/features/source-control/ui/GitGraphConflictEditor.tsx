@@ -135,7 +135,7 @@ export function GitGraphConflictEditor({
     if (!loaded || disabled || pending.current) return;
     const value = loaded.stages[side];
     if (loaded.disk === null || value === null) {
-      void runConflict(side, "Resolving conflict…", async () => {
+      void runConflict(side, t("Resolving conflict…"), async () => {
         await gitResolveConflict(cwd, relative, side);
         onResolved();
       });
@@ -143,7 +143,7 @@ export function GitGraphConflictEditor({
   };
   const save = async () => {
     if (!loaded || loaded.disk === null || hasConflictMarkers(draft)) return;
-    const success = await runConflict("save", "Saving conflict resolution…", async () => {
+    const success = await runConflict("save", t("Saving conflict resolution…"), async () => {
       if ((await readTextFile(path)) !== loaded.disk)
         throw new Error(t("The file changed on disk. Reopen it before saving your resolution."));
       const serialized = restoreMixedLineEndings(draft, loaded.disk);
@@ -212,6 +212,11 @@ export function GitGraphConflictEditor({
               type="button"
               loading={operation === "ours"}
               disabled={operation !== "ours" && (disabled || operation !== null)}
+              disabledReason={
+                operation !== "ours" && (disabled || operation !== null)
+                  ? t("Wait for the current operation to finish")
+                  : undefined
+              }
               onClick={() => take("ours")}
             >
               {t("Use current")}
@@ -223,6 +228,11 @@ export function GitGraphConflictEditor({
               type="button"
               loading={operation === "theirs"}
               disabled={operation !== "theirs" && (disabled || operation !== null)}
+              disabledReason={
+                operation !== "theirs" && (disabled || operation !== null)
+                  ? t("Wait for the current operation to finish")
+                  : undefined
+              }
               onClick={() => take("theirs")}
             >
               {t("Use incoming")}
@@ -234,6 +244,11 @@ export function GitGraphConflictEditor({
                 motion="none"
                 type="button"
                 disabled={disabled || operation !== null}
+                disabledReason={
+                  disabled || operation !== null
+                    ? t("Wait for the current operation to finish")
+                    : undefined
+                }
                 onClick={() => setDraft(resolveConflictMarkers(draft, "both"))}
               >
                 {t("Use both")}
@@ -257,6 +272,13 @@ export function GitGraphConflictEditor({
               disabled={
                 (operation !== "save" && (disabled || operation !== null)) ||
                 hasConflictMarkers(draft)
+              }
+              disabledReason={
+                hasConflictMarkers(draft)
+                  ? t("Resolve every conflict marker before staging")
+                  : operation !== "save" && (disabled || operation !== null)
+                    ? t("Wait for the current operation to finish")
+                    : undefined
               }
               onClick={() => void save()}
               className="shrink-0"

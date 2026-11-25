@@ -52,7 +52,7 @@ export function LinkedWorkItemPanel({
   const { item, error, loading, setItem } = useGithubWorkItem(target, cwd);
   const [errorForUrl, setErrorForUrl] = useState<string | null>(null);
   if (errorForUrl && errorForUrl !== target.url) setErrorForUrl(null);
-  const openError = errorForUrl === target.url ? t("Could not open the link. Try again.") : "";
+  const openProblem = errorForUrl === target.url ? t("Could not open the link. Try again.") : "";
   const targetUrlRef = useRef(target.url);
   targetUrlRef.current = target.url;
   const resize = useDragResize({
@@ -145,7 +145,7 @@ export function LinkedWorkItemPanel({
               title={t("Could not load this item.")}
               extra={<ErrorDetails title={t("Could not load this item.")} detail={error} />}
             />
-            {openError ? <InlineError>{openError}</InlineError> : null}
+            {openProblem ? <InlineError>{openProblem}</InlineError> : null}
             <Button
               variant="secondary"
               type="button"

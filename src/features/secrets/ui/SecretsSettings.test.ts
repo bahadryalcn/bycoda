@@ -245,7 +245,10 @@ it("keeps the revoked notice and shows the reason when Reconnect fails", async (
   await render();
   await act(async () => button("Reconnect").click());
   expect(container.textContent).toContain("This computer's connection to its Host was revoked.");
-  expect(container.textContent).toContain("The local Host is not installed on this computer");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Details"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("The local Host is not installed on this computer");
   expect(api.list).toHaveBeenCalledOnce();
 });
 

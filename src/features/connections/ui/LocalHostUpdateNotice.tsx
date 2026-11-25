@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { UpdateImpact } from "./UpdateImpact";
 import { hostRestartConsequences } from "./hostRestartConsequences";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -84,14 +85,22 @@ export function LocalHostUpdateNotice() {
     <>
       <Alert
         tone={notice.tone}
-        title={t(notice.title)}
+        title={notice.title}
         action={
           notice.canUpdateNow
             ? { label: t("Update host now"), onClick: () => void updateNow(), pending: updating }
             : undefined
         }
+        extra={
+          error || notice.raw ? (
+            <ErrorDetails
+              title={error ? t("The host on this computer could not be updated.") : notice.title}
+              detail={error ?? notice.raw!}
+            />
+          ) : undefined
+        }
       >
-        {[...notice.details.map((line) => t(line.text, line.params)), error ? t(error) : ""]
+        {[...notice.details, error ? t("The host on this computer could not be updated.") : ""]
           .filter(Boolean)
           .join(" ")}
       </Alert>

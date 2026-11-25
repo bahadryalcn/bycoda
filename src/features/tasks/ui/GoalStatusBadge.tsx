@@ -1,16 +1,9 @@
-import { useT } from "../../../shared/i18n";
+import { useLocale } from "../../../shared/i18n";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { GoalStatus } from "../model/hostGoals";
+import { goalStatusLabel } from "../model/statusLabels";
 
-const LABELS: Record<GoalStatus, string> = {
-  planning: "Planning",
-  "awaiting-approval": "Plan ready",
-  running: "Running",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
-};
 const TONES: Record<GoalStatus, StatusTextTone> = {
   planning: "running",
   "awaiting-approval": "needs-you",
@@ -21,14 +14,14 @@ const TONES: Record<GoalStatus, StatusTextTone> = {
 };
 
 export function GoalStatusBadge({ status }: { status: GoalStatus }) {
-  const t = useT();
+  useLocale();
   return (
     <StatusText
       tone={TONES[status]}
       className="shrink-0"
       icon={status === "running" ? <WorkingIndicator /> : undefined}
     >
-      {t(LABELS[status])}
+      {goalStatusLabel(status)}
     </StatusText>
   );
 }

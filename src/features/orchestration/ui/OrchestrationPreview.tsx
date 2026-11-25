@@ -9,7 +9,6 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -249,6 +248,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         );
   }, [actions, proposal.leadId]);
   const editable = proposal.status === "ready" && !run && !pending && !busy && !!actions;
+  const confirmReason = busy ? t("Wait for the current operation to finish") : undefined;
   const planning = proposal.status === "planning";
   const starting = pending || proposal.status === "starting";
   const visible = showAll ? proposal.tasks : proposal.tasks.slice(0, 3);
@@ -302,11 +302,11 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           )}
         </div>
         <div className="ms-auto flex shrink-0 items-center gap-0.5">
-          {!run && proposal.status === "invalid" && (
+          {!run && proposal.status === "invalid" && actions && (
             <Button
               variant="ghost"
               type="button"
-              disabled={busy || !actions}
+              disabled={busy}
               onClick={() => actions?.retry(proposal.leadId, block.id)}
             >
               {t("Try again")}
@@ -317,11 +317,13 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               variant="primary"
               type="button"
               disabled={!editable}
+              disabledReason={confirmReason}
               loading={starting}
+              loadingLabel={t("Starting…")}
               startIcon={<Play className="icon-xs" strokeWidth={1.75} />}
               onClick={() => void perform(() => actions!.confirm(proposal.leadId, block.id))}
             >
-              {starting ? t("Starting…") : t("Confirm & start")}
+              {t("Confirm & start")}
             </Button>
           )}
           {run && (
@@ -448,17 +450,17 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     )}
                     {!!task.dependsOn.length && (
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <BadgeList
-                          label={t("After")}
-                          size="xs"
-                          max={2}
-                          className="min-w-0"
-                          items={task.dependsOn.map((id, index) => {
-                            const title =
-                              proposal.tasks.find((entry) => entry.id === id)?.title ?? id;
-                            return { id: `${index}:${title}`, label: title };
+                        <Text size="micro" tone="muted" truncate className="min-w-0">
+                          {t("{p0}: {p1}", {
+                            p0: t("After"),
+                            p1: task.dependsOn
+                              .map(
+                                (id) =>
+                                  proposal.tasks.find((entry) => entry.id === id)?.title ?? id,
+                              )
+                              .join(", "),
                           })}
-                        />
+                        </Text>
                       </div>
                     )}
                   </Text>

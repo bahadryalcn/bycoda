@@ -15,7 +15,8 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
-import { RECOMMENDED_SKILLS, type RecommendedSkill } from "../model/recommendedSkills";
+import { RECOMMENDED_SKILLS, catalogText, type RecommendedSkill } from "../model/recommendedSkills";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Popover } from "../../../shared/ui/Popover";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -124,7 +125,7 @@ export function RecommendedSkills({
   const targetKey = `${machineId}:${targetCwd}:${scope}:${provider}`;
   const here = installed.get(machineId);
   const matching = RECOMMENDED_SKILLS.filter((skill) =>
-    `${skill.name} ${skill.description} ${skill.category} ${t(skill.description)} ${t(skill.category)}`
+    `${skill.name} ${skill.description} ${skill.category} ${catalogText(skill.description)} ${catalogText(skill.category)}`
       .toLocaleLowerCase()
       .includes(query.trim().toLocaleLowerCase()),
   );
@@ -226,7 +227,7 @@ export function RecommendedSkills({
                 "Existing skills are never replaced. Provider permissions and disabled-skill settings still apply. Extra tools or accounts may be required by the author.",
               )}
             </p>
-            <p>{t(SKILLS_CLI_REQUIREMENTS)}</p>
+            <p>{catalogText(SKILLS_CLI_REQUIREMENTS)}</p>
             <Button
               variant="link"
               onClick={() => {
@@ -303,7 +304,9 @@ export function RecommendedSkills({
             {t("Choose an open project on this computer to install a project skill.")}
           </InlineMessage>
         ) : null}
-        {linkError ? <InlineError>{linkError}</InlineError> : null}
+        {linkError ? (
+          <InlineError details={linkError}>{t("Could not complete the skill action.")}</InlineError>
+        ) : null}
         <TextField
           label={t("Search recommended skills")}
           hideLabel
@@ -343,13 +346,13 @@ export function RecommendedSkills({
                       {skill.name}
                     </Heading>
                     <Text size="caption" tone="secondary" leading="inherit">
-                      {[t(skill.category), other ? t("On {p0}", { p0: other }) : ""]
+                      {[catalogText(skill.category), other ? t("On {p0}", { p0: other }) : ""]
                         .filter(Boolean)
                         .join(" · ")}
                     </Text>
                   </div>
                   <Text as="p" size="secondary" leading="normal">
-                    {t(skill.description)}
+                    {catalogText(skill.description)}
                   </Text>
                   <Disclosure
                     size="sm"
@@ -369,7 +372,7 @@ export function RecommendedSkills({
                   </Disclosure>
                   {skill.note ? (
                     <Text as="p" size="secondary" leading="normal">
-                      {t(skill.note)}
+                      {catalogText(skill.note)}
                     </Text>
                   ) : null}
                   <Button
@@ -389,9 +392,21 @@ export function RecommendedSkills({
                   ) : null}
                   {result?.error ? (
                     result.status === "unknown" ? (
-                      <InlineMessage tone="warning">{result.error}</InlineMessage>
+                      <InlineMessage
+                        tone="warning"
+                        extra={
+                          <ErrorDetails
+                            detail={result.error}
+                            title={t("Could not confirm the skill installation.")}
+                          />
+                        }
+                      >
+                        {t("Could not confirm the skill installation.")}
+                      </InlineMessage>
                     ) : (
-                      <InlineError>{result.error}</InlineError>
+                      <InlineError details={result.error}>
+                        {t("Could not install the skill.")}
+                      </InlineError>
                     )
                   ) : null}
                   {unresolved && busy !== skill.id ? (
@@ -426,6 +441,17 @@ export function RecommendedSkills({
                     present ||
                     result?.status === "failed"
                   }
+                  disabledReason={
+                    busy
+                      ? t("Another installation is still running.")
+                      : missingMachine
+                        ? t("The selected computer is no longer connected.")
+                        : scope === "project" && !targetCwd
+                          ? t("Choose an open project on this computer to install a project skill.")
+                          : present
+                            ? t("Already installed on the selected computer.")
+                            : t("Dismiss the failed attempt to try again.")
+                  }
                   aria-label={
                     unresolved
                       ? t("Check installation of {p0}", { p0: skill.name })
@@ -439,13 +465,7 @@ export function RecommendedSkills({
                     });
                   }}
                 >
-                  {busy === skill.id
-                    ? progressLabel
-                    : present
-                      ? t("Installed")
-                      : unresolved
-                        ? t("Check status")
-                        : t("Install")}
+                  {present ? t("Installed") : unresolved ? t("Check status") : t("Install")}
                 </Button>
               </li>
             );

@@ -129,7 +129,7 @@ function render(id: string) {
     client: {} as SocialScreenProps["client"],
     shell,
     loaded: true,
-    error: "",
+    problem: "",
     selectWorkspace: vi.fn(),
     setAiStopped: vi.fn(),
     retry: vi.fn(),

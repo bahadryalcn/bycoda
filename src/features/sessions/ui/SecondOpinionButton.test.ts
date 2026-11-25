@@ -189,7 +189,7 @@ describe("secondary model target picker", () => {
       '[aria-label="No different model available for a second opinion"]',
     );
     expect(button).toBeTruthy();
-    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute("aria-disabled")).toBe("true");
   });
 
   it("keeps the button enabled for an installed provider whose catalog has not loaded yet", () => {

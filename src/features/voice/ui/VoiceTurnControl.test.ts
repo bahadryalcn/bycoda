@@ -49,8 +49,10 @@ it("shows the current automatic mode and opens choices without changing or commi
 it("blocks finishing while muted but keeps the turn policy choice available", async () => {
   const { onFinish, onManualChange } = await render(true, true);
   expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label="Finish turn"]')!.disabled,
-  ).toBe(true);
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Finish turn"]')!
+      .getAttribute("aria-disabled"),
+  ).toBe("true");
   const menu = container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!;
   expect(menu.disabled).toBe(false);
   await act(async () => menu.click());

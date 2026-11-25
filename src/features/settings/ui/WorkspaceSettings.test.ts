@@ -2,6 +2,7 @@
 import { expectErrorDetails } from "./errorDetails.test-support";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
@@ -62,6 +63,9 @@ it("loads the disabled Host policy and blocks duplicate saves until acknowledged
   expect(mock.save).toHaveBeenCalledWith(true);
   expect(toggle().disabled).toBe(true);
   expect(toggle().getAttribute("aria-checked")).toBe("false");
+  // A quick save never flashes its status; a slow one shows it after the shared delay.
+  expect(container.textContent).not.toContain("Saving…");
+  await act(async () => new Promise((done) => setTimeout(done, LOADING_DELAY_MS + 50)));
   expect(container.textContent).toContain("Saving…");
   await act(async () => resolve(true));
   expect(toggle().disabled).toBe(false);

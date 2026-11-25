@@ -282,6 +282,7 @@ export default function GuideHub({
                   <Button
                     variant="primary"
                     disabled={!!blocker}
+                    disabledReason={blocker?.reason}
                     endIcon={<ChevronRight className="icon-sm" />}
                     onClick={tryIt}
                   >

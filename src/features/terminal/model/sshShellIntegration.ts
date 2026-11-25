@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { t } from "../../../shared/i18n";
 import { isSingleLineCommand } from "./terminalSuggestions";
 
 export type RemoteSuggestionSource = "commands" | "paths" | "history";
@@ -188,13 +189,14 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
   const [snapshot, setState] = useState<SshShellState>();
   const [snapshotRevision, setSnapshotRevision] = useState(-1);
   const [waitingFor, setWaitingFor] = useState<string | null>(null);
-  const [failure, setFailure] = useState<{ id: string; message: string }>();
+  const [failure, setFailure] = useState<{ id: string; message: string; details?: string }>();
   const state =
     enabled && snapshot?.id === id && snapshotRevision === savedPreferences.revision
       ? snapshot
       : undefined;
   const waiting = enabled && waitingFor === id;
-  const error = enabled && failure?.id === id ? failure.message : "";
+  const notice = enabled && failure?.id === id ? failure.message : "";
+  const noticeDetails = enabled && failure?.id === id ? failure.details : undefined;
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const epoch = useRef(0);
   const pending = useRef(false);
@@ -286,14 +288,14 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
         clearPreview();
         setFailure(
           value.status === "unavailable"
-            ? { id, message: "No safe matching suggestions." }
+            ? { id, message: t("No safe matching suggestions.") }
             : undefined,
         );
         setSnapshotRevision(preferences.current.revision);
         setState(value);
       },
       failed: () => {
-        if (!disposed) setFailure({ id, message: "Remote shell integration is unavailable" });
+        if (!disposed) setFailure({ id, message: t("Remote shell integration is unavailable") });
       },
     });
     listenerReady.current = listener.ready;
@@ -332,8 +334,9 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
           clearPreview();
           setFailure({
             id,
-            message:
+            message: t(
               "Suggestions are available only at a supported shell prompt with echo enabled.",
+            ),
           });
         }
       }, 2500);
@@ -363,7 +366,11 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
           clearTimer();
           setWaitingFor(null);
           clearPreview();
-          setFailure({ id, message: String(reason) });
+          setFailure({
+            id,
+            message: t("Remote shell integration is unavailable"),
+            details: String(reason),
+          });
         }
       }
     },
@@ -484,7 +491,8 @@ export function useSshShellIntegration(id: string, enabled: boolean) {
     state,
     preview,
     waiting,
-    error,
+    notice,
+    noticeDetails,
     request,
     dismiss,
     accept,

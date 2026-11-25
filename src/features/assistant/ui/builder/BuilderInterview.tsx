@@ -29,6 +29,7 @@ export function BuilderInterview({
   draft,
   onDraftChange,
   disabled = false,
+  disabledReason,
   controls,
 }: {
   transcript: readonly AssistantBuilderTurn[];
@@ -40,6 +41,8 @@ export function BuilderInterview({
   draft: string;
   onDraftChange: (text: string) => void;
   disabled?: boolean;
+  /** Why answering is blocked while `disabled` is set. */
+  disabledReason?: string;
   controls?: ReactNode;
 }) {
   const end = useRef<HTMLDivElement>(null);
@@ -120,6 +123,7 @@ export function BuilderInterview({
               tooltipWhen="overflow"
               tooltipWide
               disabled={disabled}
+              disabledReason={disabled ? disabledReason : undefined}
               onClick={() => send(option)}
             >
               {option}
@@ -145,6 +149,7 @@ export function BuilderInterview({
             label={t("Send answer")}
             startIcon={<ArrowUp className="icon-sm" />}
             disabled={!text || busy || disabled}
+            disabledReason={disabled ? disabledReason : undefined}
             onClick={() => send(text)}
           />
         }

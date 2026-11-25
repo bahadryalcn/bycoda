@@ -8,7 +8,7 @@ import pt from "../../../../shared/i18n/locales/pt.json";
 import tr from "../../../../shared/i18n/locales/tr.json";
 import zhCN from "../../../../shared/i18n/locales/zh-CN.json";
 import { LANGUAGES, type Locale } from "../../../../shared/i18n/languages";
-import { RECORDED_ACTION_FALLBACK_LABEL, RECORDED_ACTION_LABELS } from "./recordedActionLabels";
+import { RECORDED_ACTION_IDS, recordedActionLabel } from "./recordedActionLabels";
 
 // Typed per locale, so adding a supported language without a catalog fails to compile.
 const catalogs: Record<Locale, Record<string, string>> = {
@@ -22,7 +22,8 @@ const catalogs: Record<Locale, Record<string, string>> = {
   ja,
 };
 
-const labels = [...RECORDED_ACTION_LABELS.values(), RECORDED_ACTION_FALLBACK_LABEL];
+// English is the source locale, so each label is also its own catalog key.
+const labels = [...RECORDED_ACTION_IDS.map(recordedActionLabel), recordedActionLabel("unknown.id")];
 
 describe("recorded action labels locale parity", () => {
   it("translates every recorded action label in every supported locale", () => {

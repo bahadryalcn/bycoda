@@ -2,6 +2,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import type { CrewAutosaveStatus } from "./useCrewAutosave";
 
 /**
@@ -35,11 +36,11 @@ export function CrewEditorFooter({
   const state = blocked ? null : issue ? (
     <InlineError live="polite">{issue}</InlineError>
   ) : status === "error" ? (
-    <InlineError retry={{ onRetry }}>{error}</InlineError>
+    <InlineError details={error} retry={{ onRetry }}>
+      {t("Could not save the crew.")}
+    </InlineError>
   ) : status === "saving" ? (
-    <InlineMessage tone="neutral" icon={null}>
-      {t("Saving…")}
-    </InlineMessage>
+    <LoadingText>{t("Saving…")}</LoadingText>
   ) : status === "saved" || (status === "idle" && !isNew) ? (
     <InlineMessage tone="neutral" icon={null}>
       {t("All changes saved")}

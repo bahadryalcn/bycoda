@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
 import { sshProxyEndpointText } from "./sshProxyEndpointText";
 import {
@@ -77,6 +77,15 @@ function ProxyApprovalDialog({
           <Button
             variant="primary"
             disabled={busy || (mode === "basic" && (!consent || !valid))}
+            disabledReason={
+              busy
+                ? t("Wait for the current action to finish.")
+                : mode === "basic" && !valid
+                  ? t("Enter a proxy username and password first.")
+                  : mode === "basic" && !consent
+                    ? t("Approve sending these credentials first.")
+                    : undefined
+            }
             onClick={() => {
               if (locked.current) return;
               if (mode === "anonymous") {
@@ -121,18 +130,18 @@ function ProxyApprovalDialog({
           </Text>
           <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
             {t("SSH target")}: {sshEndpointPreview(request.endpoint)} ·{" "}
-            {t(
+            {
               {
-                terminal: "Terminal",
-                runbook: "SSH runbooks",
-                forward: "Port forwarding",
-                sftpList: "List directory",
-                sftpDownload: "Download",
-                sftpUpload: "Upload",
-                sftpResume: "Resume",
-                sftpDiscard: "Discard partial",
-              }[request.operation.kind],
-            )}
+                terminal: t("Terminal"),
+                runbook: t("SSH runbooks"),
+                forward: t("Port forwarding"),
+                sftpList: t("List directory"),
+                sftpDownload: t("Download"),
+                sftpUpload: t("Upload"),
+                sftpResume: t("Resume"),
+                sftpDiscard: t("Discard partial"),
+              }[request.operation.kind]
+            }
           </Text>
           {request.operation.kind === "runbook" ? (
             <p className="mbs-1 break-all">
@@ -173,7 +182,9 @@ function ProxyApprovalDialog({
             { value: "basic", label: "Basic" },
           ]}
         />
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <InlineError details={error}>{t("Could not approve this proxy operation.")}</InlineError>
+        ) : null}
         {mode === "basic" ? (
           <>
             <TextField
@@ -197,11 +208,15 @@ function ProxyApprovalDialog({
               checked={consent}
               disabled={busy}
               onChange={(event) => setConsent(event.target.checked)}
-              label={t(
+              label={
                 secure
-                  ? "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation only. They are never saved."
-                  : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation only. They are never saved.",
-              )}
+                  ? t(
+                      "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation only. They are never saved.",
+                    )
+                  : t(
+                      "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation only. They are never saved.",
+                    )
+              }
             />
           </>
         ) : null}

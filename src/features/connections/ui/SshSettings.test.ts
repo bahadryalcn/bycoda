@@ -93,13 +93,20 @@ it("shows oversized known-host metadata as unavailable rather than empty while o
       }),
     ),
   );
-  expect(document.body.textContent).toContain("1 MiB display limit");
+  expect(await detailsText()).toContain("1 MiB display limit");
   expect(document.body.textContent).not.toContain("No known hosts yet.");
   expect(
     document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled,
   ).toBe(false);
 });
 
+const detailsText = async () => {
+  for (const trigger of [...document.querySelectorAll("button")].filter(
+    (entry) => entry.textContent === "Details",
+  ))
+    await act(async () => trigger.click());
+  return document.body.textContent ?? "";
+};
 it("keeps discovered keys usable when the agent inventory fails and assigns once without connecting", async () => {
   const assigned = vi.fn();
   await act(async () =>
@@ -112,7 +119,10 @@ it("keeps discovered keys usable when the agent inventory fails and assigns once
       }),
     ),
   );
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Agent unavailable");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not read the SSH agent.",
+  );
+  expect(await detailsText()).toContain("Agent unavailable");
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   expect(choose.disabled).toBe(false);
   await act(async () => {
@@ -159,7 +169,7 @@ it("retries only the failed SSH inventory and keeps a successful key list usable
     ([command]) => command === "ssh_known_hosts_list",
   ).length;
   const alert = [...document.querySelectorAll('[role="alert"]')].find((node) =>
-    node.textContent?.includes("Agent unavailable"),
+    node.textContent?.includes("Could not read the SSH agent."),
   )!;
   const retry = alert.querySelector<HTMLButtonElement>("button")!;
   const previous = native.invoke.getMockImplementation()!;

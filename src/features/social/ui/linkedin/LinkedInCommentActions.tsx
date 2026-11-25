@@ -19,7 +19,7 @@ export function LinkedInCommentActions({
 }) {
   const [choice, setChoice] = useState("LIKE");
   const [result, setResult] = useState<LinkedInManagementReview>();
-  const { error, is, write } = useAccountWrite(t("Could not save changes."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not save changes."));
   const { confirm, dialog } = useConfirm();
   const options = [
     { value: "LIKE", label: t("Like") },
@@ -111,7 +111,7 @@ export function LinkedInCommentActions({
       {result?.state === "attempting" || result?.state === "inspect" ? (
         <InlineError>{t("Check the result on LinkedIn before trying again.")}</InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {dialog}
     </>
   );

@@ -107,7 +107,9 @@ it("retains the form after a failed save and allows retry", async () => {
       .querySelector("form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("ACP operation failed.");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not save the ACP agent.",
+  );
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
   );
@@ -166,7 +168,9 @@ it("names the remote machine in the scope line instead of its environment id", a
 it("shows a load failure in details without a raw Error prefix", async () => {
   mock.invoke.mockRejectedValue(new Error("Host offline"));
   await render();
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain("ACP operation failed.");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not load the ACP agents.",
+  );
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
   );

@@ -176,7 +176,7 @@ export function InboxPrChangesGlance({
         ) : null}
         {loading ? <Spinner size="xs" tone="secondary" /> : null}
         {files.length > 0 ? (
-          <Button variant="ghost" type="button" onClick={() => onOpenFile()} className="ml-auto">
+          <Button variant="ghost" type="button" onClick={() => onOpenFile()} className="ms-auto">
             {files.length > shown.length
               ? t("View all {p0}", { p0: files.length })
               : t("View diff")}

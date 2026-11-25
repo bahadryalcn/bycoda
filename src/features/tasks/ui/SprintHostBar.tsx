@@ -42,7 +42,7 @@ export function SprintHostBar({
   const t = useT();
   return (
     <>
-      {error ? <InlineError>{error}</InlineError> : null}
+      {error ? <InlineError details={error} /> : null}
       {board.syncErrors.length ? (
         <InlineError details={board.syncErrors.join("\n")}>
           {t("Some machines need synchronization")}

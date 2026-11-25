@@ -43,11 +43,15 @@ function entry(key: string, updatedAt: string): { key: string; updatedAt: string
 
 describe("inbox seen items", () => {
   beforeEach(() => {
+    // Fixture dates are fixed; pin the clock so the 90-day retention never ages them out.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-28T00:00:00Z"));
     mockLocalStorage();
     clearKnownInboxItems();
   });
   afterEach(() => {
     localStorage.removeItem(KEY);
+    vi.useRealTimers();
   });
 
   it("parses one shared snapshot and observes changed or corrupt storage", () => {

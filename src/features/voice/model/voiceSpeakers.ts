@@ -16,7 +16,9 @@ export const DEFAULT_SPEAKERS: Record<SpeakerEngine, string> = {
 
 export function speakerLabel(engine: SpeakerEngine, id: string): string {
   if (engine === "supertonic")
-    return t(id.startsWith("F") ? "Female {p1}" : "Male {p1}", { p1: id.slice(1) });
+    return id.startsWith("F")
+      ? t("Female {p1}", { p1: id.slice(1) })
+      : t("Male {p1}", { p1: id.slice(1) });
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 

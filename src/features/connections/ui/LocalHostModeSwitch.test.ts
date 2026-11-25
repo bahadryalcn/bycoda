@@ -91,6 +91,8 @@ it("shows the native failure compactly and keeps the previous mode", async () =>
   native.setMode.mockRejectedValue("A Host outside this desktop still owns the data directory.");
   await render();
   await act(async () => toggle()?.click());
+  expect(document.body.textContent).toContain("Could not change how this computer runs the host.");
+  await act(async () => button("Details")?.click());
   expect(document.body.textContent).toContain("still owns the data directory");
   expect(toggle()?.getAttribute("aria-checked")).toBe("true");
 });
@@ -98,6 +100,8 @@ it("shows the native failure compactly and keeps the previous mode", async () =>
 it("reports the last error and a registration mismatch with the repair text", async () => {
   native.status = { ...base, mode: "app", lastError: "Task Scheduler refused the change." };
   await render();
+  expect(document.body.textContent).toContain("Could not change how this computer runs the host.");
+  await act(async () => button("Details")?.click());
   expect(document.body.textContent).toContain("Task Scheduler refused the change.");
   cleanup?.();
   native.status = { ...base, mode: "service", mismatch: true };

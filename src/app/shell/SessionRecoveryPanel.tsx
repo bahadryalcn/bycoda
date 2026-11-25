@@ -45,6 +45,7 @@ import type { WorkspaceSessionStub } from "../../features/workspace/model/worksp
 import { getSession } from "../../features/sessions/data/sessionStore";
 import { MoreHorizontal, Search, X } from "../../shared/ui/icons";
 import { RecoveryVerification } from "./RecoveryVerification";
+import { LiveText } from "../../shared/ui/LiveText";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import "./session-recovery.css";
 
@@ -80,7 +81,7 @@ export function SessionRecoveryPanel({
   const [pending, setPending] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pendingRef = useRef(false);
-  const [error, setError] = useState("");
+  const [outcomeText, setOutcomeText] = useState("");
   const [errorArea, setErrorArea] = useState<"open" | "list">("open");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -217,7 +218,7 @@ export function SessionRecoveryPanel({
     pendingRef.current = true;
     setPendingAction(action);
     setPending(true);
-    setError("");
+    setOutcomeText("");
     setOpenOutcome(null);
     setErrorArea("open");
     try {
@@ -226,12 +227,12 @@ export function SessionRecoveryPanel({
     } catch (cause) {
       if (cause instanceof RecoveryOpenError) {
         setOpenOutcome(cause);
-        setError(
+        setOutcomeText(
           cause.acknowledgmentFailed
             ? t("Session tabs are open, but the recovery update could not be saved.")
             : t("Some recovery entries could not be opened."),
         );
-      } else setError(t("Recovery could not finish. Check the open tabs before retrying."));
+      } else setOutcomeText(t("Recovery could not finish. Check the open tabs before retrying."));
     } finally {
       pendingRef.current = false;
       setPendingAction(null);
@@ -257,13 +258,13 @@ export function SessionRecoveryPanel({
     pendingRef.current = true;
     setPendingAction(action);
     setPending(true);
-    setError("");
+    setOutcomeText("");
     setErrorArea("list");
     try {
       await onRemove(ids);
       setSelected((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
     } catch {
-      setError(t("Could not update the recovery list. Try again."));
+      setOutcomeText(t("Could not update the recovery list. Try again."));
     } finally {
       pendingRef.current = false;
       setPendingAction(null);
@@ -361,8 +362,8 @@ export function SessionRecoveryPanel({
   // The primary action opens exactly what the owner sees: the selection, else the filtered list.
   const primaryIds = primaryOpensSelected ? selectedIds : shown.map((row) => row.stub.id);
   const primaryAction = primaryOpensSelected ? "open-selected" : "open-shown";
-  const listError = error && errorArea === "list" ? error : "";
-  const openError = error && errorArea === "open" ? error : "";
+  const listNotice = outcomeText && errorArea === "list" ? outcomeText : "";
+  const openNotice = outcomeText && errorArea === "open" ? outcomeText : "";
   const content = (
     <div className="session-recovery recovery-pane" aria-busy={pending}>
       {showToolbar ? (
@@ -410,10 +411,10 @@ export function SessionRecoveryPanel({
         </div>
       ) : null}
       {selected.size > 0 ? (
-        <Text role="status" as="div" size="caption" tone="secondary" className="recovery-status">
-          <span>{t("{p0} selected in this view", { p0: selectedIds.length })}</span>
+        <Text as="div" size="caption" tone="secondary" className="recovery-status">
+          <LiveText text={t("{p0} selected in this view", { p0: selectedIds.length })} />
           {hiddenSelectedCount > 0 ? (
-            <span>{t("{p0} selected outside this view", { p0: hiddenSelectedCount })}</span>
+            <LiveText text={t("{p0} selected outside this view", { p0: hiddenSelectedCount })} />
           ) : null}
           <Button
             variant="ghost"
@@ -426,7 +427,7 @@ export function SessionRecoveryPanel({
           </Button>
         </Text>
       ) : null}
-      {listError ? <Alert tone="danger">{listError}</Alert> : null}
+      {listNotice ? <Alert tone="danger">{listNotice}</Alert> : null}
       <div className="recovery-body">
         {shown.length ? (
           <ul
@@ -565,9 +566,9 @@ export function SessionRecoveryPanel({
         )}
       </div>
       <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
-        {openError ? (
+        {openNotice ? (
           <Alert tone="danger">
-            {openError}
+            {openNotice}
             {openOutcome ? (
               <Text
                 as="div"

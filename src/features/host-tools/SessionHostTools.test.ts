@@ -543,7 +543,7 @@ it("offers local and saved machines only for host tools while keeping conversati
     (button) => button.textContent === "Connect devices",
   )!;
   expect(connect).toBeTruthy();
-  expect(connect.disabled).toBe(true); // The selected host reports an installed runtime without a detected SDK.
+  expect(connect.getAttribute("aria-disabled")).toBe("true"); // The selected host reports an installed runtime without a detected SDK.
   expect(hostToolRequest).not.toHaveBeenCalledWith(
     cwd,
     "device.host",

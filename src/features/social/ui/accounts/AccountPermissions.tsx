@@ -13,6 +13,7 @@ import type { HostProject } from "../../../connections/public/protocol";
 import type { SocialAccount, SocialPermission } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { socialContentSnapshotKey } from "../../model/socialQuery";
+import { accountBlockedReason } from "./blockedReason";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -123,6 +124,7 @@ export function AccountPermissions({
         <FieldGroup legend={t("Assistant permissions")} layout="row">
           <Checkbox
             disabled={locked}
+            disabledReason={accountBlockedReason(disabled)}
             checked={assistant.includes("read")}
             onChange={(event) => setAssistant(event.target.checked ? ["read"] : [])}
             label={t("Can read")}
@@ -132,6 +134,7 @@ export function AccountPermissions({
           />
           <Checkbox
             disabled={locked || !assistant.includes("read")}
+            disabledReason={locked ? accountBlockedReason(disabled) : t("Allow reading first.")}
             checked={assistant.includes("draft")}
             onChange={(event) => setAssistant(event.target.checked ? ["read", "draft"] : ["read"])}
             label={t("Prepare drafts")}
@@ -146,12 +149,13 @@ export function AccountPermissions({
           size="sm"
           loading={assistantWrite.is("assistant")}
           disabled={locked}
+          disabledReason={accountBlockedReason(disabled)}
         >
           {t("Save permissions")}
         </Button>
       </form>
-      {assistantWrite.error ? (
-        <InlineError details={assistantWrite.details}>{assistantWrite.error}</InlineError>
+      {assistantWrite.failureTitle ? (
+        <InlineError details={assistantWrite.details}>{assistantWrite.failureTitle}</InlineError>
       ) : null}
 
       <div className="social-field-row">
@@ -182,6 +186,7 @@ export function AccountPermissions({
             {projectPermissions().map((permission) => (
               <Checkbox
                 disabled={locked}
+                disabledReason={accountBlockedReason(disabled)}
                 checked={grants.includes(permission.id)}
                 onChange={(event) =>
                   setGrants(
@@ -204,6 +209,7 @@ export function AccountPermissions({
             size="sm"
             loading={projectWrite.is("project")}
             disabled={locked || !projectId}
+            disabledReason={locked ? accountBlockedReason(disabled) : t("Choose a project first.")}
           >
             {t("Save project access")}
           </Button>
@@ -214,8 +220,8 @@ export function AccountPermissions({
           description={t("Create a project first to give this account project access.")}
         />
       )}
-      {projectWrite.error ? (
-        <InlineError details={projectWrite.details}>{projectWrite.error}</InlineError>
+      {projectWrite.failureTitle ? (
+        <InlineError details={projectWrite.details}>{projectWrite.failureTitle}</InlineError>
       ) : null}
     </section>
   );

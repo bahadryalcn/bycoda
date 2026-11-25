@@ -243,6 +243,11 @@ export function TemplatesSettings() {
     <Button
       variant="ghost"
       disabled={!available || rows.length >= MAX_TEMPLATES}
+      disabledReason={
+        available
+          ? t("You have reached the template limit.")
+          : t("Template storage is unavailable.")
+      }
       onClick={addTemplate}
     >
       <Plus strokeWidth={1.75} />

@@ -27,7 +27,7 @@ export function ProviderAccountRecoveryDialog({
   const [busy, setBusy] = useState(false);
   const [pendingAccount, setPendingAccount] = useState<string | null>(null);
   const selecting = useRef(false);
-  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const select = (accountId: string) =>
     selectAccount(accountId, {
       onSelect,
@@ -35,8 +35,8 @@ export function ProviderAccountRecoveryDialog({
       selecting,
       setPendingAccount,
       setBusy,
-      setError,
-      failure: t("The account could not be changed. Try again."),
+      setProblem,
+      message: t("The account could not be changed. Try again."),
     });
   return (
     <Modal
@@ -64,7 +64,7 @@ export function ProviderAccountRecoveryDialog({
         listHeight="standard"
         onChange={(accountId: string) => void select(accountId)}
       />
-      {error ? <Alert tone="danger">{error}</Alert> : null}
+      {problem ? <Alert tone="danger">{problem}</Alert> : null}
     </Modal>
   );
 }
@@ -75,23 +75,23 @@ type SelectAccountDeps = {
   selecting: { current: boolean };
   setPendingAccount: (accountId: string | null) => void;
   setBusy: (busy: boolean) => void;
-  setError: (error: string | null) => void;
-  failure: string;
+  setProblem: (error: string | null) => void;
+  message: string;
 };
 
 // Module level: the compiler cannot lower a try/finally inside a component.
 async function selectAccount(accountId: string, deps: SelectAccountDeps) {
-  const { onSelect, onClose, selecting, setPendingAccount, setBusy, setError, failure } = deps;
+  const { onSelect, onClose, selecting, setPendingAccount, setBusy, setProblem, message } = deps;
   if (selecting.current) return;
   selecting.current = true;
   setPendingAccount(accountId);
   setBusy(true);
-  setError(null);
+  setProblem(null);
   try {
     if (await onSelect(accountId)) onClose();
-    else setError(failure);
+    else setProblem(message);
   } catch (reason) {
-    setError(presentRemoteError(reason, { explicit: true }));
+    setProblem(presentRemoteError(reason, { explicit: true }));
   } finally {
     selecting.current = false;
     setPendingAccount(null);

@@ -1,5 +1,4 @@
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
-import { Alert } from "../../shared/ui/Alert";
 import {
   NEW_LOCAL_HOST_SESSION,
   newLocalHostSession,
@@ -306,7 +305,7 @@ export function useProjectMenu({
     ? notificationMuteStatus(notificationPreferences[readyNotificationProject.id])
     : null;
 
-  const { menuError, setMenuError, failMenuError, clearMenuError } = useMenuError(
+  const { menuFooter, setMenuError, failMenuError, clearMenuError } = useMenuError(
     menuPath,
     projectMenu != null || groupMenu != null,
   );
@@ -445,7 +444,7 @@ export function useProjectMenu({
           window.dispatchEvent(new CustomEvent(NEW_LOCAL_HOST_SESSION, { detail: session }));
           setProjectMenu(null);
         })
-        .catch((error) => setMenuError(String(error)))
+        .catch(failMenuError)
         .finally(() => {
           localHostCreationPending.current = false;
           setLocalHostCreating(false);
@@ -703,7 +702,7 @@ export function useProjectMenu({
         info={
           menuChange ? <ProjectGitChangeRow data-project-menu-git="" change={menuChange} /> : null
         }
-        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : null}
+        footer={menuFooter}
         onExtraPick={onPick}
       />
     );
@@ -959,7 +958,7 @@ export function useProjectMenu({
             <ProjectGitChangeRow data-group-menu-git="" change={groupMenuChange} />
           ) : null
         }
-        footer={menuError ? <Alert tone="danger">{menuError}</Alert> : undefined}
+        footer={menuFooter ?? undefined}
         compactAppearance
         extraItems={[
           ...(workspaceRoot && !locked

@@ -62,6 +62,7 @@ export function WorkspaceStorageSummary({
             loading={busy}
             loadingLabel={t("Refreshing storage…")}
             disabled={disabled}
+            disabledReason={t("Wait for the current operation to finish")}
             onClick={onRefresh}
           >
             <RefreshCw className="icon-sm" />

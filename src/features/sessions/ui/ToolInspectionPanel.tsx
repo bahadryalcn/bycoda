@@ -10,6 +10,7 @@ import { FloatingButtonGroup } from "../../../shared/ui/FloatingButtonGroup";
 import { Check, Copy, RotateCcw, WrapText } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
+import { catalogText } from "../model/catalogText";
 import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
@@ -211,7 +212,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
               <div className="flex min-w-0 items-center gap-2">
                 {/* A lone section is named by its own disclosure, so only several need headings. */}
                 {presentation.length > 1 ? (
-                  <SectionLabel as="h4">{t(section.title)}</SectionLabel>
+                  <SectionLabel as="h4">{catalogText(t, section.title)}</SectionLabel>
                 ) : (
                   <span />
                 )}
@@ -262,7 +263,12 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 <ToolInspectionSplitDiff text={section.text} wrap={wrap} />
               </div>
             ) : json ? (
-              <JsonViewer data={json.data} label={t(section.title)} maxHeight={320} pageSize={50} />
+              <JsonViewer
+                data={json.data}
+                label={catalogText(t, section.title)}
+                maxHeight={320}
+                pageSize={50}
+              />
             ) : (
               <OutputBlock
                 tabIndex={0}
@@ -279,18 +285,18 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                   <ToolInspectionDiff text={section.text} />
                 ) : section.text ? (
                   <AnsiText text={section.text} />
+                ) : section.truncated ? (
+                  t("Output left out to keep this run small.")
                 ) : (
-                  t(section.truncated ? "Output left out to keep this run small." : "Empty file")
+                  t("Empty file")
                 )}
               </OutputBlock>
             )}
             {(section.truncated && section.text) || section.legacy ? (
               <Text as="p" size="caption" tone="secondary" className="px-3 pt-1">
-                {t(
-                  section.legacy
-                    ? "Only a shortened preview was saved for this older tool call."
-                    : "Content shortened to keep this conversation responsive.",
-                )}
+                {section.legacy
+                  ? t("Only a shortened preview was saved for this older tool call.")
+                  : t("Content shortened to keep this conversation responsive.")}
               </Text>
             ) : null}
           </section>

@@ -358,7 +358,7 @@ function SubagentPanel({
             ? t("Could not stop. Retry")
             : t("Stop {p0}", { p0: name })
       }
-      disabled={delegated.stopping}
+      loading={delegated.stopping}
       onClick={delegated.onStop}
       className="shrink-0"
     >

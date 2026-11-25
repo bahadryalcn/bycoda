@@ -252,14 +252,14 @@ export function codexMcpForm(params: unknown): CodexMcpForm | null {
     const constraints =
       type === "integer" ? t("Whole number") : type === "number" ? t("Number") : undefined;
     const bounds = [
-      ["minLength", "Minimum length"],
-      ["maxLength", "Maximum length"],
-      ["minimum", "Minimum"],
-      ["maximum", "Maximum"],
-      ["minItems", "Minimum selections"],
-      ["maxItems", "Maximum selections"],
+      ["minLength", t("Minimum length")],
+      ["maxLength", t("Maximum length")],
+      ["minimum", t("Minimum")],
+      ["maximum", t("Maximum")],
+      ["minItems", t("Minimum selections")],
+      ["maxItems", t("Maximum selections")],
     ].flatMap(([name, title]) =>
-      field[name] !== undefined ? [t("{p0}: {p1}", { p0: t(title), p1: field[name] })] : [],
+      field[name] !== undefined ? [t("{p0}: {p1}", { p0: title, p1: field[name] })] : [],
     );
     const id = `mcp_field_${index}`;
     fields.push({ key, id, schema: field, required: isRequired });

@@ -92,18 +92,20 @@ export function GitCommitActions({
       : behind > 0 && ahead > 0
         ? t("Pull {p0} and push {p1} commits between {p2}", { p0: behind, p1: ahead, p2: dest })
         : behind > 0
-          ? t(behind === 1 ? "Pull {p0} commit from {p1}" : "Pull {p0} commits from {p1}", {
-              p0: behind,
-              p1: dest,
-            })
-          : t(ahead === 1 ? "Push {p0} commit to {p1}" : "Push {p0} commits to {p1}", {
-              p0: ahead,
-              p1: dest,
-            });
+          ? behind === 1
+            ? t("Pull {p0} commit from {p1}", { p0: behind, p1: dest })
+            : t("Pull {p0} commits from {p1}", { p0: behind, p1: dest })
+          : ahead === 1
+            ? t("Push {p0} commit to {p1}", { p0: ahead, p1: dest })
+            : t("Push {p0} commits to {p1}", { p0: ahead, p1: dest });
   const syncDetail = `${syncTitle}${canPublish || !index?.upstream ? ` · ${dest}` : ""}`;
   const syncLabel = canPublish
     ? t("Publish Branch")
-    : t(behind > 0 && ahead > 0 ? "Sync changes" : behind > 0 ? "Pull" : "Push");
+    : behind > 0 && ahead > 0
+      ? t("Sync changes")
+      : behind > 0
+        ? t("Pull")
+        : t("Push");
   const createTitle = index?.defaultBranch
     ? t("Create a pull request into {p0}", { p0: index.defaultBranch })
     : t("Create pull request");
@@ -134,16 +136,13 @@ export function GitCommitActions({
   // the leading icon names a one-way direction, so only a two-way sync repeats arrows.
   const twoWay = ahead > 0 && behind > 0;
   const countLabel = (count: number, incoming: boolean) =>
-    t(
-      incoming
-        ? count === 1
-          ? "{p0} incoming commit"
-          : "{p0} incoming commits"
-        : count === 1
-          ? "{p0} unpushed commit"
-          : "{p0} unpushed commits",
-      { p0: count },
-    );
+    incoming
+      ? count === 1
+        ? t("{p0} incoming commit", { p0: count })
+        : t("{p0} incoming commits", { p0: count })
+      : count === 1
+        ? t("{p0} unpushed commit", { p0: count })
+        : t("{p0} unpushed commits", { p0: count });
   const syncCounts =
     canPublish || (ahead === 0 && behind === 0) ? null : (
       <Text
@@ -215,11 +214,11 @@ export function GitCommitActions({
             }
           : {
               variant: "primary" as const,
-              label: committing ? (pending ?? busyLabel(busy ?? "")) : commitLabel,
+              label: commitLabel,
               title: undefined,
               disabled: !canCommit,
               loading: committing,
-              loadingLabel: undefined,
+              loadingLabel: pending ?? busyLabel(busy ?? ""),
               icon: <Check className="icon-sm" strokeWidth={2} />,
               trailing: null,
               onClick: () => onCommit(false),
@@ -318,6 +317,7 @@ export function GitCommitActions({
         className="min-w-0 max-w-full"
         tooltip={dest}
         disabled={syncDisabled}
+        disabledReason={syncDisabled ? t("Wait for the current operation to finish") : undefined}
         loading={syncing}
         loadingLabel={t("Syncing…")}
         startIcon={syncIcon}

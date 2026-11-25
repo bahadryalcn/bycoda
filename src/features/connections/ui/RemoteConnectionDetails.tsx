@@ -1,3 +1,4 @@
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
@@ -9,22 +10,32 @@ import {
   type ConnectionPhase,
   type RemoteFeature,
 } from "../model/remoteLifecycle";
-import { connectionIndicator } from "../model/remoteConnection";
+import { connectionIndicator, type RemoteConnectionStatus } from "../model/remoteConnection";
 
-const phases: Record<ConnectionPhase, string> = {
-  idle: "Not checked",
-  checking: "Checking Host",
-  restoring: "Refreshing remote data",
-  ready: "Host verified",
-  waiting: "Waiting for you",
-  failed: "Connection failed",
-};
-const features: Record<RemoteFeature, string> = {
-  host: "Host",
-  changes: "Live updates",
-  files: "Files",
-  git: "Git",
-  sessions: "Sessions",
+const phaseLabel = (phase: ConnectionPhase) =>
+  ({
+    idle: t("Not checked"),
+    checking: t("Checking Host"),
+    restoring: t("Refreshing remote data"),
+    ready: t("Host verified"),
+    waiting: t("Waiting for you"),
+    failed: t("Connection failed"),
+  })[phase];
+const featureLabel = (feature: RemoteFeature) =>
+  ({
+    host: t("Host"),
+    changes: t("Live updates"),
+    files: t("Files"),
+    git: t("Git"),
+    sessions: t("Sessions"),
+  })[feature];
+const reasonLabel = (reason: RemoteConnectionStatus) => {
+  const { tone } = connectionIndicator({ status: reason }, false);
+  return tone === "connected"
+    ? t("Connected")
+    : tone === "connecting"
+      ? t("Connecting")
+      : t("Not connected");
 };
 
 /** Bounded metadata only. No addresses, credentials, commands or terminal output. */
@@ -41,9 +52,9 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
     <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-2">
       <Text as="p" size="inherit" tone="muted">
         {/* Only the phase is live: it changes on real transitions, not every tick. */}
-        <Text role="status" as="span" size="inherit" tone="inherit">
-          {t(lifecycle.paused ? "Automatic reconnect paused" : phases[lifecycle.phase])}
-        </Text>
+        <LiveText
+          text={lifecycle.paused ? t("Automatic reconnect paused") : phaseLabel(lifecycle.phase)}
+        />
         {lifecycle.phase === "checking" && lifecycle.startedAt != null && now != null ? (
           <span className="tabular-nums">
             {" "}
@@ -70,15 +81,13 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
             NonNullable<typeof lifecycle.features.host>,
           ][]
         ).map(([feature, health]) => (
-          <DescriptionItem key={feature} term={t(features[feature])}>
+          <DescriptionItem key={feature} term={featureLabel(feature)}>
             <span>
-              {t(
-                health.status === "ready"
-                  ? "Up to date"
-                  : health.status === "stale"
-                    ? "Refresh pending"
-                    : "Unavailable",
-              )}
+              {health.status === "ready"
+                ? t("Up to date")
+                : health.status === "stale"
+                  ? t("Refresh pending")
+                  : t("Unavailable")}
             </span>
             {health.verifiedAt != null ? (
               <>
@@ -104,10 +113,8 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
               className="flex flex-wrap justify-between gap-x-3 gap-y-1 py-1"
             >
               <span>
-                {t(phases[event.phase])} <span className="tabular-nums">#{event.attempt}</span>
-                {event.reason
-                  ? ` · ${t(connectionIndicator({ status: event.reason }, false).label)}`
-                  : ""}
+                {phaseLabel(event.phase)} <span className="tabular-nums">#{event.attempt}</span>
+                {event.reason ? ` · ${reasonLabel(event.reason)}` : ""}
               </span>
               <Timestamp value={event.at} tone="muted" />
             </li>

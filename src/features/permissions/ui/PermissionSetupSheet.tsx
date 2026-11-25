@@ -163,6 +163,7 @@ export function PermissionSetupSheet({
                 variant={offerRestart ? "secondary" : "primary"}
                 loading={busy === "request"}
                 disabled={busy !== null}
+                disabledReason={t("Wait for the current operation to finish")}
                 onClick={() => void act(true)}
               >
                 {t("Allow")}
@@ -173,6 +174,7 @@ export function PermissionSetupSheet({
                 variant={offerRestart || showAllow ? "secondary" : "primary"}
                 loading={busy === "settings"}
                 disabled={busy !== null}
+                disabledReason={t("Wait for the current operation to finish")}
                 onClick={() => void act(false)}
               >
                 {t("Open settings")}
@@ -183,6 +185,7 @@ export function PermissionSetupSheet({
               loading={busy === "check"}
               loadingLabel={t("Checking…")}
               disabled={busy !== null}
+              disabledReason={t("Wait for the current operation to finish")}
               onClick={() =>
                 void check().catch(() => {
                   if (mounted.current) setError(true);

@@ -63,6 +63,7 @@ export function DeliveryReviewChoice({
           size="sm"
           variant="secondary"
           disabled={working}
+          disabledReason={t("Wait for the current action to finish.")}
           onClick={() => onChoose("delivered")}
         >
           {t("Mark as delivered")}
@@ -76,10 +77,22 @@ export function DeliveryReviewChoice({
         >
           {t("Send again")}
         </Button>
-        <Button size="sm" variant="ghost" disabled={working} onClick={() => onChoose("keep")}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={working}
+          disabledReason={t("Wait for the current action to finish.")}
+          onClick={() => onChoose("keep")}
+        >
           {t("Keep queued, pause")}
         </Button>
-        <Button size="sm" variant="ghost" disabled={working} onClick={() => onChoose("discard")}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={working}
+          disabledReason={t("Wait for the current action to finish.")}
+          onClick={() => onChoose("discard")}
+        >
           {t("Discard")}
         </Button>
       </div>

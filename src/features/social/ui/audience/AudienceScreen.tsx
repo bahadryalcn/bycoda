@@ -394,7 +394,9 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
             </Button>
           </section>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? (
+          <InlineError details={error}>{t("Could not complete this action.")}</InlineError>
+        ) : null}
 
         <TabPanel value="people">
           <div className="audience-layout">
@@ -438,8 +440,11 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                 </LoadingText>
               ) : null}
               {data.error ? (
-                <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
-                  {data.error}
+                <InlineError
+                  details={data.error}
+                  retry={{ onRetry: data.reload, label: t("Try again") }}
+                >
+                  {t("Could not load people.")}
                 </InlineError>
               ) : null}
               {emptyPeople ? (

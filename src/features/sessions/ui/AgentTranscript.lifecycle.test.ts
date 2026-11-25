@@ -166,8 +166,8 @@ it("holds pending follow-ups and prevents send or removal while delivery is acti
   );
   const send = host.querySelector<HTMLButtonElement>('[aria-label="Send draft"]')!;
   const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!;
-  expect(send.disabled).toBe(true);
-  expect(remove.disabled).toBe(true);
+  expect(send.getAttribute("aria-disabled")).toBe("true");
+  expect(remove.getAttribute("aria-disabled")).toBe("true");
   expect(await tooltipText(send)).toContain("still being delivered");
   expect(host.querySelector('[role="status"]')?.textContent).toContain("Sending…");
   await act(async () => {
@@ -202,8 +202,8 @@ it.each(["undelivered", "uncertain"] as const)(
     await act(async () => render(true));
     const send = host.querySelector<HTMLButtonElement>('[aria-label="Send draft"]')!;
     const remove = host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!;
-    expect(send.disabled).toBe(true);
-    expect(remove.disabled).toBe(true);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(remove.getAttribute("aria-disabled")).toBe("true");
     await act(async () => {
       send.click();
       remove.click();
@@ -211,8 +211,8 @@ it.each(["undelivered", "uncertain"] as const)(
     expect(onSendDraft).not.toHaveBeenCalled();
     expect(onRemoveDraft).not.toHaveBeenCalled();
     await act(async () => render(false));
-    expect(send.disabled).toBe(false);
-    expect(remove.disabled).toBe(false);
+    expect(send.getAttribute("aria-disabled")).not.toBe("true");
+    expect(remove.getAttribute("aria-disabled")).not.toBe("true");
     if (followUpDelivery === "uncertain") {
       expect(host.querySelector('[role="status"]')?.textContent).toContain(
         "May have been delivered",
@@ -240,7 +240,7 @@ it("keeps ordinary draft controls available during a running turn", async () => 
     ),
   );
   const send = host.querySelector<HTMLButtonElement>('[aria-label="Send draft"]')!;
-  expect(send.disabled).toBe(false);
+  expect(send.getAttribute("aria-disabled")).not.toBe("true");
   expect(host.querySelector<HTMLButtonElement>('[aria-label="Remove draft"]')!.disabled).toBe(
     false,
   );

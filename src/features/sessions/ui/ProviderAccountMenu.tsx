@@ -17,6 +17,7 @@ import {
 } from "../../providers/model/providerAccounts";
 import { useProviderAccounts } from "../../providers/public/useProviderAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
+import { catalogText } from "../model/catalogText";
 import { useModelSource } from "./modelSource";
 
 /**
@@ -112,7 +113,7 @@ export function ProviderAccountMenu({
                 ? limits && providerAccountSignedOut(limits)
                   ? t("Not signed in")
                   : t("Usage unavailable")
-                : status && t(status.label);
+                : status && catalogText(t, status.label);
             return {
               kind: "item" as const,
               id: account.id,

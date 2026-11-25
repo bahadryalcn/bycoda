@@ -1,4 +1,4 @@
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
+import { describeRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   AssistantJob,
@@ -66,7 +66,7 @@ export function JobOwnerEditDialog({
   });
   const [pending, setPending] = useState(false),
     busy = useRef(false),
-    [error, setError] = useState("");
+    [problem, setProblem] = useState<{ message: string; details?: string } | null>(null);
   const [draftStorageError, setDraftStorageError] = useState(() => unsavedJobOwnerDrafts.has(key));
   const [writer] = useState(() =>
     createLocalDraftWriter(key, (saved) => {
@@ -122,16 +122,16 @@ export function JobOwnerEditDialog({
       next.projectId !== job.projectId ||
       JSON.stringify(assistantJobProjectIds(next)) !== JSON.stringify(assistantJobProjectIds(job))
     )
-      throw new Error("The job changed or is outside visible project scope.");
+      throw new Error(t("The job changed or is outside visible project scope."));
     return next;
   }
   async function submit() {
     if (busy.current) return;
     busy.current = true;
     setPending(true);
-    setError("");
+    setProblem(null);
     try {
-      if (!live()) throw new Error("The selected project is no longer visible.");
+      if (!live()) throw new Error(t("The selected project is no longer visible."));
       if (draft.intent) {
         const next = verify((await request({ op: "jobs.get", id: job.id }, environmentId)).job);
         if (
@@ -143,13 +143,14 @@ export function JobOwnerEditDialog({
           onSaved();
           return;
         }
-        setError(
-          t(
+        setProblem({
+          message:
             mode === "replan"
-              ? "Replan could not be confirmed. Review the epic before starting another replan."
-              : "Priority change could not be confirmed. Review the job before changing it again.",
-          ),
-        );
+              ? t("Replan could not be confirmed. Review the epic before starting another replan.")
+              : t(
+                  "Priority change could not be confirmed. Review the job before changing it again.",
+                ),
+        });
         return;
       }
       const input: JobOwnerEditInput =
@@ -167,7 +168,7 @@ export function JobOwnerEditDialog({
               priority: draft.priority,
             };
       if (input.op === "jobs.replan" && !input.feedback)
-        throw new Error("Describe the change before replanning.");
+        throw new Error(t("Describe the change before replanning."));
       if (!retain({ ...draft, intent: input }, true))
         throw new Error(
           t(
@@ -180,11 +181,11 @@ export function JobOwnerEditDialog({
         (input.op === "jobs.priority" && (next.priority ?? "normal") !== input.priority) ||
         (input.op === "jobs.replan" && next.status !== "planning")
       )
-        throw new Error("Job status is unknown. Check the Room before retrying.");
+        throw new Error(t("Job status is unknown. Check the Room before retrying."));
       discard();
       onSaved();
     } catch (cause) {
-      if (alive.current && live()) setError(t(presentRemoteError(cause, { explicit: true })));
+      if (alive.current && live()) setProblem(describeRemoteError(cause));
     } finally {
       busy.current = false;
       setPending(false);
@@ -196,7 +197,7 @@ export function JobOwnerEditDialog({
       : undefined;
   return (
     <Modal
-      title={t(mode === "replan" ? "Replan job" : "Job priority")}
+      title={mode === "replan" ? t("Replan job") : t("Job priority")}
       onClose={onClose}
       size="md"
       footer={
@@ -211,7 +212,7 @@ export function JobOwnerEditDialog({
             loading={pending}
             disabled={Boolean(blockedReason)}
           >
-            {t(draft.intent ? "Check status" : mode === "replan" ? "Replan" : "Save")}
+            {draft.intent ? t("Check status") : mode === "replan" ? t("Replan") : t("Save")}
           </Button>
         </ModalActions>
       }
@@ -265,7 +266,7 @@ export function JobOwnerEditDialog({
               : ""
           }
         />
-        {error && <InlineError>{error}</InlineError>}
+        {problem && <InlineError details={problem.details}>{problem.message}</InlineError>}
         {draftStorageError && (
           <InlineError
             retry={{

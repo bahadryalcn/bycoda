@@ -17,6 +17,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { useAccountWrite } from "../accounts/useAccountWrite";
 import { LinkedInHandoff } from "./LinkedInHandoff";
 import "./linkedin.css";
+import { linkedInBusyReason } from "./linkedinReasons";
 
 type Target = { platformId: string; url: string; name: string };
 type NetworkAction =
@@ -47,7 +48,7 @@ export function LinkedInNetwork({
     "done" | "membership_pending" | "moderation_pending"
   >();
   const attempts = useRef(new Map<string, string>());
-  const { error, is, write } = useAccountWrite(t("Could not save changes."));
+  const { failureTitle, details, is, write } = useAccountWrite(t("Could not save changes."));
   const confirm = useConfirm();
   const member = account.accountType === "member";
   const busy = is("read") || is("write") || is("open");
@@ -215,6 +216,9 @@ export function LinkedInNetwork({
                 size="sm"
                 className="self-start"
                 disabled={!id || (action === "post" && !text.trim())}
+                disabledReason={
+                  !id ? t("Enter a valid LinkedIn URL first.") : t("Write the post text first.")
+                }
                 loading={is("write")}
                 onClick={() => void submit().catch(() => undefined)}
               >
@@ -228,6 +232,7 @@ export function LinkedInNetwork({
             description={t("Read and answer messages on LinkedIn.")}
             action={t("Open LinkedIn inbox")}
             disabled={disabled || busy}
+            disabledReason={linkedInBusyReason(disabled)}
             onOpen={() => void openInbox().catch(() => undefined)}
           />
         </ul>
@@ -236,7 +241,7 @@ export function LinkedInNetwork({
             {resultState === "done" ? t("Done") : t("Pending review")}
           </InlineMessage>
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       </div>
       {confirm.dialog}
     </Disclosure>

@@ -148,7 +148,7 @@ export function SprintCompletion({
             disabled={busy}
           />
         ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
+        {error ? <InlineError details={error} /> : null}
       </form>
     </Modal>
   );

@@ -264,7 +264,7 @@ it("retries the selected path's failed inspection without opening another native
     return undefined;
   });
   await choose();
-  await vi.waitFor(() => expect(container.textContent).toContain("Inspection unavailable"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Could not read attachments."));
   await expect(close().captureAndFlush()).rejects.toThrow("Inspection unavailable");
   await act(async () => closed!.retryFailed(key));
   const result = await closed!.captureAndFlush();
@@ -294,7 +294,7 @@ it("holds the original clipboard image through a failed spill and retries only t
     });
     container.querySelector("textarea")!.dispatchEvent(paste);
   });
-  await vi.waitFor(() => expect(container.textContent).toContain("Spill unavailable"));
+  await vi.waitFor(() => expect(container.textContent).toContain("Could not read attachments."));
   await expect(close().captureAndFlush()).rejects.toThrow("Spill unavailable");
   await act(async () => closed!.retryFailed(key));
   const result = await closed!.captureAndFlush();

@@ -15,6 +15,15 @@ import { t } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 
+/** The owner-question helper returns English keys for two known failures; present others as given. */
+function draftMessage(message: string) {
+  if (message === "Keep custom answers within 2,000 characters.")
+    return t("Keep custom answers within 2,000 characters.");
+  if (message === "The question data could not be verified. Refresh its original Host.")
+    return t("The question data could not be verified. Refresh its original Host.");
+  return message;
+}
+
 /** Choice keyboard handling is confined to this card, including Escape. */
 export function VoiceChoiceCard({
   choice,
@@ -72,7 +81,7 @@ export function VoiceChoiceCard({
     return (
       <div ref={root}>
         <InlineError retry={{ onRetry: () => setEpoch((value) => value + 1), label: t("Retry") }}>
-          {t(restored.error ?? draftError)}
+          {draftMessage(restored.error ?? draftError)}
         </InlineError>
       </div>
     );

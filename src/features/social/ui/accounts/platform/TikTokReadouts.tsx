@@ -1,3 +1,4 @@
+import { accountBlockedReason } from "../blockedReason";
 import { useState } from "react";
 import { useFormat, useT } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -73,7 +74,7 @@ export function TikTokReadouts({
 }) {
   const t = useT();
   const format = useFormat();
-  const { is, write, error, details } = useAccountWrite(
+  const { is, write, failureTitle, details } = useAccountWrite(
     t("Could not complete the TikTok request."),
   );
   const [result, setResult] = useState<Result>();
@@ -158,6 +159,7 @@ export function TikTokReadouts({
         size="sm"
         variant="ghost"
         disabled={disabled}
+        disabledReason={accountBlockedReason(disabled)}
         onClick={() => {
           openExternal(TIKTOK_STUDIO_COMMENTS).catch(() => undefined);
         }}
@@ -169,6 +171,7 @@ export function TikTokReadouts({
         size="sm"
         variant="ghost"
         disabled={disabled}
+        disabledReason={accountBlockedReason(disabled)}
         onClick={() => selectChange({ kind, postId, commentId, recipientId })}
       >
         {kind === "comment.reply" ? t("Reply to comment") : t("Manage comment")}
@@ -198,6 +201,11 @@ export function TikTokReadouts({
             variant="secondary"
             loading={is("read")}
             disabled={disabled || busy || (businessComments && !/^\d{1,30}$/.test(postId))}
+            disabledReason={
+              disabled || busy
+                ? accountBlockedReason(disabled)
+                : t("Enter a numeric post ID first.")
+            }
             onClick={() => read().catch(() => undefined)}
           >
             {result && view !== "live" ? t("Refresh") : labels[view]}
@@ -208,6 +216,7 @@ export function TikTokReadouts({
               variant="ghost"
               loading={is("sync")}
               disabled={disabled || busy}
+              disabledReason={accountBlockedReason(disabled)}
               onClick={() => sync().catch(() => undefined)}
             >
               {t("Sync to inbox")}
@@ -218,6 +227,7 @@ export function TikTokReadouts({
               size="sm"
               variant="ghost"
               disabled={disabled || busy}
+              disabledReason={accountBlockedReason(disabled)}
               onClick={() => selectChange({ kind: "live.reply" })}
             >
               {t("Reply to LIVE comment")}
@@ -268,7 +278,7 @@ export function TikTokReadouts({
         </>
       )}
       {is("read") && !result && <LoadingText />}
-      {!result && !busy && !error && (
+      {!result && !busy && !failureTitle && (
         <Text size="caption" tone="secondary">
           {businessComments && !postId
             ? t("Choose a post to read its comments.")
@@ -282,7 +292,7 @@ export function TikTokReadouts({
           {t("Imported items: {p0}", { p0: format.formatNumber(syncCount) })}
         </InlineMessage>
       )}
-      {error && <InlineError details={details}>{error}</InlineError>}
+      {failureTitle && <InlineError details={details}>{failureTitle}</InlineError>}
       {result && "credentialSaved" in result && result.credentialSaved && (
         <InlineMessage tone="success">{t("Stream key saved on this Host.")}</InlineMessage>
       )}
@@ -344,6 +354,7 @@ export function TikTokReadouts({
                   size="sm"
                   variant="ghost"
                   disabled={disabled}
+                  disabledReason={accountBlockedReason(disabled)}
                   onClick={() =>
                     selectChange({
                       kind: relationship === "followers" ? "follow" : "unfollow",
