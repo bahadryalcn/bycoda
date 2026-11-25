@@ -7,7 +7,7 @@ import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { AdvancedSettings, Row, Select, Toggle } from "../../shared/ui/settings";
+import { Row, Select, Toggle } from "../../shared/ui/settings";
 import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RefreshCw } from "../../shared/ui/icons";
@@ -62,7 +62,9 @@ export function DesktopControlSettings({
    * The Assistant access settings own the permission mode. A preset also turns computer use and
    * physical input on; a changed standing permission only moves the mode.
    */
-  accessRef?: { current: ((mode: DesktopPermissionMode, preset?: boolean) => void) | null };
+  accessRef?: {
+    current: ((mode: DesktopPermissionMode, preset?: boolean) => void) | null;
+  };
 }) {
   const [draft, setDraft] = useState<DesktopControlConfiguration>();
   const [saved, setSaved] = useState<DesktopControlConfiguration>();
@@ -364,7 +366,12 @@ export function DesktopControlSettings({
               const driver = DESKTOP_DRIVERS.find((item) => item === value);
               // A new driver needs its own verified helper; the setup row fills it in.
               if (driver && driver !== draft.driver)
-                setDraft({ ...draft, driver, binaryPath: "", binarySha256: "" });
+                setDraft({
+                  ...draft,
+                  driver,
+                  binaryPath: "",
+                  binarySha256: "",
+                });
             }}
           />
         </Row>
@@ -447,7 +454,10 @@ export function DesktopControlSettings({
                         multiple
                         label={t("Approved apps")}
                         value={draft.allowedApps}
-                        options={saved.allowedApps.map((value) => ({ value, label: value }))}
+                        options={saved.allowedApps.map((value) => ({
+                          value,
+                          label: value,
+                        }))}
                         onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
                         disabled={pending}
                       />
@@ -494,35 +504,33 @@ export function DesktopControlSettings({
   );
   const custom = draft && (
     <>
-      <AdvancedSettings title={t("Custom helper")} defaultOpen={false} keepMounted>
-        <Row
+      <Row
+        label={t("Helper file")}
+        description={t(
+          "Use a helper you built or trust instead of the verified one. Its checksum must match.",
+        )}
+        stacked
+      >
+        <TextField
           label={t("Helper file")}
-          description={t(
-            "Use a helper you built or trust instead of the verified one. Its checksum must match.",
-          )}
-          stacked
-        >
-          <TextField
-            label={t("Helper file")}
-            hideLabel
-            value={draft.binaryPath}
-            onChange={(event) => setDraft({ ...draft, binaryPath: event.target.value })}
-            disabled={pending}
-            monospace
-          />
-        </Row>
-        <Row label={t("Checksum (SHA-256)")} stacked>
-          <TextField
-            label={t("Checksum (SHA-256)")}
-            hideLabel
-            value={draft.binarySha256}
-            onChange={(event) => setDraft({ ...draft, binarySha256: event.target.value })}
-            disabled={pending}
-            monospace
-            maxLength={64}
-          />
-        </Row>
-      </AdvancedSettings>
+          hideLabel
+          value={draft.binaryPath}
+          onChange={(event) => setDraft({ ...draft, binaryPath: event.target.value })}
+          disabled={pending}
+          monospace
+        />
+      </Row>
+      <Row label={t("Checksum (SHA-256)")} stacked>
+        <TextField
+          label={t("Checksum (SHA-256)")}
+          hideLabel
+          value={draft.binarySha256}
+          onChange={(event) => setDraft({ ...draft, binarySha256: event.target.value })}
+          disabled={pending}
+          monospace
+          maxLength={64}
+        />
+      </Row>
       {!saveRef && (
         <div className={styles.saveArea}>
           <Text as="p" leading="normal">

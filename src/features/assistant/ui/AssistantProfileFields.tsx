@@ -8,7 +8,7 @@ import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { AdvancedSettings, Row } from "../../../shared/ui/settings";
+import { Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
 import { AssistantWorkFields } from "./settings/AssistantWorkFields";
@@ -71,7 +71,7 @@ export function AssistantProfileFields({
   const rows = useProfileRows();
   if (section === "identity") {
     const avatar = (
-      <AdvancedSettings title={t("Avatar")} keepMounted>
+      <>
         {rows ? (
           <Row label={null} stacked>
             <AssistantAvatarPicker value={value.avatar} hideLabel onChange={onChange} />
@@ -80,7 +80,7 @@ export function AssistantProfileFields({
           <AssistantAvatarPicker value={value.avatar} hideLabel={false} onChange={onChange} />
         )}
         <ShowTitle value={value} onChange={onChange} />
-      </AdvancedSettings>
+      </>
     );
     return (
       <>

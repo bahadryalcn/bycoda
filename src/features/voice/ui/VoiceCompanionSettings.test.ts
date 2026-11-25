@@ -46,9 +46,6 @@ it("links shared Assistant settings without duplicating identity editing and pre
       host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Memory"]')!.click(),
     );
     expect(loadVoiceMemory()).toEqual({ ...memory, enabled: false });
-    const appearance = button("Appearance and voice style");
-    expect(appearance.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => appearance.click());
     expect(change).not.toHaveBeenCalled();
     await act(async () => button("Orb").click());
     expect(change).toHaveBeenCalledExactlyOnceWith({ visual: "orb" });

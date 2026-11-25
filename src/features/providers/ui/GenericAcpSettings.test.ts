@@ -66,9 +66,7 @@ it("keeps every advanced value when editing and saves on the selected host witho
   expect(container.textContent).toContain("Target machine: Remote host.");
   expect(container.textContent).not.toContain("host-one");
   act(() => button("Edit").click());
-  expect(
-    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
-  ).toBeTruthy();
+  expect(container.querySelector("#acp-agent-form-disclosure h3")?.textContent).toBe("Edit agent");
   expect([...container.querySelectorAll("input")].map((input) => input.value)).toEqual([
     config.id,
     config.name,
@@ -108,9 +106,7 @@ it("retains the form after a failed save and allows retry", async () => {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host save failed");
-  expect(
-    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
-  ).toBeTruthy();
+  expect(container.querySelector("#acp-agent-form-disclosure h3")?.textContent).toBe("Edit agent");
   expect(container.querySelector("input")?.value).toBe(config.id);
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   expect(container.textContent).not.toContain("ACP agent saved on the target machine.");
@@ -164,22 +160,6 @@ it("shows a load failure as its message without a raw Error prefix", async () =>
   await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host offline");
   expect(container.textContent).not.toContain("Error: Host offline");
-});
-
-it("reveals a collapsed agent form without discarding its draft", async () => {
-  await render();
-  act(() => button("Edit").click());
-  const disclosure = () =>
-    container.querySelector<HTMLButtonElement>("#acp-agent-form-disclosure button[aria-expanded]")!;
-  act(() => disclosure().click());
-  expect(container.querySelector("#acp-agent-form-disclosure input")).toBeNull();
-  await act(async () => {
-    button("Add agent").click();
-    await new Promise((resolve) => requestAnimationFrame(resolve));
-  });
-  const field = container.querySelector<HTMLInputElement>("#acp-agent-form-disclosure input")!;
-  expect(field.value).toBe(config.id);
-  expect(document.activeElement).toBe(field);
 });
 
 it.each([false, true])(

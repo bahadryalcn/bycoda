@@ -25,7 +25,6 @@ import {
 import type { UsageLimitFailover } from "../../tasks/public/agentDefaults";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import {
-  AdvancedSettings,
   Group,
   Row,
   Segmented,
@@ -202,148 +201,137 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             disabled={pending("composer-spelling")}
           />
         </Row>
-        <AdvancedSettings
-          title={t("Advanced conversation settings")}
-          defaultOpen={false}
-          settingIds={[
-            "resume-at-reset",
-            "usage-limit-failover",
-            "auto-continue-interrupted",
-            "model-controls",
-          ]}
+        <Row
+          id="resume-at-reset"
+          feedback={feedback("resume-at-reset")}
+          label={t("Resume at reset")}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "When a provider stops a turn at its usage limit, continue the session automatically once the limit resets. You can still cancel it from the notice above the composer.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Automatic resumption requires the provider to report when its usage limit resets.",
+                )}
+              </p>
+            </InfoPopover>
+          }
         >
-          <Row
-            id="resume-at-reset"
-            feedback={feedback("resume-at-reset")}
+          <Toggle
             label={t("Resume at reset")}
-            info={
-              <InfoPopover className="shrink-0">
-                <p>
-                  {t(
-                    "When a provider stops a turn at its usage limit, continue the session automatically once the limit resets. You can still cancel it from the notice above the composer.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Automatic resumption requires the provider to report when its usage limit resets.",
-                  )}
-                </p>
-              </InfoPopover>
-            }
-          >
-            <Toggle
-              label={t("Resume at reset")}
-              on={resumeAtReset}
-              onChange={onResumeAtReset}
-              disabled={pending("resume-at-reset")}
-            />
-          </Row>
-          <Row
-            id="usage-limit-failover"
-            feedback={feedback("usage-limit-failover")}
+            on={resumeAtReset}
+            onChange={onResumeAtReset}
+            disabled={pending("resume-at-reset")}
+          />
+        </Row>
+        <Row
+          id="usage-limit-failover"
+          feedback={feedback("usage-limit-failover")}
+          label={t("At usage limit, continue on")}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "When a provider stops a chat at its usage limit, continue the same conversation elsewhere instead of waiting for the reset.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Another account keeps the model and moves to the next signed-in account of the same provider that still has quota. Model order uses the first eligible model in Settings → Models, skipping the limited account.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "The switch shows in the conversation. If nothing is available, the limit notice stays and Resume at reset still applies.",
+                )}
+              </p>
+              <p>
+                {t(
+                  "Saved on this computer. Chats running on another computer follow the setting saved there.",
+                )}
+              </p>
+            </InfoPopover>
+          }
+        >
+          <Segmented
             label={t("At usage limit, continue on")}
-            info={
-              <InfoPopover className="shrink-0">
-                <p>
-                  {t(
-                    "When a provider stops a chat at its usage limit, continue the same conversation elsewhere instead of waiting for the reset.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Another account keeps the model and moves to the next signed-in account of the same provider that still has quota. Model order uses the first eligible model in Settings → Models, skipping the limited account.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "The switch shows in the conversation. If nothing is available, the limit notice stays and Resume at reset still applies.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Saved on this computer. Chats running on another computer follow the setting saved there.",
-                  )}
-                </p>
-              </InfoPopover>
-            }
-          >
-            <Segmented
-              label={t("At usage limit, continue on")}
-              value={usageLimitFailover}
-              options={[
-                {
-                  value: "off",
-                  get label() {
-                    return t("Off");
-                  },
+            value={usageLimitFailover}
+            options={[
+              {
+                value: "off",
+                get label() {
+                  return t("Off");
                 },
-                {
-                  value: "account",
-                  get label() {
-                    return t("Another account");
-                  },
+              },
+              {
+                value: "account",
+                get label() {
+                  return t("Another account");
                 },
-                {
-                  value: "order",
-                  get label() {
-                    return t("Model order");
-                  },
+              },
+              {
+                value: "order",
+                get label() {
+                  return t("Model order");
                 },
-              ]}
-              onChange={onUsageLimitFailover}
-              disabled={pending("usage-limit-failover")}
-            />
-          </Row>
-          <Row
-            id="auto-continue-interrupted"
-            feedback={feedback("auto-continue-interrupted")}
+              },
+            ]}
+            onChange={onUsageLimitFailover}
+            disabled={pending("usage-limit-failover")}
+          />
+        </Row>
+        <Row
+          id="auto-continue-interrupted"
+          feedback={feedback("auto-continue-interrupted")}
+          label={t("Automatically continue interrupted turns")}
+          info={
+            <InfoPopover className="shrink-0">
+              <p>
+                {t(
+                  "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
+                  { p0: PRODUCT_IDENTITY.displayName },
+                )}
+              </p>
+            </InfoPopover>
+          }
+        >
+          <Toggle
             label={t("Automatically continue interrupted turns")}
-            info={
-              <InfoPopover className="shrink-0">
-                <p>
-                  {t(
-                    "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
-                    { p0: PRODUCT_IDENTITY.displayName },
-                  )}
-                </p>
-              </InfoPopover>
-            }
-          >
-            <Toggle
-              label={t("Automatically continue interrupted turns")}
-              on={autoContinue}
-              onChange={onAutoContinue}
-              disabled={pending("auto-continue-interrupted")}
-            />
-          </Row>
-          <Row
-            id="model-controls"
-            feedback={feedback("model-controls")}
+            on={autoContinue}
+            onChange={onAutoContinue}
+            disabled={pending("auto-continue-interrupted")}
+          />
+        </Row>
+        <Row
+          id="model-controls"
+          feedback={feedback("model-controls")}
+          label={t("Extras summary")}
+          description={t("Choose whether Extras also shows your active options.")}
+        >
+          <Segmented
             label={t("Extras summary")}
-            description={t("Choose whether Extras also shows your active options.")}
-          >
-            <Segmented
-              label={t("Extras summary")}
-              value={modelControls}
-              options={[
-                {
-                  value: "menu",
-                  get label() {
-                    return t("Compact");
-                  },
+            value={modelControls}
+            options={[
+              {
+                value: "menu",
+                get label() {
+                  return t("Compact");
                 },
-                {
-                  value: "beside",
-                  get label() {
-                    return t("Show active choices");
-                  },
+              },
+              {
+                value: "beside",
+                get label() {
+                  return t("Show active choices");
                 },
-              ]}
-              onChange={onModelControls}
-              disabled={pending("model-controls")}
-            />
-          </Row>
-        </AdvancedSettings>
+              },
+            ]}
+            onChange={onModelControls}
+            disabled={pending("model-controls")}
+          />
+        </Row>
       </Group>
 
       <Group title={t("Helper models")} layout="full" persistence={{ mode: "automatic" }}>

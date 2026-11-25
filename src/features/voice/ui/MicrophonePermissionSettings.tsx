@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
-import { AdvancedSettings, Row } from "../../../shared/ui/settings";
+import { Row } from "../../../shared/ui/settings";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import {
   isMicrophoneBlocked,
@@ -40,7 +40,9 @@ export function MicrophonePermissionSettings() {
     // WebViews without the Permissions API remain unknown until an explicit check.
     void (async () => {
       try {
-        const value = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+        const value = await navigator.permissions?.query({
+          name: "microphone" as PermissionName,
+        });
         if (!value) return;
         if (!mounted.current) return;
         status = value;
@@ -145,9 +147,7 @@ export function MicrophonePermissionSettings() {
         ) : null}
         <MicrophoneRecoveryAction message={blocked ? microphoneBlockedMessage() : error} />
       </Row>
-      <AdvancedSettings title={t("Permissions")} settingIds={["permission-microphone"]} keepMounted>
-        <PermissionRow id="microphone" />
-      </AdvancedSettings>
+      <PermissionRow id="microphone" />
     </>
   );
 }

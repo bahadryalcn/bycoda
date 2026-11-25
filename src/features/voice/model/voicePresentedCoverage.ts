@@ -162,7 +162,6 @@ export const presentedOmitted = {
   /** Window, pane, settings and row chrome, toasts and inline row actions. */
   chrome: [
     "ActionHost",
-    "AdvancedSettings",
     "BrandMark",
     "ExpandingSearch",
     "FloatingButtonGroup",

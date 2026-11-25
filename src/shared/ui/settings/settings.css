@@ -266,30 +266,3 @@
 .settings-row-control > :is(input, textarea, select) {
   min-inline-size: 0;
 }
-.settings-advanced > .settings-subheading {
-  overflow-wrap: anywhere;
-}
-/* The disclosure row aligns with row titles (16px), spans the frame, and puts the chevron on the right. */
-.settings-advanced-toggle {
-  min-block-size: 3rem;
-  padding-inline: 16px;
-  justify-content: flex-start;
-}
-/* The shared trailing chevron sits at the row end. */
-.settings-advanced-toggle > :last-child {
-  margin-inline-start: auto;
-}
-
-/* Secondary settings sit inside their topic's frame as a closing disclosure row. Standalone
-   (outside a Group) they draw their own thin frame. */
-.settings-advanced {
-  min-inline-size: 0;
-  margin-block: 12px;
-}
-.settings-group-content > .settings-advanced {
-  margin: 0;
-}
-
-.settings-topics > .settings-advanced {
-  margin-block: 0;
-}

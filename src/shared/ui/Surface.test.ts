@@ -260,12 +260,11 @@ it("supports the pane divider token", () => {
   );
 });
 
-it("supports opt-in mixed settings rows and nested advanced boundaries", () => {
+it("supports opt-in settings row boundaries", () => {
   expect(surfaceAttributes({ layout: "settings-group" })["data-surface-layout"]).toBe(
     "settings-group",
   );
   expect(css).toContain('[data-surface-layout="settings-group"]');
-  expect(css).toContain('data-settings-part="advanced-content"');
   expect(css).toContain("border-block-start: 1px solid var(--ui-settings-hairline)");
   expect(css).toContain("calc(var(--ui-radius-card) - 0.0625rem)");
 });

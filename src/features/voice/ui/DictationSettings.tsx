@@ -4,7 +4,7 @@ import { RevealedSetting, settingDomId } from "../../../shared/ui/settings";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t, useFormat } from "../../../shared/i18n";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
-import { AdvancedSettings, Group, Select, Toggle } from "../../../shared/ui/settings";
+import { Group, Select, Toggle } from "../../../shared/ui/settings";
 import { DICTATION_LANGUAGES, DICTATION_PROVIDER_NAMES } from "../model/dictationModels";
 import type { DictationEngine, VoiceSettings as Preferences } from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";
@@ -176,13 +176,7 @@ export function DictationSettings({
               <VoiceSetupRow setup={setup} settings={settings} change={change} />
             ) : null}
             {settings.dictationEngine === "local" ? (
-              <AdvancedSettings
-                title={t("Transcription models")}
-                settingIds={["dictation-local-models"]}
-                keepMounted
-              >
-                <LocalDictationModels settings={settings} change={change} />
-              </AdvancedSettings>
+              <LocalDictationModels settings={settings} change={change} />
             ) : (
               <DictationModelSettings settings={settings} change={change} />
             )}
@@ -214,11 +208,7 @@ export function DictationSettings({
               />
             </Row>
             {settings.dictationEngine === "local" ? (
-              <AdvancedSettings
-                title={t("Dictation options")}
-                settingIds={["dictation-device", "dictation-idle-unload"]}
-                keepMounted
-              >
+              <>
                 <Row
                   id="dictation-idle-unload"
                   label={t("Unload idle model")}
@@ -261,7 +251,7 @@ export function DictationSettings({
                     change={change}
                   />
                 ) : null}
-              </AdvancedSettings>
+              </>
             ) : null}
           </Group>
           <Group title={t("Dictionary")} layout="full">

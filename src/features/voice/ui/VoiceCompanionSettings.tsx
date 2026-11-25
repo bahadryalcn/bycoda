@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Pencil, Settings } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
-import { AdvancedSettings, Group, Toggle } from "../../../shared/ui/settings";
+import { Group, Toggle } from "../../../shared/ui/settings";
 import { saveVoicePreference } from "../model/voiceSettingsSave";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { useVoicePersona } from "../model/voicePersona";
@@ -67,42 +67,36 @@ export function VoiceCompanionSettings({
           }
         />
       </Row>
-      <AdvancedSettings
-        title={t("Appearance and voice style")}
-        settingIds={["voice-visual-style", "voice-style"]}
-        keepMounted
-      >
-        <Row id="voice-style" label={t("Voice style")}>
-          <Button
-            startIcon={<Pencil className="icon-sm" />}
-            variant="ghost"
-            onClick={() => setEditingStyle(true)}
-          >
-            {t("Customize")}
-          </Button>
-        </Row>
-        {/* A deliberate full-width chooser: four previews need more room than the control column. */}
-        <Row id="voice-visual-style" label={t("Visual style")} stacked>
-          <SegmentedControl
-            label={t("Visual style")}
-            value={settings.visual}
-            optionIdPrefix="voice-visual"
-            options={(
-              [
-                ["mark", t("bycoda mark")],
-                ["wave", t("Wave")],
-                ["dots", t("Dots")],
-                ["orb", t("Orb")],
-              ] as [VoiceVisual, string][]
-            ).map(([value, label]) => ({
-              value,
-              label,
-              accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
-            }))}
-            onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
-          />
-        </Row>
-      </AdvancedSettings>
+      <Row id="voice-style" label={t("Voice style")}>
+        <Button
+          startIcon={<Pencil className="icon-sm" />}
+          variant="ghost"
+          onClick={() => setEditingStyle(true)}
+        >
+          {t("Customize")}
+        </Button>
+      </Row>
+      {/* A deliberate full-width chooser: four previews need more room than the control column. */}
+      <Row id="voice-visual-style" label={t("Visual style")} stacked>
+        <SegmentedControl
+          label={t("Visual style")}
+          value={settings.visual}
+          optionIdPrefix="voice-visual"
+          options={(
+            [
+              ["mark", t("bycoda mark")],
+              ["wave", t("Wave")],
+              ["dots", t("Dots")],
+              ["orb", t("Orb")],
+            ] as [VoiceVisual, string][]
+          ).map(([value, label]) => ({
+            value,
+            label,
+            accessory: <VoiceVisualizer visual={value} state="listening" small preview />,
+          }))}
+          onValueChange={(visual) => change({ visual: visual as VoiceVisual })}
+        />
+      </Row>
     </Group>
   );
 }

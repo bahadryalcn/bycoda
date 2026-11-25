@@ -1,6 +1,5 @@
-/** Settings form row family: Group, Row, AdvancedSettings, feedback and the row inputs. */
+/** Settings form row family: Group, Row, feedback and the row inputs. */
 export {
-  AdvancedSettings,
   Group,
   Row,
   SettingResetButton,

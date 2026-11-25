@@ -6,7 +6,7 @@ import { AssistantCostFields } from "./AssistantCostFields";
 import { ProfileRowsProvider } from "./SettingsProfileRow";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 
-it("keeps raw context-limit drafts mounted while technical sections are collapsed", async () => {
+it("shows context-limit fields inline and keeps raw drafts", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div"),
     root = createRoot(host);
@@ -35,38 +35,20 @@ it("keeps raw context-limit drafts mounted while technical sections are collapse
   }
   try {
     await act(async () => root.render(createElement(Form)));
-    const workerHeader = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Advanced worker context limits",
-    )!;
-    expect(workerHeader.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => workerHeader.click());
-    const workerBody = host.querySelector('[data-settings-part="advanced-content"]:not([hidden])')!;
     for (const label of [
       "Compact by token count",
       "Start fresh by token count",
       "Compact by context usage",
       "Start fresh by context usage",
     ]) {
-      expect(workerBody.querySelector(`input[aria-label="${label}"]`)).not.toBeNull();
+      expect(host.querySelector(`input[aria-label="${label}"]`)).not.toBeNull();
     }
-    await act(async () => workerHeader.click());
-    const header = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Supervisor limits",
-    )!;
-    expect(header.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => header.click());
     const input = host.querySelector<HTMLInputElement>('input[min="1000"][max="1000000"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(Number.isNaN(draft.perWakeTokenCap)).toBe(true);
-    await act(async () => header.click());
-    expect(input.isConnected).toBe(true);
-    expect(input.closest('[data-settings-part="advanced-content"]')?.hasAttribute("hidden")).toBe(
-      true,
-    );
-    await act(async () => header.click());
     expect(host.querySelector('input[min="1000"][max="1000000"]')).toBe(input);
     expect(input.value).toBe("");
   } finally {

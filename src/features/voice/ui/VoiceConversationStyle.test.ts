@@ -29,7 +29,7 @@ const button = (label: string) =>
     (node) => node.textContent?.trim() === label,
   )!;
 
-it("opening the away settings leaves the saved microphone preferences untouched", async () => {
+it("showing the away settings leaves the saved microphone preferences untouched", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
     wakeEnabled: true,
@@ -38,10 +38,6 @@ it("opening the away settings leaves the saved microphone preferences untouched"
   });
   const saved = localStorage.getItem("bycoda.voice");
   await act(async () => root.render(createElement(Fixture)));
-  const disclosure = button("When you step away");
-  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => disclosure.click());
-  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   expect(
     host.querySelector('[data-setting-id="voice-idle-sleep"]')?.closest("[hidden]"),
   ).toBeNull();
@@ -60,7 +56,7 @@ it("keeps manual turn acknowledgement and its dependent controls intact", async 
     turnEndSilence: 4,
   });
   await act(async () => root.render(createElement(Fixture)));
-  expect(button("Advanced turn detection").getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelector('[data-setting-id="voice-semantic-vad"]')).not.toBeNull();
   const manual = host.querySelector<HTMLButtonElement>(
     '[role="switch"][aria-label="I decide when my turn ends"]',
   )!;

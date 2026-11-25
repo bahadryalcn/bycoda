@@ -3,7 +3,7 @@ import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
-import { AdvancedSettings, Group, Segmented, Select, Toggle } from "../../../shared/ui/settings";
+import { Group, Segmented, Select, Toggle } from "../../../shared/ui/settings";
 import { ProcessingRow } from "./VoiceProcessingRow";
 import { MicrophoneInputSettings } from "./MicrophoneInputSettings";
 import { DictationSettings } from "./DictationSettings";
@@ -200,9 +200,7 @@ function VoiceEngine({
         </>
       ) : null}
       {local ? (
-        <AdvancedSettings title={t("Voice options")} settingIds={["voice-device"]} keepMounted>
-          <ProcessingRow id="voice-device" setup={setup} value={settings.device} change={change} />
-        </AdvancedSettings>
+        <ProcessingRow id="voice-device" setup={setup} value={settings.device} change={change} />
       ) : null}
     </Group>
   );

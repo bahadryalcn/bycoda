@@ -507,7 +507,6 @@ it("does not apply a completed background job over newer voice preferences", asy
 it("chooses visual previews with radio arrows and keeps runtime setup unchanged", async () => {
   await setup();
   await advance();
-  await click("Appearance and voice style");
   const group = container.querySelector('[role="radiogroup"][aria-label="Visual style"]')!;
   const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
   expect(radios.map((radio) => radio.textContent?.trim())).toEqual([
@@ -598,7 +597,7 @@ it("shows conversation and companion preferences without changing saved values o
     expect(
       container.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"),
       id,
-    ).not.toBeNull();
+    ).toBeNull();
   }
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(backend.inspect).toHaveBeenCalledTimes(calls);
@@ -742,7 +741,7 @@ it("chooses the default cloud dictation model per provider", async () => {
   expect(document.querySelector('[data-setting-id="voice-openrouter-key"]')).not.toBeNull();
 });
 
-it("keeps core voice choices visible and retains optional dictation and processing controls behind disclosures", async () => {
+it("shows core voice choices and the dictation dictionary without disclosures", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "openai" });
   await setup();
   const row = (id: string) => container.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
@@ -752,14 +751,7 @@ it("keeps core voice choices visible and retains optional dictation and processi
   expect(row("dictation-engine").closest("[hidden]")).toBeNull();
   expect(row("dictation-model").closest("[hidden]")).toBeNull();
   expect(row("dictation-shortcut-mode").closest("[hidden]")).toBeNull();
-  expect(row("voice-device").closest("[hidden]")).not.toBeNull();
-  const dictionary = row("dictation-dictionary");
-  expect(dictionary.closest("[hidden]")).not.toBeNull();
-  await act(async () =>
-    dictionary.closest('[data-settings-part="advanced"]')!.querySelector("button")!.click(),
-  );
-  expect(row("dictation-dictionary")).toBe(dictionary);
-  expect(dictionary.closest("[hidden]")).toBeNull();
+  expect(row("dictation-dictionary").closest("[hidden]")).toBeNull();
   expect(backend.setup).not.toHaveBeenCalled();
 });
 

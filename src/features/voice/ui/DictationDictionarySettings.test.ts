@@ -31,7 +31,6 @@ async function render() {
     });
   }
   await act(async () => root!.render(createElement(Harness)));
-  await click("Dictation dictionary");
 }
 async function click(text: string) {
   const button = [...container.querySelectorAll("button")].find(

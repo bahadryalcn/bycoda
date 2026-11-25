@@ -53,7 +53,6 @@ function dictionary() {
 }
 it("retains dictionary fields on failed save and closes only after retry", async () => {
   await act(async () => root.render(dictionary()));
-  await click("Dictation dictionary");
   await click("Add term");
   await term("Audit unsaved term");
   vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
@@ -70,7 +69,6 @@ it("retains dictionary fields on failed save and closes only after retry", async
 });
 it("retains dictionary draft across Settings unmount/remount", async () => {
   await act(async () => root.render(dictionary()));
-  await click("Dictation dictionary");
   await click("Add term");
   await term("Audit retained draft");
   await act(async () => root.render(null));

@@ -13,7 +13,6 @@ import styles from "./schedule.module.css";
 import viewStyles from "../AssistantView.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
-import { AdvancedSettings } from "../../../../shared/ui/settings";
 
 const notificationOptions = [
   ["all", "All updates"],
@@ -88,7 +87,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationPresent ?? policy.notificationPresent)}
           options={notificationOptions}
           onValueChange={(next) =>
-            onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
+            onChange({
+              notificationPresent: next as AssistantProfilePatch["notificationPresent"],
+            })
           }
         />
         <ProfileSelect
@@ -96,7 +97,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationAway ?? policy.notificationAway)}
           options={notificationOptions}
           onValueChange={(next) =>
-            onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
+            onChange({
+              notificationAway: next as AssistantProfilePatch["notificationAway"],
+            })
           }
         />
         <ProfileSwitch
@@ -139,39 +142,33 @@ export function AssistantScheduleFields({
           checked={value.keepAwakeWhileAway ?? true}
           onCheckedChange={(keepAwakeWhileAway) => onChange({ keepAwakeWhileAway })}
         />
-        <AdvancedSettings
-          title={t("Inactivity and recovery")}
-          defaultOpen={!validPolicy}
-          keepMounted
-        >
-          <AssistantPresetNumber
-            label={t("Idle after")}
-            value={value.idleMinutes ?? policy.idleMinutes}
-            min={1}
-            max={1440}
-            unit={t("minutes")}
-            presets={minutes([5, 10, 15, 30, 60])}
-            onChange={(idleMinutes) => onChange({ idleMinutes })}
-          />
-          <AssistantPresetNumber
-            label={t("Away after")}
-            value={value.awayMinutes ?? policy.awayMinutes}
-            min={2}
-            max={10080}
-            unit={t("minutes")}
-            presets={minutes([15, 30, 60, 120, 240])}
-            onChange={(awayMinutes) => onChange({ awayMinutes })}
-          />
-          <AssistantPresetNumber
-            label={t("Stall timeout")}
-            value={value.stallMinutes ?? 15}
-            min={5}
-            max={1440}
-            unit={t("minutes")}
-            presets={minutes([5, 15, 30, 60, 120])}
-            onChange={(stallMinutes) => onChange({ stallMinutes })}
-          />
-        </AdvancedSettings>
+        <AssistantPresetNumber
+          label={t("Idle after")}
+          value={value.idleMinutes ?? policy.idleMinutes}
+          min={1}
+          max={1440}
+          unit={t("minutes")}
+          presets={minutes([5, 10, 15, 30, 60])}
+          onChange={(idleMinutes) => onChange({ idleMinutes })}
+        />
+        <AssistantPresetNumber
+          label={t("Away after")}
+          value={value.awayMinutes ?? policy.awayMinutes}
+          min={2}
+          max={10080}
+          unit={t("minutes")}
+          presets={minutes([15, 30, 60, 120, 240])}
+          onChange={(awayMinutes) => onChange({ awayMinutes })}
+        />
+        <AssistantPresetNumber
+          label={t("Stall timeout")}
+          value={value.stallMinutes ?? 15}
+          min={5}
+          max={1440}
+          unit={t("minutes")}
+          presets={minutes([5, 15, 30, 60, 120])}
+          onChange={(stallMinutes) => onChange({ stallMinutes })}
+        />
         {!validPolicy && <InlineError>{t("Away must start later than idle.")}</InlineError>}
       </>
     );
@@ -216,7 +213,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationPresent ?? policy.notificationPresent)}
           options={notificationOptions}
           onValueChange={(next) =>
-            onChange({ notificationPresent: next as AssistantProfilePatch["notificationPresent"] })
+            onChange({
+              notificationPresent: next as AssistantProfilePatch["notificationPresent"],
+            })
           }
         />
         <ProfileSelect
@@ -224,7 +223,9 @@ export function AssistantScheduleFields({
           value={String(value.notificationAway ?? policy.notificationAway)}
           options={notificationOptions}
           onValueChange={(next) =>
-            onChange({ notificationAway: next as AssistantProfilePatch["notificationAway"] })
+            onChange({
+              notificationAway: next as AssistantProfilePatch["notificationAway"],
+            })
           }
         />
         <div className={styles.switchCell}>
@@ -296,7 +297,10 @@ function AssistantReminderFields({
         min={0}
         max={10}
         unit={t("reminders")}
-        presets={[0, 1, 2, 3, 5, 10].map((value) => ({ value, label: String(value) }))}
+        presets={[0, 1, 2, 3, 5, 10].map((value) => ({
+          value,
+          label: String(value),
+        }))}
         onChange={(urgentNotificationRepeats) => onChange({ urgentNotificationRepeats })}
       />
       <AssistantPresetNumber

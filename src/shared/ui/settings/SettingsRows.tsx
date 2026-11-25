@@ -1,7 +1,7 @@
 import { actionHostAttributes } from "../ActionHost";
 import { surfaceAttributes } from "../Surface";
 import { Text } from "../Text";
-import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, type ReactNode } from "react";
 
 import { FieldLabel } from "../Field";
 import { InlineMessage } from "../InlineError";
@@ -260,100 +260,9 @@ function useControlDescriptions(descriptionId: string | undefined) {
 }
 
 /**
- * Secondary settings as one disclosure row: the title sits on the same x as row titles, the
- * chevron on the right, and a hairline separates it from the rows above. Put it last in a Group.
- * Closed by default, as the design system requires; pass `defaultOpen` only for a disclosure that
- * must start open (for example a form the user opened on purpose).
- * A search/reveal landing on this section or one of its `settingIds` opens it. Keep children to
- * Rows; never use it to hold only a paragraph (use `info` on the related row instead).
- * @group layout
- * @use Closing disclosure row for secondary settings inside a settings Group.
- * @avoid A standalone collapsible panel: Disclosure. A paragraph of help: `info` on the Row.
- */
-export function AdvancedSettings({
-  children,
-  id,
-  settingIds,
-  title,
-  defaultOpen = false,
-  keepMounted = false,
-}: {
-  children: ReactNode;
-  id?: string;
-  settingIds?: readonly string[];
-  title?: ReactNode;
-  defaultOpen?: boolean;
-  /** Retain draft/control identity while making a closed body hidden and inert. */
-  keepMounted?: boolean;
-}) {
-  const t = useT();
-  const headingId = useId();
-  const contentId = useId();
-  const revealed = useContext(RevealedSetting);
-  const targeted = revealed != null && (revealed === id || !!settingIds?.includes(revealed));
-  const [open, setOpen] = useState(defaultOpen || targeted);
-  const [wasTargeted, setWasTargeted] = useState(targeted);
-  if (targeted !== wasTargeted) {
-    setWasTargeted(targeted);
-    if (targeted) setOpen(true);
-  }
-  return (
-    <section
-      id={id ? settingDomId(id) : undefined}
-      data-setting-id={id}
-      data-open={open || undefined}
-      data-settings-part="advanced"
-      {...surfaceAttributes(
-        { layout: "settings-advanced", frame: "card", radius: "card" },
-        "settings-advanced",
-      )}
-      aria-labelledby={headingId}
-      tabIndex={-1}
-    >
-      <Heading
-        size="item"
-        level={3}
-        id={headingId}
-        tone="secondary"
-        className="settings-subheading"
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          align="start"
-          fullWidth
-          motion="none"
-          {...surfaceAttributes({ radius: "none" }, "settings-advanced-toggle")}
-          expanded={open}
-          aria-controls={keepMounted ? contentId : undefined}
-          onClick={() => setOpen((current) => !current)}
-        >
-          {title ?? t("Advanced")}
-        </Button>
-      </Heading>
-      {keepMounted ? (
-        <div
-          id={contentId}
-          className="settings-advanced-content"
-          data-settings-part="advanced-content"
-          hidden={!open}
-          inert={!open}
-          aria-hidden={!open || undefined}
-        >
-          {children}
-        </div>
-      ) : open ? (
-        children
-      ) : null}
-    </section>
-  );
-}
-
-/**
  * A titled topic of related settings: a heading above a thin-bordered, rounded frame whose
  * rows are separated by hairline dividers (owner decision 2026-10-31, V3-013; no gray fill).
- * Children should be `Row`s and a closing `AdvancedSettings`; wrap other content in a stacked Row.
+ * Children should be `Row`s; wrap other content in a stacked Row.
  *
  * - `description`: behind the info (ⓘ) affordance by default. `descriptionVisible` shows it as a
  *   muted subline, only for scope, dependency or consequence.

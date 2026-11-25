@@ -1,5 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Heading } from "../../../shared/ui/Heading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -22,7 +23,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Group, settingDomId } from "../../../shared/ui/settings";
+import { Group, settingDomId } from "../../../shared/ui/settings";
 import type { AcpRegistryEntry, GenericAcpConfig, GenericAcpSummary } from "../model/genericAcp";
 
 // Stable keys: each operation's label is translated at render time, never looked up dynamically.
@@ -265,17 +266,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     status === "draft"
       ? t("Save or cancel the current agent draft before opening another.")
       : t("ACP agent saved on the target machine.");
-  const openAgentForm = () => {
-    const root = formDisclosureRef.current;
-    const input = root?.querySelector<HTMLInputElement>("input");
-    if (input) input.focus();
-    else {
-      root?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
-      requestAnimationFrame(() => {
-        if (activeRef.current) root?.querySelector<HTMLInputElement>("input")?.focus();
-      });
-    }
-  };
+  const openAgentForm = () => formDisclosureRef.current?.querySelector("input")?.focus();
   const toggleRegistry = (open: boolean) => {
     if (loading || !activeRef.current || busyRef.current) return;
     if (!open) {
@@ -424,177 +415,162 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           />
         ) : null}
         <div id="acp-agent-form-disclosure" ref={formDisclosureRef}>
-          <AdvancedSettings
+          <Heading size="item" level={3} tone="secondary" className="px-3 pt-3">
+            {editing ? t("Edit agent") : t("Add agent")}
+          </Heading>
+          <form
             key={`${formRevision}:${editing ? form.id : "new"}`}
-            title={editing ? t("Edit agent") : t("Add agent")}
-            defaultOpen
-            settingIds={["acp-advanced"]}
-          >
-            <form
-              className="grid gap-x-3 gap-y-3 px-3 pb-3 pt-2 sm:grid-cols-2"
-              onChange={() => {
-                setDraftDirty(true);
-                setStatus("");
-              }}
-              onSubmit={(event) => {
-                event.preventDefault();
-                void run("saving", async () => {
-                  const args = JSON.parse(argsText);
-                  const env = envText.trim() ? JSON.parse(envText) : undefined;
-                  await request("generic_acp_save", {
-                    config: { ...form, args, ...(env ? { env } : {}) },
-                  });
-                  if (!activeRef.current) return;
-                  setStatus("saved");
-                  setFormRevision((revision) => revision + 1);
-                  resetForm();
+            className="grid gap-x-3 gap-y-3 px-3 pb-3 pt-2 sm:grid-cols-2"
+            onChange={() => {
+              setDraftDirty(true);
+              setStatus("");
+            }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run("saving", async () => {
+                const args = JSON.parse(argsText);
+                const env = envText.trim() ? JSON.parse(envText) : undefined;
+                await request("generic_acp_save", {
+                  config: { ...form, args, ...(env ? { env } : {}) },
                 });
-              }}
+                if (!activeRef.current) return;
+                setStatus("saved");
+                setFormRevision((revision) => revision + 1);
+                resetForm();
+              });
+            }}
+          >
+            <Text
+              as="p"
+              size="micro"
+              tone="secondary"
+              weight="regular"
+              leading="snug"
+              className="sm:col-span-2"
             >
-              <Text
-                as="p"
-                size="micro"
-                tone="secondary"
-                weight="regular"
-                leading="snug"
-                className="sm:col-span-2"
+              {t(
+                "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
+              )}
+            </Text>
+            <Field label={t("Agent id")}>
+              <TextField
+                label={t("Agent id")}
+                hideLabel
+                fieldClassName="w-full"
+                disabled={loading || !!busy}
+                value={form.id}
+                required
+                pattern="[a-z0-9][a-z0-9._-]*"
+                spellCheck={false}
+                placeholder="my-agent"
+                onChange={(event) => setForm({ ...form, id: event.target.value })}
+              />
+            </Field>
+            <Field label={t("Name")}>
+              <TextField
+                label={t("Name")}
+                hideLabel
+                fieldClassName="w-full"
+                disabled={loading || !!busy}
+                value={form.name}
+                required
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+              />
+            </Field>
+            <Field wide label={t("Executable path")}>
+              <TextField
+                label={t("Executable path")}
+                hideLabel
+                fieldClassName="w-full"
+                disabled={loading || !!busy}
+                monospace
+                value={form.command}
+                required
+                spellCheck={false}
+                onChange={(event) => setForm({ ...form, command: event.target.value })}
+              />
+            </Field>
+            <div className="sm:col-span-2">
+              <div
+                id="setting-acp-advanced"
+                data-setting-id="acp-advanced"
+                className="grid gap-x-3 gap-y-3 py-3 sm:grid-cols-2"
               >
-                {t(
-                  "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
-                )}
-              </Text>
-              <Field label={t("Agent id")}>
-                <TextField
-                  label={t("Agent id")}
-                  hideLabel
-                  fieldClassName="w-full"
-                  disabled={loading || !!busy}
-                  value={form.id}
-                  required
-                  pattern="[a-z0-9][a-z0-9._-]*"
-                  spellCheck={false}
-                  placeholder="my-agent"
-                  onChange={(event) => setForm({ ...form, id: event.target.value })}
-                />
-              </Field>
-              <Field label={t("Name")}>
-                <TextField
-                  label={t("Name")}
-                  hideLabel
-                  fieldClassName="w-full"
-                  disabled={loading || !!busy}
-                  value={form.name}
-                  required
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
-                />
-              </Field>
-              <Field wide label={t("Executable path")}>
-                <TextField
-                  label={t("Executable path")}
-                  hideLabel
-                  fieldClassName="w-full"
-                  disabled={loading || !!busy}
-                  monospace
-                  value={form.command}
-                  required
-                  spellCheck={false}
-                  onChange={(event) => setForm({ ...form, command: event.target.value })}
-                />
-              </Field>
-              <div className="sm:col-span-2">
-                <AdvancedSettings
-                  key={editing ? form.id : "new"}
-                  title={t("ACP arguments, environment and model context")}
-                  defaultOpen
-                  settingIds={["acp-advanced"]}
-                >
-                  <div
-                    id="setting-acp-advanced"
-                    data-setting-id="acp-advanced"
-                    className="grid gap-x-3 gap-y-3 py-3 sm:grid-cols-2"
-                  >
-                    <Field wide label={t("Arguments (JSON array)")}>
-                      <TextareaField
-                        label={t("Arguments (JSON array)")}
-                        hideLabel
-                        disabled={loading || !!busy}
-                        aria-label={t("Arguments (JSON array)")}
-                        monospace
-                        minRows={3}
-                        value={argsText}
-                        spellCheck={false}
-                        onChange={(event) => setArgsText(event.target.value)}
-                      />
-                    </Field>
-                    <Field
-                      wide
-                      label={t("Environment (JSON object; blank preserves stored values)")}
-                    >
-                      <PasswordField
-                        label={t("Environment (JSON object; blank preserves stored values)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
+                <Field wide label={t("Arguments (JSON array)")}>
+                  <TextareaField
+                    label={t("Arguments (JSON array)")}
+                    hideLabel
+                    disabled={loading || !!busy}
+                    aria-label={t("Arguments (JSON array)")}
+                    monospace
+                    minRows={3}
+                    value={argsText}
+                    spellCheck={false}
+                    onChange={(event) => setArgsText(event.target.value)}
+                  />
+                </Field>
+                <Field wide label={t("Environment (JSON object; blank preserves stored values)")}>
+                  <PasswordField
+                    label={t("Environment (JSON object; blank preserves stored values)")}
+                    hideLabel
+                    fieldClassName="w-full"
+                    disabled={loading || !!busy}
 
-                        autoComplete="off"
-                        monospace
-                        value={envText}
-                        spellCheck={false}
-                        onChange={(event) => setEnvText(event.target.value)}
-                      />
-                    </Field>
-                    <Field label={t("ACP authentication method id (optional)")}>
-                      <TextField
-                        label={t("ACP authentication method id (optional)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
-                        value={form.authMethodId ?? ""}
-                        spellCheck={false}
-                        onChange={(event) =>
-                          setForm({ ...form, authMethodId: event.target.value || undefined })
-                        }
-                      />
-                    </Field>
-                    <Field label={t("Context window tokens (optional)")}>
-                      <NumberField
-                        label={t("Context window tokens (optional)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
+                    autoComplete="off"
+                    monospace
+                    value={envText}
+                    spellCheck={false}
+                    onChange={(event) => setEnvText(event.target.value)}
+                  />
+                </Field>
+                <Field label={t("ACP authentication method id (optional)")}>
+                  <TextField
+                    label={t("ACP authentication method id (optional)")}
+                    hideLabel
+                    fieldClassName="w-full"
+                    disabled={loading || !!busy}
+                    value={form.authMethodId ?? ""}
+                    spellCheck={false}
+                    onChange={(event) =>
+                      setForm({ ...form, authMethodId: event.target.value || undefined })
+                    }
+                  />
+                </Field>
+                <Field label={t("Context window tokens (optional)")}>
+                  <NumberField
+                    label={t("Context window tokens (optional)")}
+                    hideLabel
+                    fieldClassName="w-full"
+                    disabled={loading || !!busy}
 
-                        min={1024}
-                        value={form.contextWindow ?? ""}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            contextWindow: event.target.value
-                              ? Number(event.target.value)
-                              : undefined,
-                          })
-                        }
-                      />
-                    </Field>
-                  </div>
-                </AdvancedSettings>
+                    min={1024}
+                    value={form.contextWindow ?? ""}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        contextWindow: event.target.value ? Number(event.target.value) : undefined,
+                      })
+                    }
+                  />
+                </Field>
               </div>
-              <div className="flex items-center gap-2 sm:col-span-2">
-                <Button className="shrink-0" disabled={loading || !!busy} type="submit">
-                  {busy === "saving" ? t("Saving…") : t("Save agent")}
-                </Button>
-                <Button
-                  className="shrink-0"
-                  disabled={loading || !!busy}
-                  onClick={() => {
-                    resetForm();
-                    setFormRevision((revision) => revision + 1);
-                  }}
-                >
-                  {t("Cancel")}
-                </Button>
-              </div>
-            </form>
-          </AdvancedSettings>
+            </div>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <Button className="shrink-0" disabled={loading || !!busy} type="submit">
+                {busy === "saving" ? t("Saving…") : t("Save agent")}
+              </Button>
+              <Button
+                className="shrink-0"
+                disabled={loading || !!busy}
+                onClick={() => {
+                  resetForm();
+                  setFormRevision((revision) => revision + 1);
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            </div>
+          </form>
         </div>
         <div
           id="setting-acp-registry"

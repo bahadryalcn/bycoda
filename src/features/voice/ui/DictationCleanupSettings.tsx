@@ -4,7 +4,7 @@ import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Select, Toggle } from "../../../shared/ui/settings";
+import { Select, Toggle } from "../../../shared/ui/settings";
 import { useModelCatalog } from "../../sessions/public/modelHooks";
 import { loadVoiceSettings, type VoiceSettings } from "../model/voiceSettings";
 import { DictationSettingsSuggestion } from "./DictationSettingsSuggestion";
@@ -23,7 +23,11 @@ export function DictationCleanupSettings({
     change({ dictationCleanup: { ...cleanup, ...patch } });
   const models = catalog.modelsFor("codex");
   const options = [
-    { value: "", label: t("Codex default"), icon: <ModelLabel model="codex" iconOnly /> },
+    {
+      value: "",
+      label: t("Codex default"),
+      icon: <ModelLabel model="codex" iconOnly />,
+    },
     ...models.map((model) => ({
       value: model.nativeId ?? model.id,
       label: model.name,
@@ -58,7 +62,12 @@ export function DictationCleanupSettings({
       <DictationSettingsSuggestion
         settings={settings}
         apply={(patch) => {
-          change({ dictationCleanup: { ...loadVoiceSettings().dictationCleanup, ...patch } });
+          change({
+            dictationCleanup: {
+              ...loadVoiceSettings().dictationCleanup,
+              ...patch,
+            },
+          });
           const saved = loadVoiceSettings().dictationCleanup;
           return (
             saved.instructions === patch.instructions && saved.correctionCue === patch.correctionCue
@@ -66,16 +75,7 @@ export function DictationCleanupSettings({
         }}
       />
       {cleanup.enabled ? (
-        <AdvancedSettings
-          title={t("Text cleanup options")}
-          settingIds={[
-            "dictation-cleanup-model",
-            "dictation-cleanup-instructions",
-            "dictation-correction-cue",
-            "dictation-translate",
-          ]}
-          keepMounted
-        >
+        <>
           <Row id="dictation-cleanup-model" label={t("Cleanup model")}>
             <Select
               hideLabel
@@ -119,7 +119,7 @@ export function DictationCleanupSettings({
               onChange={(translateToEnglish) => update({ translateToEnglish })}
             />
           </Row>
-        </AdvancedSettings>
+        </>
       ) : null}
     </>
   );

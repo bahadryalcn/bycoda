@@ -572,7 +572,6 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
         await expect(
           page.getByRole("radio", { name: themeLabels.theme, exact: true }),
         ).toBeChecked();
-        await expect(page.locator("details.settings-advanced")).toHaveCount(0);
         // Dark-mode depth is an always-visible slider in the Tone group of the Theme tab.
         const brightness = page.locator('[data-setting-id="dark-lightness"]').getByRole("slider");
         if (theme === "light") await expect(brightness).toHaveAttribute("aria-disabled", "true");

@@ -405,12 +405,6 @@ describe("settings pages", () => {
       await render(section as SettingsSectionId);
       // Hidden Appearance tabs pause their updates, so the control's tab is opened first.
       if (tab) await openAppearanceTab(tab);
-      if (section === "chat") {
-        const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-          (button) => button.textContent === "Advanced conversation settings",
-        );
-        await act(async () => advanced?.click());
-      }
       const control = () => container.querySelectorAll(selector)[index];
       expect(control(), key).toBeDefined();
       const before = control()!.getAttribute("aria-checked");
@@ -442,10 +436,6 @@ describe("settings pages", () => {
         JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
       );
       await render("chat");
-      const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Advanced conversation settings",
-      );
-      await act(async () => advanced?.click());
       const control = () => container.querySelector(selector);
       const before = control()?.getAttribute("aria-checked");
       expect(before, key).toBe("true");

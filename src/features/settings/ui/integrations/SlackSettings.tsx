@@ -5,7 +5,7 @@ import { t, useLocale } from "../../../../shared/i18n";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { TextField } from "../../../../shared/ui/TextField";
-import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
+import { Row, Toggle } from "../../../../shared/ui/settings";
 import { BrowserSignIn } from "./BrowserSignIn";
 import { slackSaveInput, slackSignInSaveInput } from "./chatAccountInputs";
 import {
@@ -76,7 +76,10 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
                 "Sign in with the Slack account whose channels and direct messages you want to read and answer.",
               )
         }
-        persistence={{ mode: "explicit", state: saving ? "saving" : dirty ? "dirty" : "idle" }}
+        persistence={{
+          mode: "explicit",
+          state: saving ? "saving" : dirty ? "dirty" : "idle",
+        }}
       >
         {useBotToken ? (
           <div className="integration-fields">
@@ -110,7 +113,6 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
       {useBotToken ? (
         <SetupSteps
           title={t("How to get a bot token")}
-          label={t("Slack app setup")}
           steps={[
             t("Create a Slack app at api.slack.com/apps for your workspace."),
             t("Under OAuth & Permissions, add the bot token scopes listed below."),
@@ -132,42 +134,40 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
           </div>
         </SetupSteps>
       ) : null}
-      <AdvancedSettings defaultOpen={false} keepMounted>
-        <Row
+      <Row
+        label={t("Use a bot token instead")}
+        info={t("A bot reads only the channels it is invited to and replies as the bot.")}
+      >
+        <Toggle
           label={t("Use a bot token instead")}
-          info={t("A bot reads only the channels it is invited to and replies as the bot.")}
+          on={useBotToken}
+          onChange={setUseBotToken}
+          disabled={saving}
+        />
+      </Row>
+      {useBotToken ? null : (
+        <Row
+          stacked
+          label={t("Slack app client ID")}
+          info={t(
+            "Only needed when you use your own Slack app. Turn on PKCE for the app, add the redirect URL {p0} and add these user token scopes: {p1}",
+            { p0: SLACK_REDIRECT_URL, p1: SLACK_BOT_SCOPES.join(", ") },
+          )}
         >
-          <Toggle
-            label={t("Use a bot token instead")}
-            on={useBotToken}
-            onChange={setUseBotToken}
+          <TextField
+            label={t("Slack app client ID")}
+            hideLabel
+            aria-label={t("Slack app client ID")}
+            value={clientId}
+            onChange={(event) => setClientId(event.target.value)}
+            placeholder="0000000000.0000000000000"
+            autoComplete="off"
+            spellCheck={false}
+            monospace
             disabled={saving}
           />
         </Row>
-        {useBotToken ? null : (
-          <Row
-            stacked
-            label={t("Slack app client ID")}
-            info={t(
-              "Only needed when you use your own Slack app. Turn on PKCE for the app, add the redirect URL {p0} and add these user token scopes: {p1}",
-              { p0: SLACK_REDIRECT_URL, p1: SLACK_BOT_SCOPES.join(", ") },
-            )}
-          >
-            <TextField
-              label={t("Slack app client ID")}
-              hideLabel
-              aria-label={t("Slack app client ID")}
-              value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
-              placeholder="0000000000.0000000000000"
-              autoComplete="off"
-              spellCheck={false}
-              monospace
-              disabled={saving}
-            />
-          </Row>
-        )}
-      </AdvancedSettings>
+      )}
       <AccountFormActions
         saving={saving}
         error={error}

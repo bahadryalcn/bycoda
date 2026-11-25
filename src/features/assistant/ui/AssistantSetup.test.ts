@@ -52,8 +52,6 @@ vi.mock("../../../shared/ui/settings", async () => {
       ),
     Group: ({ title, info, action, children }: any) =>
       createElement("section", null, createElement("h2", null, title), info, action, children),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../sessions/ui/modelSource", () => ({

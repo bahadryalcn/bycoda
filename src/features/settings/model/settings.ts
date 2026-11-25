@@ -1377,12 +1377,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "interface-font": ["System default"],
   "transcript-layout": ["Full width", "Chat"],
   "composer-spelling": ["Queue", "Steer"],
-  "model-controls": [
-    "Compact",
-    "Show active choices",
-    "Advanced conversation settings",
-    "Continuation and model options",
-  ],
+  "model-controls": ["Compact", "Show active choices", "Continuation and model options"],
   "streaming-text-mode": ["Paced (default)", "Immediate with adaptive fade"],
   "crew-growth": ["Color with context", "Grow with context"],
   "chat-background": ["Empty only", "All sessions"],

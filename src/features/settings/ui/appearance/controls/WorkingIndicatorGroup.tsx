@@ -25,7 +25,7 @@ const DEFAULT_SNAPSHOT = JSON.stringify(WORKING_INDICATOR_DEFAULT);
 
 /**
  * "Working projects": the color, pulse and strength of the decoration a project row shows while an
- * agent works. The preview is a real working row (`data-project-row` + `data-project-working`), so it
+ * agent works. The sample beside the animation choice is a real working row (`data-project-row` + `data-project-working`), so it
  * follows the same rules as the rail, including reduced and decorative motion.
  */
 export function WorkingIndicatorGroup() {
@@ -102,16 +102,33 @@ export function WorkingIndicatorGroup() {
         label={t("Working animation")}
         description={t("Steady keeps the tint without the pulse; Off leaves only the spinner.")}
       >
-        <Segmented<WorkingIndicatorStyle>
-          label={t("Working animation")}
-          value={value.style}
-          options={[
-            { value: "pulse", label: t("Pulse") },
-            { value: "steady", label: t("Steady") },
-            { value: "off", label: t("Off") },
-          ]}
-          onChange={(style) => update({ style })}
-        />
+        <div className="flex items-center gap-3">
+          {/* Live sample: a real working project row, so it follows the rail's motion rules. */}
+          <Text
+            as="div"
+            size="inherit"
+            tone="primary"
+            aria-hidden="true"
+            data-project-row=""
+            data-project-working="true"
+            {...surfaceAttributes(
+              { radius: "row" },
+              "relative flex h-(--ui-control-height-compact) w-28 items-center gap-2 px-2",
+            )}
+          >
+            <WorkingIndicator size="xs" />
+          </Text>
+          <Segmented<WorkingIndicatorStyle>
+            label={t("Working animation")}
+            value={value.style}
+            options={[
+              { value: "pulse", label: t("Pulse") },
+              { value: "steady", label: t("Steady") },
+              { value: "off", label: t("Off") },
+            ]}
+            onChange={(style) => update({ style })}
+          />
+        </div>
       </Row>
       <Row id="working-indicator-strength" label={t("Working strength")}>
         <Slider
@@ -124,25 +141,6 @@ export function WorkingIndicatorGroup() {
           disabled={value.style === "off"}
           onChange={(strength) => update({ strength })}
         />
-      </Row>
-      <Row stacked label={t("Preview")}>
-        <Text
-          as="div"
-          size="inherit"
-          tone="primary"
-          aria-hidden="true"
-          data-project-row=""
-          data-project-working="true"
-          {...surfaceAttributes(
-            { radius: "row" },
-            "relative flex h-(--ui-control-height-compact) w-56 max-w-full items-center gap-2 px-2",
-          )}
-        >
-          <WorkingIndicator size="xs" />
-          <Text as="span" size="inherit" tone="inherit" truncate>
-            {t("Project")}
-          </Text>
-        </Text>
       </Row>
     </Group>
   );

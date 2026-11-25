@@ -711,15 +711,15 @@ Usage limits view; both reuse the same quota and budget owners.
 ### Settings row contract
 
 Owner of the contract: `src/shared/ui/settings/SettingsRows.tsx` (Group, Row,
-AdvancedSettings, PageHeader) with `BycodaSettings.css` / `SettingsCollection.css`.
+PageHeader) with `BycodaSettings.css` / `SettingsCollection.css`.
 Pages compose these; they never reskin them or add page-local surfaces.
 
 - **Group frame (owner decision 2026-10-31, V3-013):** a heading above a thin-bordered,
   rounded frame; rows separated by hairline dividers; Pure dark uses a faint translucent card fill. One gap between
   groups (`--settings-group-gap`), one row padding (10px/16px), one minimum row height.
   Surface and divider roles are `--ui-settings-group-*` / `--ui-settings-hairline` /
-  `--ui-settings-row-hover` in `src/styles/index.css`. Children are Rows and a closing
-  AdvancedSettings; other content goes in a `stacked` Row. Collections use the same frame.
+  `--ui-settings-row-hover` in `src/styles/index.css`. Children are Rows; other
+  content goes in a `stacked` Row. Collections use the same frame.
 - **Row text:** title, with `description` behind the info (ⓘ) affordance by default
   (owner decision 2026-11-15). A visible muted subline only states scope, dependency or
   consequence. Do not show the same help twice, and state scope once per page or group.
@@ -747,9 +747,9 @@ Pages compose these; they never reskin them or add page-local surfaces.
   `TimePicker`; the stored value can be any valid minute.
 - **Tile choices:** one exclusive choice shown as tiles (Appearance mode, onboarding mode and crew) uses
   `RadioTiles` (`src/features/settings/ui/RadioTiles.tsx`); the selected tile gets `--ui-border-accent`.
-- **AdvancedSettings:** a disclosure row with the same title x as row titles, chevron on the
-  right, at the end of its group. It is closed by default; pass `defaultOpen` only for a disclosure that must start
-  open. Never use it to hold only a paragraph.
+- **No settings disclosures (owner decision 2026-11-26):** every setting is always visible.
+  Do not hide rows behind an "Advanced" or similar collapsible row; split a long topic into
+  another Group instead.
 
 ## Choosing rows and headings
 
@@ -965,8 +965,7 @@ under a closed Advanced row. This is an unresolved design/source documentation
 difference, not permission to change product behavior during a documentation edit.
 Check the current Appearance source and attributable owner decisions before
 changing disclosure placement; preserve fields, values and deep-link reveal.
-The general `AdvancedSettings` component contract above describes its API/defaults,
-not evidence that this historical Appearance requirement was accepted or superseded.
+The 2026-11-26 owner decision above removed settings disclosures entirely.
 
 Historical Appearance requirement:
 

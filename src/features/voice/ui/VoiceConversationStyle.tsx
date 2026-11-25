@@ -7,13 +7,7 @@ import {
   VOICE_PRESET_FAILED,
 } from "../model/voiceConversationPreset";
 import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
-import {
-  Group,
-  Select,
-  SettingsFeedback,
-  Toggle,
-  AdvancedSettings,
-} from "../../../shared/ui/settings";
+import { Group, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 
 /** How a spoken conversation takes turns: pauses, interruptions, progress updates and sleep. */
@@ -77,7 +71,12 @@ export function VoiceConversationStyle({
             { value: "2.5", label: t("Longer pause") },
             { value: "4", label: t("Extra time") },
             ...(![1.2, 2.5, 4].includes(pause)
-              ? [{ value: String(pause), label: t("{p0} seconds", { p0: formatNumber(pause) }) }]
+              ? [
+                  {
+                    value: String(pause),
+                    label: t("{p0} seconds", { p0: formatNumber(pause) }),
+                  },
+                ]
               : []),
           ]}
           onChange={(value) => change({ turnEndSilence: Number(value) })}
@@ -133,88 +132,75 @@ export function VoiceConversationStyle({
           onChange={(holdAnnouncements) => change({ holdAnnouncements })}
         />
       </Row>
-      <AdvancedSettings
-        title={t("When you step away")}
-        settingIds={["voice-idle-sleep", "voice-return-call", "voice-return-call-seconds"]}
-        keepMounted
+      <Row
+        id="voice-idle-sleep"
+        label={t("Sleep voice when I'm idle")}
+        descriptionVisible
+        description={t(
+          "Closes the microphone while idle. Returning leaves it off until you press Talk.",
+        )}
       >
-        <Row
-          id="voice-idle-sleep"
+        <Select
+          hideLabel
           label={t("Sleep voice when I'm idle")}
-          descriptionVisible
-          description={t(
-            "Closes the microphone while idle. Returning leaves it off until you press Talk.",
-          )}
-        >
+          value={String(settings.idleSleepMinutes)}
+          options={[
+            { value: "0", label: t("Never") },
+            ...[...idleChoices.slice(1), settings.idleSleepMinutes]
+              .filter((minutes, index, all) => minutes > 0 && all.indexOf(minutes) === index)
+              .map((minutes) => ({
+                value: String(minutes),
+                label: t("{p0} min", { p0: minutes }),
+              })),
+          ]}
+          onChange={(value) => change({ idleSleepMinutes: Number(value) })}
+        />
+      </Row>
+      <Row
+        id="voice-return-call"
+        label={t("Call me when I return")}
+        descriptionVisible
+        description={t(
+          "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
+        )}
+      >
+        <Toggle
+          label={t("Call me when I return")}
+          on={settings.returnCall === true}
+          onChange={(returnCall) => change({ returnCall })}
+        />
+      </Row>
+      {settings.returnCall === true && (
+        <Row id="voice-return-call-seconds" label={t("Listen for after calling")}>
           <Select
             hideLabel
-            label={t("Sleep voice when I'm idle")}
-            value={String(settings.idleSleepMinutes)}
-            options={[
-              { value: "0", label: t("Never") },
-              ...[...idleChoices.slice(1), settings.idleSleepMinutes]
-                .filter((minutes, index, all) => minutes > 0 && all.indexOf(minutes) === index)
-                .map((minutes) => ({
-                  value: String(minutes),
-                  label: t("{p0} min", { p0: minutes }),
-                })),
-            ]}
-            onChange={(value) => change({ idleSleepMinutes: Number(value) })}
+            label={t("Listen for after calling")}
+            value={String(settings.returnCallSeconds ?? 20)}
+            options={[...new Set([5, 10, 20, 30, 60, 120, settings.returnCallSeconds ?? 20])]
+              .sort((a, b) => a - b)
+              .map((seconds) => ({
+                value: String(seconds),
+                label: t("{p0} seconds", { p0: seconds }),
+              }))}
+            onChange={(value) => change({ returnCallSeconds: Number(value) })}
           />
         </Row>
+      )}
+      {settings.mode === "openai" && (
         <Row
-          id="voice-return-call"
-          label={t("Call me when I return")}
-          descriptionVisible
+          id="voice-semantic-vad"
+          label={t("Experimental OpenAI turn detection")}
           description={t(
-            "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
+            "Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.",
           )}
         >
           <Toggle
-            label={t("Call me when I return")}
-            on={settings.returnCall === true}
-            onChange={(returnCall) => change({ returnCall })}
+            label={t("Experimental OpenAI turn detection")}
+            on={settings.experimentalSemanticVad === true}
+            disabled={settings.manualTurnEnd === true}
+            onChange={(experimentalSemanticVad) => change({ experimentalSemanticVad })}
           />
         </Row>
-        {settings.returnCall === true && (
-          <Row id="voice-return-call-seconds" label={t("Listen for after calling")}>
-            <Select
-              hideLabel
-              label={t("Listen for after calling")}
-              value={String(settings.returnCallSeconds ?? 20)}
-              options={[...new Set([5, 10, 20, 30, 60, 120, settings.returnCallSeconds ?? 20])]
-                .sort((a, b) => a - b)
-                .map((seconds) => ({
-                  value: String(seconds),
-                  label: t("{p0} seconds", { p0: seconds }),
-                }))}
-              onChange={(value) => change({ returnCallSeconds: Number(value) })}
-            />
-          </Row>
-        )}
-      </AdvancedSettings>
-      {settings.mode === "openai" && (
-        <AdvancedSettings
-          title={t("Advanced turn detection")}
-          settingIds={["voice-semantic-vad"]}
-          defaultOpen={settings.experimentalSemanticVad === true}
-          keepMounted
-        >
-          <Row
-            id="voice-semantic-vad"
-            label={t("Experimental OpenAI turn detection")}
-            description={t(
-              "Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.",
-            )}
-          >
-            <Toggle
-              label={t("Experimental OpenAI turn detection")}
-              on={settings.experimentalSemanticVad === true}
-              disabled={settings.manualTurnEnd === true}
-              onChange={(experimentalSemanticVad) => change({ experimentalSemanticVad })}
-            />
-          </Row>
-        </AdvancedSettings>
       )}
     </Group>
   );
