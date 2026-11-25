@@ -10,6 +10,7 @@ import {
   findUnavailableOrderEntry,
   groupEntriesByKind,
   nextOrderPoolName,
+  percentDraft,
   orderDraft,
   reorderKind,
   prepareOrderSave,
@@ -373,5 +374,21 @@ describe("Work calendar cap drafts", () => {
     const edit = draft();
     edit.routing.roles = { "task.worker": { kind: "order" }, "text.git": { kind: "order" } };
     expect(prepareOrderSave(edit).routing.roles).toEqual({ "text.git": { kind: "order" } });
+  });
+});
+
+describe("percentDraft", () => {
+  it("accepts empty or whole percentages and caps them at 100", () => {
+    expect(percentDraft("", "20")).toBe("");
+    expect(percentDraft("0", "")).toBe("0");
+    expect(percentDraft("42", "4")).toBe("42");
+    expect(percentDraft("124124124", "12")).toBe("100");
+    expect(percentDraft("007", "")).toBe("7");
+  });
+
+  it("keeps the previous text for signs, decimals and exponents", () => {
+    expect(percentDraft("-5", "5")).toBe("5");
+    expect(percentDraft("2.5", "2")).toBe("2");
+    expect(percentDraft("1e3", "1")).toBe("1");
   });
 });

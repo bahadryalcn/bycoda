@@ -17,7 +17,7 @@ import {
   type ScrollbarSize,
   type ScrollbarVisibility,
 } from "../../../model/scrollbarStyle";
-import { AdvancedSettings, Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadScrollbarStyle());
@@ -76,77 +76,75 @@ export function ScrollbarGroup() {
           </Row>
         </>
       )}
-      <AdvancedSettings settingIds={["scrollbar-color", "scrollbar-strength"]}>
-        <Row
-          id="scrollbar-color"
-          controlWidth="fill"
-          label={t("Scrollbar color")}
-          description={t("Automatic follows the accent color of your theme.")}
-        >
-          <div ref={anchor} className="state-ladder-source">
-            <Segmented<ScrollbarColor>
-              label={t("Scrollbar color")}
-              value={value.color}
-              options={[
-                { value: "auto", label: t("Automatic") },
-                { value: "neutral", label: t("Neutral") },
-                { value: "theme", label: t("Theme") },
-                { value: "custom", label: t("Custom") },
-              ]}
-              onChange={(color) => {
-                update({
-                  color,
-                  customColor: color === "custom" ? customColor : value.customColor,
-                });
-                setOpen(color === "custom");
-              }}
-            />
-            {value.color === "custom" && (
-              <Button
-                variant="secondary"
-                size="sm"
-                inset="icon"
-                aria-label={t("Custom color")}
-                onClick={() => setOpen(true)}
-              >
-                <span
-                  {...surfaceAttributes(
-                    { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
-                    "state-custom-dot",
-                  )}
-                  style={{ "--surface-user-color": customColor } as React.CSSProperties}
-                />
-              </Button>
-            )}
-            {open && (
-              <Popover
-                anchor={anchor}
-                side="bottom"
-                align="end"
-                width={248}
-                flow="scroll"
-                onDismiss={() => setOpen(false)}
-              >
-                <ColorPickerPopover
-                  value={customColor}
-                  onChange={(next) => update({ color: "custom", customColor: next })}
-                />
-              </Popover>
-            )}
-          </div>
-        </Row>
-        <Row id="scrollbar-strength" label={t("Scrollbar strength")}>
-          <Slider
-            label={t("Scrollbar strength")}
-            value={value.strength}
-            display={`${value.strength}%`}
-            min={SCROLLBAR_STRENGTH_MIN}
-            max={SCROLLBAR_STRENGTH_MAX}
-            step={10}
-            onChange={(strength) => update({ strength })}
+      <Row
+        id="scrollbar-color"
+        controlWidth="fill"
+        label={t("Scrollbar color")}
+        description={t("Automatic follows the accent color of your theme.")}
+      >
+        <div ref={anchor} className="state-ladder-source">
+          <Segmented<ScrollbarColor>
+            label={t("Scrollbar color")}
+            value={value.color}
+            options={[
+              { value: "auto", label: t("Automatic") },
+              { value: "neutral", label: t("Neutral") },
+              { value: "theme", label: t("Theme") },
+              { value: "custom", label: t("Custom") },
+            ]}
+            onChange={(color) => {
+              update({
+                color,
+                customColor: color === "custom" ? customColor : value.customColor,
+              });
+              setOpen(color === "custom");
+            }}
           />
-        </Row>
-      </AdvancedSettings>
+          {value.color === "custom" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              inset="icon"
+              aria-label={t("Custom color")}
+              onClick={() => setOpen(true)}
+            >
+              <span
+                {...surfaceAttributes(
+                  { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
+                  "state-custom-dot",
+                )}
+                style={{ "--surface-user-color": customColor } as React.CSSProperties}
+              />
+            </Button>
+          )}
+          {open && (
+            <Popover
+              anchor={anchor}
+              side="bottom"
+              align="end"
+              width={248}
+              flow="scroll"
+              onDismiss={() => setOpen(false)}
+            >
+              <ColorPickerPopover
+                value={customColor}
+                onChange={(next) => update({ color: "custom", customColor: next })}
+              />
+            </Popover>
+          )}
+        </div>
+      </Row>
+      <Row id="scrollbar-strength" label={t("Scrollbar strength")}>
+        <Slider
+          label={t("Scrollbar strength")}
+          value={value.strength}
+          display={`${value.strength}%`}
+          min={SCROLLBAR_STRENGTH_MIN}
+          max={SCROLLBAR_STRENGTH_MAX}
+          step={10}
+          onChange={(strength) => update({ strength })}
+        />
+      </Row>
     </Group>
   );
 }

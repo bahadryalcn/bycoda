@@ -2,7 +2,7 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { CODE_FONT_CATALOG, fontFamilyValue } from "../../../model/fontCatalog";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
-import { AdvancedSettings, Group, Row, Segmented } from "../../../../../shared/ui/settings";
+import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
 import { useNumberDraft } from "./useNumberDraft";
@@ -98,41 +98,39 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
           {...terminalSize}
         />
       </Row>
-      <AdvancedSettings settingIds={["terminal-font-weight", "terminal-line-height"]}>
-        <Row
-          id="terminal-font-weight"
+      <Row
+        id="terminal-font-weight"
+        label={t("Terminal font weight")}
+        modified={p.terminalWeight !== d.terminalWeight}
+        onReset={() => a.onPreferences({ ...p, terminalWeight: d.terminalWeight })}
+      >
+        <Segmented
           label={t("Terminal font weight")}
-          modified={p.terminalWeight !== d.terminalWeight}
-          onReset={() => a.onPreferences({ ...p, terminalWeight: d.terminalWeight })}
-        >
-          <Segmented
-            label={t("Terminal font weight")}
-            value={terminalWeightChoice(p.terminalWeight)}
-            options={[
-              { value: "300", label: t("Light") },
-              { value: "400", label: t("Regular") },
-              { value: "700", label: t("Bold") },
-            ]}
-            onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })}
-          />
-        </Row>
-        <Row
-          id="terminal-line-height"
+          value={terminalWeightChoice(p.terminalWeight)}
+          options={[
+            { value: "300", label: t("Light") },
+            { value: "400", label: t("Regular") },
+            { value: "700", label: t("Bold") },
+          ]}
+          onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })}
+        />
+      </Row>
+      <Row
+        id="terminal-line-height"
+        label={t("Terminal line spacing")}
+        modified={p.terminalLineHeight !== d.terminalLineHeight}
+        onReset={() => a.onPreferences({ ...p, terminalLineHeight: d.terminalLineHeight })}
+      >
+        <Segmented
           label={t("Terminal line spacing")}
-          modified={p.terminalLineHeight !== d.terminalLineHeight}
-          onReset={() => a.onPreferences({ ...p, terminalLineHeight: d.terminalLineHeight })}
-        >
-          <Segmented
-            label={t("Terminal line spacing")}
-            value={String(p.terminalLineHeight)}
-            options={[1, 1.15, 1.35, 1.5].map((value) => ({
-              value: String(value),
-              label: `${value}×`,
-            }))}
-            onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })}
-          />
-        </Row>
-      </AdvancedSettings>
+          value={String(p.terminalLineHeight)}
+          options={[1, 1.15, 1.35, 1.5].map((value) => ({
+            value: String(value),
+            label: `${value}×`,
+          }))}
+          onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })}
+        />
+      </Row>
     </Group>
   );
 }

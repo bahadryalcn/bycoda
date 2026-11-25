@@ -9,6 +9,7 @@ import { BackgroundSection } from "./appearance/sections/BackgroundSection";
 import { InterfaceSection } from "./appearance/sections/InterfaceSection";
 import { TypographySection } from "./appearance/sections/TypographySection";
 import { MotionSection } from "./appearance/sections/MotionSection";
+import { ChatSection } from "./appearance/sections/ChatSection";
 import {
   AppearanceGenerationDialog,
   AppearanceGenerationLauncher,
@@ -19,7 +20,7 @@ import "./AppearanceSettings.css";
 
 export { ChatBackgroundCard } from "./appearance/sections/BackgroundSection";
 
-type Section = "theme" | "background" | "interface" | "typography" | "motion";
+type Section = "theme" | "background" | "interface" | "chat" | "typography" | "motion";
 let selectedSection: Section = "theme";
 
 /** The appearance tab whose panel holds the revealed setting, once that row is in the DOM. */
@@ -113,6 +114,7 @@ export function AppearancePage({
       label: t("Interface"),
       content: <InterfaceSection appearance={appearance} />,
     },
+    { id: "chat", label: t("Chat"), content: <ChatSection appearance={appearance} /> },
     {
       id: "typography",
       label: t("Typography"),

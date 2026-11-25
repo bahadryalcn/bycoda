@@ -608,7 +608,7 @@ export function SettingsView({
                             </div>
                           </div>
                         ) : null}
-                        {section === "chat" ? <ChatPage appearance={appearance} /> : null}
+                        {section === "chat" ? <ChatPage /> : null}
                         {section === "voice" ? <VoicePage /> : null}
                         {section === "policies" ? (
                           <div className="settings-topics">

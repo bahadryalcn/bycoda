@@ -249,12 +249,7 @@ it.each([
   expect(container.querySelector("input")).toBeNull();
 });
 
-const more = (index = 1) => `[aria-label="More for model ${index}"]`;
-async function openMore() {
-  await act(() => container.querySelector<HTMLButtonElement>(more())!.click());
-}
-
-it("renders one compact line with picker, account, profile, quota and skip reason", async () => {
+it("renders one line with picker, profile, settings, quota and skip reason", async () => {
   await act(() => root.render(createElement(ModelOrderRow, rowProps())));
   expect(picker.presentation).toBe("field");
   expect(container.textContent).toContain("15% left");
@@ -263,20 +258,23 @@ it("renders one compact line with picker, account, profile, quota and skip reaso
   // The picker names the account itself; the row has no account column of its own.
   expect(picker.hideAgentSettings).toBe(true);
   expect(container.textContent).not.toContain("Default account");
-  // Rare settings stay behind the overflow control until it opens.
-  expect(container.querySelector('input[type="number"]')).toBeNull();
+  // The settings sit in the row; nothing hides behind an overflow menu.
+  expect(container.querySelector('[aria-haspopup="dialog"]')).toBeNull();
+  expect(container.querySelector('input[type="number"]')).not.toBeNull();
 });
 
-it("passes the account to the picker and keeps rare settings in the overflow", async () => {
+it("passes the account to the picker and shows the row settings inline", async () => {
   const props = rowProps();
   props.entry.providerAccountId = "work";
   await act(() => root.render(createElement(ModelOrderRow, props)));
   expect(picker.accountId).toBe("work");
   expect(picker.accountChoices).toBe(true);
-  await openMore();
-  expect(document.body.textContent).toContain("Keep % for my own use");
-  expect(document.body.textContent).toContain("If the limit is unknown");
-  expect(document.body.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("25");
+  const percent = container.querySelector<HTMLInputElement>('input[type="number"]')!;
+  expect(percent.getAttribute("aria-label") ?? percent.labels?.[0]?.textContent).toContain(
+    "Keep % for my own use",
+  );
+  expect(percent.value).toBe("25");
+  expect(container.textContent).toContain("Unknown limit: use");
 });
 
 it("strips delegation defaults on model selection, preserves picker account selection", async () => {
@@ -326,16 +324,13 @@ it("saves Grok accounts and clears the account for a provider without profiles",
   expect(container.textContent).not.toContain("Account");
 });
 
-it("reorders with the grip only and removes from the overflow", async () => {
+it("reorders with the grip only and removes with the row button", async () => {
   const props = rowProps();
   await act(() => root.render(createElement(ModelOrderRow, props)));
   expect(container.querySelector('[aria-label="Move model 1 down"]')).toBeNull();
   expect(container.querySelector('[aria-label="Reorder model 1"]')).not.toBeNull();
-  await openMore();
   await act(() =>
-    [...document.body.querySelectorAll("button")]
-      .find((button) => button.textContent === "Remove")!
-      .click(),
+    container.querySelector<HTMLButtonElement>('[aria-label="Remove model 1"]')!.click(),
   );
   expect(props.onRemove).toHaveBeenCalledOnce();
 });
@@ -543,10 +538,10 @@ it("lists models by account with the real priority number, or flat by priority",
   expect(claude).not.toBeNull();
   // The second claude row keeps priority 3 although it is the second row of its account.
   expect(
-    [...claude.querySelectorAll('[aria-label^="More for model"]')].map((item) =>
+    [...claude.querySelectorAll('[aria-label^="Remove model"]')].map((item) =>
       item.getAttribute("aria-label"),
     ),
-  ).toEqual(["More for model 1", "More for model 3"]);
+  ).toEqual(["Remove model 1", "Remove model 3"]);
   expect(container.querySelector('[aria-label^="Reorder model"]')).toBeNull();
   const priority = [...container.querySelectorAll<HTMLElement>('[role="radio"]')].find(
     (item) => item.textContent === "Priority",
@@ -631,16 +626,16 @@ it("splits models into work, personal and shared lists by account kind", async (
   ]);
   await openTab("Models & order");
   expect(headings().slice(0, 3)).toEqual(["Work accounts", "Personal accounts", "Shared models"]);
-  expect(container.querySelectorAll('[aria-label^="More for model"]')).toHaveLength(4);
+  expect(container.querySelectorAll('[aria-label^="Remove model"]')).toHaveLength(4);
   // Each list numbers its own rows from 1. The legacy default account is Personal.
-  const labels = [...container.querySelectorAll('[aria-label^="More for model"]')].map((item) =>
+  const labels = [...container.querySelectorAll('[aria-label^="Remove model"]')].map((item) =>
     item.getAttribute("aria-label"),
   );
   expect(labels).toEqual([
-    "More for model 1",
-    "More for model 1",
-    "More for model 2",
-    "More for model 1",
+    "Remove model 1",
+    "Remove model 1",
+    "Remove model 2",
+    "Remove model 1",
   ]);
 });
 

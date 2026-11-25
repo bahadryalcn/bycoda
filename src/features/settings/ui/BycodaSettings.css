@@ -205,9 +205,6 @@
 .bycoda-settings-workbench .settings-templates {
   padding: 16px;
 }
-.bycoda-settings-workbench .settings-templates > .settings-advanced {
-  margin-block: 0 16px;
-}
 .bycoda-settings-workbench .settings-templates > div > p:only-child {
   padding: 0;
 }

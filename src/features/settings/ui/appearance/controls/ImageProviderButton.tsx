@@ -3,7 +3,6 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { DropdownMenu } from "../../../../../shared/ui/DropdownMenu";
 import { ImagePlus, Sparkles } from "../../../../../shared/ui/icons";
-import { Text } from "../../../../../shared/ui/Text";
 import { HarnessIcon } from "../../../../../shared/ui/identity/HarnessIcon";
 
 export type ImageProviderChoice = "none" | "codex" | "gemini";
@@ -37,13 +36,8 @@ export function ImageProviderButton({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <ImagePlus />
-        {t("Background image")}
-        {value !== "none" ? (
-          <Text size="caption" tone="secondary">
-            {selected.label}
-          </Text>
-        ) : null}
+        {selected.icon}
+        {value === "none" ? t("Background image") : selected.label}
       </Button>
       {open ? (
         <DropdownMenu

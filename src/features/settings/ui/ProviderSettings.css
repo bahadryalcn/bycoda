@@ -123,6 +123,15 @@
   display: none;
 }
 /* The icon, name and meta share one row and one baseline. */
+/* The provider's name with its CLI version and actions across the same row. */
+.provider-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-inline-size: 0;
+}
 .provider-detail-header {
   display: flex;
   align-items: center;

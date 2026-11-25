@@ -10,13 +10,7 @@ import {
   t,
   useLocale,
 } from "../../../shared/i18n";
-import {
-  AdvancedSettings,
-  Group,
-  Row,
-  Select,
-  SettingsFeedback,
-} from "../../../shared/ui/settings";
+import { Group, Row, Select, SettingsFeedback } from "../../../shared/ui/settings";
 
 export function LanguageSettings() {
   useLocale();
@@ -59,10 +53,8 @@ export function LanguageSettings() {
           disabled={pending}
         />
       </Row>
-      <AdvancedSettings settingIds={["git-language", "technical-language"]} keepMounted>
-        <DomainLanguageRow domain="git" />
-        <DomainLanguageRow domain="technical" />
-      </AdvancedSettings>
+      <DomainLanguageRow domain="git" />
+      <DomainLanguageRow domain="technical" />
     </Group>
   );
 }

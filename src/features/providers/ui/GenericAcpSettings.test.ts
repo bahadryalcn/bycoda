@@ -66,9 +66,7 @@ it("keeps every advanced value when editing and saves on the selected host witho
   expect(container.textContent).toContain("Target machine: Remote host.");
   expect(container.textContent).not.toContain("host-one");
   act(() => button("Edit").click());
-  expect(
-    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
-  ).toBeTruthy();
+  expect(container.querySelector("#acp-agent-form-disclosure h3")?.textContent).toBe("Edit agent");
   expect([...container.querySelectorAll("input")].map((input) => input.value)).toEqual([
     config.id,
     config.name,
@@ -114,9 +112,7 @@ it("retains the form after a failed save and allows retry", async () => {
     container.querySelector<HTMLButtonElement>('[aria-label^="Details:"]')!.click(),
   );
   expect(document.body.textContent).toContain("Host save failed");
-  expect(
-    container.querySelector("#acp-agent-form-disclosure section")?.getAttribute("aria-labelledby"),
-  ).toBeTruthy();
+  expect(container.querySelector("#acp-agent-form-disclosure h3")?.textContent).toBe("Edit agent");
   expect(container.querySelector("input")?.value).toBe(config.id);
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   expect(container.textContent).not.toContain("ACP agent saved on the target machine.");
@@ -178,13 +174,9 @@ it("shows a load failure in details without a raw Error prefix", async () => {
   expect(document.body.textContent).not.toContain("Error: Host offline");
 });
 
-it("reveals a collapsed agent form without discarding its draft", async () => {
+it("keeps the agent form draft and focuses its first field when adding", async () => {
   await render();
   act(() => button("Edit").click());
-  const disclosure = () =>
-    container.querySelector<HTMLButtonElement>("#acp-agent-form-disclosure button[aria-expanded]")!;
-  act(() => disclosure().click());
-  expect(container.querySelector("#acp-agent-form-disclosure input")).toBeNull();
   await act(async () => {
     button("Add agent").click();
     await new Promise((resolve) => requestAnimationFrame(resolve));

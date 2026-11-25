@@ -1,15 +1,8 @@
 import { useContext } from "react";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
-import {
-  AdvancedSettings,
-  Group,
-  RevealedSetting,
-  Select,
-  Toggle,
-} from "../../../shared/ui/settings";
+import { Group, RevealedSetting, Select, Toggle } from "../../../shared/ui/settings";
 import { DICTATION_LANGUAGES, DICTATION_PROVIDER_NAMES } from "../model/dictationModels";
-import { useDictionaryDraft } from "../model/voiceSettingsDrafts";
 import type { DictationEngine, VoiceSettings as Preferences } from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";
 import { LocalDictationModels } from "./LocalDictationModels";
@@ -19,8 +12,8 @@ import { VoiceCloudKey } from "./VoiceCloudKey";
 import { DictationDictionarySettings } from "./DictationDictionarySettings";
 import { VoiceSetupRow } from "./VoiceSetupRow";
 
-/** Every row behind More options; a settings search for one of them opens the section. */
-const MORE_OPTION_IDS = [
+/** Dictation detail rows; a settings search for one of them shows them while dictation is off. */
+const DETAIL_ROW_IDS = [
   "dictation-language",
   "dictation-shortcut-mode",
   "dictation-local-models",
@@ -31,7 +24,7 @@ const MORE_OPTION_IDS = [
   "dictation-remove-fillers",
 ];
 
-/** Enable, recognition engine and its cloud model stay visible; every other choice is a row in one More options. */
+/** Dictation on/off, its engine and model, and every detail row while dictation is on. */
 export function DictationSettings({
   settings,
   change,
@@ -43,11 +36,10 @@ export function DictationSettings({
 }) {
   const { speechEnabled } = setup;
   const revealed = useContext(RevealedSetting);
-  const [{ editing }] = useDictionaryDraft();
   // A settings search for a dictation detail shows it even while dictation is off.
   const detailRevealed =
-    !!revealed && revealed !== "dictation-enabled" && MORE_OPTION_IDS.includes(revealed);
-  const showMore = settings.dictationEnabled || detailRevealed;
+    !!revealed && revealed !== "dictation-enabled" && DETAIL_ROW_IDS.includes(revealed);
+  const showDetails = settings.dictationEnabled || detailRevealed;
   return (
     <Group title={t("Dictation")}>
       <Row id="dictation-enabled" label={t("Enable dictation")}>
@@ -95,13 +87,8 @@ export function DictationSettings({
           ) : null}
         </>
       )}
-      {showMore ? (
-        <AdvancedSettings
-          title={t("More options")}
-          settingIds={MORE_OPTION_IDS}
-          defaultOpen={editing !== null}
-          keepMounted
-        >
+      {showDetails ? (
+        <>
           <Row id="dictation-language" label={t("Dictation language")}>
             <Select
               hideLabel
@@ -150,7 +137,7 @@ export function DictationSettings({
               onChange={(dictationRemoveFillers) => change({ dictationRemoveFillers })}
             />
           </Row>
-        </AdvancedSettings>
+        </>
       ) : null}
     </Group>
   );

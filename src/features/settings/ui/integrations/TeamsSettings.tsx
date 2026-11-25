@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { TextField } from "../../../../shared/ui/TextField";
-import { AdvancedSettings, Row } from "../../../../shared/ui/settings";
+import { Row } from "../../../../shared/ui/settings";
 import { teamsSaveInput } from "./chatAccountInputs";
 import {
   AccountFormActions,
@@ -70,26 +70,24 @@ function TeamsAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
           }}
         />
       </Row>
-      <AdvancedSettings defaultOpen={false} keepMounted>
-        <Row
-          stacked
+      <Row
+        stacked
+        label={t("Microsoft app client ID")}
+        info={t("Only needed when your organization requires its own app registration.")}
+      >
+        <TextField
           label={t("Microsoft app client ID")}
-          info={t("Only needed when your organization requires its own app registration.")}
-        >
-          <TextField
-            label={t("Microsoft app client ID")}
-            hideLabel
-            aria-label={t("Microsoft app client ID")}
-            value={clientId}
-            onChange={(event) => setClientId(event.target.value)}
-            placeholder="00000000-0000-0000-0000-000000000000"
-            autoComplete="off"
-            spellCheck={false}
-            monospace
-            disabled={saving}
-          />
-        </Row>
-      </AdvancedSettings>
+          hideLabel
+          aria-label={t("Microsoft app client ID")}
+          value={clientId}
+          onChange={(event) => setClientId(event.target.value)}
+          placeholder="00000000-0000-0000-0000-000000000000"
+          autoComplete="off"
+          spellCheck={false}
+          monospace
+          disabled={saving}
+        />
+      </Row>
       <AccountFormActions
         saving={saving}
         error={error}

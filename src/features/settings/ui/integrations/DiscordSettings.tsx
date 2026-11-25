@@ -72,7 +72,6 @@ function DiscordAccountForm({ account, onSaved, onCancel, onSavingChange }: Acco
       </Row>
       <SetupSteps
         title={t("How to set up a Discord bot")}
-        label={t("Discord bot setup")}
         steps={[
           t("Create an application at discord.com/developers/applications and add a bot."),
           t("Reset the bot token, copy it and paste it above."),

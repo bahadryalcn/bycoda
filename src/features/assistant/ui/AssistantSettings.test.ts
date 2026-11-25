@@ -63,8 +63,6 @@ vi.mock("../../../shared/ui/settings", async () => {
         action,
         children,
       ),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../../shared/i18n", () => ({
@@ -439,7 +437,7 @@ it("groups every setting under the tab that answers its question", async () => {
   await render();
   expect(titles("personal")).toEqual(["Identity", "Conversation"]);
   expect(sections("personal")).toEqual(["language", "personality", "behavior"]);
-  expect(titles("work")).toEqual(["Work limits", "Presence and hours"]);
+  expect(titles("work")).toEqual(["Work limits", "Presence and hours", "Notifications"]);
   expect(sections("work")).toEqual(["budget", "presence", "notifications"]);
   expect(titles("access")).toEqual([
     "Permissions",
@@ -453,7 +451,7 @@ it("groups every setting under the tab that answers its question", async () => {
   // Collapsed disclosures keep their sections mounted, so drafts survive.
   expect(page("access").textContent).toContain("Customize access");
   expect(page("access").textContent).toContain("Ready for 24/7");
-  expect(page("personal").textContent).toContain("Personality and conversation");
+  expect(page("personal").textContent).toContain("Conversation");
 });
 
 it("shows the permission picker only once a worker execution exists", async () => {
@@ -507,19 +505,12 @@ it("keeps preset grants selected while customizing and preserves the mounted own
   expect(mock.calls).toEqual(["folders"]);
 });
 
-it("reveals the hidden tab and nested settings disclosures before focusing an invalid field", async () => {
+it("reveals the hidden tab and nested details before focusing an invalid field", async () => {
   await render();
   const advanced = document.createElement("section");
-  advanced.dataset.settingsPart = "advanced";
   advanced.innerHTML =
-    '<h3><button type="button" aria-expanded="false">Technical limits</button></h3><div hidden><details><summary>Additional limits</summary><input type="number" min="1" value="0" required></details></div>';
+    '<details><summary>Additional limits</summary><input type="number" min="1" value="0" required></details>';
   page("advanced").append(advanced);
-  const toggle = advanced.querySelector("button")!;
-  toggle.addEventListener("click", () => {
-    advanced.dataset.open = "true";
-    toggle.setAttribute("aria-expanded", "true");
-    advanced.querySelector("div")!.hidden = false;
-  });
   const details = advanced.querySelector("details")!;
   const input = advanced.querySelector("input")!;
   const focus = vi.spyOn(input, "focus");
@@ -532,7 +523,6 @@ it("reveals the hidden tab and nested settings disclosures before focusing an in
   });
   expect(invalid.defaultPrevented).toBe(true);
   expect(page("advanced").hidden).toBe(false);
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(details.open).toBe(true);
   expect(frames).toHaveLength(1);
   await act(async () => {

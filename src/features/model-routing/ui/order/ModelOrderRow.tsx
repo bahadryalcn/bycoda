@@ -9,16 +9,17 @@ import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
-import { ArrowRight, GripVertical, TriangleAlert } from "../../../../shared/ui/icons";
+import { NumberField } from "../../../../shared/ui/NumberField";
+import { Select } from "../../../../shared/ui/Select";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
+import { ArrowRight, GripVertical, Trash2, TriangleAlert } from "../../../../shared/ui/icons";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { supportsProviderAccounts } from "../../../providers/public/providerAccounts";
 import { defaultModelSettings, resolveModel } from "../../../sessions/public/models";
-import { entrySettings } from "../../model/modelRoutingDraft";
+import { entrySettings, percentDraft } from "../../model/modelRoutingDraft";
 import type { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
-import { ModelOrderRowMore } from "./ModelOrderRowMore";
 import { ModelProfileBadge } from "./ModelProfileBadge";
-import { useEntryAccount } from "./useEntryAccount";
 import { useQuotaLabel } from "./useQuotaLabel";
 
 /** Why an entry is skipped; `t()` takes literals only, so each label is translated where it is named. */
@@ -39,7 +40,11 @@ function skipLabel(skip: NonNullable<ModelRoutingEntryStatus["skip"]>, t: Return
   }
 }
 
-/** One compact line per order entry; reordering is the grip (drag or Alt+Up/Down). */
+/**
+ * One line per order entry with its settings in view; the account is chosen in the model
+ * picker. Reordering is the grip (drag or Alt+Up/Down). Narrow lists move the settings to a
+ * second line under the model.
+ */
 export function ModelOrderRow({
   entry,
   index,
@@ -86,7 +91,6 @@ export function ModelOrderRow({
 }) {
   const t = useT();
   const format = useFormat();
-  const account = useEntryAccount(entry);
   const quotaLabel = useQuotaLabel();
   const left = quotaLabel(status, statusLoading, statusError);
   return (
@@ -94,7 +98,7 @@ export function ModelOrderRow({
       ref={(node) => sortable?.setItemRef(entry.id, node)}
       {...surfaceAttributes(
         invalidMessage ? { tone: "warning" } : {},
-        "reorder-item grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-1 px-4 py-2 @min-[40rem]/model-order:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]",
+        "reorder-item grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-4 py-2 @min-[64rem]/model-order:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto_auto]",
       )}
       data-entry-id={entry.id}
       data-dragging={sortable?.draggingId === entry.id ? "" : undefined}
@@ -128,7 +132,7 @@ export function ModelOrderRow({
           {format.formatNumber(index + 1)}
         </Text>
       </div>
-      <div className="col-start-2 col-end-4 row-start-1 min-w-0 @min-[40rem]/model-order:col-end-3">
+      <div className="col-start-2 col-end-3 row-start-1 min-w-0">
         <ModelPicker
           harness={entry.harness}
           model={entry.model}
@@ -163,44 +167,82 @@ export function ModelOrderRow({
           }
         />
       </div>
-      <div className="col-start-3 row-start-2 flex justify-end @min-[40rem]/model-order:row-start-1 @min-[40rem]/model-order:w-16 @min-[40rem]/model-order:justify-start">
-        <ModelProfileBadge harness={entry.harness} model={entry.model} />
+      {/* Below 64rem these settings wrap under the model; wider, each takes its own column. */}
+      <div className="col-start-2 col-end-4 row-start-2 flex flex-wrap items-center gap-2 @min-[64rem]/model-order:contents">
+        <div className="flex @min-[64rem]/model-order:col-start-3 @min-[64rem]/model-order:row-start-1 @min-[64rem]/model-order:w-16">
+          <ModelProfileBadge harness={entry.harness} model={entry.model} />
+        </div>
+        <Tooltip label={t("Keep % for my own use")}>
+          <div className="w-24 @min-[64rem]/model-order:col-start-4 @min-[64rem]/model-order:row-start-1">
+            <NumberField
+              label={t("Keep % for my own use")}
+              hideLabel
+              fieldSize="sm"
+              steppers={false}
+              min={0}
+              max={100}
+              step={1}
+              inputMode="numeric"
+              placeholder={providerPercent.trim() ? providerPercent : "0"}
+              endAdornment={
+                <Text size="caption" tone="secondary" aria-hidden="true">
+                  %
+                </Text>
+              }
+              value={percent}
+              onChange={(event) => onPercent(percentDraft(event.currentTarget.value, percent))}
+            />
+          </div>
+        </Tooltip>
+        <div className="w-44 @min-[64rem]/model-order:col-start-5 @min-[64rem]/model-order:row-start-1">
+          <Select
+            label={t("If the limit is unknown")}
+            hideLabel
+            fieldSize="sm"
+            value={entry.unknownLimit}
+            options={[
+              { value: "use", label: t("Unknown limit: use") },
+              { value: "skip", label: t("Unknown limit: skip") },
+            ]}
+            onValueChange={(value) =>
+              onChange({ ...entry, unknownLimit: value === "skip" ? "skip" : "use" })
+            }
+          />
+        </div>
+        <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 @min-[64rem]/model-order:col-start-6 @min-[64rem]/model-order:row-start-1 @min-[64rem]/model-order:w-56 @min-[64rem]/model-order:justify-end">
+          {next ? (
+            <InfoTooltip
+              label={t("Next model to be used")}
+              icon={<ArrowRight className="icon-sm" aria-hidden />}
+            >
+              {t("Next model to be used")}
+            </InfoTooltip>
+          ) : null}
+          {status?.skip ? (
+            <InfoTooltip
+              label={skipLabel(status.skip, t)}
+              icon={<TriangleAlert className="icon-sm" aria-hidden />}
+            >
+              {skipLabel(status.skip, t)}
+            </InfoTooltip>
+          ) : null}
+          {left !== accountQuota ? (
+            <Text size="caption" tone="secondary" className="break-words">
+              {left}
+            </Text>
+          ) : null}
+        </div>
       </div>
-      {/* Align the secondary line with the model field when it can't sit beside it. */}
-      <div className="col-start-2 col-end-3 row-start-2 flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 @min-[40rem]/model-order:col-start-4 @min-[40rem]/model-order:col-end-5 @min-[40rem]/model-order:row-start-1 @min-[40rem]/model-order:w-56 @min-[40rem]/model-order:justify-end">
-        {next ? (
-          <InfoTooltip
-            label={t("Next model to be used")}
-            icon={<ArrowRight className="icon-sm" aria-hidden />}
-          >
-            {t("Next model to be used")}
-          </InfoTooltip>
-        ) : null}
-        {status?.skip ? (
-          <InfoTooltip
-            label={skipLabel(status.skip, t)}
-            icon={<TriangleAlert className="icon-sm" aria-hidden />}
-          >
-            {skipLabel(status.skip, t)}
-          </InfoTooltip>
-        ) : null}
-        {left !== accountQuota ? (
-          <Text size="caption" tone="secondary" className="break-words">
-            {left}
-          </Text>
-        ) : null}
-      </div>
-      <div className="col-start-4 row-start-1 @min-[40rem]/model-order:col-start-5">
-        <ModelOrderRowMore
-          entry={entry}
-          index={index}
-          percent={percent}
-          providerPercent={providerPercent}
-          account={account}
-          onChange={onChange}
-          onPercent={onPercent}
-          onRemove={onRemove}
-        />
+      <div className="col-start-3 row-start-1 @min-[64rem]/model-order:col-start-7">
+        <Button
+          iconOnly
+          variant="ghost"
+          size="sm"
+          label={t("Remove model {p0}", { p0: index + 1 })}
+          onClick={onRemove}
+        >
+          <Trash2 className="icon-sm" />
+        </Button>
       </div>
       {invalidMessage ? (
         <div className="col-span-full ps-6">

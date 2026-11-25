@@ -10,7 +10,7 @@ import {
   workerContextSettings,
   validWorkerContextSettings,
 } from "../../../../shared/model/assistantContext";
-import { AdvancedSettings, Row } from "../../../../shared/ui/settings";
+import { Row } from "../../../../shared/ui/settings";
 import { Button } from "../../../../shared/ui/Button";
 import { ProfileNumber } from "./ProfileControls";
 import { useProfileRows } from "./SettingsProfileRow";
@@ -154,16 +154,8 @@ export function AssistantCostFields({
     return (
       <>
         {contextMode}
-        <AdvancedSettings title={t("Supervisor limits")} keepMounted>
-          {limits}
-        </AdvancedSettings>
-        <AdvancedSettings
-          title={t("Advanced worker context limits")}
-          defaultOpen={!validWorkerContextSettings(value)}
-          keepMounted
-        >
-          {workerLimits}
-        </AdvancedSettings>
+        {limits}
+        {workerLimits}
         {contextError}
       </>
     );

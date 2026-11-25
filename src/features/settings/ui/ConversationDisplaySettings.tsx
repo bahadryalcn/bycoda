@@ -1,10 +1,18 @@
 import { useSyncExternalStore } from "react";
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
 import { loadStreamingTextMode, subscribeStreamingTextMode } from "../model/settings";
+import {
+  loadTranscriptLayout,
+  saveTranscriptLayout,
+  subscribeTranscriptLayout,
+  type TranscriptLayout,
+} from "../model/appearance";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import { Row, Segmented, Toggle, useConfirmedPreferences } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
+/** How the conversation is laid out and animated: transcript layout, width, word wrap and streaming. */
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
@@ -14,6 +22,16 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
       write: () => saveAgentDefaultConfirmed("streamingTextMode", next),
       verify: () => loadStreamingTextMode() === next,
     });
+  const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(
+    loadTranscriptLayout,
+    subscribeTranscriptLayout,
+  );
+  const saveLayout = (next: TranscriptLayout) =>
+    commit("transcript-layout", {
+      write: () => saveTranscriptLayout(next),
+      verify: () => loadTranscriptLayout() === next,
+      onConfirmed: () => setTranscriptLayout(next),
+    });
   const streamingTextMode = useSyncExternalStore(
     subscribeStreamingTextMode,
     loadStreamingTextMode,
@@ -21,6 +39,23 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
   );
   return (
     <>
+      <Row
+        id="transcript-layout"
+        feedback={feedback("transcript-layout")}
+        label={t("Transcript layout")}
+        description={t("Choose a wider transcript or compact chat bubbles.")}
+      >
+        <Segmented
+          label={t("Transcript layout")}
+          value={transcriptLayout}
+          disabled={pending("transcript-layout")}
+          options={[
+            { value: "full", label: t("Full width") },
+            { value: "chat", label: t("Chat") },
+          ]}
+          onChange={saveLayout}
+        />
+      </Row>
       <Row id="chat-width" label={t("Chat width")}>
         <Segmented
           label={t("Chat width")}

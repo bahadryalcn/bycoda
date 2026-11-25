@@ -8,7 +8,7 @@ import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import { ExternalLink } from "../../../../shared/ui/icons";
-import { AdvancedSettings, Row, Toggle } from "../../../../shared/ui/settings";
+import { Row, Toggle } from "../../../../shared/ui/settings";
 import {
   APP_PASSWORD_PAGES,
   applyEmailPreset,
@@ -301,17 +301,7 @@ export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }:
           />
         </Row>
       ) : null}
-      {draft.preset === "custom" ? (
-        serverRows
-      ) : (
-        <AdvancedSettings
-          title={googleChoice ? t("Advanced") : t("Server settings")}
-          defaultOpen={false}
-          keepMounted
-        >
-          {serverRows}
-        </AdvancedSettings>
-      )}
+      {serverRows}
       <AccountFormActions
         saving={saving}
         error={error}

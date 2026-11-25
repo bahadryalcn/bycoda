@@ -20,7 +20,7 @@ const sharedNames = [...sharedCatalog.matchAll(/^\| \[(\w+)\]/gm)].map((match) =
 it("places every shared component exactly once: drawn by a presented component or omitted for one reason", () => {
   const drawn = Object.keys(presentedDrawn);
   const omitted = Object.values(presentedOmitted).flat();
-  expect(sharedNames).toHaveLength(158);
+  expect(sharedNames).toHaveLength(157);
   expect([...drawn, ...omitted].sort()).toEqual([...sharedNames].sort());
   expect(new Set([...drawn, ...omitted]).size).toBe(sharedNames.length);
 });

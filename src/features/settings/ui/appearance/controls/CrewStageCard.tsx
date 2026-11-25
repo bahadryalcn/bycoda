@@ -31,7 +31,7 @@ import {
   useFollowSystemMotionEnabled,
   usePrefersReducedMotion,
 } from "../../../model/decorativeMotion";
-import { AdvancedSettings, Group, Row, Toggle } from "../../../../../shared/ui/settings";
+import { Group, Row, Toggle } from "../../../../../shared/ui/settings";
 import { resetCrew, resetMotion } from "../appearanceResets";
 import "./CrewStageCard.css";
 
@@ -163,22 +163,20 @@ export function CrewStageCard() {
             onChange={saveDecorativeMotionEnabled}
           />
         </Row>
-        <AdvancedSettings settingIds={["tab-animations"]}>
-          <Row
-            id="tab-animations"
+        <Row
+          id="tab-animations"
+          label={t("Tab animations")}
+          description={t("Slide tabs as they open and close. Off makes tab changes instant.")}
+        >
+          <Toggle
             label={t("Tab animations")}
-            description={t("Slide tabs as they open and close. Off makes tab changes instant.")}
-          >
-            <Toggle
-              label={t("Tab animations")}
-              on={tabs}
-              onChange={(next) => {
-                saveTabAnimationsEnabled(next);
-                setTabs(loadTabAnimationsEnabled());
-              }}
-            />
-          </Row>
-        </AdvancedSettings>
+            on={tabs}
+            onChange={(next) => {
+              saveTabAnimationsEnabled(next);
+              setTabs(loadTabAnimationsEnabled());
+            }}
+          />
+        </Row>
       </Group>
     </>
   );

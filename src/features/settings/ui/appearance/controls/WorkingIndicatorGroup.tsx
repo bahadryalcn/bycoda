@@ -17,7 +17,7 @@ import {
   type WorkingIndicatorColor,
   type WorkingIndicatorStyle,
 } from "../../../model/workingIndicator";
-import { AdvancedSettings, Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadWorkingIndicator());
@@ -25,7 +25,7 @@ const DEFAULT_SNAPSHOT = JSON.stringify(WORKING_INDICATOR_DEFAULT);
 
 /**
  * "Working projects": the color, pulse and strength of the decoration a project row shows while an
- * agent works. The preview is a real working row (`data-project-row` + `data-project-working`), so it
+ * agent works. The sample beside the animation choice is a real working row (`data-project-row` + `data-project-working`), so it
  * follows the same rules as the rail, including reduced and decorative motion.
  */
 export function WorkingIndicatorGroup() {
@@ -48,107 +48,103 @@ export function WorkingIndicatorGroup() {
         label={t("Working animation")}
         description={t("Steady keeps the tint without the pulse; Off leaves only the spinner.")}
       >
-        <Segmented<WorkingIndicatorStyle>
-          label={t("Working animation")}
-          value={value.style}
-          options={[
-            { value: "pulse", label: t("Pulse") },
-            { value: "steady", label: t("Steady") },
-            { value: "off", label: t("Off") },
-          ]}
-          onChange={(style) => update({ style })}
+        <div className="flex items-center gap-3">
+          {/* Live sample: a real working project row, so it follows the rail's motion rules. */}
+          <Text
+            as="div"
+            size="inherit"
+            tone="primary"
+            aria-hidden="true"
+            data-project-row=""
+            data-project-working="true"
+            {...surfaceAttributes(
+              { radius: "row" },
+              "relative flex h-(--ui-control-height-compact) w-28 items-center gap-2 px-2",
+            )}
+          >
+            <WorkingIndicator size="xs" />
+          </Text>
+          <Segmented<WorkingIndicatorStyle>
+            label={t("Working animation")}
+            value={value.style}
+            options={[
+              { value: "pulse", label: t("Pulse") },
+              { value: "steady", label: t("Steady") },
+              { value: "off", label: t("Off") },
+            ]}
+            onChange={(style) => update({ style })}
+          />
+        </div>
+      </Row>
+      <Row
+        id="working-indicator-color"
+        controlWidth="fill"
+        label={t("Working color")}
+        description={t("Automatic follows the accent color of your theme.")}
+      >
+        <div ref={anchor} className="state-ladder-source">
+          <Segmented<WorkingIndicatorColor>
+            label={t("Working color")}
+            value={value.color}
+            options={[
+              { value: "auto", label: t("Automatic") },
+              { value: "theme", label: t("Theme") },
+              { value: "custom", label: t("Custom") },
+            ]}
+            onChange={(color) => {
+              update({
+                color,
+                customColor: color === "custom" ? customColor : value.customColor,
+              });
+              setOpen(color === "custom");
+            }}
+          />
+          {value.color === "custom" && (
+            <Button
+              variant="secondary"
+              size="sm"
+              inset="icon"
+              aria-label={t("Custom color")}
+              onClick={() => setOpen(true)}
+            >
+              <span
+                {...surfaceAttributes(
+                  { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
+                  "state-custom-dot",
+                )}
+                style={{ "--surface-user-color": customColor } as React.CSSProperties}
+              />
+            </Button>
+          )}
+          {open && (
+            <Popover
+              anchor={anchor}
+              side="bottom"
+              align="end"
+              width={248}
+              flow="scroll"
+              onDismiss={() => setOpen(false)}
+            >
+              <ColorPickerPopover
+                value={customColor}
+                onChange={(next) => update({ color: "custom", customColor: next })}
+              />
+            </Popover>
+          )}
+        </div>
+      </Row>
+      <Row id="working-indicator-strength" label={t("Working strength")}>
+        <Slider
+          label={t("Working strength")}
+          value={value.strength}
+          display={`${value.strength}%`}
+          min={WORKING_INDICATOR_STRENGTH_MIN}
+          max={WORKING_INDICATOR_STRENGTH_MAX}
+          step={10}
+          disabled={value.style === "off"}
+          onChange={(strength) => update({ strength })}
         />
       </Row>
-      <Row stacked label={t("Preview")}>
-        <Text
-          as="div"
-          size="inherit"
-          tone="primary"
-          aria-hidden="true"
-          data-project-row=""
-          data-project-working="true"
-          {...surfaceAttributes(
-            { radius: "row" },
-            "relative flex h-(--ui-control-height-compact) w-56 max-w-full items-center gap-2 px-2",
-          )}
-        >
-          <WorkingIndicator size="xs" />
-          <Text as="span" size="inherit" tone="inherit" truncate>
-            {t("Project")}
-          </Text>
-        </Text>
-      </Row>
-      <AdvancedSettings settingIds={["working-indicator-color", "working-indicator-strength"]}>
-        <Row
-          id="working-indicator-color"
-          controlWidth="fill"
-          label={t("Working color")}
-          description={t("Automatic follows the accent color of your theme.")}
-        >
-          <div ref={anchor} className="state-ladder-source">
-            <Segmented<WorkingIndicatorColor>
-              label={t("Working color")}
-              value={value.color}
-              options={[
-                { value: "auto", label: t("Automatic") },
-                { value: "theme", label: t("Theme") },
-                { value: "custom", label: t("Custom") },
-              ]}
-              onChange={(color) => {
-                update({
-                  color,
-                  customColor: color === "custom" ? customColor : value.customColor,
-                });
-                setOpen(color === "custom");
-              }}
-            />
-            {value.color === "custom" && (
-              <Button
-                variant="secondary"
-                size="sm"
-                inset="icon"
-                aria-label={t("Custom color")}
-                onClick={() => setOpen(true)}
-              >
-                <span
-                  {...surfaceAttributes(
-                    { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
-                    "state-custom-dot",
-                  )}
-                  style={{ "--surface-user-color": customColor } as React.CSSProperties}
-                />
-              </Button>
-            )}
-            {open && (
-              <Popover
-                anchor={anchor}
-                side="bottom"
-                align="end"
-                width={248}
-                flow="scroll"
-                onDismiss={() => setOpen(false)}
-              >
-                <ColorPickerPopover
-                  value={customColor}
-                  onChange={(next) => update({ color: "custom", customColor: next })}
-                />
-              </Popover>
-            )}
-          </div>
-        </Row>
-        <Row id="working-indicator-strength" label={t("Working strength")}>
-          <Slider
-            label={t("Working strength")}
-            value={value.strength}
-            display={`${value.strength}%`}
-            min={WORKING_INDICATOR_STRENGTH_MIN}
-            max={WORKING_INDICATOR_STRENGTH_MAX}
-            step={10}
-            disabled={value.style === "off"}
-            onChange={(strength) => update({ strength })}
-          />
-        </Row>
-      </AdvancedSettings>
     </Group>
   );
 }

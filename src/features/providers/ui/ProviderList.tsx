@@ -114,7 +114,7 @@ function ProviderListItem({
             </Text>
             {entry.isDefault ? (
               <Tooltip label={t("Default provider")}>
-                <Star className="icon-xs shrink-0" tone="secondary" aria-hidden />
+                <Star className="icon-xs shrink-0" tone="warning" fill="currentColor" aria-hidden />
               </Tooltip>
             ) : null}
             {entry.updateAvailable ? (

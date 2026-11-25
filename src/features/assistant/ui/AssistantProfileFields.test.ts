@@ -25,8 +25,6 @@ vi.mock("../../../shared/ui/settings", async () => {
       ),
     Group: ({ title, info, action, children }: any) =>
       createElement("section", null, createElement("h2", null, title), info, action, children),
-    AdvancedSettings: ({ title, children }: any) =>
-      createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
 });
 vi.mock("../../../shared/i18n", () => ({
@@ -368,7 +366,6 @@ it("asks only for the name in setup; address, avatar and title are settings rows
 
 it("keeps the dynamic title preview available in settings", async () => {
   await setup({ name: "Ada", showTitle: true }, "identity", true);
-  await click("Avatar");
   expect(container.textContent).not.toContain("Room · Ada");
   const preview = container.querySelector<HTMLElement>('[role="img"][aria-label="Preview"]')!;
   await act(async () => {

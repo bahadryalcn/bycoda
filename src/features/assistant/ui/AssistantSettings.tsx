@@ -43,13 +43,7 @@ import {
   DesktopControlSettings,
   type DesktopControlDraftState,
 } from "../../host-tools/DesktopControlSettings";
-import {
-  AdvancedSettings,
-  Group,
-  Row,
-  SettingsSaveBar,
-  useLeaveGuard,
-} from "../../../shared/ui/settings";
+import { Group, Row, SettingsSaveBar, useLeaveGuard } from "../../../shared/ui/settings";
 import { assistantChanges } from "./settings/assistantChanges";
 import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { useLanguageChangeFlow } from "./settings/useLanguageChangeFlow";
@@ -483,15 +477,7 @@ export function AssistantSettings({
             ancestor && ancestor !== event.currentTarget;
             ancestor = ancestor.parentElement
           ) {
-            if (ancestor.matches('[data-settings-part="advanced"]:not([data-open])')) {
-              const toggle = ancestor.querySelector<HTMLButtonElement>(
-                ':scope > h3 button[aria-expanded="false"]',
-              );
-              if (toggle) {
-                toggle.click();
-                revealed = true;
-              }
-            } else if (ancestor.matches("details:not([open])")) {
+            if (ancestor.matches("details:not([open])")) {
               const toggle = ancestor.querySelector<HTMLElement>(":scope > summary");
               if (toggle) {
                 toggle.click();
@@ -559,10 +545,8 @@ export function AssistantSettings({
                   </Group>
                   <Group title={t("Conversation")}>
                     {profile("language")}
-                    <AdvancedSettings title={t("Personality and conversation")} keepMounted>
-                      {profile("personality")}
-                      {profile("behavior")}
-                    </AdvancedSettings>
+                    {profile("personality")}
+                    {profile("behavior")}
                   </Group>
                 </>,
               )}
@@ -595,31 +579,26 @@ export function AssistantSettings({
                     {profile("presence")}
                     <PresenceStatusRow snapshot={snapshot} draft={draft} />
                   </Group>
-                  <Group title={null}>
-                    <AdvancedSettings
-                      title={
-                        <>
-                          {t("Notifications")}
-                          {snapshot.capabilities.observationTasks === true ? null : (
-                            <Badge tone="warning" size="xs">
-                              {t("Readiness not confirmed")}
-                            </Badge>
-                          )}
-                        </>
-                      }
-                      keepMounted
-                    >
-                      {profile("notifications")}
-                      <AssistantTelegramNotifications
-                        request={assistantRequest}
-                        environmentId={consentEnvironment}
-                        value={draft}
-                        onChange={(patch) => {
-                          setSavedNotice(false);
-                          setDraft((current) => ({ ...current, ...patch }));
-                        }}
-                      />
-                    </AdvancedSettings>
+                  <Group
+                    title={t("Notifications")}
+                    action={
+                      snapshot.capabilities.observationTasks === true ? undefined : (
+                        <Badge tone="warning" size="xs">
+                          {t("Readiness not confirmed")}
+                        </Badge>
+                      )
+                    }
+                  >
+                    {profile("notifications")}
+                    <AssistantTelegramNotifications
+                      request={assistantRequest}
+                      environmentId={consentEnvironment}
+                      value={draft}
+                      onChange={(patch) => {
+                        setSavedNotice(false);
+                        setDraft((current) => ({ ...current, ...patch }));
+                      }}
+                    />
                   </Group>
                 </>,
               )}
@@ -715,9 +694,7 @@ export function AssistantSettings({
                     >
                       {profile("jobs")}
                       {draft.execution ? (
-                        <AdvancedSettings title={t("Job permissions")} keepMounted>
-                          {profile("permissions")}
-                        </AdvancedSettings>
+                        profile("permissions")
                       ) : (
                         <Row
                           label={t("Execution permissions")}

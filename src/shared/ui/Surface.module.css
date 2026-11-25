@@ -49,14 +49,10 @@
   border-color: var(--ui-pane-border);
 }
 
-/* Settings groups contain both rows and nested disclosures; preserve their distinct boundaries. */
+/* Rows inside a settings group are separated by hairlines. */
 :is(.surface, .appearance)[data-surface-layout="settings-group"]
-  > :is([data-settings-part="row"], [data-settings-part="advanced"])
-  ~ :is([data-settings-part="row"], [data-settings-part="advanced"]),
-:is(.surface, .appearance)[data-surface-layout="settings-advanced"] > [data-settings-part="row"],
-:is(.surface, .appearance)[data-surface-layout="settings-advanced"]
-  > [data-settings-part="advanced-content"]
-  > [data-settings-part="row"] {
+  > [data-settings-part="row"]
+  ~ [data-settings-part="row"] {
   border-block-start: 1px solid var(--ui-settings-hairline);
 }
 :is(.surface, .appearance)[data-surface-layout="settings-rows"]
@@ -84,10 +80,6 @@
   > :last-child {
   border-end-start-radius: calc(var(--ui-radius-card) - 0.0625rem);
   border-end-end-radius: calc(var(--ui-radius-card) - 0.0625rem);
-}
-:is(.surface, .appearance)[data-surface-layout="settings-group"] > [data-settings-part="advanced"] {
-  border: 0;
-  border-radius: 0;
 }
 :is(.surface, .appearance)[data-surface-separator="block"]
   + :is(.surface, .appearance)[data-surface-separator="block"] {

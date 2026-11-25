@@ -1,6 +1,19 @@
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { t } from "../../../shared/i18n/core";
 import type { SettingsEntry } from "./settings";
+import { FILE_REF_KINDS, type FileRefKind } from "../../../shared/lib/fileReferenceKind";
+
+/** Names of the file kinds whose reference color the Chat appearance tab sets. */
+export const FILE_KIND_LABELS: Record<FileRefKind, () => string> = {
+  code: () => t("Code"),
+  markup: () => t("Web and markup"),
+  docs: () => t("Documents"),
+  data: () => t("Data and config"),
+  media: () => t("Media"),
+  archive: () => t("Archives"),
+  folder: () => t("Folders"),
+  other: () => t("Other files"),
+};
 
 /** Searchable appearance and transcript controls, indexed by their current Settings page. */
 export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
@@ -56,14 +69,27 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
         () => t("Message actions"),
         "transcript copy actions hover always eylem kopyala",
       ],
+      [
+        "transcript-file-refs",
+        () => t("File references"),
+        "transcript file folder reference icon color dosya klasör referans simge",
+      ],
     ] as const
   ).map(([id, label, keywords]) => ({
     id,
-    section: "chat" as const,
+    section: "appearance" as const,
     get label() {
       return label();
     },
     keywords,
+  })),
+  ...FILE_REF_KINDS.map((kind) => ({
+    id: `file-tone-${kind}`,
+    section: "appearance" as const,
+    get label() {
+      return FILE_KIND_LABELS[kind]();
+    },
+    keywords: `file reference color tone ${kind} dosya renk`,
   })),
   {
     id: "tab-animations",

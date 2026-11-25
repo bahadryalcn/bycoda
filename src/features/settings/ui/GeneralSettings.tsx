@@ -62,7 +62,6 @@ import { BuildIdentityDetails } from "./BuildIdentityDetails";
 import { UpdateChannelRow } from "./UpdateChannelRow";
 import { DiagnosticsGroup } from "./DiagnosticsSettings";
 import {
-  AdvancedSettings,
   Group,
   Row,
   Toggle,
@@ -198,31 +197,29 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             disabled={powerPending("keep-awake")}
           />
         </Row>
-        <AdvancedSettings settingIds={["keep-awake-duration", "keep-awake-screen"]}>
-          <Row
-            id="keep-awake-duration"
-            feedback={powerFeedback("keep-awake-duration")}
-            label={t("After agents finish")}
-            dependsOn={keepAwake}
-          >
-            <Select
-              hideLabel
-              label={t("Stay awake after an agent ends")}
-              value={keepAwakeHoldAfter}
-              options={[...KEEP_AWAKE_HOLD_AFTER]}
-              onValueChange={onKeepAwakeHoldAfter}
-              disabled={!keepAwake || powerPending("keep-awake-duration")}
-            />
-          </Row>
-          <Row id="keep-awake-screen" label={t("Keep the screen on")} dependsOn={keepAwake}>
-            <Toggle
-              label={t("Keep the screen on")}
-              on={keepAwakeScreen}
-              onChange={onKeepAwakeScreen}
-              disabled={!keepAwake}
-            />
-          </Row>
-        </AdvancedSettings>
+        <Row
+          id="keep-awake-duration"
+          feedback={powerFeedback("keep-awake-duration")}
+          label={t("After agents finish")}
+          dependsOn={keepAwake}
+        >
+          <Select
+            hideLabel
+            label={t("Stay awake after an agent ends")}
+            value={keepAwakeHoldAfter}
+            options={[...KEEP_AWAKE_HOLD_AFTER]}
+            onValueChange={onKeepAwakeHoldAfter}
+            disabled={!keepAwake || powerPending("keep-awake-duration")}
+          />
+        </Row>
+        <Row id="keep-awake-screen" label={t("Keep the screen on")} dependsOn={keepAwake}>
+          <Toggle
+            label={t("Keep the screen on")}
+            on={keepAwakeScreen}
+            onChange={onKeepAwakeScreen}
+            disabled={!keepAwake}
+          />
+        </Row>
       </Group>
 
       {/* Updates: version, check/install/restart state and progress share one compact action area. */}

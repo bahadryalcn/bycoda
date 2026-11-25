@@ -6,7 +6,8 @@ import {
   type FileRefKind,
   type FileRefTone,
 } from "../../../../../shared/lib/fileReferenceKind";
-import { AdvancedSettings, Row, Segmented, Select } from "../../../../../shared/ui/settings";
+import { Row, Segmented, Select } from "../../../../../shared/ui/settings";
+import { FILE_KIND_LABELS } from "../../../model/appearanceSettingsIndex";
 import {
   APPEARANCE_DEFAULTS,
   FILE_REF_STYLES,
@@ -53,16 +54,6 @@ const ACTION_LABELS: Record<(typeof TRANSCRIPT_ACTIONS)[number], () => string> =
 const FILE_REF_STYLE_LABELS: Record<(typeof FILE_REF_STYLES)[number], () => string> = {
   colored: () => t("Colored"),
   plain: () => t("Plain"),
-};
-const FILE_KIND_LABELS: Record<FileRefKind, () => string> = {
-  code: () => t("Code"),
-  markup: () => t("Web and markup"),
-  docs: () => t("Documents"),
-  data: () => t("Data and config"),
-  media: () => t("Media"),
-  archive: () => t("Archives"),
-  folder: () => t("Folders"),
-  other: () => t("Other files"),
 };
 const FILE_TONE_LABELS: Record<FileRefTone, () => string> = {
   info: () => t("Blue"),
@@ -191,188 +182,169 @@ export function TranscriptViewGroup({
           }}
         />
       </Row>
-      <AdvancedSettings
-        title={t("Fine-tune reading")}
-        settingIds={[
-          "transcript-surface",
-          "transcript-surface-opacity",
-          "transcript-surface-blur",
-          "chat-message-color",
-          "user-message-opacity",
-          "transcript-body-ink",
-          "transcript-chrome-ink",
-          "transcript-cards",
-          "transcript-actions",
-          "transcript-file-refs",
-          ...FILE_REF_KINDS.map((kind) => `file-tone-${kind}`),
-        ]}
+      <Row
+        id="transcript-surface"
+        label={t("Reading surface")}
+        info={t("Reply paints one surface per answer, Column one for the whole conversation.")}
+        modified={modified("transcriptSurface")}
+        onReset={reset("transcriptSurface")}
       >
-        <Row
-          id="transcript-surface"
+        <Segmented
           label={t("Reading surface")}
-          info={t("Reply paints one surface per answer, Column one for the whole conversation.")}
-          modified={modified("transcriptSurface")}
-          onReset={reset("transcriptSurface")}
-        >
-          <Segmented
-            label={t("Reading surface")}
-            value={preferences.transcriptSurface}
-            options={TRANSCRIPT_SURFACES.map((value) => ({
-              value,
-              label: SURFACE_LABELS[value](),
-            }))}
-            disabled={preferencesUnavailable}
-            onChange={(transcriptSurface) => set({ transcriptSurface })}
-          />
-        </Row>
-        <Row
-          id="transcript-surface-opacity"
-          label={t("Surface opacity")}
-          dependsOn={!surfaceOff}
-          disabledReason={offReason}
-          modified={modified("transcriptSurfaceOpacity")}
-          onReset={reset("transcriptSurfaceOpacity")}
-        >
-          {slider("transcriptSurfaceOpacity", t("Surface opacity"), percent)}
-        </Row>
-        <Row
-          id="transcript-surface-blur"
-          label={t("Surface blur")}
-          info={t("Blur applies only over a background image.")}
-          dependsOn={!surfaceOff}
-          disabledReason={offReason}
-          modified={modified("transcriptSurfaceBlur")}
-          onReset={reset("transcriptSurfaceBlur")}
-        >
-          {slider("transcriptSurfaceBlur", t("Surface blur"), pixels)}
-        </Row>
-        <Row
-          id="chat-message-color"
+          value={preferences.transcriptSurface}
+          options={TRANSCRIPT_SURFACES.map((value) => ({
+            value,
+            label: SURFACE_LABELS[value](),
+          }))}
+          disabled={preferencesUnavailable}
+          onChange={(transcriptSurface) => set({ transcriptSurface })}
+        />
+      </Row>
+      <Row
+        id="transcript-surface-opacity"
+        label={t("Surface opacity")}
+        dependsOn={!surfaceOff}
+        disabledReason={offReason}
+        modified={modified("transcriptSurfaceOpacity")}
+        onReset={reset("transcriptSurfaceOpacity")}
+      >
+        {slider("transcriptSurfaceOpacity", t("Surface opacity"), percent)}
+      </Row>
+      <Row
+        id="transcript-surface-blur"
+        label={t("Surface blur")}
+        info={t("Blur applies only over a background image.")}
+        dependsOn={!surfaceOff}
+        disabledReason={offReason}
+        modified={modified("transcriptSurfaceBlur")}
+        onReset={reset("transcriptSurfaceBlur")}
+      >
+        {slider("transcriptSurfaceBlur", t("Surface blur"), pixels)}
+      </Row>
+      <Row
+        id="chat-message-color"
+        label={t("Surface color")}
+        modified={modified("messageColor")}
+        onReset={reset("messageColor")}
+      >
+        <Segmented
           label={t("Surface color")}
-          modified={modified("messageColor")}
-          onReset={reset("messageColor")}
-        >
-          <Segmented
-            label={t("Surface color")}
-            value={preferences.messageColor}
-            options={[
-              { value: "theme", label: t("Theme") },
-              { value: "neutral", label: t("Neutral") },
-            ]}
-            disabled={preferencesUnavailable}
-            onChange={(messageColor) => set({ messageColor })}
-          />
-        </Row>
-        <Row
-          id="user-message-opacity"
-          label={t("Your message opacity")}
-          modified={modified("userMessageOpacity")}
-          onReset={reset("userMessageOpacity")}
-        >
-          {slider("userMessageOpacity", t("Your message opacity"), percent)}
-        </Row>
-        <Row
-          id="transcript-body-ink"
-          label={t("Reply text")}
-          info={t("Scaled by Contrast in Theme.")}
-          modified={modified("transcriptBodyInk")}
-          onReset={reset("transcriptBodyInk")}
-        >
-          {slider("transcriptBodyInk", t("Reply text"), percent)}
-        </Row>
-        <Row
-          id="transcript-chrome-ink"
-          label={t("Tool and action text")}
-          info={t(
-            "A share of the reply text, so it is never brighter. Scaled by Contrast in Theme.",
-          )}
-          modified={modified("transcriptChromeInk")}
-          onReset={reset("transcriptChromeInk")}
-        >
-          {slider("transcriptChromeInk", t("Tool and action text"), percent)}
-        </Row>
-        <Row
-          id="transcript-cards"
+          value={preferences.messageColor}
+          options={[
+            { value: "theme", label: t("Theme") },
+            { value: "neutral", label: t("Neutral") },
+          ]}
+          disabled={preferencesUnavailable}
+          onChange={(messageColor) => set({ messageColor })}
+        />
+      </Row>
+      <Row
+        id="user-message-opacity"
+        label={t("Your message opacity")}
+        modified={modified("userMessageOpacity")}
+        onReset={reset("userMessageOpacity")}
+      >
+        {slider("userMessageOpacity", t("Your message opacity"), percent)}
+      </Row>
+      <Row
+        id="transcript-body-ink"
+        label={t("Reply text")}
+        info={t("Scaled by Contrast in Theme.")}
+        modified={modified("transcriptBodyInk")}
+        onReset={reset("transcriptBodyInk")}
+      >
+        {slider("transcriptBodyInk", t("Reply text"), percent)}
+      </Row>
+      <Row
+        id="transcript-chrome-ink"
+        label={t("Tool and action text")}
+        info={t("A share of the reply text, so it is never brighter. Scaled by Contrast in Theme.")}
+        modified={modified("transcriptChromeInk")}
+        onReset={reset("transcriptChromeInk")}
+      >
+        {slider("transcriptChromeInk", t("Tool and action text"), percent)}
+      </Row>
+      <Row
+        id="transcript-cards"
+        label={t("Cards and code")}
+        modified={modified("transcriptCards")}
+        onReset={reset("transcriptCards")}
+      >
+        <Segmented
           label={t("Cards and code")}
-          modified={modified("transcriptCards")}
-          onReset={reset("transcriptCards")}
-        >
-          <Segmented
-            label={t("Cards and code")}
-            value={preferences.transcriptCards}
-            options={TRANSCRIPT_CARDS.map((value) => ({ value, label: CARD_LABELS[value]() }))}
-            disabled={preferencesUnavailable}
-            onChange={(transcriptCards) => set({ transcriptCards })}
-          />
-        </Row>
-        <Row
-          id="transcript-actions"
+          value={preferences.transcriptCards}
+          options={TRANSCRIPT_CARDS.map((value) => ({ value, label: CARD_LABELS[value]() }))}
+          disabled={preferencesUnavailable}
+          onChange={(transcriptCards) => set({ transcriptCards })}
+        />
+      </Row>
+      <Row
+        id="transcript-actions"
+        label={t("Message actions")}
+        info={t("The last reply and keyboard focus always show them.")}
+        modified={modified("transcriptActions")}
+        onReset={reset("transcriptActions")}
+      >
+        <Segmented
           label={t("Message actions")}
-          info={t("The last reply and keyboard focus always show them.")}
-          modified={modified("transcriptActions")}
-          onReset={reset("transcriptActions")}
-        >
-          <Segmented
-            label={t("Message actions")}
-            value={preferences.transcriptActions}
-            options={TRANSCRIPT_ACTIONS.map((value) => ({ value, label: ACTION_LABELS[value]() }))}
-            disabled={preferencesUnavailable}
-            onChange={(transcriptActions) => set({ transcriptActions })}
-          />
-        </Row>
-        <Row
-          id="transcript-file-refs"
+          value={preferences.transcriptActions}
+          options={TRANSCRIPT_ACTIONS.map((value) => ({ value, label: ACTION_LABELS[value]() }))}
+          disabled={preferencesUnavailable}
+          onChange={(transcriptActions) => set({ transcriptActions })}
+        />
+      </Row>
+      <Row
+        id="transcript-file-refs"
+        label={t("File references")}
+        info={t("File and folder names in replies get an icon. Colored tints them by kind.")}
+        modified={modified("transcriptFileRefs")}
+        onReset={reset("transcriptFileRefs")}
+      >
+        <Segmented
           label={t("File references")}
-          info={t("File and folder names in replies get an icon. Colored tints them by kind.")}
-          modified={modified("transcriptFileRefs")}
-          onReset={reset("transcriptFileRefs")}
-        >
-          <Segmented
-            label={t("File references")}
-            value={preferences.transcriptFileRefs}
-            options={FILE_REF_STYLES.map((value) => ({
-              value,
-              label: FILE_REF_STYLE_LABELS[value](),
-            }))}
-            disabled={preferencesUnavailable}
-            onChange={(transcriptFileRefs) => set({ transcriptFileRefs })}
-          />
-        </Row>
-        {FILE_REF_KINDS.map((kind) => {
-          const field = FILE_TONE_FIELDS[kind];
-          return (
-            <Row
-              key={kind}
-              id={`file-tone-${kind}`}
+          value={preferences.transcriptFileRefs}
+          options={FILE_REF_STYLES.map((value) => ({
+            value,
+            label: FILE_REF_STYLE_LABELS[value](),
+          }))}
+          disabled={preferencesUnavailable}
+          onChange={(transcriptFileRefs) => set({ transcriptFileRefs })}
+        />
+      </Row>
+      {FILE_REF_KINDS.map((kind) => {
+        const field = FILE_TONE_FIELDS[kind];
+        return (
+          <Row
+            key={kind}
+            id={`file-tone-${kind}`}
+            label={FILE_KIND_LABELS[kind]()}
+            dependsOn={preferences.transcriptFileRefs === "colored"}
+            disabledReason={t("Turn on colored file references first")}
+            modified={modified(field)}
+            onReset={reset(field)}
+          >
+            <Select
               label={FILE_KIND_LABELS[kind]()}
-              dependsOn={preferences.transcriptFileRefs === "colored"}
-              disabledReason={t("Turn on colored file references first")}
-              modified={modified(field)}
-              onReset={reset(field)}
-            >
-              <Select
-                label={FILE_KIND_LABELS[kind]()}
-                hideLabel
-                controlWidth="compact"
-                value={preferences[field]}
-                disabled={preferencesUnavailable}
-                options={FILE_REF_TONES.map((tone) => ({
-                  value: tone,
-                  label: FILE_TONE_LABELS[tone](),
-                  icon: (
-                    <span
-                      aria-hidden="true"
-                      className="file-ref-swatch"
-                      style={{ "--file-ref-swatch": fileRefToneColor(tone) } as CSSProperties}
-                    />
-                  ),
-                }))}
-                onChange={(tone) => set({ [field]: tone as FileRefTone })}
-              />
-            </Row>
-          );
-        })}
-      </AdvancedSettings>
+              hideLabel
+              controlWidth="compact"
+              value={preferences[field]}
+              disabled={preferencesUnavailable}
+              options={FILE_REF_TONES.map((tone) => ({
+                value: tone,
+                label: FILE_TONE_LABELS[tone](),
+                icon: (
+                  <span
+                    aria-hidden="true"
+                    className="file-ref-swatch"
+                    style={{ "--file-ref-swatch": fileRefToneColor(tone) } as CSSProperties}
+                  />
+                ),
+              }))}
+              onChange={(tone) => set({ [field]: tone as FileRefTone })}
+            />
+          </Row>
+        );
+      })}
     </>
   );
 }

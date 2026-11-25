@@ -44,7 +44,6 @@ import {
   type LiveBackground,
 } from "../../../model/liveBackground";
 import {
-  AdvancedSettings,
   Group,
   Row,
   Segmented,
@@ -415,58 +414,50 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               onChange={appearance.onChatBackgroundScope}
             />
           </Row>
-          <AdvancedSettings
-            settingIds={[
-              "new-thread-background-effect",
-              "chat-background-empty-opacity",
-              "chat-background-session-opacity",
-            ]}
+          <Row
+            stacked
+            label={t("Background effect")}
+            info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
           >
-            <Row
-              stacked
+            <Segmented
               label={t("Background effect")}
-              info={NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[appearance.newThreadBackgroundEffect]}
-            >
-              <Segmented
-                label={t("Background effect")}
-                value={appearance.newThreadBackgroundEffect}
-                options={NEW_THREAD_BACKGROUND_EFFECTS.map((effect) => ({
-                  value: effect,
-                  label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect],
-                }))}
-                onChange={appearance.onNewThreadBackgroundEffect}
-                optionIdPrefix="new-thread-background-effect"
-              />
-            </Row>
-            <Row
-              label={t("Empty chat visibility")}
-              info={t("Background strength before a chat has messages.")}
-            >
-              <DraftSlider
-                label={t("Empty chat background visibility")}
-                value={emptyVisibility}
-                format={(next) => `${next}%`}
-                min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
-                max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-                apply={(next) => applyChatBackgroundEmptyOpacity(next / 100)}
-                commit={appearance.onChatBackgroundEmptyOpacity}
-              />
-            </Row>
-            <Row
-              label={t("Session visibility")}
-              info={t("Background strength once the conversation has messages.")}
-            >
-              <DraftSlider
-                label={t("Session background visibility")}
-                value={sessionVisibility}
-                format={(next) => `${next}%`}
-                min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
-                max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-                apply={(next) => applyChatBackgroundSessionOpacity(next / 100)}
-                commit={appearance.onChatBackgroundSessionOpacity}
-              />
-            </Row>
-          </AdvancedSettings>
+              value={appearance.newThreadBackgroundEffect}
+              options={NEW_THREAD_BACKGROUND_EFFECTS.map((effect) => ({
+                value: effect,
+                label: NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect],
+              }))}
+              onChange={appearance.onNewThreadBackgroundEffect}
+              optionIdPrefix="new-thread-background-effect"
+            />
+          </Row>
+          <Row
+            label={t("Empty chat visibility")}
+            info={t("Background strength before a chat has messages.")}
+          >
+            <DraftSlider
+              label={t("Empty chat background visibility")}
+              value={emptyVisibility}
+              format={(next) => `${next}%`}
+              min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
+              max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
+              apply={(next) => applyChatBackgroundEmptyOpacity(next / 100)}
+              commit={appearance.onChatBackgroundEmptyOpacity}
+            />
+          </Row>
+          <Row
+            label={t("Session visibility")}
+            info={t("Background strength once the conversation has messages.")}
+          >
+            <DraftSlider
+              label={t("Session background visibility")}
+              value={sessionVisibility}
+              format={(next) => `${next}%`}
+              min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
+              max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
+              apply={(next) => applyChatBackgroundSessionOpacity(next / 100)}
+              commit={appearance.onChatBackgroundSessionOpacity}
+            />
+          </Row>
         </>
       ) : null}
     </Group>

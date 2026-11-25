@@ -12,7 +12,6 @@ import { ProfileSwitch, useProfileRows } from "./SettingsProfileRow";
 import styles from "./schedule.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
-import { AdvancedSettings } from "../../../../shared/ui/settings";
 
 const notificationOptions = () =>
   [
@@ -138,39 +137,33 @@ export function AssistantScheduleFields({
           checked={value.keepAwakeWhileAway ?? true}
           onCheckedChange={(keepAwakeWhileAway) => onChange({ keepAwakeWhileAway })}
         />
-        <AdvancedSettings
-          title={t("Inactivity and recovery")}
-          defaultOpen={!validPolicy}
-          keepMounted
-        >
-          <AssistantPresetNumber
-            label={t("Idle after")}
-            value={value.idleMinutes ?? policy.idleMinutes}
-            min={1}
-            max={1440}
-            unit={t("minutes")}
-            presets={minutes([5, 10, 15, 30, 60])}
-            onChange={(idleMinutes) => onChange({ idleMinutes })}
-          />
-          <AssistantPresetNumber
-            label={t("Away after")}
-            value={value.awayMinutes ?? policy.awayMinutes}
-            min={2}
-            max={10080}
-            unit={t("minutes")}
-            presets={minutes([15, 30, 60, 120, 240])}
-            onChange={(awayMinutes) => onChange({ awayMinutes })}
-          />
-          <AssistantPresetNumber
-            label={t("Stall timeout")}
-            value={value.stallMinutes ?? 15}
-            min={5}
-            max={1440}
-            unit={t("minutes")}
-            presets={minutes([5, 15, 30, 60, 120])}
-            onChange={(stallMinutes) => onChange({ stallMinutes })}
-          />
-        </AdvancedSettings>
+        <AssistantPresetNumber
+          label={t("Idle after")}
+          value={value.idleMinutes ?? policy.idleMinutes}
+          min={1}
+          max={1440}
+          unit={t("minutes")}
+          presets={minutes([5, 10, 15, 30, 60])}
+          onChange={(idleMinutes) => onChange({ idleMinutes })}
+        />
+        <AssistantPresetNumber
+          label={t("Away after")}
+          value={value.awayMinutes ?? policy.awayMinutes}
+          min={2}
+          max={10080}
+          unit={t("minutes")}
+          presets={minutes([15, 30, 60, 120, 240])}
+          onChange={(awayMinutes) => onChange({ awayMinutes })}
+        />
+        <AssistantPresetNumber
+          label={t("Stall timeout")}
+          value={value.stallMinutes ?? 15}
+          min={5}
+          max={1440}
+          unit={t("minutes")}
+          presets={minutes([5, 15, 30, 60, 120])}
+          onChange={(stallMinutes) => onChange({ stallMinutes })}
+        />
         {!validPolicy && <InlineError>{t("Away must start later than idle.")}</InlineError>}
       </>
     );

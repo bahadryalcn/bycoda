@@ -17,3 +17,7 @@ Owner correction, 2026-11-04 (assistant settings, computer use). Recorded decisi
 ## IDE-style settings rail groups
 
 Owner request, 2026-11-08, wave E (settings rail), source: owner chat. Recorded decision text: the Settings rail is grouped like an IDE settings page instead of one flat list: App (General, Appearance, Chat, Voice, Notifications, Keybindings, Terminal, Group lock), Agents (Providers, Crews, Skills, MCP, Usage, Limits, Secrets), Code (Workspace, Source control), Connections, About (Archive, Policies), with the account avatar row at the bottom of the rail. Section ids, labels and the search index do not change; the group of a section and the order live in `model/settingsGroups.ts`. Maintenance and Labs groups join when such sections exist.
+
+## No collapsible "Advanced" rows in settings
+
+Owner request, 2026-11-26, source: owner chat. Recorded decision text (translated): "these open-close things in settings are very bad; even for one or two settings they were added and make the screen longer; let's remove them, all of them are used needlessly." Settings rows are always visible; the shared `AdvancedSettings` disclosure was removed. A long topic becomes another Group, not a collapsed row.

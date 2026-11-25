@@ -8,7 +8,7 @@ import {
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../../../../sessions/public/sessionListDisplay";
-import { AdvancedSettings, Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
+import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import { resetGroupDelay } from "../appearanceResets";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 
@@ -50,28 +50,26 @@ export function InterfaceBehaviorGroup({ appearance: a }: { appearance: Appearan
           onChange={a.onCollapsedProjectRailMode}
         />
       </Row>
-      <AdvancedSettings>
-        <Row
+      <Row
+        label={t("Group after holding")}
+        info={t("How long a dragged session rests on another before they form a group.")}
+        modified={display.groupDelayMs !== DEFAULT_SESSION_LIST_DISPLAY.groupDelayMs}
+        onReset={resetGroupDelay}
+      >
+        <Slider
           label={t("Group after holding")}
-          info={t("How long a dragged session rests on another before they form a group.")}
-          modified={display.groupDelayMs !== DEFAULT_SESSION_LIST_DISPLAY.groupDelayMs}
-          onReset={resetGroupDelay}
-        >
-          <Slider
-            label={t("Group after holding")}
-            value={delay}
-            display={t("{p1} ms", { p1: delay })}
-            min={GROUP_DELAY_MIN_MS}
-            max={GROUP_DELAY_MAX_MS}
-            step={50}
-            onChange={setDelayDraft}
-            onValueCommit={(groupDelayMs) => {
-              updateSessionListDisplay({ groupDelayMs });
-              setDelayDraft(null);
-            }}
-          />
-        </Row>
-      </AdvancedSettings>
+          value={delay}
+          display={t("{p1} ms", { p1: delay })}
+          min={GROUP_DELAY_MIN_MS}
+          max={GROUP_DELAY_MAX_MS}
+          step={50}
+          onChange={setDelayDraft}
+          onValueCommit={(groupDelayMs) => {
+            updateSessionListDisplay({ groupDelayMs });
+            setDelayDraft(null);
+          }}
+        />
+      </Row>
     </Group>
   );
 }

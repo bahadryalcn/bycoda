@@ -1,6 +1,5 @@
 import { writeGeneratorValue } from "../../../src/features/settings/ui/appearance/controls/themeGeneratorSession";
 import { ImageDropZone } from "../../../src/features/settings/ui/appearance/controls/ImageDropZone";
-import { AdvancedSettings, Row } from "../../../src/shared/ui/settings";
 import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
@@ -1321,14 +1320,6 @@ void Promise.all([
             Existing image
           </ImageDropZone>
           <ImageDropZone hasImage={false} busy onChoose={() => {}} />
-        </main>
-      ) : params.has("standaloneAdvancedProbe") ? (
-        <main className="bycoda-settings-workbench p-4">
-          <AdvancedSettings title="Standalone advanced" defaultOpen keepMounted>
-            <Row label="Standalone row">
-              <input aria-label="Standalone draft" defaultValue="draft" />
-            </Row>
-          </AdvancedSettings>
         </main>
       ) : params.has("antigravityVisual") ? (
         <main className="settings-topics p-4">

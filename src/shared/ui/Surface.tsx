@@ -74,11 +74,10 @@ export type SurfaceAppearance = {
   selectionRing?: "document";
   /** Visible inset outline for keyboard-focusable scroll regions. */
   focusRing?: "inset" | "preview-inset" | "outer";
-  /** Mixed settings rows and disclosures use their existing group hairlines and corners. */
+  /** Settings rows use their group hairlines and corners. */
   layout?:
     | "settings-group"
     | "settings-group-flat"
-    | "settings-advanced"
     | "settings-rows"
     | "settings-account-list";
   /** One hairline after each direct child except the last; no outer frame or layout.

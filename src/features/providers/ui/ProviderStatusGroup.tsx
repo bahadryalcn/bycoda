@@ -87,7 +87,7 @@ function updateNotice(
   return null;
 }
 /**
- * The CLI version with its update state, refresh and path actions, shown under the provider's
+ * The CLI version with its update state, refresh and path actions, shown beside the provider's
  * header.
  */
 export function ProviderStatusGroup({
@@ -153,7 +153,8 @@ export function ProviderStatusGroup({
   const notFound = hasProbedHarnessAvailability() && !available;
   const canCheck = UPDATABLE_HARNESSES.has(harness);
   const busy = canCheck && (checking || rowChecking);
-  const version = !notFound && check && check.status !== "unknown" ? check.installed : "—";
+  // An unknown version shows nothing rather than a placeholder.
+  const version = !notFound && check && check.status !== "unknown" ? check.installed : null;
   const checkLabel = t("{p0}: {p1}", { p0: t("Check for updates"), p1: title });
   const status =
     run.status === "updating"
@@ -192,9 +193,11 @@ export function ProviderStatusGroup({
   return (
     <div id={id} data-setting-id={`cli-path-${harness}`} className="provider-cli-status">
       <div className="provider-cli-status-line">
-        <Code size="caption" tone="secondary" className="tabular-nums">
-          {version}
-        </Code>
+        {version ? (
+          <Code size="caption" tone="secondary" className="tabular-nums">
+            {version}
+          </Code>
+        ) : null}
         {/* While work runs, its own control shows the progress; the mark would say it twice. */}
         {run.status === "updating" || busy ? null : (
           <Tooltip label={hint ?? status}>

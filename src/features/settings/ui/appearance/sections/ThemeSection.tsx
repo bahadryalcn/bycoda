@@ -1,5 +1,5 @@
 import { t, useLocale } from "../../../../../shared/i18n";
-import { AdvancedSettings, Group, Row, Segmented } from "../../../../../shared/ui/settings";
+import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "../../useAppearanceSettings";
 import { isDefaultAccent } from "../../AppearancePreviews";
 import {
@@ -96,21 +96,8 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         <Row id="saved-themes" stacked label={t("Saved themes")}>
           <SavedThemes appearance={appearance} />
         </Row>
-        <AdvancedSettings
-          title={t("Tone and interaction")}
-          settingIds={[
-            "canvas-background",
-            "hue",
-            "saturation",
-            "dark-lightness",
-            "surface-contrast",
-            "interaction-tint",
-            "interaction-strength",
-          ]}
-        >
-          <ToneSliders appearance={appearance} />
-          <StateLadder />
-        </AdvancedSettings>
+        <ToneSliders appearance={appearance} />
+        <StateLadder />
       </Group>
       <AppearanceSaveFeedback
         settingIds={[

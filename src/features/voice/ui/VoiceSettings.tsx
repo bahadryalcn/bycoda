@@ -3,14 +3,7 @@ import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { TextField } from "../../../shared/ui/TextField";
 import { t } from "../../../shared/i18n";
 import { useAssistantSnapshot } from "../../assistant/model/assistantClient";
-import {
-  AdvancedSettings,
-  Group,
-  RevealedSetting,
-  Segmented,
-  Select,
-  Toggle,
-} from "../../../shared/ui/settings";
+import { Group, RevealedSetting, Segmented, Select, Toggle } from "../../../shared/ui/settings";
 import { ProcessingRow } from "./VoiceProcessingRow";
 import { MicrophoneInputSettings } from "./MicrophoneInputSettings";
 import { DictationSettings } from "./DictationSettings";
@@ -160,19 +153,7 @@ function VoiceAssistantGroup({
       ) : null}
       <MicrophoneInputSettings />
       {companion ? (
-        <AdvancedSettings
-          title={t("More options")}
-          settingIds={[
-            "voice-speaker",
-            "voice-elevenlabs-voice",
-            "voice-device",
-            "voice-visual-style",
-            "voice-wake",
-            "voice-wake-phrase",
-            "voice-sleep-phrase",
-          ]}
-          keepMounted
-        >
+        <>
           {engine ? (
             <Row id="voice-speaker" label={t("Speaker")}>
               <Select
@@ -209,7 +190,7 @@ function VoiceAssistantGroup({
           {processingRow}
           <VoiceVisualStyleRow settings={settings} change={change} />
           <VoiceWakeRows settings={settings} change={change} profile={profile} />
-        </AdvancedSettings>
+        </>
       ) : (
         <>
           {processingRow}

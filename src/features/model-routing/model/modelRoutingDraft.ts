@@ -135,6 +135,16 @@ export function orderDraft(state: ModelRoutingState, limits: HostSettings): Orde
   };
 }
 
+/**
+ * A typed "keep for my own use" percentage: empty or a whole number from 0 to 100.
+ * Anything else keeps the previous text; a number above 100 becomes 100.
+ */
+export function percentDraft(text: string, previous: string): string {
+  if (text === "") return "";
+  if (!/^\d+$/.test(text)) return previous;
+  return String(Math.min(100, Number(text)));
+}
+
 function integer(text: string, min: number, max: number, message: string): number {
   const value = Number(text);
   if (!text.trim() || !Number.isSafeInteger(value) || value < min || value > max)

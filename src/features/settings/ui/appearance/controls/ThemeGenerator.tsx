@@ -13,9 +13,8 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../../shared/ui/Button";
 import { ImageLightbox } from "../../../../../shared/ui/ImageLightbox";
-import { Check, Dices, RefreshCw } from "../../../../../shared/ui/icons";
+import { Check, Dices, RefreshCw, Sparkles } from "../../../../../shared/ui/icons";
 import { MediaToolbarButton } from "../../../../../shared/ui/MediaToolbar";
-import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { Divider } from "../../../../../shared/ui/Divider";
 import { randomThemePrompt } from "../../../model/themePromptIdeas";
 import { Text } from "../../../../../shared/ui/Text";
@@ -322,43 +321,29 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
 
   return (
     <div className="theme-generator">
-      <div className="theme-generator-bar">
+      <div className="theme-generator-compose">
         <div className="theme-generator-prompt">
           <TextField
             fieldClassName="theme-generator-input"
-            fieldVariant="compact"
             label={t("Describe a theme")}
-            hideLabel
             value={prompt}
             placeholder={t("For example “midnight ocean” or “warm kiln”")}
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={onKeyDown}
-          />
-          <Button
-            iconOnly
-            label={t("Random prompt")}
-            size="sm"
-            variant="ghost"
-            onClick={rollPrompt}
-          >
-            <Dices />
-          </Button>
-          <Button
-            variant="primary"
-            tone="accent"
-            size="sm"
-            disabled={!trimmed || !available || busy}
-            disabledReason={
-              available
-                ? undefined
-                : t("Choose a model that supports text actions to generate a theme.")
+            endAdornment={
+              <Button
+                iconOnly
+                label={t("Random prompt")}
+                size="sm"
+                variant="ghost"
+                onClick={rollPrompt}
+              >
+                <Dices />
+              </Button>
             }
-            onClick={submit}
-          >
-            {t("Generate themes")}
-          </Button>
+          />
         </div>
-        <Disclosure summary={t("Options")} size="sm" className="theme-generator-options">
+        <div className="theme-generator-bar">
           <div className="theme-generator-config">
             <Suspense fallback={<LoadingText />}>
               <ModelPicker
@@ -395,14 +380,41 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
               }}
             />
           </div>
-        </Disclosure>
-        <div className="theme-generator-actions">
-          <Button size="sm" tooltip={t("Roll a random palette without a model")} onClick={random}>
-            {t("Random look")}
+          <Button
+            variant="primary"
+            tone="accent"
+            size="sm"
+            loading={busy}
+            disabled={!trimmed || !available || busy}
+            disabledReason={
+              available
+                ? undefined
+                : t("Choose a model that supports text actions to generate a theme.")
+            }
+            startIcon={<Sparkles />}
+            onClick={submit}
+          >
+            {t("Generate themes")}
           </Button>
         </div>
       </div>
-      {suggestions.length > 0 || jobs.length > 0 ? <Divider /> : null}
+      <Divider />
+      <div className="theme-generator-looks-head">
+        <Text weight="medium">{t("Looks")}</Text>
+        <Button
+          size="sm"
+          startIcon={<Dices />}
+          tooltip={t("Roll six random looks without a model")}
+          onClick={random}
+        >
+          {t("Shuffle looks")}
+        </Button>
+      </div>
+      {suggestions.length === 0 ? (
+        <Text size="secondary" tone="secondary">
+          {t("Shuffle for six random looks, or describe one above and generate.")}
+        </Text>
+      ) : null}
       {suggestions.length > 0 ? (
         <div className="theme-suggestions" role="group" aria-label={t("Suggested themes")}>
           {suggestions.map((suggestion, index) => {

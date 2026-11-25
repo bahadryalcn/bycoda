@@ -94,41 +94,41 @@
   color: var(--ui-text-secondary);
 }
 
-/* Prompt above its controls, followed by the current looks and independent generation activity. */
+/*
+ * Two blocks: compose (prompt, then model, image and the primary action on one row) and looks
+ * (heading with the model-free shuffle, then the result tiles). Generation activity follows.
+ */
 .theme-generator {
   display: grid;
   gap: 0.75rem;
   inline-size: 100%;
   min-inline-size: 0;
 }
-.theme-generator-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.375rem 0.5rem;
-}
-.theme-generator-prompt {
-  display: flex;
-  flex: 1 1 100%;
-  align-items: center;
-  gap: 0.25rem;
+.theme-generator-compose {
+  display: grid;
+  gap: 0.5rem;
   min-inline-size: 0;
 }
+.theme-generator-prompt,
 .theme-generator-input {
-  flex: 1 1 auto;
-  inline-size: auto;
+  inline-size: 100%;
   min-inline-size: 0;
 }
-.theme-generator-config,
-.theme-generator-actions {
+.theme-generator-bar,
+.theme-generator-looks-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.375rem 0.5rem;
+  min-inline-size: 0;
+}
+.theme-generator-config {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
   min-inline-size: 0;
-}
-.theme-generator-actions {
-  margin-inline-start: auto;
 }
 .theme-generation-activity,
 .theme-generation-entry {
@@ -159,10 +159,11 @@
   justify-content: flex-end;
   margin-inline-start: auto;
 }
+/* Result tiles: a wide swatch band beside the name, three per row at dialog width. */
 .theme-suggestions {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+  gap: 0.5rem;
 }
 .theme-suggestion-card {
   display: grid;
@@ -194,14 +195,18 @@
 .theme-swatch-strip {
   display: flex;
   flex: none;
-  inline-size: 2.5rem;
-  block-size: 0.875rem;
+  inline-size: 3.5rem;
+  block-size: 1rem;
   overflow: hidden;
   border-radius: 0.3125rem;
   border: 1px solid var(--color-stroke);
 }
 .theme-swatch-strip > span {
   flex: 1;
+}
+/* The accent gets the widest band so harmonies read at a glance. */
+.theme-swatch-strip > span:last-child {
+  flex: 1.6;
 }
 /* The full image ratio keeps the candidate readable against its palette. */
 .theme-suggestion-image {

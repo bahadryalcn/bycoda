@@ -838,8 +838,8 @@ describe("settings search", () => {
     "transcript-chrome-ink",
     "transcript-cards",
     "transcript-actions",
-  ])("opens Chat for the transcript setting %s", (id) => {
-    expect(settingsSectionForAnchor("appearance", id)).toBe("chat");
+  ])("opens Appearance for the transcript setting %s", (id) => {
+    expect(settingsSectionForAnchor("chat", id)).toBe("appearance");
   });
 
   it("routes tool search results to one page with stable row anchors", () => {

@@ -646,7 +646,6 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   // Glass is off by default off Linux; the sliders only act while it is on.
   const glass = page.getByRole("switch", { name: "Glass", exact: true });
   if (!(await glass.isChecked())) await glass.click();
-  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   const opacity = page
     .locator('[data-setting-id="sidebar-opacity"]')
     .getByRole("slider", { name: "Sidebar opacity", exact: true });
@@ -663,7 +662,6 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   });
   await page.reload();
   await openBackgroundLayer(page, "Glass");
-  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-valuenow", "99");
   const blur = page
     .locator('[data-setting-id="blur"]')
@@ -675,7 +673,6 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   );
   await page.goto("/tests/browser/settings/settings.html?section=appearance&theme=light&lang=en");
   await openBackgroundLayer(page, "Glass");
-  await expect(page.locator("details.settings-advanced")).toHaveCount(0);
   await expect(opacity).toHaveAttribute("aria-disabled", "true");
   await expect(blur).toHaveAttribute("aria-disabled", "true");
   await page.setViewportSize({ width: 390, height: 900 });
@@ -1004,7 +1001,6 @@ for (const lang of languages)
               : page.locator(".bycoda-settings-categories").getByRole("tab", { selected: true }),
           ).toBeVisible();
           await expect(page.locator(".bycoda-settings-panel")).toBeVisible();
-          await expect(page.locator("details.settings-advanced")).toHaveCount(0);
           await page.waitForTimeout(100);
           const overflow = await page.locator(".bycoda-settings-panel").evaluate((panel) => {
             const bounds = panel.getBoundingClientRect();

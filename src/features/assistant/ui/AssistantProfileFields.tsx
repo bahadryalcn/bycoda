@@ -6,7 +6,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Select } from "../../../shared/ui/Select";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { AdvancedSettings, Row } from "../../../shared/ui/settings";
+import { Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
 import { AssistantWorkFields } from "./settings/AssistantWorkFields";
@@ -99,7 +99,7 @@ export function AssistantProfileFields({
               )}
             </ProfileRow>
             <ReviewHint review={languageReview} field="addressAs" />
-            <AdvancedSettings title={t("Avatar")} keepMounted>
+            <>
               <Row label={null} stacked>
                 <AssistantAvatarPicker value={value.avatar} onChange={onChange} />
               </Row>
@@ -116,7 +116,7 @@ export function AssistantProfileFields({
                 checked={showTitle}
                 onCheckedChange={(showTitle) => onChange({ showTitle })}
               />
-            </AdvancedSettings>
+            </>
           </>
         )}
       </>

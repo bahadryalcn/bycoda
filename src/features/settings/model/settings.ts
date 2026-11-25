@@ -756,7 +756,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "streaming-text-mode",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Streaming text animation");
     },
@@ -793,7 +793,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     : []),
   {
     id: "chat-width",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Chat width");
     },
@@ -801,7 +801,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "code-word-wrap",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Word wrap");
     },
@@ -847,7 +847,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "transcript-layout",
-    section: "chat",
+    section: "appearance",
     get label() {
       return t("Transcript layout");
     },

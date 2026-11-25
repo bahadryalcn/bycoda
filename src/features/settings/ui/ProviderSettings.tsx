@@ -172,7 +172,14 @@ export function ProvidersPage({
   const handledReveal = useRef<string | null>(null);
 
   useEffect(() => {
-    void probeHarnessAvailability();
+    // The first visit checks CLI versions once so each header shows its version unprompted.
+    if (getHarnessUpdateSnapshot().checks) {
+      void probeHarnessAvailability();
+      return;
+    }
+    void checkInstalledHarnessVersions()
+      .then(() => setCheckedAt(Date.now()))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -487,7 +494,7 @@ export function ProvidersPage({
                 {/* Overview stays mounted across tabs so CLI path, ACP and sign-in drafts survive. */}
                 <div className="provider-cli-section settings-topics">
                   {activeProvider ? (
-                    <>
+                    <div className="provider-detail-head">
                       <ProviderDetailHeader
                         harness={activeProvider}
                         signInCompleted={standaloneSignIn === activeProvider}
@@ -510,7 +517,7 @@ export function ProvidersPage({
                           />
                         </div>
                       ))}
-                    </>
+                    </div>
                   ) : null}
                   {accountBusy ? (
                     <InlineMessage tone="neutral" icon={null} live="polite">

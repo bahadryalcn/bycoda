@@ -40,7 +40,7 @@ async function choose(option: string) {
   await act(async () => item.click());
 }
 
-it("opening More options leaves the saved microphone preferences untouched", async () => {
+it("shows the microphone preferences without changing the saved ones", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),
     wakeEnabled: true,
@@ -49,10 +49,6 @@ it("opening More options leaves the saved microphone preferences untouched", asy
   });
   const saved = localStorage.getItem("bycoda.voice");
   await act(async () => root.render(createElement(Fixture)));
-  const disclosure = button("More options");
-  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-  await act(async () => disclosure.click());
-  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   expect(
     host.querySelector('[data-setting-id="voice-idle-sleep"]')?.closest("[hidden]"),
   ).toBeNull();
@@ -61,18 +57,18 @@ it("opening More options leaves the saved microphone preferences untouched", asy
   expect(change).not.toHaveBeenCalled();
 });
 
-it("keeps the visible conversation to one pause choice and the memory switch", async () => {
+it("shows the pause choice, the memory switch and every other conversation row", async () => {
   await act(async () => root.render(createElement(Fixture)));
-  for (const id of ["voice-turn-silence", "voice-memory"])
-    expect(host.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"), id).toBeNull();
   for (const id of [
+    "voice-turn-silence",
+    "voice-memory",
     "voice-barge-in",
     "voice-remove-fillers",
     "voice-hold-announcements",
     "voice-idle-sleep",
     "voice-return-call",
   ])
-    expect(host.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"), id).not.toBeNull();
+    expect(host.querySelector(`[data-setting-id="${id}"]`), id).not.toBeNull();
   // The old separate switch, the listening window and the preset are gone.
   expect(host.querySelector('[data-setting-id="voice-manual-turn-end"]')).toBeNull();
   expect(host.querySelector('[data-setting-id="voice-return-call-seconds"]')).toBeNull();
@@ -89,7 +85,6 @@ it("ends the turn manually through the same acknowledged save and keeps the save
     turnEndSilence: 4,
   });
   await act(async () => root.render(createElement(Fixture)));
-  expect(button("More options").getAttribute("aria-expanded")).toBe("true");
   await choose("I end my turn");
   expect(loadVoiceSettings()).toMatchObject({
     manualTurnEnd: true,

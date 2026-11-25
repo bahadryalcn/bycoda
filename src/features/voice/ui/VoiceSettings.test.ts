@@ -61,40 +61,30 @@ async function setup(enabled = true) {
   await act(async () => root!.render(createElement(VoiceSettings)));
 }
 
-it.each(["voice-wake", "voice-wake-phrase", "voice-sleep-phrase"])(
-  "reveals %s only once voice is on, opening More options without changing any opt-in",
-  async (target) => {
-    await setup(false);
-    const row = (id: string) => container.querySelector(`[data-setting-id="${id}"]`);
-    // Wake lives with the voice assistant; there is no dimmed stub while voice is off.
-    expect(row("voice-wake")).toBeNull();
-    expect(row("voice-wake-phrase")).toBeNull();
+it("shows the wake rows only once voice is on, without changing any opt-in", async () => {
+  await setup(false);
+  const row = (id: string) => container.querySelector(`[data-setting-id="${id}"]`);
+  // Wake lives with the voice assistant; there is no dimmed stub while voice is off.
+  expect(row("voice-wake")).toBeNull();
+  expect(row("voice-wake-phrase")).toBeNull();
 
-    await act(async () =>
-      row("voice-companion")!.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
-    );
-    expect(loadVoiceSettings().enabled).toBe(true);
-    expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
-    expect(row("voice-wake")!.closest("[hidden]")).not.toBeNull();
+  await act(async () =>
+    row("voice-companion")!.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+  );
+  expect(loadVoiceSettings().enabled).toBe(true);
+  expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
+  expect(row("voice-wake")!.closest("[hidden]")).toBeNull();
+  expect(row("voice-wake-phrase")).toBeNull();
+  expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
 
-    await act(async () =>
-      root!.render(
-        createElement(RevealedSetting.Provider, { value: target }, createElement(VoiceSettings)),
-      ),
-    );
-    expect(row("voice-wake")!.closest("[hidden]")).toBeNull();
-    expect(row("voice-wake-phrase")).toBeNull();
-    expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
-
-    await act(async () =>
-      row("voice-wake")!.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
-    );
-    expect(row("voice-wake-phrase")!.querySelector("input")).not.toBeNull();
-    expect(row("voice-sleep-phrase")!.querySelector("input")).not.toBeNull();
-    expect(loadVoiceSettings().wakeEnabled).toBe(true);
-    expect(backend.setup).not.toHaveBeenCalled();
-  },
-);
+  await act(async () =>
+    row("voice-wake")!.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+  );
+  expect(row("voice-wake-phrase")!.querySelector("input")).not.toBeNull();
+  expect(row("voice-sleep-phrase")!.querySelector("input")).not.toBeNull();
+  expect(loadVoiceSettings().wakeEnabled).toBe(true);
+  expect(backend.setup).not.toHaveBeenCalled();
+});
 it("enables dictation independently without microphone capture or companion settings", async () => {
   await setup(false);
   const capture = vi.fn();
@@ -435,8 +425,6 @@ it("does not apply a completed background job over newer voice preferences", asy
 it("chooses visual previews with radio arrows and keeps runtime setup unchanged", async () => {
   await setup();
   await advance();
-  // The first More options belongs to the Voice assistant group, which holds the look.
-  await click("More options");
   const group = container.querySelector('[role="radiogroup"][aria-label="Visual style"]')!;
   const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
   expect(radios.map((radio) => radio.textContent?.trim())).toEqual([
@@ -525,12 +513,6 @@ it("shows conversation and companion preferences without changing saved values o
       .querySelector('[data-setting-id="voice-turn-silence"] button')
       ?.getAttribute("aria-label"),
   ).toBe("Wait before replying: I end my turn");
-  for (const id of ["voice-device", "voice-idle-sleep", "voice-visual-style"]) {
-    expect(
-      container.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"),
-      id,
-    ).not.toBeNull();
-  }
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(backend.inspect).toHaveBeenCalledTimes(calls);
   expect(backend.setup).not.toHaveBeenCalled();
@@ -660,30 +642,20 @@ it("chooses the default cloud dictation model per provider", async () => {
   expect(document.querySelector('[data-setting-id="voice-openrouter-key"]')).not.toBeNull();
 });
 
-it("keeps core voice choices visible and retains optional dictation and processing controls behind disclosures", async () => {
+it("shows core voice choices and every dictation detail without disclosures", async () => {
   saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "openai" });
   await setup();
   const row = (id: string) => container.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
-  expect(row("voice-mode").closest("[hidden]")).toBeNull();
-  expect(row("voice-speaker").closest("[hidden]")).not.toBeNull();
-  expect(row("dictation-engine").closest("[hidden]")).toBeNull();
-  expect(row("dictation-model").closest("[hidden]")).toBeNull();
-  expect(row("voice-device").closest("[hidden]")).not.toBeNull();
-  const language = row("dictation-language");
-  const shortcut = row("dictation-shortcut-mode");
-  const dictionary = row("dictation-dictionary");
-  expect(language.closest("[hidden]")).not.toBeNull();
-  expect(shortcut.closest("[hidden]")).not.toBeNull();
-  expect(dictionary.closest("[hidden]")).not.toBeNull();
-  // The dictionary has no disclosure of its own: one More options opens every dictation detail.
-  const more = dictionary.closest('[data-settings-part="advanced"]')!;
-  expect(more).toBe(language.closest('[data-settings-part="advanced"]'));
-  expect(more.querySelectorAll('[data-settings-part="advanced"]')).toHaveLength(0);
-  await act(async () => more.querySelector("button")!.click());
-  expect(row("dictation-dictionary")).toBe(dictionary);
-  expect(language.closest("[hidden]")).toBeNull();
-  expect(shortcut.closest("[hidden]")).toBeNull();
-  expect(dictionary.closest("[hidden]")).toBeNull();
+  for (const id of [
+    "voice-mode",
+    "dictation-engine",
+    "dictation-model",
+    "dictation-language",
+    "dictation-shortcut-mode",
+    "dictation-dictionary",
+  ])
+    expect(row(id).closest("[hidden]"), id).toBeNull();
+  expect(container.querySelector('[data-settings-part="advanced"]')).toBeNull();
   expect(backend.setup).not.toHaveBeenCalled();
 });
 

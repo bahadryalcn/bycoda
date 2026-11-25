@@ -6,7 +6,7 @@ import { t } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
-import { AdvancedSettings, Row, Select, Toggle } from "../../shared/ui/settings";
+import { Row, Select, Toggle } from "../../shared/ui/settings";
 import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RefreshCw } from "../../shared/ui/icons";
@@ -553,39 +553,37 @@ export function DesktopControlSettings({
   );
   const custom = draft && (
     <>
-      <AdvancedSettings title={t("Custom helper")} defaultOpen={false} keepMounted>
-        <Row
+      <Row
+        label={t("Helper file")}
+        info={
+          <InfoTooltip>
+            {t(
+              "Use a helper you built or trust instead of the verified one. Its checksum must match.",
+            )}
+          </InfoTooltip>
+        }
+        stacked
+      >
+        <TextField
           label={t("Helper file")}
-          info={
-            <InfoTooltip>
-              {t(
-                "Use a helper you built or trust instead of the verified one. Its checksum must match.",
-              )}
-            </InfoTooltip>
-          }
-          stacked
-        >
-          <TextField
-            label={t("Helper file")}
-            hideLabel
-            value={draft.binaryPath}
-            onChange={(event) => setDraft({ ...draft, binaryPath: event.target.value })}
-            disabled={pending}
-            monospace
-          />
-        </Row>
-        <Row label={t("Checksum (SHA-256)")} stacked>
-          <TextField
-            label={t("Checksum (SHA-256)")}
-            hideLabel
-            value={draft.binarySha256}
-            onChange={(event) => setDraft({ ...draft, binarySha256: event.target.value })}
-            disabled={pending}
-            monospace
-            maxLength={64}
-          />
-        </Row>
-      </AdvancedSettings>
+          hideLabel
+          value={draft.binaryPath}
+          onChange={(event) => setDraft({ ...draft, binaryPath: event.target.value })}
+          disabled={pending}
+          monospace
+        />
+      </Row>
+      <Row label={t("Checksum (SHA-256)")} stacked>
+        <TextField
+          label={t("Checksum (SHA-256)")}
+          hideLabel
+          value={draft.binarySha256}
+          onChange={(event) => setDraft({ ...draft, binarySha256: event.target.value })}
+          disabled={pending}
+          monospace
+          maxLength={64}
+        />
+      </Row>
       {!saveRef && (
         <div className={styles.saveArea}>
           <div className={styles.actions}>

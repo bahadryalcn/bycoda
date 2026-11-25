@@ -318,7 +318,8 @@ describe("settings pages", () => {
       tab: "Motion",
     },
     {
-      section: "chat",
+      section: "appearance",
+      tab: "Chat",
       key: "bycoda.transcriptLayout",
       initial: "chat",
       next: "full",
@@ -416,12 +417,6 @@ describe("settings pages", () => {
       await render(section as SettingsSectionId);
       // Hidden Appearance tabs pause their updates, so the control's tab is opened first.
       if (tab) await openAppearanceTab(tab);
-      if (section === "chat") {
-        const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-          (button) => button.textContent === "Advanced conversation settings",
-        );
-        await act(async () => advanced?.click());
-      }
       const control = () => container.querySelectorAll(selector)[index];
       expect(control(), key).toBeDefined();
       const before = control()!.getAttribute("aria-checked");
@@ -515,7 +510,7 @@ describe("settings pages", () => {
       interfaceFont: "System",
     });
     expect(localStorage.getItem("bycoda.showExcludedFiles")).toBe("true");
-    await render("chat");
+    await openAppearanceTab("Chat");
     expect(container.querySelector('[aria-label="Word wrap"]')?.getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -523,7 +518,7 @@ describe("settings pages", () => {
 
   it("groups settings by the workflow they configure and preserves old anchor routes", async () => {
     const ownership = {
-      chat: ["chat-width", "code-word-wrap", "streaming-text-mode", "helper-models"],
+      chat: ["helper-models"],
       worktrees: ["git-generation-default", "diff-view", "project-worktrees"],
       groupLock: ["mask-emails", "file-access", "start-in-privacy-mode"],
     } as const;
@@ -552,7 +547,8 @@ describe("settings pages", () => {
       }
     }
     expect(settingsSectionForAnchor("chat", "unknown-anchor")).toBe("chat");
-    expect(settingsSectionForAnchor(undefined, "chat-width")).toBe("chat");
+    for (const id of ["chat-width", "code-word-wrap", "streaming-text-mode", "transcript-layout"])
+      expect(settingsSectionForAnchor("chat", id)).toBe("appearance");
     expect(settingsSectionForAnchor("appearance")).toBe("appearance");
     expect(SETTINGS_SECTIONS.find((entry) => entry.id === "groupLock")?.group).toBe("privacy");
   });
@@ -709,10 +705,9 @@ describe("settings pages", () => {
         (node) => !node.closest("[data-transcript-preview]"),
       ),
     ).toHaveLength(0);
-    // Tone fields sit in the Advanced section; Settings search reveals and opens it for them.
-    expect(container.querySelector('[data-setting-id="hue"]')).toBeNull();
-    await render("appearance", { anchor: "dark-lightness" });
+    // Tone fields are always visible; no setting sits behind a disclosure.
     expect(container.querySelector('[data-setting-id="hue"]')).not.toBeNull();
+    await render("appearance", { anchor: "dark-lightness" });
     expect(container.querySelector('[data-setting-id="dark-lightness"]')).not.toBeNull();
   });
 
