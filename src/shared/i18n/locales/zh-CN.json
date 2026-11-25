@@ -12755,5 +12755,14 @@
   "Next request": "下一个请求",
   "{p0} approved, {p1} denied": "已批准 {p0} 个，已拒绝 {p1} 个",
   "Choose Approve or Deny for every request first.": "请先为每个请求选择批准或拒绝。",
-  "{p0} requests need approval": "{p0} 个请求等待批准"
+  "{p0} requests need approval": "{p0} 个请求等待批准",
+  "Continue with {p0} more minutes": "再增加{p0}分钟并继续",
+  "Show background sessions": "显示后台会话",
+  "Task worker session": "任务执行会话",
+  "Task review session": "任务审查会话",
+  "Goal planning session": "目标规划会话",
+  "Goal final review session": "目标最终审查会话",
+  "Automation session": "自动化会话",
+  "Steward session": "Steward 会话",
+  "Crew session": "Crew 会话"
 }

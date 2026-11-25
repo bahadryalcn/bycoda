@@ -1,7 +1,9 @@
 export { formatRecentRelative as formatRelative } from "../../../shared/i18n/format";
 import { sessionIssue } from "./sessionIssue";
 import {
+  isListedConversation,
   isUserConversation,
+  sessionBackgroundOwner,
   type DelegationCollectionMetadata,
 } from "../../../shared/model/host-contracts/delegation";
 import { wasTurnInterrupted } from "./inFlight";
@@ -156,6 +158,7 @@ export function liveSessionInfos(
       interruptionKnown: !session.historyPartial && !session.historyLoading,
       activityAt: sessionActivityAt(session),
       managedBy: session.managedBy,
+      backgroundOwner: sessionBackgroundOwner(session),
     });
   }
   return infos;
@@ -211,7 +214,7 @@ export function buildRecentSessions({
   const liveById = new Map(live.map((info) => [identity(info.cwd, info.id), info]));
   const rows = new Map<string, RecentSessionRow>();
   for (const row of stored) {
-    if (!isUserConversation(row)) continue;
+    if (!isListedConversation(row)) continue;
     const projectless = isProjectlessCwd(row.cwd);
     if (!projectless && !projectKeys.has(pathKey(row.cwd))) continue;
     const info = liveById.get(identity(row.cwd, row.id));
@@ -244,7 +247,7 @@ export function buildRecentSessions({
   // only just started. An idle local one is skipped, since it is either older
   // than the stored window or about to arrive with the next fetch.
   for (const info of live) {
-    if (!isUserConversation(info)) continue;
+    if (!isListedConversation(info)) continue;
     if (rows.has(identity(info.cwd, info.id))) continue;
     if (!isProjectlessCwd(info.cwd) && !projectKeys.has(pathKey(info.cwd))) continue;
     const remote = isRemoteProjectPath(info.cwd);

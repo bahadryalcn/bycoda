@@ -16,6 +16,16 @@ const parent = { parentSessionId: "p", runId: "r", kind: "subagent", model: "m",
 const row = (id: string, child = false) =>
   ({ id, cwd: "/repo", ...(child ? { delegationParent: parent } : {}) }) as SessionSummary;
 
+const remoteHost = (id: string): HostSessionSummary => ({
+  id,
+  title: id,
+  projectId: "project",
+  revision: 1,
+  status: "idle",
+  updatedAt: 2,
+  harness: "codex",
+});
+
 describe("sidebar session collections", () => {
   it("checks each freshly listed project once, even after a stale row for that project", () => {
     const rows = [
@@ -80,6 +90,29 @@ describe("sidebar session collections", () => {
     ]);
     expect(sessions[0].managedBy).toEqual(managedBy);
     expect(sessions[1].managedBy).toBeUndefined();
+  });
+
+  it("hides background sessions unless pinned or shown, and keeps legacy ones", () => {
+    const owner = { kind: "task", id: "t", role: "reviewer" } as const;
+    const background = (id: string, extra = {}) =>
+      ({ id, cwd: "/repo", backgroundOwner: owner, ...extra }) as SessionSummary;
+    const rows = [row("chat"), background("bg"), background("pinned", { pinned: true })];
+    expect(projectSessionCollection(false, [], rows, "/repo").map((s) => s.id)).toEqual([
+      "chat",
+      "pinned",
+    ]);
+    expect(projectSessionCollection(false, [], rows, "/repo", true).map((s) => s.id)).toEqual([
+      "chat",
+      "bg",
+      "pinned",
+    ]);
+    const hosted = { ...remoteHost("bg"), backgroundOwner: owner } as HostSessionSummary;
+    expect(projectSessionCollection(true, [hosted, remoteHost("chat")], [], "/repo")).toHaveLength(
+      1,
+    );
+    const shown = projectSessionCollection(true, [hosted], [], "/repo", true);
+    expect(shown[0]?.backgroundOwner).toEqual(owner);
+    expect(folderCandidates(false, rows)).toHaveLength(2);
   });
 
   it("keeps delegated children out of project rows and saved folders", () => {

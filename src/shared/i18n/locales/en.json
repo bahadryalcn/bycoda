@@ -12755,5 +12755,14 @@
   "Next request": "Next request",
   "{p0} approved, {p1} denied": "{p0} approved, {p1} denied",
   "Choose Approve or Deny for every request first.": "Choose Approve or Deny for every request first.",
-  "{p0} requests need approval": "{p0} requests need approval"
+  "{p0} requests need approval": "{p0} requests need approval",
+  "Continue with {p0} more minutes": "Continue with {p0} more minutes",
+  "Show background sessions": "Show background sessions",
+  "Task worker session": "Task worker session",
+  "Task review session": "Task review session",
+  "Goal planning session": "Goal planning session",
+  "Goal final review session": "Goal final review session",
+  "Automation session": "Automation session",
+  "Steward session": "Steward session",
+  "Crew session": "Crew session"
 }

@@ -26,6 +26,12 @@ export type TaskRunBudgetUsage = {
   /** False when older work exists outside the durable run ledger. Totals are lower bounds. */
   historyComplete: boolean;
   agentMinutes: number;
+  /**
+   * Present only when some interval is not verified. A run never outlasts its wall-clock span, so
+   * `extraMinutes` bounds the bounded runs above their verified time; `unboundedRuns` counts runs
+   * (or unknown history) whose timestamps cannot bound them.
+   */
+  uncertainty?: { extraMinutes: number; unboundedRuns: number };
   attempts: number;
   completedRuns: number;
   runningRuns: number;
@@ -40,6 +46,48 @@ export type TaskRunBudgetUsage = {
   estimatedCostUsd: null;
   measuredAt: number;
 };
+/** What the owner accepted when continuing a task past an uncertain interval; it is not counted again. */
+export type TaskRuntimeAcceptance = { extraMinutes: number; unboundedRuns: number; at: number };
+
+/** Most agent minutes the usage can stand for, or null when no run-time bound exists. */
+export function usageUpperBoundMinutes(
+  usage: Pick<TaskRunBudgetUsage, "agentMinutes" | "uncertainty">,
+  accepted?: Pick<TaskRuntimeAcceptance, "extraMinutes" | "unboundedRuns">,
+): number | null {
+  const uncertainty = usage.uncertainty;
+  if (!uncertainty) return usage.agentMinutes;
+  if (uncertainty.unboundedRuns > (accepted?.unboundedRuns ?? 0)) return null;
+  return usage.agentMinutes + Math.max(0, uncertainty.extraMinutes - (accepted?.extraMinutes ?? 0));
+}
+
+const minutesText = (value: number) => `${Math.round(value * 10) / 10} min`;
+/** The owner-decision facts: what is verified, the most it can be, and the limit. */
+export function runtimeDecisionMessage(
+  verifiedMinutes: number,
+  upperBoundMinutes: number | null,
+  limitMinutes: number,
+): string {
+  return `Earlier runs include an unverified interval: verified ${minutesText(verifiedMinutes)}, ${
+    upperBoundMinutes === null
+      ? "no known upper bound"
+      : `at most ${minutesText(upperBoundMinutes)}`
+  }, limit ${minutesText(limitMinutes)}.`;
+}
+
+/** A blocked task whose unverified earlier runtime can reach its limit: the owner decides. */
+export function canContinueTaskRuntime(task: {
+  status: string;
+  maxRunMinutes: number;
+  budgetUsage?: TaskRunBudgetUsage;
+  runtimeAccepted?: TaskRuntimeAcceptance;
+}): boolean {
+  const usage = task.budgetUsage;
+  if (task.status !== "blocked" || task.maxRunMinutes <= 0 || !usage || usage.historyComplete)
+    return false;
+  const upper = usageUpperBoundMinutes(usage, task.runtimeAccepted);
+  return usage.agentMinutes < task.maxRunMinutes && (upper === null || upper >= task.maxRunMinutes);
+}
+
 export type TaskRunBudgetEvaluation = {
   usage: TaskRunBudgetUsage;
   blocked: boolean;

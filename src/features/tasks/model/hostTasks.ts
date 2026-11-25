@@ -5,7 +5,12 @@ import {
 } from "../../../shared/model/host-contracts/model-routing";
 import { NO_VERDICT } from "./taskRules";
 import type { TaskAcceptanceReport } from "./taskAcceptance";
-import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
+import {
+  parseTaskRunBudget,
+  type TaskRunBudget,
+  type TaskRunBudgetUsage,
+  type TaskRuntimeAcceptance,
+} from "./taskBudget";
 import {
   parseTaskPreflightRequirements,
   type TaskPreflightRequirement,
@@ -238,6 +243,8 @@ export type HostTask = HostTaskInput & {
   };
   budgetUsage?: TaskRunBudgetUsage;
   budgetStop?: string;
+  /** The uncertain runtime the owner accepted when continuing; earlier uncertainty is not counted again. */
+  runtimeAccepted?: TaskRuntimeAcceptance;
   preflight?: TaskPreflightReport;
   /** Durable, host-owned identity of this task's current crew execution. */
   crewExecutionId?: string;

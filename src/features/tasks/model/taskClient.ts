@@ -63,6 +63,7 @@ export type BoardTask = HostTask & {
   pendingRefresh?: boolean;
   reviewRecheckSupported?: boolean;
   finishWithFindingsSupported?: boolean;
+  continueRuntimeSupported?: boolean;
   blockedTakeoverSupported?: boolean;
   workspaceControlsSupported?: boolean;
 };
@@ -207,6 +208,7 @@ export function hostTaskSnapshot(task: BoardTask): HostTask {
     reorderGuardSupported: _reorderGuardSupported,
     reviewRecheckSupported: _reviewRecheckSupported,
     finishWithFindingsSupported: _finishWithFindingsSupported,
+    continueRuntimeSupported: _continueRuntimeSupported,
     blockedTakeoverSupported: _blockedTakeoverSupported,
     workspaceControlsSupported: _workspaceControlsSupported,
     ...host
@@ -502,6 +504,7 @@ export async function listBoardTaskResults(
               ...task,
               reviewRecheckSupported: capabilities.includes("tasks.review-recheck"),
               finishWithFindingsSupported: capabilities.includes("tasks.finish-with-findings"),
+              continueRuntimeSupported: capabilities.includes("tasks.continue-runtime"),
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
               evaluationSupported: capabilities.includes("tasks.evaluation"),
@@ -719,6 +722,7 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     cwd: task.cwd,
     reviewRecheckSupported: task.reviewRecheckSupported,
     finishWithFindingsSupported: task.finishWithFindingsSupported,
+    continueRuntimeSupported: task.continueRuntimeSupported,
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
     evaluationSupported: task.evaluationSupported,
@@ -823,6 +827,18 @@ export async function finishTaskWithFindings(task: BoardTask): Promise<BoardTask
     true,
   );
   return updatedBoardTask(task, updated);
+}
+
+/** Accepts the unverified earlier runtime, adds minutes to the limit and starts the task again. */
+export async function continueTaskRuntime(task: BoardTask, minutes: number): Promise<BoardTask> {
+  const updated = await remoteRequest<HostTask>(
+    task.machineId,
+    "tasks.continueRuntime",
+    { taskId: task.id, minutes },
+    false,
+    true,
+  );
+  return await startTask(updatedBoardTask(task, updated));
 }
 
 export async function readTaskNotes(task: BoardTask, noteIds: string[]): Promise<BoardTask> {

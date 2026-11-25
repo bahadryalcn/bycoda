@@ -12755,5 +12755,14 @@
   "Next request": "次のリクエスト",
   "{p0} approved, {p1} denied": "承認 {p0} 件、拒否 {p1} 件",
   "Choose Approve or Deny for every request first.": "先にすべてのリクエストで承認か拒否を選んでください。",
-  "{p0} requests need approval": "{p0} 件のリクエストが承認待ちです"
+  "{p0} requests need approval": "{p0} 件のリクエストが承認待ちです",
+  "Continue with {p0} more minutes": "さらに{p0}分で続行",
+  "Show background sessions": "バックグラウンドのセッションを表示",
+  "Task worker session": "タスク作業セッション",
+  "Task review session": "タスクレビューセッション",
+  "Goal planning session": "ゴール計画セッション",
+  "Goal final review session": "ゴール最終レビューセッション",
+  "Automation session": "オートメーションセッション",
+  "Steward session": "スチュワードセッション",
+  "Crew session": "クルーセッション"
 }

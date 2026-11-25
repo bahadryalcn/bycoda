@@ -1,4 +1,7 @@
-import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
+import {
+  isListedConversation,
+  isUserConversation,
+} from "../../../shared/model/host-contracts/delegation";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import type { WorkspaceSnapshot } from "./workspaceSnapshot";
 
@@ -43,7 +46,7 @@ export function withoutHiddenSessionTabs(
 /** Covers legacy workspace snapshots as well as newly collected layouts. */
 export function withoutInternalWorkspaceSessions(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
   const sessions = snapshot.sessions.filter(
-    (session) => !session.inboxAsk && isUserConversation(session),
+    (session) => !session.inboxAsk && isListedConversation(session),
   );
   if (sessions.length === snapshot.sessions.length) return snapshot;
   const visible = new Set(sessions.map((session) => session.id));

@@ -21,6 +21,8 @@ export type SessionSidebarFilters = {
   /** Lists only the sessions on the Settled shelf of this computer's Host. */
   showSettled: boolean;
   assistantManaged: boolean;
+  /** Lists the sessions tasks, goals, automations, stewards and crews open for their own work. */
+  showBackground: boolean;
   hiddenHarnesses: HarnessId[];
   time: SessionTimeFilter;
   status: SessionStatusFilter;
@@ -36,6 +38,7 @@ export const DEFAULT_SESSION_SIDEBAR_FILTERS: SessionSidebarFilters = {
   showArchived: false,
   showSettled: false,
   assistantManaged: false,
+  showBackground: false,
   hiddenHarnesses: [],
   time: "all",
   status: DEFAULT_SESSION_STATUS_FILTER,
@@ -69,6 +72,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
       showArchived: parsed.showArchived === true,
       showSettled: parsed.showSettled === true,
       assistantManaged: parsed.assistantManaged === true,
+      showBackground: parsed.showBackground === true,
       hiddenHarnesses: Array.isArray(parsed.hiddenHarnesses)
         ? parsed.hiddenHarnesses.filter(isHarnessId)
         : [],
@@ -100,6 +104,7 @@ export function hasActiveSessionFilters(
     filters.showArchived ||
     filters.showSettled ||
     filters.assistantManaged ||
+    filters.showBackground ||
     filters.hiddenHarnesses.length > 0 ||
     filters.time !== defaultTime ||
     filters.status.working ||

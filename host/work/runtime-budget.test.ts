@@ -3,6 +3,7 @@ import { HostStore } from "../store";
 import { HostTaskBudgets, type BudgetRunRegistration } from "../tasks/task-budgets";
 import { admitRunDuration, finishRunDuration, forgetRunSamples } from "../execution/run-duration";
 import { readTaskRuntimeBudget, stopTaskRuntimeRuns } from "./runtime-budget";
+import { usageUpperBoundMinutes } from "../../src/features/tasks/model/taskBudget";
 import type { SessionRunEngine } from "../sessions/sessionRuns";
 
 const stores: HostStore[] = [];
@@ -166,4 +167,105 @@ it("stops exact advisor and worker receipts without cancelling a replacement tur
     { sessionId: "worker", runId: "worker-run" },
   ]);
   expect(command.mock.calls.every(([input]) => input.type === "cancel")).toBe(true);
+});
+
+const MINUTE = 60_000;
+/** A run observed every minute, so every interval is verified. */
+async function verifiedRun(s: Awaited<ReturnType<typeof setup>>, id: string, minutes: number) {
+  const receipt = await s.start(id, id);
+  for (let minute = 0; minute < minutes; minute++) {
+    s.clock.now += MINUTE;
+    await s.budgets.read({ taskId: "task" });
+  }
+  await s.finish(receipt);
+}
+
+const uncertainCases = {
+  "the Host restarted during a run": async (s: Awaited<ReturnType<typeof setup>>) => {
+    const receipt = await s.start("restarted", "restarted");
+    s.clock.now += MINUTE;
+    await s.budgets.read({ taskId: "task" });
+    forgetRunSamples(s.store, receipt.sessionId, receipt.runId);
+    s.clock.now += 5 * MINUTE;
+    await s.finish(receipt);
+  },
+  "two samples are 91 seconds apart": async (s: Awaited<ReturnType<typeof setup>>) => {
+    const receipt = await s.start("gap", "gap");
+    s.clock.now += 91_000;
+    await s.budgets.read({ taskId: "task" });
+    await s.finish(receipt);
+  },
+  "the run settled without a close record": async (s: Awaited<ReturnType<typeof setup>>) => {
+    const receipt = await s.start("unclosed", "unclosed");
+    s.clock.now += 5 * MINUTE;
+    const session = await s.store.session(receipt.sessionId);
+    await s.store.save(
+      { ...session, status: "idle", revision: session.revision + 1, updatedAt: s.clock.now },
+      {},
+    );
+  },
+};
+
+for (const [name, uncertainRun] of Object.entries(uncertainCases))
+  it(`still starts a 600 minute task after ${name}`, async () => {
+    const s = await setup();
+    await verifiedRun(s, "verified", 60);
+    await uncertainRun(s);
+    const task = { id: "task", maxRunMinutes: 600 };
+    const budget = await readTaskRuntimeBudget(s.budgets, task, true);
+    expect(budget).toMatchObject({ historyComplete: false, blocked: false, exceeded: false });
+    expect(budget.upperBoundMinutes).toBeGreaterThanOrEqual(60);
+    expect(budget.upperBoundMinutes).toBeLessThan(75);
+    expect((await s.budgets.read({ taskId: "task" })).uncertainty?.unboundedRuns).toBe(0);
+    expect(
+      await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 600 }, { starting: true }),
+    ).toMatchObject({ blocked: false, warning: true });
+  });
+
+it("asks the owner when an unverified interval can reach the limit", async () => {
+  const s = await setup();
+  await verifiedRun(s, "verified", 60);
+  const receipt = await s.start("lost", "lost");
+  forgetRunSamples(s.store, receipt.sessionId, receipt.runId);
+  s.clock.now += 20 * MINUTE;
+  await s.finish(receipt);
+  const task = { id: "task", maxRunMinutes: 70 };
+  const budget = await readTaskRuntimeBudget(s.budgets, task, true);
+  expect(budget).toMatchObject({ blocked: true, exceeded: false });
+  expect(budget.reason).toContain("verified 60 min");
+  expect(budget.reason).toContain("at most 80 min");
+  expect(budget.reason).toContain("limit 70 min");
+  expect(
+    await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 70 }, { starting: true }),
+  ).toMatchObject({ blocked: true });
+  // Accepting the uncertainty makes only the verified time count from here on.
+  const usage = await s.budgets.read({ taskId: "task" });
+  const runtimeAccepted = { ...usage.uncertainty!, at: s.clock.now };
+  expect(usageUpperBoundMinutes(usage, runtimeAccepted)).toBe(60);
+  expect(
+    await readTaskRuntimeBudget(
+      s.budgets,
+      { id: "task", maxRunMinutes: 120, runtimeAccepted },
+      true,
+    ),
+  ).toMatchObject({ blocked: false });
+  expect(
+    await s.budgets.evaluate(
+      { taskId: "task" },
+      { maxAgentMinutes: 70 },
+      { starting: true, accepted: runtimeAccepted },
+    ),
+  ).toMatchObject({ blocked: false });
+});
+
+it("treats a run whose clock went backwards as having no upper bound", async () => {
+  const s = await setup();
+  await verifiedRun(s, "verified", 60);
+  const receipt = await s.start("backwards", "backwards");
+  forgetRunSamples(s.store, receipt.sessionId, receipt.runId);
+  s.clock.now -= 10 * MINUTE;
+  await s.finish(receipt);
+  const budget = await readTaskRuntimeBudget(s.budgets, { id: "task", maxRunMinutes: 600 }, true);
+  expect(budget).toMatchObject({ blocked: true, upperBoundMinutes: null });
+  expect(budget.reason).toContain("no known upper bound");
 });

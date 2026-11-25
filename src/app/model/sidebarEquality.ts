@@ -52,6 +52,7 @@ function sessionSummaryEqual(a: SessionSummary, b: SessionSummary): boolean {
     a.draft === b.draft &&
     a.automationId === b.automationId &&
     plainEqual(a.delegationParent, b.delegationParent) &&
+    plainEqual(a.backgroundOwner, b.backgroundOwner) &&
     plainEqual(a.linkedWorkItem, b.linkedWorkItem) &&
     plainEqual(a.orchestration, b.orchestration)
   );

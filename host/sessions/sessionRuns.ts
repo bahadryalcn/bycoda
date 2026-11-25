@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { WorkSource, WorkWait } from "../../src/shared/model/host-contracts/work";
+import {
+  BACKGROUND_OWNER_KEY,
+  type BackgroundOwner,
+} from "../../src/shared/model/host-contracts/delegation";
 import { submitSessionWork } from "../work/session-adapter";
 import type { BudgetRunRegistration } from "../tasks/task-budgets";
 import { runLimitBreach } from "../../src/features/automations/model/automationLimits";
@@ -25,6 +29,8 @@ export type SessionRunEngine = Pick<HostEngine, "command" | "updateSession"> &
 /** What an unattended run needs to start: one prompt in a fresh session. */
 export type SessionRunSpec = {
   work?: WorkSource;
+  /** Stamped on a newly created session so lists hide it; derived from `work` by the Host. */
+  backgroundOwner?: BackgroundOwner;
   workRootWorkId?: string;
   workBudgetScope?: Pick<BudgetRunRegistration, "taskId" | "parentTaskId" | "goalId" | "role">;
   /** Continue an existing, producer-validated conversation through Work admission. */
@@ -79,6 +85,32 @@ export type SessionRunState =
       usageLimit?: UsageLimit;
     };
 
+/** Which background owner a work source stands for; chat-like sources have none. */
+export function backgroundOwnerForWork(work: WorkSource | undefined): BackgroundOwner | undefined {
+  switch (work?.kind) {
+    case "task.worker":
+    case "task.repair":
+    case "task.recovery":
+      return { kind: "task", id: work.id, role: "worker" };
+    case "task.reviewer":
+      return { kind: "task", id: work.id, role: "reviewer" };
+    case "goal.planner":
+      return { kind: "goal", id: work.id, role: "planner" };
+    case "goal.finalReview":
+      return { kind: "goal", id: work.id, role: "finalReview" };
+    case "automation":
+      return { kind: "automation", id: work.id, role: "worker" };
+    case "steward":
+      return { kind: "steward", id: work.id, role: "worker" };
+    case "crew.coordinator":
+      return { kind: "crew", id: work.id, role: "coordinator" };
+    case "crew.member":
+      return { kind: "crew", id: work.id, role: "member" };
+    default:
+      return undefined;
+  }
+}
+
 /** Starts the prompt in a new session. A failure is returned, not thrown, with
  * the session when one was already created. */
 export async function launchSessionRun(
@@ -95,7 +127,16 @@ export async function launchSessionRun(
 }> {
   if (spec.work)
     return submitSessionWork(store, engine, spec, admitted, (accepted, workAdmitted) =>
-      launchSessionRun(store, engine, { ...accepted, work: undefined }, workAdmitted ?? admitted),
+      launchSessionRun(
+        store,
+        engine,
+        {
+          ...accepted,
+          backgroundOwner: backgroundOwnerForWork(accepted.work ?? spec.work),
+          work: undefined,
+        },
+        workAdmitted ?? admitted,
+      ),
     );
   let sessionId: string | undefined = spec.resumeSessionId;
   try {
@@ -115,7 +156,12 @@ export async function launchSessionRun(
             ? {}
             : { providerAccountId: spec.providerAccountId }),
           model: spec.model,
-          modelSettings: spec.modelSettings,
+          modelSettings: spec.backgroundOwner
+            ? {
+                ...spec.modelSettings,
+                [BACKGROUND_OWNER_KEY]: JSON.stringify(spec.backgroundOwner),
+              }
+            : spec.modelSettings,
           runtimeMode: spec.runtimeMode,
         })
       ).sessionId;

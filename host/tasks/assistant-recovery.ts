@@ -1,3 +1,4 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import {
   assistantRecoveryIdentity,
   readAssistantRecovery,
@@ -208,7 +209,8 @@ export async function recoverAssistantWorker(
       session.model !== task.model ||
       session.runtimeMode !== task.runtimeMode ||
       (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
-      JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings) ||
+      JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+        JSON.stringify(task.modelSettings) ||
       session.pendingQuestion ||
       session.pendingSwitch ||
       session.queuedMessages?.length ||

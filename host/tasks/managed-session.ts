@@ -1,3 +1,4 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import type { CommandReceipt } from "../../src/features/connections/model/protocol";
 import { hostQuestionToken } from "../sessions/question-source";
 import { createHash } from "node:crypto";
@@ -123,7 +124,8 @@ export async function managedSessionCommand(
       session.model !== task.model ||
       session.runtimeMode !== task.runtimeMode ||
       (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
-      JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings) ||
+      JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+        JSON.stringify(task.modelSettings) ||
       (answering
         ? hostQuestionToken(current) !== input.questionToken
         : !!session.pendingQuestion) ||
@@ -260,7 +262,8 @@ export async function continueManagedSession(
         session.model !== task.model ||
         (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
         session.runtimeMode !== task.runtimeMode ||
-        JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings)
+        JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+          JSON.stringify(task.modelSettings)
       )
         throw new Error("The managed worker's original model or execution folder changed.");
     };

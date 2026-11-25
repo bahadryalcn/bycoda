@@ -95,14 +95,20 @@ export async function budgetReason(
 ): Promise<string | undefined> {
   const runtime = await readTaskRuntimeBudget(context.budgets, task, starting);
   if (runtime.blocked) return `Task ${task.title}: ${runtime.reason}`;
-  const own = await context.budgets.evaluate({ taskId: task.id }, task.budget, { starting });
+  const own = await context.budgets.evaluate({ taskId: task.id }, task.budget, {
+    starting,
+    accepted: task.runtimeAccepted,
+  });
   const parent = await context.budgetParent(task);
   if (parent) {
     const parentRuntime = await readTaskRuntimeBudget(context.budgets, parent, starting);
     if (parentRuntime.blocked) return `Crew task ${parent.title}: ${parentRuntime.reason}`;
   }
   const parentLimit = parent?.budget
-    ? await context.budgets.evaluate({ taskId: parent.id }, parent.budget, { starting })
+    ? await context.budgets.evaluate({ taskId: parent.id }, parent.budget, {
+        starting,
+        accepted: parent.runtimeAccepted,
+      })
     : undefined;
   const goalId = task.goalId ?? parent?.goalId;
   const goal = goalId ? await context.owningGoal(goalId) : undefined;

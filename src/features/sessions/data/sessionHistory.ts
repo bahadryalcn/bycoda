@@ -1,5 +1,8 @@
 import { sessionIssue } from "../model/sessionIssue";
-import { sessionDelegationParent } from "../../../shared/model/host-contracts/delegation";
+import {
+  sessionBackgroundOwner,
+  sessionDelegationParent,
+} from "../../../shared/model/host-contracts/delegation";
 import { wasTurnInterrupted } from "../model/inFlight";
 import {
   sameSessionProviderHistory,
@@ -107,6 +110,7 @@ function sessionSearchHit(row: SessionSummary, query: PreparedFuzzyQuery): boole
 export function summaryFromSession(session: Session, git?: SessionGitHint): SessionSummary {
   return {
     delegationParent: sessionDelegationParent(session) ?? null,
+    backgroundOwner: sessionBackgroundOwner(session),
     providerHistory: sessionProviderHistory(session),
     issue: sessionIssue(session),
     interrupted: wasTurnInterrupted(session),

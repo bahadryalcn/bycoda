@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { HostRpcMethodDefinition } from "./methods";
-import { DelegationParentSchema } from "./delegation";
+import { BackgroundOwnerSchema, DelegationParentSchema } from "./delegation";
 import { IdentifierSchema, JsonObjectSchema, SafeCounterSchema } from "./schemas";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 
@@ -142,6 +142,7 @@ export const SessionSummarySchema = z.strictObject({
   ...metadata,
   id: IdentifierSchema,
   delegationParent: DelegationParentSchema.nullable().optional(),
+  backgroundOwner: BackgroundOwnerSchema.optional(),
   title: z.string(),
   harness: SessionProviderSchema,
   providerHistory: z

@@ -223,6 +223,13 @@ export async function handleTasksRpc(
       );
       break;
 
+    case "tasks.continueRuntime":
+      request.result = await dependencies.tasksService.continueRuntime(
+        request.params,
+        request.domainContext,
+      );
+      break;
+
     case "tasks.review.recheck":
       request.result = await dependencies.tasksService.recheckReview(
         request.params,

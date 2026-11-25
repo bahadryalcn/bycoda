@@ -1,3 +1,4 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import { retireReviewedPlanner } from "./planner-retirement";
 import type { HostEngine } from "../engine";
 import { resolveGoalRunModel } from "./model-routing";
@@ -1592,7 +1593,7 @@ export class HostGoals {
           ((goal.finalReviewTarget ?? goal).providerAccountId ?? "default") &&
         session.session.model === (goal.finalReviewTarget ?? goal).model &&
         session.session.runtimeMode === goal.runtimeMode &&
-        JSON.stringify(session.session.modelSettings) ===
+        JSON.stringify(withoutBackgroundOwner(session.session.modelSettings)) ===
           JSON.stringify((goal.finalReviewTarget ?? goal).modelSettings)
       );
     } catch {

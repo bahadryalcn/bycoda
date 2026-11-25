@@ -9,6 +9,7 @@ import {
   type BudgetRunRegistration,
 } from "./task-budgets";
 import { readWorkUsage } from "../work/usage";
+import { usageUpperBoundMinutes } from "../../src/features/tasks/model/taskBudget";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -208,8 +209,12 @@ describe("durable task/goal family budgets", () => {
     await s.register();
     s.clock.now += 30_000;
     await s.finish("session", { durationMs: 3_600_000, metrics: reported });
+    // The unverified interval is bounded by the 30 second wall-clock span: well under 2 minutes.
     expect(
-      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }))
+      await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 2 }, { starting: true }),
+    ).toMatchObject({ blocked: false, usage: { historyComplete: false, agentMinutes: 0 } });
+    expect(
+      (await s.budgets.evaluate({ taskId: "task" }, { maxAgentMinutes: 0.4 }, { starting: true }))
         .blocked,
     ).toBe(true);
     await finishRunDuration(s.store, "session", "run", s.clock.now, s.clock.now);
@@ -233,6 +238,37 @@ describe("durable task/goal family budgets", () => {
       agentMinutes: 1,
       historyComplete: false,
     });
+  });
+  it("bounds an unobserved gap by wall-clock time and asks the owner only when the bound reaches the total", async () => {
+    const s = await setup();
+    await s.save("session", "run");
+    await s.register();
+    s.clock.now += 30_000;
+    await s.budgets.read({ taskId: "task" });
+    s.clock.now += 3_600_000;
+    const usage = await s.budgets.read({ taskId: "task" });
+    expect(usage).toMatchObject({ agentMinutes: 0.5, uncertainty: { unboundedRuns: 0 } });
+    expect(usageUpperBoundMinutes(usage)).toBeCloseTo(60.5, 5);
+    const roomy = await s.budgets.evaluate(
+      { taskId: "task" },
+      { maxAgentMinutes: 600 },
+      { starting: true },
+    );
+    expect(roomy).toMatchObject({ blocked: false, warning: true });
+    const tight = await s.budgets.evaluate(
+      { taskId: "task" },
+      { maxAgentMinutes: 30 },
+      { starting: true },
+    );
+    expect(tight.blocked).toBe(true);
+    expect(tight.reasons.join(" ")).toContain("limit 30 min");
+    expect(
+      await s.budgets.evaluate(
+        { taskId: "task" },
+        { maxAgentMinutes: 30 },
+        { starting: true, accepted: { ...usage.uncertainty!, at: s.clock.now } },
+      ),
+    ).toMatchObject({ blocked: false });
   });
   it("preserves legacy wall-derived time without treating it as a proven active-time breach", async () => {
     const s = await setup();

@@ -32,12 +32,13 @@ import {
   projectlessMachineSession,
   remoteSessionProjectAtKey,
 } from "../../features/connections/model/sessionMachineTarget";
-import { isUserConversation } from "../../shared/model/host-contracts/delegation";
+import { isListedConversation } from "../../shared/model/host-contracts/delegation";
 import { snapshotSessionList } from "../../features/sessions/ui/sessionListDropZones";
 import { NewSessionProjectDialog } from "../../features/projects/ui/NewSessionProjectDialog";
 import { useSessionProjectAppearance } from "./useSessionProjectAppearance";
 import { sessionProviderHistory } from "../../features/sessions/model/sessionProviderHistory";
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
+import { BackgroundSessionMark } from "../../features/sessions/ui/BackgroundSessionMark";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
@@ -763,6 +764,10 @@ function SidebarComponent({
         cwd,
         (path) => isProjectPasswordLocked(path) || isProjectLocked(path),
       );
+  const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
+  const [globalSessionFilters, setGlobalSessionFilters] =
+    useState<SessionSidebarFilters>(GLOBAL_SESSION_FILTERS);
+  const listFilters = lastSessionsOpen ? globalSessionFilters : sessionFilters;
   // Read again when a local session starts or stops and after an action on one of its rows.
   const [copyRevision, setCopyRevision] = useState(0);
   const localCopySessions = useLocalCopySessions(
@@ -773,6 +778,7 @@ function SidebarComponent({
     projectCopies,
     lastSessionsRemoteRows ?? [],
     localCopySessions,
+    sessionFilters.showBackground,
   );
   const { machines: sessionMachines } = useRemoteMachines(
     cwd === "~" || lastSessionsOpen || projectCopies.length > 0,
@@ -958,8 +964,15 @@ function SidebarComponent({
     approvalSessionIds,
   );
   const projectSessions: SessionSummary[] = useMemo(
-    () => projectSessionCollection(remoteProject, remote.sessions, sessions, cwd),
-    [remoteProject, remote.sessions, sessions, cwd],
+    () =>
+      projectSessionCollection(
+        remoteProject,
+        remote.sessions,
+        sessions,
+        cwd,
+        sessionFilters.showBackground,
+      ),
+    [remoteProject, remote.sessions, sessions, cwd, sessionFilters.showBackground],
   );
   // The list shows the shared notice in place of the sessions (and of their load status) for a
   // machine this computer cannot ask; an offline one keeps a list that was already loaded.
@@ -981,7 +994,7 @@ function SidebarComponent({
         (session) =>
           (lastSessionsOpen || sameProjectPath(session.cwd, cwd)) &&
           !session.orchestrationLeadId &&
-          isUserConversation(session) &&
+          isListedConversation(session, listFilters.showBackground) &&
           !sessionWaits?.has(session.id) &&
           (lastSessionsOpen
             ? (busySessionIds.has(session.id) && !approvalSessionIds.has(session.id)) ||
@@ -1424,9 +1437,6 @@ function SidebarComponent({
     }
   };
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
-  const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
-  const [globalSessionFilters, setGlobalSessionFilters] =
-    useState<SessionSidebarFilters>(GLOBAL_SESSION_FILTERS);
   const [globalListView, setGlobalListView] = useState<GlobalSessionListView>({
     groupBy: "none",
     sort: "newest",
@@ -1492,7 +1502,7 @@ function SidebarComponent({
   const listedSessions = useMemo(() => {
     const rows = mergeFolderSessionSummaries(
       projectSessions,
-      folderCandidates(remoteProject, openSessions),
+      folderCandidates(remoteProject, openSessions, sessionFilters.showBackground),
       sessionFolders,
     ).filter(
       (session) =>
@@ -1593,7 +1603,6 @@ function SidebarComponent({
     };
   }, [opening]);
   const searchNarrowed = Boolean(deferredSearchQuery.trim());
-  const listFilters = lastSessionsOpen ? globalSessionFilters : sessionFilters;
   const sessionListKey = JSON.stringify([
     lastSessionsOpen ? "last-sessions" : "project-sessions",
     lastSessionsOpen ? "all-projects" : cwd,
@@ -1704,7 +1713,9 @@ function SidebarComponent({
             filterSessionsByHarness(
               filterAssistantManagedSessions(
                 filterSessionsByArchive(
-                  lastSessionsData?.rows ?? [],
+                  (lastSessionsData?.rows ?? []).filter((row) =>
+                    isListedConversation(row, globalSessionFilters.showBackground),
+                  ),
                   globalSessionFilters.showArchived,
                 ).filter(
                   (session) => globalSessionFilters.showSettled === isGlobalSessionSettled(session),
@@ -3767,7 +3778,8 @@ function SidebarComponent({
                   (lastSessionsRemoteRows ?? [])
                     .filter(
                       ({ project, session }) =>
-                        projectlessMachineSession(project) && isUserConversation(session),
+                        projectlessMachineSession(project) &&
+                        isListedConversation(session, sessionFilters.showBackground),
                     )
                     .map(({ project, session }) => remoteSessionSummary(session, project)),
                   sessionFilters.showArchived,
@@ -7285,6 +7297,7 @@ const SessionCard = memo(function SessionCard({
                 compact
                 local={!remoteSession}
               />
+              <BackgroundSessionMark owner={session.backgroundOwner} />
               {compact ? modelLabel : null}
               {compact ? statusSlot : null}
             </Button>

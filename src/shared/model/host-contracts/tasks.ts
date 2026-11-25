@@ -186,6 +186,13 @@ const metadataFields = {
   evaluation: TaskEvaluationSchema.optional(),
   budgetUsage: TaskBudgetUsageSchema.optional(),
   budgetStop: z.string().optional(),
+  runtimeAccepted: z
+    .strictObject({
+      extraMinutes: z.number(),
+      unboundedRuns: SafeCounterSchema,
+      at: z.number(),
+    })
+    .optional(),
   preflight: TaskPreflightResultSchema.optional(),
   crewExecutionId: z.string().optional(),
   status: TaskStatusSchema.optional(),
@@ -359,6 +366,10 @@ export const TasksSaveParamsSchema = z.strictObject({ task: TaskPayloadSchema })
 export const TasksIdParamsSchema = z.strictObject({ taskId: z.string() });
 export const TasksFinishWithFindingsParamsSchema = TasksIdParamsSchema.extend({
   expectedUpdatedAt: z.number().finite(),
+});
+export const TasksContinueRuntimeParamsSchema = TasksIdParamsSchema.extend({
+  /** Minutes the owner adds on top of the verified runtime. */
+  minutes: z.number().finite().positive().max(52_560_000),
 });
 export const TasksMoveParamsSchema = TasksIdParamsSchema.extend({ to: TaskStatusSchema });
 export const TasksReorderParamsSchema = z.strictObject({

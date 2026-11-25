@@ -35,6 +35,25 @@ describe("calendar day agent budget", () => {
     now = new Date(2026, 9, 18, 0, 0, 1).getTime();
     expect(await limits.state()).toMatchObject({ usedMinutes: 0, limitReached: false });
   });
+  it("bounds an unverified run by its wall-clock span when the task ledger knows its start", async () => {
+    const store = new HostStore(":memory:");
+    stores.push(store);
+    const now = new Date(2026, 9, 17, 12).getTime();
+    const limits = new HostLimits(store, () => now);
+    await limits.ready;
+    await store.db.exec(
+      "CREATE TABLE task_run_budget_ledger (session_id TEXT NOT NULL,run_id TEXT NOT NULL,value TEXT NOT NULL)",
+    );
+    await store.db
+      .prepare("INSERT INTO task_run_budget_ledger VALUES (?,?,?)")
+      .run("session", "run", JSON.stringify({ startedAt: now - 10 * 60_000 }));
+    await limits.recordRun({ sessionId: "session", runId: "run" }, now);
+    await limits.save({ dailyAgentMinutes: 60 });
+    expect(await limits.state()).toMatchObject({ usageUncertain: true, limitReached: false });
+    expect(await limits.reached()).toBe(false);
+    await limits.save({ dailyAgentMinutes: 5 });
+    expect(await limits.reached()).toBe(true);
+  });
   it("keeps legacy usage and counts confirmed intervals once across midnight, gaps and restart", async () => {
     const store = new HostStore(":memory:");
     stores.push(store);

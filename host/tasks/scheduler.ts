@@ -33,9 +33,10 @@ export function budgetUsageChanged(
 ): boolean {
   const { measuredAt: _measuredAt, ...material } = current;
   if (previous && current.runningRuns > 0 && previous.runningRuns === current.runningRuns) {
-    const { agentMinutes: _minutes, ...stable } = material;
+    const { agentMinutes: _minutes, uncertainty: _extra, ...stable } = material;
     const {
       agentMinutes: _previousMinutes,
+      uncertainty: _previousExtra,
       measuredAt: _previousMeasuredAt,
       ...stableBefore
     } = previous;

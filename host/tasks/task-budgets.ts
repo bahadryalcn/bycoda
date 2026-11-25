@@ -7,12 +7,15 @@ import {
 import { sessionBudgetTokens } from "../../src/features/usage/model/usageBudgets";
 import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 import type { Block } from "../../src/features/sessions/model/session";
-import type {
-  BudgetRunRole,
-  TaskBudgetScope,
-  TaskRunBudget,
-  TaskRunBudgetEvaluation,
-  TaskRunBudgetUsage,
+import {
+  runtimeDecisionMessage,
+  usageUpperBoundMinutes,
+  type BudgetRunRole,
+  type TaskBudgetScope,
+  type TaskRunBudget,
+  type TaskRunBudgetEvaluation,
+  type TaskRunBudgetUsage,
+  type TaskRuntimeAcceptance,
 } from "../../src/features/tasks/model/taskBudget";
 
 export type BudgetRunRegistration = {
@@ -95,6 +98,9 @@ type Rollup = {
   cost: number;
   unknownCosts: number;
   uncertain: number;
+  /** Uncertain runs whose timestamps could not bound them, and the bounded runs' extra time. */
+  unbounded: number;
+  extraMs: number;
 };
 const emptyRollup = (): Rollup => ({
   attempts: 0,
@@ -105,7 +111,21 @@ const emptyRollup = (): Rollup => ({
   cost: 0,
   unknownCosts: 0,
   uncertain: 0,
+  unbounded: 0,
+  extraMs: 0,
 });
+
+/**
+ * An uncertain run cannot have lasted longer than the wall-clock span between its start and its
+ * settlement (or now, while running). The extra time above what was verified, or null when the
+ * timestamps are missing or run backwards and so bound nothing.
+ */
+function uncertainExtraMs(run: LedgerRun, now: number): number | null {
+  const end = run.settledAt ?? now;
+  if (!finite(run.startedAt) || !finite(end) || end < run.startedAt) return null;
+  // Wall-derived time recorded before intervals were verified is also a possible duration.
+  return Math.max(0, Math.max(end - run.startedAt, run.legacyElapsedMs ?? 0) - run.elapsedMs);
+}
 type RollupScope = readonly ["task" | "goal", string];
 const scopesOf = (run: LedgerRun): RollupScope[] => [
   ...(run.taskId ? [["task", run.taskId] as const] : []),
@@ -152,6 +172,19 @@ export class HostTaskBudgets {
           await store.db.exec(
             "ALTER TABLE task_run_budget_ledger ADD COLUMN sealed_settled_at INTEGER;",
           );
+        const rollupColumns = new Set(
+          (await store.db.prepare("PRAGMA table_info(task_run_budget_rollup)").all()).map((row) =>
+            String(row.name),
+          ),
+        );
+        if (!rollupColumns.has("unbounded")) {
+          await store.db.exec(
+            "ALTER TABLE task_run_budget_rollup ADD COLUMN unbounded INTEGER NOT NULL DEFAULT 0;" +
+              "ALTER TABLE task_run_budget_rollup ADD COLUMN extra_ms REAL NOT NULL DEFAULT 0;" +
+              // Runs sealed before bounds were recorded cannot be bounded afterwards.
+              "UPDATE task_run_budget_rollup SET unbounded=uncertain;",
+          );
+        }
         await store.db.exec(`
       CREATE INDEX IF NOT EXISTS task_run_budget_parent ON task_run_budget_ledger(parent_task_id);
       CREATE INDEX IF NOT EXISTS task_run_budget_open_task ON task_run_budget_ledger(task_id) WHERE ${OPEN};
@@ -345,7 +378,7 @@ export class HostTaskBudgets {
   private async rollup(kind: "task" | "goal", id: string): Promise<Rollup> {
     const row = await this.store.db
       .prepare(
-        "SELECT attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs,uncertain FROM task_run_budget_rollup WHERE scope=? AND id=?",
+        "SELECT attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs,uncertain,unbounded,extra_ms FROM task_run_budget_rollup WHERE scope=? AND id=?",
       )
       .get(kind, id);
     return row ? this.rollupOf(row) : emptyRollup();
@@ -361,19 +394,23 @@ export class HostTaskBudgets {
       cost: Number(row.cost),
       unknownCosts: Number(row.unknown_costs),
       uncertain: Number(row.uncertain),
+      unbounded: Number(row.unbounded),
+      extraMs: Number(row.extra_ms),
     };
   }
 
   /** Counts one sealed run into the given scopes. Call only in the transaction that seals it. */
   private async addToRollups(run: LedgerRun, scopes: readonly RollupScope[] = scopesOf(run)) {
     const add = this.store.db.prepare(
-      `INSERT INTO task_run_budget_rollup (scope,id,attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs,uncertain)
-       VALUES (?,?,1,?,?,?,?,?,?,?)
+      `INSERT INTO task_run_budget_rollup (scope,id,attempts,elapsed_ms,confirmed_ms,tokens,unknown_token_runs,cost,unknown_costs,uncertain,unbounded,extra_ms)
+       VALUES (?,?,1,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(scope,id) DO UPDATE SET attempts=attempts+1,elapsed_ms=elapsed_ms+excluded.elapsed_ms,
          confirmed_ms=confirmed_ms+excluded.confirmed_ms,tokens=tokens+excluded.tokens,
          unknown_token_runs=unknown_token_runs+excluded.unknown_token_runs,cost=cost+excluded.cost,
-         unknown_costs=unknown_costs+excluded.unknown_costs,uncertain=uncertain+excluded.uncertain`,
+         unknown_costs=unknown_costs+excluded.unknown_costs,uncertain=uncertain+excluded.uncertain,
+         unbounded=unbounded+excluded.unbounded,extra_ms=extra_ms+excluded.extra_ms`,
     );
+    const extra = run.durationUncertain ? uncertainExtraMs(run, run.settledAt ?? this.now()) : 0;
     for (const [kind, id] of scopes)
       await add.run(
         kind,
@@ -385,6 +422,8 @@ export class HostTaskBudgets {
         run.costUsd ?? 0,
         run.costUsd === null ? 1 : 0,
         run.durationUncertain ? 1 : 0,
+        extra === null ? 1 : 0,
+        extra ?? 0,
       );
   }
 
@@ -662,7 +701,8 @@ export class HostTaskBudgets {
       const sealed = await this.store.db
         .prepare(
           `SELECT rollup.id AS goal_id, rollup.attempts, rollup.elapsed_ms, rollup.confirmed_ms, rollup.tokens,
-           rollup.unknown_token_runs, rollup.cost, rollup.unknown_costs, rollup.uncertain
+           rollup.unknown_token_runs, rollup.cost, rollup.unknown_costs, rollup.uncertain,
+           rollup.unbounded, rollup.extra_ms
          FROM json_each(?) ids JOIN task_run_budget_rollup rollup ON rollup.scope='goal' AND rollup.id=ids.value`,
         )
         .all(ids);
@@ -697,7 +737,10 @@ export class HostTaskBudgets {
   ): TaskRunBudgetUsage {
     const historyComplete =
       knownHistory && base.uncertain === 0 && rows.every((run) => !run.durationUncertain);
-    let elapsedMs = base.elapsedMs,
+    const now = this.now();
+    let extraMs = base.extraMs,
+      unboundedRuns = base.unbounded + (knownHistory ? 0 : 1),
+      elapsedMs = base.elapsedMs,
       reportedTokens = base.tokens,
       knownCost = base.cost,
       unknownTokenRuns = base.unknownTokenRuns,
@@ -705,6 +748,11 @@ export class HostTaskBudgets {
       runningRuns = 0;
     for (const run of rows) {
       elapsedMs += run.elapsedMs;
+      if (run.durationUncertain) {
+        const extra = uncertainExtraMs(run, now);
+        if (extra === null) unboundedRuns++;
+        else extraMs += extra;
+      }
       if (run.settledAt === undefined) runningRuns++;
       if (run.tokens === null) unknownTokenRuns++;
       else reportedTokens += run.tokens;
@@ -719,6 +767,9 @@ export class HostTaskBudgets {
     return {
       historyComplete,
       agentMinutes: elapsedMs / 60_000,
+      ...(historyComplete
+        ? {}
+        : { uncertainty: { extraMinutes: extraMs / 60_000, unboundedRuns } }),
       attempts: base.attempts + rows.length,
       completedRuns: base.attempts + rows.length - runningRuns,
       runningRuns,
@@ -728,14 +779,14 @@ export class HostTaskBudgets {
       unknownTokenRuns,
       reportedCostUsd: unknownCosts || !knownHistory ? null : knownCost,
       estimatedCostUsd: null,
-      measuredAt: this.now(),
+      measuredAt: now,
     };
   }
 
   async evaluate(
     scope: TaskBudgetScope,
     budget: TaskRunBudget | undefined,
-    options: { starting?: boolean } = {},
+    options: { starting?: boolean; accepted?: TaskRuntimeAcceptance } = {},
   ): Promise<TaskRunBudgetEvaluation> {
     await this.ready;
 
@@ -744,19 +795,30 @@ export class HostTaskBudgets {
       const reasons: string[] = [];
       let warning = false;
       const threshold = (budget?.warningPercent ?? 80) / 100;
-      if (budget && (!historyKnown || (budget.maxAgentMinutes && !usage.historyComplete))) {
+      const total = budget?.maxAgentMinutes;
+      const verifiedMinutes = confirmedMs / 60_000;
+      const upperBound = usageUpperBoundMinutes(usage, options.accepted);
+      // Unknown intervals are bounded by wall-clock time; only a bound that reaches the limit,
+      // or no bound at all, needs the owner.
+      const undecided =
+        !!total && verifiedMinutes < total && (upperBound === null || upperBound >= total);
+      if (budget && (!historyKnown || (total && !usage.historyComplete))) {
         warning = true;
-        if (options.starting)
+        if (options.starting && undecided)
+          reasons.push(
+            `${runtimeDecisionMessage(verifiedMinutes, upperBound, total)} Increase the total budget to continue; earlier work is retained.`,
+          );
+        else if (options.starting && !total && !historyKnown)
           reasons.push(
             "Historical usage is incomplete. Start a new task or goal, or remove total run limits to continue; earlier work is retained.",
           );
       }
-      if (budget?.maxAgentMinutes) {
-        if (confirmedMs / 60_000 >= budget.maxAgentMinutes)
+      if (total) {
+        if (verifiedMinutes >= total)
           reasons.push(
             "The total agent-time budget is exhausted. Increase the budget to continue; completed work is retained.",
           );
-        warning ||= usage.agentMinutes >= budget.maxAgentMinutes * threshold;
+        warning ||= usage.agentMinutes >= total * threshold;
       }
       if (budget?.maxAttempts) {
         if (options.starting && usage.attempts >= budget.maxAttempts)

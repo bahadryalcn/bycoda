@@ -12755,5 +12755,14 @@
   "Next request": "Demande suivante",
   "{p0} approved, {p1} denied": "{p0} approuvées, {p1} refusées",
   "Choose Approve or Deny for every request first.": "Choisissez d’abord Approuver ou Refuser pour chaque demande.",
-  "{p0} requests need approval": "{p0} demandes attendent une approbation"
+  "{p0} requests need approval": "{p0} demandes attendent une approbation",
+  "Continue with {p0} more minutes": "Continuer avec {p0} minutes de plus",
+  "Show background sessions": "Afficher les sessions en arrière-plan",
+  "Task worker session": "Session de travail de tâche",
+  "Task review session": "Session de revue de tâche",
+  "Goal planning session": "Session de planification d'objectif",
+  "Goal final review session": "Session de revue finale d'objectif",
+  "Automation session": "Session d'automatisation",
+  "Steward session": "Session de steward",
+  "Crew session": "Session de crew"
 }

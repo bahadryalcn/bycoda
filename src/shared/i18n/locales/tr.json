@@ -12755,5 +12755,14 @@
   "Next request": "Sonraki istek",
   "{p0} approved, {p1} denied": "{p0} onaylandı, {p1} reddedildi",
   "Choose Approve or Deny for every request first.": "Önce her istek için Onayla veya Reddet seçin.",
-  "{p0} requests need approval": "{p0} istek onay bekliyor"
+  "{p0} requests need approval": "{p0} istek onay bekliyor",
+  "Continue with {p0} more minutes": "{p0} dakika daha ekleyip devam et",
+  "Show background sessions": "Arka plan oturumlarını göster",
+  "Task worker session": "Görev işçi oturumu",
+  "Task review session": "Görev inceleme oturumu",
+  "Goal planning session": "Hedef planlama oturumu",
+  "Goal final review session": "Hedef son inceleme oturumu",
+  "Automation session": "Otomasyon oturumu",
+  "Steward session": "Steward oturumu",
+  "Crew session": "Crew oturumu"
 }

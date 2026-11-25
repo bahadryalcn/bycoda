@@ -277,6 +277,8 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
   delegationParent?:
     | import("../../../shared/model/host-contracts/delegation").DelegationParent
     | null;
+  /** Background work that created the session; lists hide it unless pinned. */
+  backgroundOwner?: import("../../../shared/model/host-contracts/delegation").BackgroundOwner;
   issue?: "retrying" | "failed";
   /** Authenticated local widget details; push transport must never copy question text. */
   widgetContext?: {

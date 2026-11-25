@@ -1,3 +1,4 @@
+import { withoutBackgroundOwner } from "../../src/shared/model/host-contracts/delegation";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
@@ -498,7 +499,8 @@ export async function resumeInterrupted(
       (session.providerAccountId ?? "default") !== (task.providerAccountId ?? "default") ||
       session.model !== task.model ||
       session.runtimeMode !== task.runtimeMode ||
-      JSON.stringify(session.modelSettings) !== JSON.stringify(task.modelSettings)
+      JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+        JSON.stringify(task.modelSettings)
     ) {
       return await launchSessionRun(
         context.store,

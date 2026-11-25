@@ -293,6 +293,7 @@ export function createEnvironmentRuntime(
         "tasks.notes",
         "tasks.review-recheck",
         "tasks.finish-with-findings",
+        "tasks.continue-runtime",
         "tasks.reorder-guard",
         "tasks.blocked-takeover",
         "tasks.continue-until-done",

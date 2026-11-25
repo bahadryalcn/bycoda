@@ -1,5 +1,5 @@
 import { SessionReadProcesses } from "../session-read-process";
-import { desktopDelegationParent } from "./delegated-children";
+import { desktopBackgroundOwner, desktopDelegationParent } from "./delegated-children";
 import { normalizeProjectPath, sameProjectPath } from "./project-path";
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
@@ -840,6 +840,9 @@ export class DesktopSessions {
       linkedWorkItem: parse(row.linked_work_item_json),
       needsInput: false,
       delegationParent: desktopDelegationParent(row.model_settings),
+      ...(desktopBackgroundOwner(row.model_settings)
+        ? { backgroundOwner: desktopBackgroundOwner(row.model_settings) }
+        : {}),
       ...(row.orchestration_lead_id
         ? { orchestrationLeadId: String(row.orchestration_lead_id) }
         : {}),

@@ -8,7 +8,7 @@ import { useLocale } from "../../../shared/i18n";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { SearchView } from "../surfaces/lazySurfaces";
 import { type ComponentProps, useMemo } from "react";
-import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
+import { isListedConversation } from "../../../shared/model/host-contracts/delegation";
 
 /** Search adopts accumulated streamed text with the next structural update. */
 export function LiveSearchView({
@@ -24,7 +24,7 @@ export function LiveSearchView({
       live.filter(
         (session) =>
           !session.inboxAsk &&
-          isUserConversation(session) &&
+          isListedConversation(session) &&
           !isProjectLockedIn(lockSnapshot, session.cwd),
       ),
     [live, lockSnapshot],

@@ -204,7 +204,8 @@ export class HostLimits {
       const { dailyAgentMinutes } = await this.settings();
       if (dailyAgentMinutes <= 0) return false;
       const used = await this.usedMinutes();
-      return used >= dailyAgentMinutes || (await this.usageUncertain());
+      const { extraMinutes } = await this.uncertainToday();
+      return used + extraMinutes >= dailyAgentMinutes;
     });
   }
 
@@ -214,24 +215,50 @@ export class HostLimits {
     return await this.store.db.scope(async () => {
       const settings = await this.settings();
       const usedMinutes = await this.usedMinutes();
-      const usageUncertain = await this.usageUncertain();
+      const { present, extraMinutes } = await this.uncertainToday();
       return {
         ...settings,
         usedMinutes,
-        ...(usageUncertain ? { usageUncertain: true } : {}),
+        ...(present ? { usageUncertain: true } : {}),
         limitReached:
           settings.dailyAgentMinutes > 0 &&
-          (usageUncertain || usedMinutes >= settings.dailyAgentMinutes),
+          usedMinutes + extraMinutes >= settings.dailyAgentMinutes,
       };
     });
   }
 
-  private async usageUncertain(): Promise<boolean> {
-    const row = await this.store.db
+  /**
+   * Runs with an unverified interval today. A run cannot have used more of today than the
+   * wall-clock span it overlapped, so each adds at most that span beyond its verified time.
+   * A run the task ledger does not know is bounded by the whole day so far.
+   */
+  private async uncertainToday(): Promise<{ present: boolean; extraMinutes: number }> {
+    const now = this.now();
+    const ledger = await this.store.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_run_budget_ledger'")
+      .get();
+    const rows = await this.store.db
       .prepare(
-        "SELECT 1 AS present FROM run_duration_daily_unknown d JOIN run_duration_quota q USING(session_id,run_id) WHERE d.day=? LIMIT 1",
+        `SELECT coalesce(m.ms,0) AS ms,
+           ${ledger ? "json_extract(l.value,'$.startedAt')" : "NULL"} AS started,
+           ${ledger ? "json_extract(l.value,'$.settledAt')" : "NULL"} AS settled
+         FROM run_duration_daily_unknown d JOIN run_duration_quota q USING(session_id,run_id)
+         LEFT JOIN run_duration_daily m ON m.session_id=d.session_id AND m.run_id=d.run_id AND m.day=d.day
+         ${ledger ? "LEFT JOIN task_run_budget_ledger l ON l.session_id=d.session_id AND l.run_id=d.run_id" : ""}
+         WHERE d.day=?`,
       )
-      .get(localDay(this.now()));
-    return !!row;
+      .all(localDay(now));
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    let extraMs = 0;
+    for (const row of rows) {
+      const from = Math.max(midnight.getTime(), Number(row.started ?? 0));
+      const to = Math.min(
+        now,
+        row.settled === null || row.settled === undefined ? now : Number(row.settled),
+      );
+      extraMs += Math.max(0, to - from - Number(row.ms));
+    }
+    return { present: rows.length > 0, extraMinutes: extraMs / MINUTE_MS };
   }
 }

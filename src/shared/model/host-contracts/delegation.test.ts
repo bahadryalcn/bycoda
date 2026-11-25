@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BACKGROUND_OWNER_KEY,
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   DELEGATION_LIMITS,
@@ -11,7 +12,10 @@ import {
   delegateRefKey,
   encodeAdvisor,
   encodeSubagents,
+  isListedConversation,
   isReservedDelegationKey,
+  sessionBackgroundOwner,
+  withoutBackgroundOwner,
   providerModelSettings,
   type DelegateModelRef,
 } from "./delegation";
@@ -228,5 +232,49 @@ describe("decodeDelegationParent", () => {
     expect(decodeDelegationParent(JSON.stringify({ ...parent, kind: "other" }))).toBeUndefined();
     expect(decodeDelegationParent(JSON.stringify({ ...parent, startedAt: -1 }))).toBeUndefined();
     expect(decodeDelegationParent(undefined)).toBeUndefined();
+  });
+});
+
+describe("background sessions", () => {
+  const owner = { kind: "task", id: "t1", role: "worker" } as const;
+  const stamped = { modelSettings: { [BACKGROUND_OWNER_KEY]: JSON.stringify(owner) } };
+  const parent = { parentSessionId: "p", runId: "r", kind: "subagent", model: "m", startedAt: 1 };
+
+  it("reads the owner from full settings or a collection projection", () => {
+    expect(sessionBackgroundOwner(stamped)).toEqual(owner);
+    expect(sessionBackgroundOwner({ backgroundOwner: owner })).toEqual(owner);
+    expect(sessionBackgroundOwner({ modelSettings: {}, backgroundOwner: owner })).toBeUndefined();
+    expect(
+      sessionBackgroundOwner({ modelSettings: { [BACKGROUND_OWNER_KEY]: '{"kind":"x"}' } }),
+    ).toBeUndefined();
+  });
+
+  it("hides owned sessions unless pinned, shown, or from before the field existed", () => {
+    expect(isListedConversation({ backgroundOwner: owner })).toBe(false);
+    expect(isListedConversation(stamped)).toBe(false);
+    expect(isListedConversation({ backgroundOwner: owner, pinned: true })).toBe(true);
+    expect(isListedConversation({ backgroundOwner: owner }, true)).toBe(true);
+    expect(isListedConversation({ id: "legacy", modelSettings: {} })).toBe(true);
+    expect(isListedConversation({ id: "legacy" })).toBe(true);
+  });
+
+  it("never lists a delegated child, even with background sessions shown", () => {
+    expect(isListedConversation({ delegationParent: parent }, true)).toBe(false);
+    expect(
+      isListedConversation({ delegationParent: parent, backgroundOwner: owner, pinned: true }),
+    ).toBe(false);
+  });
+
+  it("keeps the owner through a model change and strips it for the provider", () => {
+    expect(carryCrossDelegation(stamped.modelSettings, {})[BACKGROUND_OWNER_KEY]).toBe(
+      JSON.stringify(owner),
+    );
+    expect(isReservedDelegationKey(BACKGROUND_OWNER_KEY)).toBe(true);
+    expect(providerModelSettings({ ...stamped.modelSettings, effort: "low" })).toEqual({
+      effort: "low",
+    });
+    expect(withoutBackgroundOwner({ ...stamped.modelSettings, effort: "low" })).toEqual({
+      effort: "low",
+    });
   });
 });

@@ -13,6 +13,7 @@ export interface HostTasksServicePorts<Task extends dto.TaskIdentity> {
     move(id: string, to: unknown): Promise<Task>;
     startTask(id: string): Promise<Task>;
     finishWithFindings(id: string, expectedUpdatedAt: number): Promise<Task>;
+    continueRuntime(id: string, minutes: number): Promise<Task>;
     reorder(ids: unknown, expectedUpdatedAt?: Readonly<Record<string, number>>): Promise<Task[]>;
     recheckReview(id: string): Promise<Task>;
     readNotes(id: string, ids: unknown): Promise<Task>;
@@ -86,6 +87,10 @@ export function createHostTasksService<Task extends dto.TaskIdentity>(
     finishWithFindings: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksFinishWithFindingsParamsSchema, p, c, o, (params) =>
         ports.tasks.finishWithFindings(params.taskId, params.expectedUpdatedAt),
+      ),
+    continueRuntime: (p: unknown, c: HostDomainContext, o: Options = {}) =>
+      execute(dto.TasksContinueRuntimeParamsSchema, p, c, o, (params) =>
+        ports.tasks.continueRuntime(params.taskId, params.minutes),
       ),
     reorder: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksReorderParamsSchema, p, c, o, (params) =>

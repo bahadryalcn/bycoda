@@ -553,6 +553,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "string",
   "sync.pull",
   "sync.push",
+  "tasks.continueRuntime",
   "tasks.delete",
   "tasks.events",
   "tasks.evaluation.save",

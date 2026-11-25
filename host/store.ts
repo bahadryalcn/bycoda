@@ -9,6 +9,7 @@ import {
 } from "./sessions/session-attention";
 import {
   decodeDelegationParent,
+  sessionBackgroundOwner,
   DELEGATION_PARENT_KEY,
 } from "../src/shared/model/host-contracts/delegation";
 import { checkpointWrites } from "./storage/checkpoint-writes";
@@ -3554,6 +3555,9 @@ export function summary(value: HostSession): HostSessionSummary {
     delegationParent:
       decodeDelegationParent(value.session.modelSettings?.[DELEGATION_PARENT_KEY]) ?? null,
     draft: root.draft > 0,
+    ...(sessionBackgroundOwner(value.session)
+      ? { backgroundOwner: sessionBackgroundOwner(value.session) }
+      : {}),
     ...(value.session.orchestrationLeadId
       ? { orchestrationLeadId: value.session.orchestrationLeadId }
       : {}),

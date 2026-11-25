@@ -2128,6 +2128,44 @@ describe("host tasks", () => {
       monotonic.mockRestore();
     }
   });
+  it("lets the owner continue a task whose unverified interval can reach its limit", async () => {
+    const { tasks, run, task, settled, clock, provider } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    try {
+      const started = await run({ maxRunMinutes: 30 });
+      for (let i = 0; i < 40; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
+      // The Host stalls for 40 minutes: the interval is unverified but bounded by the wall clock.
+      clock.now += 40 * MINUTE;
+      await tasks.move(started.id, "blocked");
+      await settled(started.sessionId!);
+      await tasks.tick();
+      expect(provider.cancel).toHaveBeenCalled();
+      await tasks.startTask(started.id);
+      await tasks.tick();
+      expect(await task()).toMatchObject({
+        status: "blocked",
+        error: expect.stringContaining("at most"),
+      });
+      await expect(tasks.continueRuntime(started.id, 0)).rejects.toThrow("positive");
+      const continued = await tasks.continueRuntime(started.id, 30);
+      expect(continued).toMatchObject({
+        status: "blocked",
+        maxRunMinutes: 50,
+        awaitingOwnerRestart: true,
+        runtimeAccepted: { unboundedRuns: 0 },
+      });
+      expect(continued.runtimeAccepted!.extraMinutes).toBeGreaterThan(30);
+      expect((await task()).budgetStop).toBeUndefined();
+      await tasks.startTask(started.id);
+      await tasks.tick();
+      expect((await task()).status).toBe("running");
+    } finally {
+      monotonic.mockRestore();
+    }
+  });
   it(
     "resumes an interrupted task in its retained session and worktree before releasing dependencies",
     async () => {

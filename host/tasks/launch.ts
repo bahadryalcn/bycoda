@@ -31,6 +31,7 @@ import type { TaskContext } from "./context";
 import {
   AUTOMATIC_SUBAGENTS,
   CROSS_SUBAGENTS_KEY,
+  withoutBackgroundOwner,
 } from "../../src/shared/model/host-contracts/delegation";
 
 /** Resolve Automatic through agents.options at execution, retaining owner overrides. */
@@ -602,7 +603,8 @@ export async function launch(
           session.harness !== ready.harness ||
           session.model !== ready.model ||
           session.runtimeMode !== ready.runtimeMode ||
-          JSON.stringify(session.modelSettings) !== JSON.stringify(ready.modelSettings) ||
+          JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+            JSON.stringify(ready.modelSettings) ||
           (session.providerAccountId ?? "default") !== (ready.providerAccountId ?? "default") ||
           (stage.runId && record.runId !== stage.runId) ||
           (associated &&
@@ -687,7 +689,8 @@ export async function launch(
                   session.harness !== ready.harness ||
                   session.model !== ready.model ||
                   session.runtimeMode !== ready.runtimeMode ||
-                  JSON.stringify(session.modelSettings) !== JSON.stringify(ready.modelSettings) ||
+                  JSON.stringify(withoutBackgroundOwner(session.modelSettings)) !==
+                    JSON.stringify(ready.modelSettings) ||
                   (session.providerAccountId ?? "default") !==
                     (ready.providerAccountId ?? "default") ||
                   (stage.runId && record.runId !== stage.runId) ||
