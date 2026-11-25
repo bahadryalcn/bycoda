@@ -260,7 +260,13 @@ it("shows the Host failure and keeps the name when signup cannot start", async (
   const { client, onCreated } = setup();
   client.browserWorkflowBegin.mockRejectedValueOnce(new Error("Chrome or Edge is unavailable."));
   await submit();
-  expect(element.textContent).toContain("Chrome or Edge is unavailable.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The signup could not be started. Try again.");
+  expect(document.body.textContent).not.toContain("Chrome or Edge is unavailable.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "Chrome or Edge is unavailable.",
+  );
   expect(field("Name").value).toBe("Launch");
   expect(onCreated).not.toHaveBeenCalled();
 });

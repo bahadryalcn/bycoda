@@ -183,7 +183,13 @@ it("keeps the entered name and shows the failure when the account cannot be crea
   const { onCreated } = render(client);
   typeName("Studio");
   await submitForm();
-  expect(element.textContent).toContain("The Host is busy.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The account could not be added. Try again.");
+  expect(document.body.textContent).not.toContain("The Host is busy.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The Host is busy.",
+  );
   expect(nameInput().value).toBe("Studio");
   expect(onCreated).not.toHaveBeenCalled();
 });

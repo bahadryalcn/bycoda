@@ -195,7 +195,13 @@ it("keeps the edited values after a failed save and sends them again on retry", 
   const onChanged = mount(request, scoped);
   act(() => typeInto(inputs()[2]!, "222"));
   await submit();
-  expect(element.textContent).toContain("The Host is offline.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The limits could not be saved. Try again.");
+  expect(document.body.textContent).not.toContain("The Host is offline.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The Host is offline.",
+  );
   expect(inputs()[2]?.value).toBe("222");
   expect(onChanged).not.toHaveBeenCalled();
   await submit();

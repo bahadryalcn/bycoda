@@ -135,7 +135,13 @@ it("keeps the form and shows the failure when the Host refuses the account", asy
   const { onCreated } = render(save);
   fillValid();
   await submit();
-  expect(element.textContent).toContain("The unsubscribe link is not reachable.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The email account could not be saved. Try again.");
+  expect(document.body.textContent).not.toContain("The unsubscribe link is not reachable.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The unsubscribe link is not reachable.",
+  );
   expect(field("Name").value).toBe("Newsletter");
   expect(onCreated).not.toHaveBeenCalled();
 });

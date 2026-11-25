@@ -387,7 +387,14 @@ describe("PlatformFields", () => {
 
   it("picks the field set that matches the account platform", () => {
     render(createElement(PlatformFields, props("x")));
-    expect(element.textContent).toBe("");
+    expect(textInput("Poll")?.type).toBe("checkbox");
+    expect(element.textContent).toContain("Add thread post");
+    const more = [...element.querySelectorAll("summary")].find(
+      (node) => node.textContent?.trim() === "More X options",
+    );
+    expect(more).toBeDefined();
+    expect(textInput("Quote post ID")).toBeDefined();
+    expect(textInput("Community ID")).toBeDefined();
     render(createElement(PlatformFields, props("tiktok", { creator })));
     expect(element.textContent).toContain("TikTok");
     expect(tikTokPrivacy()).not.toBeNull();

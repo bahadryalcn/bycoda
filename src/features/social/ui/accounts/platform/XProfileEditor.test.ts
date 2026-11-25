@@ -25,6 +25,14 @@ function button(text: string) {
   return [...element.querySelectorAll("button")].find((node) => node.textContent === text);
 }
 
+function expectErrorDetails(summary: string, detail: string) {
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain(summary);
+  expect(document.body.textContent).not.toContain(detail);
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(detail);
+}
+
 it("reads the profile only when asked", async () => {
   const xProfileRead = vi.fn(async () => profile);
   const client = { xProfileRead, xProfileUpdate: vi.fn() } as unknown as SocialClient;
@@ -121,9 +129,15 @@ it("sends one read for a double press and offers a retry after a failed read", a
   });
   expect(xProfileRead).toHaveBeenCalledTimes(1);
   await act(async () => fail(new Error("The profile page did not load.")));
-  expect(element.textContent).toContain("The profile page did not load.");
+  expectErrorDetails(
+    "The profile could not be verified. Read the profile again before saving.",
+    "The profile page did not load.",
+  );
   expect(element.querySelector("form")).toBeNull();
-  await act(async () => button("Read profile")?.click());
+  const retry = [...element.querySelectorAll<HTMLButtonElement>('[role="alert"] button')].find(
+    (node) => node.textContent === "Read profile",
+  );
+  await act(async () => retry?.click());
   expect(xProfileRead).toHaveBeenCalledTimes(2);
   expect(control("About").value).toBe("Draft");
 });
@@ -164,7 +178,8 @@ it("keeps the owner's edits and shows the failure when the profile cannot be ver
   await act(async () => button("Read profile")?.click());
   typeInto("About", "Changed bio");
   await submitProfile();
-  expect(element.textContent).toContain(
+  expectErrorDetails(
+    "The profile could not be verified. Read the profile again before saving.",
     "The new bio was not found when the profile was read back.",
   );
   expect(control("About").value).toBe("Changed bio");

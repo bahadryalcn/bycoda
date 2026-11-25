@@ -110,6 +110,14 @@ function button(text: string) {
   return [...element.querySelectorAll("button")].find((node) => node.textContent === text);
 }
 
+function expectErrorDetails(summary: string, detail: string) {
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain(summary);
+  expect(document.body.textContent).not.toContain(detail);
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(detail);
+}
+
 function typeInto(input: HTMLInputElement | null | undefined, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   act(() => {
@@ -162,7 +170,7 @@ it("shows the platform's own error from the status check", async () => {
   });
   render(client);
   await act(async () => button("Check connection")?.click());
-  expect(element.textContent).toContain("Access was denied.");
+  expectErrorDetails("The connection could not be started. Try again.", "Access was denied.");
 });
 
 it("keeps an organization account from starting until the numeric organization ID is entered", async () => {
@@ -216,7 +224,7 @@ it("updates an open browser sign-in through verification and failure without a c
   await act(async () => vi.advanceTimersByTimeAsync(2_000));
   expect(element.textContent).toContain("Checking…");
   await act(async () => vi.advanceTimersByTimeAsync(2_000));
-  expect(element.textContent).toContain("The identity could not be verified.");
+  expectErrorDetails("Sign-in failed. Start sign-in again.", "The identity could not be verified.");
   expect(button("Stop")).toBeUndefined();
   expect(button("Sign in in the browser")?.disabled).toBe(false);
   expect(onChanged).not.toHaveBeenCalled();
@@ -254,7 +262,10 @@ it("says plainly when the sign-in could not be started and keeps the actions ava
   });
   render(client, { account: account({ connection: "browser" }) });
   await act(async () => button("Sign in in the browser")?.click());
-  expect(element.textContent).toContain("The browser profile is busy.");
+  expectErrorDetails(
+    "The connection could not be started. Try again.",
+    "The browser profile is busy.",
+  );
   expect(button("Sign in in the browser")?.disabled).toBe(false);
 });
 
@@ -280,7 +291,7 @@ it("does not refresh as connected when the token connection fails", async () => 
   });
   await act(async () => button("Connect")?.click());
   expect(onChanged).not.toHaveBeenCalled();
-  expect(element.textContent).toContain("The token was refused.");
+  expectErrorDetails("The connection could not be started. Try again.", "The token was refused.");
 });
 
 it("uses the channel review for Telegram and offers no one-click Connect on its capability rows", () => {

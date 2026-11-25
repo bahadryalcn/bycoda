@@ -186,7 +186,13 @@ it("shows the failure and does not refresh when the Host refuses to pause", asyn
   const onChanged = render(request);
   const item = menu("pause");
   await act(async () => item?.click());
-  expect(element.textContent).toContain("The Host is busy.");
+  const alert = element.querySelector('[role="alert"]');
+  expect(alert?.textContent).toContain("The account could not be changed. Try again.");
+  expect(document.body.textContent).not.toContain("The Host is busy.");
+  act(() => alert?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.click());
+  expect(document.body.querySelector('[aria-label="Error details"]')?.textContent).toBe(
+    "The Host is busy.",
+  );
   expect(onChanged).not.toHaveBeenCalled();
 });
 
