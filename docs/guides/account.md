@@ -136,11 +136,13 @@ requests) and how long it is kept, and never your sessions, prompts, code or fil
 **Request export** prepares a JSON copy of your account in the background; when it is ready,
 **Save file** downloads it. Data sharing choices apply to this computer.
 
-In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Send every time** for each sharing category. Active time starts in **Ask every time**. Choosing **Do not send** keeps new active-time records on the local Host. Previous uploads remain in the account.
+In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Send every time** for each sharing category. Active time uses **Ask daily** by default. Choosing **Do not send** keeps new active-time records on the local Host. Previous uploads remain in the account.
 
 Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
 
-Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. In the active-time preview, **Send once** sends the reviewed data with the current preference. **Always send** sends it and sets the active-time preference to **Send every time**. This setting gives future transfers a short review window. Opening the details pauses automatic sending, and you can cancel the pending transfer. After a successful upload, the receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
+Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. For active time, **Send once** sends the reviewed data and pauses further requests until local midnight. **Send for today** lets active time sync for this account on this computer until local midnight. **Always send** saves **Send every time** and lets future active-time transfers sync automatically. Under **More options**, **Ask later** skips this transfer and waits until midnight. Dismissing the pending notice has the same effect. **Never send** disables active-time sharing until you change the preference in **Settings → Privacy**.
+
+Active time shows at most one successful upload receipt per day. The receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
 once: in the first-run setup, or for existing installations in a small notice that never

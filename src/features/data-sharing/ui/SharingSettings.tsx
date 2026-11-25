@@ -13,10 +13,12 @@ export function SharingModeSelect({
   label,
   value,
   change,
+  askLabel,
 }: {
   label: string;
   value: SharingMode;
   change: (mode: SharingMode) => void;
+  askLabel?: string;
 }) {
   useLocale();
   return (
@@ -29,7 +31,7 @@ export function SharingModeSelect({
       }}
       options={[
         { value: "off", label: t("Do not send") },
-        { value: "ask", label: t("Ask every time") },
+        { value: "ask", label: askLabel ?? t("Ask every time") },
         { value: "auto", label: t("Send every time") },
       ]}
     />
@@ -46,7 +48,12 @@ export function ActivitySharingSetting() {
       label={label}
       description={t("Sync daily active minutes to your Bycoda account.")}
     >
-      <SharingModeSelect label={label} value={mode} change={activitySharing.save} />
+      <SharingModeSelect
+        label={label}
+        value={mode}
+        change={activitySharing.save}
+        askLabel={t("Ask daily")}
+      />
     </Row>
   );
 }

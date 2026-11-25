@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Code } from "../../../shared/ui/Code";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { FileScript } from "../../../shared/ui/icons";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -55,19 +56,31 @@ export function DataSharingNotices() {
   useEffect(() => dataTransfers.present(), []);
   const [openedId, setOpenedId] = useState<number | null>(null);
   const [failedSaveId, setFailedSaveId] = useState<number | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
   const openPending = pending && openedId === pending.id ? pending : null;
-  const canAlwaysSend = openPending?.kind === "activity";
+  const isActivityReview = openPending?.kind === "activity";
   const openReceipt = showReceipts ? receipts.find((item) => item.id === openedId) : undefined;
   const details = openPending ?? openReceipt;
   const close = () => {
     openPending?.inspect(false);
+    setMenuAnchor(null);
     setOpenedId(null);
     setFailedSaveId(null);
   };
   const open = (id: number) => {
     if (openPending && openPending.id !== id) openPending.inspect(false);
     if (pending?.id === id) pending.inspect(true);
+    setMenuAnchor(null);
     setOpenedId(id);
+  };
+  const saveActivityMode = (mode: "auto" | "off") => {
+    if (!openPending) return;
+    if (!activitySharing.save(mode)) {
+      setFailedSaveId(openPending.id);
+      return;
+    }
+    openPending.decide(mode === "auto");
+    close();
   };
   const latestReceipt = showReceipts ? receipts[receipts.length - 1] : undefined;
   return (
@@ -84,7 +97,7 @@ export function DataSharingNotices() {
             label: t("Details"),
             onClick: () => open(pending.id),
           }}
-          onDismiss={() => pending.decide(false)}
+          onDismiss={() => pending.decide(false, "user")}
         />
       )}
       {latestReceipt && (
@@ -110,30 +123,67 @@ export function DataSharingNotices() {
           fitViewport
           footer={
             openPending && (
-              <ModalActions>
+              <ModalActions
+                start={
+                  isActivityReview && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        aria-haspopup="menu"
+                        aria-expanded={menuAnchor !== null}
+                        onClick={(event) => setMenuAnchor(menuAnchor ? null : event.currentTarget)}
+                      >
+                        {t("More options")}
+                      </Button>
+                      {menuAnchor && (
+                        <DropdownMenu
+                          anchor={menuAnchor}
+                          label={t("More options")}
+                          side="top"
+                          align="start"
+                          items={[
+                            { kind: "item", id: "later", label: t("Ask later") },
+                            { kind: "item", id: "never", label: t("Never send") },
+                          ]}
+                          onClose={() => setMenuAnchor(null)}
+                          onPick={(id) => {
+                            if (id === "never") saveActivityMode("off");
+                            if (id === "later") {
+                              openPending.decide(false, "user");
+                              close();
+                            }
+                          }}
+                        />
+                      )}
+                    </>
+                  )
+                }
+              >
+                {!isActivityReview && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      openPending.decide(false, "user");
+                      close();
+                    }}
+                  >
+                    {t("Do not send")}
+                  </Button>
+                )}
                 <Button
-                  variant="ghost"
+                  variant={isActivityReview ? "secondary" : "primary"}
                   onClick={() => {
-                    openPending.decide(false);
-                    close();
-                  }}
-                >
-                  {t("Do not send")}
-                </Button>
-                <Button
-                  variant={canAlwaysSend ? "secondary" : "primary"}
-                  onClick={() => {
-                    openPending.decide(true);
+                    openPending.decide(true, "user");
                     close();
                   }}
                 >
                   {t("Send once")}
                 </Button>
-                {canAlwaysSend && (
+                {openPending.allowToday && (
                   <Button
-                    variant="primary"
+                    variant="secondary"
                     onClick={() => {
-                      if (!activitySharing.save("auto")) {
+                      if (!openPending.allowToday?.()) {
                         setFailedSaveId(openPending.id);
                         return;
                       }
@@ -141,6 +191,11 @@ export function DataSharingNotices() {
                       close();
                     }}
                   >
+                    {t("Send for today")}
+                  </Button>
+                )}
+                {isActivityReview && (
+                  <Button variant="primary" onClick={() => saveActivityMode("auto")}>
                     {t("Always send")}
                   </Button>
                 )}
