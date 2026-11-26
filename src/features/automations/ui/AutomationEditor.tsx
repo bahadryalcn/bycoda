@@ -246,7 +246,9 @@ export function AutomationEditor({
                 modelSettings: draft.modelSettings,
                 modelChoice: draft.modelChoice,
               }}
-              onChange={(steps) => update("workRecipe", { version: draft.workRecipe!.version, steps })}
+              onChange={(steps) =>
+                update("workRecipe", { version: draft.workRecipe!.version, steps })
+              }
             />
           ) : (
             <SkillPromptField
@@ -317,7 +319,11 @@ export function AutomationEditor({
             model={
               // A background automation chooses its model in the Run with fields below.
               background ? null : (
-                <AutomationModelChoice draft={draft} onChange={onChange} routingHost={routingHost} />
+                <AutomationModelChoice
+                  draft={draft}
+                  onChange={onChange}
+                  routingHost={routingHost}
+                />
               )
             }
             access={
@@ -404,7 +410,12 @@ export function AutomationEditor({
               onDecide={
                 draft.id && draft.hostMachineId
                   ? async (runId, approve) => {
-                      await decideHostAutomationRun(draft.hostMachineId!, draft.id!, runId, approve);
+                      await decideHostAutomationRun(
+                        draft.hostMachineId!,
+                        draft.id!,
+                        runId,
+                        approve,
+                      );
                       onRefreshHistory();
                     }
                   : undefined

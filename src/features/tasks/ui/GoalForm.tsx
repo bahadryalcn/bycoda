@@ -476,7 +476,7 @@ export function GoalForm({
                   budget={draft.budget}
                   onChange={(budget) => update("budget", budget)}
                 />
-                {projects.length === 1 || draft.executor ? (
+                {runWith.offered ? (
                   <TaskRunWithRow
                     runWith={runWith}
                     executor={draft.executor}

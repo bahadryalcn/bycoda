@@ -52,7 +52,6 @@ import "./task-form.css";
 
 type SubmitMode = "todo" | "queued" | "save";
 
-
 export function TaskForm({
   draft: inputDraft,
   recents,

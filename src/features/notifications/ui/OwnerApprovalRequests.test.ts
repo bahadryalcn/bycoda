@@ -255,7 +255,7 @@ it("stages several approvals one by one and sends every decision together", asyn
     });
     expect(element.textContent).toContain("3 requests need approval");
     expect(element.textContent).toContain("Exact one");
-    expect(button("Send").disabled).toBe(true);
+    expect(button("Send").matches(":disabled, [aria-disabled='true']")).toBe(true);
     await act(async () => button("Approve").click());
     expect(element.textContent).toContain("Exact two");
     await act(async () => button("Deny").click());

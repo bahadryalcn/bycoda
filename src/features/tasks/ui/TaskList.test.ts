@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskList } from "./TaskList";
+import { buildTaskStop } from "../../../shared/model/host-contracts/task-stop";
 import type { TaskActionHandlers } from "./TaskCardActions";
 import type { BoardTask } from "../model/taskClient";
 import { bulkTaskKey } from "../model/taskBulkActions";
@@ -120,8 +121,16 @@ it("shows a failure's reason on the row and names machines only when several are
     title: "Ship the report",
     status: "blocked",
     error: "Checks failed: 2 tests. See the log.",
+    stop: buildTaskStop({ code: "run_failed", message: "Checks failed: 2 tests. See the log." }, 1),
   } as BoardTask;
-  const other = { ...failed, id: "other", error: undefined, machineId: "b", machineName: "Laptop" };
+  const other = {
+    ...failed,
+    id: "other",
+    error: undefined,
+    stop: undefined,
+    machineId: "b",
+    machineName: "Laptop",
+  };
   await draw([failed]);
   expect(container.textContent).toContain("Checks failed: 2 tests.");
   expect(container.textContent).not.toContain("Workstation");

@@ -5,7 +5,7 @@ import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionE
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { useProjectCrews } from "../../crews/model/crewClient";
+import { useProjectCrews } from "../../crews/public/CrewTaskPicker";
 import { TaskFormRow } from "./TaskFormFields";
 
 /** The Run with choice value for the Host-picked executor; crew choices use their id. */
@@ -75,23 +75,23 @@ export function TaskRunWithRow({
     <div>
       {choiceHidden ? null : (
         <TaskFormRow label={t("Run with")}>
-        <SearchableSelect
-          label={t("Run with")}
-          hideLabel
-          variant="pill"
-          value={executor?.kind === "auto" ? AUTO_EXECUTOR : (runWith.crewId ?? "")}
-          disabled={disabled}
-          options={[
-            { value: "", label: t("Agent") },
-            { value: AUTO_EXECUTOR, label: t("Auto") },
-            ...runWith.crews.map((entry) => ({
-              value: entry.id,
-              label: entry.name,
-              description: entry.projectId ? t("This project") : t("All projects on this host"),
-            })),
-          ]}
-          onChange={(value) => onChange(executorFor(value))}
-        />
+          <SearchableSelect
+            label={t("Run with")}
+            hideLabel
+            variant="pill"
+            value={executor?.kind === "auto" ? AUTO_EXECUTOR : (runWith.crewId ?? "")}
+            disabled={disabled}
+            options={[
+              { value: "", label: t("Agent") },
+              { value: AUTO_EXECUTOR, label: t("Auto") },
+              ...runWith.crews.map((entry) => ({
+                value: entry.id,
+                label: entry.name,
+                description: entry.projectId ? t("This project") : t("All projects on this host"),
+              })),
+            ]}
+            onChange={(value) => onChange(executorFor(value))}
+          />
         </TaskFormRow>
       )}
       {choiceHidden ? null : children}
