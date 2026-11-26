@@ -564,6 +564,30 @@ describe("PushNotifications", () => {
       await service.tick();
       expect(widgets).toEqual([1, 1]);
     });
+
+    it("sends unchanged widget heartbeats at normal priority", async () => {
+      const { store } = await storeWithDevices("phone");
+      await store.register(
+        "phone",
+        parsePushRegistration({ ...registration, widgetUpdates: true }),
+      );
+      let wall = 1_000_000;
+      const priorities: string[] = [];
+      const service = new PushNotifications({
+        store,
+        environmentId: "env-1",
+        sessions: async () => [],
+        wallNow: () => wall,
+        send: async (messages) => {
+          priorities.push(...messages.map((m) => m.priority));
+          return { unregistered: [], failed: 0 };
+        },
+      });
+      await service.tick();
+      wall += 4 * 60_000;
+      await service.tick();
+      expect(priorities).toEqual(["high", "normal"]);
+    });
   });
 
   it("forgets a token Expo reports as unregistered", async () => {

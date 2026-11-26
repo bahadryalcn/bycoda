@@ -5,6 +5,7 @@ import {
   type DesktopInboxRunner,
 } from "./desktopLive";
 import type { Session } from "../../sessions/model/session";
+import { readRemoteInboxList, REMOTE_INBOX_LIST_FRESH_MS } from "./desktopInboxOperation";
 
 describe("native desktop inbox heartbeat runner", () => {
   it("dispatches Jira images only through the native approval permit", async () => {
@@ -65,13 +66,50 @@ describe("native desktop inbox heartbeat runner", () => {
       },
       { invoke: vi.fn(), list },
     );
-    expect(list).toHaveBeenCalledWith([{ path: "/project" }], {
-      assignedToMe: false,
-      state: "open",
-      search: "",
-      githubKinds: [],
-    });
+    expect(list).toHaveBeenCalledWith(
+      [{ path: "/project" }],
+      {
+        assignedToMe: false,
+        state: "open",
+        search: "",
+        onlyProviders: ["jira"],
+        githubKinds: [],
+      },
+      undefined,
+    );
     expect(result).toEqual({ items: [{ provider: "jira" }], errors: { jira: "slow" } });
+  });
+  it("passes only the owner's explicit refresh on, never as a provider query field", async () => {
+    const list = vi.fn().mockResolvedValue({ items: [], errors: {} });
+    await executeDesktopInboxOperation(
+      {
+        action: "list",
+        projects: [{ path: "/project" }],
+        query: { assignedToMe: true, state: "all", search: "x", refresh: true },
+      },
+      { invoke: vi.fn(), list },
+    );
+    expect(list).toHaveBeenCalledWith(
+      [{ path: "/project" }],
+      { assignedToMe: true, state: "all", search: "x" },
+      { refresh: true },
+    );
+  });
+  it("answers a phone list from a recent cache and reads providers on refresh or a miss", async () => {
+    const read = vi.fn().mockResolvedValue("fresh");
+    const cache = (fresh: boolean, cached: string | null) => ({
+      fresh: vi.fn(() => fresh),
+      peek: vi.fn(() => cached),
+      read,
+    });
+    const hit = cache(true, "cached");
+    expect(await readRemoteInboxList(hit, "q")).toBe("cached");
+    expect(hit.fresh).toHaveBeenCalledWith("q", REMOTE_INBOX_LIST_FRESH_MS);
+    expect(read).not.toHaveBeenCalled();
+    expect(await readRemoteInboxList(cache(true, "cached"), "q", { refresh: true })).toBe("fresh");
+    expect(await readRemoteInboxList(cache(false, "old"), "q")).toBe("fresh");
+    expect(await readRemoteInboxList(cache(true, null), "q")).toBe("fresh");
+    expect(read).toHaveBeenCalledTimes(3);
   });
   it("continues session controls while provider work is slow, and executes a claimed job once", async () => {
     let finish!: () => void;

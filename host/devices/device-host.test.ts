@@ -711,6 +711,51 @@ describe("device boundaries", () => {
       status.mockRestore();
     }
   });
+  it("captures a viewer frame from raw adb pixels, scaled with its device size", async () => {
+    const host = new DeviceHost("/nonexistent-bycoda-device-cache", {
+      env: { ANDROID_HOME: "C:/existing-sdk" },
+      platform: "win32",
+    });
+    Object.assign(host, { origin: "http://127.0.0.1:12345" });
+    const status = vi.spyOn(host, "status").mockResolvedValue({
+      running: true,
+      installed: true,
+      agentInstalled: false,
+      platform: "win32",
+      platforms: [],
+    });
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("unavailable", { status: 503 }));
+    const command = vi
+      .spyOn(deviceProcesses, "deviceCommand")
+      .mockResolvedValue("List of devices attached\nemulator-5554\tdevice model:Tablet\n");
+    const raw = Buffer.alloc(16 + 2560 * 1600 * 4, 0x80);
+    raw.writeUInt32LE(2560, 0);
+    raw.writeUInt32LE(1600, 4);
+    raw.writeUInt32LE(1, 8);
+    const binary = vi.spyOn(deviceProcesses, "deviceBinaryCommand").mockResolvedValue(raw);
+    try {
+      const frame = await host.capture("emulator-5554", undefined, { maxEdge: 1080 });
+      expect(binary).toHaveBeenCalledWith(
+        expect.stringMatching(/adb\.exe$/),
+        ["-s", "emulator-5554", "exec-out", "screencap"],
+        expect.objectContaining({ timeoutMs: 20_000 }),
+      );
+      expect(frame).toMatchObject({ mime: "image/png", sourceWidth: 2560, sourceHeight: 1600 });
+      const png = Buffer.from(frame.base64, "base64");
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1080, 675]);
+      // Agents and older phones keep the full-resolution PNG.
+      await expect(host.capture("emulator-5554", undefined, { maxEdge: 100 })).rejects.toThrow(
+        "Invalid frame size",
+      );
+    } finally {
+      binary.mockRestore();
+      command.mockRestore();
+      fetch.mockRestore();
+      status.mockRestore();
+    }
+  });
   it("refreshes the frame immediately after a device action", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bycoda-device-frame-test-"));
     const host = new DeviceHost(directory, { env: {}, platform: "linux" });

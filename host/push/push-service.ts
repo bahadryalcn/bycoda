@@ -204,8 +204,11 @@ export class PushNotifications {
     const sessions = await this.deps.sessions();
     const widget = widgetPushPayload(sessions, (this.deps.wallNow ?? Date.now)());
     const widgetIdentity = `${widgetPushIdentity(widget)}:${JSON.stringify(widgetRecipients.map((r) => [r.deviceHash, r.pushToken]).sort())}`;
-    if (widgetIdentity !== this.widgetIdentity || widget.at - this.widgetSentAt >= 4 * 60_000) {
+    const widgetChanged = widgetIdentity !== this.widgetIdentity;
+    if (widgetChanged || widget.at - this.widgetSentAt >= 4 * 60_000) {
       // Data-only delivery reaches headless tasks. Existing registration and event consent gates apply.
+      // An unchanged heartbeat only refreshes the widget's expiry, so it goes at normal priority: Android
+      // Doze batches it instead of waking the phone. iOS background pushes must use apns-priority 5.
       const messages = widgetRecipients.map((r): ExpoPushMessage => ({
         to: r.pushToken,
         data: {
@@ -213,7 +216,7 @@ export class PushNotifications {
           environmentId: this.deps.environmentId,
           widget: JSON.stringify(widget),
         },
-        priority: "high",
+        priority: widgetChanged && r.platform === "android" ? "high" : "normal",
         _contentAvailable: true,
         collapseId: `bycoda-widget-${this.deps.environmentId}`,
         ttl: 600,

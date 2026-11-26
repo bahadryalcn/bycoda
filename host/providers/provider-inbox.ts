@@ -143,6 +143,15 @@ export class ProviderInboxBridge {
           this.now() + (writes ? 24 * 60 * 60000 : 15 * 60000),
           requestedByName(requestedBy) ?? null,
         );
+      // A phone re-asks for its list on every search or filter change and stops waiting for the
+      // previous one. That earlier list, still queued, would otherwise take one of the desktop's
+      // two job slots (and minutes of provider reads) ahead of the request the phone now shows.
+      if (operation.action === "list" && !writes)
+        await this.db
+          .prepare(
+            "UPDATE remote_inbox_jobs SET state='failed',error=? WHERE owner_hash=? AND state='queued' AND writes=0 AND id<>? AND json_extract(operation_json,'$.action')='list'",
+          )
+          .run("A newer inbox list replaced this request.", ownerHash, id);
       return { id, state: "queued" };
     });
   }

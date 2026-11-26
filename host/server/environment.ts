@@ -15,6 +15,7 @@ import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
 import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
 import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
+import { DEVICE_VIEWER_CAPABILITY } from "../../src/shared/model/host-contracts/native-devices";
 import { DELEGATION_MESSAGES_STREAM } from "../../src/shared/model/host-contracts/delegation";
 import { GITHUB_WORK_ITEMS } from "../../src/shared/model/host-contracts/work-items";
 export function createEnvironmentRuntime(
@@ -337,6 +338,7 @@ export function createEnvironmentRuntime(
         "inbox.jiraBoard.v1",
         "device.host",
         "devices.preview.mobile.v1",
+        DEVICE_VIEWER_CAPABILITY,
         "host.tools.machine-targets",
         "generic-acp-v1",
         "handoff-history-v1",

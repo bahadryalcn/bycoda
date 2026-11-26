@@ -235,6 +235,19 @@ describe("Windows Android SDK controls", () => {
       ["-s", "emulator-5554", "shell", "input", "swipe", "1", "2", "3", "4"],
     ]);
     expect(command.mock.calls.every((call) => call[2]?.timeoutMs === 30_000)).toBe(true);
+    command.mockClear();
+    for (const action of [
+      { type: "key", key: "back" },
+      { type: "key", key: "appSwitcher" },
+      { type: "rotate", orientation: "landscape" },
+    ] as const)
+      await androidDeviceControl("adb.exe", "emulator-5554", action, { command });
+    expect(command.mock.calls.map((call) => call[1].slice(3))).toEqual([
+      ["input", "keyevent", "KEYCODE_BACK"],
+      ["input", "keyevent", "KEYCODE_APP_SWITCH"],
+      ["settings", "put", "system", "accelerometer_rotation", "0"],
+      ["settings", "put", "system", "user_rotation", "1"],
+    ]);
     await expect(
       androidDeviceControl("adb.exe", "--help", { type: "home" }, { command }),
     ).rejects.toThrow("serial");

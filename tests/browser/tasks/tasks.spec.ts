@@ -82,7 +82,8 @@ for (const width of [1280, 800])
       await expect(page.locator("[data-task-description]")).toHaveCount(0);
       await capture("board");
       const card = page.getByRole("article", { name: "Repair standalone packaging", exact: true });
-      await card.click();
+      // Click the title: the card's center can land on the status button, which opens the stop reason.
+      await card.getByRole("heading", { name: "Repair standalone packaging", exact: true }).click();
       const detail = page.getByRole("complementary", { name: "Task details", exact: true });
       await expect(detail).toContainText("Responsibilities");
       await expect(detail.locator("summary").filter({ hasText: /^Error details$/ })).toBeVisible();

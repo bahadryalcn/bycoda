@@ -38,12 +38,6 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).assistantNavigation)).toEqual([
         { tab: "settings" },
       ]);
-      const appearance = page.getByRole("button", {
-        name: "Appearance and voice style",
-        exact: true,
-      });
-      await expect(appearance).toHaveAttribute("aria-expanded", "false");
-      await appearance.click();
       await page
         .locator('[data-setting-id="voice-style"]')
         .getByRole("button", { name: "Customize", exact: true })

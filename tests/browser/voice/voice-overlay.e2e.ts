@@ -701,7 +701,11 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Send answer", exact: true }).click();
       await expect(lastReply(panel)).toContainText("Your project choice has been recorded.");
       expect(await page.evaluate(() => (window as any).fixtureVoice.submits)).toBe(0);
-      await page.evaluate(() => (window as any).fixtureVoice.speech("give jobs"));
+      await page.evaluate(() =>
+        (window as any).fixtureVoice.speech(
+          "start a job to review recovery and improve the help page",
+        ),
+      );
       // The review is a dialog outside the companion panel.
       const review = page.getByRole("dialog", { name: "Review jobs before starting", exact: true });
       await expect(review).toBeVisible();

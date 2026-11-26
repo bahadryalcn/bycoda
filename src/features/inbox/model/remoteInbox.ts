@@ -103,6 +103,11 @@ export type RemoteInboxQuery = {
   githubKinds?: ("issue" | "pr")[];
   /** Limits discovery to these providers; omitted means every connected provider. */
   providers?: RemoteInboxProvider[];
+  /**
+   * An explicit refresh by the owner. Without it the desktop may answer from its recent list
+   * (the same cache its own Inbox uses) instead of asking every provider again.
+   */
+  refresh?: boolean;
 };
 export type RemoteInboxReviewComment = {
   path: string;
@@ -247,6 +252,8 @@ export function parseRemoteInboxOperation(
       throw new Error("Invalid inbox state filter.");
     if (query.assignedToMe !== undefined && typeof query.assignedToMe !== "boolean")
       throw new Error("Invalid inbox assignee filter.");
+    if (query.refresh !== undefined && typeof query.refresh !== "boolean")
+      throw new Error("Invalid inbox refresh flag.");
     const kinds = query.githubKinds;
     if (
       kinds !== undefined &&
@@ -281,6 +288,7 @@ export function parseRemoteInboxOperation(
         ...(providers === undefined
           ? {}
           : { providers: [...new Set(providers as RemoteInboxProvider[])] }),
+        ...(query.refresh === true ? { refresh: true } : {}),
       },
     };
   }

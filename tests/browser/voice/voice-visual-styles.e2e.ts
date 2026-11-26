@@ -827,7 +827,6 @@ for (const theme of ["light", "dark"])
         await panelCompact(page, visual, theme, width);
       }
       await page.getByRole("button", { name: "Expand voice companion", exact: true }).click();
-      await page.getByText("Appearance and voice style", { exact: true }).click();
       const picker = page.getByRole("radiogroup", { name: "Visual style", exact: true });
       await picker.scrollIntoViewIfNeeded();
       await picker.getByRole("radio", { name: "Wave", exact: true }).click();

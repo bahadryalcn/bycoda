@@ -189,6 +189,23 @@ describe("desktop provider inbox job bridge", () => {
     expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(2);
     expect((await bridge.beat("native", "desktop", { version: 1 })).jobs).toHaveLength(0);
   });
+  it("drops a queued list the same device replaced, keeping other reads and other devices", async () => {
+    const { bridge } = setup();
+    await bridge.beat("native", "desktop", { version: 1 });
+    const list = (search: string): RemoteInboxOperation => ({
+      action: "list",
+      projects: [{ path: "/project" }],
+      query: { assignedToMe: false, state: "open", search },
+    });
+    await bridge.request("client", "providers", read);
+    await bridge.request("client", "list-a", list("a"));
+    await bridge.request("other", "list-other", list("a"));
+    await bridge.request("client", "list-ab", list("ab"));
+    expect(await bridge.result("client", "list-a")).toMatchObject({ state: "failed" });
+    expect((await bridge.result("client", "list-ab")).state).toBe("queued");
+    expect((await bridge.result("other", "list-other")).state).toBe("queued");
+    expect((await bridge.result("client", "providers")).state).toBe("queued");
+  });
   it("marks a dispatched send uncertain after disconnect and never reclaims it", async () => {
     const { bridge, advance } = setup();
     await bridge.beat("native", "desktop", { version: 1 });

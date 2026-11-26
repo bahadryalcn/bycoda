@@ -185,7 +185,8 @@ export function sharedBrowserUrl(input: unknown) {
   if (typeof input !== "string" || input.length > 4096) throw new Error("Invalid browser URL");
   const trimmed = input.trim();
   if (!trimmed || /\s/.test(trimmed)) throw new Error(SHARED_BROWSER_INVALID_URL);
-  const local = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|(\d{1,3}\.){3}\d{1,3})(:\d+)?([/?#]|$)/i.test(trimmed);
+  const local =
+    /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|(\d{1,3}\.){3}\d{1,3})(:\d+)?([/?#]|$)/i.test(trimmed);
   const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
     ? trimmed
     : `${local ? "http" : "https"}://${trimmed}`;

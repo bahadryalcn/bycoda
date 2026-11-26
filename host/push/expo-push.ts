@@ -10,7 +10,8 @@ export type ExpoPushMessage = {
   data: Record<string, string>;
   sound?: "default";
   channelId?: "bycoda";
-  priority: "high";
+  /** "normal" lets Android Doze batch a data-only message and maps to apns-priority 5 on iOS. */
+  priority: "high" | "normal";
   _contentAvailable?: boolean;
   collapseId?: string;
   ttl?: number;

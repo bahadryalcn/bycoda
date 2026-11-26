@@ -18,6 +18,7 @@ import {
   type DesktopLiveResult,
 } from "./desktopLive";
 import type { DesktopInboxReply } from "../../inbox/model/remoteInbox";
+import { readRemoteInboxList } from "./desktopInboxOperation";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import { desktopInstanceId } from "./desktopInstance";
@@ -217,9 +218,20 @@ export function useDesktopLive(
                 deadline,
               ),
             invoke: (command, args) => invoke(command, args),
-            list: async (projects, query) => {
-              const { listInboxItems } = await import("../../inbox/model/githubTasks");
-              return listInboxItems(projects, query, { force: true });
+            list: async (projects, query, options) => {
+              const { inboxListIsFresh, listInboxItems, peekInboxList } =
+                await import("../../inbox/model/githubTasks");
+              // A cache miss still forces: per-repository reads otherwise reuse any older copy.
+              return readRemoteInboxList(
+                {
+                  fresh: (value, maxAgeMs) =>
+                    inboxListIsFresh(projects, value, Date.now(), maxAgeMs),
+                  peek: (value) => peekInboxList(projects, value),
+                  read: (value) => listInboxItems(projects, value, { force: true }),
+                },
+                query,
+                options,
+              );
             },
             results: inboxResults,
             running: inboxRunning,

@@ -79,6 +79,19 @@ describe("advertised device actions match executable arguments", () => {
     expect(JSON.stringify(schema)).toContain('"maximum":20000');
     expect(JSON.stringify(schema)).toContain('"maxLength":4096');
   });
+  it("maps the phone viewer's system keys and rotation to exact CLI arguments", () => {
+    expect(deviceActionArgs({ type: "key", key: "back" })).toEqual(["back"]);
+    expect(deviceActionArgs({ type: "key", key: "appSwitcher" })).toEqual(["app-switcher"]);
+    expect(deviceActionArgs({ type: "rotate", orientation: "landscape" })).toEqual([
+      "orientation",
+      "landscape-left",
+    ]);
+    for (const action of [
+      { type: "key", key: "--help" },
+      { type: "rotate", orientation: "--help" },
+    ] as unknown as DeviceAction[])
+      expect(() => deviceActionArgs(action)).toThrow();
+  });
   it("maps fold presets exactly and rejects arbitrary CLI arguments", () => {
     expect(deviceActionArgs({ type: "fold", posture: "half-open" })).toEqual(["fold", "half-open"]);
     const action = { type: "fold", posture: "--help" } as unknown as DeviceAction;
