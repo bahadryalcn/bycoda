@@ -2046,10 +2046,13 @@ describe("goal tasks", () => {
     expect((await tasks.get(running.id))?.status).toBe("verifying");
     const cancelled = await goals.cancel("goal");
     expect(cancelled.status).toBe("cancelled");
-    expect(await tasks.get(running.id)).toMatchObject({
-      status: "blocked",
-      error: "Stopped by you.",
-    });
+    // The verification job stops through the task Stop path, which may land after cancel returns.
+    await vi.waitFor(async () =>
+      expect(await tasks.get(running.id)).toMatchObject({
+        status: "blocked",
+        error: "Stopped by you.",
+      }),
+    );
     await tasks.idle();
     expect((await tasks.get(running.id))?.status).toBe("blocked");
     expect(turns).toHaveLength(2);
