@@ -141,7 +141,7 @@ describe("desktop phone pairing ownership", () => {
     api.access.mockReturnValueOnce(lookup.promise);
     const old = flow.open(local);
     await flow.open(remote);
-    lookup.resolve({ state: "install-required" });
+    lookup.resolve({ state: "unavailable" });
     await old;
     expect(flow.getSnapshot()).toEqual({
       stage: "access",
@@ -216,16 +216,11 @@ describe("desktop phone pairing ownership", () => {
     expect(api.cancel).not.toHaveBeenCalled();
   });
 
-  it("cannot issue tickets while the selected host still requires setup or permission", async () => {
+  it("cannot issue tickets while the selected host has no reachable address", async () => {
     const { flow, api } = fixture();
-    api.access.mockResolvedValue({
-      state: "approval-required",
-      approvalUrl: "https://login.tailscale.com/a/approve",
-    });
+    api.access.mockResolvedValue({ state: "unavailable" });
     await flow.open(remote);
     await flow.create();
-    await flow.enable();
-    expect(api.enable).not.toHaveBeenCalled();
     expect(api.create).not.toHaveBeenCalled();
   });
 });

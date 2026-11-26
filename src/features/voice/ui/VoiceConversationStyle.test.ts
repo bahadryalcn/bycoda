@@ -24,11 +24,6 @@ afterEach(async () => {
   localStorage.clear();
   vi.unstubAllGlobals();
 });
-const button = (label: string) =>
-  [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.textContent?.trim() === label,
-  )!;
-
 it("showing the away settings leaves the saved microphone preferences untouched", async () => {
   saveVoiceSettings({
     ...loadVoiceSettings(),

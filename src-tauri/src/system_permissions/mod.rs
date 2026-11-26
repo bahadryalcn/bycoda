@@ -276,7 +276,7 @@ pub fn drag_permission_app(window: tauri::WebviewWindow) -> Result<(), String> {
         }
         let native =
             crate::macos::ns_window(&window).ok_or("The permission card is unavailable.")?;
-        return app_drag::start(&native, &macos::running_app_bundle()?);
+        app_drag::start(&native, &macos::running_app_bundle()?)
     }
     #[cfg(not(target_os = "macos"))]
     {

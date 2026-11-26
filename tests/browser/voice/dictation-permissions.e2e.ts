@@ -15,8 +15,6 @@ for (const theme of ["light", "dark"]) {
     await page.evaluate(() => {
       document.documentElement.style.zoom = "2";
     });
-    await page.getByRole("button", { name: "Dictation dictionary", exact: true }).click();
-    await page.getByRole("button", { name: "Text cleanup options", exact: true }).click();
     await page.getByRole("button", { name: "Add term", exact: true }).click();
     await page
       .getByRole("textbox", { name: "Preferred spelling", exact: true })
@@ -51,8 +49,6 @@ for (const theme of ["light", "dark"]) {
       await expect(
         page.getByRole("switch", { name: "Enable dictation", exact: true }),
       ).toBeChecked();
-      await page.getByRole("button", { name: "Dictation dictionary", exact: true }).click();
-      await page.getByRole("button", { name: "Text cleanup options", exact: true }).click();
       await expect(
         page.getByText("Krankenhausinformationssystem-Schnittstellenkompatibilität", {
           exact: true,
@@ -98,7 +94,6 @@ for (const theme of ["light", "dark"]) {
         await page.getByRole("option", { name: "Türkçe", exact: true }).click();
       }
       await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Transcription models", exact: true }).click();
       const transcription = page.getByRole("region", { name: "Transcription", exact: true });
       const search = transcription.getByRole("textbox", { name: "Search models" });
       await search.fill("qwen");
@@ -136,7 +131,6 @@ for (const theme of ["light", "dark"]) {
         cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }),
       ).not.toBeChecked();
       await cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }).check();
-      await cleanup.getByRole("button", { name: "Text cleanup options", exact: true }).click();
       await expect(
         cleanup.getByRole("textbox", { name: "Correction phrase", exact: true }),
       ).toHaveValue("Düzeltiyorum");
@@ -154,12 +148,9 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&surface=settings&engine=local&recording-fixture=1`,
       );
-      await expect(page.getByText("Whisper Small", { exact: true })).not.toBeVisible();
-      await page.getByRole("button", { name: "Transcription models", exact: true }).click();
       await expect(page.getByText("Whisper Small", { exact: true })).toBeVisible();
       await expect(page.getByText("Whisper large-v3-turbo", { exact: true })).toBeVisible();
       await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Dictation options", exact: true }).click();
       await expect(page.getByText("Unload idle model", { exact: true }).first()).toBeVisible();
       await page.getByRole("button", { name: "Record test", exact: true }).click();
       await expect(page.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible();
@@ -191,7 +182,6 @@ for (const state of ["error", "loading", "working"]) {
     await page.goto(
       `/tests/browser/voice/dictation-permissions.html?stress=1&surface=settings&engine=local&models=${state}`,
     );
-    await page.getByRole("button", { name: "Transcription models", exact: true }).click();
     await expect(
       page.getByText(
         state === "error"

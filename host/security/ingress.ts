@@ -135,6 +135,7 @@ export function createTunnelIngress(
      */
     async closeRefused(): Promise<number> {
       let closed = 0;
+      // oxlint-disable-next-line unicorn/no-useless-spread -- snapshot: the loop awaits and deletes entries
       for (const [socket, token] of [...upgraded]) {
         if (!(await isPhoneCredential(token).catch(() => true))) continue;
         upgraded.delete(socket);

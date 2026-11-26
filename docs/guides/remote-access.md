@@ -94,6 +94,7 @@ directory. The URL changes whenever the tunnel starts. The Host starts it again
 after restart or verified unexpected exit if you enabled the option. Use **Stop tunnel**
 on the shared link or **Stop automatic Host access** in the Cloudflare Host form to
 stop automatic access.
+
 ### Private and public paths
 
 Settings → Connections → Devices separates the two kinds of phone path. **Private — only

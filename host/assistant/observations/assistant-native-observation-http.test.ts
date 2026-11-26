@@ -172,6 +172,8 @@ it.each(["note", "server", "crew", "native-session"])(
         gap = true,
         completed = 0,
         settled = false;
+      // The relay counts a desktop as online only after it polls; poll before the turn needs it.
+      expect((await call("conversation.desktop.take", {})).result ?? []).toEqual([]);
       const turn = call("assistant.request", {
         op: "threads.send",
         threadId: thread,

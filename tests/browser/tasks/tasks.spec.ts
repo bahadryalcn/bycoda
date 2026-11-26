@@ -1277,9 +1277,13 @@ test("compact goal filters retain scope, reset and keyboard menu focus", async (
   await choose(page, popover.getByRole("button", { name: /^Show epic:/ }), "Settings goal");
   await expect(filters).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: "Epic planned task", exact: true })).toBeVisible();
   await popover.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(filters).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Epic planned task", exact: true })).toHaveCount(
+    0,
+  );
   await page.keyboard.press("Escape");
   await expect(filters).toBeFocused();
   const deliveryMenu = page
@@ -1490,7 +1494,7 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
 });
 
 test("a goal lists its created session links", async ({ page }) => {
-  await openTasks(page, `${fixture}?boardControls`);
+  await openTasks(page, `${fixture}?boardControls&goalTasks`);
   await page
     .getByRole("article", { name: "Settings goal", exact: true })
     .getByRole("button", { name: "Task sessions", exact: true })
@@ -2234,7 +2238,7 @@ for (const width of [800, 1280])
     test(`shared goal session separators ${width} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await openTasks(page, `${fixture}?boardControls`);
+      await openTasks(page, `${fixture}?boardControls&goalTasks`);
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",

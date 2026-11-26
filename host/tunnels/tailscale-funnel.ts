@@ -8,7 +8,7 @@ export async function tailscaleExecutable(): Promise<string | undefined> {
   const executable = process.platform === "win32" ? "tailscale.exe" : "tailscale";
   const candidates = [
     ...(process.platform === "win32"
-      ? [join(process.env.ProgramFiles ?? "C:\Program Files", "Tailscale", executable)]
+      ? [join(process.env.ProgramFiles ?? "C:\\Program Files", "Tailscale", executable)]
       : [
           "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
           "/usr/local/bin/tailscale",

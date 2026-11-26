@@ -33,7 +33,8 @@ export function DictationSettingsSuggestion({
   const [applyError, setApplyError] = useState(false);
   const request = useRef<string | null>(null);
   const cleanup = settings.dictationCleanup;
-  // Dismissed settings release pending Codex work. Completed suggestions survive navigation.
+  // Completed suggestions survive navigation.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- dismissed settings release pending Codex cleanup work on unmount
   useEffect(
     () => () => {
       const current = request.current;

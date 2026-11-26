@@ -806,22 +806,6 @@ test("background layer row interaction baseline", async ({ page }) => {
   await expect(toggle).toHaveAttribute("aria-checked", checked === "true" ? "false" : "true");
 });
 
-test("advanced settings toggle surface baseline", async ({ page }) => {
-  await page.goto("/tests/browser/settings/settings.html?section=chat&theme=light&lang=en");
-  const toggle = page.getByRole("button", { name: "Advanced conversation settings" });
-  const read = () =>
-    toggle.evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { radius: s.borderTopLeftRadius, height: s.height, background: s.backgroundColor };
-    });
-  const rest = await read();
-  await toggle.hover();
-  const hover = await read();
-  await toggle.focus();
-  const focus = await read();
-  console.log("ADVANCED_TOGGLE_BASELINE", JSON.stringify({ rest, hover, focus }));
-});
-
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     for (const empty of [false, true]) {

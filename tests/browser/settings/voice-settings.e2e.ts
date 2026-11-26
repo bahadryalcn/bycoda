@@ -86,14 +86,6 @@ for (const [theme, width] of [
     await expect(wakeField).not.toBeVisible();
     await region.locator('[data-setting-id="voice-persona"]').scrollIntoViewIfNeeded();
     await capture("bottom");
-    for (const title of [
-      "Voice options",
-      "Transcription models",
-      "Dictation options",
-      "When you step away",
-      "Appearance and voice style",
-    ])
-      await region.getByRole("button", { name: new RegExp(`^${title}`) }).click();
     await assertVoiceRows(region);
     for (const [name, id] of [
       ["engine-expanded", "voice-device"],
@@ -139,7 +131,6 @@ for (const [theme, width] of [
     await capture("grok-speaker-picker");
     await page.keyboard.press("Escape");
     await region.getByRole("radio", { name: "OpenAI Realtime", exact: true }).click();
-    await region.getByText("Advanced turn detection", { exact: true }).click();
     await assertVoiceRows(region);
     await region.locator('[data-setting-id="voice-semantic-vad"]').scrollIntoViewIfNeeded();
     await capture("openai-turn-detection");
@@ -279,8 +270,6 @@ for (const theme of ["light", "dark"]) {
         group.getByRole("switch", { name: "I decide when my turn ends", exact: true }),
       ).toBeVisible();
       await expect(group.getByRole("switch", { name: "Memory", exact: true })).toBeVisible();
-      await group.getByText("Appearance and voice style", { exact: true }).click();
-      await group.getByText("Voice options", { exact: true }).click();
       await expect(
         group.getByRole("radiogroup", { name: "Visual style", exact: true }),
       ).toBeVisible();
@@ -421,7 +410,6 @@ for (const theme of ["light", "dark"]) {
     const gpuCaptures = join(process.cwd(), "temp/verification/2026-10-31-voice-gpu");
     await mkdir(gpuCaptures, { recursive: true });
     await group.screenshot({ path: join(gpuCaptures, `voice-gpu-offer-${theme}-1280.png`) });
-    await group.getByText("Voice options", { exact: true }).click();
     await group.getByRole("radio", { name: "CPU", exact: true }).click();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),

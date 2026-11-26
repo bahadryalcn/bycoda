@@ -354,7 +354,6 @@ if (query.has("boardControls")) {
     modelSettings: {},
     runtimeMode: "auto",
     maxRunMinutes: 0,
-    goalId: "controls-goal",
   };
   tasks["machine-local"] = [
     { ...defaults, status: "queued", createdAt: 1, updatedAt: 1 },
@@ -489,16 +488,32 @@ if (query.has("boardControls")) {
         : {}),
     };
   }
-  if (query.has("uiFilters"))
-    tasks["machine-local"].push({
-      ...defaults,
-      id: "independent",
-      title: "Independent task",
-      goalId: undefined,
-      status: "todo",
-      createdAt: 4,
-      updatedAt: 4,
-    });
+  // Epic tasks open from their epic; this variant plans every fixture task into it.
+  if (query.has("goalTasks"))
+    for (const task of tasks["machine-local"]) task.goalId = "controls-goal";
+  if (query.has("uiFilters")) {
+    // An epic's planned task opens from its epic and shows on the board only under the epic filter.
+    goals["machine-local"][0].taskIds.push("epic-planned");
+    tasks["machine-local"].push(
+      {
+        ...defaults,
+        id: "independent",
+        title: "Independent task",
+        status: "todo",
+        createdAt: 4,
+        updatedAt: 4,
+      },
+      {
+        ...defaults,
+        id: "epic-planned",
+        title: "Epic planned task",
+        goalId: "controls-goal",
+        status: "todo",
+        createdAt: 5,
+        updatedAt: 5,
+      },
+    );
+  }
 }
 if (query.has("bulk")) {
   const base = tasks["machine-local"][0];

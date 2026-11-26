@@ -262,6 +262,7 @@ export class VoiceWorkLedger {
     } catch {
       // Persistence is best effort; the in-memory ledger stays authoritative.
     }
+    // oxlint-disable-next-line unicorn/no-useless-spread -- snapshot: a listener may unsubscribe while notified
     for (const listener of [...this.listeners]) listener();
   }
 

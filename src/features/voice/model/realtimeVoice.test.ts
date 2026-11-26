@@ -2823,7 +2823,9 @@ it("preserves a newer accepted turn while a paused response is awaiting its ID",
 });
 
 function diagnosed(events: { diagnostic: ReturnType<typeof vi.fn> }, kind: string) {
-  return events.diagnostic.mock.calls.map(([event]) => event).filter((event) => event.kind === kind);
+  return events.diagnostic.mock.calls
+    .map(([event]) => event)
+    .filter((event) => event.kind === kind);
 }
 
 it("reports how long the session took to become ready and how many items were seeded", async () => {

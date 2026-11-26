@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "@tauri-apps/api/core";
-import { hostToolRequest } from "../../connections/model/hostFeatureClient";
+import { hostToolRequest } from "../../connections/public/hostFeatureClient";
 import { toolPreferences } from "../../host-tools/public/toolPreferences";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -33,7 +33,7 @@ export function BrowserProfileSettings() {
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
 
-  // Load profile names and grants from this desktop's Host while this settings section is mounted.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- loads profile names and grants from this desktop's Host while the section is mounted
   useEffect(() => {
     if (!isTauri()) return;
     let current = true;

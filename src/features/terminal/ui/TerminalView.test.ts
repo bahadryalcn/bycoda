@@ -147,7 +147,9 @@ import {
 it("lets the macOS keyboard layout produce Option characters in xterm", async () => {
   const { host, root } = setup();
   try {
-    await act(async () => root.render(createElement(TerminalView, { id: "mac-option", cwd: "" })));
+    await act(async () =>
+      root.render(createElement(TerminalView, { id: "mac-option", cwd: "", active: true })),
+    );
     expect(xterm.instances[0]?.options.macOptionIsMeta).toBe(false);
   } finally {
     await act(async () => root.unmount());

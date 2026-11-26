@@ -1,4 +1,4 @@
-import { createServer, request as httpRequest, type IncomingMessage } from "node:http";
+import { request as httpRequest, type IncomingMessage } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

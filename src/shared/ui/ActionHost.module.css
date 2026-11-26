@@ -189,6 +189,9 @@
     margin: 0;
     overflow: visible;
     pointer-events: none;
+    /* A transparent yielding element is its own stacking context and may come later in the
+       row; the actions must still paint and take clicks above it. */
+    z-index: 1;
   }
   :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(
       :global([data-action-yield])
@@ -210,6 +213,7 @@
     )
     :global([data-action-yield]) {
     opacity: 0;
+    pointer-events: none;
   }
   :global([data-action-host]):has(:global([data-action-yield])):is(
       :hover,

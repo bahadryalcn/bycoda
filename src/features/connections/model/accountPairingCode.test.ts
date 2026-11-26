@@ -58,7 +58,7 @@ describe("createAccountPairingCode", () => {
     await expect(
       createAccountPairingCode(
         machine,
-        api({ tailscale: { state: "offline" }, lan: { state: "setup-required" } }),
+        api({ tailscale: { state: "unavailable" }, lan: { state: "setup-required" } }),
       ),
     ).rejects.toThrow("Phone access is not set up");
   });

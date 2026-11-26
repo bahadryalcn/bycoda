@@ -102,7 +102,7 @@ it.each(["active", "paused", "restored"] as const)(
         followUpBehavior: "steer",
         sharedQueueClaimed: true,
       },
-    } as SubmitInput;
+    } as unknown as SubmitInput;
     const pre = {
       storedCurrent: session,
       current: session,
@@ -148,7 +148,7 @@ it("keeps a refused explicitly steered row behind older queued rows", async () =
     text: selected.text,
     attachments: [],
     options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -190,7 +190,7 @@ it("keeps Stop authoritative when a queued steer loses its turn during delivery"
     text: selected.text,
     attachments: selected.attachments,
     options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -236,7 +236,7 @@ it("keeps a steered row in place and the queue active when a provider switch rep
     text: selected.text,
     attachments: selected.attachments,
     options: { queuedMessageId: selected.id, followUpBehavior: "steer", sharedQueueClaimed: true },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -272,7 +272,7 @@ it.each(["unreviewed", "kept", "kept-with-new-send", "edited"])(
       sessionId: session.id,
       text: "synthetic follow-up",
       attachments: [],
-    } as SubmitInput;
+    } as unknown as SubmitInput;
     const pre = {
       storedCurrent: session,
       current: session,
@@ -343,7 +343,7 @@ it("steers a message through the host running the adopted conversation", async (
     sessionId: session.id,
     text: "from this desk",
     attachments: [],
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -384,7 +384,7 @@ it("retains an explicit queue while Claude waits for background commands without
     text: "after the tests, update the rules",
     attachments: [],
     options: { followUpBehavior: "queue" },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -419,7 +419,11 @@ it("queues a message typed while two versions of the conversation await the user
     flushHarnessEvents: vi.fn(),
     refs: { turnGen: { current: new Map([[session.id, 1]]) } },
   } as unknown as SubmitDeps;
-  const input = { sessionId: session.id, text: "while choosing", attachments: [] } as SubmitInput;
+  const input = {
+    sessionId: session.id,
+    text: "while choosing",
+    attachments: [],
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -449,7 +453,7 @@ it("retains an unconfirmed adopted steer once, with a visible held delivery stat
     sessionId: session.id,
     text: "retained follow-up",
     attachments: [],
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -519,7 +523,7 @@ it("removes an adopted queued steer only after the host confirms its atomic cons
     text: row.text,
     attachments: [],
     options: { queuedMessageId: row.id, followUpBehavior: "steer" },
-  } as SubmitInput;
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,
@@ -581,7 +585,7 @@ it.each(["rejected", "stopped"])(
       sessionId: session.id,
       text: "keep this message",
       attachments: [],
-    } as SubmitInput;
+    } as unknown as SubmitInput;
     const pre = {
       storedCurrent: session,
       current: session,
@@ -613,7 +617,7 @@ it("queues a repeated adopted Send so the first is not duplicated and the second
         refs: { turnGen: { current: new Map() } },
         dismissNoticesForContinuedSession: vi.fn(),
       } as unknown as SubmitDeps,
-      { sessionId: session.id, text: "second draft", attachments: [] } as SubmitInput,
+      { sessionId: session.id, text: "second draft", attachments: [] } as unknown as SubmitInput,
       pre,
     ),
   ).toBe(true);
@@ -639,7 +643,11 @@ it("queues a follow-up sent while the provider is still starting without showing
     flushHarnessEvents: vi.fn(),
     refs: { turnGen: { current: new Map([[session.id, 1]]) } },
   } as unknown as SubmitDeps;
-  const input = { sessionId: session.id, text: "second", attachments: [] } as SubmitInput;
+  const input = {
+    sessionId: session.id,
+    text: "second",
+    attachments: [],
+  } as unknown as SubmitInput;
   const pre = {
     storedCurrent: session,
     current: session,

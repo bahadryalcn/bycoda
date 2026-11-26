@@ -58,7 +58,8 @@ export function useCheckoutChangeStats({
   // A focus that is not listed (deleted, still loading) shows the overview.
   const overview = !!worktrees && !focusedTree;
   // The sections the Changes panel lists: the focused worktree, or every worktree with
-  // uncommitted changes, each with its separate repositories. The badge is their sum.
+  // uncommitted changes or unpushed commits, each with its separate repositories. The badge is
+  // their sum.
   const roots = focusedTree
     ? [focusedTree.path]
     : worktrees

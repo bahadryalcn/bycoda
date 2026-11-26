@@ -81,10 +81,11 @@ function MeasuredTranscriptRows({
   const [scroll, setScroll] = useState<HTMLElement | null>(null);
   // Plain rows need their scroll container only if the transcript anchors on one of them.
   const plainScroll = useRef<HTMLElement | null>(null);
-  const resolvePlainScroll = () => {
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this uncompiled list passes it to memoized rows; a new identity per render re-renders every settled row
+  const resolvePlainScroll = useCallback(() => {
     if (!plainScroll.current && root.current) plainScroll.current = closestScroll(root.current);
     return plainScroll.current;
-  };
+  }, []);
   const [margin, setMargin] = useState(0);
   const [width, setWidth] = useState(0);
   // Newest measured width, ahead of `width` while a live resize holds the commit back.

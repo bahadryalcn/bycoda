@@ -4520,16 +4520,22 @@ describe("remote host API", () => {
     expect(await s.store.authenticated(paired.token)).toBe(true);
     expect(
       (
-        await s.call("environment.describe", {}, paired.token, {}, {
-          // A paired credential is bound to its key: every request carries a proof.
-          DPoP: signDeviceProof({
-            seed: PAIRED_PROOF_SEED,
-            token: paired.token,
-            method: "POST",
-            path: "/rpc",
-            environmentId: s.store.environmentId,
-          }),
-        })
+        await s.call(
+          "environment.describe",
+          {},
+          paired.token,
+          {},
+          {
+            // A paired credential is bound to its key: every request carries a proof.
+            DPoP: signDeviceProof({
+              seed: PAIRED_PROOF_SEED,
+              token: paired.token,
+              method: "POST",
+              path: "/rpc",
+              environmentId: s.store.environmentId,
+            }),
+          },
+        )
       ).value.result.environmentId,
     ).toBe(s.store.environmentId);
     expect(
@@ -4546,15 +4552,21 @@ describe("remote host API", () => {
     // Revoking the issuer does not revoke a phone that was already paired.
     expect(
       (
-        await s.call("environment.describe", {}, paired.token, {}, {
-          DPoP: signDeviceProof({
-            seed: PAIRED_PROOF_SEED,
-            token: paired.token,
-            method: "POST",
-            path: "/rpc",
-            environmentId: s.store.environmentId,
-          }),
-        })
+        await s.call(
+          "environment.describe",
+          {},
+          paired.token,
+          {},
+          {
+            DPoP: signDeviceProof({
+              seed: PAIRED_PROOF_SEED,
+              token: paired.token,
+              method: "POST",
+              path: "/rpc",
+              environmentId: s.store.environmentId,
+            }),
+          },
+        )
       ).status,
     ).toBe(200);
   });

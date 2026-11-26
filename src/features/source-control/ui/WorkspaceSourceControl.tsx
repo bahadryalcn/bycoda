@@ -111,7 +111,8 @@ export function WorkspaceSourceControl({
   // A focus on a worktree that left the list (deleted elsewhere) quietly shows the overview.
   const focused = checkouts && focusPath ? paths.find((path) => same(path, focusPath)) : undefined;
   // The Changes panel lists sections of the focused worktree, or of every worktree with
-  // uncommitted changes (the session's worktree when none has); the header picker lists the rest.
+  // uncommitted changes or unpushed commits (the session's worktree when none has); the header
+  // picker lists the rest.
   const listedTrees = paths.flatMap((path) => (worktrees[path] ? [worktrees[path]] : []));
   const sessionRoot = checkouts ? sessionCheckout(cwd, paths) : undefined;
   const sectionRoots = !checkouts

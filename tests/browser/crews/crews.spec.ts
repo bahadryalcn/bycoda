@@ -482,12 +482,18 @@ test("the start dialog starts the work with the access chosen for this task and 
   const saved = await page.evaluate(() =>
     (
       window as unknown as {
-        crewFixtureSavedTasks: () => { crewDefinitionId: string; runtimeMode: string }[];
+        crewFixtureSavedTasks: () => {
+          executor: { kind: string; crewDefinitionId: string };
+          runtimeMode: string;
+        }[];
       }
     ).crewFixtureSavedTasks(),
   );
   expect(saved).toEqual([
-    expect.objectContaining({ crewDefinitionId: "crew", runtimeMode: "auto-accept-edits" }),
+    expect.objectContaining({
+      executor: { kind: "crew", crewDefinitionId: "crew" },
+      runtimeMode: "auto-accept-edits",
+    }),
   ]);
 });
 

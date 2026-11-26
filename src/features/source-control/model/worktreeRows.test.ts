@@ -132,17 +132,17 @@ it("sorts agent worktrees by activity and collapses long groups after five rows"
   expect(collapseAgentRows(rows, true)).toEqual({ rows, hidden: 0 });
 });
 
-it("lists only worktrees with uncommitted changes as Changes sections, the session's one when none", () => {
+it("lists worktrees with uncommitted changes, then unpushed ones, as Changes sections, the session's one when none", () => {
   const all = [
     tree("/repo", { isMain: true }),
     tree("/t/ahead", { unpushed: 4 }),
     tree("/t/dirty", { dirty: true }),
     tree("/t/mine", { dirty: true }),
   ];
-  expect(changeSectionRoots(all, "/t/mine/src")).toEqual(["/t/mine", "/t/dirty"]);
+  expect(changeSectionRoots(all, "/t/mine/src")).toEqual(["/t/mine", "/t/dirty", "/t/ahead"]);
   expect(
     changeSectionRoots(
-      all.filter((item) => !item.dirty),
+      all.filter((item) => !item.dirty && !item.unpushed),
       "/repo",
     ),
   ).toEqual(["/repo"]);

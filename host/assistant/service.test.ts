@@ -386,7 +386,9 @@ describe("durable assistant ownership and supervision", () => {
     });
     expect(job).toMatchObject({ status: "queued", dispatchState: "pending" });
     expect(job!.goalId).toBeUndefined();
-    const stored = (await f.store.db.prepare("SELECT value FROM assistant_jobs WHERE id=?").get(job!.id)) as {
+    const stored = (await f.store.db
+      .prepare("SELECT value FROM assistant_jobs WHERE id=?")
+      .get(job!.id)) as {
       value: string;
     };
     expect(JSON.parse(stored.value)).toMatchObject({ idempotencyKey: "slow-planner" });
