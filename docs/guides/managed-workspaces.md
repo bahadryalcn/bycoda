@@ -223,11 +223,11 @@ project from automatic cleanup, not only ones created after the change.
 
 Worktree sessions normally run directly in their own folder and branch, without
 per-turn Git snapshots, managed-turn admission locks or exact-capture provider retirement.
-**Settings → Workspace → Exact Git rewind (experimental)** is off by default.
+**Settings → Workspace → Exact Git rewind** is off by default.
 The setting applies to new turns on this computer's execution Host and is shared
 by desktop-native and Host-owned sessions. It is persisted on that Host in
 `managed-workspaces/exact-git-rewind.json`, outside project checkouts. Remote
-Hosts retain their own policy. Unavailable policy disables the experimental
+Hosts retain their own policy. Unavailable policy disables the full Git capture
 path so ordinary work can continue; Settings shows a retryable read error.
 With the setting off, old unfinished exact-rewind turns do not block new turns,
 and the Host does not advertise `sessions.git-rewind*` capabilities.
@@ -252,7 +252,7 @@ sessions. Older, pruned or incomplete provider history disables the file option 
 keeping conversation-only editing available. Remote file restoration requires
 an updated Host advertising `sessions.edit-from-here.v1`.
 
-The exact-rewind workflow below applies only when the experimental setting is on.
+The exact-rewind workflow below applies only when Exact Git rewind is on.
 
 Managed Git rewind restores the selected accepted user boundary's conversation,
 branch HEAD, index and working copy together. Preview shows affected commits and

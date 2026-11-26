@@ -777,7 +777,7 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
     if session
         .workspace_mode
         .as_deref()
-        .is_some_and(|mode| !matches!(mode, "current" | "worktree"))
+        .is_some_and(|mode| !matches!(mode, "current" | "worktree" | "scratch"))
     {
         return Err("Invalid workspace mode".into());
     }

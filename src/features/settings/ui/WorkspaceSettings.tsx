@@ -78,7 +78,7 @@ function ExactGitRewindSetting() {
   return (
     <Row
       id="exact-git-rewind"
-      label={t("Exact Git rewind (experimental)")}
+      label={t("Exact Git rewind")}
       description={t(
         "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.",
       )}
@@ -98,7 +98,7 @@ function ExactGitRewindSetting() {
       }
     >
       <Toggle
-        label={t("Exact Git rewind (experimental)")}
+        label={t("Exact Git rewind")}
         on={enabled}
         disabled={pending || !loaded}
         onChange={save}

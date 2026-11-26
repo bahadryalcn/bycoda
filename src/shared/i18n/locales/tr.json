@@ -460,7 +460,7 @@
   "Use current document": "Mevcut belgeyi kullan",
   "Draft recovery copy could not be confirmed. Keep this editor open.": "Taslağın kurtarma kopyası doğrulanamadı. Bu editörü açık tutun.",
   "Retry draft copy": "Taslak kopyasını yeniden dene",
-  "Exact Git rewind (experimental)": "Tam Git geri sarma (deneysel)",
+  "Exact Git rewind": "Tam Git geri sarma",
   "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Varsayılan olarak kapalıdır; tam geri sarma için tüm Git ağaçlarını kaydeder ve yeni turlara uygulanır.",
   "The local Host is unavailable. Reconnect and retry.": "Yerel Host kullanılamıyor. Yeniden bağlanıp tekrar deneyin.",
   "The local Host returned an invalid setting. Reconnect and retry.": "Yerel Host geçersiz bir ayar döndürdü. Yeniden bağlanıp tekrar deneyin.",

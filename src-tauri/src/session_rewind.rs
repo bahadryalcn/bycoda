@@ -775,7 +775,7 @@ fn require_exact_git_rewind(app: &AppHandle) -> Result<(), String> {
     if exact_git_rewind_enabled(app) {
         Ok(())
     } else {
-        Err("Enable Exact Git rewind (experimental) on the execution Host first".into())
+        Err("Enable Exact Git rewind on the execution Host first".into())
     }
 }
 

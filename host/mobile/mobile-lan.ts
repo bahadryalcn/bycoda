@@ -48,10 +48,15 @@ export function reachableAddresses(
   const tailnet: string[] = [];
   for (const [name, entries] of Object.entries(interfaces)) {
     for (const entry of entries ?? []) {
-      if (entry.internal || entry.family !== "IPv4" || entry.netmask === "255.255.255.255")
-        continue;
+      if (entry.internal || entry.family !== "IPv4") continue;
+      // Tailscale on Windows reports its address as a /32, so the point-to-point VPN
+      // filter below applies to home-network addresses only.
       if (isTailnetAddress(entry.address)) tailnet.push(entry.address);
-      else if (isLanAddress(entry.address) && !VIRTUAL_INTERFACE.test(name))
+      else if (
+        isLanAddress(entry.address) &&
+        entry.netmask !== "255.255.255.255" &&
+        !VIRTUAL_INTERFACE.test(name)
+      )
         lan.push(entry.address);
     }
   }

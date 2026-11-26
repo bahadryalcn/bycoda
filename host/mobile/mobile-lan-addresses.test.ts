@@ -4,7 +4,8 @@ vi.mock("node:os", async (original) => ({
   ...(await original<typeof import("node:os")>()),
   networkInterfaces: () => ({
     Tailscale: [
-      { address: "100.97.82.0", family: "IPv4", internal: false },
+      // Tailscale on Windows reports its address as a /32.
+      { address: "100.97.82.0", netmask: "255.255.255.255", family: "IPv4", internal: false },
       { address: "fd7a:115c:a1e0::1", family: "IPv6", internal: false },
     ],
     Ethernet: [{ address: "192.168.2.145", family: "IPv4", internal: false }],

@@ -17,9 +17,7 @@ import { WorkspacePage } from "./WorkspaceSettings";
 let root: Root;
 let container: HTMLDivElement;
 const toggle = () =>
-  container.querySelector<HTMLButtonElement>(
-    '[role="switch"][aria-label="Exact Git rewind (experimental)"]',
-  )!;
+  container.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Exact Git rewind"]')!;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
