@@ -143,6 +143,8 @@ export type HarnessAdapter = {
   /** Rewind provider state so the last user turn can be replaced. */
   rewindLastTurn?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   steerTurn(input: SteerTurnInput): Promise<void>;
+  /** False while the running turn cannot take a follow-up yet (the provider is still starting). Default: ready. */
+  steerReady?(sessionId: string): boolean;
   cancelTurn(sessionId: string, context?: HarnessOperationContext): Promise<void>;
   /**
    * Stop one running subagent or background command (`callId` is its tool
@@ -934,6 +936,11 @@ export function canSteerHarness(id: HarnessId): boolean {
   const adapter = adapters.get(id);
   if (!adapter?.live) return false;
   return adapter.canSteer !== false;
+}
+
+/** False while the session's running turn cannot take a follow-up yet; the composer queues it instead. */
+export function isHarnessSteerReady(id: HarnessId, sessionId: string): boolean {
+  return adapters.get(id)?.steerReady?.(sessionId) ?? true;
 }
 
 /** True when steering applies the follow-up's model settings, so an effort change need not restart the turn. */

@@ -4356,7 +4356,6 @@ function ConnectedRemoteSession({
         {deletedNotice && closedNotice !== deletedNotice ? (
           <Toast
             tone="info"
-            placement="top-center"
             durationMs={null}
             message={deletedNotice}
             onDismiss={() => setClosedNotice(deletedNotice)}

@@ -1320,7 +1320,7 @@ fn remote_platform_probe_handles_cmd_powershell_and_unix() {
     assert!(!script.contains("@@"));
     assert!(script.contains("checksum mismatch"));
     assert!(script.contains("Protect-BycodaDirectory"));
-    assert!(pairing_script(HostPlatform::Windows, "Nick's $PC", "key").contains("'Nick''s $PC'"));
+    assert!(pairing_script(HostPlatform::Windows, "bahadryalcn's $PC", "key").contains("'bahadryalcn''s $PC'"));
 }
 #[cfg(windows)]
 #[test]

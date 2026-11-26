@@ -11,6 +11,7 @@ it("applies all five active-time choices and shows one daily receipt", async () 
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

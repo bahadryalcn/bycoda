@@ -23,6 +23,7 @@ import { sessionsRef, setSessions } from "../../../../features/sessions/model/se
 import {
   appendSteerUser,
   canSteerHarness,
+  isHarnessSteerReady,
   isLiveHarness,
   steerHarnessTurn,
 } from "../../../../integrations/harness";
@@ -330,6 +331,11 @@ export function steerBusySubmit(
       );
       return false;
     }
+    // The provider is still starting (or the turn just ended): Steer would be
+    // refused before any write. Queue the new message directly instead of
+    // showing it as sent and taking it back. Queue rows keep their own path.
+    if (!options?.queuedMessageId && !isHarnessSteerReady(running.harness, sessionId))
+      return queueFollowUp();
     dismissNoticesForContinuedSession(sessionId);
     const visible = displayAttachments(attachments);
     const cards = {
