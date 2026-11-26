@@ -13,7 +13,7 @@ const LOG_RATIO = Math.log(RATIO);
 /** The window `recentLoopMaxMs` reports over before it starts a new one. */
 const LOOP_WINDOW_MS = 10_000;
 // Static RPC and MCP labels plus headroom; 768 buckets x 8 bytes each.
-export const MAX_METRICS = 512;
+export const MAX_METRICS = 640;
 type Distribution = { buckets: Float64Array; count: number; max: number };
 
 /** Fixed-size, cumulative histograms. Percentiles use upper bucket bounds
@@ -520,6 +520,8 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "runtimeLogs.terminals.demand",
   "runtimeLogs.tools.call",
   "sessions.adopted",
+  "sessions.approvalGrants.list",
+  "sessions.approvalGrants.revoke",
   "sessions.block",
   "sessions.inlineVisual",
   "sessions.workedTime",

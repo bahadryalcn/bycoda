@@ -177,6 +177,20 @@ it("keeps arbitrary and noncanonical method strings out of the fixed metric inve
   expect(result.limits.registeredMetrics).toBeLessThanOrEqual(MAX_METRICS);
 });
 
+it("registers every static label with headroom left for new ones", () => {
+  // The last labels of the static inventory are dropped silently once it outgrows the cap.
+  const last = [
+    "desktopLive.queueLeases.fallback",
+    "desktopLive.hostPush.fallback",
+    "mcp.ext.idleStop",
+  ];
+  for (const name of last) recordDuration(name, 1);
+  const result = perfMetrics.snapshot();
+  const names = new Set(result.metrics.map((entry) => entry.name));
+  for (const name of last) expect(names.has(name), name).toBe(true);
+  expect(result.limits.registeredMetrics).toBeLessThan(MAX_METRICS);
+});
+
 it("keeps the desktop heartbeat part names in the static allowlist", () => {
   const parts = [
     "desktopLive.poll",

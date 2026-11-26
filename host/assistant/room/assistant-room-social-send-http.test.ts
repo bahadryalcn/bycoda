@@ -146,6 +146,8 @@ it("runs reviewed Room Social send over HTTP with signed project and account adm
       (await social.call(owner, action, input)) as T;
     const account = await invoke<SocialAccount>("accounts.create", {
       platform: "x",
+      connection: "oauth",
+      xApiProduct: "pay-per-use",
       name: "Fixture",
       accountType: "member",
       projectIds: [project.id],
