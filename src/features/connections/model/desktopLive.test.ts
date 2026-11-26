@@ -1427,6 +1427,46 @@ describe("desktop live memoization and idle cadence", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps beating every tick for a while after a phone's inbox job, then idles again", async () => {
+    let now = 1_000;
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        inbox: { jobs: [{ id: "job", operation: { action: "providers" } }] },
+      })
+      .mockResolvedValue({ inbox: { acked: ["job"] } });
+    const inbox = {
+      invoke: vi.fn().mockResolvedValue({ connected: true }),
+      list: vi.fn(),
+      results: new Map(),
+      running: new Set<string>(),
+    };
+    const deps = {
+      request,
+      sessions: () => [session({ id: "idle" })],
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+      beat: {} as { inboxActiveUntil?: number },
+      inbox,
+      now: () => now,
+    };
+    await runDesktopLiveTick(deps);
+    await vi.waitFor(() => expect(inbox.running.size).toBe(0));
+    // The reply goes out, then the following idle ticks still beat for the browsing phone.
+    for (let tick = 0; tick < 4; tick++) {
+      now += 1_500;
+      await runDesktopLiveTick(deps);
+    }
+    expect(request).toHaveBeenCalledTimes(5);
+    now = (deps.beat.inboxActiveUntil ?? 0) + 1;
+    await runDesktopLiveTick(deps);
+    const settled = request.mock.calls.length;
+    now += 1_500;
+    await runDesktopLiveTick(deps);
+    expect(request).toHaveBeenCalledTimes(settled);
+  });
+
   it("goes back to every tick as soon as a session is busy or an ack is pending", async () => {
     const request = vi.fn().mockResolvedValue({});
     let busy = false;

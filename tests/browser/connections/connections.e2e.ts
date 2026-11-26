@@ -98,7 +98,9 @@ for (const theme of ["light", "dark"]) {
       await root.getByRole("tab", { name: "Devices", exact: true }).click();
       const connectPhone = root.getByRole("button", { name: "Connect a phone", exact: true });
       expect(await actionPosition(connectPhone)).toEqual(computersActionPosition);
-      await expect(root.getByRole("heading", { name: "Phone access", exact: true })).toBeVisible();
+      await expect(
+        root.getByRole("heading", { name: "Devices with access", exact: true }),
+      ).toBeVisible();
       const phoneRow = root.locator(".settings-row").filter({ hasText: "iPhone 16" });
       const phoneName = phoneRow.getByText("iPhone 16", { exact: true });
       await expect(phoneName).toBeVisible();
@@ -191,7 +193,9 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/connections/connection-dialogs.html?dialog=tunnel-rows&theme=${theme}`,
       );
       const dialog = page.getByRole("dialog", { name: "External tunnels", exact: true });
-      await expect(dialog.getByRole("status")).toHaveText(["Error", "Starting", "Connected"]);
+      await expect(
+        dialog.getByRole("region", { name: "Tunnel status", exact: true }).getByRole("status"),
+      ).toHaveText(["Error", "Starting", "Connected"]);
       await expect(dialog.getByRole("button", { name: "Copy URL", exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Start tunnel", exact: true })).toBeEnabled();
       await dialog.getByRole("textbox", { name: "Local URL or port" }).focus();

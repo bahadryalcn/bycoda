@@ -20,6 +20,12 @@ import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./d
 import { readSimulatorVideo } from "./simulator-video";
 import { cachedExpoGo, expoPreviewUrl } from "./expo-go";
 import {
+  androidRawPixels,
+  decodePng,
+  deviceFrameMaxEdge,
+  fitDevicePixels,
+} from "./device-frame-fit";
+import {
   AGENT_DEVICE_VERSION,
   DEVICE_HUB_VERSION,
   DEVICE_STILL_MIN_GAP_MS,
@@ -127,6 +133,14 @@ export function deviceActionArgs(action: DeviceAction): string[] {
       return ["type", action.text];
     case "home":
       return ["home"];
+    case "key":
+      if (action.key === "back") return ["back"];
+      if (action.key === "appSwitcher") return ["app-switcher"];
+      throw new Error("Unsupported device key");
+    case "rotate":
+      if (action.orientation !== "portrait" && action.orientation !== "landscape")
+        throw new Error("Invalid device orientation");
+      return ["orientation", action.orientation === "portrait" ? "portrait" : "landscape-left"];
     case "fold":
       if (!["closed", "half-open", "open"].includes(action.posture))
         throw new Error("Invalid device fold posture");
@@ -176,6 +190,19 @@ function localPort(): Promise<number> {
   });
 }
 
+function fittedFrame(fitted: {
+  png: Buffer;
+  sourceWidth: number;
+  sourceHeight: number;
+}): DeviceFrame {
+  return {
+    mime: "image/png",
+    base64: fitted.png.toString("base64"),
+    capturedAt: new Date().toISOString(),
+    sourceWidth: fitted.sourceWidth,
+    sourceHeight: fitted.sourceHeight,
+  };
+}
 /** One owner per host. No hub origin, daemon endpoint or token is returned to clients. */
 export class DeviceHost {
   readonly control = new DeviceControlLeases();
@@ -201,7 +228,7 @@ export class DeviceHost {
   private serial: Promise<unknown> = Promise.resolve();
   private readonly deviceSerial = new Map<string, Promise<unknown>>();
   private readonly capturePending = new Map<string, Promise<DeviceFrame>>();
-  private lastCapture?: { id: string; frame: DeviceFrame; time: number };
+  private lastCapture?: { id: string; maxEdge?: number; frame: DeviceFrame; time: number };
   /** AVD name per connected emulator serial; each lookup is an adb round trip. */
   private readonly emulatorNames = new Map<string, string>();
   private readonly agentSessions = new Set<string>();
@@ -1231,7 +1258,16 @@ export class DeviceHost {
       return { ...device, id: result.serial ?? result.id ?? device.id, booted: true };
     }, effect);
   }
-  async capture(id: string, effect?: DeviceEffectContext): Promise<DeviceFrame> {
+  /**
+   * `maxEdge` asks for a viewer frame: scaled to fit, with the device size it came from so a
+   * tap can still be mapped to device pixels. Without it the capture stays full resolution.
+   */
+  async capture(
+    id: string,
+    effect?: DeviceEffectContext,
+    options: { maxEdge?: number } = {},
+  ): Promise<DeviceFrame> {
+    const maxEdge = deviceFrameMaxEdge(options.maxEdge);
     if (this.capturePending.has(id))
       throw new Error("Another device capture is in progress; wait for it to finish");
     let fresh: DeviceFrame | undefined;
@@ -1240,15 +1276,16 @@ export class DeviceHost {
       async () => {
         if (
           this.lastCapture?.id === id &&
+          this.lastCapture.maxEdge === maxEdge &&
           Date.now() - this.lastCapture.time < DEVICE_STILL_MIN_GAP_MS
         )
           return this.lastCapture.frame;
-        fresh = await this.captureFrame(id, effect);
+        fresh = await this.captureFrame(id, effect, maxEdge);
         return fresh;
       },
       effect,
       (frame) => {
-        if (frame === fresh) this.lastCapture = { id, frame, time: Date.now() };
+        if (frame === fresh) this.lastCapture = { id, maxEdge, frame, time: Date.now() };
       },
     );
     this.capturePending.set(id, pending);
@@ -1259,7 +1296,23 @@ export class DeviceHost {
       if (this.capturePending.get(id) === pending) this.capturePending.delete(id);
     }
   }
-  private async captureFrame(id: string, effect?: DeviceEffectContext): Promise<DeviceFrame> {
+  private async captureFrame(
+    id: string,
+    effect?: DeviceEffectContext,
+    maxEdge?: number,
+  ): Promise<DeviceFrame> {
+    const frame = await this.captureFullFrame(id, effect, maxEdge);
+    if (!maxEdge || frame.sourceWidth !== undefined || frame.mime !== "image/png") return frame;
+    const pixels = await decodePng(Buffer.from(frame.base64, "base64"));
+    const fitted = pixels && (await fitDevicePixels(pixels, maxEdge));
+    await assertDeviceAuthority(effect);
+    return fitted ? fittedFrame(fitted) : frame;
+  }
+  private async captureFullFrame(
+    id: string,
+    effect?: DeviceEffectContext,
+    maxEdge?: number,
+  ): Promise<DeviceFrame> {
     const device = await this.device(id);
     await assertDeviceAuthority(effect);
     if (!device.booted) throw new Error("Boot the device before viewing");
@@ -1314,6 +1367,20 @@ export class DeviceHost {
         await unlink(file).catch(() => {});
         await unlink(displayFile).catch(() => {});
       }
+    }
+    if (["win32", "darwin"].includes(this.platform) && device.platform === "android" && maxEdge) {
+      // Raw pixels skip the device's slow PNG encoder; the Host scales and encodes once.
+      const raw = await this.binaryCommand(
+        effect,
+        this.androidBinary("adb"),
+        ["-s", device.id, "exec-out", "screencap"],
+        { env: this.env, timeoutMs: 20_000, maxBytes: 64 * 1024 * 1024 },
+      );
+      await assertDeviceAuthority(effect);
+      const pixels = androidRawPixels(raw);
+      const fitted = pixels && (await fitDevicePixels(pixels, maxEdge));
+      await assertDeviceAuthority(effect);
+      if (fitted) return fittedFrame(fitted);
     }
     if (["win32", "darwin"].includes(this.platform) && device.platform === "android") {
       const image = await this.binaryCommand(

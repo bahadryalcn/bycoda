@@ -162,6 +162,25 @@ it("restricts URL protocol and rejects embedded credentials", () => {
   expect(sharedBrowserUrl("http://localhost:3000")).toBe("http://localhost:3000/");
 });
 
+it("opens browser-bar addresses without a scheme and rejects malformed ones as plain errors", () => {
+  expect(sharedBrowserUrl("www.google.com")).toBe("https://www.google.com/");
+  expect(sharedBrowserUrl("  example.com/path?q=1 ")).toBe("https://example.com/path?q=1");
+  expect(sharedBrowserUrl("localhost:3000")).toBe("http://localhost:3000/");
+  expect(sharedBrowserUrl("192.168.1.5:8080/app")).toBe("http://192.168.1.5:8080/app");
+  expect(() => sharedBrowserUrl("mailto:someone@example.com")).toThrow();
+  for (const input of ["", "not a url", "http://"]) {
+    let failure: unknown;
+    try {
+      sharedBrowserUrl(input);
+    } catch (error) {
+      failure = error;
+    }
+    // A TypeError is reported to clients as an internal "Host request failed".
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(TypeError);
+  }
+});
+
 it("reads only the agent's session without acquiring or renewing browser control", async () => {
   let now = 1000;
   const page = {

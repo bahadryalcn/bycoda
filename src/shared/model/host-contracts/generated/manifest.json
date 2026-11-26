@@ -30102,6 +30102,24 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "key": { "enum": ["back", "appSwitcher"], "type": "string" },
+                  "type": { "const": "key", "type": "string" }
+                },
+                "required": ["type", "key"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "orientation": { "enum": ["portrait", "landscape"], "type": "string" },
+                  "type": { "const": "rotate", "type": "string" }
+                },
+                "required": ["type", "orientation"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
                   "posture": { "enum": ["closed", "half-open", "open"], "type": "string" },
                   "type": { "const": "fold", "type": "string" }
                 },
@@ -30220,7 +30238,11 @@
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "properties": { "deviceId": { "type": "string" }, "projectId": { "type": "string" } },
+        "properties": {
+          "deviceId": { "type": "string" },
+          "maxEdge": { "maximum": 4096, "minimum": 320, "type": "integer" },
+          "projectId": { "type": "string" }
+        },
         "required": ["deviceId"],
         "type": "object"
       },
@@ -30232,7 +30254,9 @@
         "properties": {
           "base64": { "type": "string" },
           "capturedAt": { "type": "string" },
-          "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+          "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" },
+          "sourceHeight": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "sourceWidth": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
         },
         "required": ["mime", "base64", "capturedAt"],
         "type": "object"
@@ -30412,7 +30436,9 @@
             "properties": {
               "base64": { "type": "string" },
               "capturedAt": { "type": "string" },
-              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" },
+              "sourceHeight": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "sourceWidth": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": ["mime", "base64", "capturedAt"],
             "type": "object"
@@ -30700,7 +30726,9 @@
             "properties": {
               "base64": { "type": "string" },
               "capturedAt": { "type": "string" },
-              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" },
+              "sourceHeight": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "sourceWidth": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": ["mime", "base64", "capturedAt"],
             "type": "object"
@@ -30806,7 +30834,9 @@
             "properties": {
               "base64": { "type": "string" },
               "capturedAt": { "type": "string" },
-              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" },
+              "sourceHeight": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "sourceWidth": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": ["mime", "base64", "capturedAt"],
             "type": "object"
@@ -30883,7 +30913,9 @@
             "properties": {
               "base64": { "type": "string" },
               "capturedAt": { "type": "string" },
-              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" },
+              "sourceHeight": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "sourceWidth": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": ["mime", "base64", "capturedAt"],
             "type": "object"
@@ -30946,7 +30978,9 @@
             "properties": {
               "base64": { "type": "string" },
               "capturedAt": { "type": "string" },
-              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" }
+              "mime": { "enum": ["image/png", "image/jpeg"], "type": "string" },
+              "sourceHeight": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "sourceWidth": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": ["mime", "base64", "capturedAt"],
             "type": "object"
@@ -77061,7 +77095,11 @@
             "method": { "const": "devices.capture", "type": "string" },
             "params": {
               "additionalProperties": false,
-              "properties": { "deviceId": { "type": "string" }, "projectId": { "type": "string" } },
+              "properties": {
+                "deviceId": { "type": "string" },
+                "maxEdge": { "maximum": 4096, "minimum": 320, "type": "integer" },
+                "projectId": { "type": "string" }
+              },
               "required": ["deviceId"],
               "type": "object"
             }
@@ -77294,6 +77332,24 @@
                       "additionalProperties": false,
                       "properties": { "type": { "const": "home", "type": "string" } },
                       "required": ["type"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "key": { "enum": ["back", "appSwitcher"], "type": "string" },
+                        "type": { "const": "key", "type": "string" }
+                      },
+                      "required": ["type", "key"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "orientation": { "enum": ["portrait", "landscape"], "type": "string" },
+                        "type": { "const": "rotate", "type": "string" }
+                      },
+                      "required": ["type", "orientation"],
                       "type": "object"
                     },
                     {
@@ -95688,5 +95744,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "6aad20bea824a5116b4ccd5cfea5df0b2e3dbfd71cdcc5ec806d99ffdb30aa18"
+  "schemaHash": "e7913bb6ed7144baeef49dd331d9bbd748cc623e6fcfa7d2eb80babb552270bd"
 }

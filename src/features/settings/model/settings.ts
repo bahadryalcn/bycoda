@@ -742,9 +742,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "exact-git-rewind",
     section: "worktrees",
     get label() {
-      return t("Exact Git rewind (experimental)");
+      return t("Exact Git rewind");
     },
-    keywords: "experimental exact git rewind snapshot managed worktree host capture turn",
+    keywords: "exact git rewind snapshot managed worktree host capture turn",
   },
   {
     id: "file-tabs",

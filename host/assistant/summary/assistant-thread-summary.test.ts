@@ -534,10 +534,17 @@ it("wakes on a queued message and retries a blocked thread at its saved deadline
     f.advance(60001);
     await vi.advanceTimersByTimeAsync(60000);
     await vi.waitFor(() => expect(f.calls).toHaveLength(2));
-    // Let the pass that made the second call finish (it rescans once to save the next deadline).
-    await vi.advanceTimersByTimeAsync(1000);
+    // Let the pass that made the second call finish (it rescans once to save the next deadline);
+    // a slow runner may need more than one turn of the timers before the count settles.
+    let scans = candidateScans(prepare);
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      const next = candidateScans(prepare);
+      const settled = next === scans;
+      scans = next;
+      expect(settled).toBe(true);
+    });
     // Between deadlines the worker stays quiet.
-    const scans = candidateScans(prepare);
     await vi.advanceTimersByTimeAsync(30000);
     expect(candidateScans(prepare)).toBe(scans);
     prepare.mockRestore();

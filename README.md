@@ -41,7 +41,7 @@ remote connections, so work keeps running when the window is closed.
 - Put a crew of specialist agents on one piece of work.
 - Hand GitHub or Jira issues from the Inbox to an agent.
 - Save SSH servers and work on them from the app.
-- Keep notes per project, talk to the voice assistant, and approve requests from the mobile app.
+- Keep notes per project, talk to the voice assistant, and approve requests from your phone.
 - Work with projects on another machine through its Host. See [remote access](docs/guides/remote-access.md).
 - Change the light and dark schemes, palettes, fonts and density, or describe a theme and let a model of your
   choice build it.

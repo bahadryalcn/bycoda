@@ -31,6 +31,9 @@ export const DESKTOP_LIVE_MS = 1_500;
  * 20 s stale threshold (DESKTOP_BEAT_STALE_MS), and a remote Stop/Approve/Answer
  * only exists for a busy or waiting session, so it never waits on this. */
 export const DESKTOP_LIVE_IDLE_MS = 5_000;
+/** After inbox work from a phone arrives or is answered, a phone is browsing: its next request
+ * (a filter, a detail, a board) is picked up within DESKTOP_LIVE_MS instead of the idle gap. */
+export const DESKTOP_INBOX_ACTIVE_MS = 30_000;
 
 export function supportsDesktopLive(capabilities: string[] | undefined): boolean {
   return !!capabilities?.includes(DESKTOP_LIVE_CAPABILITY);
@@ -355,6 +358,8 @@ function dispatchDesktopLiveCommand(
 /** When the last heartbeat was sent and whether it reported nothing. */
 export type DesktopLiveBeat = {
   idleAt?: number;
+  /** Until when a phone is treated as browsing the inbox (see DESKTOP_INBOX_ACTIVE_MS). */
+  inboxActiveUntil?: number;
   notesRevision?: number;
   queueSeq?: number;
   adoptedSeq?: number;
@@ -497,8 +502,11 @@ export async function runDesktopLiveTick(deps: {
     !deps.inbox?.running.size;
   // Anything busy, waiting or unacknowledged goes out on every tick, so a
   // session that starts running is reported within one DESKTOP_LIVE_MS.
+  const inboxActive =
+    deps.beat?.inboxActiveUntil !== undefined && now() < deps.beat.inboxActiveUntil;
   if (
     idle &&
+    !inboxActive &&
     !directoryChanged &&
     deps.beat?.idleAt !== undefined &&
     now() - deps.beat.idleAt < DESKTOP_LIVE_IDLE_MS
@@ -653,6 +661,8 @@ export async function runDesktopLiveTick(deps: {
     }
   }
   if (deps.inbox) {
+    if ((result?.inbox?.jobs?.length ?? 0) > 0 || inboxReplies.length > 0)
+      if (deps.beat) deps.beat.inboxActiveUntil = now() + DESKTOP_INBOX_ACTIVE_MS;
     for (const id of result?.inbox?.acked ?? []) deps.inbox.results.delete(id);
     for (const job of result?.inbox?.jobs ?? []) {
       if (

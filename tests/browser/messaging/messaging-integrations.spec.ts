@@ -54,7 +54,6 @@ for (const theme of themes) {
       await expect(panel.getByRole("button", { name: "Sign in with Google" })).toBeVisible();
       await expect(panel.getByText("Can't sign in with Google?")).toBeVisible();
       await capture(page, `b-email-form-${suffix}`);
-      await panel.getByRole("button", { name: "Advanced" }).click();
       await expect(panel.getByLabel("IMAP server")).toHaveValue("imap.gmail.com");
       await capture(page, `b-email-form-servers-${suffix}`);
     });
@@ -65,9 +64,7 @@ for (const theme of themes) {
       await expect(panel.getByText("Acme", { exact: true })).toBeVisible();
       await panel.getByRole("button", { name: "Add workspace" }).click();
       await expect(panel.getByRole("button", { name: "Sign in with Slack" })).toBeVisible();
-      await panel.getByRole("button", { name: "Advanced" }).click();
       await panel.getByRole("switch", { name: "Use a bot token instead" }).click();
-      await panel.getByRole("button", { name: "How to get a bot token" }).click();
       await expect(panel.getByText("channels:read", { exact: false })).toBeVisible();
       await capture(page, `c-slack-${suffix}`);
     });

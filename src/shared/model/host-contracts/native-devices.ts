@@ -44,7 +44,15 @@ export const DeviceFrameSchema = z.strictObject({
   mime: z.enum(["image/png", "image/jpeg"]),
   base64: z.string(),
   capturedAt: z.string(),
+  /** Device pixel size of a frame scaled for a viewer (`maxEdge`); absent at full resolution. */
+  sourceWidth: SafeCounterSchema.optional(),
+  sourceHeight: SafeCounterSchema.optional(),
 });
+/**
+ * Phone viewer support: `devices.capture` accepts `maxEdge` and may scale the frame, and
+ * `devices.action` accepts the `key` (back, app switcher) and `rotate` actions.
+ */
+export const DEVICE_VIEWER_CAPABILITY = "devices.viewer.v2";
 /** Minimum pause after a fallback capture, also the Host cache lifetime. */
 export const DEVICE_STILL_MIN_GAP_MS = 100;
 
@@ -81,6 +89,8 @@ export const DeviceActionSchema = z.discriminatedUnion("type", [
     endY: coordinate,
   }),
   z.strictObject({ type: z.literal("home") }),
+  z.strictObject({ type: z.literal("key"), key: z.enum(["back", "appSwitcher"]) }),
+  z.strictObject({ type: z.literal("rotate"), orientation: z.enum(["portrait", "landscape"]) }),
   z.strictObject({
     type: z.literal("fold"),
     posture: z.enum(["closed", "half-open", "open"]),
@@ -172,7 +182,11 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
     result: DeviceSummarySchema,
   },
   "devices.capture": {
-    params: z.strictObject({ ...base, deviceId: z.string() }),
+    params: z.strictObject({
+      ...base,
+      deviceId: z.string(),
+      maxEdge: z.number().int().min(320).max(4096).optional(),
+    }),
     result: DeviceFrameSchema,
   },
   "devices.stream": {

@@ -217,7 +217,9 @@ export function bindNativeDevicesOwner(
           else if (method === "devices.boot")
             result = await host.boot(String(params.deviceId ?? ""), effect);
           else if (method === "devices.capture")
-            result = await host.capture(String(params.deviceId ?? ""), effect);
+            result = await host.capture(String(params.deviceId ?? ""), effect, {
+              maxEdge: params.maxEdge as number | undefined,
+            });
           else if (method === "devices.stream")
             // Viewing only: a failed read has no unknown outcome, so it is never
             // marked admitted and its DEVICE_STREAM_UNSUPPORTED text reaches the caller.

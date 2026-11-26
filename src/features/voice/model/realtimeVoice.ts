@@ -176,9 +176,7 @@ function medianOf(samples: readonly number[]) {
   if (!samples.length) return 0;
   const sorted = [...samples].sort((a, b) => a - b);
   const middle = sorted.length >> 1;
-  return Math.round(
-    sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2,
-  );
+  return Math.round(sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2);
 }
 
 function diagnosticCode(value: unknown) {

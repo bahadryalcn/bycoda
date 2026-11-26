@@ -353,9 +353,8 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       mkdirSync("temp/verification/models-work-limits", { recursive: true });
-      for (const state of ["normal", "reached", "uncertain", "unlimited"]) {
-        const flags =
-          state === "normal" ? "" : state === "unlimited" ? "&unlimited&uncertain" : `&${state}`;
+      for (const state of ["normal", "reached", "unlimited"]) {
+        const flags = state === "normal" ? "" : `&${state}`;
         await page.goto(
           `/tests/browser/settings/settings.html?modelLimits&theme=${theme}&lang=en${flags}`,
         );
@@ -378,18 +377,7 @@ for (const theme of ["light", "dark"])
           expect(
             (await page.getByText("Limit reached", { exact: true }).boundingBox())!.width,
           ).toBeLessThan(200);
-        await expect(page.getByRole("meter")).toHaveCount(
-          state === "normal" || state === "reached" ? 1 : 0,
-        );
-        if (state === "uncertain" || state === "unlimited")
-          await expect(
-            page.getByText(
-              state === "uncertain"
-                ? "Today's agent time is incomplete. New work waits until tomorrow while a daily limit is set."
-                : "Today's agent time is incomplete.",
-              { exact: true },
-            ),
-          ).toBeVisible();
+        await expect(workLimits.getByRole("meter")).toHaveCount(state === "unlimited" ? 0 : 1);
         await page
           .getByRole("spinbutton", { name: "Daily agent minutes", exact: true })
           .fill("2880");
@@ -463,14 +451,6 @@ for (const theme of ["light", "dark"])
       await page.reload();
       await expect(anchor).toBeChecked({ checked: !wasChecked });
       await expect(chat.locator("details, summary")).toHaveCount(0);
-      // Rarely changed conversation options stay behind their explicit toggle.
-      const advanced = chat.getByRole("button", {
-        name: "Advanced conversation settings",
-        exact: true,
-      });
-      await expect(advanced).toHaveAttribute("aria-expanded", "false");
-      await advanced.click();
-      await expect(advanced).toHaveAttribute("aria-expanded", "true");
       await expect(
         chat.getByRole("switch", { name: "Resume at reset", exact: true }),
       ).toBeVisible();

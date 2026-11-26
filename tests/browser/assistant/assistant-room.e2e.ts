@@ -405,6 +405,12 @@ for (const theme of ["light", "dark"])
       });
       const language = await showGroup("Language");
       await chooseSetupValue(page, "Language", "English");
+      // A drafted address written for another language asks before the switch applies.
+      const keepDrafts = page.getByRole("button", {
+        name: "I will review them myself",
+        exact: true,
+      });
+      if (await keepDrafts.isVisible()) await keepDrafts.click();
       await language.screenshot({
         animations: "disabled",
         path: join(output, `settings-${theme}-${width}-language.png`),
@@ -509,25 +515,8 @@ async function openSettingsGroup(page: Page, name: string) {
   const tab = page.getByRole("dialog").getByRole("tab", { name: pages[name], exact: true });
   await expect(tab).toBeVisible();
   await tab.click();
-  const disclosureName =
-    name === "Conversation behavior"
-      ? "Personality and conversation"
-      : name === "Cost and context"
-        ? "Supervisor limits"
-        : name === "Jobs" || name === "Computer use"
-          ? "Customize access"
-          : undefined;
-  if (disclosureName) {
-    if (disclosureName === "Customize access") {
-      await page.getByRole("dialog").getByRole("radio", { name: "Custom", exact: true }).click();
-    } else {
-      const disclosure = page
-        .getByRole("dialog")
-        .getByRole("button", { name: disclosureName, exact: true });
-      await expect(disclosure).toBeVisible();
-      if ((await disclosure.getAttribute("aria-expanded")) !== "true") await disclosure.click();
-    }
-  }
+  if (name === "Jobs" || name === "Computer use")
+    await page.getByRole("dialog").getByRole("radio", { name: "Custom", exact: true }).click();
   if (name === "Computer use")
     return page
       .getByRole("dialog")
@@ -1117,9 +1106,6 @@ for (const theme of ["light", "dark"])
         path: join(output, `output-context-compact-${theme}-${width}.png`),
       });
       await expect(cost.getByText("Automatic", { exact: true })).toBeVisible();
-      await cost
-        .getByRole("button", { name: "Advanced worker context limits", exact: true })
-        .click();
       const soft = cost.getByRole("spinbutton", { name: "Compact by token count", exact: true });
       await expect(soft).toHaveValue("150000");
       await expect(
@@ -1135,9 +1121,6 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Cost and context");
-      await dialog
-        .getByRole("button", { name: "Advanced worker context limits", exact: true })
-        .click();
       await expect(
         dialog.getByRole("spinbutton", { name: "Compact by token count", exact: true }),
       ).toHaveValue("160000");

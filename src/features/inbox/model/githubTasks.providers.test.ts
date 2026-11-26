@@ -222,3 +222,35 @@ describe.each([
     expect(invoke).not.toHaveBeenCalledWith(`${commandPrefix}_repo`, expect.anything());
   });
 });
+
+describe("provider-scoped inbox reads", () => {
+  beforeEach(() => {
+    clearInboxCache();
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command.endsWith("_status")) return { connected: true };
+      if (command === "git_github_repositories") return ["acme/web"];
+      if (command === "git_github_work_items") return [workItem("acme/web", "issue")];
+      throw new Error(`Unexpected command: ${command}`);
+    });
+  });
+
+  it("never contacts a provider that was not asked for", async () => {
+    const result = await listInboxItems(
+      [{ path: "/tmp/project" }],
+      {
+        assignedToMe: false,
+        state: "open",
+        search: "",
+        githubKinds: ["issue"],
+        onlyProviders: ["github"],
+      },
+      { force: true },
+    );
+    expect(result.items.map((item) => item.provider)).toEqual(["github"]);
+    const commands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    expect(commands.some((command) => /^(linear|jira|gitlab|azure_devops)_/.test(command))).toBe(
+      false,
+    );
+  });
+});

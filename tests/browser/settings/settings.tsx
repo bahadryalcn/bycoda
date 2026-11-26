@@ -948,6 +948,7 @@ mockIPC(
             providers: [
               { provider: "cloudflare", installed: true, credential: "not-required" },
               { provider: "ngrok", installed: true, credential: "missing" },
+              { provider: "tailscale", installed: true, credential: "not-required" },
             ],
             tunnels: fixtureAutomaticHostAccess
               ? [

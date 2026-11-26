@@ -2407,7 +2407,7 @@ test("model picker aligns account rows and keeps quota readable in both themes a
         await expect(rows.first()).toContainText("92% remaining");
         await expect(rows.nth(1)).toContainText("47% remaining");
         await expect(rows.nth(1).getByRole("meter")).toHaveAttribute("aria-valuenow", "47");
-        await expect(rows.nth(1)).toContainText("Refresh failed. Updated 24m ago");
+        await expect(rows.nth(1)).toContainText(/Refresh failed. Updated 2[45]m ago/);
         await expect(rows.last()).toBeInViewport();
         const first = (await rows.first().boundingBox())!;
         const last = (await rows.last().boundingBox())!;

@@ -226,8 +226,8 @@ export function createHostDispatcher(services: HostServices) {
             ? operations.get(method)!(params, domainContext)
             : method === "environment.describe"
               ? services.environment.describe(params, options, {
-                principalId: context.principal.id,
-              })
+                  principalId: context.principal.id,
+                })
               : services.projects.list(options, domainContext);
         const result = await waitForRead(
           () => (context.trackWork ? context.trackWork(read) : read()),

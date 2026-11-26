@@ -9,20 +9,53 @@ import {
   type DesktopInboxReply,
   type RemoteInboxOperation,
   type RemoteInboxList,
+  type RemoteInboxProvider,
   type RemoteInboxQuery,
 } from "../../inbox/public/remoteInbox";
 
 export type DesktopInboxRunner = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  /**
+   * `refresh` is the owner's explicit refresh: read every provider again. Otherwise a recent list
+   * may answer. `onlyProviders` limits which providers are contacted at all.
+   */
   list: (
     projects: { path: string }[],
-    query: Omit<RemoteInboxQuery, "providers"> & { jiraEnabled?: boolean },
+    query: Omit<RemoteInboxQuery, "providers" | "refresh"> & {
+      jiraEnabled?: boolean;
+      onlyProviders?: RemoteInboxProvider[];
+    },
+    options?: { refresh?: boolean },
   ) => Promise<RemoteInboxList>;
   results: Map<string, DesktopInboxReply>;
   running: Set<string>;
   onNotesChanged?: () => void | Promise<void>;
   jira?: (operation: RemoteJiraOperation, deadline?: number) => Promise<unknown>;
 };
+
+/**
+ * How old a list a paired phone may be answered from. The desktop's own Inbox and earlier phone
+ * reads fill the same cache, so opening or re-filtering on the phone does not ask every provider
+ * again; the owner's explicit refresh always does.
+ */
+export const REMOTE_INBOX_LIST_FRESH_MS = 60_000;
+
+/** A phone's list read: a recent cached list answers at once, anything else reads the providers. */
+export async function readRemoteInboxList<Query, Result>(
+  cache: {
+    fresh: (query: Query, maxAgeMs: number) => boolean;
+    peek: (query: Query) => Result | null;
+    read: (query: Query) => Promise<Result>;
+  },
+  query: Query,
+  options?: { refresh?: boolean },
+): Promise<Result> {
+  if (!options?.refresh && cache.fresh(query, REMOTE_INBOX_LIST_FRESH_MS)) {
+    const cached = cache.peek(query);
+    if (cached) return cached;
+  }
+  return cache.read(query);
+}
 
 /** Executes only existing inbox contracts; auth/config/shell commands are absent. */
 export async function executeDesktopInboxOperation(
@@ -70,16 +103,20 @@ export async function executeDesktopInboxOperation(
     );
   }
   if (operation.action === "list") {
-    const { providers, ...query } = operation.query;
+    const { providers, refresh, ...query } = operation.query;
     const wanted = (provider: string) =>
       !providers || providers.includes(provider as (typeof providers)[number]);
-    // shortcut: Linear/GitLab/Azure DevOps are still read and dropped here; add
-    // per-provider skip flags to listInboxItems if those reads become costly.
-    const value = await runner.list(operation.projects, {
-      ...query,
-      ...(wanted("github") ? {} : { githubKinds: [] }),
-      ...(wanted("jira") ? {} : { jiraEnabled: false }),
-    });
+    // Providers that were not asked for are never contacted; the filter below stays as a guard.
+    const value = await runner.list(
+      operation.projects,
+      {
+        ...query,
+        ...(providers ? { onlyProviders: [...providers] } : {}),
+        ...(wanted("github") ? {} : { githubKinds: [] }),
+        ...(wanted("jira") ? {} : { jiraEnabled: false }),
+      },
+      refresh ? { refresh: true } : undefined,
+    );
     return {
       ...value,
       ...(operation.omittedProjects ? { omittedProjects: operation.omittedProjects } : {}),

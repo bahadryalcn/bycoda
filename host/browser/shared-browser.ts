@@ -172,9 +172,30 @@ export function sharedBrowserViewport(width: unknown, height: unknown) {
 // Bound the returned value before Playwright serializes/transfers it to the host.
 const browserArgumentValue = runtimeLogPreview;
 
+/** Thrown for an address the shared browser cannot open; clients match this exact message. */
+export const SHARED_BROWSER_INVALID_URL = "Enter a web address such as example.com.";
+
+/**
+ * People type addresses the way a browser bar accepts them ("www.google.com",
+ * "localhost:3000"). A missing scheme becomes https, or http for a local or IP host.
+ * A rejection is a plain Error: a TypeError from `new URL` would be reported as an
+ * internal Host failure ("Host request failed") instead of a usable message.
+ */
 export function sharedBrowserUrl(input: unknown) {
   if (typeof input !== "string" || input.length > 4096) throw new Error("Invalid browser URL");
-  const url = new URL(input);
+  const trimmed = input.trim();
+  if (!trimmed || /\s/.test(trimmed)) throw new Error(SHARED_BROWSER_INVALID_URL);
+  const local =
+    /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|(\d{1,3}\.){3}\d{1,3})(:\d+)?([/?#]|$)/i.test(trimmed);
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `${local ? "http" : "https"}://${trimmed}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new Error(SHARED_BROWSER_INVALID_URL);
+  }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
     throw new Error("Use an HTTP(S) URL without credentials");
   return url.href;

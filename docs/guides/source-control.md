@@ -35,12 +35,13 @@ including one created by the assistant, a crew or a remote machine, is
 initialized automatically.
 
 **All worktrees** (the default when a project has several worktrees) lists a section
-for each worktree that has uncommitted changes, and for each separate repository inside
+for each worktree that has uncommitted changes or commits waiting to be pushed (changed
+ones first), and for each separate repository inside
 it (such as `mobile`), all on the same level with no indentation. A section header
 shows the repository icon, the bold name (the project name for the project folder, the
 branch for another worktree), the muted branch, sync arrows, the change count, and refresh
-and a menu on hover. Clean, ahead-only and unknown worktrees are not listed here; they are
-in the header picker. With none changed, the session's worktree is shown. The first
+and a menu on hover. Clean and unknown worktrees are not listed here; they are
+in the header picker. With none changed or ahead, the session's worktree is shown. The first
 section opens; the rest open on click. Each section's menu offers **Show only this
 repository** (remembered per project) and **Show all repositories**. Rows carry no text
 markers such as "This session" or "Separate repository"; hover for the path. The Changes

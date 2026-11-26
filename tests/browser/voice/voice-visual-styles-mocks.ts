@@ -174,7 +174,7 @@ export async function converseWithAssistant(input: {
   transcript: string;
   execute: (name: string, args: Record<string, unknown>) => Promise<any>;
 }) {
-  if (input.transcript === "give jobs") {
+  if (input.transcript === "start a job to review recovery and improve the help page") {
     const result = await input.execute("give_jobs", {
       jobs: [
         {

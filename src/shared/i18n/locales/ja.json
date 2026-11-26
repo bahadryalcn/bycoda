@@ -387,7 +387,7 @@
   "Upstream": "追跡先ブランチ",
   "SSH terminal access": "SSH ターミナルへのアクセス",
   "Connect a computer running bycoda Host": "bycoda Host を実行しているコンピューターに接続",
-  "Exact Git rewind (experimental)": "Git の正確な巻き戻し（実験的）",
+  "Exact Git rewind": "Git の正確な巻き戻し",
   "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "既定ではオフです。正確に巻き戻すために Git ツリー全体を記録します。このコンピューターの Host での新しいターンに適用されます。",
   "The local Host is unavailable. Reconnect and retry.": "ローカル Host を利用できません。再接続してもう一度お試しください。",
   "The local Host returned an invalid setting. Reconnect and retry.": "ローカル Host が無効な設定を返しました。再接続してもう一度お試しください。",

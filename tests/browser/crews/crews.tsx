@@ -374,8 +374,15 @@ let runs = [
         reviewer: params.has("reviewingAgain")
           ? { sessionId: "current-review-session" }
           : undefined,
-        error: params.has("blocked")
-          ? "The design asset is unavailable. Keep the existing layout draft and select a replacement before retrying this task."
+        stop: params.has("blocked")
+          ? {
+              code: "run_failed",
+              message:
+                "The design asset is unavailable, so select a replacement before retrying this task.",
+              actor: "host",
+              nextAction: "retry",
+              at: at(2),
+            }
           : undefined,
         sessionId: "ui-session",
         verification: {

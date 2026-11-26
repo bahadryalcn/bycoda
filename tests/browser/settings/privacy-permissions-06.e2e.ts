@@ -22,9 +22,13 @@ for (const theme of ["light", "dark"])
         "gate",
       ]) {
         await page.goto(
-          `/tests/browser/settings/privacy-permissions-06.html?surface=${surface}&theme=${theme}`,
+          `/tests/browser/settings/privacy-permissions-06.html?surface=${surface}&theme=${theme}${surface === "helper" ? "&permission=microphone" : ""}`,
         );
         await expect(page.locator("body")).not.toBeEmpty();
+        if (surface === "helper")
+          await expect(
+            page.getByRole("button", { name: "Reveal bycoda in Finder", exact: true }),
+          ).toBeVisible();
         if (surface === "privacy") {
           await expect(page.locator(".privacy-group-row")).toBeVisible();
           await expect(page.locator(".privacy-group-row")).toHaveCSS("display", "grid");

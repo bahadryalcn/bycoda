@@ -69,8 +69,8 @@ it("refuses agent device tools before they reach the device host while the switc
     params: { action: "devices.status", input: {} },
     token: "token",
   };
-  await expect(
-    dispatchConversationTools(dependencies as never, request as never),
-  ).rejects.toThrow("DEVICES_AGENT_ACCESS_OFF");
+  await expect(dispatchConversationTools(dependencies as never, request as never)).rejects.toThrow(
+    "DEVICES_AGENT_ACCESS_OFF",
+  );
   expect(status).not.toHaveBeenCalled();
 });

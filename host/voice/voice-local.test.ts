@@ -495,7 +495,10 @@ it("lets the phone join a runtime loaded with other settings while desktop windo
   });
   const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
   try {
-    const desktop = await service.start({ natural: true, voiceId: "F1", idleUnloadMinutes: 7 }, true);
+    const desktop = await service.start(
+      { natural: true, voiceId: "F1", idleUnloadMinutes: 7 },
+      true,
+    );
     const phoneConfig = { natural: true, voiceId: "M2", idleUnloadMinutes: 1 };
     await expect(service.start(phoneConfig)).rejects.toThrow("Voice settings changed.");
     const listening = await service.start(phoneConfig, true, { joinLoaded: true });
@@ -533,9 +536,9 @@ it("refuses a phone reply voice when the computer runs dictation without one", a
   const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
   try {
     await service.start({ natural: false }, true);
-    await expect(
-      service.start({ natural: true }, false, { joinLoaded: true }),
-    ).rejects.toThrow(VOICE_IN_USE_WITHOUT_SPEECH);
+    await expect(service.start({ natural: true }, false, { joinLoaded: true })).rejects.toThrow(
+      VOICE_IN_USE_WITHOUT_SPEECH,
+    );
     // Listening alone still shares the loaded recognizer.
     await expect(
       service.start({ natural: true }, true, { joinLoaded: true }),

@@ -181,6 +181,11 @@ export type InboxQuery = Omit<GithubWorkItemQuery, "kind"> & {
   jiraStatuses?: string[];
   /** Background callers explicitly opt out of Jira network reads. */
   jiraEnabled?: boolean;
+  /**
+   * Read only these providers (a paired phone asking for one source). Unset reads every
+   * connected provider; the others are not contacted at all instead of read and dropped.
+   */
+  onlyProviders?: readonly InboxProvider[];
 };
 
 export type InboxProviderErrors = Partial<Record<InboxProvider, string>>;
@@ -385,7 +390,7 @@ export function inboxListCacheKey(
   // it never serves or overwrites the unscoped list.
   const teams = scopeKey(query.linearHiddenTeamIds ?? readHiddenLinearTeamIds());
   const jiraProjects = scopeKey(query.jiraHiddenProjectIds ?? readHiddenJiraProjectIds());
-  return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}:${JSON.stringify([query.jiraAssignees ?? [], query.jiraUnassigned ?? false, query.jiraStatuses ?? []])}`;
+  return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}:${JSON.stringify([query.jiraAssignees ?? [], query.jiraUnassigned ?? false, query.jiraStatuses ?? []])}${query.onlyProviders ? `:only=${[...new Set(query.onlyProviders)].sort().join(",")}` : ""}`;
 }
 
 function scopeKey(ids: readonly string[] | null): string {
@@ -1171,12 +1176,19 @@ async function fetchInboxItems(
     limited?: boolean;
     sources?: Map<string, GithubInboxSource>;
   };
+  const only = query.onlyProviders;
+  const skipped = async (): Promise<ProviderRead> => ({ items: [] });
+  const scoped = (provider: InboxProvider, work: () => Promise<ProviderRead>) =>
+    !only || only.includes(provider) ? work : skipped;
   const jobs: [InboxProvider, () => Promise<ProviderRead>][] = [
-    ["github", fetchGithub],
-    ["linear", fetchLinear],
-    ["jira", fetchJira],
-    ["gitlab", () => fetchRepositoryProvider("gitlab", gitlabConnected)],
-    ["azuredevops", () => fetchRepositoryProvider("azuredevops", azureDevOpsConnected)],
+    ["github", scoped("github", fetchGithub)],
+    ["linear", scoped("linear", fetchLinear)],
+    ["jira", scoped("jira", fetchJira)],
+    ["gitlab", scoped("gitlab", () => fetchRepositoryProvider("gitlab", gitlabConnected))],
+    [
+      "azuredevops",
+      scoped("azuredevops", () => fetchRepositoryProvider("azuredevops", azureDevOpsConnected)),
+    ],
   ];
   const ready = new Map<InboxProvider, ProviderRead>();
   const previous = peekInboxList(projects, query);

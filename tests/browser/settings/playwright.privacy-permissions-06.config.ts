@@ -5,7 +5,11 @@ export default defineConfig({
   workers: 1,
   timeout: 30_000,
   outputDir: "../../../temp/test-results/privacy-permissions-06",
-  use: { baseURL: "http://127.0.0.1:1476", viewport: { width: 1280, height: 900 } },
+  use: {
+    baseURL: "http://127.0.0.1:1476",
+    locale: "en-US",
+    viewport: { width: 1280, height: 900 },
+  },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: {
     command:

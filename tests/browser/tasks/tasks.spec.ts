@@ -96,7 +96,8 @@ for (const width of [1280, 800])
       await expect(page.locator("[data-task-description]")).toHaveCount(0);
       await capture("board");
       const card = page.getByRole("article", { name: "Repair standalone packaging", exact: true });
-      await card.click();
+      // Click the title: the card's center can land on the status button, which opens the stop reason.
+      await card.getByRole("heading", { name: "Repair standalone packaging", exact: true }).click();
       const detail = page.getByRole("complementary", { name: "Task details", exact: true });
       await expect(detail).toContainText("Responsibilities");
       await expect(detail.locator("summary").filter({ hasText: /^Error details$/ })).toBeVisible();
@@ -1252,6 +1253,9 @@ test("compact goal filters retain scope, reset and keyboard menu focus", async (
   await expect(filters.locator("..")).not.toHaveAttribute("data-filter-active", "");
   await openFilter(page);
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Epic planned task", exact: true })).toHaveCount(
+    0,
+  );
   await page.keyboard.press("Escape");
   await expect(filters).toBeFocused();
   const deliveryMenu = page
@@ -1454,7 +1458,7 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
 });
 
 test("a goal lists its created session links", async ({ page }) => {
-  await openTasks(page, `${fixture}?boardControls`);
+  await openTasks(page, `${fixture}?boardControls&goalTasks`);
   await taskMenuAction(
     page,
     page.getByRole("article", { name: "Settings goal", exact: true }),
@@ -2227,7 +2231,7 @@ for (const width of [800, 1280])
     test(`shared goal session separators ${width} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await openTasks(page, `${fixture}?boardControls`);
+      await openTasks(page, `${fixture}?boardControls&goalTasks`);
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",

@@ -147,6 +147,24 @@ export async function androidDeviceControl(
     case "home":
       await run(["input", "keyevent", "KEYCODE_HOME"]);
       break;
+    case "key":
+      await run([
+        "input",
+        "keyevent",
+        action.key === "back" ? "KEYCODE_BACK" : "KEYCODE_APP_SWITCH",
+      ]);
+      break;
+    case "rotate":
+      // A fixed rotation needs auto-rotate off; 0 is the natural (portrait) and 1 the landscape turn.
+      await run(["settings", "put", "system", "accelerometer_rotation", "0"]);
+      await run([
+        "settings",
+        "put",
+        "system",
+        "user_rotation",
+        action.orientation === "portrait" ? "0" : "1",
+      ]);
+      break;
     case "press":
       await run(["input", "tap", coordinate(action.x), coordinate(action.y)]);
       break;

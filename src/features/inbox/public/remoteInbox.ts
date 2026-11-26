@@ -10,5 +10,6 @@ export {
   type DesktopInboxReply,
   type RemoteInboxList,
   type RemoteInboxOperation,
+  type RemoteInboxProvider,
   type RemoteInboxQuery,
 } from "../model/remoteInbox";

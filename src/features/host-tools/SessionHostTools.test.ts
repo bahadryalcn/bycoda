@@ -799,10 +799,9 @@ it("follows Settings: Use devices removes the Devices tab and removed sources le
     expect(toolTabs().map((tab) => tab.getAttribute("aria-label"))).not.toContain("Devices");
     expect(toolChooser().textContent).toContain("Host browser");
     expect(
-      [
-        ...vi.mocked(hostFeatureRequest).mock.calls,
-        ...vi.mocked(hostToolRequest).mock.calls,
-      ].some((call) => String(call[2]).startsWith("devices.")),
+      [...vi.mocked(hostFeatureRequest).mock.calls, ...vi.mocked(hostToolRequest).mock.calls].some(
+        (call) => String(call[2]).startsWith("devices."),
+      ),
     ).toBe(false);
 
     await toolAct(() => toolPreferences.devicesEnabled.save(true));

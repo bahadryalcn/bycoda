@@ -105,7 +105,6 @@ for (const [theme, width] of [
       };
       await capture("top");
       if (tab === "Personal") {
-        await dialog.getByRole("button", { name: "Avatar", exact: true }).click();
         const avatarField = await dialog
           .getByRole("textbox", { name: "Emoji or initials", exact: true })
           .boundingBox();
@@ -117,12 +116,6 @@ for (const [theme, width] of [
           .getByRole("button", { name: "Generate avatar", exact: true })
           .scrollIntoViewIfNeeded();
         await capture("avatar");
-        await dialog
-          .getByRole("button", { name: "Personality and conversation", exact: true })
-          .click();
-      } else if (tab === "Work") {
-        await dialog.getByRole("button", { name: "Inactivity and recovery", exact: true }).click();
-        await dialog.getByRole("button", { name: /^Notifications/ }).click();
       } else if (tab === "Access") {
         await dialog.getByRole("radio", { name: "Full access", exact: true }).click();
         await expect(
@@ -144,7 +137,6 @@ for (const [theme, width] of [
         await expect(
           dialog.getByText(/International-Platform-Development/, { exact: false }).first(),
         ).toBeVisible();
-        await dialog.getByRole("button", { name: "Custom helper", exact: true }).click();
         await dialog
           .getByRole("textbox", { name: "Helper file", exact: true })
           .fill(
@@ -155,11 +147,6 @@ for (const [theme, width] of [
           .scrollIntoViewIfNeeded();
         await capture("helper");
         await dialog.locator("summary").filter({ hasText: "All checks" }).click();
-      } else {
-        await dialog.getByRole("button", { name: "Supervisor limits", exact: true }).click();
-        await dialog
-          .getByRole("button", { name: "Advanced worker context limits", exact: true })
-          .click();
       }
       await assertSettingsGeometry(dialog, region);
       await capture("expanded-bottom");
@@ -260,12 +247,6 @@ for (const theme of ["light", "dark"])
         .fill("Settings fixture");
       await capture("personal");
       await sectionCapture("Identity", "identity");
-      const conversation = dialog.getByRole("button", {
-        name: tr("Personality and conversation"),
-        exact: true,
-      });
-      await expect(conversation).toBeVisible();
-      await conversation.click();
       await sectionCapture("Personality", "personality");
       await sectionCapture("Conversation", "conversation");
 
@@ -310,7 +291,6 @@ for (const theme of ["light", "dark"])
         name: tr("Helper file"),
         exact: true,
       });
-      await expect(helperPath).toBeHidden();
       await expect(
         dialog.getByRole("switch", { name: tr("Enable computer use"), exact: true }),
       ).not.toBeChecked();
@@ -322,14 +302,12 @@ for (const theme of ["light", "dark"])
         dialog.getByRole("button", { name: tr("Stop computer use"), exact: true }),
       ).toHaveCount(0);
       await capture("computer");
-      await dialog.getByRole("button", { name: tr("Custom helper"), exact: true }).click();
       await expect(helperPath).toBeVisible();
       await helperPath.scrollIntoViewIfNeeded();
       await capture("computer-helper-expanded");
       await sectionCapture("Computer use", "computer-all");
 
       await tab("Advanced").click();
-      await dialog.getByRole("button", { name: tr("Supervisor limits"), exact: true }).click();
       await dialog
         .getByRole("spinbutton", { name: tr("Reserve per review"), exact: true })
         .fill("9000");

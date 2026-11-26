@@ -112,7 +112,6 @@ for (const theme of ["light", "dark"]) {
         await page.getByRole("option", { name: "Türkçe", exact: true }).click();
       }
       await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Transcription models", exact: true }).click();
       const transcription = page.getByRole("region", { name: "Transcription", exact: true });
       const search = transcription.getByRole("textbox", { name: "Search models" });
       await search.fill("qwen");
@@ -150,7 +149,6 @@ for (const theme of ["light", "dark"]) {
         cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }),
       ).not.toBeChecked();
       await cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }).check();
-      await cleanup.getByRole("button", { name: "Text cleanup options", exact: true }).click();
       await expect(
         cleanup.getByRole("textbox", { name: "Correction phrase", exact: true }),
       ).toHaveValue("Düzeltiyorum");

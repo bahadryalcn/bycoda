@@ -1,4 +1,8 @@
-export { ownerApprovalsSnapshot, subscribeOwnerApprovals } from "./model/ownerApprovals";
+export {
+  ownerApprovalsSnapshot,
+  reopenOwnerApproval,
+  subscribeOwnerApprovals,
+} from "./model/ownerApprovals";
 export {
   ownerSecretInputsSnapshot,
   subscribeOwnerSecretInputs,

@@ -37,6 +37,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sessions without a project open and list correctly.
 - The new task form no longer shows a "Merge automatically" option that had no effect.
 
+## [0.7.25]
+
+### Added
+
+- Automations can hold recipes: versioned, ordered task and owner-decision steps. **Repeat this** on a finished task prefills one, and a declined decision or blocked step stops the recipe with its reason.
+- Tasks show who ran the work and why they stopped or are waiting, list their helper delegations and flag failed helpers on the board card.
+- Tasks, epics, crews and automations share one executor choice (agent, crew or auto); new work defaults to **Use settings**.
+- Browser profiles can be managed in Settings, together with the access each profile grants.
+- Dictation and voice can use local GGUF transcription models.
+- Daily active-time sharing offers **Send once**, **Send for today**, **Ask later** and **Never send**, with at most one receipt per local day.
+
+### Improved
+
+- Settings show every row in full; collapsible rows are gone.
+- Background work sessions (task workers and reviewers, planners, automations, stewards and crews) stay out of session lists, search and restored tabs unless pinned or **Show background sessions** is on.
+- Epic tasks and crew assignments open from their parent card instead of separate board rows.
+- Task runtime counts only observed time, so sleep or a stall no longer blocks a task.
+- Chat, voice, Room and automation tasks are created through one path and keep the owner's request word for word; **/task** creates the task directly.
+- Computer use and Jira board changes follow Assistant access permissions, and approval queues and notification review share one flow.
+- Follow-ups to Claude wait in the queue while its provider is starting.
+
+### Fixed
+
+- Bare MCP authorization tokens are sent with the Bearer scheme.
+- Queued messages survive deferred history loading and interrupted turns, and **Load newer messages** appears only when newer turns are hidden.
+
 ## [0.7.23]
 
 ### Added

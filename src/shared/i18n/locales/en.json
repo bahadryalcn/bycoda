@@ -658,7 +658,7 @@
   "Use current document": "Use current document",
   "Draft recovery copy could not be confirmed. Keep this editor open.": "Draft recovery copy could not be confirmed. Keep this editor open.",
   "Retry draft copy": "Retry draft copy",
-  "Exact Git rewind (experimental)": "Exact Git rewind (experimental)",
+  "Exact Git rewind": "Exact Git rewind",
   "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.",
   "The local Host is unavailable. Reconnect and retry.": "The local Host is unavailable. Reconnect and retry.",
   "The local Host returned an invalid setting. Reconnect and retry.": "The local Host returned an invalid setting. Reconnect and retry.",
