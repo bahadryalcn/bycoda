@@ -300,3 +300,18 @@ it("retains Native branch retirement and workspace mode/base callbacks", async (
   });
   expect(effects.git).toHaveBeenCalledOnce();
 });
+
+it("keeps a projectless conversation in No project and opens the chosen folder in a new tab", async () => {
+  const source = {
+    ...newSession("claude", "~"),
+    blocks: [{ id: "user-1", role: "user" as const, text: "Hello" }],
+  };
+  await mount(source);
+  await act(async () => directory.onCwdChange(source.id, "G:/beta"));
+  expect(deps.sessionsRef.current.find((session) => session.id === source.id)).toBe(source);
+  expect(source).toMatchObject({ cwd: "~", scratchWorkspace: true });
+  const next = deps.sessionsRef.current.find((session) => session.id !== source.id)!;
+  expect(next).toMatchObject({ cwd: "G:/beta", blocks: [] });
+  expect(deps.appendTab).toHaveBeenCalledOnce();
+  expect(effects.keep).not.toHaveBeenCalled();
+});

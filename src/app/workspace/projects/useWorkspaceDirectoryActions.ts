@@ -130,13 +130,14 @@ export function useWorkspaceDirectoryActions({
       const previous = current?.cwd;
       const owner = current && hostSessionBinding(current);
       if (owner && previous && sameProjectPath(previous, normalized)) return;
-      // Threads stay bound to their project. Switching from the composer opens a
-      // new tab instead of retargeting the conversation.
+      // Threads stay bound to their project, and projectless ("~") threads stay in
+      // No project. Switching from the composer opens a new tab instead of
+      // retargeting the conversation.
       if (
         current &&
         previous &&
         !sameProjectPath(previous, normalized) &&
-        (owner || (looksLikeProject(previous) && !isBlankSession(current)))
+        (owner || ((looksLikeProject(previous) || previous === "~") && !isBlankSession(current)))
       ) {
         setProjectCwd(normalized);
         remember(normalized);
