@@ -1,7 +1,7 @@
 import type {
   AssistantRequest,
   AssistantResponse,
-} from "../../../shared/model/host-contracts/assistant";
+} from "../host-contracts/assistant";
 export const SPOKEN_LANGUAGES = {
   tr: "tr-TR",
   en: "en-US",

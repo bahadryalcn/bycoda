@@ -84,9 +84,15 @@ const MAX_OUTSTANDING_REQUESTS = 2;
 /** How long a ready installation probe is trusted; startup failure discards it sooner. */
 export const VOICE_PROBE_REUSE_MS = 10 * 60_000;
 
-/** A phone asked for spoken replies while the computer's voice runs dictation without a voice. */
+/**
+ * Hosts before shared reply voices refused every spoken phone call while any dictation (also the
+ * phone's own) held the recognizer. Kept so clients can still translate that older reason.
+ */
 export const VOICE_IN_USE_WITHOUT_SPEECH =
   "Voice is in use on this computer without spoken replies. End voice on the computer, then try again.";
+/** A phone asked for spoken replies while a voice conversation without a reply voice is running. */
+export const VOICE_CONVERSATION_WITHOUT_SPEECH =
+  "A voice conversation without spoken replies is running on this computer. End it there, then try again.";
 
 function busyError() {
   return new Error("Speech recognition is busy. Please speak again after transcription.");
@@ -119,6 +125,13 @@ export class LocalVoiceService {
   private starting = 0;
   /** Leases opened by dictation (recognition only). */
   private dictation = new Set<string>();
+  /** Starts in flight that may hold a voice conversation (not recognition only). */
+  private conversationStarts = 0;
+  /**
+   * Reply voice settings a phone call brought to a recognizer that dictation loaded without one.
+   * The recognizer keeps the dictation's settings; only speech uses these.
+   */
+  private adoptedSpeech?: VoiceRuntimeConfig;
   /** Set while an unused recognizer is kept loaded for the next dictation. */
   private warm?: ReturnType<typeof setTimeout>;
   /** Last ready probe; survives `close` so reconnecting skips the Python scan. */
@@ -160,6 +173,7 @@ export class LocalVoiceService {
     const speechStartedAtStart = this.speech.started;
     let outcome = "failed";
     this.starting++;
+    if (!recognitionOnly) this.conversationStarts++;
     try {
       const info = await this.startRuntime(
         value,
@@ -171,6 +185,7 @@ export class LocalVoiceService {
       return info;
     } finally {
       this.starting--;
+      if (!recognitionOnly) this.conversationStarts--;
       const totalMs = Math.round(elapsedSince(startedAt));
       if (outcome === "failed" || totalMs >= SLOW_VOICE_START_MS) {
         const fields: Record<string, DiagnosticLogFields[string]> = {
@@ -212,11 +227,17 @@ export class LocalVoiceService {
     }
     /** Whether this start uses a runtime loaded for other settings. */
     let joined = false;
+    /** Set when this start brings the reply voice a dictation-only runtime lacks. */
+    let adopt = false;
     const join = (refusal: string) => {
       if (!joinLoaded) throw new Error(refusal);
       // Any loaded recognizer can transcribe; a reply voice exists only if the owner enabled it.
-      if (!recognitionOnly && config.natural && !this.runtime.natural)
-        throw new Error(VOICE_IN_USE_WITHOUT_SPEECH);
+      // Dictation alone (the computer's or this phone's) chose no reply voice, so the call brings its own.
+      // Only a running voice conversation that chose silent replies keeps the refusal.
+      if (!recognitionOnly && config.natural && !this.speechConfig.natural) {
+        if (!this.onlyDictation()) throw new Error(VOICE_CONVERSATION_WITHOUT_SPEECH);
+        adopt = true;
+      }
       joined = true;
     };
     if (this.loading && this.runtimeKey !== key)
@@ -245,6 +266,20 @@ export class LocalVoiceService {
         this.runtimeKey = key;
       }
     }
+    if (adopt) {
+      // The dictation probe did not look for speech files; this call's settings must be installed.
+      const found = await this.inspectInstallation(key, config, phases);
+      if (!found.ready)
+        throw new Error(
+          `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Voice assistant. Choose Locate existing to find installed voice files, or Install to get missing files.`,
+        );
+      if (!this.loading) throw new Error("Local voice disconnected.");
+      // A concurrent call may have brought a reply voice while this one probed.
+      if (!this.speechConfig.natural) {
+        if (!this.onlyDictation()) throw new Error(VOICE_CONVERSATION_WITHOUT_SPEECH);
+        this.adoptedSpeech = { ...config, python: found.python, ttsPath: found.ttsPath };
+      }
+    }
     // A joined runtime keeps its owner's idle timeout.
     if (recognitionOnly && !joined) this.runtime.idleUnloadMinutes = idleUnloadMinutes;
     const info = await this.loadModels(recognitionOnly, phases);
@@ -264,6 +299,17 @@ export class LocalVoiceService {
       this.idle.unref();
     }
     return { ...info, lease };
+  }
+
+  /** The reply voice settings in effect: the runtime's own, or those a phone call brought. */
+  private get speechConfig(): VoiceRuntimeConfig {
+    return this.adoptedSpeech ?? this.runtime;
+  }
+
+  /** No voice conversation holds or is opening a lease besides the start asking (dictation only). */
+  private onlyDictation() {
+    for (const lease of this.leases.keys()) if (!this.dictation.has(lease)) return false;
+    return this.conversationStarts <= 1;
   }
 
   private async inspectInstallation(key: string, config: VoiceRuntimeConfig, phases: StartPhases) {
@@ -299,12 +345,12 @@ export class LocalVoiceService {
     const loadSpeech = () =>
       timeStartPhase(phases, "speech", () =>
         this.speech.started
-          ? this.speech.start(this.runtime)
-          : measure("voice.local.start.speech", () => this.speech.start(this.runtime)),
+          ? this.speech.start(this.speechConfig)
+          : measure("voice.local.start.speech", () => this.speech.start(this.speechConfig)),
       );
-    const needsSpeech = this.runtime.natural && !recognitionOnly;
+    const needsSpeech = this.speechConfig.natural && !recognitionOnly;
     try {
-      if (needsSpeech && this.runtime.engine !== "voxcpm2") {
+      if (needsSpeech && this.speechConfig.engine !== "voxcpm2") {
         const [info] = await Promise.all([worker, loadSpeech()]);
         return info;
       }
@@ -313,6 +359,8 @@ export class LocalVoiceService {
       return info;
     } catch (error) {
       this.forgetRuntime();
+      // A reply voice that failed to start is not kept for the next call.
+      if (!this.speech.started) this.adoptedSpeech = undefined;
       if (!this.leases.size) this.close();
       throw error;
     }
@@ -544,6 +592,7 @@ export class LocalVoiceService {
 
   close() {
     this.speech.close();
+    this.adoptedSpeech = undefined;
     const child = this.child;
     this.child = undefined;
     this.loading = undefined;

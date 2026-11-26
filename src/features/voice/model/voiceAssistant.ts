@@ -1,7 +1,7 @@
 import { boundToolOutput } from "./voiceToolOutput";
 import { shouldWaitForVoice } from "./voiceSpeechPolicy";
-import { VOICE_FEATURE_CONTEXT } from "./voiceFeatureLexicon";
-import { VOICE_SHARED_POLICY } from "./voiceInstructions";
+import { VOICE_FEATURE_CONTEXT } from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
+import { VOICE_SHARED_POLICY } from "../../../shared/model/voice-realtime/voiceInstructions";
 import { runHarnessTextPrompt } from "../../../integrations/harness";
 import type { Session } from "../../sessions/model/session";
 import { monotonicNow, elapsedSince } from "../../../shared/lib/time/timestamps";
@@ -12,7 +12,7 @@ import {
   voiceLimitFallback,
   voiceProgressText,
 } from "./voiceAssistantNotices";
-import { personaBlock } from "./voicePrompt";
+import { personaBlock } from "../../../shared/model/voice-realtime/voicePrompt";
 import { voiceRequest } from "./voiceConversation";
 import {
   voiceRuntimeDeadline,

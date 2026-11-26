@@ -1,4 +1,4 @@
-import { normalizeVoiceSearch, voiceSearchClauses } from "./voiceFeatureLexicon";
+import { normalizeVoiceSearch, voiceSearchClauses } from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
 
 /** Metadata only. The owning Host remains responsible for validation and authorization. */
 export type VoiceToolFamily = "conversation" | "social" | "runtime-logs";

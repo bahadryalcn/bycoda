@@ -91,6 +91,8 @@ import { VoiceCloudCredentials } from "../voice/voice-cloud-credentials";
 import type { LiveStreamService } from "../live-stream/service";
 import { LocalVoiceService } from "../voice/voice-local";
 import { VoiceSetupService } from "../voice/voice-setup";
+import type { VoiceCallSettingsStore } from "../voice/voice-call-settings";
+import type { VoiceRealtimeRelays } from "../voice/voice-realtime-relay";
 import type { ApprovalRegistry } from "../approvals/approval-registry";
 import type { PushNotifications } from "../push/push-service";
 import type { PushDeviceStore } from "../push/push-store";
@@ -345,6 +347,8 @@ export interface ServerBindings {
   voiceCloud: VoiceCloudCredentials;
   localVoice: LocalVoiceService;
   voiceSetup: VoiceSetupService;
+  voiceCallSettings: VoiceCallSettingsStore;
+  voiceRelays: VoiceRealtimeRelays;
   pushDevices: PushDeviceStore;
   pushNotifications: PushNotifications;
   approvals: ApprovalRegistry;

@@ -360,6 +360,8 @@ export function createEnvironmentRuntime(
         "dev.servers.tunnel.v1",
         "voice.realtime.v1",
         "voice.realtime.v2",
+        "voice.realtime.relay.v1",
+        "voice.realtime.relay.v2",
         "voice.tools.v1",
         "voice.local.v1",
         "voice.cloud.v1",

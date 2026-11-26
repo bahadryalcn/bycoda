@@ -7,7 +7,7 @@ import {
   isVoiceConversationActive,
   subscribeVoiceConversationActivity,
 } from "../model/voiceActivity";
-import { voiceLanguageCode } from "../model/voiceLanguage";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { useVoicePresence } from "../model/voicePresence";
 import { voiceRuntimeSettings, type VoiceSettings } from "../model/voiceSettings";
 import { saveVoiceSettingsPatch } from "../model/voiceSettingsSave";

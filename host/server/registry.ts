@@ -35,6 +35,8 @@ export function createRegistryRuntime(
     | "localVoice"
     | "voiceCloud"
     | "voiceSetup"
+    | "voiceCallSettings"
+    | "voiceRelays"
     | "featureDirectory"
     | "accountPlatform"
     | "models"

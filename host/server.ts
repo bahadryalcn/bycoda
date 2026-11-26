@@ -268,6 +268,8 @@ export async function createHostServer(
       voiceCloud: () => voiceRuntime.voiceCloud,
       localVoice: () => voiceRuntime.localVoice,
       voiceSetup: () => voiceRuntime.voiceSetup,
+      voiceCallSettings: () => voiceRuntime.voiceCallSettings,
+      voiceRelays: () => voiceRuntime.voiceRelays,
       pushDevices: () => pushRuntime.pushDevices,
       pushNotifications: () => pushRuntime.pushNotifications,
       approvals: () => pushRuntime.approvals,

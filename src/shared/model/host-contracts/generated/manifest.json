@@ -69890,6 +69890,115 @@
       "retry": "never",
       "scope": "device"
     },
+    "voice.call.settings.get": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "additionalProperties": false,
+            "properties": {
+              "grokVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+              "languageLock": { "maxLength": 32, "minLength": 1, "type": "string" },
+              "mode": { "enum": ["local", "grok", "openai"], "type": "string" },
+              "openaiVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+              "persona": { "maxLength": 600, "type": "string" },
+              "turnEndSilence": { "maximum": 4, "minimum": 0.6, "type": "number" }
+            },
+            "required": [
+              "mode",
+              "grokVoice",
+              "openaiVoice",
+              "languageLock",
+              "persona",
+              "turnEndSilence"
+            ],
+            "type": "object"
+          },
+          "signedIn": {
+            "additionalProperties": false,
+            "properties": { "grok": { "type": "boolean" }, "openai": { "type": "boolean" } },
+            "required": ["grok", "openai"],
+            "type": "object"
+          }
+        },
+        "required": ["settings", "signedIn"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.call.settings.set": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "grokVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+          "languageLock": { "maxLength": 32, "minLength": 1, "type": "string" },
+          "mode": { "enum": ["local", "grok", "openai"], "type": "string" },
+          "openaiVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+          "persona": { "maxLength": 600, "type": "string" },
+          "turnEndSilence": { "maximum": 4, "minimum": 0.6, "type": "number" }
+        },
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "additionalProperties": false,
+            "properties": {
+              "grokVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+              "languageLock": { "maxLength": 32, "minLength": 1, "type": "string" },
+              "mode": { "enum": ["local", "grok", "openai"], "type": "string" },
+              "openaiVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+              "persona": { "maxLength": 600, "type": "string" },
+              "turnEndSilence": { "maximum": 4, "minimum": 0.6, "type": "number" }
+            },
+            "required": [
+              "mode",
+              "grokVoice",
+              "openaiVoice",
+              "languageLock",
+              "persona",
+              "turnEndSilence"
+            ],
+            "type": "object"
+          },
+          "signedIn": {
+            "additionalProperties": false,
+            "properties": { "grok": { "type": "boolean" }, "openai": { "type": "boolean" } },
+            "required": ["grok", "openai"],
+            "type": "object"
+          }
+        },
+        "required": ["settings", "signedIn"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "voice.cloud.transcribe": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -70156,6 +70265,283 @@
             "type": "object"
           }
         ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.realtime.audio": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "audio": { "maxLength": 87384, "minLength": 1, "type": "string" },
+          "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "playedMs": { "maximum": 3600000, "minimum": 0, "type": "integer" },
+          "seq": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": ["lease", "seq", "audio"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.realtime.end": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "lease": { "maxLength": 200, "minLength": 1, "type": "string" } },
+        "required": ["lease"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.realtime.interrupt": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "playedMs": { "maximum": 3600000, "minimum": 0, "type": "integer" }
+        },
+        "required": ["lease", "playedMs"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.realtime.next": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "lease": { "maxLength": 200, "minLength": 1, "type": "string" }
+        },
+        "required": ["lease", "cursor"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "chunks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "audio": { "maxLength": 1000000, "minLength": 1, "type": "string" },
+                "responseId": { "maxLength": 200, "type": "string" }
+              },
+              "required": ["at", "audio", "responseId"],
+              "type": "object"
+            },
+            "maxItems": 256,
+            "type": "array"
+          },
+          "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "events": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "state": { "enum": ["listening", "thinking", "speaking"], "type": "string" },
+                    "type": { "const": "state", "type": "string" }
+                  },
+                  "required": ["type", "at", "state"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "responseId": { "maxLength": 200, "type": "string" },
+                    "text": { "maxLength": 16000, "type": "string" },
+                    "type": {
+                      "enum": ["user_transcript", "assistant_transcript"],
+                      "type": "string"
+                    }
+                  },
+                  "required": ["type", "at", "text"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "type": { "const": "interrupted", "type": "string" }
+                  },
+                  "required": ["type", "at"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "message": { "maxLength": 500, "type": "string" },
+                    "reason": {
+                      "enum": [
+                        "ended",
+                        "idle",
+                        "revoked",
+                        "provider",
+                        "replaced",
+                        "expired",
+                        "stopping"
+                      ],
+                      "type": "string"
+                    },
+                    "type": { "const": "ended", "type": "string" }
+                  },
+                  "required": ["type", "at", "reason"],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 256,
+            "type": "array"
+          }
+        },
+        "required": ["chunks", "events", "cursor"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.realtime.start": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "duplex": { "type": "boolean" },
+          "language": { "maxLength": 32, "minLength": 1, "type": "string" },
+          "projectId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "provider": { "enum": ["xai", "openai"], "type": "string" },
+          "threadId": { "maxLength": 200, "minLength": 1, "type": "string" }
+        },
+        "required": ["threadId", "provider"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "inRate": { "const": 16000, "type": "number" },
+          "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "outRate": { "const": 24000, "type": "number" }
+        },
+        "required": ["lease", "inRate", "outRate"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "voice.realtime.text": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "text": { "maxLength": 4000, "minLength": 1, "type": "string" }
+        },
+        "required": ["lease", "text"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.voice.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "queued": { "type": "boolean" } },
+        "required": ["queued"],
+        "type": "object"
       },
       "retry": "never",
       "scope": "device"
@@ -72940,6 +73326,179 @@
               "additionalProperties": false,
               "properties": { "lease": { "maxLength": 200, "minLength": 1, "type": "string" } },
               "required": ["lease"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.realtime.start", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "duplex": { "type": "boolean" },
+                "language": { "maxLength": 32, "minLength": 1, "type": "string" },
+                "projectId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "provider": { "enum": ["xai", "openai"], "type": "string" },
+                "threadId": { "maxLength": 200, "minLength": 1, "type": "string" }
+              },
+              "required": ["threadId", "provider"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.realtime.audio", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "audio": { "maxLength": 87384, "minLength": 1, "type": "string" },
+                "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "playedMs": { "maximum": 3600000, "minimum": 0, "type": "integer" },
+                "seq": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              },
+              "required": ["lease", "seq", "audio"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.realtime.next", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "lease": { "maxLength": 200, "minLength": 1, "type": "string" }
+              },
+              "required": ["lease", "cursor"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.realtime.interrupt", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "playedMs": { "maximum": 3600000, "minimum": 0, "type": "integer" }
+              },
+              "required": ["lease", "playedMs"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.realtime.text", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "lease": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "text": { "maxLength": 4000, "minLength": 1, "type": "string" }
+              },
+              "required": ["lease", "text"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.realtime.end", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "lease": { "maxLength": 200, "minLength": 1, "type": "string" } },
+              "required": ["lease"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.call.settings.get", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "voice.call.settings.set", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "grokVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+                "languageLock": { "maxLength": 32, "minLength": 1, "type": "string" },
+                "mode": { "enum": ["local", "grok", "openai"], "type": "string" },
+                "openaiVoice": { "maxLength": 32, "minLength": 1, "type": "string" },
+                "persona": { "maxLength": 600, "type": "string" },
+                "turnEndSilence": { "maximum": 4, "minimum": 0.6, "type": "number" }
+              },
               "type": "object"
             }
           },
@@ -95744,5 +96303,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "e7913bb6ed7144baeef49dd331d9bbd748cc623e6fcfa7d2eb80babb552270bd"
+  "schemaHash": "80d0ca3f0551ff1512979775b6d73590700ceefaf75791bb6f41f4e6e358d062"
 }

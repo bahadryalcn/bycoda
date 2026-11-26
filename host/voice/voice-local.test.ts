@@ -15,7 +15,7 @@ import {
   LOCAL_WORKER_UNRESPONSIVE_MS,
   LocalVoiceService,
   validateVoiceAudio,
-  VOICE_IN_USE_WITHOUT_SPEECH,
+  VOICE_CONVERSATION_WITHOUT_SPEECH,
 } from "./voice-local";
 import * as gpuDetection from "./voice-gpu";
 import * as runtime from "./voice-runtime";
@@ -519,7 +519,51 @@ it("lets the phone join a runtime loaded with other settings while desktop windo
   }
 });
 
-it("refuses a phone reply voice when the computer runs dictation without one", async () => {
+// Dictation (the computer's, or the phone's own message dictation) chose no reply voice; a phone call
+// used to be refused with "voice is in use on this computer without spoken replies".
+it("starts the phone call's reply voice beside a recognizer that only dictation loaded", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "speech-python", ttsPath: "tts" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    loading?: Promise<unknown>;
+    runtime: runtime.VoiceRuntimeConfig;
+    speech: { start: (config: unknown) => Promise<void> };
+  };
+  const worker = vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.loading = Promise.resolve(workerInfo);
+    return workerInfo;
+  });
+  const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    const dictation = await service.start({ natural: false }, true);
+    const call = await service.start({ natural: true, voiceId: "M2" }, false, { joinLoaded: true });
+    expect(call.lease).not.toBe(dictation.lease);
+    expect(speech).toHaveBeenCalledOnce();
+    expect(speech.mock.calls[0]![0]).toMatchObject({
+      natural: true,
+      voiceId: "M2",
+      python: "speech-python",
+      ttsPath: "tts",
+    });
+    // The recognizer keeps the dictation's settings; it is shared, not reloaded.
+    expect(internals.runtime.natural).toBe(false);
+    expect(worker).toHaveBeenCalledTimes(2);
+    // The call's own listening turns share the same recognizer.
+    await expect(
+      service.start({ natural: true, voiceId: "M2" }, true, { joinLoaded: true }),
+    ).resolves.toMatchObject({ model: workerInfo.model });
+    // Desktop windows are still told to disconnect other voice settings.
+    await expect(service.start({ natural: true })).rejects.toThrow("Voice settings changed.");
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("refuses a phone reply voice while a voice conversation without one is running", async () => {
   const service = new LocalVoiceService();
   const inspect = vi
     .spyOn(runtime, "inspectVoiceRuntime")
@@ -535,9 +579,9 @@ it("refuses a phone reply voice when the computer runs dictation without one", a
   });
   const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
   try {
-    await service.start({ natural: false }, true);
+    await service.start({ natural: false });
     await expect(service.start({ natural: true }, false, { joinLoaded: true })).rejects.toThrow(
-      VOICE_IN_USE_WITHOUT_SPEECH,
+      VOICE_CONVERSATION_WITHOUT_SPEECH,
     );
     // Listening alone still shares the loaded recognizer.
     await expect(

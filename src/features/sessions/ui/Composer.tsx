@@ -3552,6 +3552,33 @@ export const Composer = memo(function Composer({
     else publishDraft(el?.value ?? draftTextRef.current);
   };
 
+  const draftActions =
+    showClearText || subagentList ? (
+      <div className="ms-1 me-1.5 flex shrink-0 items-center gap-0.5">
+        {showClearText ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            iconOnly
+            label={t("Clear text")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              const field = ref.current;
+              if (!field?.value || !canMutateDraft() || composingRef.current) return;
+              field.focus();
+              userEditBeforeRef.current = null;
+              applyUndoableTextareaEdit(field, "", 0, applyingAttachmentCut);
+            }}
+          >
+            <X className="icon-xs" />
+          </Button>
+        ) : null}
+        {subagentList && onOpenSubagent ? (
+          <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
+        ) : null}
+      </div>
+    ) : null;
+
   return (
     <div
       ref={composerRoot}
@@ -4012,21 +4039,25 @@ export const Composer = memo(function Composer({
             inlineText={inlineActive ? draft : undefined}
           />
           {attachments.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-2">
-              {attachments.map((file, index) => (
-                <AttachmentChip
-                  key={file.id}
-                  attachment={file}
-                  token={tokens[index]}
-                  draft={{ projectRoot: executionCwd }}
-                  onInsertToken={
-                    !shell && inlineAttachments?.has(file.id)
-                      ? undefined
-                      : () => insertAttachmentToken(file.id)
-                  }
-                  onRemove={() => removeAttachment(file.id)}
-                />
-              ))}
+            // Draft actions take the chip row's top-right corner so the text keeps its full width.
+            <div className={`flex items-start ps-3 pt-1.5 ${draftActions ? "" : "pe-3"}`}>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 pt-0.5">
+                {attachments.map((file, index) => (
+                  <AttachmentChip
+                    key={file.id}
+                    attachment={file}
+                    token={tokens[index]}
+                    draft={{ projectRoot: executionCwd }}
+                    onInsertToken={
+                      !shell && inlineAttachments?.has(file.id)
+                        ? undefined
+                        : () => insertAttachmentToken(file.id)
+                    }
+                    onRemove={() => removeAttachment(file.id)}
+                  />
+                ))}
+              </div>
+              {draftActions}
             </div>
           ) : null}
 
@@ -4197,27 +4228,8 @@ export const Composer = memo(function Composer({
                 }}
               />
             </div>
-            {showClearText || subagentList ? (
-              <div className="me-2 mt-1.5 flex shrink-0 items-center gap-1">
-                {showClearText ? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => {
-                      const field = ref.current;
-                      if (!field?.value || !canMutateDraft() || composingRef.current) return;
-                      field.focus();
-                      userEditBeforeRef.current = null;
-                      applyUndoableTextareaEdit(field, "", 0, applyingAttachmentCut);
-                    }}
-                  >
-                    {t("Clear text")}
-                  </Button>
-                ) : null}
-                {subagentList && onOpenSubagent ? (
-                  <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
-                ) : null}
-              </div>
+            {draftActions && attachments.length === 0 ? (
+              <div className="mt-1.5">{draftActions}</div>
             ) : null}
           </div>
 

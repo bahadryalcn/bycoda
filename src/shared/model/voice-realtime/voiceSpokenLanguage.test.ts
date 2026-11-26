@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { acceptedVoiceLanguage, VoiceSpokenLanguageWrites } from "./voiceSpokenLanguage";
-import type { AssistantRequest } from "../../../shared/model/host-contracts/assistant";
+import type { AssistantRequest } from "../host-contracts/assistant";
 afterEach(() => localStorage.clear());
 it("prefers real ASR metadata and never uses interface locale or assistant text", () => {
   expect(acceptedVoiceLanguage("hello", "tr")).toBe("tr-TR");

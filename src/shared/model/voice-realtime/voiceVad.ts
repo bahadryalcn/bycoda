@@ -1,4 +1,4 @@
-import { bytesToBase64 } from "../../../shared/lib/base64";
+import { bytesToBase64 } from "../../lib/base64";
 
 /** Per-frame speech evidence: loudness and voicing (pitch periodicity). */
 export type FrameFeatures = { rms: number; periodicity: number };

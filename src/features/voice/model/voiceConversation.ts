@@ -1,6 +1,6 @@
 import { voiceReplyModel } from "./voiceReplyModel";
 import { shouldWaitForVoice } from "./voiceSpeechPolicy";
-import { buildVoicePrompt } from "./voicePrompt";
+import { buildVoicePrompt } from "../../../shared/model/voice-realtime/voicePrompt";
 import {
   canRunHarnessTextPrompt,
   runHarnessTextPrompt,

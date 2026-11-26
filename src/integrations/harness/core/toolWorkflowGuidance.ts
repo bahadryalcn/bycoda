@@ -6,7 +6,7 @@ export type ToolWorkflowAvailability = {
 };
 
 /** Change when routing or recovery instructions change; delivery fingerprints include this text. */
-export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-16.1";
+export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-26.1";
 
 /**
  * Per-tool rules live in each tool's description and in tools.describe; this hint
@@ -21,7 +21,7 @@ export const MCP_ON_DEMAND_GUIDANCE =
   "MCP servers load on demand: conversation_mcp_servers_list, then _servers_describe one, then _tools_call; none are wired directly.";
 
 const CONVERSATION_GUIDANCE =
-  "Need a password, token or API key? Never ask in chat: call secrets.request. Discover narrowly: conversation_tools_search (CLI tools.search) by task or family, then conversation_tools_describe and conversation_tools_status for the tools you will use; avoid full catalog dumps. For browser work prefer the integrated browser.preview/browser.status route over an external browser. Show visuals via visuals.preview then visuals.render when asked to see something or a chart/diagram beats text; keep simple answers as text. " +
+  "Request credentials with secrets.request, never in chat. Use conversation_tools_search (CLI tools.search), then conversation_tools_describe and conversation_tools_status. Search by task or family and avoid full catalog dumps. For web pages and previews: browser.status then browser.preview. For the real browser or desktop: desktop.status. Verify a named provider plugin. If unavailable, report the failure and honor the requested target. Show visuals via visuals.preview then visuals.render when asked to see something or a chart/diagram beats text; keep simple answers as text. " +
   MCP_ON_DEMAND_GUIDANCE;
 
 export function toolWorkflowGuidance(availability: ToolWorkflowAvailability): string {

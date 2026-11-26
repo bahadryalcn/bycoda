@@ -192,10 +192,15 @@ export async function handleVoiceRpc(
 }
 
 async function transcriptionStatus(cloud: ServerBindings["voiceCloud"]) {
-  const [status, openai, xai] = await Promise.all([
-    cloud.status(),
+  const [status, { openai, xai }] = await Promise.all([cloud.status(), realtimeSignIns()]);
+  return { ...status, openai, xai };
+}
+
+/** Whether this computer has a Grok Build / Codex sign-in (or env key); never the credential. */
+export async function realtimeSignIns() {
+  const [openai, xai] = await Promise.all([
     realtimeCredential("openai").catch(() => undefined),
     realtimeCredential("xai").catch(() => undefined),
   ]);
-  return { ...status, openai: Boolean(openai), xai: Boolean(xai) };
+  return { openai: Boolean(openai), xai: Boolean(xai) };
 }
