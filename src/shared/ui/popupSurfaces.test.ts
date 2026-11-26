@@ -219,7 +219,8 @@ it("hosts native popover children in one opaque frame and clears the owner ref",
   );
   expect(host).toBe(container.firstElementChild);
   expect(container.firstElementChild?.classList.contains(floatingFrameClassName)).toBe(true);
-  expect(container.querySelectorAll(".popover-backdrop")).toHaveLength(1);
+  expect(container.querySelectorAll(".popover-solid")).toHaveLength(1);
+  expect(container.querySelector(".popover-backdrop")).toBeNull();
   expect(container.querySelector('[data-native-child="true"]')?.textContent).toBe("Native choices");
   expect(container.querySelectorAll("[data-popover-flow]")).toHaveLength(1);
   expect(

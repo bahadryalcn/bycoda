@@ -20,7 +20,7 @@ export const floatingFrameClassName = styles.floatingFrame;
 export const nativePopupFrameClassName = styles.frame;
 
 /**
- * Opaque floating ground shared by in-window overlays and app-rendered native popup roots.
+ * Floating ground shared by in-window overlays (theme glass) and native popup roots (opaque).
  * @group overlay
  * @use Backdrop inside a positioned shared popup frame.
  * @avoid Complete in-app floating content: Popover. OS-window roots use useNativePopupFrame.
@@ -30,9 +30,9 @@ export function PopupBackdrop({
   className,
   ref,
 }: {
-  /** Legacy material flag. All popup grounds use the floating surface. */
+  /** Opaque ground without glass: OS-window popup roots, which have no app content behind them. */
   solid?: boolean;
-  /** Legacy material flag. All popup grounds use the floating surface. */
+  /** Same glass as the default ground; kept so existing callers need no change. */
   frosted?: boolean;
   className?: string;
   ref?: Ref<HTMLDivElement>;
@@ -145,7 +145,7 @@ export function NativePopover({
         { ...frameProps.style, "--native-popup-max-height": `${maxHeight}px` } as CSSProperties
       }
     >
-      <PopupBackdrop />
+      <PopupBackdrop solid />
       <div className={`${contentClassName} max-h-[var(--native-popup-max-height)] overflow-y-auto`}>
         {host ? <NativePopupHost value={host}>{children}</NativePopupHost> : null}
       </div>

@@ -131,8 +131,10 @@ it("keeps the shared opaque frame when solid is requested", async () => {
   expect(document.body.querySelector(".popover-backdrop, .backdrop-blur-xl")).toBeNull();
   const css = fs.readFileSync("src/styles/index.css", "utf8");
   expect(css).toMatch(
-    /\.popover-backdrop,\s*\.popover-solid,\s*\.popover-frosted\s*\{\s*background: var\(--ui-surface-floating\);\s*\}/,
+    /\.popover-solid,\s*\.popover-backdrop,\s*\.popover-frosted\s*\{\s*background: var\(--ui-surface-floating\);\s*\}/,
   );
+  // Only the glass backdrops blur; the solid ground never samples the pane.
+  expect(css).not.toMatch(/\.popover-solid[^{}]*\{[^}]*backdrop-filter/);
 });
 
 it.each([
@@ -372,7 +374,7 @@ it("hides while its anchor is not rendered and returns once the anchor shows aga
   expect(Number.parseFloat(surface.style.left)).toBe(40);
 });
 
-it("uses the same opaque floating backdrop for legacy frosted requests", async () => {
+it("uses the same glass floating backdrop for frosted requests", async () => {
   await act(async () =>
     root.render(createElement(Popover, { anchor }, createElement("p", null, "x"))),
   );
@@ -388,7 +390,6 @@ it("uses the same opaque floating backdrop for legacy frosted requests", async (
 
   const css = fs.readFileSync("src/styles/index.css", "utf8");
   expect(css).toMatch(
-    /\.popover-backdrop,[^{]*\.popover-solid,[^{]*\{[^}]*background: var\(--ui-surface-floating\)/,
+    /:is\(\.popover-backdrop, \.popover-frosted\) \{[^}]*backdrop-filter: var\(--ui-floating-glass-filter\)/,
   );
-  expect(css).not.toMatch(/[^{}]*\.popover-(?:backdrop|solid|frosted)[^{}]*\{[^}]*backdrop-filter/);
 });

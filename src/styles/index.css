@@ -561,16 +561,10 @@ html.theme-light {
     var(--color-content) calc(16% * var(--appearance-layer-strength, 1)),
     var(--ui-layer-base)
   );
-  /* Pure/Tinted only choose the painted canvas. Floating chrome lifts from the opaque theme layer
-     in both modes. Light uses a capped lift so the theme tint survives high surface contrast. */
-  --ui-floating-base: var(--ui-layer-base);
-  --ui-floating-lift-color: var(--color-content);
-  --ui-floating-lift: calc(16% * var(--appearance-layer-strength, 1));
-  --ui-surface-floating: color-mix(
-    in oklab,
-    var(--ui-floating-lift-color) var(--ui-floating-lift),
-    var(--ui-floating-base)
-  );
+  /* Opaque ground of every floating surface (dialogs, sheets, popovers, menus, tooltips, toasts,
+     floating panels) where glass is off: the theme's raised step; the Pure canvas maps it near the
+     pure ground below. Popup backdrops paint --ui-floating-glass over it when blur is available. */
+  --ui-surface-floating: var(--ui-surface-raised);
   --ui-floating-edge: color-mix(
     in oklab,
     var(--color-content)
@@ -669,10 +663,16 @@ html.theme-light {
   --ui-activity-dock-edge:
     inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
     inset 0 1px 0 color-mix(in oklab, var(--color-content) 7%, transparent);
-  /* Legacy preview tokens resolve to opaque floating paint without an extra filter or glint. */
-  --ui-frosted-glass: var(--ui-surface-floating);
-  --ui-frosted-filter: none;
-  --ui-frosted-edge: none;
+  /* Floating glass for every popup backdrop (menus, popovers, tooltips, dialogs, sheets): a theme
+     tint over a strong, saturated blur, so the pane beneath shows through as color instead of a
+     flat gray card (owner 2026-11-03 and 2026-11-26, translated: "I don't want this gray look").
+     Without blur the backdrop falls back to the opaque --ui-surface-floating. */
+  --ui-floating-glass: color-mix(in oklab, var(--color-background-base) 22%, transparent);
+  --ui-floating-glass-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(1.8) brightness(0.82);
+  --ui-floating-glass-edge: inset 0 1px 0 color-mix(in oklab, var(--color-content) 10%, transparent);
+  --ui-frosted-glass: var(--ui-floating-glass);
+  --ui-frosted-filter: var(--ui-floating-glass-filter);
+  --ui-frosted-edge: var(--ui-floating-glass-edge);
   --ui-frosted-divider: var(--ui-pane-border);
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
@@ -1103,12 +1103,6 @@ html.theme-light {
       ),
     var(--ui-layer-base)
   );
-  --ui-floating-lift-color: var(--palette-solidInk);
-  --ui-floating-lift: clamp(
-    0%,
-    calc((var(--ui-ground-lightness) - 58%) * 2.5 * var(--appearance-layer-strength, 1)),
-    88%
-  );
   /* Light ladder: zinc-like ink steps (4 / 12 / 16), selected vs hover >= 1.15:1 on the ground. */
   --ui-state-hover: 4%;
   --ui-state-selected: 12%;
@@ -1128,6 +1122,11 @@ html.theme-light {
   /* Light glass: a milky canvas veil that brightens the blur instead of dimming it. */
   --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 45%, transparent);
   --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.06);
+  /* Light floating glass: a milky veil that brightens what it blurs. */
+  --ui-floating-glass: color-mix(in oklab, var(--color-background-base) 36%, transparent);
+  --ui-floating-glass-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.6) brightness(1.05);
+  --ui-floating-glass-edge: inset 0 1px 0
+    color-mix(in oklab, var(--color-background-base) 85%, transparent);
   --ui-activity-dock-edge:
     inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
     inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 80%, transparent);
@@ -1161,6 +1160,13 @@ html.theme-light {
 html[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureDark);
   --ui-chat-canvas: var(--color-background-base);
+  /* Opaque floating ground near the pure ground instead of a mid gray slab. The mix is in srgb:
+     an oklab mix this close to black rounds to the canvas itself. */
+  --ui-surface-floating: color-mix(
+    in srgb,
+    var(--color-content) calc(10% * var(--appearance-layer-strength, 1)),
+    var(--color-background-base)
+  );
   /* Groups and cards read as cards on the black ground: a faint ink fill over whatever surface
      holds them, framed by the card border. */
   --ui-card-surface: color-mix(
@@ -1179,6 +1185,7 @@ html[data-canvas-background="pure"] {
 html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
   --ui-chat-pane-canvas: var(--ui-chat-canvas);
+  --ui-surface-floating: var(--ui-surface-raised);
   --ui-card-surface: transparent;
   /* Mirror of the dark step: a faint off-white on the white ground. */
   --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
@@ -2572,8 +2579,6 @@ html.has-workspace-background {
       calc(clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
     var(--color-background-base)
   );
-  /* Keep the selected tint present when artwork contributes to the layer under a Pure canvas. */
-  --ui-floating-base: color-mix(in oklab, var(--ui-tint-base) 35%, var(--ui-layer-base));
   --ui-ground-lightness: calc(
     var(--background-lightness) *
       (1 - clamp(0, var(--workspace-background-strength, 0), 1) * 0.32) +
@@ -4441,11 +4446,31 @@ html:not(.theme-light) .markdown-code-token {
   }
 }
 
-/* Every backdrop spelling shares the opaque theme ground, including legacy previews. */
-.popover-backdrop,
+/* One material for every in-window floating surface (menus, popovers, tooltips, dialogs, sheets):
+   theme glass over a blur of the pane. .popover-solid stays opaque for OS-window popup roots, which
+   have no app content behind them. .popover-frosted is the same glass. */
 .popover-solid,
+.popover-backdrop,
 .popover-frosted {
   background: var(--ui-surface-floating);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html:not([data-performance-no-blur]) :is(.popover-backdrop, .popover-frosted) {
+    background: var(--ui-floating-glass);
+    box-shadow: var(--ui-floating-glass-edge);
+    -webkit-backdrop-filter: var(--ui-floating-glass-filter);
+    backdrop-filter: var(--ui-floating-glass-filter);
+  }
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html :is(.popover-backdrop, .popover-frosted) {
+    background: var(--ui-surface-floating);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* Animate content only; its sibling glass stays still. Finish at `none` and
@@ -4874,7 +4899,7 @@ html.is-reordering
 :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: blur(var(--glass-blur));
 }
-/* The opaque floating backdrop already covers the pane. Skip blur on nested surfaces. */
+/* A nested glass surface samples the already blurred floating backdrop only once. */
 :is(.popover-backdrop, .popover-solid, .popover-frosted)
   ~ *
   :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
