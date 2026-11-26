@@ -4,13 +4,13 @@ import {
   type CloudDictationProvider,
   type VoiceRuntimeConfig,
 } from "./localVoiceClient";
-import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
+import { VoiceVad, pcmBase64, resamplePcm } from "../../../shared/model/voice-realtime/voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { processDictationText, type DictationProcessingOptions } from "./dictationProcessing";
 import { reportDictationLanguage } from "./dictationActivity";
-import { acceptedVoiceLanguage } from "./voiceSpokenLanguage";
+import { acceptedVoiceLanguage } from "../../../shared/model/voice-realtime/voiceSpokenLanguage";
 
 const noop = () => {};
 /** New speech (seconds) before the next live preview of the phrase in progress.

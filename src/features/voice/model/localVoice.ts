@@ -5,7 +5,7 @@ import {
   type LocalVoiceTranscript,
   type VoiceRuntimeConfig,
 } from "./localVoiceClient";
-import { VoiceVad, decodePcmBase64, pcmBase64, resamplePcm } from "./voiceVad";
+import { VoiceVad, decodePcmBase64, pcmBase64, resamplePcm } from "../../../shared/model/voice-realtime/voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 import { openMicrophone, stopMicrophone } from "./microphoneAccess";

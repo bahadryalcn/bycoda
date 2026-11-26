@@ -5,7 +5,7 @@ import type {
   AssistantProfile,
   AssistantMemory,
 } from "../../../shared/model/host-contracts/assistant";
-import { voiceLanguageInstructions } from "./voiceLanguage";
+import { voiceLanguageInstructions } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { voiceMemoryMigrationComplete } from "./voiceHostMemory";
 import { voiceStyleInstructions, type VoiceStyleProfile } from "./voiceStyle";
 

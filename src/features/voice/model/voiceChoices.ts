@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { UserQuestionPrompt, UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { AssistantOwnerQuestion } from "../../../shared/model/assistantOwnerQuestions";
-import { normalizeVoiceSearch } from "./voiceFeatureLexicon";
+import { normalizeVoiceSearch } from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
 
 const choiceInput = z.strictObject({
   question: z.string().trim().min(1).max(1000),

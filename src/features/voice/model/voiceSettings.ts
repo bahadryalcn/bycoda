@@ -9,7 +9,7 @@ import type {
 } from "./localVoiceClient";
 import { DEFAULT_SPEAKERS, SPEAKER_IDS, type SpeakerEngine } from "./voiceSpeakers";
 import { CLOUD_DICTATION_PROVIDERS, DICTATION_MODELS } from "./dictationModels";
-import { SPOKEN_LANGUAGES } from "./voiceSpokenLanguage";
+import { SPOKEN_LANGUAGES } from "../../../shared/model/voice-realtime/voiceSpokenLanguage";
 import { WAKE_PHRASE_LIMITS } from "./voiceWakePhrase";
 
 export type VoiceVisual = "mark" | "wave" | "dots" | "orb";

@@ -31,7 +31,7 @@ import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { voiceError } from "../model/voiceAssistantNotices";
 import { VOICE_HOST_STEP_MS, voiceConnectionStep } from "../model/voiceConnectionStep";
-import { voiceInterruptedTurnNotice } from "../model/voiceInstructions";
+import { voiceInterruptedTurnNotice } from "../../../shared/model/voice-realtime/voiceInstructions";
 import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
@@ -168,7 +168,7 @@ import {
   assistantRequest,
   useAssistantSnapshot,
 } from "../../assistant/model/assistantClient";
-import { voiceLanguageCode } from "../model/voiceLanguage";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { VoiceThreadTranscript, voiceThreadSeed, voiceThreadSummary } from "../model/voiceThreads";
 import { withVoiceSessionBoundary } from "../model/voiceSessionGap";
 import { VoicePanelResize } from "./companion/VoicePanelResize";
@@ -203,7 +203,7 @@ import {
   voiceSessionStopTool,
   voiceOwnerPresenceIntent,
 } from "../model/voiceAssistantControls";
-import { VoiceSpokenLanguageWrites } from "../model/voiceSpokenLanguage";
+import { VoiceSpokenLanguageWrites } from "../../../shared/model/voice-realtime/voiceSpokenLanguage";
 import { loadVoiceMemory } from "../model/voiceMemory";
 import {
   parseVoiceChoice,

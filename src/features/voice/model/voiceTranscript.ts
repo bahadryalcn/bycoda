@@ -1,4 +1,4 @@
-import { isVoiceTranscriptionHintEcho } from "./voiceFeatureLexicon";
+import { isVoiceTranscriptionHintEcho } from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
 
 /** Event annotations and an echoed vocabulary hint are recognizer metadata, never
  * user instructions. Keep lexical speech, including single-word replies. */

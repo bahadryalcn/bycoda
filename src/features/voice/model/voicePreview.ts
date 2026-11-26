@@ -2,7 +2,7 @@ import { RealtimeVoice } from "./realtimeVoice";
 import { realtimeSecret } from "./realtimeVoiceClient";
 import { localVoiceBackend } from "./localVoiceClient";
 import { voiceRuntimeSettings, type VoiceSettings } from "./voiceSettings";
-import { voiceLanguageCode } from "./voiceLanguage";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { voicePlaybackTimeoutMs } from "./voicePlaybackDeadline";
 
 /** Output-only preview. Never acquires a microphone or grants tools. */

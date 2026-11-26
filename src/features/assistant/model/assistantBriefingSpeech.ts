@@ -6,7 +6,7 @@ import {
   isVoiceConversationActive,
   subscribeVoiceConversationActivity,
 } from "../../voice/model/voiceActivity";
-import { voiceLanguageCode } from "../../voice/model/voiceLanguage";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 
 let output: AbortController | undefined;

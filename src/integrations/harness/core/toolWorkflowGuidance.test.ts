@@ -47,6 +47,18 @@ describe("tool workflow delivery", () => {
     expect(hint.length).toBeLessThan(1_650);
   });
 
+  it("routes browser and desktop work without treating a native plugin as ready", () => {
+    const input = { conversation: true, social: false, runtimeLogs: false };
+    const hint = toolWorkflowGuidance(input);
+    expect(hint).toContain("desktop.status");
+    expect(hint).toContain("real browser");
+    expect(hint).toContain("named provider plugin");
+    expect(hint).toContain("report the failure");
+    const disconnected = toolWorkflowGuidance({ ...input, conversation: false, runtimeLogs: true });
+    expect(disconnected).not.toContain("desktop.status");
+    expect(disconnected).not.toContain("named provider plugin");
+  });
+
   it("teaches on-demand MCP in one short line without server names, only with Conversation Tools", () => {
     expect(MCP_ON_DEMAND_GUIDANCE.length).toBeLessThanOrEqual(180);
     for (const tool of ["conversation_mcp_servers_list", "_servers_describe", "_tools_call"])
@@ -58,6 +70,6 @@ describe("tool workflow delivery", () => {
   });
 
   it("changes the delivery fingerprint with the version", () => {
-    expect(TOOL_WORKFLOW_GUIDANCE_VERSION).toBe("2026-11-16.1");
+    expect(TOOL_WORKFLOW_GUIDANCE_VERSION).toBe("2026-11-26.1");
   });
 });

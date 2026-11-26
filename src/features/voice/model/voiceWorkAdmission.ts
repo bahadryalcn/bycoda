@@ -1,4 +1,4 @@
-import { normalizeVoiceSearch } from "./voiceFeatureLexicon";
+import { normalizeVoiceSearch } from "../../../shared/model/voice-realtime/voiceFeatureLexicon";
 
 const usageSubject = /\b(?:tokens?|kullanim\w*|usage|tuketim\w*)\b/;
 const usageDimension =

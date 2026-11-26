@@ -11,7 +11,7 @@ Own capture, recognition, playback and companion UI across `src/features/voice/`
 
 - UI/model: `src/features/voice/ui/` (VoiceCompanion, VoiceSettings, DictationButton) and `src/features/voice/model/` (voiceSession, localVoice, realtimeVoice).
 - Host: `host/voice/` (runtime/setup and worker dispatch); `host/assistant/voice/` owns admitted Assistant delivery.
-- Phone calls: the native Host socket carries only the methods in `src/shared/model/host-contracts/voice.ts` (capability `transport.ws.voice.v1`), routed by `host/voice/voice-ws-operations.ts`; setup, models and keys stay on owner RPC.
+- Phone calls: the native Host socket carries only the methods in `src/shared/model/host-contracts/voice.ts` (capability `transport.ws.voice.v1`), routed by `host/voice/voice-ws-operations.ts`; setup, models and keys stay on owner RPC. A Grok Voice / OpenAI Realtime call (capability `voice.realtime.relay.v1`) runs in `host/voice/voice-realtime-relay.ts` with the provider credential kept on the Host and one `ask_assistant` tool bound to the call's thread; call choices live in `host/voice/voice-call-settings.ts`. Session payload, instructions, VAD and speaker ids shared by desktop and Host are in `src/shared/model/voice-realtime/`.
 - Native: `src-tauri/src/` owns presence, microphone settings, generation and overlay adapters. Follow the affected adapter in the [owner map](references/surfaces.md).
 - Tests: adjacent UI/model/Host suites and voice fixtures in `tests/browser/`.
 

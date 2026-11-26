@@ -2,11 +2,15 @@ import { errorText } from "../../../shared/lib/errors";
 import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import type { RealtimeProvider, RealtimeSecret } from "./realtimeVoiceClient";
-import { VoiceVad, decodePcmBase64, pcmBase64 } from "./voiceVad";
+import { VoiceVad, decodePcmBase64, pcmBase64 } from "../../../shared/model/voice-realtime/voiceVad";
 import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 import { voiceTools } from "./voiceToolSchemas";
-import { voiceInstructions } from "./voiceInstructions";
-import { voiceLanguageCode } from "./voiceLanguage";
+import { voiceInstructions } from "../../../shared/model/voice-realtime/voiceInstructions";
+import {
+  REALTIME_SPEECH_SPEED,
+  realtimeSessionPayload,
+} from "../../../shared/model/voice-realtime/realtimeSession";
+import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import {
   classifyVoiceFailure,
   VOICE_ROTATION_MS,
@@ -24,7 +28,6 @@ import {
   voiceConnectionStep,
 } from "./voiceConnectionStep";
 import { t } from "../../../shared/i18n";
-import { voiceTranscriptionHint } from "./voiceFeatureLexicon";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
@@ -48,8 +51,7 @@ export type VoiceEvent = {
 
 export { voiceTools, voiceInstructions };
 
-/** OpenAI output speed (0.25–1.5). */
-export const REALTIME_SPEECH_SPEED = 1.1;
+export { REALTIME_SPEECH_SPEED };
 
 /** The client commits candidate audio and explicitly authorizes each response. */
 export function realtimeSession(
@@ -61,49 +63,16 @@ export function realtimeSession(
   languageLock = "auto",
   experimentalSemanticVad = false,
 ) {
-  const audioFormat = { type: "audio/pcm", rate: 24000 };
-  if (provider === "openai")
-    return {
-      type: "realtime",
-      model,
-      instructions: voiceInstructions(language, persona, languageLock),
-      output_modalities: ["audio"],
-      tools: voiceTools,
-      tool_choice: "auto",
-      audio: {
-        input: {
-          format: audioFormat,
-          noise_reduction: { type: "near_field" },
-          transcription: {
-            model: "gpt-4o-mini-transcribe",
-            // Optional vocabulary hint supported by the current transcription model.
-            // No private target names and no replacement of recognized owner speech.
-            prompt: voiceTranscriptionHint(voiceLanguageCode(languageLock) ?? language),
-            ...(voiceLanguageCode(languageLock)
-              ? { language: voiceLanguageCode(languageLock) }
-              : {}),
-          },
-          turn_detection: experimentalSemanticVad
-            ? {
-                type: "semantic_vad",
-                eagerness: "auto",
-                create_response: false,
-                interrupt_response: false,
-              }
-            : null,
-        },
-        // Default 1.0 sounds slow in conversation, especially outside English.
-        output: { format: audioFormat, voice: voice || "marin", speed: REALTIME_SPEECH_SPEED },
-      },
-    };
-  return {
+  return realtimeSessionPayload({
+    provider,
+    model,
+    language,
     instructions: voiceInstructions(language, persona, languageLock),
-    voice: voice || "eve",
-    reasoning: { effort: "none" },
-    turn_detection: { type: null },
     tools: voiceTools,
-    audio: { input: { format: audioFormat }, output: { format: audioFormat } },
-  };
+    voice,
+    languageLock,
+    experimentalSemanticVad,
+  });
 }
 
 /** Silence (s) that ends a spoken turn. Natural mid-sentence pauses are often

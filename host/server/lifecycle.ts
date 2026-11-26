@@ -145,6 +145,7 @@ export async function createLifecycleRuntime(
     | "subscriptionHub"
     | "bulkTransfers"
     | "localVoice"
+    | "voiceRelays"
     | "decisionModels"
     | "roomFiles"
     | "assistantKeepAwake"
@@ -312,6 +313,7 @@ export async function createLifecycleRuntime(
       drain("retention", () => dependencies.managed.retention.stop());
       drain("queueDrainer", async () => await dependencies.queueDrainer.close());
       drain("localVoice", () => dependencies.localVoice.close());
+      drain("voiceRelays", () => dependencies.voiceRelays.close());
       drain("decisionModels", () => dependencies.decisionModels.close());
       drain("assistant", () => dependencies.assistant.close());
       drain("assistantCommands", () => dependencies.roomFiles.folders.close());

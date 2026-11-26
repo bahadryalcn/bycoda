@@ -3,7 +3,7 @@ import {
   shouldSilentlyAcknowledgeVoice,
   shouldWaitForVoice,
 } from "../src/features/voice/model/voiceSpeechPolicy";
-import { voiceSearchClauses } from "../src/features/voice/model/voiceFeatureLexicon";
+import { voiceSearchClauses } from "../src/shared/model/voice-realtime/voiceFeatureLexicon";
 import { voiceWorkRefusal } from "../src/features/voice/model/voiceWorkAdmission";
 import {
   mayDeliverVoiceBriefing,

@@ -8,6 +8,8 @@ import { voiceSocketOperations } from "./voice-ws-operations";
 import type { LocalVoiceService } from "./voice-local";
 import type { VoiceCloudCredentials } from "./voice-cloud-credentials";
 import type { VoiceSetupService } from "./voice-setup";
+import type { VoiceRealtimeRelays } from "./voice-realtime-relay";
+import type { VoiceCallSettingsStore } from "./voice-call-settings";
 
 function setup(state: { setup?: string; models?: string } = {}) {
   const localVoice = {
@@ -22,12 +24,25 @@ function setup(state: { setup?: string; models?: string } = {}) {
     status: () => ({ state: state.setup ?? "ready" }),
     models: { status: () => ({ state: state.models ?? "idle" }) },
   };
+  const voiceRelays = {
+    start: vi.fn(async () => ({ lease: "relay-a", inRate: 16000, outRate: 24000 })),
+    audio: vi.fn(() => ({ accepted: true })),
+    next: vi.fn(),
+    interrupt: vi.fn(),
+    end: vi.fn(),
+  };
+  const voiceCallSettings = {
+    get: vi.fn(async () => ({ settings: { mode: "local" }, signedIn: { grok: false, openai: true } })),
+    set: vi.fn(async () => ({ settings: { mode: "openai" }, signedIn: { grok: false, openai: true } })),
+  };
   const operations = voiceSocketOperations({
     localVoice: localVoice as unknown as LocalVoiceService,
     voiceCloud: { get: vi.fn() } as unknown as VoiceCloudCredentials,
     voiceSetup: voiceSetup as unknown as VoiceSetupService,
+    voiceRelays: voiceRelays as unknown as VoiceRealtimeRelays,
+    voiceCallSettings: voiceCallSettings as unknown as VoiceCallSettingsStore,
   });
-  return { localVoice, operations };
+  return { localVoice, operations, voiceRelays, voiceCallSettings };
 }
 const context = (authorized = true) =>
   ({ authorized: async () => authorized }) as unknown as HostDomainContext;
@@ -76,5 +91,41 @@ describe("phone voice call over the native socket", () => {
     expect(error).toBeInstanceOf(HostDomainOutcomeError);
     expect((error as Error).message).toBe("Voice setup is still running.");
     expect(localVoice.start).not.toHaveBeenCalled();
+  });
+  it("starts the realtime relay with the device context and refuses oversized or revoked audio", async () => {
+    const { operations, voiceRelays } = setup();
+    const device = context();
+    await expect(
+      operations["voice.realtime.start"]({ threadId: "room-1", provider: "openai" }, device),
+    ).resolves.toEqual({ lease: "relay-a", inRate: 16000, outRate: 24000 });
+    expect(voiceRelays.start).toHaveBeenCalledWith({ threadId: "room-1", provider: "openai" }, device);
+    await expect(
+      operations["voice.realtime.audio"]({ lease: "relay-a", seq: 0, audio: "A".repeat(87_388) }, device),
+    ).rejects.toThrow();
+    await expect(
+      operations["voice.realtime.audio"]({ lease: "relay-a", seq: 0, audio: "AAAA" }, context(false)),
+    ).rejects.toBeInstanceOf(HostDomainAuthorizationError);
+    await expect(
+      operations["voice.realtime.start"]({ threadId: "room-1", provider: "elevenlabs" }, device),
+    ).rejects.toThrow();
+    expect(voiceRelays.audio).not.toHaveBeenCalled();
+  });
+  it("reads and changes call settings for the paired phone, validating the patch first", async () => {
+    const { operations, voiceCallSettings } = setup();
+    await expect(operations["voice.call.settings.get"]({}, context())).resolves.toMatchObject({
+      signedIn: { grok: false, openai: true },
+    });
+    await operations["voice.call.settings.set"]({ mode: "openai" }, context());
+    expect(voiceCallSettings.set).toHaveBeenCalledWith({ mode: "openai" });
+    await expect(
+      operations["voice.call.settings.set"]({ mode: "openai", apiKey: "x" }, context()),
+    ).rejects.toThrow();
+    await expect(
+      operations["voice.call.settings.set"]({ persona: "x".repeat(601) }, context()),
+    ).rejects.toThrow();
+    await expect(
+      operations["voice.call.settings.set"]({ turnEndSilence: 30 }, context()),
+    ).rejects.toThrow();
+    expect(voiceCallSettings.set).toHaveBeenCalledTimes(1);
   });
 });

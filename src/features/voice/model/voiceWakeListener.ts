@@ -1,4 +1,4 @@
-import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
+import { VoiceVad, pcmBase64, resamplePcm } from "../../../shared/model/voice-realtime/voiceVad";
 import { WAKE_LIMITS, WakeGuard } from "./voiceWakeGuard";
 import { matchesWakePhrase } from "./voiceWakePhrase";
 import { withTimeout } from "../../../shared/lib/withTimeout";

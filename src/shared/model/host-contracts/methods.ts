@@ -395,6 +395,14 @@ export const HOST_RPC_METHODS = Object.freeze({
   "voice.local.speechNext": voiceOperation("voice.local.speechNext"),
   "voice.local.keepAlive": voiceOperation("voice.local.keepAlive"),
   "voice.local.release": voiceOperation("voice.local.release"),
+  "voice.realtime.start": voiceOperation("voice.realtime.start"),
+  "voice.realtime.audio": voiceOperation("voice.realtime.audio"),
+  "voice.realtime.next": voiceOperation("voice.realtime.next"),
+  "voice.realtime.interrupt": voiceOperation("voice.realtime.interrupt"),
+  "voice.realtime.text": voiceOperation("voice.realtime.text"),
+  "voice.realtime.end": voiceOperation("voice.realtime.end"),
+  "voice.call.settings.get": voiceOperation("voice.call.settings.get"),
+  "voice.call.settings.set": voiceOperation("voice.call.settings.set"),
   "assistant.request": {
     ...workflowOperation("assistant.v1", AssistantRequestSchema, AssistantResponseSchema),
     // A Room send waits for the assistant's reply, which routinely takes longer than the 12 s

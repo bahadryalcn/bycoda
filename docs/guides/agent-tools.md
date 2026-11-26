@@ -14,6 +14,18 @@ Skills show only the saved owner preference: the switch on a skill's page, and *
 in the list. Bycoda does not observe skill readiness or activity, so the Skills
 screen does not display them.
 
+## Browser and desktop tools
+
+Ask for a bycoda browser preview to use the Browser panel and its profile settings.
+Ask for your real browser or a desktop app to use Computer Use. The agent checks
+the desktop helper and its effective permissions before acting. Both tools can
+be used in the same conversation.
+
+When you name a provider's browser or desktop plugin, the agent checks that
+connection and reports any failure. The agent can use bycoda's tools when they
+match the target you asked for. For example, opening an existing Chrome window
+uses Computer Use and its app permissions.
+
 ## bykit
 
 Agents use `bykit` when it is available and suits the operation. They can use
