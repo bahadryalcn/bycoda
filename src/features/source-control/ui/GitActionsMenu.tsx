@@ -405,13 +405,17 @@ export function GitActionsMenu({
       case "repository-scope":
         return repositoryScope?.onToggle();
       case "pull":
-        return run(() => gitPull(cwd), undefined, t("Pulling…"), (detail) =>
-          isDivergedPull(detail)
-            ? {
-                label: t("Pull (Rebase)"),
-                run: () => run(() => gitPull(cwd, true), undefined, t("Pulling…")),
-              }
-            : undefined,
+        return run(
+          () => gitPull(cwd),
+          undefined,
+          t("Pulling…"),
+          (detail) =>
+            isDivergedPull(detail)
+              ? {
+                  label: t("Pull (Rebase)"),
+                  run: () => run(() => gitPull(cwd, true), undefined, t("Pulling…")),
+                }
+              : undefined,
         );
       case "pull-rebase":
         return run(() => gitPull(cwd, true), undefined, t("Pulling…"));
