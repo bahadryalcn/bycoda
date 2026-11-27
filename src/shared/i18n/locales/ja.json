@@ -12080,6 +12080,8 @@
   "Design preview": "デザインのプレビュー",
   "Discard source changes": "ソースの変更を破棄",
   "Enter a design name.": "デザイン名を入力してください。",
+  "Describe the result first.": "先に結果を説明してください。",
+  "Choose a model that supports text actions to create a design.": "テキスト操作に対応したモデルを選ぶと、デザインを作成できます。",
   "HTML, CSS and JavaScript": "HTML、CSS、JavaScript",
   "Import background": "背景を読み込む",
   "Import design": "デザインを読み込む",

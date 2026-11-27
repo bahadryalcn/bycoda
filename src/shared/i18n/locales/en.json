@@ -12076,6 +12076,8 @@
   "The saved design changed. Reopen it before saving again.": "The saved design changed. Reopen it before saving again.",
   "Saved media is missing. Your current design is unchanged.": "Saved media is missing. Your current design is unchanged.",
   "Enter a design name.": "Enter a design name.",
+  "Describe the result first.": "Describe the result first.",
+  "Choose a model that supports text actions to create a design.": "Choose a model that supports text actions to create a design.",
   "Create or import a background first.": "Create or import a background first.",
   "The saved design library is full. Delete a design first.": "The saved design library is full. Delete a design first.",
   "Motion presets apply to the app.": "Motion presets apply to the app.",

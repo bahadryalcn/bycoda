@@ -12,11 +12,14 @@ import { ThemeNameDialog } from "./ThemeNameDialog";
 
 export function SavedDesignLibrary({
   disabled,
+  disabledReason,
   onOpen,
   onApply,
   onError,
 }: {
   disabled: boolean;
+  /** Why the parent disabled the library; shown on each disabled action. */
+  disabledReason?: string;
   onOpen: (theme: SavedTheme) => Promise<void>;
   onApply: (theme: SavedTheme) => Promise<void>;
   onError: (error: unknown) => void;
@@ -25,6 +28,7 @@ export function SavedDesignLibrary({
   const [renaming, setRenaming] = useState<SavedTheme | null>(null);
   const [pending, setPending] = useState(false);
   const { confirm, dialog } = useConfirm();
+  const blockedReason = pending ? t("Wait for the current action to finish.") : disabledReason;
   const guard = (theme: SavedTheme) => {
     if (
       JSON.stringify(loadSavedThemes().find((item) => item.id === theme.id)) !==
@@ -49,6 +53,7 @@ export function SavedDesignLibrary({
         <Heading size="section">{t("Saved designs")}</Heading>
         <Button
           disabled={disabled || pending}
+          disabledReason={blockedReason}
           onClick={() =>
             void run(async () => {
               const theme = await importDesign();
@@ -80,6 +85,7 @@ export function SavedDesignLibrary({
               <Button
                 size="sm"
                 disabled={disabled || pending}
+                disabledReason={blockedReason}
                 onClick={() => void run(() => onOpen(theme))}
               >
                 {t("Open")}
@@ -87,6 +93,7 @@ export function SavedDesignLibrary({
               <Button
                 size="sm"
                 disabled={disabled || pending}
+                disabledReason={blockedReason}
                 onClick={() => void run(() => onApply(theme))}
               >
                 {t("Apply")}
@@ -95,6 +102,7 @@ export function SavedDesignLibrary({
                 size="sm"
                 variant="ghost"
                 disabled={disabled || pending}
+                disabledReason={blockedReason}
                 onClick={() => setRenaming(theme)}
               >
                 {t("Rename")}
@@ -103,6 +111,7 @@ export function SavedDesignLibrary({
                 size="sm"
                 variant="ghost"
                 disabled={disabled || pending}
+                disabledReason={blockedReason}
                 onClick={() => void run(() => exportDesign(theme))}
               >
                 {t("Export")}
@@ -112,6 +121,7 @@ export function SavedDesignLibrary({
                 variant="ghost"
                 tone="danger"
                 disabled={disabled || pending}
+                disabledReason={blockedReason}
                 onClick={() =>
                   void confirm({
                     title: t("Delete design"),

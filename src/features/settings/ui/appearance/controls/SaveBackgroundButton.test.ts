@@ -65,6 +65,8 @@ it("keeps the original naming target and edited form when selection changes or s
 it("releases pending ownership when reading the current appearance fails", async () => {
   act(() => root.render(createElement(SaveBackgroundButton, { path: "/old.html" })));
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
-  expect(host.textContent).toContain("Snapshot unavailable");
+  // The raw cause sits behind Details; the row shows the translated failure.
+  expect(host.textContent).toContain("Could not complete this action.");
+  expect(host.textContent).not.toContain("Snapshot unavailable");
   expect(host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
 });

@@ -10,6 +10,7 @@ import { Select } from "../../../../../shared/ui/Select";
 import { Badge } from "../../../../../shared/ui/Badge";
 import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
 import { useAppearanceSettings, type AppearanceSettings } from "../../useAppearanceSettings";
@@ -100,7 +101,10 @@ function Studio({
   const [busy, setBusy] = useGeneratorState("designBusy", false);
   const [cancelling, setCancelling] = useGeneratorState("designCancelling", false);
   const [requestId, setRequestId] = useGeneratorState<string | null>("designRequestId", null);
-  const [error, setError] = useGeneratorState<string | null>("designError", null);
+  const [error, setError] = useGeneratorState<{ title: string; detail?: string } | null>(
+    "designError",
+    null,
+  );
   const [creationFailed, setCreationFailed] = useGeneratorState("designCreationFailed", false);
   const [provider, setProvider] = useGeneratorState<"codex" | "gemini">(
     "designImageProvider",
@@ -124,7 +128,22 @@ function Studio({
   const current = !!draft && designIsCurrent(draft, JSON.parse(currentSelection), !!scopedProject);
   const sourcePending =
     draft?.kind === "scene" && sourcePath === draft.path && source !== (draft.source ?? "");
-  const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
+  const waitReason = t("Wait for the current action to finish.");
+  const sourceReason = t("Update the preview before saving or applying source changes.");
+  const blockedReason = blocked ? waitReason : sourcePending ? sourceReason : undefined;
+  const createReason = working
+    ? waitReason
+    : sourcePending
+      ? sourceReason
+      : !prompt.trim()
+        ? t("Describe the result first.")
+        : t("Choose a model that supports text actions to create a design.");
+  const saveReason = blockedReason ?? t("Enter a design name.");
+  const fail = (cause: unknown) =>
+    setError({
+      title: t("Could not complete this action."),
+      detail: cause instanceof Error ? cause.message : String(cause),
+    });
   const perform = async (action: () => Promise<void>) => {
     if (blocked || operation.current) return;
     operation.current = true;
@@ -319,7 +338,7 @@ function Studio({
       title={t("Create a design")}
       size="min(960px, 100vw)"
       onClose={() => {
-        if (working) setError(t("Finish the current action before closing."));
+        if (working) setError({ title: t("Finish the current action before closing.") });
         else onClose();
       }}
     >
@@ -377,12 +396,17 @@ function Studio({
                   !prompt.trim() ||
                   (kind !== "image" && !canRunHarnessTextPrompt(choice.harness))
                 }
+                disabledReason={createReason}
                 onClick={() => void generate().catch(fail)}
               >
                 {createLabel}
               </Button>
               {busy ? (
-                <Button disabled={cancelling} onClick={() => void cancel().catch(fail)}>
+                <Button
+                  disabled={cancelling}
+                  disabledReason={waitReason}
+                  onClick={() => void cancel().catch(fail)}
+                >
                   {t("Cancel")}
                 </Button>
               ) : null}
@@ -390,6 +414,7 @@ function Studio({
             <div className="flex flex-wrap gap-2">
               <Button
                 disabled={blocked || sourcePending}
+                disabledReason={blockedReason}
                 onClick={() => void perform(replacing(importBackground))}
               >
                 {t("Import background")}
@@ -397,6 +422,7 @@ function Studio({
               <InfoPopover>{t("Import images, videos or self-contained HTML.")}</InfoPopover>
               <Button
                 disabled={blocked || sourcePending}
+                disabledReason={blockedReason}
                 onClick={() => void perform(replacing(captureCurrent))}
               >
                 {t("Use current design")}
@@ -404,6 +430,7 @@ function Studio({
             </div>
             <Button
               disabled={blocked || sourcePending}
+              disabledReason={blockedReason}
               onClick={() =>
                 void perform(
                   replacing(async () => {
@@ -431,8 +458,13 @@ function Studio({
                     ? { label: t("Retry"), onClick: () => void generate().catch(fail) }
                     : undefined
                 }
+                extra={
+                  error.detail ? (
+                    <ErrorDetails title={error.title} detail={error.detail} />
+                  ) : undefined
+                }
               >
-                {error}
+                {error.title}
               </SettingsFeedback>
             ) : null}
           </div>
@@ -479,6 +511,7 @@ function Studio({
                 <div className="flex flex-wrap gap-2">
                   <Button
                     disabled={blocked || sourcePending || !draft.name.trim()}
+                    disabledReason={saveReason}
                     onClick={() => {
                       if (draft.saved)
                         void confirm({
@@ -497,6 +530,7 @@ function Studio({
                   {draft.saved ? (
                     <Button
                       disabled={blocked || sourcePending || !draft.name.trim()}
+                      disabledReason={saveReason}
                       onClick={() => void perform(() => save(true))}
                     >
                       {t("Save a copy")}
@@ -522,6 +556,7 @@ function Studio({
                   <Button
                     variant="ghost"
                     disabled={blocked}
+                    disabledReason={waitReason}
                     onClick={() => {
                       if (sourcePath !== (draft.path ?? "")) {
                         setSource(draft.source ?? "");
@@ -553,6 +588,7 @@ function Studio({
             />
             <Button
               disabled={blocked}
+              disabledReason={waitReason}
               onClick={() =>
                 void perform(async () => {
                   const next = await previewEditedSource(draft, source);
@@ -568,6 +604,7 @@ function Studio({
               <Button
                 variant="ghost"
                 disabled={blocked}
+                disabledReason={waitReason}
                 onClick={() => setSource(draft.source ?? "")}
               >
                 {t("Discard source changes")}
@@ -577,6 +614,7 @@ function Studio({
         ) : null}
         <SavedDesignLibrary
           disabled={blocked || sourcePending}
+          disabledReason={blockedReason}
           onError={fail}
           onOpen={(theme) => perform(replacing(() => openTheme(theme)))}
           onApply={(theme) =>

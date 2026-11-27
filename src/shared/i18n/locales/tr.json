@@ -12084,6 +12084,8 @@
   "Design preview": "Tasarım önizlemesi",
   "Discard source changes": "Kod değişikliklerini bırak",
   "Enter a design name.": "Tasarım adı girin.",
+  "Describe the result first.": "Önce sonucu açıklayın.",
+  "Choose a model that supports text actions to create a design.": "Tasarım oluşturmak için metin işlemlerini destekleyen bir model seçin.",
   "HTML, CSS and JavaScript": "HTML, CSS ve JavaScript",
   "Import background": "Arka planı içe aktar",
   "Import design": "Tasarımı içe aktar",

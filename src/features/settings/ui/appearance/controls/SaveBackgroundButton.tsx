@@ -10,6 +10,7 @@ import { useSavedThemes, type SavedTheme } from "../../../model/savedThemes";
 import type { BackgroundLibraryImage } from "../../../model/backgroundLibrary";
 import { saveBackgroundName, prepareBackgroundName } from "../../../runtime/nameBackground";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
+import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { ThemeNameDialog } from "./ThemeNameDialog";
 
 /** Direct naming in the ordinary library/history; editing never changes the selected file. */
@@ -58,6 +59,7 @@ export function SaveBackgroundButton({
         size="sm"
         variant="ghost"
         disabled={disabled || preparing}
+        disabledReason={t("Wait for the current action to finish.")}
         loading={preparing}
         loadingLabel={t("Loading…")}
         aria-label={design ? `${t("Rename")}: ${design.name}` : t("Save background")}
@@ -65,7 +67,14 @@ export function SaveBackgroundButton({
       >
         {design ? t("Rename") : t("Save background")}
       </Button>
-      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          extra={<ErrorDetails title={t("Could not complete this action.")} detail={error} />}
+        >
+          {t("Could not complete this action.")}
+        </SettingsFeedback>
+      ) : null}
       {editing ? (
         <ThemeNameDialog
           title={editing.expected ? t("Rename") : t("Save background")}

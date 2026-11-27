@@ -12080,6 +12080,8 @@
   "Design preview": "设计预览",
   "Discard source changes": "放弃源码更改",
   "Enter a design name.": "请输入设计名称。",
+  "Describe the result first.": "请先描述结果。",
+  "Choose a model that supports text actions to create a design.": "请选择支持文本操作的模型以创建设计。",
   "HTML, CSS and JavaScript": "HTML、CSS 和 JavaScript",
   "Import background": "导入背景",
   "Import design": "导入设计",

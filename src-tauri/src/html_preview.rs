@@ -210,6 +210,7 @@ pub fn create_html_preview(
     })
 }
 
+#[cfg(test)]
 fn make_preview(path: String, content: String) -> Result<Preview, String> {
     make_preview_with(path, content, false)
 }
