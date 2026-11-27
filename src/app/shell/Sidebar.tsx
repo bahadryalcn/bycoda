@@ -1043,6 +1043,34 @@ function SidebarComponent({
         />
       </>
     ) : null;
+  // The collapsed rail overlays the count on an icon, so it drops the spinner and uses the
+  // solid accent pill to stay legible and clear of the glyph.
+  const workingSessionsRailBadge =
+    workingSessionCount > 0 ? (
+      <>
+        {/* Count badges are text-only, so the pill fill lives on this wrapper. */}
+        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--ui-tone-accent-solid)] px-1">
+          <Badge
+            variant="count"
+            size="xs"
+            tone="accent"
+            aria-hidden="true"
+            data-workspace-working-count
+            style={{ "--badge-foreground": "var(--ui-tone-accent-on-solid)" } as CSSProperties}
+          >
+            {workingSessionCount}
+          </Badge>
+        </span>
+        <LiveText
+          className="sr-only"
+          text={
+            workingSessionCount === 1
+              ? t("{p0} working session", { p0: workingSessionCount })
+              : t("{p0} working sessions", { p0: workingSessionCount })
+          }
+        />
+      </>
+    ) : null;
   const remoteExecutionCwd =
     remote.sessions.find((session) => session.id === activeRemoteId)?.cwd ??
     (activeSessionId ? remoteBindings.pendingWorktree(activeSessionId) : undefined) ??
@@ -5264,7 +5292,7 @@ function SidebarComponent({
           onPreviewSession={onPreviewSession}
           recoveryControl={recoveryControl}
           cwd={cwd}
-          workingSessionsBadge={workingSessionsBadge}
+          workingSessionsBadge={workingSessionsRailBadge}
           recents={visibleRecents}
           tabShown={open}
           inboxUnseen={inboxUnseen}
@@ -6042,7 +6070,7 @@ function CompactRailAction({
     <>
       {dot ? <StatusDot label={label} aria-hidden className="absolute right-1 top-1" /> : null}
       {badge ? (
-        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0">{badge}</span>
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 [&>span]:ml-0">{badge}</span>
       ) : null}
     </>
   );

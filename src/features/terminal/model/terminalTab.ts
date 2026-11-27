@@ -7,6 +7,9 @@ export type TerminalMetaPatch = {
   cwd?: string;
   /** `null` clears a running command; omit to leave it unchanged. */
   foreground?: string | null;
+  /** The shell was refused because its folder is no longer a workspace (a removed worktree):
+   * the owner replaces this terminal with a new one in its project folder. */
+  restartInProject?: true;
 };
 
 export type RunningTerminal = {

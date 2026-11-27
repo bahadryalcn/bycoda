@@ -1,5 +1,6 @@
-import { language } from "@codemirror/language";
+import { ensureSyntaxTree, language } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
+import { highlightTree, tagHighlighter, tags } from "@lezer/highlight";
 import { describe, expect, it } from "vitest";
 import { languageForPath } from "./editorLanguage";
 import { syntaxDiagnostics } from "./editorLint";
@@ -74,5 +75,55 @@ describe("languageForPath", () => {
 
   it("leaves unknown file types as plain text", async () => {
     await expect(languageForPath("notes.unknown")).resolves.toBeNull();
+  });
+
+  it.each([".env", ".env.local", ".env.production", "app.env"])(
+    "highlights %s as dotenv",
+    async (path) => {
+      const extension = await languageForPath(path);
+      expect(extension).not.toBeNull();
+      expect(languageName(extension!)).toBe("dotenv");
+    },
+  );
+
+  it("colors dotenv keys, values and comments separately", async () => {
+    const extension = await languageForPath(".env");
+    const doc = [
+      "# settings",
+      "SESSION_EXPIRY_MS_TIME = -1 # 900000",
+      "NEXT_PUBLIC_SESSION_UNLOAD_ENABLED = false",
+      'export NEXT_PUBLIC_APP_VERSION = "0.0.0-${STAGE}"',
+      "URL=http://x#y",
+    ].join("\n");
+    const state = EditorState.create({ doc, extensions: [extension!] });
+    const tree = ensureSyntaxTree(state, state.doc.length, 5000)!;
+    const highlighter = tagHighlighter([
+      { tag: tags.propertyName, class: "key" },
+      { tag: tags.string, class: "string" },
+      { tag: tags.number, class: "number" },
+      { tag: tags.bool, class: "bool" },
+      { tag: tags.comment, class: "comment" },
+      { tag: tags.keyword, class: "keyword" },
+      { tag: tags.meta, class: "meta" },
+    ]);
+    const tokens: string[] = [];
+    highlightTree(tree, highlighter, (from, to, cls) => {
+      tokens.push(`${cls}:${doc.slice(from, to)}`);
+    });
+    expect(tokens).toEqual([
+      "comment:# settings",
+      "key:SESSION_EXPIRY_MS_TIME",
+      "number:-1",
+      "comment:# 900000",
+      "key:NEXT_PUBLIC_SESSION_UNLOAD_ENABLED",
+      "bool:false",
+      "keyword:export",
+      "key:NEXT_PUBLIC_APP_VERSION",
+      'string:"0.0.0-',
+      "meta:${STAGE}",
+      'string:"',
+      "key:URL",
+      "string:http://x#y",
+    ]);
   });
 });

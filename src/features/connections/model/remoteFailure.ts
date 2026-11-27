@@ -1,5 +1,6 @@
 import { t } from "../../../shared/i18n/core";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
+import { WORKSPACE_NOT_REGISTERED_MESSAGE } from "../../../shared/model/host-contracts/schemas";
 import { actionableUnreachableReason, sanitizeConnectionError } from "./connectionReason";
 
 /** Why a request to a connected machine failed, as far as the user can act on it. */
@@ -195,10 +196,23 @@ export function isTimeoutFailure(error: unknown): boolean {
   );
 }
 
+/** The Host refused a process because its folder is not (or no longer) a managed workspace.
+ * Nothing started; the same folder will be refused again until its workspace returns. */
+export function isWorkspaceNotRegisteredRefusal(error: unknown): boolean {
+  return (
+    remoteErrorText(error)
+      .replace(/^(?:Error: )?(?:Host rejected request:\s*)?(?:RPC_WS_REMOTE:\s*)?/i, "")
+      .trim() === WORKSPACE_NOT_REGISTERED_MESSAGE
+  );
+}
+
 /** The fixed messages thrown in English (they are matched above) shown in the user's language. */
 function localizeRemoteMessage(message: string): string {
-  const text = message.replace(/^Host rejected request:\s*/i, "");
+  const text = message.replace(/^(?:Host rejected request:\s*)?(?:RPC_WS_REMOTE:\s*)?/i, "");
   const known: Record<string, string> = {
+    [WORKSPACE_NOT_REGISTERED_MESSAGE]: t(
+      "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.",
+    ),
     "Update bycoda Host in Machines settings to use this on projects on another machine.": t(
       "Update bycoda Host in Machines settings to use this on projects on another machine.",
     ),

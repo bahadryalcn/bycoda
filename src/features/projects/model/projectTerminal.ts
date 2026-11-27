@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 import {
   newEditorPane,
   nextTerminalTitleFromFiles,
+  projectTerminalReplacement,
+  replacePaneFile,
   type EditorPane,
   type FilePaneTab,
   type WorkspaceTab,
@@ -184,6 +186,35 @@ export function patchDockTerminal(
   });
   if (!changed) return dock;
   return { ...dock, pane: { ...dock.pane, files } };
+}
+
+/**
+ * Replaces a dock terminal whose folder is no longer a workspace with a new one in the project
+ * folder, in the same place. SSH shells and Host runs have no local folder and are left alone.
+ */
+export function restartDockTerminalInProject(
+  dock: ProjectTerminalDock,
+  fileId: string,
+): ProjectTerminalDock {
+  const file = dock.pane.files.find((entry) => entry.id === fileId);
+  if (!file || dock.sshShells?.[fileId] || dock.remoteRuns?.[fileId]) return dock;
+  const next = projectTerminalReplacement(
+    file,
+    dock.pane.files,
+    file.projectCwd ?? dock.projectPath,
+  );
+  if (!next) return dock;
+  return {
+    ...dock,
+    pane: replacePaneFile(dock.pane, fileId, next),
+    ...(dock.splitGroups
+      ? {
+          splitGroups: dock.splitGroups.map((ids) =>
+            ids.map((id) => (id === fileId ? next.id : id)),
+          ),
+        }
+      : {}),
+  };
 }
 
 export function patchProjectTerminals(

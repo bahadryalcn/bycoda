@@ -6,6 +6,8 @@ import {
   canonicalWorkspacePath,
   workspacePathKey as pathKey,
 } from "../workspaces/workspace-paths";
+import { WORKSPACE_NOT_REGISTERED_MESSAGE } from "../../src/shared/model/host-contracts/schemas";
+import { HostDomainRefusalError } from "../domains/context";
 import { withHostGitMutation } from "../git/git-mutations";
 import { durableWrite } from "../git/turn-git-history";
 import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
@@ -30,6 +32,18 @@ interface ProcessLease extends NativeActivityStart {
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const contains = (root: string, target: string) =>
   pathKey(root) === pathKey(target) || pathKey(target).startsWith(`${pathKey(root)}${sep}`);
+/**
+ * The cwd lies in no present managed workspace (its folder or record is gone). Admission
+ * refuses before any lease or reservation is written, so nothing ran and the outcome is known.
+ */
+const workspaceNotRegistered = (cause?: unknown) =>
+  new HostDomainRefusalError(
+    "WORKSPACE_NOT_REGISTERED",
+    "validation",
+    false,
+    WORKSPACE_NOT_REGISTERED_MESSAGE,
+    cause === undefined ? undefined : { cause },
+  );
 const identity = (value: unknown, label: string) => {
   if (typeof value !== "string" || !value.trim() || value.length > 512 || value.includes("\0"))
     throw new Error(`Invalid native ${label}`);
@@ -69,7 +83,10 @@ export function createManagedNativeActivity(deps: {
   };
   const canonicalWorkspace = async (cwd: string) => {
     if (!isAbsolute(cwd) || cwd.includes("\0")) throw new Error("Native cwd must be absolute");
-    const canonical = await canonicalWorkspacePath(cwd);
+    const canonical = await canonicalWorkspacePath(cwd).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw workspaceNotRegistered(error);
+      throw error;
+    });
     const candidates = (
       await Promise.all(
         (await deps.listWorkspaces()).map(async (entry) => {
@@ -85,11 +102,12 @@ export function createManagedNativeActivity(deps: {
     ).filter((entry): entry is ManagedWorkspace => !!entry && contains(entry.path, canonical));
     candidates.sort((a, b) => b.path.length - a.path.length);
     const candidate = candidates[0];
-    if (!candidate) throw new Error("Native cwd has no registered managed workspace");
+    // A retired, removed or paused directory admits no process; refuse before the full check.
+    if (!candidate || candidate.directoryState !== "present") throw workspaceNotRegistered();
     const stored = await deps.workspace(candidate.id);
     const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
     if (workspace.directoryState !== "present" || !contains(workspace.path, canonical))
-      throw new Error("Native workspace canonical identity changed");
+      throw workspaceNotRegistered();
     return { workspace, canonical };
   };
   return {

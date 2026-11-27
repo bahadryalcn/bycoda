@@ -24,7 +24,10 @@ import { useT } from "../../../shared/i18n";
 import { useToast } from "../../../shared/ui/ToastRegion";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { reportFailure } from "../../../shared/ui/reportFailure";
-import { describeRemoteError } from "../../connections/public/remoteFailure";
+import {
+  describeRemoteError,
+  isWorkspaceNotRegisteredRefusal,
+} from "../../connections/public/remoteFailure";
 import { describeActionFailure, useGracedFailure } from "../../connections/public/transientFailure";
 import { loadSshSnippets } from "../../connections/model/sshSnippets";
 import { bindTerminalDomInput } from "../runtime/terminalDomInput";
@@ -335,6 +338,10 @@ export function TerminalView({
         shellActions.current?.suspendAutomatic();
         setShellReady(false);
         if (attemptedLaunch) {
+          // A removed worktree can never admit this shell again: its owner opens a new terminal
+          // in the project folder in its place. The refusal stays shown until it does.
+          if (!privateTerminal && isWorkspaceNotRegisteredRefusal(error))
+            getOnMetaChange()?.({ restartInProject: true });
           const failure = describeActionFailure(error);
           if (failure.transient) setStartupError(error);
           else setStartupOutcome(failure.message);

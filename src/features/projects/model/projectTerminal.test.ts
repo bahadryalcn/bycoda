@@ -13,6 +13,7 @@ import {
   nextDockTerminalTitle,
   patchProjectTerminals,
   projectTerminalFileIds,
+  restartDockTerminalInProject,
   selectDockTerminal,
   splitProjectTerminalsForMove,
   splitTerminalInDock,
@@ -216,5 +217,42 @@ describe("splitProjectTerminalsForMove", () => {
     const allA = splitProjectTerminalsForMove(docks, [a1, a2], [b1], sessions);
     expect(allA.moving.map((dock) => dock.projectPath)).toEqual(["/tmp/a"]);
     expect(allA.remaining.map((dock) => dock.projectPath)).toEqual(["/tmp/b"]);
+  });
+});
+
+describe("restartDockTerminalInProject", () => {
+  it("puts a new project-folder terminal in the gone worktree terminal's place", () => {
+    const project = newTerminalFile("/repo", "repo");
+    const gone = newTerminalFile("/worktrees/repo-wt", "repo-wt", "/repo", "pwsh");
+    const dock = selectDockTerminal(
+      splitTerminalInDock(
+        addTerminalToDock(createProjectTerminal("/repo", project), gone),
+        gone.id,
+        newTerminalFile("/repo", "repo 3"),
+      ),
+      gone.id,
+    );
+    const next = restartDockTerminalInProject(dock, gone.id);
+    const index = dock.pane.files.findIndex((file) => file.id === gone.id);
+    const fresh = next.pane.files[index];
+    expect(fresh.id).not.toBe(gone.id);
+    expect(fresh).toMatchObject({ cwd: "/repo", terminal: true, shellProfile: "pwsh" });
+    expect(fresh.path).toBe("repo 2");
+    expect(next.pane.activeFileId).toBe(fresh.id);
+    expect(next.splitGroups?.flat()).toContain(fresh.id);
+    expect(next.splitGroups?.flat()).not.toContain(gone.id);
+  });
+
+  it("leaves a terminal already in the project folder, SSH shells and unknown ids alone", () => {
+    const project = newTerminalFile("/repo");
+    const dock = createProjectTerminal("/repo", project);
+    expect(restartDockTerminalInProject(dock, project.id)).toBe(dock);
+    expect(restartDockTerminalInProject(dock, "missing")).toBe(dock);
+    const remote = newTerminalFile("/worktrees/x", undefined, "/repo");
+    const ssh = {
+      ...addTerminalToDock(dock, remote),
+      sshShells: { [remote.id]: { connectionId: "c", project: { environmentId: "e", cwd: "/x" } } },
+    };
+    expect(restartDockTerminalInProject(ssh, remote.id)).toBe(ssh);
   });
 });

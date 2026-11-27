@@ -11959,6 +11959,7 @@
   "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.": "スキルをコピーするには、もう一方のマシンのbycoda Hostを更新する必要があります。マシン設定で更新してください。",
   "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.": "スキルを削除するには、もう一方のマシンのbycoda Hostを更新する必要があります。マシン設定で更新してください。",
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "このデスクトップ操作を行う前に、マシン設定でbycoda Hostを更新してください。",
+  "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.": "このフォルダーはこのマシンに登録されたワークスペースではなくなりました。プロジェクトまたはワークツリーを開き直してから、もう一度開始してください。",
   "This isn’t available for projects on another machine yet.": "別のマシン上のプロジェクトではまだ利用できません。",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "スキルを一覧表示するには、{p0}の{p1} Hostを更新する必要があります。マシン設定で更新してください。",
   "Couldn't reach {p0}.": "{p0}に接続できませんでした。",

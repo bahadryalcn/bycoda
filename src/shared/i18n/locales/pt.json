@@ -11959,6 +11959,7 @@
   "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.": "O bycoda Host da outra máquina precisa ser atualizado para copiar habilidades. Atualize-o nas configurações de máquinas.",
   "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.": "O bycoda Host da outra máquina precisa ser atualizado para excluir habilidades. Atualize-o nas configurações de máquinas.",
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "Atualize o bycoda Host nas configurações de máquinas antes de controlar este turno da área de trabalho.",
+  "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.": "Esta pasta não é mais um espaço de trabalho registrado nesta máquina. Reabra o projeto ou worktree e inicie novamente.",
   "This isn’t available for projects on another machine yet.": "Isso ainda não está disponível para projetos em outra máquina.",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "O {p1} Host de {p0} precisa ser atualizado para listar habilidades. Atualize-o nas configurações de máquinas.",
   "Couldn't reach {p0}.": "Não foi possível acessar {p0}.",

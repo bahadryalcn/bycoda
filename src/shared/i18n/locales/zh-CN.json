@@ -11959,6 +11959,7 @@
   "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.": "另一台设备上的 bycoda Host 需要更新才能复制技能。请在“设备”设置中更新。",
   "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.": "另一台设备上的 bycoda Host 需要更新才能删除技能。请在“设备”设置中更新。",
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "在控制此桌面轮次之前，请在“设备”设置中更新 bycoda Host。",
+  "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.": "此文件夹已不再是这台设备上已注册的工作区。请重新打开其项目或工作树，然后再次启动。",
   "This isn’t available for projects on another machine yet.": "其他设备上的项目暂不支持此功能。",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "{p0} 上的 {p1} Host 需要更新才能列出技能。请在“设备”设置中更新。",
   "Couldn't reach {p0}.": "无法连接到 {p0}。",

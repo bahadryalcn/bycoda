@@ -95485,6 +95485,7 @@
                         "CONTEXT_CHANGED",
                         "NATIVE_ADMISSION_UNENROLLED",
                         "PROJECT_FOLDER_MISSING",
+                        "WORKSPACE_NOT_REGISTERED",
                         "GROUP_LOCK_DESKTOP_UNAVAILABLE"
                       ],
                       "type": "string"
@@ -96432,5 +96433,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2eb75c2464a9ba823dc1bf5e5e7c871b378b6586ed76dd7b9b8b37b1e4204bdf"
+  "schemaHash": "838fdb86a47985af1271aeebd293831a3444d2de989fc6cc66184ce7409fff5b"
 }

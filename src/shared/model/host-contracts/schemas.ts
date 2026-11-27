@@ -116,6 +116,11 @@ export const REQUEST_EXPIRED_ERROR_CODE = "REQUEST_EXPIRED" as const;
 export const REQUEST_EXPIRED_MESSAGE =
   "This request is older than 30 days and was not run. Check whether it already happened and send it again.";
 
+/** The Host's `WORKSPACE_NOT_REGISTERED` refusal: a native process asked to start in a folder
+ * that is not (or no longer) a present managed workspace. The desktop recognises it by this text. */
+export const WORKSPACE_NOT_REGISTERED_MESSAGE =
+  "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.";
+
 /**
  * Machine codes for a Host refusal made before any effect started. Each one is
  * sent with delivery "not-sent": nothing ran, so the same command may be sent
@@ -136,6 +141,7 @@ export const HOST_REFUSAL_ERROR_CODES = [
   "CONTEXT_CHANGED",
   "NATIVE_ADMISSION_UNENROLLED",
   "PROJECT_FOLDER_MISSING",
+  "WORKSPACE_NOT_REGISTERED",
   "GROUP_LOCK_DESKTOP_UNAVAILABLE",
 ] as const;
 export type HostRefusalErrorCode = (typeof HOST_REFUSAL_ERROR_CODES)[number];

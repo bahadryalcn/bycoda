@@ -11963,6 +11963,7 @@
   "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.": "Beceri kopyalamak için diğer makinedeki bycoda Host’un güncellenmesi gerekiyor. Bağlantılar ayarlarından güncelleyin.",
   "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.": "Beceri silmek için diğer makinedeki bycoda Host’un güncellenmesi gerekiyor. Bağlantılar ayarlarından güncelleyin.",
   "Update bycoda Host in Machines settings before controlling this desktop turn.": "Bu masaüstü adımını kontrol etmeden önce Bağlantılar ayarlarında bycoda Host’u güncelleyin.",
+  "This folder is no longer a registered workspace on this machine. Reopen its project or worktree, then start again.": "Bu klasör artık bu makinede kayıtlı bir çalışma alanı değil. Projesini veya worktree'sini yeniden açıp tekrar başlatın.",
   "This isn’t available for projects on another machine yet.": "Bu, başka bir makinedeki projelerde henüz kullanılamıyor.",
   "{p0}'s {p1} Host needs updating to list skills. Update it in Machines settings.": "Becerileri listelemek için {p0} üzerindeki {p1} Host’un güncellenmesi gerekiyor. Bağlantılar ayarlarından güncelleyin.",
   "Couldn't reach {p0}.": "{p0} makinesine ulaşılamadı.",

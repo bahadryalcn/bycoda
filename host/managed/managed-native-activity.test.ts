@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { turnGit } from "../git/turn-git-history";
 import { createExecutionActivityReservations } from "../workspace-cleanup";
+import { WORKSPACE_NOT_REGISTERED_MESSAGE } from "../../src/shared/model/host-contracts/schemas";
 import { createManagedNativeActivity } from "./managed-native-activity";
 import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
 const cleanups: (() => Promise<void>)[] = [];
@@ -142,9 +143,11 @@ it("binds canonical process admission to the device and accepted session and ret
   await expect(f.service.start({ ...request, sessionId: "wrong" }, owner)).rejects.toThrow(
     "does not own",
   );
-  await expect(f.service.start({ ...request, cwd: f.main }, owner)).rejects.toThrow(
-    "no registered",
-  );
+  await expect(f.service.start({ ...request, cwd: f.main }, owner)).rejects.toMatchObject({
+    code: "WORKSPACE_NOT_REGISTERED",
+    category: "validation",
+    delivery: "not-sent",
+  });
   await expect(f.service.start(request, owner)).resolves.toEqual({
     activityId: "process",
     workspaceId: "workspace",
@@ -214,6 +217,25 @@ it("refuses process admission while the workspace directory is being retired", a
         { activityId: `blocked-${directoryState}`, cwd: f.path, kind: "shell" },
         owner,
       ),
-    ).rejects.toThrow("unavailable");
+    ).rejects.toMatchObject({ code: "WORKSPACE_NOT_REGISTERED", delivery: "not-sent" });
   }
+});
+
+it("refuses a process whose folder is gone as a known, unsent outcome", async () => {
+  const f = await fixture();
+  const gone = join(f.path, "removed-folder");
+  await expect(
+    f.service.start({ activityId: "gone", cwd: gone, kind: "terminal" }, owner),
+  ).rejects.toMatchObject({
+    code: "WORKSPACE_NOT_REGISTERED",
+    category: "validation",
+    retryable: false,
+    delivery: "not-sent",
+    message: WORKSPACE_NOT_REGISTERED_MESSAGE,
+  });
+  f.workspaces.splice(0);
+  await expect(
+    f.service.start({ activityId: "unlisted", cwd: f.path, kind: "terminal" }, owner),
+  ).rejects.toMatchObject({ code: "WORKSPACE_NOT_REGISTERED", delivery: "not-sent" });
+  expect(await f.activity.list(f.workspace.id)).toHaveLength(0);
 });
