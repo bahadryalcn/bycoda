@@ -119,7 +119,6 @@
   "Waiting for your approval": "Onayınızı bekliyor",
   "Execution": "Çalışma biçimi",
   "Standard": "Standart",
-  "This queued message uses different model settings. It will wait for a new turn.": "Bu kuyruk mesajı farklı model ayarları kullanıyor. Yeni bir yanıt turunu bekleyecek.",
   "New messages wait until this turn finishes. Stop pauses the queue.": "Yeni mesajlar devam eden yanıt bitene kadar bekler. Durdur, kuyruğu duraklatır.",
   "File access": "Dosya erişimi",
   "Files, projects and skills": "Dosyalar, projeler ve skill'ler",

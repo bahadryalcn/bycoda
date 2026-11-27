@@ -6,7 +6,7 @@ import { useProjectsDiffStats } from "./useProjectDiffStats";
 
 /**
  * Uncommitted files of the given worktree roots and the separate repositories inside them:
- * the same sections the Changes panel lists, so the tab badge, the picker's "All worktrees"
+ * the same sections the Changes panel lists, so the tab badge, the picker's "All repositories"
  * chip and the section chips agree. `byRoot` sums each root with its nested repositories.
  * Discovery runs only for the roots passed (dirty worktrees), never for every worktree.
  */

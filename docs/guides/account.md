@@ -136,7 +136,7 @@ requests) and how long it is kept, and never your sessions, prompts, code or fil
 **Request export** prepares a JSON copy of your account in the background; when it is ready,
 **Save file** downloads it. Data sharing choices apply to this computer.
 
-In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Send every time** for each sharing category. Active time uses **Ask daily** by default. Choosing **Do not send** keeps new active-time records on the local Host. Previous uploads remain in the account.
+In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Send every time** for each sharing category. **Send every time** sends without a notice beforehand; only **Ask every time** asks for approval. Active time uses **Ask daily** by default. Choosing **Do not send** keeps new active-time records on the local Host. Previous uploads remain in the account.
 
 Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
 

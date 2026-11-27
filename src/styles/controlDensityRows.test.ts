@@ -54,9 +54,7 @@ describe("control-density rows", () => {
 
   it("sizes the checkout header rows from the density token", () => {
     const css = read("../features/source-control/ui/CheckoutHeader.module.css");
-    expect(rule(css, ".header")).toContain(
-      "min-block-size: max(36px, var(--ui-control-height-compact));",
-    );
+    expect(rule(css, ".header")).toContain("min-block-size: var(--ui-control-height-compact);");
     expect(rule(css, ".branchHeader")).toContain(
       "min-block-size: max(36px, var(--ui-control-height-compact));",
     );

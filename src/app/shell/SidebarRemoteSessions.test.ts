@@ -331,7 +331,7 @@ it("puts the server control before the shared project and worktree picker", asyn
     )!;
     expect(picker).not.toBeNull();
     expect(server.compareDocumentPosition(picker)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(picker.textContent).toContain("All worktrees");
+    expect(picker.textContent).toContain("All repositories");
     await act(async () => picker.click());
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
       row.textContent?.includes("main"),

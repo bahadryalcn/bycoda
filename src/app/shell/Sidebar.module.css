@@ -6,21 +6,22 @@
   padding-inline-start: var(--session-folder-indent, 0px);
 }
 
-/* Groups and sections (Pinned, Reminders, a folder) are told apart by space, never by rules
-   or boxes. Collapsed headers stack on the list's tight rhythm, like a list of folders; an
+/* Groups and sections (Pinned, Reminders, a folder) are told apart by space; only the Pinned
+   block's end and the Settled shelf's start get a hairline (sessionList.css). Collapsed headers stack on the list's tight rhythm, like a list of folders; an
    open group gets a little air after its last row, and so does a closed one that hands over
    to loose sessions, so the next header or the unfiled list reads as a new start. */
 .folder[data-section-divided]:not([data-section-collapsed]):has(~ li:not([aria-hidden])),
 .folder[data-section-divided][data-section-collapsed]:has(
-    + li:not([data-section-divided], [aria-hidden])
+    + li:not([data-section-divided], [data-section-break], [aria-hidden])
   ) {
   margin-block-end: var(--space-3);
 }
 
-/* The header spans the pane, so it can measure its own width: New session folds to its icon
-   (Button collapseLabel) when the pane is narrow, even without an overflow menu. */
+/* The header spans the pane, so it can measure its own width. The session tools fold into
+   their overflow menu first (WorkspaceToolbar); New session keeps its label until the pane is
+   very narrow (Button collapseLabel on the pane-header-compact container). */
 .workspaceHeader {
-  container: pane-header / inline-size;
+  container: pane-header-compact / inline-size;
 }
 
 /* Let the location use spare space and shrink only when the toolbar needs it. */
@@ -31,6 +32,7 @@
 .workspaceHeader > [data-pane-header-body] {
   min-inline-size: fit-content;
   justify-content: flex-end;
+  column-gap: 0;
 }
 
 .projectlessToolbar:not(:has([data-expanded])) {
@@ -38,9 +40,7 @@
 }
 
 @container workspace-pane (inline-size < 440px) {
-  .workspaceHeader,
-  .workspaceHeader > [data-pane-header-body],
-  .workspaceHeader [data-session-tools] {
+  .workspaceHeader {
     column-gap: 0;
   }
 

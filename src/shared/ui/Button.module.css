@@ -294,6 +294,21 @@
   align-items: center;
 }
 
+/* pane-header-compact: a header that folds its other tools first, so the label stays longer. */
+@container pane-header-compact (inline-size <= 18rem) {
+  .control[data-button-collapse-label] {
+    padding-inline: var(--ui-space-2);
+  }
+  .control[data-button-collapse-label] .label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: clip;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    contain: size;
+  }
+}
 @container pane-header (inline-size <= 26rem) {
   .control[data-button-collapse-label] {
     padding-inline: var(--ui-space-2);
@@ -364,6 +379,11 @@
 .control.link[data-button-layout="text"] .label {
   display: inline;
   overflow: visible;
+}
+/* An inline label has no grid cell for the ghosts to share: they would trail the link as
+   blank text-width gaps (Retry, Dismiss pushed apart). Prose links reflow, so reserve nothing. */
+.control.link[data-button-layout="text"] .labelGhost {
+  display: none;
 }
 .progressIcon {
   display: inline-grid;

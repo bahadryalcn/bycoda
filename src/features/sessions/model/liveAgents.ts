@@ -4,6 +4,7 @@ import {
   decodeDelegationParent,
 } from "../../../shared/model/host-contracts/delegation";
 import { sessionIssue } from "./sessionIssue";
+import type { SessionLifecycleView } from "./sessionLifecycle";
 import { delegationParentOf, isDelegatedChildOf } from "./delegatedAgents";
 import { sessionWait, waitStillWorking, type SessionWait } from "./sessionWait";
 import { executionUserIndex } from "./executionTurn";
@@ -87,6 +88,23 @@ export function liveAgentsFromSessions(
     )
     .map(({ session, wait }) => toLiveAgent(session, unseenFinishedIds.has(session.id), wait))
     .sort(compareLiveAgents);
+}
+
+/**
+ * Settled sessions leave Activity whatever their last outcome (done, failed, waiting). A session
+ * that is working or asking again stays: its new message re-activated it on the Host before the
+ * renderer's lifecycle read caught up.
+ */
+export function withoutSettledAgents(
+  agents: LiveAgent[],
+  lifecycleOf: (agent: LiveAgent) => Pick<SessionLifecycleView, "state"> | undefined,
+): LiveAgent[] {
+  const kept = agents.filter(
+    (agent) =>
+      lifecycleOf(agent)?.state !== "settled" ||
+      (!agent.done && !agent.issue && !agent.waiting),
+  );
+  return kept.length === agents.length ? agents : kept;
 }
 
 /** Project activity includes host-owned turns, but excludes finished or waiting chats. */

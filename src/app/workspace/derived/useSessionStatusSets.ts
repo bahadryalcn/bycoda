@@ -10,13 +10,24 @@ import {
   sessionWaitsEqual,
   type SessionWait,
 } from "../../../features/sessions/model/sessionWait";
-import { liveAgentsFromSessions } from "../../../features/sessions/model/liveAgents";
+import {
+  liveAgentsFromSessions,
+  withoutSettledAgents,
+} from "../../../features/sessions/model/liveAgents";
+import {
+  useRemoteSessionLifecycleLists,
+  useSessionLifecycleList,
+} from "../../../features/sessions/hooks/useSessionLifecycle";
 import {
   remoteLiveAgents,
   remoteSessionWait,
   type RemoteRailSession,
 } from "../../../features/connections/model/remoteRailSessions";
-import { remoteSessionFor } from "../../../features/connections/model/connections";
+import {
+  knownRemoteMachine,
+  remoteSessionFor,
+} from "../../../features/connections/model/connections";
+import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import type { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
 import { liveAgentsEqual } from "../../model/sidebarEquality";
@@ -34,6 +45,12 @@ function useStableState<T>(next: T, equal: (previous: T, next: T) => boolean): T
   if (kept === next || equal(kept, next)) return kept;
   setKept(next);
   return next;
+}
+
+/** The remote Host machine whose lifecycle records cover a session in `cwd`; undefined when local. */
+function remoteLifecycleMachine(cwd: string): string | undefined {
+  const environmentId = parseRemotePath(cwd)?.environmentId;
+  return environmentId ? knownRemoteMachine(environmentId)?.id : undefined;
 }
 
 /** Session ids that are busy, plus their orchestration leads. */
@@ -202,12 +219,25 @@ export function useLiveAgentStatus({
     );
   }, [sessions, tabs]);
   const windowLiveAgents = useWindowLiveAgents(stableLiveAgents, ownedLiveSessionKeys);
-  const liveAgents = useMemo(
-    () =>
-      liveAgentsEnabled
-        ? windowLiveAgents.filter((agent) => !isProjectLockedIn(lockSnapshot, agent.cwd))
-        : [],
-    [windowLiveAgents, lockSnapshot, liveAgentsEnabled],
+  // Settled records live on the Host that owns each session: this computer's or a remote one.
+  const { views: localLifecycle } = useSessionLifecycleList(liveAgentsEnabled);
+  const remoteMachineIds = [
+    ...new Set(windowLiveAgents.flatMap((agent) => remoteLifecycleMachine(agent.cwd) ?? [])),
+  ].sort();
+  const { lists: remoteLifecycle } = useRemoteSessionLifecycleLists(
+    liveAgentsEnabled && remoteMachineIds.length ? JSON.stringify(remoteMachineIds) : "",
   );
+  const liveAgents = useMemo(() => {
+    if (!liveAgentsEnabled) return [];
+    const unlocked = windowLiveAgents.filter(
+      (agent) => !isProjectLockedIn(lockSnapshot, agent.cwd),
+    );
+    return withoutSettledAgents(unlocked, (agent) => {
+      if (!parseRemotePath(agent.cwd)) return localLifecycle.get(agent.id);
+      const machineId = remoteLifecycleMachine(agent.cwd);
+      const views = machineId ? remoteLifecycle.get(machineId) : undefined;
+      return views?.get(agent.id) ?? views?.get(remoteSessionFor(agent.id) ?? "");
+    });
+  }, [windowLiveAgents, lockSnapshot, liveAgentsEnabled, localLifecycle, remoteLifecycle]);
   return { nextLiveAgents, liveAgents, ownedLiveSessionKeys, sessionWaits };
 }

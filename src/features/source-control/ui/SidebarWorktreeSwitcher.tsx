@@ -20,7 +20,7 @@ import { shortSha } from "../../../shared/lib/shortSha";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { ChevronDown, ChevronRight, GitBranch, Plus } from "../../../shared/ui/icons";
 
-/** The sidebar title. Picking a worktree narrows the sidebar, and the
+/** The sidebar title. Picking a worktree narrows the Changes panel, and the
  * sessions opened from it, to that working copy and names it here. */
 export function SidebarWorktreeSwitcher({
   cwd,
@@ -67,7 +67,7 @@ export function SidebarWorktreeSwitcher({
   const search = useRef<HTMLInputElement>(null);
   const focus = useWorktreeFocus(cwd);
   const { data, error, loading, refresh } = useProjectWorktrees(cwd);
-  // No focus means "All worktrees"; the project folder is a worktree like the
+  // No focus means "All repositories"; the project folder is a worktree like the
   // others. The shared row builder hides worktrees that cannot be opened.
   const main = data?.worktrees.find((tree) => tree.isMain);
   const createName = query.trim();
@@ -78,7 +78,7 @@ export function SidebarWorktreeSwitcher({
   const allSelected = hasAll && !focus;
 
   // Counts of the worktrees that have uncommitted changes: the same sections the Changes panel
-  // and its tab badge add up, so the chips and "All worktrees" agree with them.
+  // and its tab badge add up, so the chips and "All repositories" agree with them.
   const totals = useChangeTotals(changeSectionRoots(data?.worktrees, cwd), open);
   const canCreate = !!data && !error && !!createName && rows.length === 0;
 
@@ -180,12 +180,12 @@ export function SidebarWorktreeSwitcher({
   });
   const focused =
     focus && data?.worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
-  // Shown after the project name: the focused worktree's branch, "All worktrees"
+  // Shown after the project name: the focused worktree's branch, "All repositories"
   // when several exist, or the lone project folder's branch.
   const copyName = focus
     ? (focused?.branch ?? focus.branch ?? detachedLabel(focused?.head))
     : hasAll
-      ? t("All worktrees")
+      ? t("All repositories")
       : (main?.branch ?? undefined);
   const project = projectLabel ?? projectName(cwd);
   const fullTitle = copyName ? `${project} · ${copyName}` : project;

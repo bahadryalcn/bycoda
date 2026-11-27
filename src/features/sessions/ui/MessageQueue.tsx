@@ -69,6 +69,7 @@ import { hasMissingAttachment } from "../model/queuePersistence";
 import { useQueuedSteerRoute, useQueuedTargetSummary } from "../model/reactiveReads";
 import { moveQueuedMessage, ownerQueueRows, runningTargetOf } from "../model/messageQueue";
 import { HarnessIcon } from "./HarnessIcon";
+import { useModelSource } from "./modelSource";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { announceDrag } from "../../../shared/lib/drag";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
@@ -111,7 +112,7 @@ async function runQueueAction(
   }
 }
 
-type AccountList = { id: string; label: string }[];
+type AccountList = readonly { id: string; label: string }[];
 // Even compact rows fill the capped viewport well before the end of one page.
 const QUEUE_PAGE_SIZE = 12;
 
@@ -145,7 +146,10 @@ export function MessageQueue({
     accountChoicesSnapshot,
     accountChoicesSnapshot,
   );
-  const accountLists: Partial<Record<string, AccountList>> = JSON.parse(accountListsJson);
+  // A remote conversation's accounts are its Host's; this computer's profiles say nothing there.
+  const source = useModelSource();
+  const accountLists: Partial<Record<string, AccountList>> =
+    source.accounts ?? JSON.parse(accountListsJson);
   const delivery = useDeliveryProgress(sessionId);
   const queueDelivery = useQueueDeliveryMessage(sessionId, delivery);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
@@ -658,12 +662,17 @@ export function MessageQueue({
                 ? conversationAccount.providerAccountId
                 : target?.providerAccountId;
             const account = accounts.find((account) => account.id === (accountId ?? "default"));
+            // Until the Host reports this provider's accounts the saved one is not judged missing.
             const accountLabel =
-              target && supportsProviderAccounts(target.harness)
+              target &&
+              supportsProviderAccounts(target.harness) &&
+              source.accountsKnown?.(target.harness) !== false
                 ? account
                   ? accountDisplayLabel(accounts, account)
                   : accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID
-                    ? t("Removed account")
+                    ? source.accounts
+                      ? t("Unavailable Host account")
+                      : t("Removed account")
                     : t("Default account")
                 : undefined;
             const targetLabel =

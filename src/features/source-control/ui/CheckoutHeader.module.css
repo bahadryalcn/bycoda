@@ -1,9 +1,16 @@
+/* Repository rows sit between separator lines: no extra block padding, so collapsed rows stay close. */
 .header {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-block-size: max(36px, var(--ui-control-height-compact));
-  padding: 2px 6px;
+  min-block-size: var(--ui-control-height-compact);
+  padding-inline: 6px;
+}
+
+/* Each repository's staged and unstaged lists share one capped, scrollable height. */
+.sectionFiles {
+  max-block-size: min(20rem, 45vh);
+  overflow-y: auto;
 }
 
 .disclosure {

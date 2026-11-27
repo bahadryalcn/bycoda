@@ -218,13 +218,13 @@ for (const light of [false, true])
         await machine.click();
         await expect(machine).toBeEnabled();
         const picker = header.getByRole("button", { name: "Switch worktree" });
-        await expect(picker).toContainText("All worktrees");
+        await expect(picker).toContainText("All repositories");
         await expect(
           machine.locator("xpath=following::button[@aria-label='Switch worktree'][1]"),
         ).toBeVisible();
         await picker.click();
         const worktrees = page.getByRole("dialog", { name: "Worktrees" });
-        await expect(worktrees.getByRole("option", { name: "All worktrees" })).toBeVisible();
+        await expect(worktrees.getByRole("option", { name: "All repositories" })).toBeVisible();
         const directory = path.resolve("temp/verification/remote-worktree-picker");
         await mkdir(directory, { recursive: true });
         await writeFile(

@@ -2,7 +2,7 @@
 .inline {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-1) / 2);
+  gap: 0;
   min-inline-size: 0;
 }
 
@@ -16,7 +16,8 @@
   display: none;
 }
 
-@container workspace-pane (inline-size < 340px) {
+/* The tools fold before the location truncates or New session loses its label. */
+@container workspace-pane (inline-size < 460px) {
   .inline {
     display: none;
   }

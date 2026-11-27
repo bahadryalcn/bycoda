@@ -313,7 +313,9 @@ export function useSharedRemoteQueue(
       }
       if (!client.canDrain() && !client.hostDrains())
         throw new Error(client.snapshot().error ?? "The queue could not be resumed. Try again.");
-      if (client.snapshot().queue.status !== "active")
+      // An emptied queue means the released rows were already sent, not that Resume was undone.
+      const settled = client.snapshot().queue;
+      if (settled.messages.length && settled.status !== "active")
         throw new Error("Queue resume was cancelled. The messages remain queued.");
       return true;
     },
