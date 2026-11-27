@@ -284,10 +284,9 @@ Object.assign(window, {
   serversFixtureAgentMode: (mode: "ready" | "expired" | "error") => {
     agentReviewMode = mode;
   },
-  serversFixtureAgentTarget: () => {
+  serversFixtureAgentTarget: (host = "changed.example.invalid") => {
     const record = sshRecords.find((item) => item.id === "ssh-duplicate");
-    if (record?.sshEndpoint)
-      record.sshEndpoint = { ...record.sshEndpoint, host: "changed.example.invalid" };
+    if (record?.sshEndpoint) record.sshEndpoint = { ...record.sshEndpoint, host };
     window.dispatchEvent(new Event("bycoda:server-inventory"));
   },
   serversFixtureEmit: emitFixtureEvent,

@@ -22,7 +22,9 @@ for (const theme of ["light", "dark"]) {
         });
       };
       const inventory = page.getByRole("list", { name: "Servers", exact: true });
-      await expect(inventory.getByRole("button", { name: /^(SSH )?Existing SSH target/ })).toBeVisible();
+      await expect(
+        inventory.getByRole("button", { name: /^(SSH )?Existing SSH target/ }),
+      ).toBeVisible();
       await capture("catalog-list");
       await page.getByRole("radio", { name: "Card view", exact: true }).click();
       await capture("catalog-cards");
@@ -70,11 +72,11 @@ for (const theme of ["light", "dark"]) {
       await details.getByRole("button", { name: "SSH group settings", exact: true }).click();
       const group = page.getByRole("dialog", { name: /^SSH group settings/ });
       await group.getByRole("button", { name: "Edit group", exact: true }).click();
-      const defaults = group.locator('[aria-label="Group defaults"]');
+      const defaults = page.getByRole("dialog", { name: /^Group defaults/ });
       await defaults.scrollIntoViewIfNeeded();
       await capture("group-defaults");
       await defaults.locator("summary").filter({ hasText: "Remote environment" }).click();
-      await group
+      await defaults
         .getByRole("textbox", { name: "Variable name 1", exact: true })
         .scrollIntoViewIfNeeded();
       await capture("group-environment");
@@ -86,7 +88,6 @@ for (const theme of ["light", "dark"]) {
       const files = page.getByRole("dialog", { name: "SFTP files", exact: true });
       await expect(files).toBeVisible();
       await capture("sftp-empty");
-      await files.getByRole("button", { name: "Open", exact: true }).click();
       await expect(files.getByText("README.md", { exact: true })).toBeVisible();
       await capture("sftp-files");
       await page.keyboard.press("Escape");
@@ -137,13 +138,9 @@ for (const theme of ["light", "dark"]) {
       const calls = await page.evaluate(() => (window as any).serversFixtureCalls as string[]);
       expect(
         calls.filter((command) =>
-          [
-            "server_metadata_update",
-            "server_ssh_save",
-            "ssh_terminal_spawn",
-            "ssh_forward_start",
-            "sftp_upload",
-          ].includes(command),
+          ["server_ssh_save", "ssh_terminal_spawn", "ssh_forward_start", "sftp_upload"].includes(
+            command,
+          ),
         ),
       ).toEqual([]);
     });
@@ -189,7 +186,11 @@ for (const theme of ["light", "dark"]) {
       await commandName.fill("Unfinished command");
       await commands.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
       await nav.getByRole("tab", { name: "Organization", exact: true }).click();
+      // The group saves itself when the field is left (the new group chip then shifts the inventory),
+      // so leave it first; the unsaved command and forwarding drafts must still survive.
       await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
+      await details.getByRole("combobox", { name: "Group", exact: true }).blur();
+      await expect(page.getByRole("button", { name: /^Unfinished group/ })).toBeVisible();
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
       await expect(commandName).toHaveValue("Unfinished command");
       await page.screenshot({ path: `${folder}/commands-${theme}-${width}.png` });
@@ -215,13 +216,9 @@ for (const theme of ["light", "dark"]) {
       const calls = await page.evaluate(() => (window as any).serversFixtureCalls);
       expect(
         calls.some((command: string) =>
-          [
-            "server_metadata_update",
-            "server_ssh_save",
-            "ssh_terminal_spawn",
-            "ssh_forward_start",
-            "pty_write",
-          ].includes(command),
+          ["server_ssh_save", "ssh_terminal_spawn", "ssh_forward_start", "pty_write"].includes(
+            command,
+          ),
         ),
       ).toBe(false);
     });
