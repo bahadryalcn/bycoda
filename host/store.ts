@@ -701,6 +701,8 @@ export class HostStore {
     await this.db
       .exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS metadata_voice_work_owner ON metadata(json_extract(value,'$.ownership.id'))
+        WHERE key LIKE 'voice-work:%';
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, cwd TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), snapshot TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS deleted_sessions (id TEXT PRIMARY KEY, deleted_at INTEGER NOT NULL);
