@@ -59,8 +59,10 @@ function failedCardOf(block: Block): Block | undefined {
 function parseDelegateCall(block: Block): DelegateCall | undefined {
   // A path-shaped argument (a model ref like `grok:grok-4.6`) can turn the title into
   // "Read …"; the preview keeps the tool's own name.
-  const kind = delegationToolKind(block);
-  if (kind !== "delegate" && kind !== "wait" && kind !== "reply") return undefined;
+  const found = delegationToolKind(block);
+  if (!found) return undefined;
+  // An advisor consult starts a child the same way a delegate does, so its card takes the call's place.
+  const kind = found === "consult" ? "delegate" : found;
   const sessionIds: string[] = [];
   try {
     const detail: unknown = JSON.parse(block.tool?.detail ?? "");

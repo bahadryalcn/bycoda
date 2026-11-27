@@ -59,8 +59,8 @@ export function createMobileRuntime(
       ];
     },
     phonesOverPublic: () => tunnels.allowsPhonesOverPublic(),
-    issueDevice: async (name, kind, proofKey) =>
-      await dependencies.engine.store.issueDevice(name, kind, false, proofKey),
+    issueDevice: async (name, kind, proofKey, replacement) =>
+      await dependencies.engine.store.issueDevice(name, kind, false, proofKey, replacement),
     transaction: async (action) => await dependencies.engine.store.transaction(action),
   });
   const mobileIngressSecret = `${randomUUID()}${randomUUID()}`;
@@ -69,6 +69,7 @@ export function createMobileRuntime(
     environmentId: dependencies.engine.store.environmentId,
     mobileIngressSecret: () => mobileIngressSecret,
     authority: (token) => dependencies.engine.store.deviceAuthority(token),
+    completeReplacement: (token) => dependencies.engine.store.completeDeviceReplacement(token),
   });
   const hostPort = () => {
     const address = dependencies.server.address();

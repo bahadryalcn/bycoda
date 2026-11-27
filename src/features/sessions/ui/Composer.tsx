@@ -1242,15 +1242,16 @@ export const Composer = memo(function Composer({
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
-  const composerPlaceholder = worktreeRemoved
-    ? t("Select a branch or worktree to continue…")
-    : inboxCard
-      ? t("Add a note, or send to start…")
-      : noteCard
-        ? t("Add a message, or send…")
-        : handoffCard
-          ? t("Add context, or send to continue…")
-          : (placeholder ?? t("Message"));
+  const composerPlaceholder =
+    worktreeRemoved && !(hasProject && onWorktreeChange)
+      ? t("Select a branch or worktree to continue…")
+      : inboxCard
+        ? t("Add a note, or send to start…")
+        : noteCard
+          ? t("Add a message, or send…")
+          : handoffCard
+            ? t("Add context, or send to continue…")
+            : (placeholder ?? t("Message"));
   // No token can be styled without one of these introducers. Plain drafts use
   // the native text once, avoiding a second full wrapping layout in the overlay.
   const plainDraft =
@@ -3650,8 +3651,27 @@ export const Composer = memo(function Composer({
         </p>
       ) : null}
       {children}
+      {hasProject && worktreeRemoved && onWorktreeChange ? (
+        <WorktreePicker
+          cwd={cwd}
+          executionCwd={executionCwd}
+          enabled={enabled && !busy && !disabled}
+          worktreeRemoved
+          onSelect={async (tree) => {
+            const result = mutateParentInput(parentChanged, () => onWorktreeChange(tree));
+            if (result === false) throw new Error("Session input is temporarily closed.");
+            await result;
+            requestAnimationFrame(() => {
+              const active = document.activeElement;
+              if (active === document.body || composerRoot.current?.contains(active))
+                ref.current?.focus();
+            });
+          }}
+          onManage={onManageWorktrees}
+        />
+      ) : null}
       {sessionId ? <WorkspaceRewindPreviewHost sessionId={sessionId} /> : null}
-      {sessionId && !draftWorkspace ? (
+      {sessionId && !draftWorkspace && !worktreeRemoved ? (
         <SessionWorkspaceActions
           key={`workspace-actions:${sessionId}`}
           sessionId={sessionId}
@@ -4461,11 +4481,7 @@ export const Composer = memo(function Composer({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={recallLastTurn}
                 disabled={disabled || worktreeRemoved}
-                disabledReason={
-                  worktreeRemoved
-                    ? t("Select a branch or worktree to continue…")
-                    : t("Action unavailable.")
-                }
+                disabledReason={worktreeRemoved ? undefined : t("Action unavailable.")}
               >
                 <Undo2 className="icon-sm" />
               </Button>
@@ -4667,32 +4683,7 @@ export const Composer = memo(function Composer({
                     </div>
                   ) : null}
                 </>
-              ) : hasProject && worktreeRemoved && onWorktreeChange ? (
-                <>
-                  <WorktreePicker
-                    cwd={cwd}
-                    executionCwd={executionCwd}
-                    enabled={enabled && !busy}
-                    onSelect={async (...args) => {
-                      const select = onWorktreeChange;
-                      if (!select) throw new Error("Worktree selection is unavailable.");
-                      const result = mutateParentInput(parentChanged, () => select(...args));
-                      if (result === false) throw new Error("Session input is temporarily closed.");
-                      return await result;
-                    }}
-                    worktreeRemoved={worktreeRemoved}
-                    onBranchChange={
-                      onBranchChange
-                        ? () => {
-                            mutateParentInput(parentChanged, onBranchChange);
-                          }
-                        : undefined
-                    }
-                    onManage={onManageWorktrees}
-                    onClose={() => ref.current?.focus()}
-                  />
-                </>
-              ) : hasProject ? (
+              ) : hasProject && !worktreeRemoved ? (
                 <>
                   {onWorktreeChange ? (
                     <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />

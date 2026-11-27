@@ -1,5 +1,41 @@
 import { expect, test } from "@playwright/test";
 
+for (const light of [true, false]) {
+  for (const width of [800, 1280]) {
+    const name = `${light ? "light" : "dark"}-${width}`;
+    test(`removed worktree recovery ${name}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-usability.html?removedWorktree${light ? "&light" : ""}`,
+      );
+      const composer = page.locator("[data-composer]");
+      const direct = composer.getByRole("button", { name: "Continue in main" });
+      const choose = composer.getByRole("button", { name: "Choose worktree…" });
+      await expect(direct).toBeEnabled();
+      await expect(page.getByText("Continue with the report")).toBeVisible();
+      await expect(page.getByText(/os error 2/)).toHaveCount(0);
+      await expect(composer.getByText("Couldn’t refresh workspace status")).toHaveCount(0);
+      const draft = composer.getByRole("textbox", { name: "Message" });
+      await expect(draft).toHaveValue("Keep this integrated draft");
+      await page.screenshot({ path: `temp/verification/worktree-recovery/${name}.png` });
+      if (width === 800) {
+        await choose.click();
+        const choices = page.getByRole("dialog", { name: "Worktrees" });
+        await expect(choices.getByRole("option", { name: /feature/ })).toBeVisible();
+        await page.screenshot({ path: `temp/verification/worktree-recovery/picker-${name}.png` });
+        await choices.getByRole("option", { name: /feature/ }).click();
+      } else {
+        await direct.click();
+      }
+      await expect(choose).toHaveCount(0);
+      await expect(page.getByText(/os error 2/)).toHaveCount(0);
+      await expect(draft).toHaveValue("Keep this integrated draft");
+      await expect(draft).toBeFocused();
+    });
+  }
+}
+
 test("normal coding session has no voice results launcher", async ({ page }) => {
   await page.goto("/tests/browser/sessions/session-usability.html?historyFixture");
   const session = page.locator("[data-session-drop]");

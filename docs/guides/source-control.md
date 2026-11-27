@@ -70,6 +70,10 @@ picker leads, with refresh, worktree management and the Git menu at the end. The
 has no Worktrees or Branches tabs. A branch checked out in another worktree appears under
 **In a worktree** with a worktree badge; selecting it opens that worktree.
 
+When a conversation's worktree folder is gone, the composer offers to continue in the
+project folder's current branch or choose another worktree. The conversation and draft
+stay in the same session.
+
 Deleting a worktree offers **Also delete branch**, off by default. It is available only
 when the branch is fully merged; it is unavailable with unpushed commits or for the
 default branch.

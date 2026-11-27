@@ -439,7 +439,7 @@ fn installation_confirmed(installed: Option<&str>, bundled: &str, healthy: bool)
     }
 }
 
-fn data_dir() -> Option<PathBuf> {
+pub(crate) fn data_dir() -> Option<PathBuf> {
     if crate::debug_profile::profile_id().is_some() {
         return crate::debug_profile::host_data_dir();
     }

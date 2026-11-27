@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { externalTunnelApi, ExternalTunnelController } from "../model/externalTunnelController";
 import { remoteBackoffDelay } from "../model/remotePollingPolicy";
 import type { RemoteMachine } from "../model/protocol";
+import { isLocalSyncMachine } from "../model/localSync";
 
 /**
  * One machine's tunnel controller and its status poll. Mount it keyed by machine identity so
@@ -59,6 +60,8 @@ export function useTunnelSession(machine: RemoteMachine, active: boolean) {
     run,
     overview: state.overview,
     ready: state.phase === "ready" && !state.pending,
+    /** The sharing computer's name when it is not the one this window runs on. */
+    remoteName: isLocalSyncMachine(machine) ? undefined : machine.name,
   };
 }
 

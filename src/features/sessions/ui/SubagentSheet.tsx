@@ -11,6 +11,7 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
   useCallback,
+  useContext,
   memo,
   useEffect,
   useLayoutEffect,
@@ -37,7 +38,9 @@ import type { DelegationKind } from "../../../shared/model/host-contracts/delega
 import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
 import { SubagentReport, SubagentStateLine, runLabelWith } from "./SubagentAnatomy";
 import { ActivityRow } from "./AgentTranscriptActivity";
-import { blockForStep } from "./agentStepBlocks";
+import { blockForStep } from "../model/agentStepBlocks";
+import { sessionToolFilePaths } from "../model/sessionToolPaths";
+import { TranscriptToolPaths } from "./TranscriptToolPaths";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
@@ -171,159 +174,167 @@ export function SubagentSheet({
   const stops = useStopRequests();
   const stopKey = block.tool?.callId ?? block.id;
   const stopping = stops.stopping.has(stopKey);
+  // The panel sits beside the transcript: its links search this run's files first.
+  const parentToolPaths = useContext(TranscriptToolPaths);
+  const toolPaths = useStableCallback(() => [
+    ...sessionToolFilePaths([block], cwd),
+    ...(parentToolPaths?.() ?? []),
+  ]);
 
   return (
-    <Sheet
-      padding="none"
-      modal={false}
-      anchor="container"
-      side="end"
-      surface={command ? "floating" : "chat"}
-      resizable={command ? undefined : AGENT_PANEL_RESIZE}
-      expanded={!command && expanded}
-      open={visible}
-      title={
-        command
-          ? name
-          : agentRole === "advisor"
-            ? `${t("Advisor")}: ${name}`
-            : t("Subagent: {p0}", { p0: name })
-      }
-      closeLabel={command ? t("Close command panel") : t("Close agent panel")}
-      escapeScope="[data-session-drop]"
-      scroll="none"
-      bodyClassName={`${styles.layout} font-sans`}
-      bodyText={{ size: "body" }}
-      onClose={onClose}
-      headerActions={
-        <>
-          {!command ? (
-            <Button
-              iconOnly
-              size="sm"
-              variant="ghost"
-              label={expanded ? t("Restore") : t("Expand")}
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded ? (
-                <Minimize2 className="icon-sm" aria-hidden />
-              ) : (
-                <Maximize2 className="icon-sm" aria-hidden />
-              )}
-            </Button>
-          ) : null}
-          {back ? (
-            <Button
-              iconOnly
-              label={t("Back")}
-              variant="ghost"
-              type="button"
-              tooltip={back.name}
-              className="shrink-0"
-              data-subagent-back
-              onClick={back.open}
-            >
-              <ArrowLeft className="icon-sm" aria-hidden />
-            </Button>
-          ) : null}
-          <CopyTranscriptButton block={block} busy={busy} status={runLabelWith(block, busy, t)} />
-          {onStop && running ? (
-            <Button
-              className="shrink-0"
-              variant="ghost"
-              type="button"
-              loading={stopping}
-              loadingLabel={t("Stopping…")}
-              startIcon={<Square className="icon-sm" aria-hidden />}
-              tooltip={
-                stops.failed.has(stopKey)
-                  ? t("Could not stop it. Try again.")
-                  : command
-                    ? t("Stop this command")
-                    : agentRole === "advisor"
-                      ? t("Stop")
-                      : t("Stop this subagent")
-              }
-              onClick={() => stops.request(stopKey, onStop)}
-            >
-              {stops.failed.has(stopKey) ? t("Could not stop. Retry") : t("Stop")}
-            </Button>
-          ) : null}
-          {onShowInTranscript ? (
-            <Button
-              iconOnly
-              label={t("Show in transcript")}
-              variant="ghost"
-              type="button"
-              onClick={() => {
-                setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
-              }}
-              tooltip={command ? undefined : t("Scroll to this agent in the transcript")}
-              className="shrink-0"
-            >
-              <CornerDownRight className="icon-sm" aria-hidden />
-            </Button>
-          ) : null}
-        </>
-      }
-      headerBelow={
-        <SubagentStateLine
-          block={block}
-          busy={busy}
-          steps={steps}
-          model={model}
-          needsInput={needsInput}
-        />
-      }
-    >
-      {showFailed ? (
-        <div className="shrink-0 px-4 pt-2">
-          <InlineMessage tone="warning">
-            {t("Could not find this item in the transcript. It stays open here.")}
-          </InlineMessage>
-        </div>
-      ) : null}
-      {!command && nested ? (
-        <div data-chat-column className="mx-auto w-full shrink-0">
-          {nested}
-        </div>
-      ) : null}
-      {command ? (
-        <CommandDetails
-          key={block.id}
-          block={block}
-          busy={busy}
-          cwd={cwd}
-          onLoadRemoteBlock={onLoadRemoteBlock}
-        />
-      ) : (
-        <SubagentTrail
-          key={block.id}
-          block={block}
-          steps={steps}
-          running={running}
-          cwd={cwd}
-          onOpenFile={onOpenFile}
-          onOpenDiff={onOpenDiff}
-        />
-      )}
-      {!command && (requests || composer) ? (
-        <div className={styles.requests}>
-          <ScrollArea gutter="stable" className="min-h-0 flex-1">
-            <div data-chat-column className="mx-auto w-full min-w-0">
-              {requests}
-              {composer ?? (relay ? <SubagentMessageForm name={name} relay={relay} /> : null)}
-            </div>
-          </ScrollArea>
-        </div>
-      ) : !command && relay ? (
-        <SubagentMessageForm name={name} relay={relay} />
-      ) : !command ? (
-        <Text as="p" size="caption" tone="secondary" className="shrink-0 px-4 py-2">
-          {t("Messaging is unavailable in this conversation.")}
-        </Text>
-      ) : null}
-    </Sheet>
+    <TranscriptToolPaths.Provider value={toolPaths}>
+      <Sheet
+        padding="none"
+        modal={false}
+        anchor="container"
+        side="end"
+        surface={command ? "floating" : "chat"}
+        resizable={command ? undefined : AGENT_PANEL_RESIZE}
+        expanded={!command && expanded}
+        open={visible}
+        title={
+          command
+            ? name
+            : agentRole === "advisor"
+              ? `${t("Advisor")}: ${name}`
+              : t("Subagent: {p0}", { p0: name })
+        }
+        closeLabel={command ? t("Close command panel") : t("Close agent panel")}
+        escapeScope="[data-session-drop]"
+        scroll="none"
+        bodyClassName={`${styles.layout} font-sans`}
+        bodyText={{ size: "body" }}
+        onClose={onClose}
+        headerActions={
+          <>
+            {!command ? (
+              <Button
+                iconOnly
+                size="sm"
+                variant="ghost"
+                label={expanded ? t("Restore") : t("Expand")}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? (
+                  <Minimize2 className="icon-sm" aria-hidden />
+                ) : (
+                  <Maximize2 className="icon-sm" aria-hidden />
+                )}
+              </Button>
+            ) : null}
+            {back ? (
+              <Button
+                iconOnly
+                label={t("Back")}
+                variant="ghost"
+                type="button"
+                tooltip={back.name}
+                className="shrink-0"
+                data-subagent-back
+                onClick={back.open}
+              >
+                <ArrowLeft className="icon-sm" aria-hidden />
+              </Button>
+            ) : null}
+            <CopyTranscriptButton block={block} busy={busy} status={runLabelWith(block, busy, t)} />
+            {onStop && running ? (
+              <Button
+                className="shrink-0"
+                variant="ghost"
+                type="button"
+                loading={stopping}
+                loadingLabel={t("Stopping…")}
+                startIcon={<Square className="icon-sm" aria-hidden />}
+                tooltip={
+                  stops.failed.has(stopKey)
+                    ? t("Could not stop it. Try again.")
+                    : command
+                      ? t("Stop this command")
+                      : agentRole === "advisor"
+                        ? t("Stop")
+                        : t("Stop this subagent")
+                }
+                onClick={() => stops.request(stopKey, onStop)}
+              >
+                {stops.failed.has(stopKey) ? t("Could not stop. Retry") : t("Stop")}
+              </Button>
+            ) : null}
+            {onShowInTranscript ? (
+              <Button
+                iconOnly
+                label={t("Show in transcript")}
+                variant="ghost"
+                type="button"
+                onClick={() => {
+                  setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
+                }}
+                tooltip={command ? undefined : t("Scroll to this agent in the transcript")}
+                className="shrink-0"
+              >
+                <CornerDownRight className="icon-sm" aria-hidden />
+              </Button>
+            ) : null}
+          </>
+        }
+        headerBelow={
+          <SubagentStateLine
+            block={block}
+            busy={busy}
+            steps={steps}
+            model={model}
+            needsInput={needsInput}
+          />
+        }
+      >
+        {showFailed ? (
+          <div className="shrink-0 px-4 pt-2">
+            <InlineMessage tone="warning">
+              {t("Could not find this item in the transcript. It stays open here.")}
+            </InlineMessage>
+          </div>
+        ) : null}
+        {!command && nested ? (
+          <div data-chat-column className="mx-auto w-full shrink-0">
+            {nested}
+          </div>
+        ) : null}
+        {command ? (
+          <CommandDetails
+            key={block.id}
+            block={block}
+            busy={busy}
+            cwd={cwd}
+            onLoadRemoteBlock={onLoadRemoteBlock}
+          />
+        ) : (
+          <SubagentTrail
+            key={block.id}
+            block={block}
+            steps={steps}
+            running={running}
+            cwd={cwd}
+            onOpenFile={onOpenFile}
+            onOpenDiff={onOpenDiff}
+          />
+        )}
+        {!command && (requests || composer) ? (
+          <div className={styles.requests}>
+            <ScrollArea gutter="stable" className="min-h-0 flex-1">
+              <div data-chat-column className="mx-auto w-full min-w-0">
+                {requests}
+                {composer ?? (relay ? <SubagentMessageForm name={name} relay={relay} /> : null)}
+              </div>
+            </ScrollArea>
+          </div>
+        ) : !command && relay ? (
+          <SubagentMessageForm name={name} relay={relay} />
+        ) : !command ? (
+          <Text as="p" size="caption" tone="secondary" className="shrink-0 px-4 py-2">
+            {t("Messaging is unavailable in this conversation.")}
+          </Text>
+        ) : null}
+      </Sheet>
+    </TranscriptToolPaths.Provider>
   );
 }
 

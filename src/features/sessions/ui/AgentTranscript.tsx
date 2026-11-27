@@ -91,6 +91,8 @@ import { AttachmentChip } from "./AttachmentChip";
 import { inlineMediaAttachmentPath, LocalMedia } from "./LocalMedia";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { TranscriptSessionId } from "./TranscriptSessionId";
+import { TranscriptToolPaths } from "./TranscriptToolPaths";
+import { sessionToolFilePaths } from "../model/sessionToolPaths";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
@@ -971,6 +973,8 @@ function VirtualizedTranscriptComponent(props: Props) {
 }
 // Activity preserves local state while suspending hidden work and effects.
 export const AgentTranscript = memo(function AgentTranscript(props: Props) {
+  // Collected on click only; the transcript can hold thousands of blocks.
+  const toolPaths = useStableCallback(() => sessionToolFilePaths(props.blocks, props.cwd));
   const transcript =
     props.cwd && props.harness ? (
       <TranscriptSkills cwd={props.cwd} harness={props.harness} sessionId={props.sessionId}>
@@ -992,15 +996,17 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
         <Activity mode={props.visible === false ? "hidden" : "visible"}>
           <WorkItemMentionCwd value={props.cwd}>
             <TranscriptSessionId.Provider value={props.sessionId}>
-              <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
-                {props.approvalContext ? (
-                  <ApprovalDecisionProvider {...props.approvalContext}>
-                    {transcript}
-                  </ApprovalDecisionProvider>
-                ) : (
-                  transcript
-                )}
-              </DelegatedRunOwner.Provider>
+              <TranscriptToolPaths.Provider value={toolPaths}>
+                <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
+                  {props.approvalContext ? (
+                    <ApprovalDecisionProvider {...props.approvalContext}>
+                      {transcript}
+                    </ApprovalDecisionProvider>
+                  ) : (
+                    transcript
+                  )}
+                </DelegatedRunOwner.Provider>
+              </TranscriptToolPaths.Provider>
             </TranscriptSessionId.Provider>
           </WorkItemMentionCwd>
         </Activity>

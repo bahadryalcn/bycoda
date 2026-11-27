@@ -55,7 +55,7 @@ import {
   parseMachineDraft,
 } from "../model/machineEdit";
 import { syncNow } from "../../sync/model/syncClient";
-import { notifyRemoteRecovered } from "../model/remoteHealth";
+import { notifyRemoteRecovered, recordRemoteConnection } from "../model/remoteHealth";
 import { machineLabel } from "../model/machineIdentity";
 import type { RemoteMachine } from "../model/protocol";
 
@@ -132,7 +132,11 @@ export function ConnectionsSettings() {
     onDone: (next) => {
       submitting.current = false;
       setBusy(false);
-      if (next.error)
+      if (next.error) {
+        // The machine refused this computer while reconnecting: its row says so and offers Pair
+        // again, which is why no banner repeats it (`errorShownOnRow`).
+        if (retryMachine && /\[RPC_AUTHORIZATION\]/.test(next.error))
+          recordRemoteConnection(retryMachine.environmentId, next.error);
         setError(
           afterEdit.current
             ? `${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}
@@ -140,7 +144,7 @@ export function ConnectionsSettings() {
 ${next.error}`
             : next.error,
         );
-      else if (next.machine) {
+      } else if (next.machine) {
         setAdding(false);
         setEditing(undefined);
         const submitted = submittedAddDraft.current;
@@ -217,7 +221,7 @@ ${next.error}`
       ? {
           name: plan.name,
           target: plan.target,
-          port: "",
+          port: plan.port ? String(plan.port) : "",
           alternate: plan.alternate ?? "",
         }
       : sshFields(false);
@@ -264,6 +268,17 @@ ${next.error}`
         setBusy(false);
       }
     }
+  };
+  // A machine that refused this computer's credential is set up again over its saved SSH
+  // address; the finished setup takes over the saved entry instead of adding a duplicate.
+  const pairAgain = (machine: RemoteMachine) => {
+    if (!machine.ssh) return;
+    void begin(undefined, false, false, {
+      target: machine.ssh.target,
+      alternate: machine.ssh.alternate ?? null,
+      name: machine.name,
+      port: machine.ssh.port ?? null,
+    });
   };
   const connectUrl = () => {
     if (busy) return;
@@ -349,13 +364,15 @@ ${next.error}`
         try {
           await remoteRequest(machine.id, "devices.revokeSelf");
         } catch (reason) {
-          // The sentence is the reason; the raw cause follows a blank line and waits behind Details.
-          throw new Error(
+          // The translated sentence is the reason, shown whole; only the raw cause is sanitized,
+          // and it waits behind Details after the blank line.
+          setError(
             `${t(
               "{p0} was not removed because access could not be revoked. Reconnect and try again, or remove it from this desktop only and revoke it on the host with bycoda-host devices and bycoda-host revoke <device-id>.",
               { p0: machine.name },
             )}\n\n${sanitizeConnectionError(errorText(reason))}`,
           );
+          return;
         }
       }
       await disconnectMachine(machine.id);
@@ -380,6 +397,8 @@ ${next.error}`
   // A failure is "reason" + blank line + "cause": the reason is the body, the cause waits behind Details.
   const [errorReason = "", ...errorRest] = error.split("\n\n");
   const errorParts = { reason: errorReason, cause: errorRest.join("\n\n").trim() };
+  // A refused credential is the machine row's message, with its Pair again action; no banner repeats it.
+  const errorShownOnRow = Boolean(retryMachine) && /\[RPC_AUTHORIZATION\]/.test(error);
   const removingMachine = removing
     ? machines.find((machine) => machine.id === removing)
     : undefined;
@@ -491,7 +510,7 @@ ${next.error}`
               }
             />
           )}
-          {error && !adding && !removing ? (
+          {error && !adding && !removing && !errorShownOnRow ? (
             <Alert
               tone="danger"
               title={!busy && retryMachine ? retryMachine.name : undefined}
@@ -534,6 +553,7 @@ ${next.error}`
                       menuOpen={rowMenu?.machine.id === machine.id}
                       onUpdateHost={() => void begin(machine, true)}
                       onReconnect={() => void begin(machine)}
+                      onPairAgain={() => pairAgain(machine)}
                       onSyncNow={() => void syncNow(machine.id)}
                       onToggleDetails={() =>
                         setDetailMachine((current) =>

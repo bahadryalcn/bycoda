@@ -6,7 +6,10 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { t } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { useSyncExternalStore } from "react";
 import { isLocalSyncMachine } from "../model/localSync";
+import { isPairingRefused } from "../model/remoteConnection";
+import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
 import type { RemoteMachine } from "../model/protocol";
 
 export function RemoveMachineDialog({
@@ -30,6 +33,10 @@ export function RemoveMachineDialog({
   const [reason, ...rest] = error.split("\n\n");
   const cause = rest.join("\n\n").trim();
   const localSync = isLocalSyncMachine(machine);
+  // A machine that already refuses this desktop's credential has nothing left to revoke.
+  const refused = useSyncExternalStore(subscribeChanges, () =>
+    isPairingRefused(readRemoteConnection(machine.environmentId)),
+  );
   return (
     <Modal
       onClose={() => {
@@ -55,9 +62,11 @@ export function RemoveMachineDialog({
             variant="primary"
             tone={mode === "revoke" ? "danger" : undefined}
             loading={revoking}
-            onClick={() => onConfirm(mode === "revoke")}
+            onClick={() => onConfirm(mode === "revoke" && !refused)}
           >
-            {mode === "revoke" ? t("Revoke access and remove") : t("Remove from this desktop only")}
+            {mode === "revoke" && !refused
+              ? t("Revoke access and remove")
+              : t("Remove from this desktop only")}
           </Button>
         </ModalActions>
       }
@@ -79,12 +88,25 @@ export function RemoveMachineDialog({
             {
               value: "local",
               label: t("Remove from this desktop only"),
-              description: t(
-                "Removing alone leaves this desktop’s credential valid on the host. Revoke access to invalidate it first; the machine must be reachable.",
-              ),
+              description: refused
+                ? t("{p0} already refuses this desktop, so nothing stays valid there.", {
+                    p0: machine.name,
+                  })
+                : t(
+                    "Removing alone leaves this desktop’s credential valid on the host. Revoke access to invalidate it first; the machine must be reachable.",
+                  ),
               disabled: revoking,
             },
-            { value: "revoke", label: t("Revoke access and remove"), disabled: revoking },
+            {
+              value: "revoke",
+              label: t("Revoke access and remove"),
+              disabled: revoking || refused,
+              disabledReason: refused
+                ? t("{p0} already refuses this desktop. There is no access left to revoke.", {
+                    p0: machine.name,
+                  })
+                : undefined,
+            },
           ]}
         />
         {error ? (

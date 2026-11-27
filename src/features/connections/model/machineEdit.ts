@@ -116,6 +116,10 @@ export function isRawIpAddress(target: string): boolean {
 export function hostnameSuggestion(target: string, machineName: string): string | undefined {
   const name = machineName.trim();
   if (!isRawIpAddress(target) || name.length > 253) return undefined;
+  // A Tailscale address works from anywhere; a `.local` name only on the same network.
+  const host = target.trim().slice(target.trim().lastIndexOf("@") + 1);
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) && /\.local$/i.test(name))
+    return undefined;
   if (
     !/^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(
       name,

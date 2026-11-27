@@ -92,6 +92,7 @@ export type * as modelQuoteDraftApi from "./public/quoteDraft";
 export type * as modelCommandInspectionApi from "./public/commandInspection";
 export type * as modelSessionApi from "./public/session";
 export type * as modelSessionActivityApi from "./public/sessionActivity";
+export type * as modelSessionIssueApi from "./public/sessionIssue";
 export type * as modelSessionFiltersApi from "./public/sessionFilters";
 export type * as modelSessionFoldersApi from "./public/sessionFolders";
 export type * as modelSessionLifecycleApi from "./public/sessionLifecycle";

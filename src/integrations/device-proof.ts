@@ -24,6 +24,12 @@ export type DeviceProofClaims = {
   iat: number;
   ath: string;
   eid: string;
+  /**
+   * Set on a request the client sends before it has durably saved this credential (the check that
+   * precedes saving a new pairing). The proof authenticates the request but does not show the
+   * credential is in use, so it never retires the credential this one replaces.
+   */
+  unsaved?: true;
 };
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -125,6 +131,8 @@ export type SignDeviceProofInput = {
   jti?: string;
   /** Unix seconds; defaults to now. */
   iat?: number;
+  /** The client has not saved this credential yet; see `DeviceProofClaims.unsaved`. */
+  unsaved?: boolean;
 };
 
 /** The compact JWS to send in the `DPoP` header of one request. */
@@ -138,6 +146,7 @@ export function signDeviceProof(input: SignDeviceProofInput): string {
     iat: input.iat ?? Math.floor(Date.now() / 1000),
     ath: deviceProofTokenHash(input.token),
     eid: input.environmentId,
+    ...(input.unsaved ? { unsaved: true as const } : {}),
   };
   const signingInput = `${base64urlEncode(utf8ToBytes(JSON.stringify(header)))}.${base64urlEncode(
     utf8ToBytes(JSON.stringify(claims)),
@@ -145,7 +154,76 @@ export function signDeviceProof(input: SignDeviceProofInput): string {
   return `${signingInput}.${base64urlEncode(ed25519.sign(utf8ToBytes(signingInput), input.seed))}`;
 }
 
-export type DeviceProofFailure = "malformed" | "key" | "signature" | "claims" | "stale";
+/**
+ * A client that pairs again with a Host it already holds a credential for proves possession of
+ * the earlier key, so the Host retires that credential once the new one is in use. The signature
+ * covers this claim and the new key, so it cannot be replayed for another pairing or another key.
+ */
+export type DeviceReplacementProof = { proofKey: DeviceProofJwk; signature: string };
+
+type DeviceReplacementContext = {
+  /** The redemption's claim ID (base64url, so the fields cannot run into each other). */
+  claimId: string;
+  /** The key the new credential is bound to. */
+  proofKey: DeviceProofJwk;
+  environmentId: string;
+};
+
+const replacementMessage = (context: DeviceReplacementContext): Uint8Array =>
+  utf8ToBytes(
+    `bycoda.device-replacement.v1\n${context.claimId}\n${deviceProofThumbprint(context.proofKey)}\n${context.environmentId}`,
+  );
+
+/** Signed with the seed of the earlier credential's key. */
+export function signDeviceReplacement(
+  previousSeed: Uint8Array,
+  context: DeviceReplacementContext,
+): DeviceReplacementProof {
+  return {
+    proofKey: deviceProofKeyFromSeed(previousSeed).publicJwk,
+    signature: base64urlEncode(ed25519.sign(replacementMessage(context), previousSeed)),
+  };
+}
+
+/** The thumbprint of the earlier key when the proof is valid for this redemption, else undefined. */
+export function verifyDeviceReplacement(
+  value: unknown,
+  context: DeviceReplacementContext,
+): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const { proofKey, signature } = value as Record<string, unknown>;
+  const jwk = parseDeviceProofJwk(proofKey);
+  const bytes = typeof signature === "string" ? base64urlDecode(signature) : undefined;
+  if (!jwk || bytes?.length !== 64) return undefined;
+  try {
+    return ed25519.verify(bytes, replacementMessage(context), base64urlDecode(jwk.x)!)
+      ? deviceProofThumbprint(jwk)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What a phone sends at pairing to name its installation when its keys did not survive: a hash of
+ * a platform identifier that outlives a reinstall (Android's app-scoped `ANDROID_ID`) with the
+ * Host's environment ID, so the raw identifier never leaves the phone and two Hosts see unrelated
+ * values. It is an identifier, not a secret or a proof; `HostStore.issueDevice` says what it may do.
+ */
+export function deviceInstallId(platformId: string, environmentId: string): string {
+  return base64urlEncode(
+    sha256(utf8ToBytes(`bycoda.device-install.v1\n${environmentId}\n${platformId}`)),
+  );
+}
+
+/** The install ID only when it is one unpadded base64url SHA-256 digest. */
+export function parseDeviceInstallId(value: unknown): string | undefined {
+  return typeof value === "string" && value.length === 43 && base64urlDecode(value)?.length === 32
+    ? value
+    : undefined;
+}
+
+export type DeviceProofFailure ="malformed" | "key" | "signature" | "claims" | "stale";
 
 export type VerifyDeviceProofInput = {
   proof: string;
@@ -161,7 +239,7 @@ export type VerifyDeviceProofInput = {
 };
 
 export type VerifyDeviceProofResult =
-  | { ok: true; jti: string; iat: number; jwk: DeviceProofJwk }
+  | { ok: true; jti: string; iat: number; jwk: DeviceProofJwk; unsaved?: true }
   | { ok: false; reason: DeviceProofFailure };
 
 function parseJson(segment: string): Record<string, unknown> | undefined {
@@ -203,8 +281,9 @@ export function verifyDeviceProof(input: VerifyDeviceProofInput): VerifyDevicePr
     valid = false;
   }
   if (!valid) return fail("signature");
-  const { jti, htm, htu, iat, ath, eid } = payload;
+  const { jti, htm, htu, iat, ath, eid, unsaved } = payload;
   if (
+    (unsaved !== undefined && unsaved !== true) ||
     typeof jti !== "string" ||
     jti.length < 16 ||
     jti.length > 64 ||
@@ -222,5 +301,5 @@ export function verifyDeviceProof(input: VerifyDeviceProofInput): VerifyDevicePr
     return fail("claims");
   const now = input.now ?? Math.floor(Date.now() / 1000);
   if (Math.abs(now - iat) > DEVICE_PROOF_SKEW_SECONDS) return fail("stale");
-  return { ok: true, jti, iat, jwk };
+  return { ok: true, jti, iat, jwk, ...(unsaved ? { unsaved: true as const } : {}) };
 }

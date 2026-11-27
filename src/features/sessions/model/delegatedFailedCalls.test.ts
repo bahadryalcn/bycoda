@@ -31,7 +31,7 @@ describe("failedAskCard", () => {
     expect(card?.tool?.kind).toBe("subagent");
     expect(toolCallState(card!)).toBe("rejected");
     expect(subagentReport(card!)).toBe("Model unavailable");
-    expect(card?.agentRun).toMatchObject({ name: "Subagent", steps: [] });
+    expect(card?.agentRun).toMatchObject({ name: "Subagent", steps: [], unstarted: true });
   });
 
   it("names a consult call's card Advisor and reads a nested error message", () => {

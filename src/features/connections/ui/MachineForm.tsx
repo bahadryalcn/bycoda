@@ -101,8 +101,8 @@ function SshFields({
             type="button"
             disabled={busy}
             onClick={() => onChange({ target: suggestion })}
-            variant="secondary"
-            align="start"
+            variant="ghost"
+            className="self-start"
           >
             {t("Use {p0} instead of the IP", { p0: suggestion })}
           </Button>

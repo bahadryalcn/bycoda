@@ -60,7 +60,7 @@ function TunnelNotices({
               : undefined
           }
         >
-          {issueCopy(state.issue)}
+          {issueCopy(state.issue, session.remoteName)}
         </Alert>
       ) : null}
     </>

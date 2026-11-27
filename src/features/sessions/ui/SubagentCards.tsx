@@ -23,9 +23,9 @@ import {
 import { requestViewDelegated, retryDelegated, stopDelegated } from "./delegatedFocus";
 import { useStopRequests } from "./useStopRequests";
 import { ActivityPhases } from "./AgentTranscriptActivity";
-import { blockForStep } from "./agentStepBlocks";
+import { blockForStep } from "../model/agentStepBlocks";
 import { SubagentRetryButton } from "./SubagentRetryButton";
-import { SubagentRowContent } from "./SubagentRowContent";
+import { AdvisorBadge, SubagentRowContent } from "./SubagentRowContent";
 import { subagentRunDescription, SubagentRunStatus } from "./SubagentRunStatus";
 import { runLabelWith, SubagentReport } from "./SubagentAnatomy";
 import { consumeOpenSubagent, OPEN_SUBAGENT_EVENT, requestViewSubagent } from "./subagentFocus";
@@ -35,6 +35,7 @@ import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import { useSubagentRunIdentity, type SubagentRunSession } from "./useSubagentRunIdentity";
 import { subagentGroupLayout, subagentGroupProgress } from "./subagentGroupLayout";
 import { SubagentCardFace } from "./SubagentCardFace";
+import { SubagentStartFailures } from "./SubagentStartFailure";
 import styles from "./SubagentRow.module.css";
 
 /** The conversation whose transcript renders these rows; Crew member cards open and stop through it. */
@@ -89,20 +90,31 @@ export function SubagentStack({
 }) {
   const t = useT();
   useLocale();
-  const wrapper = `flex min-w-0 flex-col ${embedded ? "" : "px-4"}`;
-  const layout = subagentGroupLayout(blocks.length);
   // shortcut: the open card is plain state, not retained across a released transcript; cards are never virtualized, upgrade if remounting loses the reader's pick.
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  // Asks that never started have no run to show: their reason is one line, not a card.
+  const unstarted = blocks.filter((block) => block.agentRun?.unstarted);
+  if (unstarted.length === blocks.length)
+    return <SubagentStartFailures blocks={unstarted} embedded={embedded} />;
+  const runs = unstarted.length ? blocks.filter((block) => !block.agentRun?.unstarted) : blocks;
+  const wrapper = `flex min-w-0 flex-col ${unstarted.length ? "gap-2" : ""} ${embedded ? "" : "px-4"}`;
+  const startFailures = unstarted.length ? (
+    <SubagentStartFailures blocks={unstarted} embedded />
+  ) : null;
+  const layout = subagentGroupLayout(runs.length);
   if (layout === "cards") {
-    // A run that died is open on its reason until the reader picks another; one trail at a time.
+    // A run that died with work to show is open on it until the reader picks another; one trail at a time.
     const openId =
       picked === undefined
-        ? (blocks.find((block) => toolCallState(block) === "rejected")?.id ?? null)
+        ? (runs.find(
+            (block) => toolCallState(block) === "rejected" && !!block.agentRun?.steps.length,
+          )?.id ?? null)
         : picked;
     return (
       <div className={wrapper}>
-        <div className={styles.cards} data-subagent-cards={blocks.length}>
-          {blocks.map((block) => (
+        {startFailures}
+        <div className={styles.cards} data-subagent-cards={runs.length}>
+          {runs.map((block) => (
             <SubagentRow
               key={block.id}
               block={block}
@@ -121,12 +133,13 @@ export function SubagentStack({
       </div>
     );
   }
-  const progress = subagentGroupProgress(blocks.map((block) => blockLifecycle(block, live)));
+  const progress = subagentGroupProgress(runs.map((block) => blockLifecycle(block, live)));
   return (
     <div className={wrapper}>
+      {startFailures}
       <div
         className={layout === "list" ? styles.list : "flex min-w-0 flex-col"}
-        data-subagent-list={layout === "list" ? blocks.length : undefined}
+        data-subagent-list={layout === "list" ? runs.length : undefined}
       >
         {layout === "list" ? (
           <Text size="caption" tone="muted" className={`${styles.listHeader} tabular-nums`}>
@@ -135,8 +148,8 @@ export function SubagentStack({
           </Text>
         ) : null}
         <TranscriptVirtualRows
-          listId={`agents:${blocks[0]?.id}`}
-          rows={blocks.map((block) => ({
+          listId={`agents:${runs[0]?.id}`}
+          rows={runs.map((block) => ({
             id: block.id,
             blockIds: [block.id],
             pinned:
@@ -238,6 +251,7 @@ export function SubagentRow({
     window.addEventListener(OPEN_SUBAGENT_EVENT, openIfAsked);
     return () => window.removeEventListener(OPEN_SUBAGENT_EVENT, openIfAsked);
   }, [block.id, setOpen]);
+  if (block.agentRun?.unstarted) return <SubagentStartFailures blocks={[block]} embedded />;
   return (
     <SubagentPanel
       block={block}
@@ -309,6 +323,13 @@ function SubagentPanel({
   const { account, effort } = useSubagentRunIdentity(delegated?.session, block.agentRun?.model);
   const round = block.agentRun?.round;
   const session = delegated?.session;
+  // An advisor runs as a child session like a subagent; the mark tells the two apart.
+  const badge =
+    session?.modelSettings &&
+    delegationParentOf({ modelSettings: session.modelSettings })?.kind === "advisor" ? (
+      <AdvisorBadge />
+    ) : undefined;
+  const openLabel = t("Open {p0} in its own panel", { p0: name });
   const rowContent = () => (
     <SubagentRowContent
       harness={session?.runningModelTarget?.harness ?? session?.harness}
@@ -318,6 +339,7 @@ function SubagentPanel({
       active={active}
       failed={state === "rejected"}
       handle={delegated?.handle}
+      badge={badge}
       subtitle={subtitle}
       details={[
         round && round > 1 ? t("Round {p0}", { p0: round }) : undefined,
@@ -369,7 +391,7 @@ function SubagentPanel({
     <Button
       motion="none"
       iconOnly
-      label={t("Open {p0} in its own panel", { p0: name })}
+      label={openLabel}
       variant="ghost"
       type="button"
       tooltip={t("Open in panel")}
@@ -404,13 +426,15 @@ function SubagentPanel({
             onOpenFile={onOpenFile}
             onOpenDiff={onOpenDiff}
           />
-          <SubagentReport
-            block={block}
-            cwd={cwd}
-            onOpenFile={onOpenFile}
-            heading="h4"
-            className="mt-2 ps-5"
-          />
+          {variant === "card" && state === "rejected" ? null : (
+            <SubagentReport
+              block={block}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
+              heading="h4"
+              className="mt-2 ps-5"
+            />
+          )}
           {(variant !== "card" && delegated?.onRetry) || delegated?.resultReceived ? (
             <div className="mt-2 flex min-w-0 flex-col items-start gap-1.5 ps-5">
               {variant !== "card" && delegated.onRetry ? (
@@ -435,7 +459,8 @@ function SubagentPanel({
   );
 
   if (variant === "card") {
-    const hasTrail = steps.length > 0 || !!report;
+    // A failed card shows its reason itself; the trail opens only on work it did.
+    const hasTrail = steps.length > 0 || (!!report && state !== "rejected");
     return (
       <>
         <SubagentCardFace
@@ -446,6 +471,7 @@ function SubagentPanel({
           harness={session?.runningModelTarget?.harness ?? session?.harness}
           model={block.agentRun?.model}
           account={account}
+          badge={badge}
           details={[
             round && round > 1 ? t("Round {p0}", { p0: round }) : undefined,
             model && modelNameBesideIcon(model),
@@ -463,6 +489,8 @@ function SubagentPanel({
             />
           }
           description={description}
+          openLabel={openLabel}
+          onOpen={openPanel}
           toggleLabel={
             hasTrail
               ? open
@@ -490,19 +518,25 @@ function SubagentPanel({
     );
   }
 
-  // A run can report its first step late (or never). Nothing opens under the row, so it has no
-  // chevron and the row itself does nothing; its prompt and status stay in the panel button.
+  // A run can report its first step late (or never). Nothing opens under the row yet, so the
+  // row itself opens the run in its own panel, where its prompt and live state already show.
   if (steps.length === 0 && !report) {
     return (
       <div className="flex min-w-0 flex-col">
-        <Disclosure
-          variant="step"
-          collapsible={false}
-          summaryLabel={name}
-          aria-description={description}
-          summary={rowContent()}
-          summaryActions={actions}
-        />
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center">
+          <Button
+            variant="item"
+            type="button"
+            label={openLabel}
+            aria-description={description}
+            data-subagent-open
+            onClick={openPanel}
+            className="min-w-0 text-start"
+          >
+            {rowContent()}
+          </Button>
+          {stopButton}
+        </div>
         {stopFailure}
       </div>
     );

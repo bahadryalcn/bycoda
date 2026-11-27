@@ -477,8 +477,13 @@ it("holds the overload once automatic retries are exhausted", async () => {
 
 const INTERRUPTED =
   "RPC_WS_INTERRUPTED: Native Host connection did not return a result. The operation outcome is unknown; reconcile its command receipt before retrying.";
-/** Active projection whose native commands fail as interrupted when `fail` says so. */
-async function startInterrupted(fail: (command: string, call: number) => boolean) {
+/** Settled unsent while the Host was down, for example during a Host update. */
+const UNDISPATCHED = "RPC_WS_DEADLINE: Host request deadline elapsed before dispatch";
+/** Active projection whose native commands fail with `message` when `fail` says so. */
+async function startInterrupted(
+  fail: (command: string, call: number) => boolean,
+  message = INTERRUPTED,
+) {
   vi.resetModules();
   vi.useFakeTimers();
   mocks.invoke.mockReset();
@@ -487,7 +492,7 @@ async function startInterrupted(fail: (command: string, call: number) => boolean
   mocks.invoke.mockImplementation((command: string) => {
     calls[command] = (calls[command] ?? 0) + 1;
     if (command === "control_privacy_projection_read") return Promise.resolve({ revision: 4 });
-    if (fail(command, calls[command])) return Promise.reject(new Error(INTERRUPTED));
+    if (fail(command, calls[command])) return Promise.reject(new Error(message));
     return Promise.resolve(
       command === "control_privacy_projection_transition" ? { revision: 5 } : undefined,
     );
@@ -542,6 +547,31 @@ it("refuses a change whose begin was interrupted and reconciles that begin in th
     );
     expect(begins).toHaveLength(2);
     expect(begins[1][1]).toEqual({ operationId: begins[0][1].operationId });
+    await expect(model.withRoomPrivacyMutation(() => "next")).resolves.toBe("next");
+  } finally {
+    model.deactivateRoomPrivacyProjection();
+    vi.useRealTimers();
+  }
+});
+
+it.each([
+  UNDISPATCHED,
+  "RPC_WS_UNAVAILABLE: Host connection is unavailable before dispatch",
+])("replays a begin that was settled unsent before dispatch instead of holding it: %s", async (
+  message,
+) => {
+  const model = await startInterrupted(
+    (command, call) => command === "control_privacy_projection_begin" && call === 1,
+    message,
+  );
+  try {
+    const refused = expect(model.withRoomPrivacyMutation(() => "unlocked")).rejects.toThrow(
+      message,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await refused;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
     await expect(model.withRoomPrivacyMutation(() => "next")).resolves.toBe("next");
   } finally {
     model.deactivateRoomPrivacyProjection();

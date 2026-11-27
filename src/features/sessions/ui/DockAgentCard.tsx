@@ -4,7 +4,8 @@ import { modelNameBesideIcon } from "../model/modelDisplayName";
 import type { HarnessId } from "../model/session";
 import { useSession } from "../model/sessionsStore";
 import type { SubagentStepStrip } from "../model/subagentStepStrip";
-import { SubagentRowContent } from "./SubagentRowContent";
+import { delegationParentOf } from "../model/delegatedAgents";
+import { AdvisorBadge, SubagentRowContent } from "./SubagentRowContent";
 import { SubagentRunStatus } from "./SubagentRunStatus";
 import { useSubagentRunIdentity } from "./useSubagentRunIdentity";
 
@@ -18,6 +19,7 @@ export function DockAgentCard({ agent, provider }: { agent: DockAgent; provider?
     child ?? { harness: provider, providerAccountId: agent.providerAccountId },
     child?.model,
   );
+  const advisor = !!child && delegationParentOf(child)?.kind === "advisor";
   return (
     <SubagentRowContent
       layout="dock"
@@ -27,9 +29,10 @@ export function DockAgentCard({ agent, provider }: { agent: DockAgent; provider?
       active={agent.status === "running"}
       failed={agent.status === "failed"}
       handle={agent.crewMember?.handle}
+      badge={advisor ? <AdvisorBadge /> : undefined}
       details={[
         agent.round && agent.round > 1 ? t("Round {p0}", { p0: agent.round }) : undefined,
-        agent.model ? modelNameBesideIcon(agent.model) : t("Subagent"),
+        agent.model ? modelNameBesideIcon(agent.model) : advisor ? undefined : t("Subagent"),
         // An account this device does not list (a remote Host's) still names the exact one used.
         account?.accountLabel ?? agent.providerAccountId,
         effort,

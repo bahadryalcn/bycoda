@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgentStep } from "../model/session";
+import type { AgentStep } from "./session";
 import { agentStepBlock, blockForStep } from "./agentStepBlocks";
 
 const tool = { id: "s1", kind: "tool", text: "Read file", status: "completed" } as AgentStep;

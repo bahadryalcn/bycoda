@@ -1,5 +1,6 @@
 import { AccountUsageMeters } from "../../../src/features/providers/ui/ProviderAccountUsage";
 import { SessionDiscussionFixture } from "./session-discussion-fixture";
+import { sessionInWorktree } from "../../../src/features/source-control/model/worktrees";
 import { ProjectBackgroundDialog } from "../../../src/features/projects/ui/ProjectBackgroundDialog";
 import { RailBackgroundControls } from "../../../src/features/projects/ui/RailBackgroundControls";
 import { saveProjectChatBackgroundSettings } from "../../../src/features/projects/model/projectChatBackground";
@@ -174,6 +175,22 @@ if (new URLSearchParams(location.search).has("controlDialogs")) {
 }
 
 const reviewFixture = new URLSearchParams(location.search).get("reviewFixture");
+const removedWorktreeFixture = new URLSearchParams(location.search).has("removedWorktree");
+if (removedWorktreeFixture) {
+  mockIPC(
+    (command) => {
+      if (command !== "git_worktrees") return null;
+      return {
+        defaultRoot: "/trees",
+        worktrees: [
+          { path: "/fixture", branch: "main", head: "abc123", isMain: true },
+          { path: "/trees/feature", branch: "feature", head: "abc123", isMain: false },
+        ],
+      };
+    },
+    { shouldMockEvents: true },
+  );
+}
 let checkpointReads = 0;
 const checkpointDirectories: string[] = [];
 if (reviewFixture !== null) {
@@ -289,13 +306,25 @@ const initial: Session = {
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
   ...(reviewFixture === "worktree-busy" ? { worktreeCwd: "/fixture-worktree" } : {}),
+  ...(removedWorktreeFixture ? { worktreeCwd: "/trees/deleted", worktreeRemoved: true } : {}),
   blocks: machineFixture
     ? []
     : historyFixture
       ? historyBlocks.slice(12)
       : new URLSearchParams(location.search).has("socialDiscussion")
         ? []
-        : baseBlocks,
+        : removedWorktreeFixture
+          ? [
+              ...baseBlocks,
+              { id: "failed-send", role: "user", text: "Continue with the report" },
+              {
+                id: "failed-checkout",
+                role: "system",
+                notice: "error",
+                text: "Sistem belirtilen dosyayı bulamıyor. (os error 2)",
+              },
+            ]
+          : baseBlocks,
   ...(historyFixture ? { historyLoading: true, storedHistory: { before: 12, revision: 1 } } : {}),
   rewindHistory: new URLSearchParams(location.search).has("rewindFixture")
     ? [
@@ -457,6 +486,9 @@ function Fixture() {
         }
       : undefined,
     onBranchChange: noop,
+    onWorktreeChange: removedWorktreeFixture
+      ? async (_id, tree) => setSession((value) => sessionInWorktree(value, tree))
+      : undefined,
     onWorkspaceModeChange: noop,
     onWorktreeBaseChange: noop,
     onModelChange: (_id, harness, model) => setSession((value) => ({ ...value, harness, model })),

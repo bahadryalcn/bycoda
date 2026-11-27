@@ -1,4 +1,4 @@
-import { statFiles } from "../../../platform/tauri/fs";
+import { listDir, statFiles } from "../../../platform/tauri/fs";
 import {
   isEqualOrInside,
   joinPath,
@@ -68,20 +68,149 @@ export function messageFileCandidates(path: string, cwd: string, text: string): 
   return candidates;
 }
 
+/** A session path ending in `/` names a folder the session listed. */
+function sessionFolder(path: string): string {
+  return path.endsWith("/") ? path.replace(/\/+$/, "") : parentPath(path);
+}
+
+function projectRelative(path: string, cwd: string): string | undefined {
+  if (!isEqualOrInside(path, cwd) || pathKey(path) === pathKey(cwd)) return undefined;
+  return slash(path).slice(slash(cwd).replace(/\/+$/, "").length + 1);
+}
+
+/**
+ * The same project-relative reference beside files the session's tools
+ * touched. An agent working in another folder names its files bare
+ * (`read.rs`), and the project root is the wrong place to look for them.
+ * Files with the same relative path come first, then their folders.
+ */
+export function sessionFileCandidates(
+  path: string,
+  cwd: string,
+  sessionPaths: readonly string[],
+): string[] {
+  if (sessionPaths.length === 0) return [];
+  const relative = projectRelative(path, cwd);
+  if (!relative) return [];
+  // Compare in the file's own key space so Windows paths match case-insensitively.
+  const endsWithRelative = (file: string) => {
+    const normalized = slash(file);
+    const base = normalized.slice(0, -(relative.length + 1));
+    return (
+      normalized.length > relative.length + 1 &&
+      normalized[base.length] === "/" &&
+      pathKey(joinPath(base, relative)) === pathKey(normalized)
+    );
+  };
+  const seen = new Set([pathKey(path)]);
+  const exact: string[] = [];
+  const nearby: string[] = [];
+  const add = (list: string[], candidate: string) => {
+    const key = pathKey(candidate);
+    if (seen.has(key)) return;
+    seen.add(key);
+    list.push(candidate);
+  };
+  for (const file of sessionPaths) {
+    if (!file.endsWith("/") && endsWithRelative(file)) add(exact, file);
+  }
+  for (const file of sessionPaths) {
+    if (nearby.length >= MAX_MESSAGE_FOLDERS) break;
+    add(nearby, joinPath(sessionFolder(file), relative));
+  }
+  return [...exact, ...nearby];
+}
+
+const SESSION_SEARCH_MAX_FOLDERS = 4;
+const SESSION_SEARCH_MAX_CHILDREN = 40;
+/** Folders too large to list usefully, and never where an agent names sources. */
+const SESSION_SEARCH_SKIPPED = new Set([
+  ".git",
+  "node_modules",
+  ".pnpm-store",
+  ".venv",
+  "venv",
+  "target",
+]);
+
+/** A drive, home or other shallow folder holds unrelated projects. */
+function tooBroadToSearch(folder: string, cwd: string): boolean {
+  const local = slash(folder).replace(/^remote:\/\/[^/]+\//, "");
+  return local.split("/").filter(Boolean).length < 3 || isEqualOrInside(cwd, folder);
+}
+
+/**
+ * The reference one level below the folders the session worked in outside
+ * the project, then below their parents: a session that touched
+ * `bykit/temp/read.patch` finds `bykit/src/read.rs`. Inside the project the
+ * file index already searches everywhere.
+ */
+async function sessionNeighborCandidates(
+  relative: string,
+  cwd: string,
+  sessionPaths: readonly string[],
+): Promise<string[]> {
+  const folders = new Map<string, string>();
+  for (const file of sessionPaths) {
+    if (folders.size >= SESSION_SEARCH_MAX_FOLDERS) break;
+    const folder = sessionFolder(file);
+    if (!isEqualOrInside(folder, cwd) && !tooBroadToSearch(folder, cwd))
+      folders.set(pathKey(folder), folder);
+  }
+  const roots = new Map<string, string>();
+  for (const folder of folders.values()) {
+    roots.set(pathKey(folder), folder);
+    const parent = parentPath(folder);
+    if (pathKey(parent) !== pathKey(folder) && !tooBroadToSearch(parent, cwd))
+      roots.set(pathKey(parent), parent);
+  }
+  const listings = await Promise.all(
+    [...roots.values()].map((root) => listDir(root).catch(() => [])),
+  );
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  for (const entries of listings) {
+    let children = 0;
+    for (const entry of entries) {
+      if (!entry.isDir || SESSION_SEARCH_SKIPPED.has(entry.name)) continue;
+      if (children++ >= SESSION_SEARCH_MAX_CHILDREN) break;
+      const candidate = joinPath(entry.path, relative);
+      const key = pathKey(candidate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(candidate);
+    }
+  }
+  return candidates;
+}
+
+function firstExisting(infos: { path: string; isDir?: boolean; mtimeMs?: number | null }[]) {
+  return infos.find((info) => info.isDir || info.mtimeMs != null)?.path;
+}
+
 /**
  * Resolves a reference that does not exist at the project root against the
- * folders the message names. This works for ignored folders, which the
- * project file index leaves out.
+ * folders the message names, then beside files the session touched, then one
+ * folder further out. This works for ignored folders, which the project file
+ * index leaves out.
  */
 export async function resolveMessageFileReference(
   path: string,
   cwd: string | undefined,
   text: string,
+  sessionPaths: readonly string[] = [],
 ): Promise<string> {
   if (!cwd) return path;
-  const candidates = messageFileCandidates(path, cwd, text);
+  const candidates = [
+    ...messageFileCandidates(path, cwd, text),
+    ...sessionFileCandidates(path, cwd, sessionPaths),
+  ];
   if (candidates.length === 0) return path;
-  const infos = await statFiles([path, ...candidates]).catch(() => []);
-  const existing = infos.find((info) => info.isDir || info.mtimeMs != null);
-  return existing?.path ?? path;
+  const existing = firstExisting(await statFiles([path, ...candidates]).catch(() => []));
+  if (existing) return existing;
+  const relative = projectRelative(path, cwd);
+  if (!relative || sessionPaths.length === 0) return path;
+  const neighbors = await sessionNeighborCandidates(relative, cwd, sessionPaths);
+  if (neighbors.length === 0) return path;
+  return firstExisting(await statFiles(neighbors).catch(() => [])) ?? path;
 }
