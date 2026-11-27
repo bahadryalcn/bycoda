@@ -11,25 +11,25 @@ import { closeSync, existsSync, openSync } from "node:fs";
  * A value that is not 64 hex characters fails packaging loudly.
  */
 export const BYKIT_PIN = Object.freeze({
-  version: "0.2.1",
+  version: "0.2.2",
   repository: "https://github.com/bahadryalcn/bykit",
   // Host target -> release target triple and the sha256 of the release archive.
   targets: {
     "darwin-arm64": {
       triple: "aarch64-apple-darwin",
-      sha256: "934b2f0e45d157dc000d8f62f19c42f978cb2ae7a90503a17a57df315fec246e",
+      sha256: "90e87888b2ecd563a59fcb0c5983f414bb362286244ba481df6964adba9dfc90",
     },
     "darwin-x64": {
       triple: "x86_64-apple-darwin",
-      sha256: "d8a9a32a738eaea9bf3d810cd1515c42bae6027864cead3fb41cf298f275a796",
+      sha256: "586baac6f85a169ef144cfb5086b6a3e1f8cb7f5b31acbee117eae2a71a7cbde",
     },
     "linux-x64": {
       triple: "x86_64-unknown-linux-gnu",
-      sha256: "7f4ab3dcfc040bdd465494e2372daa5928515490d29fc3db03a7a821d675b0e4",
+      sha256: "e208d2f81ec4bd36e22b5efde785255aea3300298fc72e4ee8648744afc1528b",
     },
     "win32-x64": {
       triple: "x86_64-pc-windows-msvc",
-      sha256: "c7f79c8bd19a630cc1f1fa1c2877f6d7df0cf403afbb5ba3866d538fddba3769",
+      sha256: "cc44aa6bfd021f97b1b4cf07cd2b7b0fcfb755bc283179d6f0bbb2e36bdd5b23",
     },
   },
 });

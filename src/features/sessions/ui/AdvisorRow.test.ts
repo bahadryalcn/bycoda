@@ -121,3 +121,10 @@ it("shows failure details and keeps advice collapsible", () => {
   act(() => container.querySelector("summary")!.click());
   expect(details.open).toBe(false);
 });
+
+it("keeps an encrypted advisor result a plain row with nothing to open", () => {
+  act(() => root.render(createElement(AdvisorRow, { block: advisor("completed") })));
+  expect(container.textContent).toContain("Advisor");
+  expect(container.querySelector("details")).toBeNull();
+  expect(container.querySelector("summary")).toBeNull();
+});

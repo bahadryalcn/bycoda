@@ -1,11 +1,13 @@
 import { AccountApiError, ConnectInfoUpdate, type AccountClient } from "@bycoda/account-contracts";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 
-/** What the Host reports in `environment.describe` that phones need. */
+/** What the Host reports in `environment.describe` that signed-in phones and computers need. */
 export type PhoneConnectHost = {
   environmentId: string;
   name: string;
   mobileRoutes?: { endpoint: string; lanKey?: string; public?: true }[];
+  /** The Host's public https tunnel origin; other computers pair and reconnect over it. */
+  tunnelRoute?: string;
 };
 
 /** The Host is re-read this often; a change is published at the next check. */
@@ -27,7 +29,18 @@ export function buildConnectInfo(host: PhoneConnectHost): ConnectInfoUpdate | nu
       return true;
     })
     .sort((left, right) => routePriority(left) - routePriority(right));
-  const routes = candidates.slice(0, 4);
+  // The Host tunnel is the only route another computer can pair over, so it keeps a slot even
+  // when phones are not allowed on it (then it is absent from `mobileRoutes`).
+  // An entry phones may use too keeps its flags; one the contract rejects is dropped like the rest.
+  const unflagged = { endpoint: host.tunnelRoute ?? "" };
+  const tunnel = !host.tunnelRoute?.startsWith("https://")
+    ? undefined
+    : (candidates.find((route) => route.endpoint === host.tunnelRoute) ??
+      (ConnectInfoUpdate.shape.routes.element.safeParse(unflagged).success
+        ? unflagged
+        : undefined));
+  const routes = candidates.filter((route) => route !== tunnel).slice(0, tunnel ? 3 : 4);
+  if (tunnel) routes.push(tunnel);
   const hostName = truncateGraphemes(host.name.trim(), 80, "");
   const parsed = ConnectInfoUpdate.safeParse({
     environmentId: host.environmentId,

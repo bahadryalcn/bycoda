@@ -15,6 +15,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
+import { isDivergedPull } from "../model/commitActions";
 
 export function GitLoading({ text }: { text: string }) {
   useLocale();
@@ -63,6 +64,8 @@ type GitFeedbackProps = {
   onRetry?: () => void;
   onDismiss?: () => void;
   cwd?: string;
+  /** A different way to finish the failed action, offered as the dialog's primary action. */
+  alternate?: { label: string; onClick: () => void };
 };
 
 export function GitFeedback(props: GitFeedbackProps) {
@@ -84,6 +87,7 @@ function GitFeedbackContent({
   onRetry,
   onDismiss,
   cwd,
+  alternate,
 }: GitFeedbackProps) {
   useLocale();
   // A machine connection failure is explained once by the central connection notice.
@@ -103,11 +107,7 @@ function GitFeedbackContent({
   const context = [title, cwd, detail].filter(Boolean).join("\n\n");
   const branchInWorktree =
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
-  // Git localizes its hints, but the config keys it names stay in English in every language.
-  const divergedPull =
-    kind === "error" &&
-    !!detail &&
-    /advice\.diverging|pull\.rebase|divergent branches/i.test(detail);
+  const divergedPull = kind === "error" && isDivergedPull(detail);
   const message = (
     <>
       {title}
@@ -172,7 +172,7 @@ function GitFeedbackContent({
                 {saved ? t("Saved") : t("Add to notes")}
               </Button>
               <Button
-                variant="primary"
+                variant={alternate ? "ghost" : "primary"}
                 onClick={() => {
                   requestAddToChat(context, "quote");
                   setOpen(false);
@@ -180,6 +180,17 @@ function GitFeedbackContent({
               >
                 {t("Add to chat")}
               </Button>
+              {alternate ? (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setOpen(false);
+                    alternate.onClick();
+                  }}
+                >
+                  {alternate.label}
+                </Button>
+              ) : null}
             </ModalActions>
           }
         >
@@ -192,7 +203,7 @@ function GitFeedbackContent({
             {divergedPull ? (
               <Text as="p" size="inherit" tone="primary">
                 {t(
-                  "Your branch and its remote both have new commits, so Git can’t fast-forward. Use Pull (Rebase) in the Git actions menu to replay your commits on top, or merge the remote branch.",
+                  "Your branch and its remote both have new commits, so Git can’t fast-forward. Pull (Rebase) replays your commits on top of the remote; merging keeps both histories.",
                 )}
               </Text>
             ) : null}

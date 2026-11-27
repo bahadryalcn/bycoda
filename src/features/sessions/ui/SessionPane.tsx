@@ -69,6 +69,7 @@ import { orchestrationLocksUndo, useSessionReviewEligibility } from "./SessionRe
 import { LatestTurnAccessory } from "./LatestTurnAccessory";
 import { isProjectlessCwd } from "../model/recentSessions";
 import { usageLimitFailureId, type UsageLimitRecovery } from "./SessionErrorNotice";
+import { worktreeRecoveryErrorId } from "../model/sessionIssue";
 import { SessionProviderGoal, type SessionProviderGoalCommand } from "./SessionProviderGoal";
 import { PromptOutline } from "./PromptOutline";
 import {
@@ -1200,6 +1201,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerWorktreeChange = useStableCallback(
     onWorktreeChangeProp ? (tree: Worktree) => onWorktreeChange!(session.id, tree) : undefined,
   );
+  const recoveryErrorId =
+    session.worktreeRemoved && onWorktreeChangeProp && looksLikeProject(session.cwd)
+      ? worktreeRecoveryErrorId(session.blocks)
+      : undefined;
   const composerWorkspaceModeChange = useStableCallback((mode: WorkspaceMode, base?: string) =>
     onWorkspaceModeChange(session.id, mode, base),
   );
@@ -2121,8 +2126,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       sessionId={session.id}
                       delegatedRunOwner={session.id}
                       blocks={
-                        projectedDraft
-                          ? liveBlocks.filter((block) => block.id !== draftBlock?.id)
+                        projectedDraft || recoveryErrorId
+                          ? liveBlocks.filter(
+                              (block) =>
+                                block.id !== recoveryErrorId &&
+                                (!projectedDraft || block.id !== draftBlock?.id),
+                            )
                           : liveBlocks
                       }
                       performanceTraceId={performanceTraceId}

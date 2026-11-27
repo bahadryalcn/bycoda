@@ -58,7 +58,7 @@ import {
   type HostSnapshotManifest,
 } from "./storage/snapshots";
 import { normalizeProjectPath } from "./desktop/project-path";
-import type { DeviceProofBinding } from "./security/device-proof";
+import type { DeviceProofBinding, DeviceReplacement } from "./security/device-proof";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { StoreDatabase } from "./store-db";
 import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
@@ -260,6 +260,8 @@ export type DeviceAuthority = {
   localDesktop: boolean;
   /** The client key this credential is bound to; absent for devices paired before proofs. */
   binding?: DeviceProofBinding;
+  /** Its first proof signed after the client saved it retires the earlier credential. */
+  replacementPending?: true;
 };
 
 export type HostAuthorityChange = Readonly<{
@@ -794,6 +796,15 @@ export class HostStore {
       await this.db.exec("ALTER TABLE devices ADD COLUMN proof_jkt TEXT");
     if (!deviceColumns.some((column) => column.name === "proof_x"))
       await this.db.exec("ALTER TABLE devices ADD COLUMN proof_x TEXT");
+    // Key of the earlier credential this one replaces once it is in use.
+    if (!deviceColumns.some((column) => column.name === "replaces_jkt"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN replaces_jkt TEXT");
+    // The phone installation a credential was issued to; see `issueDevice`.
+    if (!deviceColumns.some((column) => column.name === "install_id"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN install_id TEXT");
+    // A revoke and its replacement sweep are separate statements; a crash between them must not
+    // leave a hidden credential valid, so every start sweeps again.
+    await this.dropOrphanedReplacements();
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -3391,13 +3402,51 @@ export class HostStore {
     kind?: "phone" | "desktop",
     localDesktop = false,
     proofKey?: DeviceProofBinding,
+    /**
+     * Ties this credential to an earlier one of the same client, which
+     * `completeDeviceReplacement` retires once the client uses this one after saving it. Nothing
+     * is retired here, so a client that never receives or never saves this one keeps the earlier.
+     *
+     * `jkt` is proof: the caller verified a signature by the earlier credential's key. `installId`
+     * is only an identifier, used when the keys are gone (Android deletes them with the app). It
+     * is accepted without key proof because of what it takes and what it can do. The redemption
+     * itself needs the one-time pairing code the owner just approved, which already grants a full
+     * credential; the install ID adds nothing to that. It can only retire phone credentials that
+     * were issued with the same ID, never a desktop or the Host's own credential, and only after
+     * the new credential is in use. The ID is a hash of the Host's environment ID with a value
+     * Android scopes to the app's signing key, the device and the user, so another app, another
+     * device or another Host cannot derive it. The worst case, a pairing-code holder who also
+     * learned another phone's ID, makes that phone pair again; the owner sees and can revoke the
+     * credential that did it.
+     */
+    replacement?: DeviceReplacement,
   ): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
+      const installId = (kind === "phone" && proofKey && replacement?.installId) || null;
+      // The earlier credential found by key proof, else the newest one of the same installation.
+      const earlier =
+        (proofKey && replacement?.jkt && replacement.jkt !== proofKey.jkt
+          ? await this.db
+              .prepare(
+                "SELECT proof_jkt, replaces_jkt FROM devices WHERE proof_jkt=? AND kind IS ? AND management<>2 LIMIT 1",
+              )
+              .get(replacement.jkt, kind ?? null)
+          : undefined) ??
+        (installId
+          ? await this.db
+              .prepare(
+                "SELECT proof_jkt, replaces_jkt FROM devices WHERE install_id=? AND kind='phone' AND management<>2 AND proof_jkt IS NOT NULL AND proof_jkt<>? ORDER BY paired_at DESC LIMIT 1",
+              )
+              .get(installId, proofKey!.jkt)
+          : undefined);
+      // An earlier credential that is itself an unconfirmed replacement passes its target on, so
+      // completing this one retires the whole chain.
+      const replacesJkt = earlier ? (earlier.replaces_jkt ?? earlier.proof_jkt) : null;
       await this.db
         .prepare(
-          "INSERT INTO devices (id, name, hash, kind, paired_at, management, proof_jkt, proof_x) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO devices (id, name, hash, kind, paired_at, management, proof_jkt, proof_x, replaces_jkt, install_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .run(
           id,
@@ -3408,6 +3457,8 @@ export class HostStore {
           localDesktop ? 2 : 0,
           proofKey?.jkt ?? null,
           proofKey?.x ?? null,
+          typeof replacesJkt === "string" ? replacesJkt : null,
+          installId,
         );
       return { id, token };
     });
@@ -3415,10 +3466,61 @@ export class HostStore {
   async revokeDevice(id: string): Promise<boolean> {
     return this.db.storeScope(async () => {
       this.clearAuthCache();
-      return Number((await this.db.prepare("DELETE FROM devices WHERE id=?").run(id)).changes) > 0;
+      const revoked =
+        Number((await this.db.prepare("DELETE FROM devices WHERE id=?").run(id)).changes) > 0;
+      await this.dropOrphanedReplacements();
+      return revoked;
     });
   }
-  /** Owner-facing metadata only: device token hashes must never leave the store. */
+  /**
+   * An unconfirmed replacement is not listed (`pairedDevices`): the credential it replaces stands
+   * for that client. Revoking that credential therefore revokes its unconfirmed replacements too,
+   * or they would stay valid where the owner cannot see them.
+   */
+  private async dropOrphanedReplacements(): Promise<void> {
+    await this.db
+      .prepare(
+        "DELETE FROM devices WHERE replaces_jkt IS NOT NULL AND replaces_jkt NOT IN (SELECT proof_jkt FROM devices WHERE proof_jkt IS NOT NULL)",
+      )
+      .run();
+  }
+  /**
+   * Finishes a re-pairing once the new credential is in use: the caller has just verified a
+   * device proof for `token` that the client signed after saving the credential. Retires the same
+   * client's earlier credential (the one bound to the key recorded at issuance), its replacements
+   * that never came into use and every other phone credential of the same installation, in one
+   * transaction. Only rows of the same kind match, and never the Host's own desktop credential.
+   * Until this runs the earlier credential keeps working, so a failed pairing or a failed save
+   * leaves the client connected.
+   */
+  async completeDeviceReplacement(token: string): Promise<boolean> {
+    return this.transaction(async () => {
+      const row = await this.db
+        .prepare("SELECT id, kind, replaces_jkt, install_id FROM devices WHERE hash=?")
+        .get(this.hash(token));
+      if (typeof row?.replaces_jkt !== "string") return false;
+      this.clearAuthCache();
+      await this.db
+        .prepare(
+          "DELETE FROM devices WHERE (proof_jkt=? OR replaces_jkt=? OR (kind='phone' AND install_id=?)) AND kind IS ? AND id<>? AND management<>2",
+        )
+        .run(
+          row.replaces_jkt,
+          row.replaces_jkt,
+          typeof row.install_id === "string" ? row.install_id : null,
+          row.kind ?? null,
+          String(row.id),
+        );
+      await this.db.prepare("UPDATE devices SET replaces_jkt=NULL WHERE id=?").run(String(row.id));
+      return true;
+    });
+  }
+  /**
+   * Owner-facing metadata only: device token hashes must never leave the store. A replacement
+   * its client has not confirmed (`replaces_jkt` still set) is left out, so a phone that pairs
+   * again is listed once: by its earlier credential until the new one takes over. The caller's
+   * own row is always listed.
+   */
   async pairedDevices(currentToken: string): Promise<{
     devices: { id: string; name: string; isCurrent: boolean }[];
     devicesTruncated: boolean;
@@ -3429,9 +3531,9 @@ export class HostStore {
         throw new Error("Device authorization was revoked");
       const rows = await this.db
         .prepare(
-          "SELECT id, name, hash=? AS is_current FROM devices ORDER BY is_current DESC, id LIMIT 257",
+          "SELECT id, name, hash=? AS is_current FROM devices WHERE replaces_jkt IS NULL OR hash=? ORDER BY is_current DESC, id LIMIT 257",
         )
-        .all(hash);
+        .all(hash, hash);
       return {
         devices: rows.slice(0, 256).map((row) => ({
           id: String(row.id),
@@ -3537,6 +3639,7 @@ export class HostStore {
             `DELETE FROM devices ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
           )
           .run(id, hash, hash);
+        await this.dropOrphanedReplacements();
         return Number(result.changes) > 0;
       }
       const result = await this.db
@@ -3551,11 +3654,12 @@ export class HostStore {
   async revokeToken(token: string): Promise<boolean> {
     return this.db.storeScope(async () => {
       this.clearAuthCache();
-      return (
+      const revoked =
         Number(
           (await this.db.prepare("DELETE FROM devices WHERE hash=?").run(this.hash(token))).changes,
-        ) > 0
-      );
+        ) > 0;
+      await this.dropOrphanedReplacements();
+      return revoked;
     });
   }
   /** Positive credentials are cached for 1.5s. Local authorization changes
@@ -3631,7 +3735,9 @@ export class HostStore {
     // A read on every request: it must not take a writer admission.
     const row = await this.db.readScope(() =>
       this.db
-        .prepare("SELECT kind, management, proof_jkt, proof_x FROM devices WHERE hash=?")
+        .prepare(
+          "SELECT kind, management, proof_jkt, proof_x, replaces_jkt FROM devices WHERE hash=?",
+        )
         .get(hash),
     );
     if (!row) return undefined;
@@ -3641,6 +3747,7 @@ export class HostStore {
       ...(typeof row.proof_jkt === "string" && typeof row.proof_x === "string"
         ? { binding: { jkt: row.proof_jkt, x: row.proof_x } }
         : {}),
+      ...(typeof row.replaces_jkt === "string" ? { replacementPending: true as const } : {}),
     };
   }
   /**

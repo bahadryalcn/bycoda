@@ -551,8 +551,16 @@ export function createManagedWorkspaceRuntime(
               committedOnly: true,
             }))
               repositories.add(sibling.repository);
-          for (const repository of repositories)
-            await deleteStaleFetchRefs(repository).catch(() => undefined);
+          // Repositories are independent, so a few run at once (the Git pool's own width) instead
+          // of one after another; few enough to stay below the pool's queue limit. This stays
+          // before `listen`: it deletes every landing ref, including one a live fetch would own.
+          const pending = Array.from(repositories);
+          await Promise.all(
+            Array.from({ length: Math.min(6, pending.length) }, async () => {
+              for (let repository = pending.pop(); repository; repository = pending.pop())
+                await deleteStaleFetchRefs(repository).catch(() => undefined);
+            }),
+          );
         });
       // Before the operation loop: a crash mid-rename must settle before anything reads branches.
       await step("branch-renames", () => registry.recoverBranchRenames());

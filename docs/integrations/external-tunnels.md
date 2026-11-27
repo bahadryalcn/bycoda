@@ -6,9 +6,9 @@ the computer, provider and target. A project action resolves that project's
 existing host connection; it does not fall back to this computer when a remote
 host is unavailable.
 
-**Dev server sharing** forwards an HTTP or HTTPS loopback service on the selected
+**Web app** forwards an HTTP or HTTPS loopback service on the selected
 computer. Enter its URL or port, for example `http://127.0.0.1:5173` or `5173`.
-The service's own access controls apply. **bycoda host access** forwards the
+The service's own access controls apply. **Remote access** forwards the
 selected host's actual listening port. Existing device authentication, environment
 identity validation, origin restrictions, revocation and pairing remain required.
 The host port cannot be shared under the dev-server target.
@@ -58,7 +58,7 @@ retirement blocks replacement. Stopping the Host tunnel or selecting **Stop
 automatic Host access** disables automatic restart. Foreign/corrupt state is
 preserved and reported as unavailable.
 
-While **Let my signed-in phones find this computer** is on and the desktop is signed in, the
+While **Let my signed-in devices find this computer** is on and the desktop is signed in, the
 publisher checks Host routes every five seconds. Routes are ordered LAN, Tailscale,
 then the live tunnel, capped at four with one slot reserved for the tunnel.
 Stopping a tunnel removes its URL at the next successful check. Only endpoints

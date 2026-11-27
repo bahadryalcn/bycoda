@@ -77,7 +77,7 @@ function CandidateRow({
           !plan && !pair
             ? machine.sources.includes("account")
               ? t(
-                  "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
+                  "Computers connect to each other over HTTPS. On that computer, turn on Let my signed-in devices find this computer under Devices, then choose Create link under Sharing and share Remote access. Or add it by its SSH address.",
                 )
               : t("This computer has no SSH address to set it up from here yet.")
             : busy

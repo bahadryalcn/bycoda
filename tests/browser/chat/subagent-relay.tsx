@@ -180,6 +180,22 @@ function WorkflowFixture() {
   );
 }
 
+/** An ask the Host refused before any child session existed. */
+function unstarted(id: string, name = "Subagent"): Block {
+  return {
+    id,
+    role: "tool",
+    text: name,
+    tool: {
+      kind: "subagent",
+      title: name,
+      status: "failed",
+      detail: "Choose an available worktree of this project",
+    },
+    agentRun: { name, steps: [], unstarted: true },
+  };
+}
+
 function Fixture() {
   const params = new URLSearchParams(location.search);
   const statusColors = params.has("status-colors");
@@ -232,7 +248,23 @@ function Fixture() {
       className="relative flex h-dvh min-w-0 flex-col bg-background-base text-content"
       data-session-drop
     >
-      {params.has("inline-status") ? (
+      {params.has("start-failure") ? (
+        <div className="flex flex-col gap-4 p-4" data-transcript-reply>
+          <SubagentStack blocks={[unstarted("u1"), unstarted("u2")]} />
+          <SubagentStack
+            blocks={[
+              { ...agent, id: "done", tool: { ...agent.tool!, status: "completed" } },
+              unstarted("u3", "Advisor"),
+              {
+                ...agent,
+                id: "failed",
+                agentRun: { name: "Explorer", steps: [] },
+                tool: { ...agent.tool!, status: "failed", detail: "Model unavailable" },
+              },
+            ]}
+          />
+        </div>
+      ) : params.has("inline-status") ? (
         // Production renders these rows inside the reply wrapper that defines the quiet chrome inks.
         <div className="p-4" data-transcript-reply>
           <SubagentStack blocks={statusAgents} live />

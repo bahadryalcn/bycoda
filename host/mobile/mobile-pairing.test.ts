@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deviceProofKeyFromSeed } from "../../src/integrations/device-proof";
+import {
+  deviceInstallId,
+  deviceProofKeyFromSeed,
+  signDeviceReplacement,
+} from "../../src/integrations/device-proof";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { hostProof } from "./host-proof";
 import {
@@ -114,6 +118,95 @@ it.each(["desktop", "phone", "invalid", undefined])(
     );
   },
 );
+
+it("retires the earlier credential only for a client that proves it holds the earlier key", async () => {
+  const owner = secret();
+  // The store only records the key to retire; nothing is revoked at redemption.
+  const replaced: (string | undefined)[] = [];
+  const installs: (string | undefined)[] = [];
+  const manager = new MobilePairing({
+    environmentId: "test-environment",
+    hasDeviceHash: () => true,
+    canIssuePairing: () => true,
+    issueDevice: (_name, _kind, _proofKey, replacement) => {
+      replaced.push(replacement?.jkt);
+      installs.push(replacement?.installId);
+      return { id: randomUUID(), token: secret() };
+    },
+  });
+  managers.push(manager);
+  const previousSeed = new Uint8Array(32).fill(9);
+  const previous = deviceProofKeyFromSeed(previousSeed);
+  const pair = async (replaces: (claimId: string) => unknown, installId?: unknown) => {
+    const ticket = await manager.create(owner);
+    const claimId = secret();
+    await manager.redeem({
+      version: 1,
+      environmentId: ticket.environmentId,
+      ticket: ticket.ticket,
+      claimId,
+      deviceName: "Bycoda phone",
+      proofKey: PROOF_KEY.publicJwk,
+      replaces: replaces(claimId),
+      installId,
+    });
+  };
+  const sign = (claimId: string, environmentId = "test-environment") =>
+    signDeviceReplacement(previousSeed, {
+      claimId,
+      proofKey: PROOF_KEY.publicJwk,
+      environmentId,
+    });
+
+  // A second phone with the same name, a bare public key, a signature made for another claim,
+  // Host or new key, and a signature by a different key all leave every existing credential alone.
+  await pair(() => undefined);
+  await pair(() => ({ proofKey: previous.publicJwk }));
+  await pair(() => sign(secret()));
+  await pair((claimId) => sign(claimId, "another-environment"));
+  await pair((claimId) =>
+    signDeviceReplacement(previousSeed, {
+      claimId,
+      proofKey: previous.publicJwk,
+      environmentId: "test-environment",
+    }),
+  );
+  await pair((claimId) => ({ ...sign(claimId), proofKey: PROOF_KEY.publicJwk }));
+  expect(replaced).toEqual(Array(6).fill(undefined));
+
+  await pair((claimId) => sign(claimId));
+  expect(replaced[6]).toBe(previous.jkt);
+  expect(installs).toEqual(Array(7).fill(undefined));
+
+  // An install ID is passed on only in its exact form (two malformed ones here).
+  const installId = deviceInstallId("android-id", "test-environment");
+  await pair(() => undefined, installId);
+  await pair(() => undefined, `${installId}x`);
+  await pair(() => undefined, 7);
+  expect(installs.slice(7)).toEqual([installId, undefined, undefined]);
+});
+
+it("ignores an install ID sent by a computer", async () => {
+  const issueDevice = vi.fn(() => ({ id: randomUUID(), token: secret() }));
+  const manager = new MobilePairing({
+    environmentId: "test-environment",
+    hasDeviceHash: () => true,
+    canIssuePairing: () => true,
+    issueDevice,
+  });
+  managers.push(manager);
+  const ticket = await manager.create(secret(), { kind: "desktop" });
+  await manager.redeem({
+    version: 1,
+    environmentId: ticket.environmentId,
+    ticket: ticket.ticket,
+    claimId: secret(),
+    deviceName: "Laptop",
+    proofKey: PROOF_KEY.publicJwk,
+    installId: deviceInstallId("android-id", "test-environment"),
+  });
+  expect(issueDevice).toHaveBeenCalledExactlyOnceWith("Laptop", "desktop", PROOF_BINDING);
+});
 
 it("serializes asynchronous claims and never replays an issuance with an uncertain outcome", async () => {
   const owner = secret();

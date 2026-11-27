@@ -68,6 +68,12 @@ import {
   detachSessionWorktree,
   worktreeDeletedExternally,
 } from "../../../../features/source-control/model/worktrees";
+import {
+  isMissingPathError,
+  normalizeWorktreeRecoveryError,
+  REMOVED_WORKTREE_ERROR,
+} from "../../../../features/sessions/model/sessionIssue";
+import { withTimeout } from "../../../../shared/lib/withTimeout";
 import { isRemoteProjectPath } from "../../../../features/projects/model/recents";
 import { beginNativeManagedTurn } from "../../../../features/workspaces/model/nativeManagedTurn";
 import { t } from "../../../../shared/i18n";
@@ -117,6 +123,7 @@ export async function runSubmitDispatch(
   } = events;
   let finishManagedTurn: ((interrupted: boolean) => Promise<void>) | undefined;
   let checkpointSettled: Promise<void> | undefined;
+  let dispatchFailure: string | undefined;
   try {
     const latest = sessionsRef.current.find((session) => session.id === sessionId) ?? current;
     // Both Host policy lookups are memoized briefly and independent: start them
@@ -423,14 +430,30 @@ export async function runSubmitDispatch(
     turn.controlOutcome.error = message;
     turn.replyEndedAt ??= Date.now();
     retiringTurns.current.set(sessionId, gen);
-    if (!turn.providerFailureSeen) {
-      enqueueHarnessEvent(sessionId, {
-        type: "session.error",
-        message,
-      });
-    }
+    if (!turn.providerFailureSeen) dispatchFailure = message;
     turn.providerFailureSeen = true;
   } finally {
+    const worktreePath = current.worktreeCwd;
+    // An inaccessible checkout must never be mistaken for a deleted one.
+    const worktreeRemoved =
+      turnGen.current.get(sessionId) === gen &&
+      turn.providerFailureSeen &&
+      !!worktreePath &&
+      !isRemoteProjectPath(current.cwd) &&
+      (await withTimeout(
+        worktreeDeletedExternally(worktreePath),
+        2000,
+        "Worktree availability",
+      ).catch(() => false));
+    if (dispatchFailure !== undefined && turnGen.current.get(sessionId) === gen) {
+      enqueueHarnessEvent(sessionId, {
+        type: "session.error",
+        message:
+          worktreeRemoved && isMissingPathError(dispatchFailure)
+            ? REMOVED_WORKTREE_ERROR
+            : dispatchFailure,
+      });
+    }
     flushHarnessEvents();
     turn.controlOutcome = {
       status:
@@ -495,11 +518,24 @@ export async function runSubmitDispatch(
           prev.map((s) => {
             if (s.id !== sessionId || turnGen.current.get(sessionId) !== gen) return s;
             // The reply's own end time: cleanup and persistence are not part of the run.
-            const stopped = stopStreaming(
+            let stopped = stopStreaming(
               s,
               turn.replyEndedAt ?? Date.now(),
               turn.providerFailureSeen,
             );
+            if (
+              worktreeRemoved &&
+              worktreePath &&
+              s.worktreeCwd === worktreePath &&
+              !s.worktreeRemoved &&
+              !ctx.refs.switchingWorktrees.current.has(sessionId)
+            ) {
+              stopped = detachSessionWorktree(
+                { ...stopped, blocks: normalizeWorktreeRecoveryError(stopped.blocks) },
+                stopped.cwd,
+                worktreePath,
+              );
+            }
             const providerFailed =
               turn.providerFailureSeen || isProviderFailureText(lastAssistantTextInTurn(stopped));
             // A failed turn holds the queue for the owner; the next row would
@@ -552,30 +588,6 @@ export async function runSubmitDispatch(
       console.warn("Workspace checkpoint flush failed", error),
     );
     if (finalizedCurrentTurn) {
-      const worktreePath = current.worktreeCwd;
-      if (turn.providerFailureSeen && worktreePath && !isRemoteProjectPath(current.cwd)) {
-        void worktreeDeletedExternally(worktreePath)
-          .then((deleted) => {
-            if (
-              !deleted ||
-              ctx.refs.switchingWorktrees.current.has(sessionId) ||
-              turnGen.current.get(sessionId) !== gen
-            )
-              return;
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === sessionId &&
-                !session.busy &&
-                !session.worktreeRemoved &&
-                session.worktreeCwd === worktreePath
-                  ? detachSessionWorktree(session, session.cwd, worktreePath)
-                  : session,
-              ),
-            );
-          })
-          // An inaccessible checkout must never be mistaken for a deleted one.
-          .catch(() => {});
-      }
       // Next tick: the flush above has rendered by then, so the banner
       // quotes the reply's final text rather than the previous batch.
       deferWorkspaceWork(() => {

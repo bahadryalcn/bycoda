@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { appendReadyHandoff, buildDeterministicHandoff } from "../../sessions/public/handoff";
 import { newSession, sessionWorkCwd } from "../../sessions/public/session";
 import { type Session } from "../../sessions";
+import { normalizeWorktreeRecoveryError } from "../../sessions/public/sessionIssue";
 import {
   invokeWorkspace,
   notifyGitChanged,
@@ -230,8 +231,6 @@ export function worktreeSessionIds(
   return [...ids];
 }
 
-export const NO_BRANCH_LABEL = "No branch selected";
-
 /** Keep the transcript and project identity while requiring a new working copy. */
 export function detachSessionWorktree<T extends { cwd: string; worktreeCwd?: string }>(
   session: T,
@@ -279,6 +278,7 @@ export function sessionInWorktree(session: Session, tree: Worktree): Session {
           };
   return {
     ...target,
+    blocks: session.worktreeRemoved ? normalizeWorktreeRecoveryError(target.blocks) : target.blocks,
     worktreeRemoved: undefined,
     worktreeCwd: pathKey(tree.path) === pathKey(session.cwd) ? undefined : tree.path,
     branch: tree.branch ?? undefined,

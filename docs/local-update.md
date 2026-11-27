@@ -239,9 +239,12 @@ recovery from an exited host whose state file remains.
 If the registered Windows host PID has already exited, installation may proceed
 after idle database and stopped-service checks. If the PID still runs, a lifecycle
 failure blocks installation. A connection error is not evidence that the host is idle.
-The desktop's automatic bundled-Host installer admits a fresh, empty profile only.
-For an existing profile it cannot prove all activity owners or distinguish an
-intentional stop from a failure, so it defers automatic repair and upgrades. The
+The desktop's automatic bundled-Host installer installs into a fresh, empty profile.
+For an existing profile only a version upgrade runs unasked: a live Host that reports
+no running work is stopped by the Host itself if it is still idle, then replaced.
+Repair, and an upgrade over a busy or unverifiable Host, wait for the owner. While
+the installer holds its lock the app reports the local Host as updating, waits for it
+on refused local requests, and reloads every view once it answers again. The
 owner-directed update coordinator retains its separate admission and recovery checks.
 
 Settings → Machines offers **Update host now** on that deferred or failed notice.

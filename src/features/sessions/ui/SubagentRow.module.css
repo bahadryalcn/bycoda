@@ -212,11 +212,25 @@
 
 .cardTitle {
   justify-self: stretch;
-  /* ui-drift-ignore: shared-internal-selector -- The card face Button spans the card; the card owns the inline padding. */
-  padding-inline: 0;
   min-inline-size: 0;
   margin-block-end: var(--space-1);
   text-align: start;
+}
+
+/* The card's one action covers the whole face; the tracks above stay text, so a click anywhere
+   on them lands on it. Interactive tracks (reason, footer) are lifted over it. */
+.cardAction {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* ui-drift-ignore: shared-internal-selector -- The card-covering Button's hover fill follows the card's own corners; no Button radius role inherits. */
+  border-radius: inherit;
+}
+
+.cardReason,
+.cardFooter {
+  position: relative;
+  z-index: 2;
 }
 
 .cardModel {

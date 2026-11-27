@@ -27,8 +27,8 @@ function errorText(detail: string, failed: boolean): string {
 /**
  * An `agents.delegate` / `agents.consult` call that failed before a child session
  * existed (model unavailable, skill preparation, limits). Nothing in the Host names a
- * child, so the parent transcript's own tool block is all there is: it stands in as a
- * failed subagent card. The model's own retry is the only retry; the arguments are not
+ * child, so the parent transcript's own tool block is all there is: it stands in as an
+ * `unstarted` run, which the transcript shows as one line with its reason. The model's own retry is the only retry; the arguments are not
  * kept on the block, so nothing here can re-issue the call.
  */
 export function failedAskCard(block: Block): Block | undefined {
@@ -49,6 +49,6 @@ export function failedAskCard(block: Block): Block | undefined {
     text: title,
     ...(block.startedAt !== undefined ? { startedAt: block.startedAt } : {}),
     tool: { kind: "subagent", title, status: "failed", detail: error },
-    agentRun: { name: title, ...(model ? { model } : {}), steps: [] },
+    agentRun: { name: title, ...(model ? { model } : {}), steps: [], unstarted: true },
   };
 }

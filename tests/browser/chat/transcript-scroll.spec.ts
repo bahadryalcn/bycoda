@@ -24,6 +24,53 @@ test("keeps the latest visible until the reader scrolls up", async ({ page }) =>
   await expect.poll(distanceFromBottom).toBeGreaterThan(100);
 });
 
+test("widening the transcript while reading keeps the reader's place", async ({ page }) => {
+  await page.goto("/tests/browser/chat/transcript.html");
+  // A narrow chat beside an editor; closing the editor doubles its width below.
+  await page.evaluate(() => {
+    document.getElementById("root")!.style.width = "420px";
+  });
+  const scroller = page.locator(".agent-transcript");
+  const distanceFromBottom = () =>
+    scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect(scroller.locator(".transcript-turn")).toHaveCount(20, { timeout: 30_000 });
+  await page.evaluate(() => document.fonts.ready);
+  await expect.poll(distanceFromBottom).toBeLessThanOrEqual(1);
+  await scroller.hover();
+  for (let tick = 0; tick < 15; tick++) await page.mouse.wheel(0, -200);
+  await expect(page.locator(".agent-transcript[data-jump-pill]")).toHaveCount(1);
+  await expect.poll(distanceFromBottom).toBeGreaterThan(2000);
+  await page.waitForTimeout(300);
+  // Mark the paragraph the reader is looking at, at the top of the view.
+  const marked = await scroller.evaluate((el) => {
+    const top = el.getBoundingClientRect().top;
+    const paragraph = [...el.querySelectorAll<HTMLElement>("p")].find(
+      (node) => node.getBoundingClientRect().bottom > top + 1,
+    );
+    paragraph?.setAttribute("data-reader-place", "");
+    return !!paragraph;
+  });
+  expect(marked).toBe(true);
+  const before = await scroller.evaluate((el) => ({
+    height: el.scrollHeight,
+    distance: el.scrollHeight - el.clientHeight - el.scrollTop,
+  }));
+  await page.evaluate(() => {
+    document.getElementById("root")!.style.width = "850px";
+  });
+  await page.waitForTimeout(800);
+  // The content got shorter by more than the distance read, so the browser clamped the offset.
+  expect(before.height - (await scroller.evaluate((el) => el.scrollHeight))).toBeGreaterThan(
+    before.distance,
+  );
+  const inView = await scroller.evaluate((el) => {
+    const top = el.getBoundingClientRect().top;
+    const rect = el.querySelector("[data-reader-place]")!.getBoundingClientRect();
+    return rect.bottom > top && rect.top < top + el.clientHeight;
+  });
+  expect(inView).toBe(true);
+});
+
 test("finishing an anchored reply brings the latest turn back to the composer edge", async ({
   page,
 }) => {

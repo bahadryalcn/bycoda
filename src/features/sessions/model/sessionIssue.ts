@@ -1,6 +1,34 @@
 import type { Block, Session } from "./session";
 import { isProviderFailureText } from "./plan";
 
+export const REMOVED_WORKTREE_ERROR = "Worktree unavailable";
+
+export function isMissingPathError(text: string): boolean {
+  return /\(os error [23]\)\s*$|\bENOENT\b|\bno such file or directory\b/i.test(text);
+}
+
+/** The recovery card takes the place of the latest checkout failure while a target is required. */
+export function worktreeRecoveryErrorId(blocks: readonly Block[]): string | undefined {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block.role === "user" && !block.draft && !block.internal) break;
+    if (isSessionErrorBlock(block)) {
+      if (block.text === REMOVED_WORKTREE_ERROR || isMissingPathError(block.text)) return block.id;
+      break;
+    }
+  }
+  return undefined;
+}
+
+export function normalizeWorktreeRecoveryError(blocks: Block[]): Block[] {
+  const errorId = worktreeRecoveryErrorId(blocks);
+  if (!errorId || blocks.find((block) => block.id === errorId)?.text === REMOVED_WORKTREE_ERROR)
+    return blocks;
+  return blocks.map((block) =>
+    block.id === errorId ? { ...block, text: REMOVED_WORKTREE_ERROR } : block,
+  );
+}
+
 /** Normalize only plain retry counters; preserve provider-specific error details. */
 export function sessionRetryNotice(message: string | undefined): {
   reconnecting: boolean;

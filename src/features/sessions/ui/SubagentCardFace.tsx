@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -13,9 +12,10 @@ import styles from "./SubagentRow.module.css";
 
 /**
  * One delegated run as a card. Cards of a group sit in one grid row and share its tracks: the
- * title (two lines at most, in full on hover and focus), the provider and model, the state line
- * and the progress bar each line up across the cards, and the cards are equally tall. The title
- * is the run's work disclosure; its trail opens under the card grid, not in the card.
+ * title (two lines at most), the provider and model, the state line and the progress bar each
+ * line up across the cards, and the cards are equally tall. The whole card is one button: it
+ * opens the run's work under the card grid, or the run's own panel while there is no work to show
+ * yet. The footer's actions sit above it and keep their own clicks.
  */
 export function SubagentCardFace({
   name,
@@ -25,15 +25,23 @@ export function SubagentCardFace({
   harness,
   model,
   account,
+  badge,
   details,
   status,
   description,
   toggleLabel,
   open,
   onToggle,
+  openLabel,
+  onOpen,
   reason,
   footer,
 }: {
+  /** A role mark before the model, such as the advisor's. */
+  badge?: ReactNode;
+  /** The card's action while it has no work to show: open the run in its own panel. */
+  openLabel: string;
+  onOpen: () => void;
   name: string;
   active: boolean;
   failed: boolean;
@@ -55,7 +63,6 @@ export function SubagentCardFace({
   /** Actions in the last track; every card has one. */
   footer: ReactNode;
 }) {
-  const t = useT();
   const detail = details.filter(Boolean).join(" · ");
   const titleClass = "min-w-0 text-start font-sans";
   // ui-drift-ignore: text-truncation -- WorkingIndicator only offers one-line truncate; the working title keeps the two lines its idle Text has.
@@ -85,27 +92,20 @@ export function SubagentCardFace({
       data-subagent-card
       data-subagent-lifecycle={lifecycle}
     >
-      {toggleLabel ? (
-        <Button
-          variant="item"
-          type="button"
-          controlHeight="content"
-          className={styles.cardTitle}
-          label={toggleLabel}
-          aria-description={description}
-          aria-expanded={open}
-          tooltip={name}
-          tooltipWhen="overflow"
-          onClick={onToggle}
-        >
-          {titleText}
-        </Button>
-      ) : (
-        <span className={styles.cardTitle} aria-description={description}>
-          {titleText}
-        </span>
-      )}
+      <Button
+        variant="item"
+        type="button"
+        controlHeight="fill"
+        className={styles.cardAction}
+        label={toggleLabel ?? openLabel}
+        aria-description={description}
+        aria-expanded={toggleLabel ? open : undefined}
+        data-subagent-card-action
+        onClick={toggleLabel ? onToggle : onOpen}
+      />
+      <span className={styles.cardTitle}>{titleText}</span>
       <span className={styles.cardModel} data-subagent-identity>
+        {badge}
         <SubagentMarks
           className={styles.cardMark}
           harness={harness}
@@ -119,14 +119,8 @@ export function SubagentCardFace({
         ) : null}
       </span>
       <div className={styles.cardReason} data-subagent-reason>
-        {reason ? (
-          <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-            <Text size="micro" tone="danger">
-              {t("Subagent failed")}
-            </Text>
-            <ErrorDetails title={t("Subagent failed")} detail={reason} />
-          </span>
-        ) : null}
+        {/* The state line already says Failed: a short reason shows as written, a long one as its first line with Details. */}
+        {reason ? <InlineError live="off" details={reason} /> : null}
       </div>
       {status}
       <span className={styles.cardFooter}>{footer}</span>

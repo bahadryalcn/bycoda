@@ -85,7 +85,7 @@ When a continued Codex conversation is archived in Codex, sending a follow-up as
 ## Free access outside your network
 
 In **Settings → Connections → Sharing**, choose **Create link**, select the computer,
-then choose **bycoda host** and **Cloudflare**. Select **Start sharing** to open the
+then choose **Remote access** and **Cloudflare**. Select **Start sharing** to open the
 tunnel. Check **Restart tunnel automatically** before starting if you want the Host
 to keep the tunnel available. The option is off by default.
 No Cloudflare account, token or paid service is needed. bycoda uses an installed
@@ -97,7 +97,7 @@ stop automatic access.
 
 ### Private and public paths
 
-Settings → Connections → Devices separates the two kinds of phone path. **Private — only
+Settings → Connections → Devices separates the two kinds of phone path. **Private to
 your devices** holds **Local network** and **Tailscale (private)**: the encrypted phone
 listener answers only on your network or Tailscale address, never from the internet.
 **Public internet** covers the Cloudflare, ngrok and **Tailscale Funnel (public)** tunnels
@@ -151,8 +151,11 @@ support SSE; HTTP RPC remains the fallback transport.
 
 **Settings → Connections → Computers** lists your saved computers. **Add a computer**
 opens a dialog: **Found** combines computers signed in to your account, Tailscale
-devices, SSH config aliases and known hosts, each with its sources and online state,
-with a search by name or address. The same computer found by several sources is one
+devices, SSH config aliases and known hosts, each with its sources,
+with a search by name or address. Git hosting services such as github.com are left out.
+An SSH entry no other source vouches for is checked on its SSH port; entries that are
+offline or do not answer wait in the closed **Not reachable now** section and can still
+be added from there. The same computer found by several sources is one
 row: an account computer joins the SSH entry on its Tailscale or home-network address.
 Saved computers are hidden from **Found**. If a saved SSH computer changes its address,
 discovery can also recognize it when both addresses have the same public host key in
@@ -182,7 +185,7 @@ tunnel is retired; a discovery probe can try SSH next. A write with an unknown
 outcome is never replayed on another route. Closing the pairing dialog cancels
 pending setup and status waits before a ticket can be redeemed.
 Plain HTTP is used only for loopback. The other computer must be signed in with the same
-account, online, and have "Let my signed-in phones find this computer" on; pairing needs
+account, online, and have "Let my signed-in devices find this computer" on; pairing needs
 an HTTPS route there (a tunnel). Tunnels are for other computers; phones use one only when public phone access is allowed. The home-network phone route is not
 used between desktops: without an HTTPS route or an SSH address, **Add** stays off and its
 info icon says so.
@@ -523,7 +526,7 @@ While a project's machine cannot be asked, its Files and Changes panes, and its 
 
 The forward binds to a temporary port on the laptop's loopback interface. Quitting the desktop closes only that forward. It does not stop the host service or its agent sessions.
 
-**Remove** in Settings asks for confirmation and offers two choices. **Remove from this desktop only** deletes the saved connection and closes its forward. The host keeps running, and this desktop's device credential stays valid on it. **Revoke access and remove** first asks the host to revoke the credential this desktop is using, then removes the connection. It needs the machine to be reachable, and if revocation fails the connection is kept. Neither option stops the host, affects other desktops' credentials, or deletes sessions. Adding the same machine again reconnects its projects, tabs, and history.
+**Remove** in Settings asks for confirmation and offers two choices. **Remove from this desktop only** deletes the saved connection and closes its forward. The host keeps running, and this desktop's device credential stays valid on it. **Revoke access and remove** first asks the host to revoke the credential this desktop is using, then removes the connection. It needs the machine to be reachable, and if revocation fails the connection is kept. A machine that already refuses this desktop's credential has nothing left to revoke, so only the first choice is offered; its row says so and, for an SSH machine, **Pair again** sets it up over its saved SSH address and takes over the saved connection. Neither option stops the host, affects other desktops' credentials, or deletes sessions. Adding the same machine again reconnects its projects, tabs, and history.
 
 Restoring a saved SSH tunnel shares one 20-second budget across address checks and
 connection attempts. Other requests to that machine report that reconnect is in

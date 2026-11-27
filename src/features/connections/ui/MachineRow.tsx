@@ -34,6 +34,7 @@ import {
   type MachineStatus,
 } from "../model/machineSummary";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
+import { isPairingRefused } from "../model/remoteConnection";
 import { isReconnecting, subscribeReconnecting } from "../model/remoteReconnect";
 import { machineContext, machineLabel } from "../model/machineIdentity";
 import type { RemoteMachine } from "../model/protocol";
@@ -86,7 +87,14 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
     probed,
     now,
   });
-  return { status, enabled, turningOff, error: shared.error };
+  return {
+    status,
+    enabled,
+    turningOff,
+    error: shared.error,
+    // Only pairing again helps; reconnecting and syncing fail the same way until then.
+    refused: isPairingRefused(shared),
+  };
 }
 
 /** Additional context for the current machine status. */
@@ -110,6 +118,7 @@ export function MachineRow({
   menuOpen,
   onUpdateHost,
   onReconnect,
+  onPairAgain,
   onToggleMenu,
   onToggleDetails,
   onSyncNow,
@@ -128,6 +137,8 @@ export function MachineRow({
   menuOpen: boolean;
   onUpdateHost: () => void;
   onReconnect: () => void;
+  /** The machine refused this computer's credential: set it up over SSH again. */
+  onPairAgain: () => void;
   onToggleMenu: (anchor: HTMLElement) => void;
   onToggleDetails: () => void;
   onSyncNow: () => void;
@@ -143,7 +154,11 @@ export function MachineRow({
     desktopVersion: buildIdentity?.buildId,
     routeCount: local ? 0 : routes.count,
   });
-  const reason = statusReason(connection.status, probed, connection.error);
+  // Pair again runs over the saved SSH address; a row without one keeps its own reason.
+  const canPairAgain = Boolean(machine.ssh) && connection.refused && connection.enabled;
+  const reason = canPairAgain
+    ? t("{p0} no longer accepts this computer. Pair again to reconnect.", { p0: machine.name })
+    : statusReason(connection.status, probed, connection.error);
   const Icon = local ? Laptop : Server;
   return (
     <div
@@ -206,7 +221,9 @@ export function MachineRow({
             {reason}
           </Text>
         ) : null}
-        <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
+        {connection.refused ? null : (
+          <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
+        )}
         {local ? <LocalHostModeSwitch /> : null}
         {showDetails ? (
           <Text
@@ -226,7 +243,18 @@ export function MachineRow({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {machine.ssh && needsUpdate && connection.enabled ? (
+        {canPairAgain ? (
+          <Button
+            stableWidth
+            disabled={busy}
+            onClick={onPairAgain}
+            variant="primary"
+            className="shrink-0"
+            type="button"
+          >
+            {t("Pair again")}
+          </Button>
+        ) : machine.ssh && needsUpdate && connection.enabled ? (
           <Button
             stableWidth
             disabled={busy}

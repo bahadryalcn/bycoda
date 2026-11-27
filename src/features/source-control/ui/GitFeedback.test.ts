@@ -71,17 +71,27 @@ it("shows the original failure output and routes worktree recovery to the same m
 it("explains a diverged pull even when Git localized its hints", async () => {
   const detail =
     'ipucu: Iraksak dallar ileri sarılamaz\nipucu: Disable this message with "git config set advice.diverging false"\nonulmaz: İleri sarma olanaklı değil, iptal ediliyor.';
+  const rebase = vi.fn();
   await act(async () =>
-    root.render(createElement(GitFeedback, { title: "Pulling failed", detail })),
+    root.render(
+      createElement(GitFeedback, {
+        title: "Pulling failed",
+        detail,
+        alternate: { label: "Pull (Rebase)", onClick: rebase },
+      }),
+    ),
   );
   await click("Details");
-  expect(document.body.textContent).toContain("Use Pull (Rebase)");
+  expect(document.body.textContent).toContain("Pull (Rebase) replays your commits");
   expect(document.querySelector("pre")?.textContent).toBe(detail);
+  await click("Pull (Rebase)");
+  expect(rebase).toHaveBeenCalledOnce();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   await act(async () =>
     root.render(createElement(GitFeedback, { title: "Pulling failed", detail: "fatal: offline" })),
   );
   await click("Details");
-  expect(document.body.textContent).not.toContain("Use Pull (Rebase)");
+  expect(document.body.textContent).not.toContain("Pull (Rebase) replays");
 });
 
 it("keeps the original output when copying fails", async () => {

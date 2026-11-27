@@ -82,7 +82,7 @@ export function TunnelStartForm({
   submit?: ReactNode;
 }) {
   const id = useId();
-  const { controller, state, overview, ready, action, run } = session;
+  const { controller, state, overview, ready, action, run, remoteName } = session;
   const notReadyReason = ready
     ? undefined
     : state.pending
@@ -104,18 +104,28 @@ export function TunnelStartForm({
           {
             value: "dev-server",
             label: t("Web app"),
-            description: t(
-              "A site running on this computer, like localhost:3000. Anyone with the link can open it.",
-            ),
+            description: remoteName
+              ? t(
+                  "A site running on {p0}, like localhost:3000. Anyone with the link can open it.",
+                  { p0: remoteName },
+                )
+              : t(
+                  "A site running on this computer, like localhost:3000. Anyone with the link can open it.",
+                ),
             disabled: funnel,
             disabledReason: funnel ? t("Tailscale Funnel shares remote access only.") : undefined,
           },
           {
             value: "host",
             label: t("Remote access"),
-            description: t(
-              "Your phone and other computers reach bycoda on this computer. Each one still has to be a paired device.",
-            ),
+            description: remoteName
+              ? t(
+                  "Your phone and other computers reach bycoda on {p0}. Each one still has to be a paired device.",
+                  { p0: remoteName },
+                )
+              : t(
+                  "Your phone and other computers reach bycoda on this computer. Each one still has to be a paired device.",
+                ),
           },
         ]}
       />
@@ -159,9 +169,14 @@ export function TunnelStartForm({
           ) : null}
           {provider === "tailscale" ? (
             <p>
-              {t(
-                "Tailscale Funnel publishes this computer on the internet at a ts.net address. It differs from Tailscale (private), which only your own devices can reach. Funnel must be allowed for your tailnet.",
-              )}
+              {remoteName
+                ? t(
+                    "Tailscale Funnel publishes {p0} on the internet at a ts.net address. It differs from Tailscale (private), which only your own devices can reach. Funnel must be allowed for your tailnet.",
+                    { p0: remoteName },
+                  )
+                : t(
+                    "Tailscale Funnel publishes this computer on the internet at a ts.net address. It differs from Tailscale (private), which only your own devices can reach. Funnel must be allowed for your tailnet.",
+                  )}
             </p>
           ) : null}
           {provider === "cloudflare" ? (
@@ -186,7 +201,9 @@ export function TunnelStartForm({
           {selected ? (
             <InlineMessage tone={selected.credential === "saved" ? "success" : "warning"}>
               {selected.credential === "saved"
-                ? t("ngrok authtoken is saved securely on this computer.")
+                ? remoteName
+                  ? t("ngrok authtoken is saved securely on {p0}.", { p0: remoteName })
+                  : t("ngrok authtoken is saved securely on this computer.")
                 : selected.credential === "unavailable"
                   ? issueCopy("credential-store-unavailable")
                   : issueCopy("credential-missing")}

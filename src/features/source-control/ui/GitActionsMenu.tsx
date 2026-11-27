@@ -49,7 +49,8 @@ import {
 } from "../../connections/public/remoteCapabilities";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { deleteLocalBranch } from "../model/deleteBranch";
-import { operationLabel } from "../model/commitActions";
+import { isDivergedPull, operationLabel } from "../model/commitActions";
+import type { GitOperationFeedback } from "../model/gitPanelState";
 import {
   commitMenuOptions,
   gitActionsMenuItems,
@@ -232,7 +233,12 @@ export function GitActionsMenu({
     supported,
   ]);
 
-  const run = async (work: () => Promise<unknown>, status?: string, pending?: string) => {
+  const run = async (
+    work: () => Promise<unknown>,
+    status?: string,
+    pending?: string,
+    alternateFor?: (detail: string) => GitOperationFeedback["alternate"],
+  ) => {
     if (gitPanelRuntime(cwd).state.busy) return;
     setGitFeedback(cwd, null);
     setBusy(GIT_MENU_BUSY);
@@ -242,19 +248,21 @@ export function GitActionsMenu({
       // One channel for the outcome: the header status, not a second success row.
       if (status) onStatus(status);
     } catch (error) {
+      const detail = errorText(error);
       setGitFeedback(cwd, {
         kind: "error",
+        alternate: alternateFor?.(detail),
         get title() {
           // The progress label names the action ("Pulling…" -> "Pulling failed").
           return pending
             ? t("{p0} failed", { p0: pending.replace(/…$/, "") })
             : t("Git operation failed");
         },
-        detail: errorText(error),
+        detail,
         // Only the repeatable network actions (pull, push, fetch, sync) offer Try again.
         retry: pending
           ? async () => {
-              await run(work, status, pending);
+              await run(work, status, pending, alternateFor);
             }
           : undefined,
       });
@@ -397,7 +405,14 @@ export function GitActionsMenu({
       case "repository-scope":
         return repositoryScope?.onToggle();
       case "pull":
-        return run(() => gitPull(cwd), undefined, t("Pulling…"));
+        return run(() => gitPull(cwd), undefined, t("Pulling…"), (detail) =>
+          isDivergedPull(detail)
+            ? {
+                label: t("Pull (Rebase)"),
+                run: () => run(() => gitPull(cwd, true), undefined, t("Pulling…")),
+              }
+            : undefined,
+        );
       case "pull-rebase":
         return run(() => gitPull(cwd, true), undefined, t("Pulling…"));
       case "push":

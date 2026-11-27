@@ -140,6 +140,39 @@ describe("requireDeviceProof", () => {
     // Not a paired device: the policy leaves it to the other principals' own checks.
     expect(await gate(withIngress(secret), "u".repeat(43))).toEqual({ ok: true });
   });
+
+  it("retires a re-paired client's earlier credential only on a verified proof", async () => {
+    const secret = "s".repeat(72);
+    let pending = true;
+    const completeReplacement = vi.fn(async () => {
+      if (completeReplacement.mock.calls.length === 1) throw new Error("busy");
+      pending = false;
+    });
+    const gate = createDeviceProofGate({
+      environmentId: ENVIRONMENT,
+      mobileIngressSecret: () => secret,
+      authority: async () => ({ binding, ...(pending ? { replacementPending: true } : {}) }),
+      cache: new DeviceProofReplayCache(),
+      completeReplacement,
+    });
+    const request = (proof?: string) => {
+      const value = fake("POST", "/rpc", proof);
+      value.headers = { [MOBILE_INGRESS_HEADER]: secret };
+      return value;
+    };
+    // The token alone, or a proof by another key, shows nothing about the new credential's holder.
+    expect((await gate(request(), TOKEN)).ok).toBe(false);
+    expect((await gate(request(sign({ seed: seedOf(8) })), TOKEN)).ok).toBe(false);
+    // Neither does the check the client signs before it has saved the credential.
+    expect(await gate(request(sign({ unsaved: true })), TOKEN)).toEqual({ ok: true, unsaved: true });
+    expect(completeReplacement).not.toHaveBeenCalled();
+    // A failed retirement does not fail the request and is tried again on the next one.
+    expect(await gate(request(sign()), TOKEN)).toEqual({ ok: true });
+    expect(await gate(request(sign()), TOKEN)).toEqual({ ok: true });
+    expect(await gate(request(sign()), TOKEN)).toEqual({ ok: true });
+    expect(completeReplacement).toHaveBeenCalledTimes(2);
+    expect(completeReplacement).toHaveBeenLastCalledWith(TOKEN);
+  });
 });
 
 type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -312,6 +345,40 @@ describe("Host enforces device proofs", () => {
         ).status,
       ).toBe(401);
     }
+  });
+
+  it("keeps a re-paired phone's earlier credential until the new one is used with its key", async () => {
+    const s = await setup();
+    const earlierSeed = seedOf(21);
+    const newSeed = seedOf(22);
+    const phone = (seed: Uint8Array, replaces?: string) =>
+      s.store.issueDevice("Bycoda phone", "phone", false, bindingOf(seed), { jkt: replaces });
+    const earlier = await phone(earlierSeed);
+    const replacement = await phone(newSeed, bindingOf(earlierSeed).jkt);
+    const describe = (seed: Uint8Array, token: string) =>
+      s.signed(s.directPort, seed, token, "environment.describe");
+    // Issued but not in use: a stolen new token without its key retires nothing.
+    expect((await s.call(s.directPort, replacement.token, "environment.describe")).status).toBe(401);
+    expect((await describe(earlierSeed, replacement.token)).status).toBe(401);
+    expect((await describe(earlierSeed, earlier.token)).status).toBe(200);
+    // The check before the phone saves the new credential works and still retires nothing, so a
+    // failed save leaves the phone with the credential it has.
+    const unsaved = signDeviceProof({
+      seed: newSeed,
+      token: replacement.token,
+      method: "POST",
+      path: "/rpc",
+      environmentId: s.store.environmentId,
+      unsaved: true,
+    });
+    expect(
+      (await s.call(s.directPort, replacement.token, "environment.describe", {}, unsaved)).status,
+    ).toBe(200);
+    expect((await describe(earlierSeed, earlier.token)).status).toBe(200);
+    // The phone's first request after saving the new credential retires the earlier one.
+    expect((await describe(newSeed, replacement.token)).status).toBe(200);
+    expect((await describe(earlierSeed, earlier.token)).status).toBe(401);
+    expect((await describe(newSeed, replacement.token)).status).toBe(200);
   });
 
   it("accepts an unbound device directly and refuses it on the tunnel", async () => {

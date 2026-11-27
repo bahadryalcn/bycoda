@@ -144,6 +144,17 @@ describe("placeDelegatedCards for Host agents.delegate calls", () => {
     expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1"), delegatedBlockId("c2"), "a1"]);
   });
 
+  it("places an advisor consult where it was asked, not after the turn's prompt", () => {
+    const consult = call(
+      "k1",
+      "mcp__bycoda-conversation__conversation_agents_consult",
+      JSON.stringify({ runId: "r", sessionId: "c1", status: "running" }),
+    );
+    const blocks = [user("u1", "audit", 1_000), reply("a0"), consult, reply("a1")];
+    const placed = placeDelegatedCards(blocks, [plain("c1")]);
+    expect(ids(placed)).toEqual(["u1", "a0", delegatedBlockId("c1"), "a1"]);
+  });
+
   it("hides a reply call to a run that has a card", () => {
     const replyCall = (id: string, sessionId: string) =>
       call(

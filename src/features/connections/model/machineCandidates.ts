@@ -222,25 +222,37 @@ export type SshAddPlan = {
   target: string;
   alternate: string | null;
   name: string;
+  /** SSH port when it is not the one SSH config chooses (pairing a saved machine again). */
+  port?: number | null;
   /** The account computer this row is; SSH setup refuses a Host with another identity. */
   environmentId?: string;
 };
 
-/** The SSH add this candidate allows, or null when it has no SSH route (account only). */
+/** A route address without its SSH port, and that port: `host`, `host:2222` or `[v6]:2222`. */
+function splitSshPort(address: string): { host: string; port: number | null } {
+  const match = /^\[([^\]]+)\]:(\d+)$/.exec(address) ?? /^([^:]+):(\d+)$/.exec(address);
+  return match ? { host: match[1]!, port: Number(match[2]) } : { host: address, port: null };
+}
+
+/**
+ * The SSH add this candidate allows, or null when it has no SSH route (account only). A machine
+ * has one SSH port, so the second address is one that answers on the first one's port.
+ */
 export function sshAddPlan(candidate: DiscoveredMachine): SshAddPlan | null {
   const order: CandidateRouteKind[] = ["name", "tailscale", "lan"];
-  const routes = order.flatMap((kind) =>
-    candidate.sshRoutes.filter((route) => route.kind === kind),
-  );
+  const routes = order
+    .flatMap((kind) => candidate.sshRoutes.filter((route) => route.kind === kind))
+    .map((route) => splitSshPort(route.address));
   const first = routes[0];
   if (!first) return null;
   const withUser = (address: string) =>
     candidate.sshUser && !address.includes("@") ? `${candidate.sshUser}@${address}` : address;
-  const second = routes.find((route) => route.address !== first.address);
+  const second = routes.find((route) => route.host !== first.host && route.port === first.port);
   return {
-    target: withUser(first.address),
-    alternate: second ? withUser(second.address) : null,
+    target: withUser(first.host),
+    alternate: second ? withUser(second.host) : null,
     name: candidate.name,
+    ...(first.port ? { port: first.port } : {}),
     ...(candidate.environmentId ? { environmentId: candidate.environmentId } : {}),
   };
 }
