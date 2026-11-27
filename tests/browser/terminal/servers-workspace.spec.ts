@@ -67,7 +67,6 @@ for (const theme of ["light", "dark"]) {
       ).toHaveValue("C:/keys/unfinished");
       await capture("identity-draft");
       await details.getByRole("button", { name: "Cancel", exact: true }).click();
-      await details.getByRole("tab", { name: "Organization", exact: true }).click();
       await details.getByRole("button", { name: "SSH group settings", exact: true }).click();
       const group = page.getByRole("dialog", { name: /^SSH group settings/ });
       await group.getByRole("button", { name: "Edit group", exact: true }).click();

@@ -58,9 +58,11 @@ it("lets workspace policy controls adapt through shared settings rows", () => {
   expect(editor).toContain('<Row id="workspace-pinning"');
   expect(policy).not.toMatch(/@media[^{]*\b(?:inline-size|width)\b/);
   expect(settings).toMatch(/container: settings-row \/ inline-size;/);
+  // The row is its own size container, so the wrap must not live in its own container query.
   expect(settings).toMatch(
-    /@container settings-row \(inline-size < 35rem\)[\s\S]*?\.settings-row:not\(\[data-stacked\]\)\s*\{\s*display: flex;\s*flex-wrap: wrap;/,
+    /^\.settings-row:not\(\[data-stacked\]\)\s*\{\s*display: flex;\s*flex-wrap: wrap;/m,
   );
+  expect(settings).toMatch(/@container settings-row \(inline-size < 35rem\)/);
 });
 
 it("declares each pane container once, on the pane root", () => {
