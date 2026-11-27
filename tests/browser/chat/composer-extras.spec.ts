@@ -50,9 +50,10 @@ for (const theme of ["light", "dark"]) {
       const details = page.getByRole("dialog", { name: /^Details:/ });
       await expect(details.getByLabel("Error details")).toContainText("RPC_WS_DEADLINE");
       await expect(details.getByRole("button", { name: "Copy details" })).toBeInViewport();
-      const noticeBox = (await notice.boundingBox())!;
+      // The popover opens below its Details trigger and never covers the notice copy.
+      const triggerBox = (await trigger.boundingBox())!;
       expect((await details.boundingBox())!.y).toBeGreaterThanOrEqual(
-        noticeBox.y + noticeBox.height,
+        triggerBox.y + triggerBox.height,
       );
       await page.screenshot({
         animations: "disabled",
@@ -170,13 +171,7 @@ for (const theme of ["light", "dark"] as const) {
         await panel
           .locator("[data-model-settings] [data-setting-id]")
           .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-setting-id"))),
-      ).toEqual([
-        "crossAdvisor",
-        "imageModels",
-        "subagentPolicy",
-        "crossSubagents",
-        "crossSubagentMaxEffort",
-      ]);
+      ).toEqual(["crossAdvisor", "imageModels", "crossSubagents", "crossSubagentMaxEffort"]);
       const images = panel.locator('[data-setting-id="imageModels"]');
       await images.locator("[data-model-setting-add]").click();
       await panel.getByRole("option", { name: /Nano Banana/ }).click();
@@ -279,7 +274,7 @@ for (const theme of ["light", "dark"] as const) {
           return heading.top >= bounds.top && heading.bottom <= bounds.bottom;
         }),
       ).toBe(true);
-      await expect(selectedModels.getByRole("button", { name: /kaldır$|^Remove/ })).toHaveCount(3);
+      await expect(selectedModels.getByRole("button", { name: /^(Remove|Kaldır)/ })).toHaveCount(3);
       await page.screenshot({
         path: `temp/verification/2026-11-13-ui-coherence/models/agents-${theme}-${width}.png`,
       });
@@ -325,12 +320,18 @@ for (const theme of ["light", "dark"] as const) {
           const copyTop = (await notice
             .getByText("Usage limit reached", { exact: true })
             .boundingBox())!;
-          const copyBottom = (await notice.getByText(/^Resets /).boundingBox())!;
+          // The copy block ends with the Cancel auto-resume link under the reset time.
+          const copyBottom = (await cancel.boundingBox())!;
           const copyCenter = (copyTop.y + copyBottom.y + copyBottom.height) / 2;
-          for (const control of [switchModel, switchAccount, cancel, dismiss]) {
+          for (const control of [switchModel, switchAccount]) {
             const bounds = (await control.boundingBox())!;
             expect(Math.abs(bounds.y + bounds.height / 2 - copyCenter)).toBeLessThan(2);
           }
+          // Dismiss stays on the title row, in the corner.
+          const dismissBounds = (await dismiss.boundingBox())!;
+          expect(
+            Math.abs(dismissBounds.y + dismissBounds.height / 2 - (copyTop.y + copyTop.height / 2)),
+          ).toBeLessThan(2);
         }
         expect(
           await notice.evaluate((element) => {
@@ -432,6 +433,20 @@ test("model search windows large catalogs while narrowing and navigating", async
     await expect(options).toContainText("Catalog 199");
     await search.fill("");
     await options.first().press("End");
+    // The windowed list finishes its End scroll before the account list reveals itself above it.
+    const scrollTops = () =>
+      panel.getByRole("listbox", { name: "Models" }).evaluate((list) => {
+        let node: HTMLElement | null = list;
+        while (node && node.scrollHeight <= node.clientHeight) node = node.parentElement;
+        return node?.scrollTop ?? 0;
+      });
+    await expect
+      .poll(async () => {
+        const before = await scrollTops();
+        await page.waitForTimeout(200);
+        return before === (await scrollTops());
+      })
+      .toBe(true);
     await panel.locator("[data-model-account-menu]").click();
     await expect(panel.getByRole("radio", { name: /^work/ })).toBeInViewport();
     await panel.getByRole("radio", { name: /^work/ }).click();
@@ -725,9 +740,12 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       const speed = panel.getByRole("term").filter({ hasText: /^Response speed$/ });
       await expect(speed).toBeVisible();
       await expect(speed.locator("..").getByRole("definition")).toHaveText("50.0 TPS");
-      await expect(
-        panel.getByText("Average speed includes tools and waiting.", { exact: true }),
-      ).toBeVisible();
+      // The caveat sits behind the speed row's info icon instead of inline text.
+      await speed.locator("..").getByRole("img", { name: "Help" }).hover();
+      await expect(page.getByRole("tooltip")).toHaveText(
+        "Average speed includes tools and waiting.",
+      );
+      await panel.getByRole("meter").hover();
       await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
       await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
@@ -1281,7 +1299,13 @@ test("composer access keeps the icon button size when opened", async ({ page }) 
   await page.getByRole("option", { name: /^Full access / }).click();
   const label = access.locator(":scope > span:not([aria-hidden])");
   const chevron = access.locator(":scope > svg");
-  await expectHint(page, access, /^Full access$/, null);
+  // The icon-only shield's hint explains the mode; its name is the accessible name.
+  await expectHint(
+    page,
+    access,
+    /^Allow commands, edits, and supported MCP confirmations in non-plan turns without prompts\.$/,
+    null,
+  );
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   await input.fill("Keep this draft");
   for (const theme of ["dark", "light"]) {
@@ -1358,7 +1382,10 @@ test("chat busy actions explain steering and queuing without losing the draft", 
   await page.getByRole("button", { name: "Use steer", exact: true }).click();
   await expect(send).toContainText("Steer");
   await input.fill("/plan Review this change");
-  await expect(send).toContainText("Queue message");
+  // Queueing is the only follow-up here, so it takes over the primary button and its name.
+  await expect(page.getByRole("button", { name: "Queue message", exact: true })).toContainText(
+    "Queue message",
+  );
   await input.fill("Keep my work");
   await expect(send).toContainText("Steer");
   await expectHint(page, send, null, ["Enter"]);
@@ -1589,25 +1616,13 @@ for (const theme of ["light", "dark"]) {
     test(`projectless session entry ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 720 });
       await page.goto(`/tests/browser/chat/composer-extras.html?welcome&no-project&theme=${theme}`);
-      const project = page.getByRole("button", { name: "Open a project", exact: true });
-      const guide = page.getByRole("button", { name: "Guide", exact: true });
+      // The hero heading is the project picker of a draft; there are no separate entry buttons.
+      const project = page.getByRole("button", { name: /^Choose project/ });
       await expect(project).toBeInViewport();
-      await expect(guide).toBeInViewport();
       await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeInViewport();
       await page.screenshot({ path: `temp/verification/new-window-entry/${theme}-${width}.png` });
-
-      await page.evaluate(() => {
-        window.addEventListener("bycoda:guide-action", (event) => {
-          document.body.dataset.guideAction = (event as CustomEvent<string>).detail;
-        });
-        window.addEventListener("bycoda:open-usage-guide", () => {
-          document.body.dataset.guideOpened = "true";
-        });
-      });
       await project.press("Enter");
-      await expect(page.locator("body")).toHaveAttribute("data-guide-action", "open-project");
-      await guide.press("Enter");
-      await expect(page.locator("body")).toHaveAttribute("data-guide-opened", "true");
+      await expect(page.getByRole("button", { name: "Add project…" })).toBeVisible();
     });
   }
 }
@@ -1632,15 +1647,15 @@ test("composer shows the account name when it fits and keeps narrow controls ali
       if (selectWork) {
         await trigger.click();
         const picker = page.getByRole("dialog", { name: "Model and settings", exact: true });
+        // Two accounts sit behind the collapsible account control.
+        await picker.locator("[data-model-account-menu]").click();
         await picker.getByRole("radio", { name: /^work\b/ }).click();
         if (width === 800) {
-          const selected = picker.getByRole("option", { selected: true }).locator("..");
-          const indicator = await selected.evaluate((row) => {
-            const style = getComputedStyle(row, "::before");
-            return { width: style.inlineSize, color: style.backgroundColor };
-          });
-          expect(indicator.width).toBe("2px");
-          expect(indicator.color).not.toBe("rgba(0, 0, 0, 0)");
+          // The chosen model is marked by a filled row and a check, not an accent bar.
+          const selected = picker.getByRole("option", { selected: true });
+          const fill = await selected.evaluate((row) => getComputedStyle(row).backgroundColor);
+          expect(fill).not.toBe("rgba(0, 0, 0, 0)");
+          await expect(selected.locator("svg")).toBeVisible();
           await picker.screenshot({
             path: `temp/verification/composer-account-layout/picker-${theme}-800.png`,
           });
@@ -1847,15 +1862,18 @@ test("model picker names and selects accounts and session shows its active agent
   await main.click();
   const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
   await expect(panel).toBeVisible();
-  // Two accounts stay in view above a single copy of the model list.
-  const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
+  // Two accounts sit behind one collapsible control; opening it lists both in place of the models.
+  const menu = panel.locator("[data-model-account-menu]");
+  await expect(menu).toHaveAccessibleName(/Account: personal/);
+  const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
+  await expect(opus).toHaveCount(1);
+  await menu.click();
+  const account = panel.getByRole("radiogroup", { name: "Accounts", exact: true });
   const personal = account.getByRole("radio", { name: /^personal\b/ });
   const work = account.getByRole("radio", { name: /^work\b/ });
   await expect(personal).toBeVisible();
   await expect(work).toBeVisible();
   await expect(personal).toBeChecked();
-  const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
-  await expect(opus).toHaveCount(1);
   await page.screenshot({
     path: testInfo.outputPath("account-model-picker.png"),
     animations: "disabled",
@@ -1865,10 +1883,12 @@ test("model picker names and selects accounts and session shows its active agent
   expect(workRow.y).toBeGreaterThanOrEqual(personalRow.y + personalRow.height);
   expect(workRow.x).toBeCloseTo(personalRow.x);
   expect(workRow.width).toBeCloseTo(personalRow.width);
+  // Choosing an account closes the list and returns to the models.
+  await work.click();
+  await expect(account).toHaveCount(0);
+  await expect(menu).toHaveAccessibleName(/Account: work/);
   await opus.click();
   await expect(panel).toBeVisible();
-  await work.click();
-  await expect(work).toBeChecked();
   await expect(main).toContainText("Opus 5.5");
   await expect(main).toHaveAccessibleName(/Account: work/);
   await page.keyboard.press("Escape");
@@ -1899,7 +1919,7 @@ test("model picker names and selects accounts and session shows its active agent
   });
   await page.setViewportSize({ width: 320, height: 800 });
   await expect(page.locator("[data-session-agent]")).toBeInViewport();
-  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: /^(Send|Queue message)$/ })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -2050,14 +2070,14 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
 
   await page.getByRole("button", { name: "codex", exact: true }).click();
   await openPanel();
-  // The panel reads top-down: Reasoning leads, then Service Tier.
+  // The panel reads top-down: Reasoning leads, then Service tier.
   expect(
     await settingsColumn
       .locator('[data-setting-id] [role="radiogroup"]')
       .evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label"))),
-  ).toEqual(["Reasoning", "Service Tier"]);
+  ).toEqual(["Reasoning", "Service tier"]);
   await expect(option("Reasoning", "Medium")).toHaveAttribute("aria-checked", "true");
-  await expect(option("Service Tier", "Standard")).toHaveAttribute("aria-checked", "true");
+  await expect(option("Service tier", "Standard")).toHaveAttribute("aria-checked", "true");
   // Claude-only rows stay off Codex; the cross-provider delegation rows live on the Agents tab.
   await expect(setting("Subagent model policy")).toHaveCount(0);
   await expect(setting("Advisor")).toHaveCount(0);
@@ -2070,15 +2090,15 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await expect(setting("Subagent model policy")).toHaveCount(0);
   await panel.getByRole("tab", { name: "Settings", exact: true }).click();
   await choose("Reasoning", "High");
-  await choose("Service Tier", "Fast");
+  await choose("Service tier", "Fast");
   await page.keyboard.press("Escape");
   await expect(main).toContainText("High");
   await expect(page.getByTestId("choice")).toContainText('"serviceTier":"fast"');
   await page.setViewportSize({ width: 1280, height: 800 });
   await openPanel();
-  await choose("Service Tier", "Ultrafast");
+  await choose("Service tier", "Ultrafast");
   await expect(page.getByTestId("choice")).toContainText('"serviceTier":"ultrafast"');
-  await expect(option("Service Tier", "Ultrafast")).toHaveAttribute("aria-checked", "true");
+  await expect(option("Service tier", "Ultrafast")).toHaveAttribute("aria-checked", "true");
   await page.screenshot({
     path: testInfo.outputPath("chat-codex-ultrafast-dark.png"),
     animations: "disabled",
@@ -2221,7 +2241,7 @@ test("independent scalar model settings preserve the draft caret and sibling val
   expect(await draft.evaluate((node) => [node.selectionStart, node.selectionEnd])).toEqual([3, 8]);
   await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
   const tier = page.getByRole("button", {
-    name: "Service Tier: Standard",
+    name: "Service tier: Standard",
     exact: true,
   });
   await tier.click();
@@ -2384,7 +2404,7 @@ test("model picker aligns account rows and keeps quota readable in both themes a
         );
         await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
         const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
-        if (count === 3) {
+        if (count >= 2) {
           const trigger = panel.locator("[data-model-account-menu]");
           const account = trigger.getByText("personal", { exact: true });
           const quota = trigger.getByText("92% remaining", { exact: true });
@@ -2419,16 +2439,12 @@ test("model picker aligns account rows and keeps quota readable in both themes a
           animations: "disabled",
         });
         if (count === 2) {
-          await panel
-            .getByRole("listbox", { name: "Models" })
-            .getByRole("option")
-            .last()
-            .scrollIntoViewIfNeeded();
-          expect((await rows.first().boundingBox())!.y).toBeCloseTo(first.y);
+          // Arrow keys choose the next account, which closes the list and names it on the control.
           await rows.first().focus();
           await rows.first().press("ArrowDown");
-          await expect(rows.nth(1)).toBeChecked();
-          await expect(rows.nth(1)).toBeFocused();
+          await expect(panel.locator("[data-model-account-menu]")).toHaveAccessibleName(
+            /Account: work/,
+          );
         } else {
           await expect(rows.last()).toContainText("0% remaining");
         }
@@ -2603,12 +2619,13 @@ test("model picker shows account identity and applies subagent picks as a batch"
       const search = editor.getByRole("combobox", { name: "Search models" });
       await search.fill("Opus 5.5");
       await expect(pickerOptions).toHaveCount(1);
-      await selectShown.press("Space");
+      // The bulk action only stays in the toolbar while eight or more models are shown.
+      await expect(selectShown).toHaveCount(0);
+      await pickerOptions.first().click();
       await expect(editor.getByRole("status")).toHaveText("2 selected");
-      const clearShown = editor.getByRole("button", { name: "Clear shown selection", exact: true });
-      await clearShown.press("Space");
+      await pickerOptions.first().click();
       await expect(editor.getByRole("status")).toHaveText("1 selected");
-      await selectShown.click();
+      await pickerOptions.first().click();
       await search.clear();
       await expect(editor.getByText("2 selected")).toBeVisible();
       await expect(page.getByTestId("choice")).not.toContainText('"crossSubagents":"[');
@@ -3024,8 +3041,8 @@ for (const theme of ["light", "dark"])
       const list = page.getByRole("listbox", { name: "Chat search results", exact: true });
       const match = list.locator(".app-search-match");
       const excerpt = match.locator(".app-search-match-excerpt");
-      await expect(match).toHaveCSS("margin-inline-start", "22px");
-      await expect(list.locator(".app-search-more")).toHaveCSS("margin-inline-start", "42px");
+      await expect(match).toHaveCSS("margin-inline-start", "24px");
+      await expect(list.locator(".app-search-more")).toHaveCSS("margin-inline-start", "40px");
       await page.mouse.move(width - 1, 1199);
       const line = await excerpt.evaluate((node) => parseFloat(getComputedStyle(node).lineHeight));
       expect(
@@ -3288,8 +3305,10 @@ for (const theme of ["dark", "light"] as const) {
     await expect(dialog).toBeVisible();
 
     await page.keyboard.press("Escape");
-    await expect(dialog.getByText("Discard your changes?")).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
+    // The confirmation is its own dialog over the editor.
+    const discard = page.getByRole("dialog", { name: "Discard your changes?" });
+    await expect(discard).toBeVisible();
+    await expect(discard.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
     await page.screenshot({ path: `temp/verification/queue-edit/discard-${theme}.png` });
   });
 }
@@ -3326,7 +3345,10 @@ test("a long plain paste keeps the existing draft when saving fails", async ({ p
   const text = "Clipboard text ".repeat(600);
   await field.fill("Existing draft");
   await pastePlainText(field, text);
+  await expect(page.getByRole("alert")).toContainText("Could not read attachments.");
+  await page.getByRole("button", { name: /^Details:/ }).click();
   await expect(page.getByText(/Fixture cannot save the paste/)).toBeVisible();
+  await page.keyboard.press("Escape");
   expect(
     await field.evaluate(
       (element) => (element as HTMLTextAreaElement).value ?? element.textContent,

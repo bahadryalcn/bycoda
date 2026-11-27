@@ -671,7 +671,6 @@ test("rail appearance keeps compact five-column icons and applies independent tr
 
 test("project menu offers a separate disk folder rename", async ({ page }) => {
   await page.locator('[data-project-path="G:/wallet/api"]').click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Folders", exact: true }).click();
   await page.getByRole("menuitem", { name: "Rename folder…", exact: true }).click();
   const dialog = page.getByRole("dialog", {
     name: "Rename folder",

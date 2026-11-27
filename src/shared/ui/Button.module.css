@@ -281,6 +281,8 @@
   position: relative;
 }
 .badge {
+  /* flex: the slot is exactly the badge's height, not a line box that pushes it below the corner. */
+  display: flex;
   position: absolute;
   inset-block-start: calc(-1 * var(--ui-space-1));
   inset-inline-end: calc(-1 * var(--ui-space-1));

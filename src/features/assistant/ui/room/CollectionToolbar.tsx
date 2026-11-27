@@ -85,6 +85,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                 : view === "Sessions"
                   ? t("Sessions")
                   : t("Jobs")}
+            {count !== undefined && " "}
             {count !== undefined && (
               <span className={styles.collectionCount}>
                 <Text weight="regular" tone="muted" leading="inherit">

@@ -64,7 +64,7 @@ const luminance = ({ r, g, b }: Rgba) => {
 async function worstContrast(page: Page, reply: Locator, ink: Rgba): Promise<number> {
   const style = await page.addStyleTag({
     content:
-      '[data-transcript-reply] * { color: transparent !important; -webkit-text-fill-color: transparent !important; border-color: transparent !important; } [data-transcript-reply] *::before, [data-transcript-reply] *::after { visibility: hidden !important; } [data-transcript-reply] :is(svg, img, canvas, button, code, pre, table, .bg-sidebar, [class*="_badge_"], [data-transcript-inset]) { visibility: hidden !important; }',
+      '[data-transcript-reply] * { color: transparent !important; -webkit-text-fill-color: transparent !important; border-color: transparent !important; } [data-transcript-reply] *::before, [data-transcript-reply] *::after { visibility: hidden !important; } [data-transcript-reply] :is(svg, img, canvas, button, code, pre, table, .bg-sidebar, [class*="_badge_"], [class*="_appearance_"], [class*="_track_"], [data-transcript-inset]) { visibility: hidden !important; }',
   });
   // A reply taller than the viewport is captured in pieces with the fixed composer and wallpaper
   // stitched in; a viewport that holds the whole reply measures the reply surface only.
@@ -120,13 +120,14 @@ test.describe("one reply, one surface", () => {
     for (const text of ["I will check the setup first", "The checks pass", "Two agents are idle"])
       await expect(reply.getByText(text).first()).toBeAttached();
     await expect(reply.getByText("bun run check", { exact: true }).first()).toBeAttached();
-    // Rows carry no fill of their own; user bubbles, code, tables and inset cards are the exceptions.
+    // Rows carry no fill of their own; user bubbles, code, tables, inset cards, severity chips and
+    // progress tracks are the exceptions.
     const stray = await reply.evaluate((root) =>
       [...root.querySelectorAll<HTMLElement>("*")]
         .filter((el) => {
           if (
             el.closest(
-              '[data-chat-message-surface="user"], pre, code, table, [data-transcript-inset], .bg-sidebar, .markdown-code-copy, [class*="_badge_"], [class*="_highlight_"]',
+              '[data-chat-message-surface="user"], pre, code, table, [data-transcript-inset], .bg-sidebar, .markdown-code-copy, [class*="_badge_"], [class*="_highlight_"], [class*="_appearance_"], [class*="_track_"]',
             )
           )
             return false;
@@ -321,6 +322,11 @@ test.describe("surface modes", () => {
     const row = reply.locator("[data-transcript-actions-row]").first();
     await page.mouse.move(0, 0);
     await expect(row).toHaveCSS("opacity", "0");
+    // The transcript follows its tail until a real wheel gesture leaves it, so reach the first
+    // reply the way a reader does instead of scrolling the page programmatically.
+    await page.mouse.move(640, 300);
+    await page.mouse.wheel(0, -4000);
+    await expect(reply).toBeInViewport();
     await reply.hover({ position: { x: 20, y: 20 } });
     await expect(row).toHaveCSS("opacity", "1");
   });

@@ -28,7 +28,7 @@ for (const theme of ["light", "dark"])
       });
       const search = history.getByRole("searchbox", { name: "Search this section", exact: true });
       await search.fill("no-such-activity");
-      await expect(history.getByRole("status")).toHaveText("No results");
+      await expect(history.getByRole("status")).toContainText("No results");
       await search.fill("release");
       await expect(events).toHaveCount(1);
       await expect(events.first()).toContainText("Release note draft is waiting for your review");

@@ -250,9 +250,10 @@ for (const theme of ["light", "dark"])
       await source.fill(
         "**Ready for review**\n\n- Keep draft\n- Check preview\n\n`const value = 42;`",
       );
+      // One writing surface by default; the preview is one toggle away once there is text.
       const preview = page.getByRole("region", { name: "Preview", exact: true });
-      await expect(preview.getByText("Ready for review", { exact: true })).toBeVisible();
-      await expect(preview.locator("li")).toHaveCount(2);
+      const toggle = page.getByRole("button", { name: "Preview", exact: true });
+      await expect(preview).toHaveCount(0);
       await page.locator('input[type="file"]').setInputFiles({
         name: "sample.png",
         mimeType: "image/png",
@@ -267,16 +268,19 @@ for (const theme of ["light", "dark"])
       await page.getByRole("option", { name: /bycoda-website/ }).click();
       await expect(picker).toContainText("bycoda-website");
       await expect(picker).not.toContainText("pf-ui-portal");
-      for (const mode of ["Split", "Preview", "Source"]) {
-        await page.getByRole("tab", { name: mode, exact: true }).click();
-        await expect(page.getByRole("tab", { name: mode, exact: true })).toHaveAttribute(
-          "aria-selected",
-          "true",
-        );
-        if (mode === "Preview") await expect(source).toBeHidden();
-        else await expect(source).toBeVisible();
-        if (mode === "Source") await expect(preview).toHaveCount(0);
-        else await expect(preview.getByText("Ready for review", { exact: true })).toBeVisible();
+      for (const mode of ["Source", "Preview", "Source"]) {
+        const previewing = mode === "Preview";
+        if ((await toggle.getAttribute("aria-pressed")) !== String(previewing))
+          await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-pressed", String(previewing));
+        if (previewing) {
+          await expect(source).toBeHidden();
+          await expect(preview.getByText("Ready for review", { exact: true })).toBeVisible();
+          await expect(preview.locator("li")).toHaveCount(2);
+        } else {
+          await expect(source).toBeVisible();
+          await expect(preview).toHaveCount(0);
+        }
         await expect(page.getByRole("img", { name: "sample.png" })).toBeVisible();
         await page.screenshot({
           path: `temp/verification/jira-comment-preview/${theme}-${width}-${mode.toLowerCase()}.png`,
@@ -369,7 +373,11 @@ test("failed moves preserve the original card and remain visible", async ({ page
     .getByRole("menu", { name: "Move ENG-1" })
     .getByRole("menuitem", { name: "In Progress", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("Jira permission denied");
+  const failure = page.getByRole("alert");
+  await expect(failure).toContainText("The Jira request failed.");
+  // The Host's reason sits behind the failure's Details control.
+  await failure.getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByText("Jira permission denied")).toBeVisible();
   await expect(
     page
       .getByRole("region", { name: "To Do", exact: true })

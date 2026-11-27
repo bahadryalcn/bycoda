@@ -132,7 +132,7 @@ for (const theme of ["light", "dark"])
     test(`image transparency shared surface ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/tests/browser/files/file-tree.html?binary&theme=${theme}`);
-      const preview = page.getByRole("group", { name: "Image preview: preview.png" });
+      const preview = page.getByRole("region", { name: "Image preview: preview.png" });
       await expect(preview).toBeVisible();
       await expect(preview.locator("img")).toBeVisible();
       // WebKit collapses a repeated size list ("16px 16px, 16px 16px") to one entry, so assert

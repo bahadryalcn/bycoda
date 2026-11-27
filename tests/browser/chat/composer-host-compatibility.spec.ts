@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const fixture = "/tests/browser/chat/composer-host-compatibility.html";
 const waiting =
@@ -6,6 +6,16 @@ const waiting =
 // A blocked Send keeps its name; the reason is its accessible description.
 const blockedSend = "Send";
 const capture = (name: string) => `temp/verification/c1/${test.info().project.name}/${name}.png`;
+
+/** The status shows a short headline; the Host's explanation sits behind its Details control. */
+async function expectStatusDetail(page: Page, status: Locator, text: string) {
+  await expect(status).toContainText("Could not prepare the workspace.");
+  const details = status.getByRole("button", { name: /^Details/ });
+  await details.click();
+  await expect(page.getByText(text)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveAttribute("aria-expanded", "false");
+}
 
 async function readyCurrentCheckout(page: Page) {
   await expect(page.locator("[data-workspace-creation-status]")).toHaveCount(0);
@@ -72,7 +82,7 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(waiting);
+    await expectStatusDetail(page, status, waiting);
     await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
@@ -116,7 +126,7 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(waiting);
+    await expectStatusDetail(page, status, waiting);
     await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await page.screenshot({ path: capture(`deferred-host-update-${theme}`) });
     await page.setViewportSize({ width: 800, height: 900 });
@@ -146,10 +156,12 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(
+    await expectStatusDetail(
+      page,
+      status,
       "Update bycoda Host on this project's machine to use managed workspaces. Your checkout is not used as a fallback.",
     );
-    await expect(status).not.toContainText(waiting);
+    await expect(page.getByText(waiting)).toHaveCount(0);
     await expect(page.getByRole("button", { name: blockedSend, exact: true })).toBeDisabled();
     await expect(
       page.getByRole("button", { name: "Use current checkout", exact: true }),
@@ -167,7 +179,7 @@ for (const theme of ["light", "dark"] as const) {
       theme === "light",
     );
     const status = page.locator("[data-workspace-creation-status]");
-    await expect(status).toContainText(waiting);
+    await expectStatusDetail(page, status, waiting);
     await page
       .getByRole("button", { name: "Simulate Host upgrade and reconnect", exact: true })
       .click();

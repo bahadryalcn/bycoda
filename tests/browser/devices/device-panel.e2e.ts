@@ -125,7 +125,8 @@ for (const width of [800, 1280])
       await page.getByRole("button", { name: "Capture", exact: true }).click();
       const error = page.locator(".device-panel-error");
       await expect(error).toBeVisible();
-      expect(await error.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("1px");
+      // The strip keeps its height in the panel; the Alert inside owns the look.
+      await expect(error.getByRole("alert")).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("error.png"), animations: "disabled" });
       expect(
         await page.locator(".device-panel").evaluate((el) => el.scrollWidth <= el.clientWidth + 1),

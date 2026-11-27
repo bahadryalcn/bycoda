@@ -72,7 +72,10 @@ function Fixture() {
                 {long}
               </span>
             </OverflowTooltip>
-            <Button data-testid="icon" iconOnly label="Search workspace">
+            <Button data-testid="icon" iconOnly label="Search workspace" shortcut="Ctrl+F">
+              <Search />
+            </Button>
+            <Button data-testid="icon-plain" iconOnly label="Plain icon">
               <Search />
             </Button>
             <Button data-testid="responsive" tooltip="Responsive Explorer" tooltipWhen="overflow">
@@ -180,7 +183,15 @@ function Fixture() {
             />
             <FloatingButtonGroup
               label="Floating icon actions"
-              items={[{ id: "search", label: "Find fixture", icon: <Search />, iconOnly: true }]}
+              items={[
+                {
+                  id: "search",
+                  label: "Find fixture",
+                  icon: <Search />,
+                  iconOnly: true,
+                  shortcut: "Ctrl+F",
+                },
+              ]}
             />
             <ButtonGroup
               variant="expanding"

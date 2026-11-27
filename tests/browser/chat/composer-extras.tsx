@@ -707,7 +707,12 @@ function Fixture() {
           </div>
         ) : null}
         {welcome ? (
-          <EmptySession cwd={fixtureCwd} composer={composer} hasChatBackground={!withCrew} />
+          <EmptySession
+            cwd={fixtureCwd}
+            composer={composer}
+            hasChatBackground={!withCrew}
+            onProjectChange={projectless ? () => {} : undefined}
+          />
         ) : (
           composer
         )}

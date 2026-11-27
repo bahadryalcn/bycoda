@@ -545,6 +545,7 @@ function ButtonApiControls() {
           size="sm"
           iconOnly
           label="Button API filters"
+          shortcut="Ctrl+Shift+F"
           shape="pill"
           selected={selected}
           aria-pressed={selected}

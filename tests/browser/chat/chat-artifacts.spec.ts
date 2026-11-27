@@ -399,8 +399,8 @@ test("chat messages, attachment references and running work keep a readable hier
       await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png");
       await page.mouse.move(0, 0);
       const cardBox = (await card.boundingBox())!;
-      expect(cardBox.width).toBe(78);
-      expect(cardBox.height).toBe(52);
+      expect(cardBox.width).toBe(88);
+      expect(cardBox.height).toBe(64);
       expect((await image.boundingBox())!.height).toBe(
         await card.evaluate((node) => node.clientHeight),
       );
@@ -580,9 +580,9 @@ test("chat code and command results remain compact until explicitly opened", asy
     true,
   );
   await page.screenshot({ path: info.outputPath("chat-code-details.png") });
-  // A failed command opens its own output; the reader closes it with the two they opened.
+  // Only the changes and the output the reader opened are open; the reader closes both.
   const openOutputs = page.locator('summary[aria-label^="Hide output for"]');
-  await expect(openOutputs).toHaveCount(3);
+  await expect(openOutputs).toHaveCount(2);
   while ((await openOutputs.count()) > 0) await openOutputs.first().click();
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
   await expect

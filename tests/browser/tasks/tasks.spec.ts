@@ -365,7 +365,7 @@ for (const width of [1280, 800])
       await openGoals(page);
       const epic = page.getByRole("article", { name: "Mobile workspace refresh", exact: true });
       await expect(epic).toBeVisible();
-      const details = epic.getByRole("button", { name: "Details", exact: true });
+      const details = epic.locator("summary", { hasText: "Details" });
       await expect(details).toHaveAttribute("aria-expanded", "false");
       await expect(epic.getByText("Final epic acceptance", { exact: true })).toBeHidden();
       await capture("epic-collapsed");

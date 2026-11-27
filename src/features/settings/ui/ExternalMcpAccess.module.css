@@ -39,6 +39,14 @@
   gap: 12px;
   min-inline-size: 0;
 }
+/* A token row wraps its actions below the details when the pane is narrow, so the in-place
+   revoke question always has room for Cancel. */
+.row {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 16px;
+}
 .identity {
   display: grid;
   gap: 4px;

@@ -81,6 +81,7 @@ export function ProjectIconPicker({
           onValueChange={onPick}
           tile={{ motion: "none", layout: "stacked" }}
           tileLayout="portrait"
+          className="grid-cols-5"
           options={icons.map((icon) => ({
             value: icon.name,
             ariaLabel: t("Project icon: {p0}", { p0: icon.label }),

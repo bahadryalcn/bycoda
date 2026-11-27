@@ -96,7 +96,7 @@ for (const theme of ["light", "dark"])
         exact: true,
       });
       const bash = installed.locator(".terminal-shell-item").filter({ hasText: "Git Bash" });
-      await expect(bash.getByText("Default", { exact: true })).toBeVisible();
+      await expect(bash.getByRole("img", { name: "Default", exact: true })).toBeVisible();
       await installed
         .locator(".terminal-shell-item")
         .filter({ hasText: "Command Prompt" })
@@ -160,7 +160,10 @@ test("host discovery retries and save errors preserve the previous shell", async
     "/tests/browser/settings/settings.html?section=terminal&terminal=host-error&lang=en",
   );
   const hosts = page.locator("#setting-host-shells");
-  await expect(hosts.getByRole("alert")).toContainText("Fixture host unavailable");
+  await expect(hosts.getByRole("alert")).toContainText("Could not read remote shells.");
+  await hosts.getByRole("alert").getByRole("button", { name: "Details" }).click();
+  await expect(page.getByText("Fixture host unavailable")).toBeVisible();
+  await page.keyboard.press("Escape");
   await hosts.getByRole("button", { name: "Retry", exact: true }).click();
   const remote = hosts.getByRole("button", {
     name: /^Default shell on remote server Development server with a long descriptive name:/,
@@ -171,7 +174,10 @@ test("host discovery retries and save errors preserve the previous shell", async
   );
   await remote.click();
   await page.getByRole("option", { name: /Git Bash/ }).click();
-  await expect(hosts.getByRole("alert")).toContainText("Fixture shell save failed");
+  await expect(hosts.getByRole("alert")).toContainText("Could not confirm the remote shell change.");
+  await hosts.getByRole("alert").getByRole("button", { name: "Details" }).click();
+  await expect(page.getByText("Fixture shell save failed")).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(remote).toContainText("Automatic");
   // The outcome of a failed save is unknown, so the machine must be read back before another
   // choice; the alert offers exactly that recovery action and then re-enables the select.

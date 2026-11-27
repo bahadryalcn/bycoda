@@ -58,8 +58,13 @@ for (const theme of ["light", "dark"])
       await choose(page, "Scope", "Everywhere");
       await capture(page, `memory-edit-${theme}-${width}`);
       await editor.getByRole("button", { name: "Save", exact: true }).click();
-      await expect(row(page, edited)).toContainText("Everywhere");
-      const toggle = row(page, edited).getByRole("switch", { name: "Active", exact: true });
+      // Everywhere is the default scope, so the row names only narrower scopes.
+      await expect(row(page, edited)).not.toContainText("Coding sessions only");
+      await row(page, edited).getByRole("button", { name: "Edit", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Scope: Everywhere/ })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      const toggle = row(page, edited).getByRole("switch", { name: "Enable memory", exact: true });
       await toggle.focus();
       await page.keyboard.press("Space");
       await expect(toggle).not.toBeChecked();
@@ -80,7 +85,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       await expect(row(page, edited)).toBeVisible();
       await expect(
-        row(page, edited).getByRole("switch", { name: "Active", exact: true }),
+        row(page, edited).getByRole("switch", { name: "Enable memory", exact: true }),
       ).not.toBeChecked();
       await capture(page, `memory-restored-${theme}-${width}`);
     });

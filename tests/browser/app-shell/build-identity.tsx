@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { UpdateRow } from "../../../src/features/settings/ui/GeneralSettings";
+import { BuildIdentityDetails } from "../../../src/features/settings/ui/BuildIdentityDetails";
 import { LocalHostUpdateNotice } from "../../../src/features/connections/ui/LocalHostUpdateNotice";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { setLanguagePreference } from "../../../src/shared/i18n";
@@ -54,6 +55,7 @@ createRoot(document.getElementById("root")!).render(
     <div className="bycoda-settings-form general-settings">
       <h1 className="text-ui-title">General</h1>
       <UpdateRow onOpenWhatsNew={() => {}} />
+      <BuildIdentityDetails />
       <LocalHostUpdateNotice />
     </div>
   </main>,

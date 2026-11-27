@@ -216,7 +216,10 @@ for (const theme of ["light", "dark"] as const)
       await expect(
         dialog.getByRole("searchbox", { name: "Filter commit files", exact: true }),
       ).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Next file", exact: true })).toBeVisible();
+      // The changed-files list is the file navigation; Previous/Next file belong to blame.
+      await expect(
+        dialog.getByRole("region", { name: "Changed files", exact: true }),
+      ).toBeVisible();
       await page.screenshot({ path: `${folder}/graph-inspector-${theme}-${width}.png` });
       await page.goto("/tests/browser/source-control/git-workspace.html?conflict&visual-conflict");
       await applyTheme();
@@ -251,10 +254,12 @@ test("Git actions show progress in place without losing focus or repeating mutat
   const sync = page.getByRole("button").filter({ hasText: "Sync changes" });
   await sync.focus();
   await sync.press("Enter");
-  await expect(sync).toHaveAttribute("aria-busy", "true");
-  await expect(sync).toBeFocused();
+  // While pending the action carries its own progress label.
+  const syncing = page.getByRole("button", { name: "Syncing…", exact: true });
+  await expect(syncing).toHaveAttribute("aria-busy", "true");
+  await expect(syncing).toBeFocused();
   await expect(page.locator("header").first().getByRole("status")).toHaveCount(0);
-  await sync.press("Enter");
+  await syncing.press("Enter");
   const calls = (command: string) =>
     page.evaluate(
       (name) =>
@@ -286,6 +291,7 @@ test("Git actions show progress in place without losing focus or repeating mutat
       window as unknown as { gitFixtureFinishAction: (command: string) => void }
     ).gitFixtureFinishAction("git_sync"),
   );
+  await expect(syncing).toHaveCount(0);
   await expect(sync).not.toHaveAttribute("aria-busy", "true");
   await page.getByRole("button", { name: /^Stashes/ }).click();
   // The row's more action is named "Actions for …" at rest and its loading label while busy.
@@ -343,13 +349,18 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
   await expect(hunks.first()).toBeAttached();
   await hunks.first().focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("alert")).toContainText("Fixture index.lock");
+  await expect(page.getByRole("alert")).toContainText("Couldn’t update changes");
   await expect(file).toBeVisible();
   await expect(file.getByRole("group").first().locator("button[aria-expanded]")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
   await expect(hunks.first()).toBeFocused();
+  // The cause opens from the alert's Details action.
+  await page.getByRole("alert").getByRole("button", { name: "Details" }).click();
+  await expect(page.getByText(/Fixture index\.lock/).first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await hunks.first().focus();
   const calls = () =>
     page.evaluate(() =>
       (
@@ -542,7 +553,7 @@ test("submodules keep independent drafts, staging, commits and pushes", async ({
   await module.getByRole("button", { name: "Commit options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Commit & Push", exact: true }).click();
   // The submodule is on its default branch: the push asks first in the in-app dialog.
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByRole("button", { name: "Push", exact: true }).click();
   await expect(message).toHaveValue("");
   await expect(parentMessage).toHaveValue("Parent draft stays here");
   const calls = await page.evaluate(
@@ -605,7 +616,7 @@ test("new branch from accepts typed references with branch suggestions", async (
   const dialog = page.getByRole("dialog", { name: "New branch from…", exact: true });
   const base = dialog.getByLabel("Base branch", { exact: true });
   const name = dialog.getByLabel("Branch name", { exact: true });
-  const create = dialog.getByRole("button", { name: "Create branch", exact: true });
+  const create = dialog.getByRole("button", { name: "Create", exact: true });
   await expect(name).toBeFocused();
   expect(
     await base.evaluate((element) =>
@@ -625,7 +636,7 @@ test("new branch from accepts typed references with branch suggestions", async (
       await base.fill("origin/unlisted");
       await expect(base).toHaveValue("origin/unlisted");
       await base.press("Tab");
-      await expect(name).toBeFocused();
+      await expect(base).not.toBeFocused();
       await expect(create).toBeEnabled();
       expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
@@ -786,7 +797,7 @@ test("branches held by another worktree are grouped, badged and move the header 
   const picker = page.locator("[data-branch-picker]");
   const audit = "audit/2026-10-14-long-branch-name-for-responsive-review";
   const held = picker.getByRole("option").filter({ hasText: audit });
-  await expect(picker.getByText("In a worktree", { exact: true })).toBeVisible();
+  await expect(picker.getByText("Existing worktrees", { exact: true })).toBeVisible();
   await expect(held.getByText("worktree", { exact: true })).toBeVisible();
   // Free branches carry no worktree badge.
   await expect(

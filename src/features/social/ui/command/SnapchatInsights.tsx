@@ -91,7 +91,7 @@ function InsightPages<T>({
   renderRow(row: T): ReactNode;
 }) {
   const [page, setPage] = useState<DataPage<T>>();
-  const { failureTitle, is, write } = useAccountWrite(failure);
+  const { details, failureTitle, is, write } = useAccountWrite(failure);
   const loading = is("read") || is("more");
   const read = (cursor?: string) => {
     if (disabled || loading) return;
@@ -127,7 +127,7 @@ function InsightPages<T>({
           {page ? t("Refresh") : label}
         </Button>
       </div>
-      {failureTitle ? <InlineError>{failureTitle}</InlineError> : null}
+      {failureTitle ? <InlineError details={details}>{failureTitle}</InlineError> : null}
       {page?.context}
       {page?.rows.map((row) => (
         <div key={rowKey(row)}>{renderRow(row)}</div>

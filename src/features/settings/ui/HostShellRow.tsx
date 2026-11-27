@@ -148,7 +148,9 @@ export function HostShellRow({
           />
         </div>
         <div className="settings-collection-actions">
-          {expanded ? (
+          {/* Without a shell list (failed or not read yet) the inventory cannot open, so the
+              retry stays reachable here. */}
+          {expanded || !listed ? (
             <Button
               variant="ghost"
               iconOnly

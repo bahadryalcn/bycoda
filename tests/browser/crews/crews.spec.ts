@@ -58,97 +58,38 @@ for (const theme of ["light", "dark"] as const) {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/crews/crews.html?longProjects&theme=${theme}`);
       const management = await openWork(page);
-      const project = management.getByRole("button", {
-        name: "Project: crew-project",
-        exact: true,
-      });
-      await expect(project).toBeVisible();
-      const before = await project.boundingBox();
-      await project.click();
-      const option = page
-        .getByRole("option")
-        .filter({ hasText: "accessibility-review-and-implementation" });
-      await expect(option).toBeVisible();
-      const bounds = await option.boundingBox();
-      expect(bounds!.height).toBeLessThan(65);
-      expect(bounds!.width).toBeGreaterThan(before!.width);
-      expect(bounds!.x).toBeGreaterThanOrEqual(0);
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      // Work is shown for the opened project: the project is chosen elsewhere, so neither the
+      // work view nor the new task form offers a project picker or project creation.
+      const project = (scope: ReturnType<Page["locator"]>) =>
+        scope.getByRole("button", { name: /^Project/ });
+      await expect(project(management)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "New project…", exact: true })).toHaveCount(0);
+      expect(await management.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.screenshot({
         path: `temp/verification/2026-11-11-crew-pickers/picker-${theme}-${width}.png`,
       });
-      await page.getByRole("button", { name: "New project…", exact: true }).click();
-      const create = page.getByRole("dialog", { name: "Create project", exact: true });
-      await expect(
-        create.getByRole("textbox", { name: "Project name", exact: true }),
-      ).toBeFocused();
-      await expect(create.getByText("Created in C:/fixture", { exact: true })).toBeVisible();
-      await expect(
-        create.getByRole("button", { name: "Create project", exact: true }),
-      ).toBeDisabled();
-      expect(await project.boundingBox()).toEqual(before);
-      await page.screenshot({
-        path: `temp/verification/2026-11-11-crew-pickers/create-${theme}-${width}.png`,
-      });
-      await create.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(create).toHaveCount(0);
-      await expect(management).toBeVisible();
       const start = await openStart(page);
-      await start.getByRole("button", { name: "Project: crew-project", exact: true }).click();
-      await expect(option).toBeVisible();
-      await page.screenshot({
-        path: `temp/verification/2026-11-11-crew-pickers/new-work-picker-${theme}-${width}.png`,
-      });
-      // The task form's picker only chooses among existing projects; creating one stays in
-      // the crew work manager above.
-      const startBounds = await option.boundingBox();
-      expect(startBounds!.height).toBeLessThan(65);
-      expect(startBounds!.x).toBeGreaterThanOrEqual(0);
-      expect(startBounds!.x + startBounds!.width).toBeLessThanOrEqual(width);
+      await expect(project(start)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "New project…", exact: true })).toHaveCount(0);
-      await page.keyboard.press("Escape");
-      await expect(option).toHaveCount(0);
-      await expect(start).toBeVisible();
+      await expect(start.getByRole("textbox", { name: "Task title", exact: true })).toBeVisible();
     });
   }
 }
 
-test("project creation retains invalid and failed drafts then selects created project", async ({
-  page,
-}) => {
-  await page.goto("/tests/browser/crews/crews.html?failOperation=projects.createDirectory");
-  const management = await openWork(page);
-  const project = management.getByRole("button", {
-    name: "Project: crew-project",
-    exact: true,
-  });
-  await project.click();
-  await page.getByRole("button", { name: "New project…", exact: true }).click();
-  const create = page.getByRole("dialog", { name: "Create project", exact: true });
-  const name = create.getByRole("textbox", { name: "Project name", exact: true });
-  await name.fill("../../invalid");
-  await create.getByRole("button", { name: "Create project", exact: true }).click();
-  await expect(create.getByRole("alert")).toContainText(
-    "Use a folder name without slashes or special characters.",
-  );
-  await name.fill("new-project");
-  await create.getByRole("button", { name: "Create project", exact: true }).click();
-  await expect(create.getByRole("alert")).toContainText(
-    "The Host could not complete this action. Try again in a moment.",
-  );
-  await expect(name).toHaveValue("new-project");
-  await create.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(management).toBeVisible();
+test("project creation is not offered from the crew work view", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html");
-  const next = await openWork(page);
-  await next.getByRole("button", { name: "Project: crew-project", exact: true }).click();
-  await page.getByRole("button", { name: "New project…", exact: true }).click();
-  await name.fill("new-project");
-  await create.getByRole("button", { name: "Create project", exact: true }).click();
-  await expect(create).toHaveCount(0);
-  await expect(
-    next.getByRole("button", { name: "Project: new-project", exact: true }),
-  ).toBeVisible();
+  const management = await openWork(page);
+  await expect(management.getByRole("button", { name: /^Project/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New project…", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Create project", exact: true })).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { crewFixtureOperations: string[] }).crewFixtureOperations.filter(
+          (method) => method === "projects.createDirectory",
+        ).length,
+    ),
+  ).toBe(0);
 });
 
 type CrewsTab = "Teams" | "Members" | "Work";
@@ -407,7 +348,7 @@ test("model catalog failure leaves existing work controls and sessions usable", 
   await page.goto("/tests/browser/crews/crews.html?catalogUnavailable");
   const management = await openWork(page);
   await expect(
-    management.getByRole("status").filter({ hasText: "Model catalog temporarily unavailable" }),
+    management.getByRole("alert").filter({ hasText: "Model catalog temporarily unavailable" }),
   ).toBeVisible();
   const work = management.locator('[data-crew-run="run"]');
   await work.getByRole("button", { name: "Pause new assignments" }).click();
@@ -426,7 +367,11 @@ test("opening an acknowledged run again after a navigation failure never starts 
   const management = await openWork(page);
   const work = management.locator('[data-crew-run="run"]');
   await work.getByRole("button", { name: "Open session", exact: true }).first().click();
-  await expect(management.getByText("Conversation temporarily unavailable")).toBeVisible();
+  // The failure names the action; the Host's reason sits behind its Details control.
+  const failure = management.getByRole("alert").filter({ hasText: "Open session failed" });
+  await expect(failure).toBeVisible();
+  await failure.getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByText("Conversation temporarily unavailable")).toBeVisible();
   await expect(management).toBeVisible();
   await expect(page.getByLabel("Opened session")).toHaveText("");
   await work.getByRole("button", { name: "Open session", exact: true }).first().click();
@@ -682,7 +627,8 @@ test("paused work keeps cancellation available while its coordinator is running"
     .getByRole("dialog", { name: "Stop work", exact: true })
     .getByRole("button", { name: "Stop work", exact: true })
     .click();
-  await expect(work.getByRole("button", { name: "Stop work", exact: true })).toHaveAttribute(
+  // The pressed button carries its own pending name.
+  await expect(work.getByRole("button", { name: "Stopping…", exact: true })).toHaveAttribute(
     "aria-busy",
     "true",
   );
@@ -701,19 +647,20 @@ for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/crews/crews.html?theme=${theme}&slowOperation=crews.pause`);
     const management = await openWork(page);
-    const pause = management.getByRole("button", {
+    const pauseAction = management.getByRole("button", {
       name: "Pause new assignments",
       exact: true,
     });
-    await pause.focus();
-    await pause.press("Enter");
+    await pauseAction.focus();
+    await pauseAction.press("Enter");
+    // The pressed button carries its own pending name instead of a separate status line.
+    const pause = management.getByRole("button", { name: "Pausing…", exact: true });
     await expect(pause).toHaveAttribute("aria-busy", "true");
     await expect(pause).toBeFocused();
     await expect(
       management.getByRole("button", { name: "Stop work", exact: true }),
     ).not.toHaveAttribute("aria-busy", "true");
-    // The running action is named beside its controls, not only by a spinner.
-    await expect(management.getByRole("status").filter({ hasText: "Pausing…" })).toBeVisible();
+    await expect(management.getByRole("status").filter({ hasText: "Pausing…" })).toHaveCount(0);
     await pause.evaluate((node: HTMLButtonElement) => node.click());
     expect(
       await page.evaluate(
@@ -1360,7 +1307,7 @@ test("access is set once for every member, model rules open on demand, and edits
     });
   });
   // The default model choice offers the link to the shared model order.
-  await dialog.getByRole("radio", { name: "Default", exact: true }).check();
+  await dialog.getByRole("radio", { name: "Use settings", exact: true }).check();
   await dialog.getByRole("button", { name: "Manage models", exact: true }).click();
   await expect
     .poll(() =>
@@ -1461,9 +1408,14 @@ test("a failed save stays visible, keeps the draft and starts nothing", async ({
   const dialog = crewEditor(page);
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   // The autosave fails: the error and Retry stay in the footer, the draft stays as typed.
+  await expect(dialog.getByText("Could not save the crew.")).toBeInViewport();
+  // The Host's reason sits behind the failure's Details control.
+  await dialog.getByRole("button", { name: /^Details/ }).click();
   await expect(
-    dialog.getByText("The Host rejected this crew: storage is read-only right now."),
-  ).toBeInViewport();
+    page.getByText("The Host rejected this crew: storage is read-only right now."),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
   await expect(dialog.getByRole("textbox", { name: "Crew name", exact: true })).toHaveValue(
     "Website Crew v2",
@@ -1575,8 +1527,11 @@ for (const theme of ["light", "dark"] as const) {
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
         ).toBe(true);
-      // The rail keeps the crew identities; it no longer lists current work.
-      await expect(page.getByRole("region", { name: "Crew work", exact: true })).toHaveCount(0);
+      // The crews rail keeps the crew identities; current work is listed by the sidebar's own
+      // Crew work section, not by this rail.
+      await expect(
+        page.locator("aside").first().getByRole("region", { name: "Crew work", exact: true }),
+      ).toHaveCount(0);
       await page
         .locator("aside")
         .first()
@@ -1828,9 +1783,7 @@ for (const theme of ["light", "dark"] as const) {
       await dialog
         .getByRole("textbox", { name: "Crew name", exact: true })
         .fill("Fixture draft preserved");
-      await expect(
-        dialog.getByText("The Host rejected this crew: storage is read-only right now."),
-      ).toBeVisible();
+      await expect(dialog.getByText("Could not save the crew.")).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Try again", exact: true })).toBeVisible();
       await shot("footer-error");
       await page.goto(`/tests/browser/crews/crews.html?library=empty&theme=${theme}`);
@@ -1882,9 +1835,13 @@ for (const theme of ["light", "dark"])
       await expect(second).toBeVisible();
       for (const node of [first, second])
         await expect(node.locator("../..")).toHaveCSS("border-bottom-width", "1px");
-      const scan = page.getByRole("button", { name: "Scan with these settings" });
+      // The scan options open in a dialog; its footer carries the scan action.
+      await page.getByRole("button", { name: "Scan settings", exact: true }).click();
+      const scan = page
+        .getByRole("dialog", { name: "Scan settings", exact: true })
+        .getByRole("button", { name: "Scan with these settings" });
       await expect(scan).toBeEnabled();
-      await expect(scan.locator("../..")).toHaveCSS("border-top-width", "1px");
+      await expect(scan.locator("xpath=ancestor::footer[1]")).toHaveCSS("border-top-width", "1px");
       await page.screenshot({
         path: `temp/verification/2026-10-25-crew-management-v2/shared-settings-${theme}-${width}.png`,
         animations: "disabled",

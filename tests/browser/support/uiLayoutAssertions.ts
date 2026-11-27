@@ -226,16 +226,25 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
           while (parent && parent !== containing) parent = parent.parentElement;
         }
         let ellipsis = getComputedStyle(el).textOverflow === "ellipsis";
+        // Content inside a scroller that lies beyond an outer clip is reached by scrolling, not cut.
+        let scrollsX = false;
+        let scrollsY = false;
         for (; parent && parent !== document.documentElement; parent = parent.parentElement) {
           const style = getComputedStyle(parent);
           if (style.textOverflow === "ellipsis" || style.webkitLineClamp !== "none")
             ellipsis = true;
-          if (!clips(style) || scrolls(style)) continue;
+          if (!clips(style) || scrolls(style)) {
+            scrollsX ||= ["auto", "scroll"].includes(style.overflowX);
+            scrollsY ||= ["auto", "scroll"].includes(style.overflowY);
+            continue;
+          }
           const bounds = parent.getBoundingClientRect();
           const cut =
-            (["hidden", "clip"].includes(style.overflowX) &&
+            (!scrollsX &&
+              ["hidden", "clip"].includes(style.overflowX) &&
               (box.right > bounds.right + 1 || box.left < bounds.left - 1)) ||
-            (["hidden", "clip"].includes(style.overflowY) &&
+            (!scrollsY &&
+              ["hidden", "clip"].includes(style.overflowY) &&
               (box.bottom > bounds.bottom + 1 || box.top < bounds.top - 1));
           // Truncated labels are an intentional, readable-by-tooltip contract; actions never are.
           if (cut && !(ellipsis && !el.matches(ACTIONABLE))) {

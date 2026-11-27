@@ -61,7 +61,7 @@ import { SessionFolderGroup } from "./SessionFolderSettings";
 import { NewProjectFolderGroup } from "./NewProjectFolderSettings";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { PoliciesSettings } from "./PoliciesSettings";
+import { LegalDocuments } from "./PoliciesSettings";
 import { NotificationAlerts } from "./NotificationsSettings";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
 import { WorkspacePage } from "./WorkspaceSettings";
@@ -622,9 +622,7 @@ export function SettingsView({
                         {section === "policies" ? (
                           <div className="settings-topics">
                             <HelpSettings />
-                            <Disclosure summary={t("Legal")} variant="row">
-                              <PoliciesSettings />
-                            </Disclosure>
+                            <LegalDocuments />
                           </div>
                         ) : null}
                         {section === "keybindings" ? <KeybindingsPage /> : null}

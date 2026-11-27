@@ -133,6 +133,10 @@
   .composer-controls {
     --composer-settings-in-picker: 1;
   }
+
+  .composer-send-controls [data-composer-stop-optional] {
+    display: none;
+  }
 }
 
 [data-jump-to-bottom] {

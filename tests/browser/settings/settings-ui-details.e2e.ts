@@ -6,7 +6,7 @@ for (const theme of ["light", "dark"]) {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en&buildDetails=1`,
+        `/tests/browser/settings/settings.html?section=policies&theme=${theme}&lang=en&buildDetails=1`,
       );
       const details = page.getByTestId("build-identity-details");
       const header = details.locator("summary");
@@ -14,10 +14,10 @@ for (const theme of ["light", "dark"]) {
       await header.click();
       await expect(details).toHaveAttribute("open", "");
       await expect(details.getByText(/4b9e2169b0bd3864cebb-local/)).toBeVisible();
-      const group = page.getByRole("region", { name: "Updates", exact: true });
+      const group = page.getByRole("region", { name: "About", exact: true });
       await page.mouse.move(0, 0);
       await group.screenshot({
-        path: `temp/verification/settings-setup-polish/updates-${theme}-${width}.png`,
+        path: `temp/verification/settings-setup-polish/about-${theme}-${width}.png`,
       });
       await expect(
         header.getByRole("button", { name: "Copy build details", exact: true }),
@@ -367,13 +367,18 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/settings/settings.html?section=integrations&collectionMessaging=1&theme=${theme}&lang=en`,
       );
-      await page.getByRole("tab", { name: "Email", exact: true }).click();
-      const panel = page.getByRole("tabpanel", { name: "Email" });
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await page.getByRole("option", { name: "Email", exact: true }).click();
+      const panel = page.getByRole("region", { name: "Connection", exact: true });
       const account = panel.getByRole("listitem").filter({ hasText: "Work email" });
       await account.getByRole("button", { name: "Edit" }).click();
-      const actions = panel.locator('.integration-actions[data-surface-frame="pane"]');
+      // The save row sits directly under the form fields with the same inset: no divider of its own.
+      const actions = panel
+        .locator(".integration-actions")
+        .filter({ has: page.getByRole("button", { name: /save and test connection/i }) });
       await expect(actions).toBeVisible();
-      await expect(actions).toHaveCSS("border-block-start-width", "1px");
+      await expect(actions.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+      await expect(actions).toHaveCSS("border-block-start-width", "0px");
       await actions.scrollIntoViewIfNeeded();
       await panel.screenshot({
         path: info.outputPath(`messaging-actions-${theme}-${width}.png`),
@@ -466,19 +471,6 @@ for (const theme of ["light", "dark"]) {
       );
       expect(width === 800 ? chatEdges.blockColor : chatEdges.inlineColor).toBe(chatEdges.expected);
       await editor.screenshot({ path: info.outputPath(`template-edge-${theme}-${width}.png`) });
-      await page.goto(
-        `/tests/browser/settings/settings.html?section=policies&theme=${theme}&lang=en`,
-      );
-      const reader = page.locator(".policy-reader");
-      await expect(reader).toBeVisible();
-      const policyEdges = await reader.evaluate(edgeValues);
-      expect([policyEdges.block, policyEdges.inline]).toEqual(
-        width === 800 ? ["1px", "0px"] : ["0px", "1px"],
-      );
-      expect(width === 800 ? policyEdges.blockColor : policyEdges.inlineColor).toBe(
-        policyEdges.expected,
-      );
-      await page.screenshot({ path: info.outputPath(`policy-edge-${theme}-${width}.png`) });
     });
   }
 }
@@ -565,7 +557,7 @@ for (const theme of ["light", "dark"])
         .click({ position: { x: 10, y: 10 } });
       await expect(savedActions).toHaveCSS("opacity", "1");
       expect(await savedActions.boundingBox()).toEqual(savedBox);
-      await saved.getByRole("button", { name: "Rename" }).focus();
+      await saved.getByRole("button", { name: "More actions", exact: true }).focus();
       await expect(savedActions).toHaveCSS("opacity", "1");
       await saved.screenshot({ path: info.outputPath(`saved-actions-${theme}-${width}.png`) });
       await selected.hover();
@@ -855,15 +847,15 @@ for (const theme of ["light", "dark"])
           );
         const addBackground = await background(editor);
         expect(addBackground).not.toBe("rgba(0, 0, 0, 0)");
-        const draft = editor.getByRole("textbox", { name: /New .* account/ });
+        const draft = editor.getByRole("textbox", { name: "Account name", exact: true });
         await expect(draft).toBeFocused();
         await expect(draft).not.toHaveAttribute("aria-invalid", "true");
         await expect(editor.getByRole("radio")).toHaveCount(2);
-        await expect(editor.getByRole("radio", { name: "Personal" })).not.toBeChecked();
+        await expect(editor.getByRole("radio", { name: "Personal" })).toBeChecked();
         await expect(editor.getByRole("radio", { name: "Work" })).not.toBeChecked();
         await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeDisabled();
         await draft.fill("Unsaved test account");
-        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeDisabled();
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeEnabled();
         await editor.getByText("Work", { exact: true }).click({ timeout: 5000 });
         await expect(editor.getByRole("radio", { name: "Work" })).toBeChecked();
         await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeEnabled();
@@ -971,13 +963,13 @@ for (const theme of ["light", "dark"])
       await expect(swatch).toHaveCSS("border-top-width", "2px");
       await expect(swatch).toHaveCSS("border-top-left-radius", "50%");
       const dial = page.getByRole("slider", { name: "Gradient angle", exact: true });
-      await expect(dial).toHaveCSS("width", "32px");
-      await expect(dial).toHaveCSS("border-top-left-radius", "50%");
+      await expect(dial).toHaveCSS("width", "16px");
+      await expect(dial).toHaveCSS("border-top-left-radius", "9999px");
       await page.keyboard.press("Tab");
       await dial.focus();
       expect(await dial.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
       await expect(dial).toHaveCSS("outline-width", "1px");
-      await expect(dial).toHaveCSS("outline-offset", "2px");
+      await expect(dial).toHaveCSS("outline-offset", "-1px");
       const value = Number(await dial.getAttribute("aria-valuenow"));
       await dial.press("ArrowRight");
       await expect(dial).toHaveAttribute("aria-valuenow", String(value + 1));
@@ -1040,8 +1032,8 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
       );
       await page.getByRole("tab", { name: "Interface", exact: true }).click();
-      const controls = page.locator(".interface-scrollbar-controls");
-      const rows = controls.locator(":scope > .settings-row");
+      const controls = page.getByRole("region", { name: "Scrollbars", exact: true });
+      const rows = controls.locator(".settings-row");
       await expect(rows).toHaveCount(4);
       await expect(rows.nth(0)).toHaveCSS("border-top-width", "0px");
       for (let i = 1; i < 4; i++) await expect(rows.nth(i)).toHaveCSS("border-top-width", "1px");

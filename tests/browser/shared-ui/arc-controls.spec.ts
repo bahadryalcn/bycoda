@@ -1038,9 +1038,8 @@ test("pending quiet actions preserve hierarchy, geometry and keyboard focus", as
           await expect(action).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
           await expect(action).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
           if (index === 1) {
-            // The label keeps its width and accessible name beneath a centered spinner.
-            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "0");
-            await expect(action.locator(':scope > span[aria-hidden="true"]')).toBeVisible();
+            // A text action keeps its label readable beside a start spinner while pending.
+            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "1");
             await expect(action).toContainText("Quiet native action");
             await expect(action).toHaveAccessibleName("Quiet native action");
           }
@@ -1773,8 +1772,8 @@ test.describe("shared control state matrix", () => {
       .getByRole("button", { name: "Disabled action", exact: true })
       .evaluate((node) => (node as HTMLElement).click());
     await expect(count).toHaveText("1");
-    // The loading text action keeps its name while pending.
-    await expect(page.getByTestId("matrix-loading-text")).toContainText("Loading action");
+    // The loading text action shows its pending text beside the spinner.
+    await expect(page.getByTestId("matrix-loading-text")).toContainText("Saving…");
     const pressed = page.getByRole("button", { name: "Selected action", exact: true });
     await pressed.click();
     await expect(pressed).toHaveAttribute("aria-pressed", "true");

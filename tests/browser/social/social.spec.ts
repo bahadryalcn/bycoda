@@ -4,6 +4,17 @@ import { spotlightId, storyId } from "./snapchat-data";
 
 type FixtureCall = { command: string; args: { params?: { action?: string; input?: unknown } } };
 
+/** The alert owns one plain sentence; the raw provider text sits behind its Details link. */
+async function expectErrorDetails(page: Page, detail: string | RegExp) {
+  await page
+    .getByRole("alert")
+    .getByRole("button", { name: /^(Ayrıntılar|Details)/ })
+    .first()
+    .click();
+  await expect(page.getByLabel(/^(Hata ayrıntıları|Error details)$/)).toContainText(detail);
+  await page.keyboard.press("Escape");
+}
+
 /** Inputs of every `social.request` the fixture received for one action, in order. */
 function requests(page: Page, action: string) {
   return page.evaluate(
@@ -68,7 +79,7 @@ for (const theme of ["light", "dark"])
         }),
       ]);
       await page.getByRole("radio", { name: "Liste", exact: true }).check();
-      await page.getByRole("button", { name: /Campaign body.*Fixture Reddit/ }).click();
+      await page.getByRole("button", { name: /^Reddit Campaign body/ }).click();
       const reopened = page.getByRole("dialog");
       await expect(reopened.getByRole("textbox", { name: "Başlık", exact: true })).toHaveValue(
         "Release notes",
@@ -110,7 +121,7 @@ test("social YouTube management confirms video edits and shows provider failures
     .getByRole("dialog", { name: "Videoyu sil" })
     .getByRole("button", { name: "Videoyu sil" })
     .click();
-  await expect(page.getByText("Fixture YouTube deletion denied.")).toBeVisible();
+  await expectErrorDetails(page, "Fixture YouTube deletion denied.");
   expect(await requests(page, "youtube.video.delete")).toEqual([
     {
       accountId: "youtube-api",
@@ -272,7 +283,7 @@ for (const theme of ["light", "dark"])
       await capture("community");
       await chooseSection("Analiz");
       await page.getByRole("button", { name: "Yükle", exact: true }).click();
-      await expect(page.getByText(/YouTube işlem yapmanı bekliyor/)).toBeVisible();
+      await expect(page.getByText(/YouTube işlem yapmanızı bekliyor/)).toBeVisible();
       await capture("needs-human");
     });
   }
@@ -554,7 +565,7 @@ test("Snapchat routed loading, project permission, empty, denied and exact delet
   await page.getByRole("option", { name: "Fixture Snapchat Read Only" }).click();
   await page.getByText("Creator earnings", { exact: true }).click();
   await page.getByRole("button", { name: "Read earnings" }).click();
-  await expect(page.getByText(/Fixture creator access denied/)).toBeVisible();
+  await expectErrorDetails(page, /Fixture creator access denied/);
   await expect(page.getByText("No Snapchat earnings found.")).toHaveCount(0);
 
   await page.getByRole("tab", { name: "Content", exact: true }).click();
@@ -614,10 +625,8 @@ for (const theme of ["light", "dark"])
       await comments.getByLabel("LinkedIn etkinlik kimliği").fill("7246559654799892480");
       await comments.getByRole("button", { name: "Yorumları yükle" }).click();
       await expect(page.getByText("Bir ürün demosu olacak mı?")).toBeVisible();
-      await page.getByRole("button", { name: "Yanıtla", exact: true }).click();
-      await page
-        .getByRole("textbox", { name: "Yanıtla", exact: true })
-        .fill("Evet, yayın sonunda.");
+      await page.getByRole("button", { name: "Yanıt", exact: true }).click();
+      await page.getByRole("textbox", { name: "Yanıt", exact: true }).fill("Evet, yayın sonunda.");
       await page.getByRole("button", { name: "Değişikliği incele" }).scrollIntoViewIfNeeded();
       await page.screenshot({
         path: `temp/verification/social-linkedin/live-comments-${theme}-${width}.png`,
@@ -649,7 +658,7 @@ for (const theme of ["light", "dark"])
         .locator("summary")
         .filter({ hasText: /^Analiz$/ })
         .click();
-      await page.getByRole("button", { name: "Yenile", exact: true }).click();
+      await page.getByRole("button", { name: "Analizleri oku", exact: true }).click();
       await expect(page.getByText(/Gösterimler/)).toBeVisible();
       await page.getByText("LinkedIn gönderilerini yönet", { exact: true }).click();
       await page.getByText("Mevcut bir incelemeyi aç", { exact: true }).click();
@@ -1108,7 +1117,10 @@ for (const theme of ["light", "dark"])
       await expect(badge).toBeVisible();
       // Chromium rounds the 1.5px cutout to a physical CSS pixel at device scale 1.
       await expect(badge).toHaveCSS("border-top-width", "1px");
-      await page.locator(".inbox-row-preview").filter({ hasText: "Demo ürün sorusu" }).click();
+      await page
+        .getByRole("list", { name: "Konuşmalar" })
+        .getByRole("button", { name: /Demo ürün sorusu/ })
+        .click();
       // Shared MessageTimeline: borderless bubbles, own messages end-aligned, day separators.
       const own = page.locator('[data-message-id][data-own="true"] > div').first();
       await expect(own).toHaveCSS("border-top-width", "0px");
@@ -1404,12 +1416,12 @@ test("social extra caller visual matrix", async ({ page }) => {
         path: `temp/verification/social-extra/editor-${theme}-${width}.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: /AI.a sor/ }).click();
+      await page.getByRole("button", { name: /Yapay zekâya sor/ }).click();
       await page.screenshot({
         path: `temp/verification/social-extra/editor-ai-${theme}-${width}.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: /AI.a sor/ }).click();
+      await page.getByRole("button", { name: /Yapay zekâya sor/ }).click();
       await page.getByText("Demo TikTok", { exact: true }).click();
       await page.screenshot({
         path: `temp/verification/social-extra/tiktok-${theme}-${width}.png`,
@@ -1543,7 +1555,7 @@ for (const theme of ["light", "dark"])
       await account.locator("summary").filter({ hasText: "Doğrudan mesajlar" }).click();
       const open = account.getByRole("button", { name: "Tarayıcıda aç", exact: true });
       await open.click();
-      const status = account.getByText("Reddit Chat’te devam et.", { exact: true });
+      const status = account.getByText("Reddit Chat’te devam edin.", { exact: true });
       await expect(status).toBeVisible();
       await expect(open).toBeDisabled();
       await account.getByRole("button", { name: "Kapat", exact: true }).click();
@@ -1596,7 +1608,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("option", { name: "Doğrudan mesajlar", exact: true }).click();
       const open = account.getByRole("button", { name: "Tarayıcıda aç", exact: true });
       await open.click();
-      const status = account.getByText("X tarayıcı penceresinde devam et.", { exact: true });
+      const status = account.getByText("X tarayıcı penceresinde devam edin.", { exact: true });
       await expect(status).toBeVisible();
       await expect(open).toBeDisabled();
       await account.getByRole("button", { name: "Kapat", exact: true }).click();
@@ -1756,7 +1768,8 @@ test("account settings and connection forms visual matrix", async ({ page }, tes
         fullPage: true,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: "Bunun yerine e-posta hesabı ekle" }).click();
+      await page.getByRole("button", { name: /^Platform: / }).click();
+      await page.getByRole("option", { name: "E-posta", exact: true }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath(`email-account-${theme}-${width}.png`),
@@ -1773,9 +1786,9 @@ for (const width of [800, 1280]) {
     for (const theme of ["light", "dark"]) {
       for (const [scene, platform, instruction] of [
         ["signup-google-expired", "YouTube", "Google kayıt oturumunun süresi doldu."],
-        ["signup-google-device", "YouTube", "QR kodunu telefonunla tara"],
-        ["signup-instagram-phone", "Instagram", "Instagram’da cep telefonu numaranı gir"],
-        ["signup-x-welcome", "X", "X’te karşılama adımlarını bitir"],
+        ["signup-google-device", "YouTube", "QR kodunu telefonunuzla tarayın"],
+        ["signup-instagram-phone", "Instagram", "Instagram’da cep telefonu numaranızı girin"],
+        ["signup-x-welcome", "X", "X’te karşılama adımlarını bitirin"],
       ]) {
         await page.goto(`/tests/browser/social/social.html?signup-create&${scene}`);
         await page.evaluate(
@@ -1924,22 +1937,32 @@ for (const [width, variant] of [
           await page.getByRole("button", { name: /Fixture Reddit/ }).click();
           const connection = page.getByRole("region", { name: "Bağlantı", exact: true });
           await connection.getByRole("button", { name: "Bağlantıyı kontrol et" }).click();
-          await expect(connection.getByRole("alert")).toContainText(
-            "Reddit, ağ güvenliği nedeniyle tarayıcı erişimini engelledi. Daha sonra tekrar deneyin.",
+          await expect(connection.getByRole("alert")).toContainText("Oturum açılamadı.");
+          await connection
+            .getByRole("alert")
+            .getByRole("button", { name: /^Ayrıntılar/ })
+            .click();
+          await expect(page.getByLabel("Hata ayrıntıları", { exact: true })).toContainText(
+            "Reddit blocked browser access for network security. Try again later.",
           );
+          await page.keyboard.press("Escape");
           const accountStatus = page
             .getByRole("dialog", { name: "Fixture Reddit" })
             .locator(".social-detail-status");
-          await expect(accountStatus.getByText("Bağlı", { exact: true })).toHaveCount(0);
+          await expect(connection.getByRole("status").filter({ hasText: "Bağlı" })).toHaveCount(0);
           await expect(
-            accountStatus.getByText("Bağlantı tekrar denenmeli", { exact: true }),
+            accountStatus.getByRole("img", {
+              name: "Hesap durumu: Bağlantı tekrar denenmeli",
+              exact: true,
+            }),
           ).toHaveCount(1);
           await page.screenshot({
             path: `temp/verification/social-platform-acceptance/reddit-connect-network-block-${theme}-${width}.png`,
             animations: "disabled",
           });
           await connection.getByRole("button", { name: "Bağlantıyı kontrol et" }).click();
-          await expect(accountStatus.getByText("Bağlı", { exact: true })).toHaveCount(1);
+          await expect(connection.getByRole("status").filter({ hasText: "Bağlı" })).toHaveCount(1);
+          await expect(accountStatus.getByRole("img", { name: /^Hesap durumu: / })).toHaveCount(0);
           await expect(connection.getByRole("alert")).toHaveCount(0);
         }
         continue;
@@ -1947,7 +1970,7 @@ for (const [width, variant] of [
       await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
       await expect(
         dialog.getByText(
-          "Aşağıda belirtilenleri platform penceresinde tamamla. Sonra burada Devam et’e tıkla.",
+          "Aşağıda belirtilenleri platform penceresinde tamamlayın. Sonra burada Devam et’e tıklayın.",
         ),
       ).toBeVisible();
       await expect(dialog.getByText(/parola|koşul kabulü/i)).toHaveCount(0);
@@ -1975,7 +1998,7 @@ for (const [width, variant] of [
   });
 }
 
-test("automatic audience labels stay on one line", async ({ page }, testInfo) => {
+test("automatic audience list stays on one line with its hint", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {
     for (const width of [800, 1280]) {
       await page.setViewportSize({ width, height: 900 });
@@ -1985,10 +2008,13 @@ test("automatic audience labels stay on one line", async ({ page }, testInfo) =>
         theme === "light",
       );
       await page.getByRole("tab", { name: "Hedef kitle", exact: true }).click();
-      const badge = page.locator(".audience-collection-main [data-variant][data-tone]");
-      await expect(badge).toBeVisible();
-      const bounds = await badge.boundingBox();
-      expect(bounds!.height).toBeLessThanOrEqual(20);
+      // The automatic list carries a lightning icon with the "Otomatik" hint instead of a text tag.
+      const row = page.getByRole("button", { name: "Yorumcular", exact: true });
+      await expect(row).toBeVisible();
+      const bounds = await row.boundingBox();
+      expect(bounds!.height).toBeLessThanOrEqual(36);
+      await row.hover();
+      await expect(page.getByRole("tooltip", { name: "Otomatik" })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath(`audience-badge-${theme}-${width}.png`),
         fullPage: true,
@@ -2005,7 +2031,9 @@ test.beforeEach(async ({ page }, testInfo) => {
   );
 });
 
-test("empty reply rules explain the disabled review once", async ({ page }, testInfo) => {
+test("empty reply rules explain themselves once without a review button", async ({
+  page,
+}, testInfo) => {
   for (const theme of ["light", "dark"]) {
     for (const width of [800, 1280]) {
       await page.setViewportSize({ width, height: 900 });
@@ -2024,8 +2052,8 @@ test("empty reply rules explain the disabled review once", async ({ page }, test
       const explanation = "Bu hesap için henüz yanıt kuralı yok.";
       await expect(dialog.getByText(explanation, { exact: true })).toHaveCount(1);
       const review = dialog.getByRole("button", { name: "Kuralları AI ile gözden geçir" });
-      await expect(review).toBeDisabled();
-      await expect(review).toHaveAccessibleDescription(explanation);
+      // With no rules there is nothing to review, so the control is absent and the sentence stands alone.
+      await expect(review).toHaveCount(0);
       await page.screenshot({
         path: testInfo.outputPath(`reply-rules-${theme}-${width}.png`),
         fullPage: true,
@@ -2081,8 +2109,8 @@ test("the five sections render and switch by click and keyboard", async ({ page 
     "Hesaplar ve Ayarlar",
   ]);
   // Command loads its AI activity and pending work from the Host without a read error.
-  await expect(page.getByRole("textbox", { name: "AI'a sor" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "İşleminiz bekleniyor" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Yapay zekâya sor" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Sizi bekliyor" })).toBeVisible();
   await expect(page.getByText("AI etkinliği yüklenemedi.")).toHaveCount(0);
   await expect(page.getByText("Bekleyen işler yüklenemedi.")).toHaveCount(0);
 
@@ -2100,7 +2128,7 @@ test("the five sections render and switch by click and keyboard", async ({ page 
     );
     await expect(landmark()).toBeVisible();
     // Only the selected section is visible; the command input stays mounted but hidden.
-    await expect(page.getByRole("textbox", { name: "AI'a sor" })).toBeHidden();
+    await expect(page.getByRole("textbox", { name: "Yapay zekâya sor" })).toBeHidden();
   }
 
   // Keyboard: Home, ArrowRight and End move focus and selection along the strip.
@@ -2108,7 +2136,7 @@ test("the five sections render and switch by click and keyboard", async ({ page 
   await page.keyboard.press("Home");
   await expect(nav.getByRole("tab", { name: "Komut" })).toBeFocused();
   await expect(nav.getByRole("tab", { name: "Komut" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("textbox", { name: "AI'a sor" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Yapay zekâya sor" })).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(nav.getByRole("tab", { name: "İçerik" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("button", { name: "Yeni gönderi" })).toBeVisible();
@@ -2122,7 +2150,7 @@ test("a command becomes a visible plan that runs nothing until the owner runs it
 }) => {
   await openSocial(page);
   await expect(page.getByText("Bugün gönderilen", { exact: true })).toBeVisible();
-  const input = page.getByRole("textbox", { name: "AI'a sor" });
+  const input = page.getByRole("textbox", { name: "Yapay zekâya sor" });
   const submit = page.getByRole("button", { name: "Plan", exact: true });
   await expect(submit).toBeDisabled();
   await input.fill("Answer this week's pricing questions");
@@ -2229,11 +2257,15 @@ test("account detail lists what a disconnected account cannot do and sending sta
 }) => {
   await openSocial(page);
   await sections(page).getByRole("tab", { name: "Hesaplar ve Ayarlar" }).click();
-  const sending = page.getByRole("group", { name: "Onaylı gönderimleri aç" });
-  const enable = sending.getByRole("button", { name: "Onaylı gönderimleri aç" });
-  await expect(enable).toBeDisabled();
-  await sending.getByRole("checkbox").check();
+  const sending = page.getByRole("group", { name: "Onaylı gönderimler" });
+  const enable = sending.getByRole("button", { name: "Etkinleştir" });
   await expect(enable).toBeEnabled();
+  // Enabling asks for confirmation first; cancelling sends nothing to the Host.
+  await enable.click();
+  const confirm = page.getByRole("dialog", { name: "Onaylı gönderimler açılsın mı?" });
+  await expect(confirm.getByRole("button", { name: "Onaylı gönderimleri aç" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirm).toBeHidden();
 
   await page.getByRole("button", { name: /Demo account/ }).click();
   const detail = page.getByRole("dialog", { name: "Demo account" });
@@ -2246,7 +2278,7 @@ test("account detail lists what a disconnected account cannot do and sending sta
   await expect(detail.getByRole("button", { name: "Tarayıcıda bağla", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(detail).toBeHidden();
-  // Ticking the consent box only enables the action; nothing was sent to the Host.
+  // The confirmation was dismissed; nothing was sent to the Host.
   expect(await requests(page, "execution.enable")).toEqual([]);
 });
 
@@ -2301,13 +2333,13 @@ test("media field lists attached images and video and removes each item explicit
       await page.screenshot({ path: testInfo.outputPath(`x-media-${theme}-${width}.png`) });
     }
   }
-  // Each item has its own remove button (catalog "{p0}'ı kaldır"); nothing removes the batch at once.
+  // Each item has its own remove button (catalog "Kaldır: {p0}"); nothing removes the batch at once.
   const status = page.getByRole("status", { name: "Eklerin türleri" });
-  await page.getByRole("button", { name: "one.png'ı kaldır", exact: true }).click();
+  await page.getByRole("button", { name: "Kaldır: one.png", exact: true }).click();
   await expect(status).toHaveText("image,video");
-  await page.getByRole("button", { name: "two.png'ı kaldır", exact: true }).click();
+  await page.getByRole("button", { name: "Kaldır: two.png", exact: true }).click();
   await expect(status).toHaveText("video");
-  await page.getByRole("button", { name: "demo.mp4'ı kaldır", exact: true }).click();
+  await page.getByRole("button", { name: "Kaldır: demo.mp4", exact: true }).click();
   await expect(status).toBeEmpty();
 });
 
@@ -2383,9 +2415,17 @@ for (const theme of ["light", "dark"])
       await capture("accounts");
       for (const [label, name] of [
         ["Bu bilgisayarda gönderim", "sending"],
-        ["Gelen kutusu", "inbox-settings"],
+        ["Gelen kutusunu otomatik yenile", "inbox-settings"],
         ["AI modeli", "ai-model"],
       ] as const) {
+        // The inbox setting is a single switch row, not a region of its own.
+        if (name === "inbox-settings") {
+          const toggle = page.getByRole("switch", { name: label, exact: true });
+          await toggle.scrollIntoViewIfNeeded();
+          await expect(toggle).toBeVisible();
+          await capture(name);
+          continue;
+        }
         const region = page.getByRole("region", { name: label, exact: true });
         await region.scrollIntoViewIfNeeded();
         await expect(region).toBeVisible();

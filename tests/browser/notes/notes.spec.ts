@@ -145,6 +145,14 @@ test("session note picker overlays the editor, restores keyboard focus and opens
   await expect(page.locator('[data-note-id="note-1"]')).toHaveCount(0);
 });
 
+test("a note that starts with a heading is named by it and has no separate title field", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/notes/notes.html?heading");
+  await expect(page.getByRole("heading", { name: "Release checklist", level: 1 })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveCount(0);
+});
+
 test("opening an empty session creates no document and browsing project notes remembers the selection", async ({
   page,
 }) => {
@@ -356,7 +364,7 @@ test("quotes selected note text from preview and source through the contextual m
         () => (window as unknown as { selectedQuotes: { text: string }[] }).selectedQuotes[1]?.text,
       ),
     )
-    .toBe("# Release checklist");
+    .toBe("Release checklist");
 });
 
 test("keeps note controls compact and confirms deletion in a focused dialog", async ({
@@ -860,9 +868,15 @@ for (const theme of ["light", "dark"])
       await expect(page.getByText("Loading notes…")).toBeVisible();
       await page.screenshot({ path: info.outputPath(`notes-loading-${theme}-${width}.png`) });
       await page.goto(`/tests/browser/notes/notes.html?panel&failedNotes&theme=${theme}`);
-      await expect(page.getByText(/Fixture notes unavailable/)).toBeVisible();
+      const failure = page
+        .getByRole("alert")
+        .filter({ hasText: "Could not load or update notes." });
+      await expect(failure).toBeVisible();
       await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
       await page.screenshot({ path: info.outputPath(`notes-error-${theme}-${width}.png`) });
+      // The Host's reason sits behind the failure's Details control.
+      await failure.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByText(/Fixture notes unavailable/)).toBeVisible();
     });
 
 test("new session note saves explicitly and leaves no false title recovery when closed", async ({

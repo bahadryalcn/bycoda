@@ -106,7 +106,7 @@ test("application menu keeps navigation in reach and groups secondary actions", 
       await expect(menu.getByText("Check for Updates…")).toHaveCount(0);
       await expect(menu.getByText("Usage guide")).toHaveCount(0);
       await expect(menu.getByText("Take the tour")).toHaveCount(0);
-      await expect(menu.getByText("New Terminal", { exact: true })).toHaveCount(0);
+      await expect(menu.getByText("New terminal", { exact: true })).toHaveCount(0);
       await expect(menu.getByRole("menuitem", { name: /^Inbox/ })).toContainText(
         /Ctrl\+Shift\+I|⌘⇧I/,
       );
@@ -118,8 +118,10 @@ test("application menu keeps navigation in reach and groups secondary actions", 
       await expect(page.getByLabel("Selected action")).toHaveText("Notes");
       await trigger.click();
       await page.keyboard.press("End");
+      // Quit, Minimize to tray and Close window sit below the Terminal submenu.
+      for (let step = 0; step < 3; step++) await page.keyboard.press("ArrowUp");
       await page.keyboard.press("ArrowRight");
-      await page.getByRole("menuitem", { name: /^New Terminal/ }).click();
+      await page.getByRole("menuitem", { name: /^New terminal/ }).click();
       await expect(page.getByLabel("Selected action")).toHaveText("New Terminal");
     }
   }
@@ -346,7 +348,7 @@ test("workspace picker uses spare header width before clipping names", async ({
   }
   await page.getByRole("tab", { name: /^Sessions/ }).click();
   await header.getByRole("button", { name: "Search sessions", exact: true }).click();
-  const search = header.getByPlaceholder("Search sessions…");
+  const search = header.getByRole("combobox", { name: /^Search sessions/ });
   await expect(search).toBeVisible();
   await search.fill("retained query");
   for (const pane of ["wide", "narrow"]) {
@@ -487,7 +489,7 @@ test("session detail closes on ancestor scroll and cancels a pending hover", asy
     await page.mouse.move(1200, 700);
     await row.hover();
     await expect(detail).toBeVisible();
-    await expect(detail).toContainText("Last activity: Oct 17, 2026, 03:37 PM");
+    await expect(detail).toContainText(/Oct 17/);
     await page.screenshot({ path: testInfo.outputPath(`session-detail-open-${theme}.png`) });
     // An unrelated pane scrolling must not dismiss the session's detail.
     await page.locator("main").dispatchEvent("scroll");
@@ -729,12 +731,20 @@ test("workspace header keeps location before session tools and holds no window n
       await page.setViewportSize({ width: 1280, height: 800 });
       await resize.press("Enter");
       await expect(newSession).toBeVisible({ timeout: 5_000 });
-      await expect(newSession.getByText("New session", { exact: true })).toBeHidden();
+      // The label folds into a 1px clipped slot; its text node stays for assistive technology.
+      await expect
+        .poll(() =>
+          newSession
+            .getByText("New session", { exact: true })
+            .locator("xpath=..")
+            .evaluate((slot) => slot.getBoundingClientRect().width),
+        )
+        .toBeLessThanOrEqual(1);
       await newSession.press("Enter");
       await expect(page.getByLabel("Selected action")).toHaveText("New session");
       await header.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Search sessions", exact: true }).click();
-      const search = header.getByPlaceholder("Search sessions…");
+      const search = header.getByRole("combobox", { name: /^Search sessions/ });
       await expect(search).toBeFocused();
       await expect(newSession).toBeInViewport();
       const actionBounds = (await newSession.boundingBox())!;
@@ -765,7 +775,7 @@ test("workspace header keeps location before session tools and holds no window n
           }));
           if (!project) {
             expect(titleStyle.weight).toBeGreaterThanOrEqual(500);
-            expect(titleStyle.size).toBe(16);
+            expect(titleStyle.size).toBe(14);
           }
           await page.screenshot({
             path: testInfo.outputPath(
@@ -826,9 +836,15 @@ test("workspace header keeps location before session tools and holds no window n
           previousRight = toolsBounds.x + toolsBounds.width;
           if (project) {
             const label = newSession.getByText("New session", { exact: true });
-            const showLabel = paneWidth >= 350;
+            // The shared pane-header breakpoint: at 26rem or less the label folds to its icon.
+            const showLabel = paneWidth > 26 * 16;
             if (showLabel) await expect(label).toBeVisible();
-            else await expect(label).toBeHidden();
+            else
+              await expect
+                .poll(() =>
+                  label.locator("xpath=..").evaluate((slot) => slot.getBoundingClientRect().width),
+                )
+                .toBeLessThanOrEqual(1);
             const button = (await newSession.boundingBox())!;
             const headerBox = (await header.boundingBox())!;
             expect(button.x).toBeGreaterThanOrEqual(previousRight);

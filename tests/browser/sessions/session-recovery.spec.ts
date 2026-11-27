@@ -32,16 +32,13 @@ for (const theme of ["dark", "light"]) {
   test(`recovery row actions clear the scrollbar in ${theme}`, async ({ page }) => {
     await page.goto(`/tests/browser/sessions/session-recovery.html?theme=${theme}`);
     const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
-    await expect(dialog.getByRole("button", { name: /^Open all/ })).not.toHaveAttribute(
-      "data-tooltip-owner",
-    );
     await dialog.getByRole("radio", { name: /^All sessions/ }).click();
     const remove = dialog.getByRole("button", { name: /^Remove .+ from recovery list$/ }).first();
     for (const button of [
       remove,
       dialog.getByRole("button", { name: "Close", exact: true }),
       dialog.getByRole("button", { name: "Recovery list maintenance" }),
-      dialog.getByRole("button", { name: "Restore chat layout" }),
+      dialog.getByRole("button", { name: "More ways to open", exact: true }),
     ]) {
       await expect(button).not.toHaveAttribute("data-tooltip-owner");
     }
@@ -157,7 +154,7 @@ test("all recovered projects remain searchable, selectable and reopenable", asyn
   await dialog.getByRole("textbox", { name: "Search recovered sessions" }).fill("conversation 24");
   await expect(dialog.getByRole("checkbox")).toHaveCount(1);
   await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Open selected" }).click();
+  await dialog.getByRole("button", { name: /^Open sessions/ }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.getByTestId("opened")).toHaveText('{"ids":["session-23"],"layout":false}');
   await page.getByRole("button", { name: "Recovered sessions 24" }).click();
@@ -173,7 +170,9 @@ test("the summary and bulk controls fit a narrow viewport", async ({ page }) => 
   await page.goto("/tests/browser/sessions/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Restore chat layout" })).toBeInViewport();
+  await expect(
+    dialog.getByRole("button", { name: "More ways to open", exact: true }),
+  ).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -181,7 +180,8 @@ test("the summary and bulk controls fit a narrow viewport", async ({ page }) => 
     path: "temp/verification/2026-10-13-session-recovery/narrow-500.png",
     animations: "disabled",
   });
-  await dialog.getByRole("button", { name: "Restore chat layout" }).click();
+  await dialog.getByRole("button", { name: "More ways to open", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Restore chat layout" }).click();
   await expect(page.getByTestId("opened")).toContainText('"layout":true');
   const result = JSON.parse(await page.getByTestId("opened").innerText()) as { ids: string[] };
   expect(result.ids).toHaveLength(24);

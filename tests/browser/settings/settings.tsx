@@ -1134,6 +1134,7 @@ mockIPC(
       }
     }
     if (command.startsWith("plugin:event|")) return null;
+    if (command === "quick_composer_set_enabled") return null;
     if (command === "plugin:app|version") return "0.5.70-fixture";
     if (new URLSearchParams(location.search).has("buildDetails")) {
       if (command === "plugin:app|identifier") return "com.bycoda.desktop";

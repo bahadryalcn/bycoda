@@ -243,7 +243,7 @@ async function fixture(
   const toolName = language === "tr" ? "Tarayıcı" : "Host browser";
   const toolTab = page.getByRole("tab", { name: toolName, exact: true });
   const toolMenu = page.getByRole("button", {
-    name: language === "tr" ? "Oturum aracı seçimi" : "Conversation tool selection",
+    name: language === "tr" ? "Konuşma aracı seçimi" : "Conversation tool selection",
     exact: true,
   });
   await expect(toolTab.or(toolMenu)).toBeVisible();

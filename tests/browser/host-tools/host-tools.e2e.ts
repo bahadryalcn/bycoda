@@ -74,7 +74,7 @@ async function selectTool(page: Page, name: string, scope: Page | Locator = page
     return;
   }
   const menu = scope.getByRole("button", {
-    name: /^(Conversation tool selection|Oturum aracı seçimi)$/,
+    name: /^(Conversation tool selection|Konuşma aracı seçimi)$/,
   });
   if (await menu.isVisible()) {
     await menu.click();
@@ -92,7 +92,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/host-tools/host-tools.html?theme=${theme}`);
       await selectTool(page, "Logs");
       await page.getByRole("button", { name: "Panel placement", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Move Logs to layout", exact: true }).click();
       const toolbar = page.locator(
         ".tools-workspace-pane:has(.host-tools) > .tools-workspace-toolbar",
       );
@@ -398,9 +398,12 @@ for (const theme of ["dark", "light"]) {
       await expect(timeline.locator('[data-level="success"]')).toHaveCount(1);
       for (const kind of ["server", "browser"]) {
         const row = timeline.locator(`.runtime-log-row[data-source="${kind}"]`).first();
-        await expect(row.locator(".runtime-log-meta > :first-child")).toHaveText(
-          `[${kind.toUpperCase()}]`,
-        );
+        await expect(
+          row.locator(".runtime-log-meta").getByRole("img", {
+            name: kind === "server" ? "Server" : "Browser",
+            exact: true,
+          }),
+        ).toBeVisible();
       }
       const colors = await timeline.evaluate((area) =>
         ["error", "warn", "info", "debug", "http", "success"].map(
@@ -452,7 +455,9 @@ test("resource charts show empty and sampled states without overflow", async ({ 
   await page.goto(fixture);
   await selectTool(page, "Resource usage");
   const panel = page.getByRole("region", { name: "Host resource diagnostics", exact: true });
-  await expect(panel.getByText("No samples yet", { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText("Take a sample to start the charts.", { exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: "temp/verification/2026-10-13-resource-usage/empty.png" });
   await panel.getByRole("button", { name: "Sample now", exact: true }).click();
   await expect(panel.locator(".resource-value").first()).toHaveText("2.4%");
@@ -502,7 +507,7 @@ test("starts live logs and moves a separate panel without covering the workspace
   await page.keyboard.press("Escape");
   await expect(placement).toBeFocused();
   await placement.click();
-  await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Move Logs to layout", exact: true }).click();
   const dock = page.getByRole("complementary", { name: "Tool panels" });
   await expect(dock).toBeVisible();
   await expect(dock.locator(".tools-workspace-toolbar")).toHaveCount(1);
@@ -565,10 +570,10 @@ test("inspects unified logs, prepares an agent draft and clears a scoped view", 
   await panel.getByRole("button", { name: "Filters", exact: true }).click();
   const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
   await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
-  await page.getByRole("option", { name: "ERROR", exact: true }).click();
+  await page.getByRole("option", { name: "Error", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(timeline.getByText("Workspace loaded", { exact: true })).toHaveCount(0);
-  await timeline.locator("details").first().getByText("Details", { exact: true }).click();
+  await timeline.locator("details").first().locator("summary").click();
   await expect(timeline.getByText("Stack trace", { exact: true })).toBeVisible();
   await timeline.getByRole("checkbox").first().check();
   await panel.getByRole("button", { name: "Add to conversation", exact: true }).click();
@@ -955,7 +960,7 @@ for (const locale of ["en", "tr"]) {
           ? ["Devices", "Host browser", "Development servers", "Logs", "Resource usage"]
           : ["Cihazlar", "Tarayıcı", "Geliştirme sunucuları", "Loglar", "Kaynak kullanımı"];
       const toolTabs = page.getByRole("tablist", {
-        name: locale === "en" ? "Conversation tool selection" : "Oturum aracı seçimi",
+        name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
         exact: true,
       });
       const wideTools = width >= NARROW_TOOLS_WIDTH;
@@ -967,7 +972,7 @@ for (const locale of ["en", "tr"]) {
         await expect(toolTabs.getByRole("tab")).toHaveCount(0);
         await expect(
           page.getByRole("button", {
-            name: locale === "en" ? "Conversation tool selection" : "Oturum aracı seçimi",
+            name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
             exact: true,
           }),
         ).toBeVisible();

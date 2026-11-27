@@ -518,7 +518,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       ) : null}
       <ScrollArea axis="both" gutter="stable" className="grid max-h-80 empty:hidden">
         {shownTokens.map((grant) => (
-          <ActionHost key={grant.id} variant="settings" separator>
+          <ActionHost key={grant.id} variant="settings" separator className={styles.row}>
             <div className={styles.identity}>
               <span>{grant.name}</span>
               <Text size="caption" tone="secondary" leading="inherit">

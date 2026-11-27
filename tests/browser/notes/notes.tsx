@@ -22,7 +22,8 @@ const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   title: index === 0 ? "Release planning" : `Note ${String(index).padStart(2, "0")}`,
   body:
     (index === 0
-      ? "# Release checklist\n\nWrite the launch summary here.\n\n- [ ] Review changes\n- [ ] Update documentation\n\n```ts\nconst preserve = true;\n```"
+      ? (parameters.has("heading") ? "# " : "") +
+        "Release checklist\n\nWrite the launch summary here.\n\n- [ ] Review changes\n- [ ] Update documentation\n\n```ts\nconst preserve = true;\n```"
       : `Project notes and ideas for item ${index}.`) +
     padding +
     (index === 999 ? "\n\nSearch marker past preview 999." : ""),

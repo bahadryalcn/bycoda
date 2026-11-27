@@ -39,7 +39,8 @@
   );
   --transcript-ink-chrome: color-mix(
     in srgb,
-    var(--transcript-ink-body) var(--appearance-transcript-chrome-ink, 61%),
+    var(--transcript-ink-body)
+      max(var(--appearance-transcript-chrome-ink, 61%), var(--transcript-chrome-ink-floor, 0%)),
     var(--ui-tint-base)
   );
   /* Machine work steps back further: command lines and faint metadata are shares of chrome. */
@@ -75,6 +76,11 @@
 html.theme-light :is(html, [data-transcript-preview])[data-chat-message-color="neutral"],
 html.theme-light[data-chat-message-color="neutral"] {
   --transcript-surface-color: var(--palette-canvasPureLight);
+}
+
+/* Art behind the pane can sit under any chrome line, so chrome keeps a legible share of body. */
+:is(html:is(.has-chat-background, .has-native-glass), [data-transcript-preview]) {
+  --transcript-chrome-ink-floor: 90%;
 }
 
 /* Backdrop blur only exists while art or native glass sits behind the pane. */

@@ -103,7 +103,7 @@ for (const theme of ["dark", "light"])
           true;
       });
       await page.getByRole("button", { name: "Reload preview", exact: true }).click();
-      await expect(page.getByRole("alert")).toContainText("Preview unavailable");
+      await expect(page.getByRole("alert")).toContainText("Couldn’t preview this file");
       await page.screenshot({ path: `${directory}/${theme}-${width}-error.png` });
       await page.evaluate(() => {
         (window as unknown as { inlineVisualFixture: { fail: boolean } }).inlineVisualFixture.fail =

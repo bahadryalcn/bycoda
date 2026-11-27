@@ -249,7 +249,7 @@ createRoot(document.getElementById("root")!).render(
                 selected: "",
                 backups: [],
                 loading: false,
-                error: "Fixture draft unavailable",
+                problem: "Fixture draft unavailable",
               },
               setDraftRecovery: () => {},
               setError: () => {},

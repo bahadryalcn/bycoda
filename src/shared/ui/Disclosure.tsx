@@ -39,7 +39,7 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   /**
    * `plain` inline text-level, `compact` for quiet form detail, `row` list-row height,
    * `card` framed like `Surface variant="card"`,
-   * `step` one transcript line (28px, follows density): the whole row toggles (icon, label, gaps,
+   * `step` one transcript line (24px, follows density): the whole row toggles (icon, label, gaps,
    * chevron), the chevron is always visible in the chrome ink and turns when open, hover washes the
    * row but an open row keeps no wash, the body opens below. Hover and focus stay within the row.
    * Put at most two icon

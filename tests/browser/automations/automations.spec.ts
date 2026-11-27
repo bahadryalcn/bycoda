@@ -275,13 +275,14 @@ test("automation save keeps its label and focus while fields lock and failures p
   await expect(save).not.toHaveAttribute("aria-busy", "true");
   await expect(name).toBeEnabled();
   await expect(name).toHaveValue("Keep this edited automation");
-  await expect(
-    page.getByText("Save unavailable; retry your changes", { exact: true }),
-  ).toBeVisible();
+  // The failure is titled by the action; the Host's reason sits behind its Details control.
+  const failure = page.getByRole("alert").filter({ hasText: "Could not save the automation." });
+  await expect(failure).toBeVisible();
+  await failure.getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByText("Save unavailable; retry your changes")).toBeVisible();
+  await page.keyboard.press("Escape");
   await save.click();
-  await expect(
-    page.getByText("Save unavailable; retry your changes", { exact: true }),
-  ).toBeHidden();
+  await expect(failure).toBeHidden();
   await expect(name).toHaveValue("Keep this edited automation");
 });
 
@@ -507,14 +508,19 @@ for (const width of [800, 1280])
         const message =
           state === "slow"
             ? page.getByRole("status").filter({ hasText: "Loading…" })
-            : page.getByText("Fixture: run history is unavailable right now", {
-                exact: true,
-              });
+            : page.getByRole("alert").filter({ hasText: "Could not load recent runs." });
         await expect(message).toBeVisible();
         await page.screenshot({
           path: `temp/verification/automations-devices-visual/${theme}-${width}-history-${state}.png`,
           animations: "disabled",
         });
+        if (state === "error") {
+          // The Host's reason sits behind the failure's Details control.
+          await message.getByRole("button", { name: /^Details/ }).click();
+          await expect(
+            page.getByText("Fixture: run history is unavailable right now"),
+          ).toBeVisible();
+        }
       }
     });
   }

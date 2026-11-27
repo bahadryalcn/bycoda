@@ -78,8 +78,19 @@ mockIPC(
           : "D:/custom/codex.exe";
       }
     }
+    // The Machines step exists only while a remote machine does; `?noMachines` shows it absent.
+    if (command === "remote_machines")
+      return new URLSearchParams(location.search).has("noMachines")
+        ? []
+        : [
+            {
+              id: "fixture-remote",
+              name: "Build box",
+              endpoint: "http://192.168.1.20:4000",
+              environmentId: "fixture-env",
+            },
+          ];
     if (
-      command === "remote_machines" ||
       command === "session_import_keys" ||
       command === "generic_acp_list"
     )

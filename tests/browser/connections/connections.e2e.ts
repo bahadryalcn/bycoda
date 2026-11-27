@@ -53,7 +53,7 @@ for (const theme of ["light", "dark"]) {
       await root.getByRole("button", { name: "Actions for Studio Mac", exact: true }).click();
       await page.getByRole("menuitem", { name: "Connection details", exact: true }).click();
       await expect(root.locator(".connection-details").last()).toContainText("100.97.82.4");
-      await expect(root.getByText("In use", { exact: true })).toBeVisible();
+      await expect(root.getByRole("img", { name: "In use", exact: true })).toBeVisible();
       await page.screenshot({ path: `${evidence}/${theme}-${width}-machines.png` });
       await root.getByRole("button", { name: "Actions for Studio Mac", exact: true }).click();
       await page.getByRole("menuitem", { name: "Edit name and address…", exact: true }).click();
@@ -72,12 +72,7 @@ for (const theme of ["light", "dark"]) {
       await expect(addDialog.getByRole("radio", { name: "SSH", exact: true })).toBeChecked();
       const address = addDialog.getByRole("textbox", { name: "SSH address", exact: true });
       await address.fill("owner@new-machine");
-      await expect(
-        addDialog.getByText(
-          "Installs bycoda Host over SSH so you can run agents on this computer.",
-          { exact: true },
-        ),
-      ).toBeVisible();
+      await expect(addDialog.getByText(/Installs bycoda Host over SSH/)).toHaveCount(0);
       // Help sits behind an information control; the form keeps only what is needed to proceed.
       const help = addDialog.getByRole("button", { name: "Connection help", exact: true });
       await expect(help).toHaveAttribute("aria-expanded", "false");
@@ -105,7 +100,7 @@ for (const theme of ["light", "dark"]) {
       const phoneName = phoneRow.getByText("iPhone 16", { exact: true });
       await expect(phoneName).toBeVisible();
       await expect(root.getByText("Studio Mac desktop", { exact: true })).toHaveCount(0);
-      await expect(root.getByText("This desktop", { exact: true })).toHaveCount(1);
+      await expect(root.getByRole("img", { name: "This desktop", exact: true })).toHaveCount(1);
       const activity = phoneRow.getByText(/^Paired /);
       await expect(activity).toHaveAttribute("data-tone", "muted");
       await expect(activity).not.toHaveCSS(
@@ -152,7 +147,7 @@ for (const theme of ["light", "dark"]) {
       await createLink.click();
       const share = page.getByRole("dialog", { name: "Create link", exact: true });
       await expect(share).toBeVisible();
-      await expect(share.getByRole("button", { name: "Start sharing", exact: true })).toBeEnabled();
+      await expect(share.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
       await share.getByRole("textbox", { name: "Local URL or port" }).fill("4567");
       await page.screenshot({ path: `${evidence}/${theme}-${width}-share.png` });
       await share.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -165,15 +160,13 @@ for (const theme of ["light", "dark"]) {
       const restart = share.getByRole("checkbox", { name: "Restart tunnel automatically" });
       await expect(restart).not.toBeChecked();
       await restart.check();
-      await expect(share.getByRole("button", { name: "Start sharing", exact: true })).toBeEnabled();
+      await expect(share.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
       await page.screenshot({ path: `${evidence}/${theme}-${width}-host-share.png` });
       await share.getByRole("button", { name: "Cancel", exact: true }).click();
       await createLink.click();
       await expect(restart).not.toBeChecked();
       await share.getByText("ngrok", { exact: true }).click();
-      await expect(
-        share.getByRole("button", { name: "Start sharing", exact: true }),
-      ).toBeDisabled();
+      await expect(share.getByRole("button", { name: "Share", exact: true })).toBeDisabled();
       await page.screenshot({ path: `${evidence}/${theme}-${width}-ngrok-share.png` });
       await share.getByRole("button", { name: "Cancel", exact: true }).click();
       expect(await root.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
@@ -192,12 +185,12 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/connections/connection-dialogs.html?dialog=tunnel-rows&theme=${theme}`,
       );
-      const dialog = page.getByRole("dialog", { name: "External tunnels", exact: true });
+      const dialog = page.getByRole("dialog", { name: "Create link", exact: true });
       await expect(
         dialog.getByRole("region", { name: "Tunnel status", exact: true }).getByRole("status"),
       ).toHaveText(["Error", "Starting", "Connected"]);
       await expect(dialog.getByRole("button", { name: "Copy URL", exact: true })).toBeVisible();
-      await expect(dialog.getByRole("button", { name: "Start tunnel", exact: true })).toBeEnabled();
+      await expect(dialog.getByRole("button", { name: "Share", exact: true })).toBeEnabled();
       await dialog.getByRole("textbox", { name: "Local URL or port" }).focus();
       const evidence = "temp/verification/connections-redesign";
       mkdirSync(evidence, { recursive: true });

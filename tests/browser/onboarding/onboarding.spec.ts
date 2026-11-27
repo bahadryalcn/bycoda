@@ -231,7 +231,13 @@ test("adds only the chosen missing provider after validation and keeps it on res
   await expect(add.getByRole("button", { name: "Add provider", exact: true })).toBeDisabled();
   await add.getByRole("textbox", { name: "CLI path", exact: true }).fill("D:/invalid.exe");
   await add.getByRole("button", { name: "Add provider", exact: true }).click();
-  await expect(add.getByRole("alert")).toContainText("Selected file is not a provider CLI");
+  await expect(add.getByRole("alert")).toContainText("Could not inspect the CLI executable.");
+  // The raw reason sits behind the shared Details control.
+  await add.getByRole("alert").getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Selected file is not a provider CLI",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.locator(".onboarding-agent")).toHaveCount(2);
   await add.getByRole("button", { name: "Choose executable", exact: true }).click();
   await expect(add.getByRole("textbox", { name: "CLI path", exact: true })).toHaveValue(
@@ -380,9 +386,11 @@ for (const theme of ["light", "dark"])
     test(`guide wiki search and article ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${fixture}?guideHub&theme=${theme}`);
-      await page.getByRole("button", { name: "Read the Projects article", exact: true }).click();
+      // The topic panel no longer links out; the Wiki tab is the way to the full articles.
       const wiki = page.getByRole("tab", { name: "Wiki" });
-      await expect(wiki).toBeFocused();
+      await wiki.click();
+      await expect(wiki).toHaveAttribute("aria-selected", "true");
+      await page.getByRole("button", { name: /Projects and workbench/ }).click();
       await expect(page.getByRole("heading", { name: "Projects and workbench" })).toBeVisible();
       const search = page.getByRole("searchbox", { name: "Search" });
       await search.fill("coordinator specialist");

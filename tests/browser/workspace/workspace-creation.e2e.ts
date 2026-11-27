@@ -106,7 +106,11 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/workspace/workspace-creation.html?theme=${theme}&old-host&worktree`,
       );
-      await expect(page.locator("[data-workspace-creation-status]")).toContainText(
+      await page
+        .locator("[data-workspace-creation-status]")
+        .getByText("Details", { exact: true })
+        .click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
         "Update bycoda Host",
       );
       expect((await expectNoAdmission(page)).submissions).toEqual([]);
@@ -118,7 +122,11 @@ for (const theme of ["light", "dark"]) {
         /Keep the owner's draft/,
       );
       await page.getByRole("button", { name: "Retry", exact: true }).click();
-      await expect(page.locator("[data-workspace-creation-status]")).toContainText(
+      await page
+        .locator("[data-workspace-creation-status]")
+        .getByText("Details", { exact: true })
+        .click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
         "Update bycoda Host",
       );
       await page.screenshot({

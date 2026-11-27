@@ -237,26 +237,14 @@ for (const theme of ["dark", "light"]) {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await page.getByRole("button", { name: "Notifications", exact: true }).click();
       await expect(panel.locator(".approval-toast")).toHaveCount(2);
-      const clearBox = (await page
-        .getByRole("button", { name: "Clear all", exact: true })
-        .boundingBox())!;
-      const summaryBox = (await panel.locator(".notification-summary").boundingBox())!;
-      expect(
-        Math.abs(summaryBox.y + summaryBox.height / 2 - clearBox.y - clearBox.height / 2),
-      ).toBeLessThan(4);
-      expect(clearBox.x).toBeGreaterThan(summaryBox.x + summaryBox.width);
+      // Clearing history lives in the options popover, not the sheet header.
+      await expect(page.getByRole("button", { name: "Clear all", exact: true })).toHaveCount(0);
       await expect(panel.getByText(/What this app announced/)).toHaveCount(0);
-      const failed = panel.locator('.notification-history-kind[data-tone="danger"]').first();
-      const finished = panel.locator('.notification-history-kind[data-tone="success"]').first();
-      // The tone lives on the kind icon; the label next to the project stays plain text.
+      // Only a problem carries a glyph; finished rows have no "Finished" label. The tone lives on
+      // the icon slot.
       const failedIcon = panel.locator('.notification-history-icon[data-tone="danger"]').first();
-      const finishedIcon = panel.locator('.notification-history-icon[data-tone="success"]').first();
       await expect(panel.locator(".notification-pending-card")).toBeVisible();
-      await expect(failed).toHaveText("Failed");
-      await expect(finished).toHaveText("Finished");
-      expect(await failedIcon.evaluate((node) => getComputedStyle(node).color)).not.toBe(
-        await finishedIcon.evaluate((node) => getComputedStyle(node).color),
-      );
+      await expect(failedIcon.locator("> *")).toBeVisible();
       // Requests still pending live in the pending card, not in the recent rows.
       await expect(
         panel.locator(".notification-history-item").getByText("Waiting for you"),
@@ -276,11 +264,12 @@ for (const theme of ["dark", "light"]) {
       await expect(page.getByText("This conversation is no longer available.")).toBeVisible();
       // One entry leaves on its own; the row is still expanded from the failed open.
       const rows = await panel.locator(".notification-history-item").count();
-      await gone.getByRole("button", { name: "Remove", exact: true }).click();
+      await gone.getByRole("button", { name: "Dismiss", exact: true }).click();
       await expect(panel.locator(".notification-history-item")).toHaveCount(rows - 1);
       await page.screenshot({
         path: `temp/verification/2026-11-11-notification-center/${theme}-${width}.png`,
       });
+      await page.getByRole("button", { name: "Notification options", exact: true }).click();
       await page.getByRole("button", { name: "Clear all", exact: true }).click();
       await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeVisible();
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -288,7 +277,6 @@ for (const theme of ["dark", "light"]) {
         path: `temp/verification/2026-11-11-notification-center/confirm-${theme}-${width}.png`,
       });
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("button", { name: "Notification options", exact: true }).click();
       const settings = page.getByRole("region", { name: "Notification options", exact: true });
       const toggle = settings.getByRole("switch", { name: "Show request popups", exact: true });
       await toggle.click();

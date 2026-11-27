@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { useContext, useEffect, useRef, useState } from "react";
@@ -137,5 +138,30 @@ export function PoliciesSettings() {
         <AgentMarkdown text={body} />
       </Text>
     </div>
+  );
+}
+
+/** The legal documents behind one disclosure; a Settings search hit on a document opens it. */
+export function LegalDocuments() {
+  const revealed = useContext(RevealedSetting);
+  const [state, setState] = useState(() => ({
+    open: POLICIES.some((policy) => policy.id === revealed),
+    revealed,
+  }));
+  // Derived during render so the document is visible before the reveal scrolls and focuses it.
+  if (state.revealed !== revealed)
+    setState({
+      open: state.open || POLICIES.some((policy) => policy.id === revealed),
+      revealed,
+    });
+  return (
+    <Disclosure
+      summary={t("Legal")}
+      variant="row"
+      open={state.open}
+      onOpenChange={(open) => setState((current) => ({ ...current, open }))}
+    >
+      <PoliciesSettings />
+    </Disclosure>
   );
 }

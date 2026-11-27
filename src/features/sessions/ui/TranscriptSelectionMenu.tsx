@@ -173,8 +173,8 @@ export function TranscriptSelectionMenu({
     const toolbar = rail.current?.firstElementChild;
     if (!(toolbar instanceof HTMLElement)) return;
     // Targets arrive asynchronously. Measure the intrinsic tray, not the already
-    // viewport-clamped popup. Include menu padding (8) and frame border (2).
-    const measure = () => setMenuWidth(toolbar.offsetWidth + 10);
+    // viewport-clamped popup. Include menu padding (16, --ui-space-2 per side) and frame border (2).
+    const measure = () => setMenuWidth(toolbar.offsetWidth + 18);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(toolbar);

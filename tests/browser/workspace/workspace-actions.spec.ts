@@ -3,7 +3,8 @@ import { mkdir } from "node:fs/promises";
 
 test("a finished session exposes guarded quick directory deletion", async ({ page }) => {
   await page.goto("/tests/browser/workspace/workspace-actions.html");
-  const remove = page.getByRole("button", { name: "Delete directory", exact: true });
+  await page.getByRole("button", { name: "Workspace actions", exact: true }).click();
+  const remove = page.getByRole("menuitem", { name: "Delete worktree directory", exact: true });
   await expect(remove).toBeVisible();
   await remove.click();
   const dialog = page.getByRole("dialog", { name: "Delete worktree directory" });
@@ -33,7 +34,8 @@ test("reviews exact revisions, opens commit diff, merges and retains a readable 
   await dialog.getByRole("button", { name: "Merge into main", exact: true }).click();
   await expect(dialog).toContainText("Merged into main.");
   await dialog.getByRole("contentinfo").getByRole("button", { name: "Close", exact: true }).click();
-  await page.getByRole("button", { name: "Delete directory", exact: true }).click();
+  await page.getByRole("button", { name: "Workspace actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete worktree directory", exact: true }).click();
   const removal = page.getByRole("dialog", { name: "Delete worktree directory" });
   await expect(removal).toContainText("conversation, branch and recovery history are retained");
   await removal.getByRole("button", { name: "Delete directory", exact: true }).click();
@@ -85,9 +87,6 @@ for (const theme of ["light", "dark"] as const)
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/workspace/workspace-actions.html?theme=${theme}`);
       await expect(page.getByRole("button", { name: "Review changes", exact: true })).toBeVisible();
-      await expect(
-        page.getByRole("button", { name: "Delete directory", exact: true }),
-      ).toBeVisible();
       await page.screenshot({
         path: `temp/verification/f1/session-actions-${theme}-${width}.png`,
         fullPage: true,
@@ -120,9 +119,12 @@ for (const theme of ["light", "dark"] as const)
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Workspace actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Delete worktree directory", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Delete worktree directory" })).toContainText(
-        "Dependency links",
-      );
+      // Dependency links are an info icon, not inline text.
+      await expect(
+        page
+          .getByRole("dialog", { name: "Delete worktree directory" })
+          .getByRole("img", { name: "Dependency links", exact: true }),
+      ).toBeVisible();
       await page.screenshot({
         path: `temp/verification/f1/session-removal-${theme}-${width}.png`,
         fullPage: true,

@@ -17,6 +17,12 @@
   margin-block-end: var(--space-3);
 }
 
+/* The header spans the pane, so it can measure its own width: New session folds to its icon
+   (Button collapseLabel) when the pane is narrow, even without an overflow menu. */
+.workspaceHeader {
+  container: pane-header / inline-size;
+}
+
 /* Let the location use spare space and shrink only when the toolbar needs it. */
 .workspaceHeader > [data-pane-header-heading] {
   flex-shrink: 1;

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { expectErrorDetail } from "./error-details";
 
 const output = "temp/verification/assistant-interview-language-20261113";
 const longQuestion =
@@ -70,7 +71,9 @@ for (const theme of ["light", "dark"])
       await page.evaluate(() =>
         (window as any).interviewFixture.reject("Provider authentication expired."),
       );
-      await expect(page.getByText(/Provider authentication expired/)).toBeVisible();
+      // The provider failure shows a plain sign-in message; the raw text sits behind Details.
+      await expect(page.getByText(/Choose a signed-in account in the model picker/)).toBeVisible();
+      await expectErrorDetail(page, /Provider authentication expired/);
       await capture("error");
       await page.getByRole("button", { name: "Try again", exact: true }).click();
       await requestCount(page, 3);

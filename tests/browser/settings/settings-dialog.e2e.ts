@@ -180,11 +180,8 @@ for (const theme of ["light", "dark"] as const) {
       await expect(modelRow.getByRole("button", { name: /opus.*personal/i })).toBeVisible();
       await expect(picker).toHaveCount(0);
       await tab("Groups").click();
-      const group = dialog.getByRole("group", { name: "Smartest", exact: true });
-      await expect(group.getByRole("button", { name: /^Smartest/ })).toHaveAttribute(
-        "aria-expanded",
-        "true",
-      );
+      const group = dialog.getByRole("region", { name: "Smartest", exact: true });
+      await expect(group.getByRole("textbox", { name: "Group name" })).toHaveValue("Smartest");
       const grips = group.getByRole("button", { name: /^Reorder in/ });
       const from = (await grips.first().boundingBox())!;
       const to = (await grips.last().boundingBox())!;
@@ -195,8 +192,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.mouse.up();
       await expect(grips.last()).toHaveAttribute("aria-label", initial!);
       await capture("groups");
-      await tab("Agents").click();
-      await capture("agents");
+      await expect(tab("Agents")).toHaveCount(0);
       await tab("Limits").click();
       await expect(dialog.getByRole("region", { name: "Plan share by job" })).toBeVisible();
       await expect(dialog.getByText("No usage in this window", { exact: true })).toBeVisible();
@@ -224,6 +220,7 @@ test("settings dialog Archive reports unavailable history and retries", async ({
   );
   await page.getByTestId("open-settings").click();
   const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+  await dialog.getByRole("radio", { name: "Conversations", exact: true }).click();
   await expect(dialog.getByRole("button", { name: /retry/i })).toBeVisible();
   await dialog.getByRole("button", { name: /retry/i }).click();
   await expect(page.locator("main")).toHaveAttribute("data-fixture-retries", "1");

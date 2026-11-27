@@ -404,6 +404,12 @@ Object.assign(window, {
           ];
         if (command === "list_claude_commands") return [];
       }
+      if (command === "git_branches" && params.has("workspaceChips"))
+        return {
+          current: "main",
+          detached: false,
+          branches: [{ name: "main", current: true, remote: null }],
+        };
       if (command === "canonical_store_session_guard_ready") return false;
       if (command === "canonical_store_list") return { entries: [], revision: 0 };
       if (command === "session_list_drafts") return [];

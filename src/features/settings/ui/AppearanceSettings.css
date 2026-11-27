@@ -18,6 +18,7 @@
   inset-block-start: var(--settings-page-bar-height);
   z-index: 1;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding-block: 0 8px;
@@ -26,7 +27,8 @@
   min-inline-size: 0;
 }
 .appearance-tabs {
-  flex: 1 1 auto;
+  /* Tabs keep a readable run; in a narrow pane the launcher wraps below them. */
+  flex: 1 1 16rem;
   min-inline-size: 0;
 }
 .appearance-generation-launcher {

@@ -94,7 +94,6 @@ for (const theme of ["light", "dark"])
       expect(actual.border).toBe(actual.expectedBorder);
       expect(actual.background).toBe(actual.expectedBackground);
       const branch = card.getByText("main ← feature").locator("..");
-      const footer = card.getByText("Click the chip to open on GitHub");
       const paints = await branch.evaluate((node) => {
         const probe = document.createElement("span");
         probe.style.background = "var(--ui-surface-inset, var(--ui-surface-muted))";
@@ -104,17 +103,9 @@ for (const theme of ["light", "dark"])
         return { actual: getComputedStyle(node).backgroundColor, expected };
       });
       expect(paints.actual).toBe(paints.expected);
-      const footerPaint = await footer.evaluate((node) => {
-        const probe = document.createElement("span");
-        probe.style.borderTop = "1px solid var(--ui-pane-border)";
-        node.appendChild(probe);
-        const expected = getComputedStyle(probe).borderTopColor;
-        probe.remove();
-        const style = getComputedStyle(node);
-        return { actual: style.borderTopColor, width: style.borderTopWidth, expected };
-      });
-      expect(footerPaint.width).toBe("1px");
-      expect(footerPaint.actual).toBe(footerPaint.expected);
+      // The chip itself is the GitHub link; the card carries no instruction footer.
+      await expect(chip).toHaveAttribute("href", /github\.com/);
+      await expect(card.getByText("Click the chip to open on GitHub")).toHaveCount(0);
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/work-item-avatar-${theme}-${width}.png`,
@@ -601,19 +592,18 @@ for (const theme of ["light", "dark"])
       await chip.click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      const colors = await dialog.evaluate((node, light) => {
+      const colors = await dialog.evaluate((node) => {
         const probe = document.createElement("span");
         node.appendChild(probe);
-        // The shared backdrop is the opaque floating surface in light and 95% of it in dark.
-        probe.style.background = light
-          ? "var(--ui-surface-floating)"
-          : "color-mix(in srgb, var(--ui-surface-floating) 95%, transparent)";
+        // The dialog frame paints the shared floating glass (opaque floating surface when the
+        // browser cannot blur); the glass token is theme-bound.
+        probe.style.background = "var(--ui-floating-glass)";
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
         // The dialog paints its floating surface on the shared backdrop layer inside the frame.
         const surface = node.querySelector(".popover-backdrop") ?? node;
         return { actual: getComputedStyle(surface).backgroundColor, expected };
-      }, theme === "light");
+      });
       expect(colors.actual).toBe(colors.expected);
       await page.screenshot({
         animations: "disabled",
@@ -710,18 +700,20 @@ for (const theme of ["light", "dark"])
       const card = page.locator("[data-attachment-chip]");
       const insert = card.getByRole("button", { name: /Insert .* into the message/ });
       const remove = card.getByRole("button", { name: /Remove 15-/ });
+      // The shared action group owns the reveal; its buttons inherit the group opacity.
+      const actions = insert.locator("xpath=..");
       await page.mouse.move(0, 0);
-      await expect(insert).toHaveCSS("opacity", "0");
+      await expect(actions).toHaveCSS("opacity", "0");
       const before = await insert.boundingBox();
       await card.hover();
-      await expect(insert).toHaveCSS("opacity", "1");
+      await expect(actions).toHaveCSS("opacity", "1");
       expect(await insert.boundingBox()).toEqual(before);
       await insert.click();
       await expect(page.getByLabel("Draft", { exact: true })).toHaveText("[file1]");
       await page.mouse.move(0, 0);
       await remove.focus();
-      await expect(insert).toHaveCSS("opacity", "1");
-      await expect(remove).toHaveCSS("opacity", "1");
+      await expect(actions).toHaveCSS("opacity", "1");
+      await expect(actions).toHaveCSS("opacity", "1");
       await page.screenshot({
         path: `temp/verification/session-last-interactions/attachment-${theme}-${width}.png`,
       });

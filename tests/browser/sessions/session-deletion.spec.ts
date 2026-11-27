@@ -15,7 +15,6 @@ for (const theme of ["light", "dark"]) {
       );
       const counter = row.getByText("8/10", { exact: true });
       await expect(counter).toBeVisible();
-      const trash = row.locator("svg").last();
       const geometry = {
         ...(await row.evaluate((element) => ({
           overflow: element.scrollWidth > element.clientWidth,
@@ -31,11 +30,11 @@ for (const theme of ["light", "dark"]) {
       expect(geometry.whiteSpace).toBe("nowrap");
       const titleBox = (await title.boundingBox())!;
       const counterBox = (await counter.boundingBox())!;
-      const trashBox = (await trash.boundingBox())!;
+      const rowBox = (await row.boundingBox())!;
       expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(counterBox.x);
-      expect(counterBox.x + counterBox.width).toBeLessThanOrEqual(trashBox.x);
+      expect(counterBox.x + counterBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
       expect(
-        Math.abs(titleBox.y + titleBox.height / 2 - trashBox.y - trashBox.height / 2),
+        Math.abs(titleBox.y + titleBox.height / 2 - counterBox.y - counterBox.height / 2),
       ).toBeLessThan(2);
       const pendingBox = (await row.boundingBox())!;
       await page.screenshot({
@@ -81,14 +80,22 @@ for (const theme of ["light", "dark"]) {
     await expect(notice).toContainText("Deleting conversation data…");
     expect(await notice.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
     await page.getByRole("button", { name: "Fail", exact: true }).click();
-    await expect(notice.getByRole("alert")).toContainText("Storage unavailable");
+    await notice.getByRole("button", { name: /^Details/ }).click();
+    await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+      "Storage unavailable",
+    );
+    await page.keyboard.press("Escape");
     await expect(notice).not.toContainText("Conversation deleted.");
-    await notice.getByRole("button").focus();
+    await notice.getByRole("button", { name: "Dismiss", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(notice).toHaveCount(0);
     await page.getByRole("button", { name: "Keep worktree warning", exact: true }).click();
     await expect(notice).toContainText("Conversation deleted. Its worktree was kept.");
-    await expect(notice).toContainText("Worktree cleanup unavailable");
+    await notice.getByRole("button", { name: /^Details/ }).click();
+    await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+      "Worktree cleanup unavailable",
+    );
+    await page.keyboard.press("Escape");
     await page.screenshot({ path: test.info().outputPath(`cleanup-warning-${theme}.png`) });
     await page.getByRole("button", { name: "Complete", exact: true }).click();
     await expect(notice).toHaveCount(0);

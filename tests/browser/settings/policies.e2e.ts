@@ -8,35 +8,23 @@ for (const theme of ["dark", "light"])
       await page.goto(
         `/tests/browser/settings/settings.html?section=policies&theme=${theme}&lang=en`,
       );
+      await page.getByText("Legal", { exact: true }).click();
       const policies = page.locator(".policies-settings");
-      const documents = policies.getByRole("tablist", { name: "Policy documents" });
-      await expect(documents.getByRole("tab")).toHaveCount(4);
-      await expect(
-        documents.getByRole("tab", { name: "Privacy policy", exact: true }),
-      ).toHaveAttribute("aria-selected", "true");
+      const documents = policies.getByRole("button", { name: /^Policy documents: /, exact: false });
+      await expect(documents).toContainText("Privacy policy");
       await expect(policies.locator("article")).toContainText(
         "What bycoda collects, and what it does not",
       );
       await expect(page.getByRole("dialog")).toHaveCount(0);
-      const reader = policies.locator(".policy-reader");
-      expect(await reader.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
-      await reader.evaluate((node) => {
-        node.scrollTop = node.scrollHeight;
-      });
-      await expect(documents.getByRole("tab").first()).toBeInViewport();
-      await documents.getByRole("tab").first().focus();
-      await page.keyboard.press("End");
-      await expect(
-        documents.getByRole("tab", { name: "Software license (MIT)", exact: true }),
-      ).toBeFocused();
-      await expect(reader.locator("article")).toContainText("MIT License");
-      await page.keyboard.press("Home");
-      expect(await reader.evaluate((node) => node.scrollTop)).toBe(0);
+      await documents.click();
+      await expect(page.getByRole("option")).toHaveCount(4);
+      await page.getByRole("option", { name: "Software license (MIT)", exact: true }).click();
+      await expect(documents).toContainText("Software license (MIT)");
+      await expect(policies.locator("article")).toContainText("MIT License");
+      await policies.locator("article").scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      const bounds = await reader.boundingBox();
-      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(901);
       await page.screenshot({
         path: `temp/verification/2026-10-18-settings-layout/policies-${theme}-${width}.png`,
       });

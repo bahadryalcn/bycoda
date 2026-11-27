@@ -127,18 +127,6 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     panel
       .locator("[data-model-settings]")
       .locator(`[role="radiogroup"][aria-label="${name}"], [role="group"][aria-label="${name}"]`);
-  const choose = async (name: string, option: string | RegExp) => {
-    if (!(await panel.isVisible())) await modelButton.click();
-    // Delegation settings sit on the Agents tab when the model also has its own settings.
-    const agents = panel.getByRole("tab", { name: /^Agents/ });
-    if ((await agents.count()) > 0 && (await agents.getAttribute("aria-selected")) !== "true")
-      await agents.click();
-    const choice = setting(name)
-      .getByRole("radio", { name: option, exact: true })
-      .or(setting(name).getByRole("checkbox", { name: option, exact: true }));
-    await choice.click();
-    await expect(choice).toHaveAttribute("aria-checked", "true");
-  };
   // Delegation values are encoded refs inside the saved model settings.
   const saved = async () => {
     const choice = JSON.parse((await page.getByTestId("choice").textContent()) || "{}");
@@ -150,7 +138,6 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
       subagents: ([] as { model: string }[])
         .concat(decode(settings.crossSubagents) ?? [])
         .map((ref) => ref.model),
-      subagentPolicy: settings.subagentPolicy,
     };
   };
   await modelButton.click();
@@ -189,22 +176,23 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await expect(panel.locator("[data-model-settings]")).toHaveCSS("color-scheme", "dark");
   // Subagent rows name Claude models without the provider prefix their icon already shows.
   await delegate("Subagents", /^Haiku 4\.5\b/);
-  await choose("Subagent model policy", "Override all");
   await expect.poll(saved).toEqual({
     model: "claude:haiku-4.5",
     advisor: "claude:opus-5-5",
     subagents: ["claude:haiku-4.5"],
-    subagentPolicy: "force",
   });
   await expect(page.getByRole("textbox", { name: "Commit message" })).toHaveValue(
     "Keep this commit draft",
   );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  const policy = setting("Subagent model policy");
+  // The subagent mode is the panel's segmented control; the model policy follows from it per turn.
+  const policy = panel.locator("[data-model-settings]").getByRole("radiogroup", {
+    name: "Subagents",
+  });
   for (const reducedMotion of ["no-preference", "reduce"] as const) {
     await page.emulateMedia({ reducedMotion });
-    await policy.getByRole("radio", { name: "Agent's choice", exact: true }).click();
-    await policy.getByRole("radio", { name: "Override all", exact: true }).click();
+    await policy.getByRole("radio", { name: "Off", exact: true }).click();
+    await policy.getByRole("radio", { name: "Automatic", exact: true }).click();
     // Measure the settled plate, not an intermediate shared-layout animation frame.
     await expect
       .poll(() =>
@@ -261,6 +249,8 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await page.screenshot({
     path: testInfo.outputPath("git-generation-narrow.png"),
   });
+  // Put the saved Haiku pick back after the mode toggles above.
+  await delegate("Subagents", /^Haiku 4\.5\b/);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await page.screenshot({
@@ -272,6 +262,5 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     model: "claude:haiku-4.5",
     advisor: "claude:opus-5-5",
     subagents: ["claude:haiku-4.5"],
-    subagentPolicy: "force",
   });
 });

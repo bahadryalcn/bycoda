@@ -86,7 +86,7 @@ let branches = [
   { name: "develop", current: false, remote: null },
   { name: "main", current: false, remote: "origin" },
   { name: "feature/team", current: false, remote: "origin" },
-  // Held by another worktree in the checkouts scenarios: listed under "In a worktree".
+  // Held by another worktree in the checkouts scenarios: listed under "Existing worktrees".
   ...(new URLSearchParams(location.search).has("checkouts")
     ? [
         {

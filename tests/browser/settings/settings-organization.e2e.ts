@@ -45,17 +45,15 @@ test("settings search metadata uses the available result width", async ({ page }
       );
       await page.getByRole("button", { name: "Search settings", exact: true }).click();
       await page.getByRole("combobox", { name: "Search settings", exact: true }).fill("phone");
-      // Results are grouped under their category heading, so the category is the group's label
-      // rather than metadata inside each option.
-      const group = page.getByRole("group", { name: "Connections", exact: true });
-      const result = group.getByRole("option").filter({ hasText: "Phone" });
-      await expect(result).toHaveCount(1);
-      const metadata = group
-        .locator("span, div")
-        .filter({ hasText: /^Connections$/ })
+      // Results are one ranked list; each result title uses the available width on one line.
+      const result = page
+        .getByRole("listbox", { name: "Settings search results", exact: true })
+        .getByRole("option")
+        .filter({ hasText: "Phone" })
         .first();
-      await expect(metadata).toBeVisible();
-      const geometry = await metadata.evaluate((node) => ({
+      await expect(result).toBeVisible();
+      const title = result.locator("[data-search-result-title]");
+      const geometry = await title.evaluate((node) => ({
         height: node.getBoundingClientRect().height,
         lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight),
       }));
@@ -119,7 +117,12 @@ for (const theme of ["light", "dark"])
           await input.fill(names[id]);
           await expect(page.getByRole("option").first()).toContainText(names[id]);
           await input.press("Enter");
-          await expect(page.locator(`[role=tab][id$="-${section}"]`)).toHaveAttribute(
+          // "chat" is an Appearance topic tab; the other sections are settings categories.
+          const tab =
+            section === "chat"
+              ? page.locator(`.appearance-settings [role=tab][id$="-chat"]`)
+              : page.locator(`[role=tab][id$="-${section}"]`);
+          await expect(tab).toHaveAttribute(
             "aria-selected",
             "true",
           );

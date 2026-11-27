@@ -1188,7 +1188,7 @@ function TasksContent({
             axis="both"
             scrollbar="always"
             gutter="stable"
-            className={`min-h-0 min-w-0 flex-1 overscroll-none p-4 @max-[640px]/task-area:has-[+aside]:hidden${
+            className={`min-h-0 min-w-0 flex-1 overscroll-none p-4${selected ? " @max-[640px]/task-area:hidden" : ""}${
               loading || tasks.length === 0 ? " flex flex-col" : ""
             }`}
           >

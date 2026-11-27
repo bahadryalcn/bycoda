@@ -122,7 +122,9 @@ test("file error remains inline and retry restores the conversation once", async
   await open(page, "failRevert");
   await revertFiles(page);
   await confirm(page);
-  await expect(dialog(page).getByRole("alert")).toContainText("File restoration failed");
+  await expect(dialog(page).getByRole("alert")).toContainText("Couldn’t rewind");
+  await dialog(page).getByRole("button", { name: "Details: Couldn’t rewind", exact: true }).click();
+  await expect(page.getByText("File restoration failed")).toBeVisible();
   await expect(message(page)).toBeVisible();
   expect((await fixture(page)).events.rewinds).toBe(0);
   await confirm(page);
@@ -154,9 +156,14 @@ test("conversation retry preserves successful file restoration and does not appl
   await open(page, "failConversation&conflicts");
   await revertFiles(page);
   await confirm(page);
-  await expect(dialog(page).getByRole("alert")).toHaveText(
-    "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
-  );
+  await expect(dialog(page).getByRole("alert")).toContainText("Couldn’t rewind");
+  await dialog(page).getByRole("button", { name: "Details: Couldn’t rewind", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
+    ),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(message(page)).toBeVisible();
   expect(
     (await fixture(page)).calls.filter((call) => call.command === "session_files_revert"),

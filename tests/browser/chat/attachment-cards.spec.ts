@@ -510,12 +510,16 @@ test("real Composer shows pasted files in cards and inline and renumbers removal
       await expect(firstImageCard.getByRole("button")).toHaveCount(2);
       await page.mouse.move(0, 0);
       for (const card of await cards.all()) {
-        const remove = card.getByRole("button", { name: /^Remove / });
+        // The shared action group owns the reveal; its buttons inherit the group opacity.
+        const remove = card.getByRole("button", { name: /^Remove / }).locator("xpath=..");
         await expect(remove).toHaveCSS("opacity", "0");
       }
       for (const card of await cards.all()) {
         await card.hover();
-        await expect(card.getByRole("button", { name: /^Remove / })).toHaveCSS("opacity", "1");
+        await expect(card.getByRole("button", { name: /^Remove / }).locator("xpath=..")).toHaveCSS(
+          "opacity",
+          "1",
+        );
       }
       await firstImageCard.click({ button: "right" });
       const menu = page.getByRole("menu");

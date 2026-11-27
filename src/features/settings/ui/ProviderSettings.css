@@ -149,7 +149,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--ui-space-2, 0.5rem);
 }
 .provider-status-checked {
   white-space: nowrap;

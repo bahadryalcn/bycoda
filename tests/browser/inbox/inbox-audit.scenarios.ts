@@ -130,7 +130,7 @@ test.describe("Inbox audit", () => {
           ),
         ).toEqual(["one", "unavailable-project", "two"]);
         await page.getByRole("textbox", { name: "Search projects" }).fill("Payment");
-        await page.getByRole("button", { name: "Clear shown selection" }).click();
+        await page.getByRole("checkbox", { name: "Select all shown", exact: true }).uncheck();
         expect(
           await page.evaluate(() =>
             (
@@ -144,9 +144,7 @@ test.describe("Inbox audit", () => {
           fullPage: true,
         });
         await page.getByRole("button", { name: "Connect an inbox source", exact: true }).click();
-        await expect(
-          page.getByRole("menuitem", { name: "Connect GitLab", exact: true }),
-        ).toBeVisible();
+        await expect(page.getByRole("menuitem", { name: "GitLab", exact: true })).toBeVisible();
         await page.screenshot({
           path: `temp/verification/inbox-complete-audit/connections-${theme}-${width}.png`,
           fullPage: true,
@@ -218,7 +216,13 @@ test.describe("Inbox audit", () => {
           await source.fill(
             "**Preserve this draft**\n\n- Verify preview\n- Keep the original text",
           );
+          // One writing surface by default; the preview is one toggle away once there is text.
+          const toggle = form.getByRole("button", { name: "Preview", exact: true });
           const preview = form.getByRole("region", { name: "Preview", exact: true });
+          await expect(preview).toHaveCount(0);
+          await expect(toggle).toHaveAttribute("aria-pressed", "false");
+          await toggle.click();
+          await expect(toggle).toHaveAttribute("aria-pressed", "true");
           await expect(preview.getByText("Preserve this draft", { exact: true })).toBeVisible();
           await expect(preview.locator("li")).toHaveCount(2);
           await form.scrollIntoViewIfNeeded();
@@ -226,14 +230,14 @@ test.describe("Inbox audit", () => {
             path: `temp/verification/inbox-complete-audit/${provider}-issue-split-${theme}-${width}.png`,
             fullPage: true,
           });
-          await form.getByRole("tab", { name: "Preview", exact: true }).click();
           await expect(source).toBeHidden();
           if (provider === "github")
             await page.screenshot({
               path: `temp/verification/inbox-complete-audit/github-issue-preview-${theme}-${width}.png`,
               fullPage: true,
             });
-          await form.getByRole("tab", { name: "Source", exact: true }).click();
+          await toggle.click();
+          await expect(preview).toHaveCount(0);
           await expect(source).toBeVisible();
           if (provider === "github")
             await page.screenshot({
@@ -293,12 +297,18 @@ test.describe("Inbox audit", () => {
         `/tests/browser/inbox/jira-board.html?auditProvider=github&auditState=${state}`,
       );
       await expect(page.getByRole("heading", { name: /Keep payment form drafts/ })).toBeVisible();
-      if (state === "error")
+      if (state === "error") {
+        const failure = page.getByRole("alert").filter({ hasText: "Could not load this item." });
+        await expect(failure).toBeVisible();
+        await expect(failure.getByRole("button", { name: "Try again" })).toBeVisible();
+        // The Host's reason sits behind the failure's Details control.
+        await failure.getByRole("button", { name: /^Details/ }).click();
         await expect(
           page
             .getByText("Offline fixture: access temporarily unavailable", { exact: true })
             .first(),
         ).toBeVisible();
+      }
       if (state === "empty")
         await expect(page.getByText("No description", { exact: true })).toBeVisible();
       if (state === "loading") await expect(page.getByRole("status")).toContainText("Loading");
@@ -316,8 +326,10 @@ test.describe("Inbox audit", () => {
       "/tests/browser/inbox/jira-board.html?auditProvider=github&auditScreen=scope&lang=tr",
     );
     await page.getByRole("button", { name: "Connect an inbox source", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "GitLab bağla", exact: true })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Jira bağla", exact: true })).toBeVisible();
+    // The menu is named by the translated action and lists the providers by name.
+    const menu = page.getByRole("menu", { name: "Gelen kutusu kaynağı bağla", exact: true });
+    await expect(menu.getByRole("menuitem", { name: "GitLab", exact: true })).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Jira", exact: true })).toBeVisible();
     await page.screenshot({
       path: "temp/verification/inbox-complete-audit/connections-tr.png",
       fullPage: true,

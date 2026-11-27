@@ -215,8 +215,9 @@ for (const disk of ["missing", "changed"]) {
     );
     expect((await snapshot(page)).writes).toHaveLength(0);
     await page.getByRole("button", { name: "Save", exact: true }).click();
+    // The notice names the disk state and offers Reload or Overwrite; saving never writes.
     await expect(page.locator('[data-workspace="recovered"]')).toContainText(
-      "The file changed on disk. Reload or overwrite before saving.",
+      disk === "missing" ? "The disk version could not be verified." : "File changed on disk.",
     );
     expect((await snapshot(page)).writes).toHaveLength(0);
     await page.getByRole("button", { name: "Overwrite disk version", exact: true }).click();

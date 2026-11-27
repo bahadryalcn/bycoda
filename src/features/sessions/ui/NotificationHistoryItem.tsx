@@ -176,7 +176,7 @@ export function HistoryItem({
           <span className="notification-history-titleline">
             <Text
               as="span"
-              className="notification-history-title"
+              className="notification-history-title relative"
               size="secondary"
               tone={unread ? "primary" : "secondary"}
               weight={unread ? "medium" : "regular"}

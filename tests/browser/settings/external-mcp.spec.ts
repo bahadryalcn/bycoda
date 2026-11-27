@@ -43,6 +43,8 @@ for (const theme of ["light", "dark"])
       await dialog
         .getByRole("textbox", { name: "Token name" })
         .fill("A long client access token name to check narrow layout containment");
+      // The duration is an advanced option, collapsed by default.
+      await dialog.getByText("Advanced", { exact: true }).click();
       await dialog.getByRole("spinbutton").fill("367");
       await dialog.getByRole("button", { name: "Create token", exact: true }).click();
       await expect(page.locator("body")).not.toHaveAttribute("data-creates");

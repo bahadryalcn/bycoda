@@ -234,8 +234,10 @@ for (const theme of ["light", "dark"]) {
       await page.goto(`/tests/browser/workspace/workspace-layout.html?theme=${theme}`);
       await page.getByRole("button", { name: "Group Gamma with Alpha" }).click();
       const tabs = page.getByRole("tablist", { name: "Pane sessions" });
-      await expect(tabs).toHaveCSS("border-bottom-width", "1px");
-      const paint = await tabs.evaluate((node) => ({
+      // The shared pane frame around the tab list draws the divider under it.
+      const strip = tabs.locator("xpath=ancestor::*[@data-surface-frame='pane'][1]");
+      await expect(strip).toHaveCSS("border-bottom-width", "1px");
+      const paint = await strip.evaluate((node) => ({
         background: getComputedStyle(node).backgroundColor,
         border: getComputedStyle(node).borderBottomColor,
       }));

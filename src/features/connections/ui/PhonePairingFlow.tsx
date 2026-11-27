@@ -203,15 +203,16 @@ export function PhonePairingFlow({
             )
           ) : (
             <>
-              <InlineMessage tone="info">
-                {mode === "lan" && networkHint
-                  ? networkHint
-                  : state.access.reason
+              {/* The network hint above already explains a bare failure; the Host reason adds to it. */}
+              {state.access.reason || !(mode === "lan" && networkHint) ? (
+                <InlineMessage tone="info">
+                  {state.access.reason
                     ? state.access.reason
                     : state.access.state === "setup-required"
                       ? copy.setup
                       : copy.unavailable}
-              </InlineMessage>
+                </InlineMessage>
+              ) : null}
               {addresses.length > 1 ? (
                 <SearchableSelect
                   label={copy.address}

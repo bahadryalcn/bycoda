@@ -122,6 +122,9 @@ export function ComposerAction({
           label={t("Stop")}
           shortcut={stopShortcut}
           data-usage-guide="stop-button"
+          data-composer-stop-optional={
+            showFollowUp && hasValue && onQueue && !submitting && !stopping ? "" : undefined
+          }
           loading={stopping}
           loadingLabel={t("Stopping…")}
           onClick={onStop}

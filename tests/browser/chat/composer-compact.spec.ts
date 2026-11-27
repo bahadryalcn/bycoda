@@ -327,7 +327,7 @@ for (const width of [1280, 800]) {
           url(inline ? { inlineExamples: "repeated-pdf", turns: "2" } : { turns: "2" }, light),
         );
         const editor = inline ? page.locator("[data-composer-inline-input]") : field(page);
-        const clear = page.getByRole("button", { name: "Clear text", exact: true });
+        const clear = page.getByRole("button", { name: "Clear", exact: true });
         const source =
           "Aşağıdaki performans sorunlarına bakar mısın?\n\n## Bulgular (önem sırasıyla)\n\n1. **Stil hesabı eleman başına çok pahalı.** ~9,4k elemanlı DOM’da tam stil hesabı 109 ms sürüyor. CSS’te 10.337 kural, 145 `@container`, 163 `:has()` var." +
           (inline ? " [file1]" : "");
@@ -345,10 +345,9 @@ for (const width of [1280, 800]) {
         await expect(field(page)).toHaveValue("");
         await expect(editor).toBeFocused();
         await expect(clear).toBeHidden();
+        // Clear empties the whole draft, attachments included; undo brings both back together.
         if (inline)
-          await expect(
-            composer.getByRole("button", { name: /^Remove .*\.pdf$/ }).first(),
-          ).toBeVisible();
+          await expect(composer.getByRole("button", { name: /^Remove .*\.pdf$/ })).toHaveCount(0);
         await editor.press("ControlOrMeta+z");
         await expect(field(page)).toHaveValue(source);
         if (inline)
@@ -506,7 +505,7 @@ test("the session composer renders all eight compact references in the editable 
           const first = chip.firstElementChild!.getBoundingClientRect();
           const last = chip.lastElementChild!.getBoundingClientRect();
           const rect = chip.getBoundingClientRect();
-          return style.paddingInline === "5px" && rect.width - (last.right - first.left) <= 12.5;
+          return style.paddingInline === "4px" && rect.width - (last.right - first.left) <= 10.5;
         }),
       ),
     ).toBe(true);
@@ -585,13 +584,13 @@ test("repeated PDF references use their intrinsic width with small padding", asy
       await expect(box.locator("[data-attachment-chip]")).toHaveCount(1);
       for (const pdf of await pdfs.all()) {
         await expect(pdf).toHaveText("Detailed-project-report-tr (1).pdf71 KB");
-        await expect(pdf).toHaveCSS("padding-inline", "5px");
+        await expect(pdf).toHaveCSS("padding-inline", "4px");
         const extraWidth = await pdf.evaluate((chip) => {
           const icon = chip.firstElementChild!.getBoundingClientRect();
           const size = chip.lastElementChild!.getBoundingClientRect();
           return chip.getBoundingClientRect().width - (size.right - icon.left);
         });
-        expect(extraWidth).toBeCloseTo(12, 0);
+        expect(extraWidth).toBeCloseTo(10, 0);
       }
       await box.screenshot({ path: `${evidence}/${light ? "light" : "dark"}-${width}.png` });
     }
@@ -650,9 +649,16 @@ test("skill panels match the composer and keep their actions visible", async ({ 
       await page.goto(url({ inlineExamples: "skill-panels" }, light));
       const box = page.locator("[data-composer-box]");
       const editor = box.locator("[data-composer-inline-input]");
+      // Floating panels share the one theme glass (--ui-floating-glass), resolved here by a probe.
       const composerMaterial = await box.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return { fill: style.backgroundColor, filter: style.backdropFilter };
+        const probe = document.createElement("div");
+        probe.style.cssText =
+          "background: var(--ui-floating-glass); backdrop-filter: var(--ui-floating-glass-filter)";
+        element.append(probe);
+        const style = getComputedStyle(probe);
+        const material = { fill: style.backgroundColor, filter: style.backdropFilter };
+        probe.remove();
+        return material;
       });
       const checkMaterial = async (panel: Locator) => {
         const surface = panel.locator(':scope > [aria-hidden="true"]');
@@ -684,9 +690,10 @@ test("skill panels match the composer and keep their actions visible", async ({ 
       await capture(page, `skill-picker-${light ? "light" : "dark"}-${width}`);
       const options = list.getByRole("option");
       await expect(options).toHaveCount(2);
-      await expect(options.first()).toContainText("/ui-ux-pro-max");
+      // A matching group leads the skills it contains.
+      await expect(options.first()).toContainText("/group-interface-design");
       await expect(options.first()).toHaveAttribute("aria-selected", "true");
-      await expect(options.nth(1)).toContainText("/group-interface-design");
+      await expect(options.nth(1)).toContainText("/ui-ux-pro-max");
       await expect(create).toHaveAttribute("data-button-variant", "secondary");
       const panel = list.locator("xpath=ancestor::*[@data-popover-side][last()]");
       await checkMaterial(panel);
@@ -704,7 +711,6 @@ test("skill panels match the composer and keep their actions visible", async ({ 
       await expect(options.first()).toBeInViewport({ ratio: 1 });
       await page.keyboard.press("ArrowDown");
       await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
-      await page.keyboard.press("ArrowUp");
       await page.keyboard.press("Enter");
       await expect(editor.getByRole("button", { name: "ui-ux-pro-max", exact: true })).toHaveCount(
         2,
@@ -773,7 +779,7 @@ for (const light of [true, false])
       await page.goto(url({ dictation: "", goal: "" }, light));
       const group = page.getByRole("group", { name: "Dictation", exact: true });
       const microphone = group.getByRole("button", { name: "Dictate", exact: true });
-      const options = group.getByRole("button", { name: "Dictation options" });
+      const options = group.getByRole("button", { name: "Dictation language" });
       const stop = page.getByRole("button", { name: "Stop", exact: true });
       await expect(stop).toBeVisible();
       await expect(microphone).toBeVisible();
@@ -804,7 +810,7 @@ for (const light of [true, false])
       await page.keyboard.press("Tab");
       await expect(options).toBeFocused();
       await page.keyboard.press("Enter");
-      const menu = page.getByRole("menu", { name: "Dictation options" });
+      const menu = page.getByRole("menu", { name: "Dictation language" });
       await expect(menu).toBeVisible();
       const menuBox = (await menu.boundingBox())!;
       expect(menuBox.y + menuBox.height).toBeLessThan(optionsBox.y);
@@ -1676,6 +1682,13 @@ for (const { theme, width } of PANE_MATRIX)
             reason: "The draft field scrolls its own long text vertically inside the editor.",
           },
         ],
+        gap: [
+          {
+            selector: ".composer-controls",
+            reason:
+              "In a pane under 31rem the toolbar packs its icon buttons at 4px so Stop and Send stay on one row; the model chip keeps its 6px glyph gap.",
+          },
+        ],
       },
     });
   });
@@ -1685,7 +1698,7 @@ for (const { theme, width } of PANE_MATRIX)
 for (const { theme, width } of PANE_MATRIX.filter((entry) => entry.width === 800))
   test(`composer workspace chips show readable labels at 800px ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
-    await page.goto(url({ workspaceChips: "1" }, theme === "light"));
+    await page.goto(url({ workspaceChips: "1", turns: "0" }, theme === "light"));
     const controls = page.locator("[data-composer-workspace-controls]");
     await expect(controls).toBeVisible();
     await expect(controls.getByRole("button", { name: /^Run on:/ })).toHaveText("This computer");
@@ -1727,7 +1740,7 @@ test("the access shield stays icon-only for every mode", async ({ page }) => {
   await expect(trigger).toBeVisible();
   const iconOnly = () =>
     trigger.evaluate((node) => ({
-      text: (node.textContent ?? "").replace(/\s+/g, " ").trim(),
+      text: ((node as HTMLElement).innerText ?? "").replace(/\s+/g, " ").trim(),
       glyphs: node.querySelectorAll("svg").length,
       name: node.getAttribute("aria-label") ?? "",
     }));

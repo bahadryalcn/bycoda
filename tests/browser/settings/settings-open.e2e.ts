@@ -15,10 +15,13 @@ for (const theme of ["light", "dark"]) {
       const topics = appearance.getByRole("tablist", { name: "Görünüm", exact: true });
       await expect(topics.getByRole("tab")).toHaveCount(6);
       const openTopic = (name: string) => topics.getByRole("tab", { name, exact: true }).click();
-      // The dark-mode depth slider is always visible in the Theme tab, next to hue and saturation.
-      for (const id of ["hue", "saturation", "dark-lightness"]) {
+      // The Theme tab shows hue and saturation; the depth slider exists only in the dark scheme.
+      for (const id of ["hue", "saturation"]) {
         await expect(appearance.locator(`[data-setting-id="${id}"]`)).toBeVisible();
       }
+      await expect(appearance.locator('[data-setting-id="dark-lightness"]')).toHaveCount(
+        theme === "dark" ? 1 : 0,
+      );
       await openTopic("Tipografi");
       await expect(appearance.locator('[data-setting-id="code-font-size"]')).toBeVisible();
       // Sidebar opacity lives in the Glass background layer, whose editor opens from its row.
@@ -91,10 +94,11 @@ test("settings expose advanced controls without opening a menu", async ({ page }
   ]) {
     await page.goto(`/tests/browser/settings/settings.html?section=${section}&theme=dark&lang=en`);
     const form = page.locator(".bycoda-settings-form");
-    // Build provenance and provider setup/discovery are intentionally disclosed.
+    // Legal documents, remote media options and provider setup/discovery are intentionally disclosed.
     // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
     const optionalDisclosures: Record<string, string[]> = {
-      general: ["Build details"],
+      connections: ["Advanced"],
+      policies: ["Build details", "Legal"],
       providers: ["#setting-antigravity-account", ".provider-cli-more"],
     };
     await expect
@@ -129,7 +133,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       await form.getByRole("button", { name: "Add a computer", exact: true }).first().click();
       const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });
       await addDialog.getByRole("tab", { name: "Enter address", exact: true }).click();
-      const machineForm = addDialog.getByRole("form", { name: "Add a new computer", exact: true });
+      const machineForm = addDialog.getByRole("form", { name: "Add a computer", exact: true });
       const hostUrl = machineForm.getByRole("radio", { name: "Host URL", exact: true });
       await hostUrl.focus();
       await hostUrl.press("Space");
@@ -141,7 +145,7 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       await machineForm.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(addDialog).toHaveCount(0);
     }
-    if (section === "general") {
+    if (section === "policies") {
       const buildDetails = form.getByTestId("build-identity-details");
       await buildDetails.locator("summary").click();
       await expect(

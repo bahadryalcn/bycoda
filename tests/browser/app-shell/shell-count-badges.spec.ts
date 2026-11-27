@@ -105,13 +105,12 @@ test("shell counts stay compact and follow custom accents in both rail presentat
           await expect(page.getByLabel("Selected action", { exact: true })).toHaveText(
             "Recovered sessions",
           );
-          const settings = owner
-            .locator("..")
-            .getByRole("button", { name: "Settings", exact: true });
+          const settings = page.getByRole("button", { name: "Settings", exact: true });
           const icon = (await owner.boundingBox())!;
           const badge = (await recoveryCount.boundingBox())!;
           expect(badge.y).toBeLessThan(icon.y);
-          expect(badge.x + badge.width).toBeLessThanOrEqual(icon.x + icon.width);
+          // The shared button badge overlaps the corner; it must stay on screen, not be clipped.
+          expect(badge.x + badge.width).toBeLessThanOrEqual(width);
           const settingsBox = (await settings.boundingBox())!;
           if (expanded) {
             expect(icon.x + icon.width).toBeLessThanOrEqual(settingsBox.x);

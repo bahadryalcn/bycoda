@@ -35,7 +35,7 @@
 .settings-title-line {
   display: flex;
   align-items: center;
-  gap: var(--ui-space-1, 0.25rem);
+  gap: var(--ui-space-2, 0.5rem);
   min-inline-size: 0;
 }
 /* Info and reset icons are 28px targets; they must not make a titled row taller than a plain one,
@@ -233,26 +233,28 @@
   overflow-wrap: anywhere;
 }
 
-/* Each row measures its own content area, including standalone rows. Below 35rem the row keeps
-   label left and control right while both fit (a switch, a short select or segmented choice), and
-   the control wraps under the label, start aligned, only when it does not; wide editors and lists
-   use `stacked`. */
+/* A row keeps label left and control right while both fit (a switch, a short select or segmented
+   choice), and the control wraps under the label, start aligned, only when it does not; wide
+   editors and lists use `stacked`. The row is its own size container, so the container query below
+   can only restyle its children; the flex layout itself must not depend on it. */
+.settings-row:not([data-stacked]) {
+  display: flex;
+  flex-wrap: wrap;
+}
+.settings-row:not([data-stacked]) > .settings-row-label {
+  flex: 1 1 10rem;
+}
+.settings-row:not([data-stacked]) > .settings-row-control {
+  flex: 0 1 auto;
+}
+.settings-row:not([data-stacked]) > .settings-row-feedback {
+  flex-basis: 100%;
+}
 @container settings-row (inline-size < 35rem) {
-  .settings-row:not([data-stacked]) {
-    display: flex;
-    flex-wrap: wrap;
-  }
-  .settings-row:not([data-stacked]) > .settings-row-label {
-    flex: 1 1 10rem;
-  }
   .settings-row:not([data-stacked]) > .settings-row-control {
-    flex: 0 1 auto;
     inline-size: max-content;
     min-inline-size: 0;
     max-inline-size: 100%;
-  }
-  .settings-row:not([data-stacked]) > .settings-row-feedback {
-    flex-basis: 100%;
   }
   /* One wrapped alignment for every control: under the label, start aligned (a shared
      MorphSelect would otherwise push itself to the end with its own auto margin). */

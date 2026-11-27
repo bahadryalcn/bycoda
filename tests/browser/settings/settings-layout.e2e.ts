@@ -34,13 +34,13 @@ for (const [theme, width] of [
       const form = page.locator(`[data-settings-section="${section}"]`);
       await expect(form).toBeVisible();
       // Every page shares one bounded column: the form fills the panel until it reaches the single
-      // column cap (60rem; 80rem only when the dialog is maximized), then centres.
+      // column cap (80rem; 96rem only when the dialog is maximized), then centres.
       // The cap settles once the page's layout has run, so wait for it before measuring.
       await expect
         .poll(() => form.evaluate((node) => Number.parseFloat(getComputedStyle(node).maxWidth)), {
           message: section,
         })
-        .toBe(60 * 16);
+        .toBe(80 * 16);
       const dimensions = await form.evaluate((node) => {
         const bounds = node.getBoundingClientRect();
         const parent = node.parentElement!.getBoundingClientRect();
@@ -55,8 +55,8 @@ for (const [theme, width] of [
         };
       });
       // No page keeps its own track any more: preferences, collections and list/detail libraries
-      // all measure the same 60rem column.
-      expect(dimensions.cap, section).toBe(60 * 16);
+      // all measure the same 80rem column.
+      expect(dimensions.cap, section).toBe(80 * 16);
       expect(dimensions.width, section).toBeGreaterThan(
         Math.min(dimensions.parent, dimensions.cap) * 0.95,
       );
@@ -137,11 +137,12 @@ test("Turkish policies and usage limits remain usable at intermediate widths", a
   for (const width of [1280, 768]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/tests/browser/settings/settings.html?section=policies&theme=dark&lang=tr");
+    await page.getByText("Yasal belgeler", { exact: true }).click();
     await expect(
       page
-        .locator(".policy-navigation")
-        .getByRole("tab", { name: "Gizlilik politikası", exact: true }),
-    ).toHaveAttribute("aria-selected", "true");
+        .locator(".policies-settings")
+        .getByRole("button", { name: "Politika belgeleri: Gizlilik politikası", exact: true }),
+    ).toBeVisible();
     const categoryPicker = page.locator(".bycoda-settings-category-picker");
     if (await categoryPicker.isVisible()) {
       await categoryPicker.getByRole("button").click();
@@ -236,13 +237,24 @@ for (const { theme, width } of PANE_MATRIX)
                 reason: "Code, table and terminal hosts scroll horizontally inside themselves.",
               },
             ],
+            gap: [
+              {
+                selector: ".bycoda-arc-segmented",
+                reason: "Segmented options sit in one inset track with a deliberate 2px separation.",
+              },
+              {
+                selector: "[role=tablist]",
+                reason: "Tabs in one strip sit 1px apart by design.",
+              },
+            ],
           },
         });
       }
     });
 
-// Fractional breakpoints: a settings row stacks its control below the label under the topic width
-// threshold and sits inline above it. Sweep half-pixel widths and demand a single transition.
+// Fractional widths: a settings row wraps its control below the label when label and control no
+// longer fit side by side, and sits inline above that. Sweep half-pixel widths and demand a single
+// transition (no flicker between layouts).
 test("settings rows switch from stacked to inline once, at the topic-width threshold", async ({
   page,
 }) => {
@@ -251,7 +263,7 @@ test("settings rows switch from stacked to inline once, at the topic-width thres
   const rows = page.locator('[data-settings-section="keybindings"] .settings-row');
   await expect(rows.first()).toBeVisible();
   const samples: { topic: number; inline: boolean }[] = [];
-  for (let paneWidth = 560; paneWidth <= 760; paneWidth += 0.5) {
+  for (let paneWidth = 300; paneWidth <= 760; paneWidth += 0.5) {
     await page.locator("[data-settings-scroller]").evaluate((node, value) => {
       node.style.boxSizing = "border-box";
       node.style.flex = "none";
@@ -275,6 +287,6 @@ test("settings rows switch from stacked to inline once, at the topic-width thres
   );
   expect(samples[0].inline, "narrowest sample is stacked").toBe(false);
   expect(samples.at(-1)!.inline, "widest sample is inline").toBe(true);
-  // The switch lands on the documented 560px topic width, within one pixel either way.
-  expect(Math.abs(transitions[0].topic - 560)).toBeLessThanOrEqual(1);
+  // The control wraps only when it no longer fits, never at a comfortable width.
+  expect(transitions[0].topic).toBeLessThan(560);
 });

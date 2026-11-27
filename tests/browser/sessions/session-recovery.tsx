@@ -111,7 +111,11 @@ function RailFixture() {
       <output data-testid="settings-destination" className="sr-only">
         {settings}
       </output>
-      <div style={{ position: "fixed", insetBlockEnd: 0, insetInlineEnd: 0 }}>
+      {/* The footer's own container: the controls fold by its width, as in WorkspaceFooter. */}
+      <div
+        className="@container/footer pointer-events-none flex [&>nav]:pointer-events-auto"
+        style={{ position: "fixed", insetBlockEnd: 0, insetInlineStart: 0, insetInlineEnd: 0 }}
+      >
         <WorkspaceControls />
       </div>
       {open ? (
