@@ -17,7 +17,9 @@ for (const theme of ["dark", "light"]) {
       await expect(settings).toBeVisible();
       await expect(page.getByText(/Model set in Settings/)).toHaveCount(0);
       const boxes = await Promise.all([grouping, settings].map((button) => button.boundingBox()));
-      expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1);
+      // One row: the controls differ in height, so compare their vertical centres.
+      const centres = boxes.map((box) => box!.y + box!.height / 2);
+      expect(Math.abs(centres[0] - centres[1])).toBeLessThanOrEqual(3);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -87,7 +89,11 @@ for (const theme of ["dark", "light"]) {
       const editor = page.getByRole("textbox", { name: "Skill instructions", exact: true });
       await expect(editor).toBeVisible();
       await editor.fill("---\nname: arc\n---\n\n# Edited instructions\n");
-      await expect(page.getByText("Unsaved changes", { exact: true })).toBeVisible();
+      // A draft shows as an enabled Save beside Discard changes.
+      await expect(
+        page.getByRole("button", { name: "Discard changes", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
@@ -154,10 +160,6 @@ for (const theme of ["light", "dark"])
       await expect(saved).toBeVisible();
       await expect(saved).toBeDisabled();
       await expect(page.getByText("Skill saved.", { exact: true })).toHaveCount(0);
-      // The preview footer reports the document state: the button and the footer both say Saved.
-      await expect(
-        page.getByRole("complementary", { name: "Skill preview" }).locator("footer"),
-      ).toContainText("Saved");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

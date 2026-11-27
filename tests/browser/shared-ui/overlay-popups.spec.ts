@@ -153,7 +153,8 @@ test.describe("modal surface and hierarchy", () => {
         const surface = await bg(page, '[role="dialog"] > .popover-backdrop');
         expect(surface).not.toBe(workbench);
         expect(surface).toBe(popover);
-        if (theme === "light") expect(surface).toBe(await rootBg(page, "--ui-surface-raised"));
+        // Every in-window floating surface shares one theme glass over a blur of the pane.
+        if (theme === "light") expect(surface).toBe(await rootBg(page, "--ui-floating-glass"));
         // A readable boundary at rest: the frame keeps the stroke role.
         const border = await dialog.evaluate((el) => {
           const style = getComputedStyle(el);
@@ -359,7 +360,7 @@ test.describe("tooltip", () => {
     }
     await setup(page, "dark");
     await page.getByTestId("open-modal-sm").click();
-    await page.getByRole("button", { name: "Close" }).focus();
+    await page.getByTestId("dialog-hint-icon").focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Shift+Tab");
     await expect(page.getByRole("tooltip")).toBeVisible();
@@ -561,7 +562,7 @@ test.describe("filters", () => {
     await expect(host).toHaveAttribute("data-filter-active", "");
     await expect(trigger).toHaveText("1");
     await shot(page, "filters-git-active", "light", "1280");
-    await panel.getByRole("button", { name: "Reset filter", exact: true }).click();
+    await panel.getByRole("button", { name: "Reset", exact: true }).click();
     await expect(host).not.toHaveAttribute("data-filter-active");
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);

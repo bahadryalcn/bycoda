@@ -65,7 +65,7 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/subagent-retention/history-${theme}-${width}.png`,
       });
       const menu = page.getByRole("menu", { name: "Session subagents" });
-      await expect(menu.locator("..").locator(":scope > .popover-frosted")).toHaveCount(1);
+      await expect(menu.locator("..").locator(":scope > .popover-backdrop")).toHaveCount(1);
       const firstRow = menu.getByRole("menuitem").first();
       const spacing = await firstRow.evaluate((row) => {
         const style = getComputedStyle(row);
@@ -98,7 +98,7 @@ for (const theme of ["light", "dark"])
       await expect(output).toContainText("command output fixture");
       const fill = await command.evaluate((node) => {
         const probe = document.createElement("span");
-        probe.style.background = "var(--ui-surface-muted)";
+        probe.style.background = "var(--ui-card-surface)";
         node.appendChild(probe);
         const expected = getComputedStyle(probe).backgroundColor;
         probe.remove();
@@ -451,7 +451,9 @@ for (const theme of ["light", "dark"])
       // Claude Code's built-in advisor: details start closed and toggle on click.
       const advisor = page.locator("[data-advisor-row]");
       await expect(advisor).toContainText("Advisor · Fable 5.2");
-      await expect(advisor).toContainText("Done");
+      // A completed advisor row carries no status chip; only a failure or pending state does.
+      await expect(advisor).not.toContainText("Failed");
+      await expect(advisor).not.toContainText("Thinking");
       await expect(advisor.locator("summary img")).toBeVisible();
       await expect(advisor.locator("details")).not.toHaveAttribute("open");
       await advisor.screenshot({

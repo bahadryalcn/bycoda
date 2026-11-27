@@ -3,9 +3,11 @@ import { expect, test } from "@playwright/test";
 test("imports only eligible selected records and prevents a repeated pending import", async ({
   page,
 }) => {
+  // The dialog scans the default Termius location as it opens.
   await page.goto("/tests/browser/terminal/termius-import.html");
-  await page.getByRole("button", { name: "Scan this computer" }).click();
-  await expect(page.getByText("1 of 3 selected")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Import selected (1)", exact: true }),
+  ).toBeEnabled();
   await expect(page.getByRole("checkbox", { name: "Import Existing database" })).toBeDisabled();
   await expect(page.getByRole("checkbox", { name: "Import Internal proxy target" })).toBeDisabled();
   await page
@@ -34,12 +36,13 @@ test("recovers from a failed scan and reports an expired preview without losing 
   page,
 }) => {
   await page.goto("/tests/browser/terminal/termius-import.html?error&expired");
-  await page.getByRole("button", { name: "Scan this computer" }).click();
   await expect(page.getByRole("alert")).toContainText("Close Termius and try again");
   await page.getByRole("button", { name: "Scan this computer" }).click();
   await page.getByRole("button", { name: "Import selected (1)", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Migration preview expired");
-  await expect(page.getByText("1 of 3 selected")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Import selected (1)", exact: true }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
@@ -51,7 +54,6 @@ for (const light of [false, true]) {
     await page.setViewportSize({ width: 390, height: 750 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/terminal/termius-import.html?tr${light ? "&light" : ""}`);
-    await page.getByRole("button", { name: "Bu bilgisayarı tara" }).click();
     await expect(page.getByRole("dialog")).toHaveAccessibleName("Termius'tan içe aktar");
     const all = page.getByRole("checkbox", { name: "Tümünü seç", exact: true });
     await all.focus();

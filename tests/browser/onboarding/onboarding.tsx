@@ -90,11 +90,7 @@ mockIPC(
               environmentId: "fixture-env",
             },
           ];
-    if (
-      command === "session_import_keys" ||
-      command === "generic_acp_list"
-    )
-      return [];
+    if (command === "session_import_keys" || command === "generic_acp_list") return [];
     if (command === "import_discover") {
       const base = {
         provider: "claude",

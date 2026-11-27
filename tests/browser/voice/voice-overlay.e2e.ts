@@ -392,11 +392,15 @@ for (const theme of ["light", "dark"])
       await expect(
         mirror.getByRole("alert").getByRole("button", { name: "Dismiss" }),
       ).toBeVisible();
+      // The raw reason sits behind Details, like in the panel.
+      await expect(mirror.getByText("Voice needs attention", { exact: true })).toBeVisible();
+      await mirror
+        .getByRole("button", { name: "Details: Voice needs attention", exact: true })
+        .click();
       await expect(
-        mirror.getByText("Voice input cleanup was not confirmed. Start voice again.", {
-          exact: true,
-        }),
-      ).toBeVisible();
+        page.getByRole("dialog", { name: "Details: Voice needs attention" }),
+      ).toContainText("Voice input cleanup was not confirmed. Start voice again.");
+      await page.keyboard.press("Escape");
       await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-details.png`) });
       expect(await mirror.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
@@ -886,5 +890,13 @@ for (const { theme, width } of PANE_MATRIX)
       await expectLayoutContracts(page, {
         surface: `voice panel ${state} (320px pane)`,
         root: "section[data-voice-state]",
+        allow: {
+          gap: [
+            {
+              selector: ".bycoda-arc-segmented",
+              reason: "Segmented options sit in one inset track with a deliberate 2px separation.",
+            },
+          ],
+        },
       });
     });

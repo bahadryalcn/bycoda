@@ -11,7 +11,7 @@ for (const theme of ["light", "dark"]) {
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       await details
@@ -78,7 +78,7 @@ for (const theme of ["light", "dark"]) {
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       const credentials = details.getByRole("region", { name: "Credentials" });

@@ -44,7 +44,16 @@ test("device controls show pending only at the initiating action and recover fro
   await capture.click();
   await expect(capture).toHaveAttribute("aria-busy", "true");
   await fixture(page, "finish", "capture", "Device screenshot exceeds 4 MiB");
-  await expect(page.getByRole("alert")).toContainText("Device screenshot exceeds 4 MiB");
+  await expect(page.getByRole("alert")).toContainText("Device screen unavailable");
+  // The raw reason waits behind the shared Details control.
+  await page
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Device screenshot exceeds 4 MiB",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByText("Could not load devices", { exact: true })).toHaveCount(0);
   await expect(capture).toBeEnabled();
   await capture.click();
@@ -84,7 +93,15 @@ test("server details, logs and startup retain local pending feedback and clear f
   await fixture(page, "finish", "devServers.start", "Fixture host is unavailable");
   await expect(start).not.toHaveAttribute("aria-busy", "true");
   await expect(start).toBeEnabled();
-  await expect(page.getByRole("alert")).toContainText("Fixture host is unavailable");
+  await expect(page.getByRole("alert")).toContainText("The server action failed.");
+  await page
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "Fixture host is unavailable",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByLabel("Server name", { exact: true })).toHaveValue("Second server");
 });
 

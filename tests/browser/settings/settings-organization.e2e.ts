@@ -122,10 +122,7 @@ for (const theme of ["light", "dark"])
             section === "chat"
               ? page.locator(`.appearance-settings [role=tab][id$="-chat"]`)
               : page.locator(`[role=tab][id$="-${section}"]`);
-          await expect(tab).toHaveAttribute(
-            "aria-selected",
-            "true",
-          );
+          await expect(tab).toHaveAttribute("aria-selected", "true");
           await expect(page.locator(`#setting-${id}`)).toBeVisible();
         };
         await jump("chat-width", "chat");

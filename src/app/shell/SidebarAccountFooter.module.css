@@ -16,6 +16,8 @@
   gap: var(--space-1);
 }
 .actions {
+  min-inline-size: 0;
+  max-inline-size: 100%;
   flex: 0 1 auto;
   flex-wrap: wrap;
   justify-content: flex-end;

@@ -18,7 +18,7 @@ test("column filters combine and remain resettable with no matches", async ({ pa
   const message = page.getByRole("dialog", { name: "Filter Commit Message", exact: true });
   await message.getByRole("textbox").fill("no such commit");
   await expect(graph).toContainText("No matching commits");
-  await message.getByRole("button", { name: "Reset all filters", exact: true }).click();
+  await message.getByRole("button", { name: "Reset", exact: true }).click();
   await message.getByRole("textbox").press("Escape");
   await expect(graph.locator(".git-history-item")).toHaveCount(40);
 });
@@ -53,15 +53,23 @@ test("stash actions fit a narrow rail and commit files remain navigable", async 
     dialog.getByRole("region", { name: "Changed files", exact: true }).getByRole("button"),
   ).toHaveCount(1);
   await search.fill("");
-  await dialog.getByRole("button", { name: "Next file", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Previous file", exact: true })).toBeEnabled();
+  const changed = dialog.getByRole("region", { name: "Changed files", exact: true });
+  await changed.getByRole("button", { name: /^src\/theme\.css/ }).click();
+  await expect(changed.getByRole("button", { name: /^src\/theme\.css/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(changed.getByRole("button", { name: /^src\/workspace\.tsx/ })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await page.screenshot({ path: testInfo.outputPath("commit-inspector.png") });
   await dialog
     .locator("summary")
     .filter({ hasText: /^Changed files$/ })
     .press("Enter");
   await expect(search).toBeHidden();
-  await expect(dialog.getByRole("button", { name: "Next file", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("group", { name: "src/theme.css", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Close commit details", exact: true }).click();
   await expect(
     dialog.getByRole("button", { name: "Working tree actions", exact: true }),
@@ -143,14 +151,21 @@ test("fetch, pull, push, stage, unstage and stash run in the correct repository"
     name: "Commit graph",
     exact: true,
   });
+  const actions = dialog.getByRole("button", { name: "Working tree actions", exact: true });
   for (const name of ["Fetch", "Pull", "Push"]) {
-    await dialog.getByRole("button", { name: new RegExp(`^${name}(?:\\s*\\d+)?$`) }).click();
-    await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
+    // One sync action leads the header; the other two sit in the actions menu.
+    const lead = dialog.getByRole("button", { name: new RegExp(`^${name}(?:\\s*\\d+)?$`) });
+    if (await lead.isVisible()) await lead.click();
+    else {
+      await actions.click();
+      await page.getByRole("menuitem", { name, exact: true }).click();
+    }
+    await expect(actions).toBeEnabled();
   }
   for (const name of ["Stage all changes", "Unstage All Changes", "Stash"]) {
-    await dialog.getByRole("button", { name: "Working tree actions", exact: true }).click();
+    await actions.click();
     await page.getByRole("menuitem", { name, exact: true }).click();
-    await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
+    await expect(actions).toBeEnabled();
   }
   const calls = await page.evaluate(
     () =>
@@ -190,7 +205,7 @@ test("local and origin branch deletion use separate actions", async ({ page }) =
     .click();
   await page.getByText("Delete from remote…", { exact: true }).click();
   await page
-    .getByRole("dialog", { name: "Delete?", exact: true })
+    .getByRole("dialog", { name: "Delete origin/feature/team from the remote?", exact: true })
     .getByRole("button", { name: "Delete", exact: true })
     .click();
   await expect(
@@ -282,9 +297,14 @@ test("commit context menu runs the changes, blame, GitHub and copy actions", asy
     dialog.getByRole("heading", { name: "Workspace change 39", exact: true }),
   ).toBeVisible();
   await pick("Open in blame");
-  await expect(dialog.getByRole("region", { name: "Blame at commit", exact: true })).toContainText(
-    "Deniz Yılmaz",
-  );
+  // The author sits in the blame entry's tooltip, next to the commit and its date.
+  await dialog
+    .getByRole("region", { name: "Blame at commit", exact: true })
+    .getByRole("button")
+    .first()
+    .hover();
+  await expect(page.getByRole("tooltip")).toContainText("Deniz Yılmaz");
+
   await pick("Copy Commit ID");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     "0000000000000000000000000000000000000027",
@@ -339,7 +359,9 @@ test("commit context menu Git actions run with the selected SHA", async ({ page 
   };
   for (const name of ["Checkout (Detached)", "Cherry-Pick", "Revert Commit"]) {
     await pick(name);
-    await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
+    await expect(
+      dialog.getByRole("button", { name: "Working tree actions", exact: true }),
+    ).toBeEnabled();
   }
   await pick("Create branch…");
   await page.getByRole("textbox", { name: "Branch name", exact: true }).fill("feature/from-commit");
@@ -357,7 +379,9 @@ test("commit context menu Git actions run with the selected SHA", async ({ page 
         .getByRole("dialog", { name: /^Hard reset to /u })
         .getByRole("button", { name: "Hard reset", exact: true })
         .click();
-    await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
+    await expect(
+      dialog.getByRole("button", { name: "Working tree actions", exact: true }),
+    ).toBeEnabled();
   }
   const calls = await page.evaluate(
     () =>

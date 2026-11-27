@@ -233,7 +233,8 @@ function Fixture() {
       data-session-drop
     >
       {params.has("inline-status") ? (
-        <div className="p-4">
+        // Production renders these rows inside the reply wrapper that defines the quiet chrome inks.
+        <div className="p-4" data-transcript-reply>
           <SubagentStack blocks={statusAgents} live />
           <SubagentStack blocks={[agent]} live />
         </div>

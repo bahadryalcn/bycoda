@@ -336,7 +336,7 @@ function NoticesSection() {
       <ToastRegion />
       {showFileError ? (
         <FileActionError
-          message="Could not rename the file."
+          details="Could not rename the file."
           onDismiss={() => setShowFileError(false)}
         />
       ) : null}

@@ -443,7 +443,9 @@ test.describe("feedback behavior", () => {
       expect(Math.abs(control.y + control.height / 2 - copyCenter)).toBeLessThanOrEqual(1);
     }
     await page.getByRole("button", { name: "Show file action error" }).click();
-    const fileError = page.getByRole("alert").filter({ hasText: "Could not rename the file." });
+    const fileError = page
+      .getByRole("alert")
+      .filter({ hasText: "Couldn’t open the file in its default app" });
     await page.clock.fastForward(60_000);
     await expect(fileError).toBeVisible();
   });
@@ -513,10 +515,14 @@ test.describe("feedback behavior", () => {
         .locator('[data-frame="empty-page"]')
         .getByRole("button", { name: "Open folder", exact: true }),
     ).toBeVisible();
-    // Existing callers with no context keep the page presentation.
+    // A caller with no context keeps the page presentation; the document viewers sit in a panel.
+    await expect(page.locator('[data-frame="empty-page"] [data-context]')).toHaveAttribute(
+      "data-context",
+      "page",
+    );
     await expect(
       page.locator('[data-frame="empty-consumer-document"] [data-context]'),
-    ).toHaveAttribute("data-context", "page");
+    ).toHaveAttribute("data-context", "panel");
   });
 
   test("boot failure keeps the label and retry reachable by keyboard at narrow and short sizes", async ({
@@ -532,7 +538,7 @@ test.describe("feedback behavior", () => {
         width,
       );
       const title = page.getByRole("heading", { level: 1 });
-      const retry = page.getByRole("button", { name: "Reload app" });
+      const retry = page.getByRole("button", { name: "Reload", exact: true });
       for (const box of [await title.boundingBox(), await retry.boundingBox()]) {
         expect(box!.x).toBeGreaterThanOrEqual(0);
         expect(box!.x + box!.width).toBeLessThanOrEqual(width);
@@ -547,14 +553,15 @@ test.describe("feedback behavior", () => {
       await expect(toggle).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(toggle).toHaveAttribute("aria-expanded", "true");
-      await page.keyboard.press("Tab");
-      await expect(page.getByLabel("Error details")).toBeFocused();
+      // Copy sits in the details header, before the scrollable text.
       await page.keyboard.press("Tab");
       const copy = page.getByRole("button", { name: "Copy details" });
       await expect(copy).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(page.getByRole("button", { name: "Copied" })).toBeVisible();
       expect(await page.evaluate(() => window.__clipboard.writes.length)).toBe(1);
+      await page.keyboard.press("Tab");
+      await expect(page.getByLabel("Error details")).toBeFocused();
     }
   });
 });

@@ -8,7 +8,7 @@ import voiceStyles from "../../../src/features/voice/ui/VoiceCompanion.module.cs
 import { VoiceSettings } from "../../../src/features/voice/ui/VoiceSettings";
 import { DictationButton } from "../../../src/features/voice/ui/DictationButton";
 import { reportDictationLanguage } from "../../../src/features/voice/model/dictationActivity";
-import { MicrophoneRecoveryAction } from "../../../src/features/voice/ui/MicrophoneRecoveryAction";
+import { VoiceRecoveryAction } from "../../../src/features/voice/ui/MicrophoneRecoveryAction";
 import { VoiceCompanion } from "../../../src/features/voice/ui/VoiceCompanion";
 import { VoiceSetupSteps } from "../../../src/features/voice/ui/VoiceSetupSteps";
 import type { Session } from "../../../src/features/sessions/model/session";
@@ -310,7 +310,7 @@ function Fixture() {
           {error ? (
             <>
               <SettingsFeedback state="error">{error}</SettingsFeedback>
-              <MicrophoneRecoveryAction message={error} />
+              <VoiceRecoveryAction message={error} />
             </>
           ) : null}
         </section>

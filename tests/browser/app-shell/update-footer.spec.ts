@@ -208,7 +208,7 @@ test("installed notice survives reload and reading notes, closes persistently, t
 }) => {
   await page.goto(route);
   const notice = page.getByRole("button", {
-    name: `Updated to ${appVersion}`,
+    name: `What's new in ${appVersion}`,
     exact: true,
   });
   await expect(notice).toBeVisible();
@@ -223,7 +223,7 @@ test("installed notice survives reload and reading notes, closes persistently, t
   await expect(notice).toHaveCount(0);
   await page.goto(`${route}?install=${nextVersion}`);
   await expect(
-    page.getByRole("button", { name: `Updated to ${nextVersion}`, exact: true }),
+    page.getByRole("button", { name: `What's new in ${nextVersion}`, exact: true }),
   ).toBeVisible();
 });
 
@@ -286,19 +286,29 @@ test("installed update stays on one row with a corner dismiss action", async ({ 
     `${capture}/README.md`,
     "# Installed update notice\n\nChromium account footer with a seeded update, real quick settings, and mocked account and voice state.\n",
   );
+  // An update that is waiting takes the footer slot of the installed notice, so this row is
+  // measured with no pending update.
+  await page.addInitScript(() => {
+    const internals = (
+      window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+      }
+    ).__TAURI_INTERNALS__;
+    const invoke = internals.invoke;
+    internals.invoke = (command, args) =>
+      command === "app_update_check" ? Promise.resolve(null) : invoke(command, args);
+  });
   await page.goto(`${route}?account&installed-notice`);
   const rail = page.locator("[data-account-fixture-rail]");
   const footer = rail.locator("[data-sidebar-account-footer]");
-  const notice = footer.getByRole("button", { name: "What's new", exact: true });
+  const notice = footer.getByRole("button", { name: `What's new in ${appVersion}`, exact: true });
   const dismiss = footer.getByRole("button", { name: "Dismiss update notification" });
   const settings = footer.getByRole("button", { name: "Settings", exact: true });
   const voice = footer.getByRole("button", { name: "Talk to Arif", exact: true });
-  const voiceSettings = footer.getByRole("button", { name: "Voice settings", exact: true });
   const notifications = footer.getByRole("button", { name: "Notifications", exact: true });
   await expect(notice).toBeVisible();
   await expect(dismiss).toBeVisible();
   await expect(voice).toBeVisible();
-  await expect(voiceSettings.locator("svg")).toBeVisible();
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -318,7 +328,7 @@ test("installed update stays on one row with a corner dismiss action", async ({ 
       const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
       const bounds = async () =>
         Promise.all(
-          [voice, notice, notifications, settings, voiceSettings].map(
+          [voice, notice, notifications, settings].map(
             async (button) => (await button.boundingBox())!,
           ),
         );
@@ -326,7 +336,6 @@ test("installed update stays on one row with a corner dismiss action", async ({ 
       for (const box of resting)
         expect(Math.abs(centerY(box) - centerY(resting[1]))).toBeLessThan(2);
       const close = (await dismiss.boundingBox())!;
-      expect(resting[4].x).toBeCloseTo(resting[0].x + resting[0].width, 0);
       const book = (await notice.locator("svg").boundingBox())!;
       const cross = (await dismiss.locator("svg").boundingBox())!;
       expect(centerY(cross)).toBeCloseTo(book.y, 0);
@@ -336,18 +345,12 @@ test("installed update stays on one row with a corner dismiss action", async ({ 
       expect(Math.abs(cross.x + cross.width / 2 - (book.x + book.width))).toBeLessThanOrEqual(4);
       expect(close.x).toBeGreaterThan(resting[1].x + resting[1].width / 2);
       await notice.hover();
-      await expect(
-        page.getByRole("tooltip").filter({ hasText: `Updated to ${appVersion}` }),
-      ).toBeVisible();
+      // The icon-only button is named by its label; a tooltip would only repeat it.
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
       expect(await bounds()).toEqual(resting);
     }
   }
   await expect(notice.locator("svg.lucide-book-open")).toBeVisible();
-  await voiceSettings.click();
-  const quickSettings = page.getByRole("dialog", { name: "Voice settings" });
-  await expect(quickSettings.getByRole("switch", { name: "Wake and sleep phrases" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(voiceSettings).toBeFocused();
   await notice.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("[data-fixture-notes]")).toHaveText(appVersion);

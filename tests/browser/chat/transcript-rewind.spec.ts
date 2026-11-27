@@ -32,8 +32,8 @@ for (const width of [1280, 800])
       const picker = page.locator("[data-model-picker-presentation]").first();
       await picker.click();
       await expect(page.getByText("Codex fixture", { exact: true }).last()).toBeVisible();
-      // The retained list stays usable, and the failed refresh is shown with Retry instead of hidden.
-      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toBeVisible();
+      // The retained list stays usable; a refresh that only timed out is not an owner-facing failure.
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
       await page.screenshot({ path: `${captures}/retained-${width}-${theme}.png` });
 
       // The first page keeps polling and re-persists its retained catalog, which would seed the
@@ -183,7 +183,7 @@ for (const width of [390, 1000]) {
     await page.goto("/tests/browser/chat/transcript.html?rewind", {
       waitUntil: "domcontentloaded",
     });
-    await expect(page.getByText("Stopped by you", { exact: true })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Stopped by you", exact: true })).toBeVisible();
     const wrong = page.locator('[data-prompt-anchor="wrong-request"]');
     const prior = page.locator('[data-prompt-anchor="prior-request"]');
     const actions = wrong.getByRole("button", { name: "Edit from here", exact: true });
@@ -235,7 +235,7 @@ for (const width of [1280, 800])
         animations: "disabled",
       });
       const apply = dialog.getByRole("button", {
-        name: "Rewind conversation and files",
+        name: "Rewind",
         exact: true,
       });
       await apply.focus();
@@ -255,7 +255,7 @@ for (const width of [1280, 800])
         path: `temp/verification/s5/rewind-undo-${width}-${theme}.png`,
         animations: "disabled",
       });
-      await undoDialog.getByRole("button", { name: "Undo rewind", exact: true }).click();
+      await undoDialog.getByRole("button", { name: "Undo", exact: true }).click();
       await expect(page.locator('[data-block="second"]')).toBeVisible();
       const methods = await page.evaluate(() =>
         (
@@ -292,7 +292,7 @@ for (const width of [1280, 800])
         exact: true,
       });
       const apply = dialog.getByRole("button", {
-        name: "Rewind conversation and files",
+        name: "Rewind",
         exact: true,
       });
       await trigger.click();
@@ -345,9 +345,7 @@ test("blocked capture keeps rewind unavailable and cancellation preserves histor
   await page.getByRole("button", { name: "Return before the later change", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("uncaptured source file");
-  await expect(
-    dialog.getByRole("button", { name: "Rewind conversation and files", exact: true }),
-  ).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Rewind", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.locator('[data-block="second"]')).toBeVisible();
 });

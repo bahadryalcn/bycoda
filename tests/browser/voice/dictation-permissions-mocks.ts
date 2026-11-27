@@ -21,6 +21,17 @@ export const loadRecents = useRecents;
 export const useModelCatalog = () => ({
   modelsFor: () => [{ id: "codex:gpt-6.1-sol", nativeId: "gpt-6.1-sol", name: "GPT-6.1 Sol" }],
 });
+type FixtureModel = { installed: boolean; recommended?: boolean; languages?: string[] };
+// Same pure ranking as the real catalog module, which this fixture replaces.
+export const supportsDictationLanguage = (model: FixtureModel, language: string) =>
+  !language || !model.languages || model.languages.includes(language);
+export function rankLocalModels<T extends FixtureModel>(models: T[], language: string) {
+  const score = (model: T) =>
+    Number(supportsDictationLanguage(model, language)) * 4 +
+    Number(model.installed) * 2 +
+    Number(Boolean(model.recommended));
+  return [...models].sort((left, right) => score(right) - score(left));
+}
 export const localDictationModels = {
   list: async () => {
     const state = new URLSearchParams(location.search).get("models");

@@ -50,7 +50,8 @@ for (const [theme, width] of ["dark", "light"].flatMap((theme) =>
     await expect(tooltip).toHaveCount(0);
 
     await session.hover();
-    await expect(tooltip).toContainText("Last activity");
+    // The detail card puts the last-activity age beside the status instead of labelling it.
+    await expect(tooltip).toContainText(/StatusInterrupted\s*2m/);
     await page.screenshot({ path: path.join(directory, `${theme}-${width}-session.png`) });
 
     await page.locator('[data-project-path="/fixture/demo-repo"] [data-project-primary]').hover();
@@ -624,11 +625,9 @@ for (const light of [false, true]) {
           { waitUntil: "domcontentloaded" },
         );
         if (state === "empty")
-          await expect(
-            page.getByText("No sessions in the last 7 days", { exact: true }),
-          ).toBeVisible();
+          await expect(page.getByText("No sessions", { exact: true })).toBeVisible();
         if (state === "loading")
-          await expect(page.getByText("Loading sessions…", { exact: true })).toBeVisible();
+          await expect(page.getByRole("status", { name: "Loading…" })).toBeVisible();
         if (state === "error") {
           await expect(page.getByRole("alert")).toContainText("Couldn’t load sessions");
           await expect(page.locator('[data-session-card="row-demo"]')).toBeVisible();
@@ -748,9 +747,10 @@ for (const light of [false, true]) {
         `/tests/browser/sessions/session-row-layout.html?global&${width === 1280 ? "wide" : "compact"}&${light ? "light" : "dark"}`,
         { waitUntil: "domcontentloaded" },
       );
-      const create = page.getByRole("button", { name: "New session", exact: true });
+      // Last Sessions has no current project, so its new-session action is the project choice.
+      const create = page.getByRole("button", { name: "Choose project", exact: true });
       await create.click();
-      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      const dialog = page.getByRole("dialog", { name: "New session in" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
       // Options: "No project" (default folder) plus the two fixture projects.
@@ -791,9 +791,12 @@ for (const light of [false, true]) {
       );
       const header = page.locator("[data-workspace-header]");
       const create = header.getByRole("button", { name: "New session", exact: true });
-      const choose = header.getByRole("button", { name: "Choose project", exact: true });
-      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      // The split button's arrow opens the Session actions menu; Choose project is its item.
+      const choose = header.getByRole("button", { name: "Session actions", exact: true });
+      const chooseItem = page.getByRole("menuitem", { name: "Choose project", exact: true });
+      const dialog = page.getByRole("dialog", { name: "New session in" });
       await choose.click();
+      await chooseItem.click();
       await expect(dialog).toBeVisible();
       await expect(page.getByRole("menu", { name: "Session actions" })).toHaveCount(0);
       const search = dialog.getByRole("combobox", { name: "Search projects" });
@@ -805,8 +808,12 @@ for (const light of [false, true]) {
       await search.press("Escape");
       await expect(choose).toBeFocused();
       const labelText = create.getByText("New session", { exact: true });
-      if (width === 1280) await expect(labelText).toBeVisible();
-      else await expect(labelText).toBeHidden();
+      // The label collapses into the icon at the compact width (the width-reserving ghost stays).
+      const createWidth = (await create.boundingBox())!.width;
+      if (width === 1280) {
+        await expect(labelText).toBeVisible();
+        expect(createWidth).toBeGreaterThan(80);
+      } else expect(createWidth).toBeLessThan(48);
       const icon = create.locator("svg");
       await expect(icon).toBeVisible();
       await expect(icon).toHaveAttribute("stroke", "currentColor");
@@ -823,10 +830,10 @@ for (const light of [false, true]) {
         expect(endGap).toBeLessThanOrEqual(8);
       };
       await expectTrailing();
-      await expect(create).toHaveAttribute("data-button-hierarchy", "primary");
-      await expect(choose).toHaveAttribute("data-button-hierarchy", "primary");
-      await expect(create).toHaveAttribute("data-button-tone", "neutral");
-      await expect(choose).toHaveAttribute("data-button-tone", "neutral");
+      await expect(create).toHaveAttribute("data-button-hierarchy", "ghost");
+      await expect(choose).toHaveAttribute("data-button-hierarchy", "ghost");
+      await expect(create).toHaveAttribute("data-button-tone", "accent");
+      await expect(choose).toHaveAttribute("data-button-tone", "accent");
       await expect(create).not.toHaveCSS("border-start-start-radius", "0px");
       await expect(choose).not.toHaveCSS("border-start-end-radius", "0px");
       await choose.blur();
@@ -834,6 +841,7 @@ for (const light of [false, true]) {
       await header.screenshot({ path: path.join(evidence, `${label}-workspace-header.png`) });
       await choose.focus();
       await choose.press("Enter");
+      await chooseItem.click();
       await expect(search).toBeFocused();
       await search.press("Escape");
       await expect(choose).toBeFocused();
@@ -863,8 +871,8 @@ test("new session accepts explicit current project and preserves project-local d
   await page.goto("/tests/browser/sessions/session-row-layout.html?global", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
-  await page.getByRole("option", { name: /^bycoda / }).click();
+  await page.getByRole("button", { name: "Choose project", exact: true }).click();
+  await page.getByRole("option", { name: /^bycoda/ }).click();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("1");
   await expect(page.getByRole("status", { name: "Created project" })).toHaveText("/fixture/bycoda");
   await expect(page.getByRole("status", { name: "Last Sessions mode" })).toHaveText("true");
@@ -882,12 +890,17 @@ test("new session retains selector and error when selected project becomes unava
   await page.goto("/tests/browser/sessions/session-row-layout.html?global&create-error", {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "New session", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
-  await dialog.getByRole("option", { name: /demo-repo / }).click();
-  await expect(
-    dialog.getByText("This project is no longer available.", { exact: true }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Choose project", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New session in" });
+  await dialog.getByRole("option", { name: /^demo-repo/ }).click();
+  await expect(dialog.getByText("Could not create session.", { exact: true })).toBeVisible();
+  // The raw reason waits behind the shared Details control.
+  await dialog.getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "This project is no longer available.",
+  );
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
   await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
   await expect(dialog.getByRole("combobox")).toBeEnabled();
 });
@@ -919,7 +932,10 @@ for (const theme of ["light", "dark"]) {
         await expect(actions.getByRole("button", { name: label })).toBeVisible();
       }
       const actionBox = (await actions.boundingBox())!;
-      expect(actionBox.x + actionBox.width).toBeCloseTo(timeBox!.x + timeBox!.width, 0);
+      // The time follows the project name; the actions take the row's trailing edge while it yields.
+      const rowBox = (await row.boundingBox())!;
+      expect(actionBox.x + actionBox.width).toBeLessThanOrEqual(rowBox.x + rowBox.width);
+      expect(actionBox.x + actionBox.width).toBeGreaterThan(rowBox.x + rowBox.width - 24);
 
       await page.mouse.move(width - 10, 760);
       await expect(yieldSlot).toHaveCSS("opacity", "1");
@@ -1506,11 +1522,19 @@ for (const { theme, width } of PANE_MATRIX)
     await expectLayoutContracts(page, {
       surface: "sidebar project and session rows (320px pane)",
       root: pane,
+      // The Sessions, Explorer and Changes tabs form one segmented control.
+      joined: '[role="tablist"]',
       allow: {
         overflow: [
           {
             selector: "[data-sidebar-scroll], [data-session-list-scroll]",
             reason: "The row list is the sidebar's own vertical scroller.",
+          },
+        ],
+        gap: [
+          {
+            selector: '[aria-label="More actions"], [aria-label="Choose project"]',
+            reason: "The header's icon actions sit flush: each hit area carries its own padding.",
           },
         ],
       },

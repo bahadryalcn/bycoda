@@ -3,9 +3,7 @@ import { expect, test } from "@playwright/test";
 const fixture = "/tests/browser/onboarding/onboarding.html?guide";
 const captures = "temp/verification/2026-10-14-usage-guide";
 
-test("walks through the guide, restores previous steps and finishes", async ({
-  page,
-}) => {
+test("walks through the guide, restores previous steps and finishes", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(fixture);

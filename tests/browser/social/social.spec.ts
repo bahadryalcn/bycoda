@@ -1477,7 +1477,7 @@ test("social extra caller visual matrix", async ({ page }) => {
         animations: "disabled",
       });
       await sections(page).getByRole("tab", { name: "İçerik", exact: true }).click();
-      await expect(page.getByText("Henüz gönderi yok.")).toBeVisible();
+      await expect(page.getByText("Henüz gönderi yok", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/social-extra/content-empty-${theme}-${width}.png`,
         animations: "disabled",
@@ -1488,7 +1488,7 @@ test("social extra caller visual matrix", async ({ page }) => {
         theme === "light",
       );
       await sections(page).getByRole("tab", { name: "Gelen kutusu", exact: true }).click();
-      await expect(page.getByText("Henüz konuşma yok.", { exact: false })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Henüz konuşma yok" })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/social-extra/inbox-empty-${theme}-${width}.png`,
         animations: "disabled",
@@ -2469,9 +2469,10 @@ for (const theme of ["light", "dark"])
         await expect(region).toBeVisible();
         if (name === "browser-settings") await expect(region.getByRole("switch")).toBeVisible();
         if (name === "reply-rules")
+          // No rules: nothing to review, so there is no review button.
           await expect(
             region.getByRole("button", { name: "Kuralları AI ile gözden geçir", exact: true }),
-          ).toBeDisabled();
+          ).toHaveCount(0);
         if (name === "permissions")
           expect(await region.getByRole("checkbox").count()).toBeGreaterThan(1);
         if (name === "autonomy")
@@ -2491,7 +2492,8 @@ for (const theme of ["light", "dark"])
       await name.fill("Unsent fixture account draft");
       await expect(name).toHaveValue("Unsent fixture account draft");
       await capture("connect-account");
-      await connect.getByRole("button", { name: "Bunun yerine e-posta hesabı ekle" }).click();
+      await connect.getByRole("button", { name: /^Platform: / }).click();
+      await page.getByRole("option", { name: "E-posta", exact: true }).click();
       const email = page.getByRole("dialog");
       await email.getByRole("textbox", { name: "İsim", exact: true }).fill("Unsent email draft");
       await email

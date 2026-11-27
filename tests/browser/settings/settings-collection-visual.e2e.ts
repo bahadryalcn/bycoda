@@ -75,31 +75,35 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/settings/settings.html?section=integrations&collectionMessaging=1&theme=${theme}&lang=en`,
       );
-      await page.getByRole("tab", { name: "Email", exact: true }).click();
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await page.getByRole("option", { name: "Email", exact: true }).click();
       await expect(page.getByText("Work email")).toBeVisible();
       await page
-        .getByRole("tabpanel", { name: "Email" })
+        .getByRole("region", { name: "Connection", exact: true })
         .filter({ hasText: "Work email" })
         .screenshot({ path: `${dir}/email-context-${theme}-${width}.png` });
-      await page.getByRole("tab", { name: "Slack", exact: true }).click();
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await page.getByRole("option", { name: "Slack", exact: true }).click();
       await expect(page.getByText("Work Slack")).toBeVisible();
       await page
-        .getByRole("tabpanel", { name: "Slack" })
+        .getByRole("region", { name: "Connection", exact: true })
         .screenshot({ path: `${dir}/slack-context-${theme}-${width}.png` });
       await page.goto(
         `/tests/browser/settings/settings.html?section=integrations&collectionLinear=1&theme=${theme}&lang=en`,
       );
-      await page.getByRole("tab", { name: "Linear", exact: true }).click();
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await page.getByRole("option", { name: "Linear", exact: true }).click();
       await expect(page.getByText("Engineering", { exact: true })).toBeVisible();
       await page
-        .getByRole("tabpanel", { name: "Linear" })
+        .getByRole("region", { name: "Connection", exact: true })
         .screenshot({ path: `${dir}/linear-context-${theme}-${width}.png` });
       await page.goto(
         `/tests/browser/settings/settings.html?section=integrations&collectionJira=1&theme=${theme}&lang=en`,
       );
-      await page.getByRole("tab", { name: "Jira", exact: true }).click();
+      await page.getByRole("button", { name: /^Services:/ }).click();
+      await page.getByRole("option", { name: "Jira", exact: true }).click();
       await expect(page.getByText("Engineering board", { exact: true })).toBeVisible();
-      const jira = page.getByRole("tabpanel", { name: "Jira" });
+      const jira = page.getByRole("region", { name: "Connection", exact: true });
       await expect(jira.locator(".settings-collection")).toHaveCount(2);
       for (let i = 0; i < 2; i++)
         await jira

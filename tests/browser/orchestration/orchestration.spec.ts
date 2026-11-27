@@ -36,7 +36,7 @@ for (const width of [390, 1000])
     await search.press("Enter");
     await page.getByRole("menuitemradio", { name: "High", exact: true }).click();
     await page.getByRole("button", { name: "Details for UI task", exact: true }).click();
-    const instruction = page.getByRole("textbox", { name: "Instructions for task 1", exact: true });
+    const instruction = page.getByRole("textbox", { name: "Instructions", exact: true });
     const draft = "Retained multiline instruction\n".repeat(20);
     await instruction.fill(draft);
     const dimensions = await instruction.evaluate((el) => ({
@@ -79,7 +79,16 @@ for (const width of [390, 1000])
     await page.evaluate(() =>
       (window as unknown as { rejectFixtureConfirmation: () => void }).rejectFixtureConfirmation(),
     );
-    await expect(page.getByRole("alert")).toContainText("Fixture approval unavailable");
+    await expect(page.getByRole("alert")).toContainText("Could not start orchestration");
+    // The raw reason waits behind the shared Details control.
+    await page
+      .getByRole("alert")
+      .getByRole("button", { name: /^Details/ })
+      .click();
+    await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+      "Fixture approval unavailable",
+    );
+    await page.keyboard.press("Escape");
     await expect(instruction).toHaveValue(draft);
     await expect(group.getByRole("radio", { name: "3", exact: true })).toHaveAttribute(
       "aria-checked",
@@ -115,7 +124,7 @@ for (const light of [true, false])
       await expect(expanded).toHaveAttribute("data-surface-variant", "selection");
       await expect(expanded.locator(":scope > div").last()).toHaveCSS(
         "padding-inline-start",
-        "26px",
+        "24px",
       );
       const heights: number[] = [];
       for (const density of ["compact", "comfortable", "touch"]) {
@@ -154,9 +163,7 @@ for (const theme of ["light", "dark"])
         page.getByRole("button", { name: "Confirm & start", exact: true }),
       ).toBeVisible();
       await page.getByRole("button", { name: "Details for UI task", exact: true }).click();
-      await expect(
-        page.getByRole("textbox", { name: "Instructions for task 1", exact: true }),
-      ).toBeVisible();
+      await expect(page.getByRole("textbox", { name: "Instructions", exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/goal-final-callers/proposal-${theme}-${width}.png`,
         animations: "disabled",

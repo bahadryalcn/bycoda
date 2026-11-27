@@ -49,6 +49,9 @@ async function assertVoiceRows(region: Locator) {
   expect(problems).toEqual([]);
 }
 
+/** The one-word status in the Setup row. */
+const setupStatus = (group: Locator, text: string) =>
+  group.locator('[data-setting-id="voice-setup"]').getByText(text, { exact: true });
 const hasSetting = (id: string) => `.settings-group:has([data-setting-id="${id}"])`;
 
 for (const [theme, width] of [
@@ -73,7 +76,7 @@ for (const [theme, width] of [
     };
     const assistant = region.locator(hasSetting("voice-companion"));
     const conversation = region.locator(hasSetting("voice-turn-silence"));
-    await expect(region.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(setupStatus(region, "Ready")).toBeVisible();
     await assertVoiceRows(region);
     await capture("top");
     // The Assistant owns identity: Voice settings has no persona, style dialog or appearance fold.
@@ -85,11 +88,9 @@ for (const [theme, width] of [
     ).toHaveCount(0);
     const wake = region.locator('[data-setting-id="voice-wake"]').getByRole("switch");
     const wakeField = region.locator('[data-setting-id="voice-wake-phrase"]').getByRole("textbox");
-    await expect(wake).not.toBeVisible();
+    // Rare choices are shown in place: no More options fold; the phrase field follows its switch.
+    await expect(wake).toBeVisible();
     await expect(wakeField).not.toBeVisible();
-    // One More options per group: the assistant's rare choices and the conversation's.
-    await assistant.getByRole("button", { name: /^More options/ }).click();
-    await expect(wake).toBeInViewport();
     await wake.check();
     await wakeField.fill("Hey Arif");
     await wakeField.press("Enter");
@@ -98,11 +99,6 @@ for (const [theme, width] of [
     await capture("wake-phrase");
     await wake.uncheck();
     await expect(wakeField).not.toBeVisible();
-    await conversation.getByRole("button", { name: /^More options/ }).click();
-    await region
-      .getByRole("button", { name: /^More options/ })
-      .last()
-      .click();
     await assertVoiceRows(region);
     for (const [name, id] of [
       ["engine-expanded", "voice-device"],
@@ -266,7 +262,7 @@ for (const theme of ["light", "dark"]) {
       page,
     }, testInfo) => {
       const group = await openVoice(page, "missing", theme, width);
-      await expect(group.getByText("Voice setup is needed", { exact: true })).toBeVisible();
+      await expect(setupStatus(group, "Setup needed")).toBeVisible();
       await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
       // Locate files is one visible action, not a one-item menu.
       const locate = group.getByRole("button", { name: "Locate files", exact: true });
@@ -279,7 +275,7 @@ for (const theme of ["light", "dark"]) {
       await expect(group).not.toContainText("Missing:");
       // Existing-file paths live in the Locate dialog; the setup group itself has no text fields.
       await expect(
-        group.getByRole("group", { name: "Voice setup", exact: true }).getByRole("textbox"),
+        group.getByRole("group", { name: "Setup", exact: true }).getByRole("textbox"),
       ).toHaveCount(0);
       await group.scrollIntoViewIfNeeded();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -310,10 +306,6 @@ for (const theme of ["light", "dark"]) {
       const saved = await page.evaluate(() => localStorage.getItem("bycoda.voice"));
       await expect(group.getByRole("button", { name: /^Wait before replying:/ })).toBeVisible();
       await expect(group.getByRole("switch", { name: "Memory", exact: true })).toBeVisible();
-      await group
-        .getByRole("button", { name: /^More options/ })
-        .first()
-        .click();
       await expect(
         group.getByRole("radiogroup", { name: "Visual style", exact: true }),
       ).toBeVisible();
@@ -349,7 +341,7 @@ for (const [theme, width] of [
     });
     const region = await openVoice(page, "ready", theme, width);
     const row = region.locator('[data-setting-id="voice-memory"]');
-    await row.getByRole("button", { name: /^Manage \(/ }).click();
+    await row.getByRole("button", { name: /^\d+ notes?$/ }).click();
     expect((await page.evaluate(() => (window as any).assistantNavigation)).at(-1)).toEqual({
       tab: "memory",
     });
@@ -375,7 +367,7 @@ test("voice install finishes in place using a simulated job", async ({ page }) =
   await expect
     .poll(() => page.evaluate(() => sessionStorage.getItem("fixture-voice-install-request")))
     .not.toBeNull();
-  await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(setupStatus(group, "Ready")).toBeVisible({ timeout: 15_000 });
   await expect(group.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.voice")!).python))
@@ -387,15 +379,15 @@ test("voice install finishes in place using a simulated job", async ({ page }) =
 test("stalled detection keeps Install available and ends with a retry", async ({ page }) => {
   // The Voice page also has an unrelated model-list retry; the setup retry lives in the Voice setup group.
   const group = (await openVoice(page, "stalled", "dark", 390)).getByRole("group", {
-    name: "Voice setup",
+    name: "Setup",
     exact: true,
   });
-  await expect(group.getByText("Checking voice setup…", { exact: true })).toBeVisible();
+  await expect(group.getByText("Checking…", { exact: true })).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toBeVisible();
   await expect(group.getByRole("button", { name: "Try again", exact: true })).toBeVisible({
     timeout: 25_000,
   });
-  await expect(group.getByText("Checking voice setup…", { exact: true })).toHaveCount(0);
+  await expect(group.getByText("Checking…", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -449,22 +441,16 @@ test("an ongoing installation resumes with progress and prevents duplicate actio
   ).toBeVisible();
   await expect(group.getByRole("button", { name: "Install", exact: true })).toHaveCount(0);
   await expect(group.getByRole("button", { name: "Locate files", exact: true })).toHaveCount(0);
-  await expect(
-    group.getByRole("switch", { name: "Enable voice companion", exact: true }),
-  ).toBeDisabled();
+  await expect(group.getByRole("switch", { name: "Voice assistant", exact: true })).toBeDisabled();
   await mkdir(captures, { recursive: true });
   await group.screenshot({ path: join(captures, "voice-installing-light-390.png") });
 });
 
 test("Turkish voice setup keeps the same simple actions at a narrow width", async ({ page }) => {
   const group = await openVoice(page, "missing", "dark", 390, "tr");
-  await expect(
-    group.getByText("Sesli konuşma için kurulum gerekli", { exact: true }),
-  ).toBeVisible();
+  await expect(setupStatus(group, "Kurulum gerekli")).toBeVisible();
   await expect(group.getByRole("button", { name: "Kur", exact: true })).toBeVisible();
-  await expect(
-    group.getByRole("button", { name: "Dosyaların yerini göster", exact: true }),
-  ).toBeVisible();
+  await expect(group.getByRole("button", { name: "Dosyaları seç", exact: true })).toBeVisible();
   await expect(group).not.toContainText("faster-whisper");
   await expect(group).not.toContainText("pip install");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -475,14 +461,14 @@ test("Turkish voice setup keeps the same simple actions at a narrow width", asyn
 for (const theme of ["light", "dark"]) {
   test(`voice processing choice and GPU upgrade offer: ${theme}`, async ({ page }) => {
     const group = await openVoice(page, "cpu-only", theme);
-    await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(setupStatus(group, "Ready")).toBeVisible();
     // The default Natural voice (Supertonic) runs on the CPU: no GPU offer.
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),
     ).toHaveCount(0);
     await group.getByRole("button", { name: /^Reply voice:/ }).click();
     await page.getByRole("option", { name: "High quality (VoxCPM2)", exact: true }).click();
-    await expect(group.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await expect(setupStatus(group, "Ready")).toBeVisible();
     await expect(group.getByText("NVIDIA GeForce RTX 4070", { exact: false })).toBeVisible();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),
@@ -491,10 +477,6 @@ for (const theme of ["light", "dark"]) {
     const gpuCaptures = join(process.cwd(), "temp/verification/2026-10-31-voice-gpu");
     await mkdir(gpuCaptures, { recursive: true });
     await group.screenshot({ path: join(gpuCaptures, `voice-gpu-offer-${theme}-1280.png`) });
-    await group
-      .getByRole("button", { name: /^More options/ })
-      .first()
-      .click();
     await group.getByRole("radio", { name: "CPU", exact: true }).click();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),

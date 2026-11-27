@@ -174,7 +174,9 @@ test("host discovery retries and save errors preserve the previous shell", async
   );
   await remote.click();
   await page.getByRole("option", { name: /Git Bash/ }).click();
-  await expect(hosts.getByRole("alert")).toContainText("Could not confirm the remote shell change.");
+  await expect(hosts.getByRole("alert")).toContainText(
+    "Could not confirm the remote shell change.",
+  );
   await hosts.getByRole("alert").getByRole("button", { name: "Details" }).click();
   await expect(page.getByText("Fixture shell save failed")).toBeVisible();
   await page.keyboard.press("Escape");

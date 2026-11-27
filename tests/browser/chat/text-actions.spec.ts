@@ -70,7 +70,8 @@ for (const target of ["reprompt", "en"] as const) {
       );
       await expect(dialog.getByRole("button", { name: apply, exact: true })).toBeEnabled();
       await expect(dialog.getByText(waiting, { exact: false })).toHaveCount(0);
-      await expect(dialog.getByRole("status")).toContainText("Ready");
+      // A finished result shows no progress text: the status region is empty, not "Ready".
+      await expect(dialog.getByRole("status")).toHaveText("");
       expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,

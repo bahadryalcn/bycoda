@@ -158,7 +158,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
       );
-      await expect(page.locator(".settings-page-title")).toHaveText("Models");
+      await expect(page.locator(".settings-page-title")).toHaveText("Accounts and defaults");
       const tabs = page.getByRole("tablist", { name: "Models", exact: true });
       await expect(tabs.getByRole("tab")).toHaveText(["Providers", "Background work", "Defaults"]);
       await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
@@ -174,14 +174,17 @@ for (const theme of ["light", "dark"])
       await expect(
         page
           .getByRole("tablist", { name: "Settings categories", exact: true })
-          .getByRole("tab", { name: "Models", exact: true }),
+          .getByRole("tab", { name: "Accounts and defaults", exact: true }),
       ).toHaveCount(1);
-      // The save-scope picker sits in the "Defaults saved to" group above the defaults.
-      const saveBar = page.getByRole("group", { name: "Defaults saved to", exact: true });
-      const scope = saveBar.getByRole("button", { name: "Save in", exact: true });
-      await expect(scope).toHaveText("Bycoda defaults");
+      // The scope row sits above the defaults it governs: all projects, or one project.
+      const scope = page.getByRole("radiogroup", {
+        name: "Where these settings apply",
+        exact: true,
+      });
+      const allProjects = scope.getByRole("radio", { name: "All projects", exact: true });
+      const oneProject = scope.getByRole("radio", { name: "One project", exact: true });
+      await expect(allProjects).toBeChecked();
       await expect(scope).toBeInViewport();
-      await expect(saveBar.getByText(/targets|Everything|Global/)).toHaveCount(0);
       const capture = async (state: string) => {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
@@ -191,31 +194,21 @@ for (const theme of ["light", "dark"])
         });
       };
       await capture("defaults");
-      await scope.click();
-      const dialog = page.getByRole("dialog", { name: "Apply defaults to", exact: true });
-      await expect(
-        dialog.getByText(
-          "New conversations use these defaults unless a project has its own settings.",
-        ),
-      ).toBeVisible();
-      await expect(
-        dialog.getByRole("combobox", { name: "Search projects, groups and workspaces" }),
-      ).toHaveCount(0);
+      await oneProject.click();
+      // Choosing One project opens the shared project picker.
+      const projects = page.getByRole("option");
+      await expect(projects.first()).toBeVisible();
       await capture("default-scope");
-      await dialog.getByRole("radio", { name: "Project overrides", exact: true }).click();
-      await expect(
-        dialog.getByRole("combobox", { name: "Search projects, groups and workspaces" }),
-      ).toBeVisible();
-      await dialog.getByRole("option").filter({ hasNotText: "Select all:" }).first().click();
-      await expect(scope).not.toHaveText(/Bycoda defaults/);
+      await projects.first().click();
+      await expect(oneProject).toBeChecked();
+      await expect(page.getByRole("button", { name: /^Switch project/ })).toBeVisible();
       await capture("project-scope");
-      await dialog.getByRole("radio", { name: "Bycoda defaults", exact: true }).click();
-      await dialog.getByRole("button", { name: "Done", exact: true }).click();
-      await expect(scope).toHaveText("Bycoda defaults");
+      await allProjects.click();
+      await expect(allProjects).toBeChecked();
       await tabs.getByRole("tab", { name: "Providers", exact: true }).click();
-      await expect(saveBar).toHaveCount(0);
+      await expect(scope).toHaveCount(0);
       await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
-      await expect(scope).toHaveText("Bycoda defaults");
+      await expect(allProjects).toBeChecked();
     });
 
 for (const theme of ["light", "dark"])
@@ -288,7 +281,7 @@ for (const theme of ["light", "dark"])
       await capture("accounts");
       await accounts.getByRole("button", { name: "Add account", exact: true }).click();
       const accountDialog = page.getByRole("dialog", { name: "Add account", exact: true });
-      const draft = accountDialog.getByRole("textbox", { name: /New .* account/ });
+      const draft = accountDialog.getByRole("textbox", { name: "Account name", exact: true });
       await draft.fill("Retained provider draft");
       // Exercise a programmatic settings navigation while the modal owns pointer and keyboard focus.
       await page
@@ -312,7 +305,7 @@ for (const theme of ["light", "dark"])
         node.scrollTop = node.scrollHeight;
       });
       await capture("usage-bottom");
-      await categories.getByRole("tab", { name: "Models", exact: true }).click();
+      await categories.getByRole("tab", { name: "Accounts and defaults", exact: true }).click();
       await expect(draft).toHaveValue("Retained provider draft");
       await accountDialog.getByRole("button", { name: "Cancel", exact: true }).click();
       // Bulk CLI actions and the catalog share the Providers tab; decision models have their own page.
@@ -370,13 +363,10 @@ for (const theme of ["light", "dark"])
             { exact: true },
           ),
         ).toBeVisible();
-        await expect(page.getByText("Limit reached", { exact: true })).toHaveCount(
-          state === "reached" ? 1 : 0,
-        );
-        if (state === "reached")
-          expect(
-            (await page.getByText("Limit reached", { exact: true }).boundingBox())!.width,
-          ).toBeLessThan(200);
+        // The reached state is an icon whose name is the label; the row adds no text of its own.
+        const reached = workLimits.getByRole("img", { name: "Limit reached", exact: true });
+        await expect(reached).toHaveCount(state === "reached" ? 1 : 0);
+        if (state === "reached") expect((await reached.boundingBox())!.width).toBeLessThan(40);
         await expect(workLimits.getByRole("meter")).toHaveCount(state === "unlimited" ? 0 : 1);
         await page
           .getByRole("spinbutton", { name: "Daily agent minutes", exact: true })
@@ -456,12 +446,13 @@ for (const theme of ["light", "dark"])
       ).toBeVisible();
       const helperModels = chat.locator("#setting-helper-models");
       await expect(helperModels).toContainText("Translation, reprompt and title models");
-      await expect(helperModels).toContainText("Model set in Settings → Models → Background work.");
+      await expect(helperModels).not.toContainText("Model set in Settings");
       await expect(
         helperModels.getByRole("button", { name: "Manage models", exact: true }),
       ).toBeVisible();
       await expect(chat.locator("#setting-git-generation-default")).toHaveCount(0);
-      await expect(chat.locator("#setting-chat-width button").first()).toBeVisible();
+      // Chat width belongs to Appearance, not the Chat page.
+      await expect(chat.locator("#setting-chat-width")).toHaveCount(0);
       const overflow = await chat.evaluate((root) =>
         [...root.querySelectorAll(".settings-row, .settings-group-heading, .settings-row-control")]
           .filter((node) => node.scrollWidth > node.clientWidth + 1)
@@ -500,7 +491,7 @@ for (const theme of ["light", "dark"])
 
       await settings.getByRole("button", { name: "Add server", exact: true }).click();
       const add = page.getByRole("dialog", { name: "Add MCP server" });
-      await expect(add.getByText("Office PC", { exact: true })).toBeVisible();
+      await expect(add.getByText("Save on Office PC", { exact: true })).toBeVisible();
       await expect(add.getByRole("textbox", { name: "Server URL" })).toBeVisible();
       await page.screenshot({ path: `${path}-add.png` });
       await add.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -553,10 +544,10 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
         await expect(
           page.getByRole("radio", { name: themeLabels.theme, exact: true }),
         ).toBeChecked();
-        // Dark-mode depth is an always-visible slider in the Tone group of the Theme tab.
+        // Dark-mode depth is a slider in the Tone group of the Theme tab, present only in dark.
         const brightness = page.locator('[data-setting-id="dark-lightness"]').getByRole("slider");
-        if (theme === "light") await expect(brightness).toHaveAttribute("aria-disabled", "true");
-        else await expect(brightness).not.toHaveAttribute("aria-disabled", "true");
+        if (theme === "light") await expect(brightness).toHaveCount(0);
+        else await expect(brightness).toBeVisible();
         await page.screenshot({ path: `${prefix}-appearance-theme.png` });
         const scroller = page.locator("[data-settings-scroller]");
         const dimensions = await scroller.evaluate((node) => ({

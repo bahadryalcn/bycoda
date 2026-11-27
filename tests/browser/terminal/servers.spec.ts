@@ -1,3 +1,4 @@
+import { pickAddMenuItem } from "./servers-add-menu";
 import { expect, test, type Locator } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 const evidence = "temp/verification/2026-10-19-servers-ux/browser";
@@ -44,7 +45,7 @@ for (const theme of ["light", "dark"])
       });
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       await page
         .getByRole("region", { name: "Server details" })
@@ -86,7 +87,7 @@ for (const theme of ["light", "dark"])
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       await expect(details).toBeVisible();
@@ -119,7 +120,7 @@ for (const theme of ["light", "dark"])
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       await page
         .getByRole("region", { name: "Server details" })
@@ -139,7 +140,7 @@ for (const theme of ["light", "dark"])
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       await page.getByRole("tab", { name: "Automation", exact: true }).click();
       await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
@@ -359,7 +360,7 @@ for (const theme of ["light", "dark"]) {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/terminal/servers.html?terminalWorkspace&theme=${theme}`);
       for (let index = 0; index < 2; index++) {
-        await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+        await pickAddMenuItem(page, "Quick connect");
         const editor = page.getByRole("dialog", { name: "Quick connect", exact: true });
         await editor
           .getByRole("textbox", { name: "Hostname", exact: true })
@@ -441,7 +442,7 @@ for (const theme of ["light", "dark"]) {
       expect((await search.boundingBox())!.width).toBeGreaterThan(150);
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       const navigation = details.getByRole("tablist", { name: "Server tools" });
@@ -878,7 +879,7 @@ for (const theme of ["light", "dark"]) {
       await page.screenshot({ path: `${directory}/menu-${theme}-${width}.png` });
       await page.keyboard.press("Escape");
       await ask.click();
-      const projects = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      const projects = page.getByRole("dialog", { name: "New session in" });
       await expect(projects).toBeVisible();
       await page.screenshot({ path: `${directory}/projects-${theme}-${width}.png` });
       await projects.getByText("fixture", { exact: true }).click();
@@ -1021,7 +1022,7 @@ test("pastes local clipboard text into the active SSH terminal with both gesture
   test.skip(browserName !== "chromium", "Requires Chromium clipboard permissions");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/tests/browser/terminal/servers.html?terminalWorkspace=1");
-  await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+  await pickAddMenuItem(page, "Quick connect");
   const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
   await dialog
     .getByRole("textbox", { name: "Hostname", exact: true })
@@ -1068,7 +1069,7 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
         ).serversFixtureRequests,
     );
   expect((await calls()).some((item) => item.command.startsWith("ssh_terminal"))).toBe(false);
-  await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+  await pickAddMenuItem(page, "Quick connect");
   const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
   await dialog
     .getByRole("textbox", { name: "Hostname", exact: true })
@@ -1104,7 +1105,7 @@ test("SSH config duplicate choice opens the existing record without importing ov
   await page.goto("/tests/browser/terminal/servers.html?sshFixture=1");
   await page
     .getByRole("list", { name: "Servers" })
-    .getByRole("button", { name: /^Existing SSH target/ })
+    .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
     .click();
   await page
     .getByRole("tablist", { name: "Server tools" })
@@ -1146,7 +1147,7 @@ for (const theme of ["light", "dark"])
     await page.setViewportSize({ width: 390, height: 780 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/terminal/servers.html?terminalWorkspace=1&theme=${theme}`);
-    await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+    await pickAddMenuItem(page, "Quick connect");
     const quick = page.getByRole("dialog", { name: "Quick connect", exact: true });
     await quick
       .getByRole("textbox", { name: "Name", exact: true })
@@ -1189,7 +1190,7 @@ for (const theme of ["light", "dark"])
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await page
       .getByRole("tablist", { name: "Server tools" })
@@ -1221,7 +1222,7 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
   await page.goto("/tests/browser/terminal/servers.html?sshFixture=1&chainCertificate=1");
   await page
     .getByRole("list", { name: "Servers" })
-    .getByRole("button", { name: /^Existing SSH target/ })
+    .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
     .click();
   await page
     .getByRole("region", { name: "Server details" })
@@ -1306,7 +1307,7 @@ for (const theme of ["light", "dark"]) {
     await page.setViewportSize({ width: 390, height: 780 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/terminal/servers.html?terminalWorkspace=1&theme=${theme}`);
-    await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+    await pickAddMenuItem(page, "Quick connect");
     const dialog = page.getByRole("dialog", { name: "Quick connect", exact: true });
     await dialog
       .getByRole("textbox", { name: "Hostname", exact: true })
@@ -1430,7 +1431,7 @@ for (const theme of ["light", "dark"]) {
     const preview = page.getByRole("region", { name: "Saved SSH tabs", exact: true });
     // With no active terminal, the shared section disclosure exposes the saved
     // preview directly. Only an explicit Connect may start its fresh shell.
-    await expect(preview.getByRole("button", { name: /^Saved SSH tabs/ })).toHaveAttribute(
+    await expect(preview.getByRole("button", { name: /^Saved SSH tabs \d+$/ })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
@@ -1634,7 +1635,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await page
       .getByRole("region", { name: "Server details" })
@@ -1738,7 +1739,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     const nativeRequests = () =>
       page.evaluate(
@@ -1814,7 +1815,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await expect(
       page.getByText("HTTP CONNECT: proxy.example.invalid:8080", { exact: true }),
@@ -1920,7 +1921,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     const nativeRequests = () =>
       page.evaluate(
@@ -2033,7 +2034,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     const requests = () =>
       page.evaluate(
@@ -2142,7 +2143,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     const requests = () =>
       page.evaluate(
@@ -2282,7 +2283,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await page
       .getByRole("tablist", { name: "Server tools" })
@@ -2396,7 +2397,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await page
       .getByRole("region", { name: "Server details" })
@@ -2467,7 +2468,7 @@ for (const theme of ["light", "dark"]) {
       );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await page
       .getByRole("tablist", { name: "Server tools" })
@@ -2513,7 +2514,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /^Existing SSH target/ })
+      .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
       .click();
     await page.getByRole("button", { name: "Connect via SSH", exact: true }).click();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();

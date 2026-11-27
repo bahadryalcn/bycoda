@@ -93,10 +93,10 @@ for (const width of [390, 1000]) {
       await expect(strip.locator('[data-attachment-chip="image"]')).toHaveCount(7);
       const fileBox = await file.boundingBox();
       const imageBox = await image.boundingBox();
-      // File and image attachments share the compact tile dimensions.
-      expect(fileBox!.width).toBe(88);
+      // File cards are one content-width row at least as wide as an image tile; both share the tile height.
+      expect(imageBox!.width).toBe(88);
+      expect(fileBox!.width).toBeGreaterThanOrEqual(imageBox!.width);
       expect(fileBox!.height).toBe(64);
-      expect(imageBox!.width).toBe(fileBox!.width);
       expect(imageBox!.height).toBe(fileBox!.height);
       expect(
         await file

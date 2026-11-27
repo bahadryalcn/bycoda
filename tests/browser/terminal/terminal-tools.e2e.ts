@@ -14,10 +14,14 @@ for (const theme of ["light", "dark"]) {
       const canvas = dock.locator(".terminal-canvas");
       const root = page.locator("html");
       const search = header.getByRole("button", { name: "Find in terminal" });
-      const close = header.getByRole("button", { name: "Close Terminals?", exact: true });
+      const close = header.getByRole("button", { name: "Close terminal", exact: true });
       await expect(search).toBeEnabled();
-      await expect(header.getByRole("button", { name: "Command suggestions" })).toBeEnabled();
+      // Command suggestions live in the pane actions menu, not as a header button.
+      await expect(header.getByRole("button", { name: "Command suggestions" })).toHaveCount(0);
       await expect(header.getByRole("button", { name: "Terminal pane actions" })).toHaveCount(1);
+      await header.getByRole("button", { name: "Terminal pane actions" }).click();
+      await expect(page.getByRole("menuitem", { name: "Command suggestions" })).toBeEnabled();
+      await page.keyboard.press("Escape");
       await expect(
         dock.locator(".terminal-canvas").getByRole("button", { name: "Find in terminal" }),
       ).toHaveCount(0);
@@ -29,8 +33,8 @@ for (const theme of ["light", "dark"]) {
       expect(toolbarBounds.x).toBe(canvasBounds.x);
       expect(toolbarBounds.x).toBeGreaterThan(sidebarBounds.x + sidebarBounds.width);
       await dock.screenshot({ path: info.outputPath("header.png") });
-      await header.getByRole("button", { name: "Move Terminal" }).click();
-      await expect(page.getByText("Dock Right", { exact: true })).toBeVisible();
+      await header.getByRole("button", { name: "Move terminal" }).click();
+      await expect(page.getByText("Dock right", { exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await search.click();
       await expect(dock.getByRole("textbox", { name: "Find in terminal" })).toBeVisible();
@@ -38,21 +42,20 @@ for (const theme of ["light", "dark"]) {
       await expect(dock.getByRole("textbox", { name: "Find in terminal" })).toHaveCount(0);
       await expect(search).toHaveCount(1);
       await close.click();
-      const dialog = page.getByRole("dialog", { name: "Close Terminals?" });
-      const cancel = dialog.getByRole("button", { name: "Cancel" });
-      await expect(cancel).toBeFocused();
-      await dialog.screenshot({ path: info.outputPath("close-choices.png") });
-      await cancel.click();
-      await expect(dialog).toBeHidden();
+      const menu = page.getByRole("menu", { name: "Close terminal" });
+      await expect(menu).toBeVisible();
+      await menu.screenshot({ path: info.outputPath("close-choices.png") });
+      await page.keyboard.press("Escape");
+      await expect(menu).toBeHidden();
       await expect(root).not.toHaveAttribute("data-closed-terminal", /.+/);
       await close.click();
-      await dialog.getByRole("button", { name: "Close Active Terminal" }).click();
+      await menu.getByRole("menuitem", { name: "Close active terminal" }).click();
       await expect(root).toHaveAttribute("data-closed-terminal", "fixture-two");
       await close.click();
-      await dialog.getByRole("button", { name: "Close others" }).click();
+      await menu.getByRole("menuitem", { name: "Close others" }).click();
       await expect(root).toHaveAttribute("data-closed-terminal", "except:fixture-two");
       await close.click();
-      await dialog.getByRole("button", { name: "Close All Terminals" }).click();
+      await menu.getByRole("menuitem", { name: "Close all terminals" }).click();
       await expect(root).toHaveAttribute("data-closed-terminal", "all");
     });
   }
@@ -62,15 +65,17 @@ test("terminal dock header fits the minimum side dock width", async ({ page }, i
   await page.goto("/tests/browser/terminal/terminal-tools.html?dock");
   const dock = page.locator("[data-project-terminal-dock]");
   const header = dock.locator(".terminal-header");
-  await header.getByRole("button", { name: "Move Terminal" }).click();
-  await page.getByText("Dock Right", { exact: true }).click();
+  await header.getByRole("button", { name: "Move terminal" }).click();
+  await page.getByText("Dock right", { exact: true }).click();
   await dock.evaluate((element) => {
     element.parentElement!.style.width = "180px";
   });
   await expect
     .poll(() => header.evaluate((element) => element.scrollWidth - element.clientWidth))
     .toBe(0);
-  await expect(header.getByRole("button", { name: "Close Terminals?" })).toBeInViewport();
+  await expect(
+    header.getByRole("button", { name: "Close terminal", exact: true }),
+  ).toBeInViewport();
   await header.screenshot({ path: info.outputPath("header-side-dark-180.png") });
 });
 
@@ -90,11 +95,11 @@ test("opens an interactive SSH project tab in the terminal dock", async ({ page 
       const dock = page.locator("[data-project-terminal-dock]");
       await expect(dock.getByRole("tab", { name: "Terminal 1" })).toBeVisible();
       await dock.screenshot({ path: info.outputPath(`project-ssh-${theme}-${width}.png`) });
-      await dock.getByRole("button", { name: "Close Terminals?" }).click();
-      const dialog = page.getByRole("dialog", { name: "Close Terminals?" });
-      await expect(dialog.getByRole("button", { name: "Close others" })).toBeDisabled();
+      await dock.getByRole("button", { name: "Close terminal", exact: true }).click();
+      const menu = page.getByRole("menu", { name: "Close terminal" });
+      await expect(menu.getByRole("menuitem", { name: "Close others" })).toBeDisabled();
       await page.keyboard.press("Escape");
-      await expect(dialog).toBeHidden();
+      await expect(menu).toBeHidden();
     }
   }
 });
@@ -630,6 +635,9 @@ for (const theme of ["light", "dark"])
       const nextTerminal = page.locator(".xterm-helper-textarea");
       await nextTerminal.pressSequentially("cl");
       await nextTerminal.press("Control+Space");
+      await expect(page.getByText("Remote shell integration is unavailable")).toBeVisible();
+      // The raw failure sits behind the notice's Details control.
+      await page.getByRole("button", { name: /^Details/ }).click();
       await expect(page.getByText("Fixture shell unavailable")).toBeVisible();
       await expect(page.getByText("Waiting for the shell prompt…")).toBeVisible();
       await page.screenshot({ path: info.outputPath(`remote-error-${theme}-${width}.png`) });

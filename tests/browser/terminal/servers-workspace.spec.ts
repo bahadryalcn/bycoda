@@ -1,3 +1,4 @@
+import { pickAddMenuItem } from "./servers-add-menu";
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
@@ -21,14 +22,14 @@ for (const theme of ["light", "dark"]) {
         });
       };
       const inventory = page.getByRole("list", { name: "Servers", exact: true });
-      await expect(inventory.getByRole("button", { name: /^Existing SSH target/ })).toBeVisible();
+      await expect(inventory.getByRole("button", { name: /^(SSH )?Existing SSH target/ })).toBeVisible();
       await capture("catalog-list");
       await page.getByRole("radio", { name: "Card view", exact: true }).click();
       await capture("catalog-cards");
       await page.getByRole("button", { name: /^Legacy display label/ }).click();
       await expect(inventory.locator("[data-server-row]")).toHaveCount(1);
       await capture("catalog-group");
-      await inventory.getByRole("button", { name: /^Existing SSH target/ }).click();
+      await inventory.getByRole("button", { name: /^(SSH )?Existing SSH target/ }).click();
       const details = page.getByRole("region", { name: "Server details", exact: true });
       await expect(details).toBeVisible();
       const credentials = details.getByRole("region", { name: "Credentials" });
@@ -91,7 +92,7 @@ for (const theme of ["light", "dark"]) {
       await capture("sftp-files");
       await page.keyboard.press("Escape");
       await details.getByRole("button", { name: "Close server details", exact: true }).click();
-      await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+      await pickAddMenuItem(page, "SSH settings");
       const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
       await expect(settings.getByText("id_ed25519_work", { exact: true })).toBeVisible();
       await capture("ssh-keys");
@@ -118,7 +119,7 @@ for (const theme of ["light", "dark"]) {
       await editor.locator("summary").filter({ hasText: "Advanced SSH settings" }).click();
       await capture("add-server-advanced");
       await editor.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+      await pickAddMenuItem(page, "Quick connect");
       const quick = page.getByRole("dialog", { name: "Quick connect", exact: true });
       await expect(quick.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
       await expect(quick.getByRole("textbox", { name: "Name", exact: true })).not.toHaveAttribute(
@@ -160,7 +161,7 @@ for (const theme of ["light", "dark"]) {
       );
       const folder = "temp/verification/2026-10-19-servers-complete";
       await page.screenshot({ path: `${folder}/inventory-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+      await pickAddMenuItem(page, "SSH settings");
       const ssh = page.getByRole("dialog", { name: "SSH settings", exact: true });
       await ssh.getByRole("tab", { name: "Import SSH config", exact: true }).click();
       await ssh
@@ -175,7 +176,7 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("Escape");
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /^Existing SSH target/ })
+        .getByRole("button", { name: /^(SSH )?Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details", exact: true });
       const nav = details.getByRole("tablist", { name: "Server tools", exact: true });
@@ -231,7 +232,7 @@ for (const theme of ["light", "dark"]) {
 test("SSH management is reachable before any server exists", async ({ page }) => {
   await page.goto("/tests/browser/terminal/servers.html?emptyServers&sshKeys");
   await expect(page.getByRole("list", { name: "Servers" }).getByRole("button")).toHaveCount(0);
-  await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+  await pickAddMenuItem(page, "SSH settings");
   const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
   await expect(dialog.getByText("id_ed25519_work", { exact: true })).toBeVisible();
   await dialog.getByRole("tab", { name: "Import SSH config", exact: true }).click();

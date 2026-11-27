@@ -46,7 +46,9 @@ for (const theme of ["light", "dark"] as const) {
       const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
       await prompt.fill("Start this Windows session and keep its model choice");
       await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
-      await expect(page.getByText("Ctrl+↵", { exact: true })).toBeVisible();
+      // The shortcut is the Start button's tooltip, not a permanent label.
+      await page.getByRole("button", { name: "Start", exact: true }).hover();
+      await expect(page.getByRole("tooltip")).toContainText("Ctrl+↵");
       await page.screenshot({
         path: info.outputPath(`windows-quick-${theme}-${width}.png`),
         animations: "disabled",
@@ -212,9 +214,12 @@ test("quick composer keeps an explicit worktree blocked on a legacy Host and pre
   await prompt.fill("Keep this failed worktree draft");
   await page.getByRole("button", { name: "Workspace Current checkout", exact: true }).click();
   await page.evaluate(() => (window as any).quickFixture.pickWorkspace("worktree"));
-  await expect(page.locator("[data-workspace-creation-status]")).toContainText(
-    "Update bycoda Host",
-  );
+  await page
+    .locator("[data-workspace-creation-status]")
+    .getByRole("button", { name: /^Details/ })
+    .click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText("Update bycoda Host");
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
   await expect(prompt).toHaveValue("Keep this failed worktree draft");
   await page.getByRole("button", { name: "Use current checkout", exact: true }).click();

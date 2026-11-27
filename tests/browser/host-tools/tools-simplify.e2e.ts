@@ -152,7 +152,7 @@ test("log filters and monitor URL drafts remain usable without expanding permane
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
   await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
-  await page.getByRole("option", { name: "ERROR", exact: true }).click();
+  await page.getByRole("option", { name: "Error", exact: true }).click();
   await expect(page.locator(".runtime-log-row")).toHaveCount(1);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Website monitors", exact: true }).click();

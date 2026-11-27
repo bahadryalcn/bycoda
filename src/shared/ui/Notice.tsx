@@ -170,7 +170,8 @@ export function NoticeButton({ action, quiet }: { action: NoticeAction; quiet?: 
     <Button
       variant={quiet ? "ghost" : (action.variant ?? "secondary")}
       size="sm"
-      loading={action.pending ?? false}
+      // Only an action its owner can mark pending reserves the spinner slot; the rest stay compact.
+      loading={action.pending}
       disabled={action.disabled}
       aria-label={action.ariaLabel}
       disabledReason={action.disabledReason}

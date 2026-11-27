@@ -240,7 +240,8 @@ for (const { theme, width } of PANE_MATRIX)
             gap: [
               {
                 selector: ".bycoda-arc-segmented",
-                reason: "Segmented options sit in one inset track with a deliberate 2px separation.",
+                reason:
+                  "Segmented options sit in one inset track with a deliberate 2px separation.",
               },
               {
                 selector: "[role=tablist]",

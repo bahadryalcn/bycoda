@@ -115,6 +115,7 @@ export function SessionSubagentsMenu({
           side="top"
           align="end"
           size="lg"
+          density="comfortable"
           items={items}
           onPick={(id) => {
             const agent = agents.find((candidate) => candidate.blockId === id);

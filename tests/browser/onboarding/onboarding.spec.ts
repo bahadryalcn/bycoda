@@ -233,7 +233,10 @@ test("adds only the chosen missing provider after validation and keeps it on res
   await add.getByRole("button", { name: "Add provider", exact: true }).click();
   await expect(add.getByRole("alert")).toContainText("Could not inspect the CLI executable.");
   // The raw reason sits behind the shared Details control.
-  await add.getByRole("alert").getByRole("button", { name: /^Details/ }).click();
+  await add
+    .getByRole("alert")
+    .getByRole("button", { name: /^Details/ })
+    .click();
   await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
     "Selected file is not a provider CLI",
   );
@@ -556,4 +559,11 @@ test.describe("coarse onboarding controls", () => {
       path: "temp/verification/onboarding-controls/coarse-appearance-dark-800.png",
     });
   });
+});
+
+test("the Machines step appears only while a remote machine exists", async ({ page }) => {
+  await page.goto(`${fixture}?noMachines`);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: /4\s*Projects/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Machines/ })).toHaveCount(0);
 });

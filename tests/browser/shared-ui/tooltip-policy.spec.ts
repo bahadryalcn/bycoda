@@ -230,7 +230,9 @@ for (const light of [true, false])
         light,
       );
       await page.locator('summary[aria-label^="Show the steps for"]').click();
-      const row = page.locator('[data-variant="step"] > summary[aria-label^="Show output for"]').first();
+      const row = page
+        .locator('[data-variant="step"] > summary[aria-label^="Show output for"]')
+        .first();
       await expect(row).toBeVisible();
       const heights: number[] = [];
       for (const density of ["compact", "comfortable", "touch"]) {

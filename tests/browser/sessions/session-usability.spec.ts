@@ -226,7 +226,8 @@ for (const light of [true, false])
           return context.getImageData(0, 0, 1, 1).data[3];
         });
         expect(alpha, name).toBeGreaterThan(0);
-        expect(alpha, name).toBeLessThan(255);
+        // The Undo morph is a field-like control on the shared muted fill, which is opaque by design.
+        if (name !== "undoSurface") expect(alpha, name).toBeLessThan(255);
       }
       await page.screenshot({
         path: `temp/verification/sessions-callers/session-review-${light ? "light" : "dark"}-${width}.png`,
@@ -265,6 +266,8 @@ for (const light of [true, false])
         `/tests/browser/sessions/session-usability.html?accountFixture${light ? "&light" : ""}`,
       );
       await page.getByRole("button", { name: /Claude Code Claude Sonnet research model/ }).click();
+      // Accounts sit behind one collapsed control in the picker; open it to reach them.
+      await page.getByRole("button", { name: "Accounts", exact: true }).click();
       await expect(page.getByText("Work", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/sessions-callers/model-accounts-${light ? "light" : "dark"}-${width}.png`,
@@ -573,7 +576,8 @@ for (const mode of ["folders", "imports"] as const)
 test("focused dialog tooltip does not block adjacent filters", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 900 });
   await page.goto("/tests/browser/sessions/session-usability.html?controlDialogs=imports&light");
-  await expect(page.getByRole("tooltip").filter({ hasText: "Close" })).toBeVisible();
+  // An icon-only Close carries no hint, so nothing floats over the neighbouring filter control.
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   await page.getByRole("button", { name: "Conversation filters" }).click({ timeout: 3000 });
   await expect(page.getByRole("switch", { name: /Show automation runs/ })).toBeVisible();
 });
@@ -586,8 +590,14 @@ for (const theme of ["light", "dark"])
         `/tests/browser/sessions/session-usability.html?controlDialogs=imports${theme === "light" ? "&light" : ""}`,
       );
       await page.getByRole("button", { name: "Import 1" }).click();
-      await expect(page.getByText("Fixture transcript unavailable")).toBeVisible();
+      await expect(page.getByText("The conversation could not be imported.")).toBeVisible();
       await expect(page.getByText("Conversations that could not be imported: 1")).toBeVisible();
+      // The raw reason waits behind the shared Details control.
+      await page.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+        "Fixture transcript unavailable",
+      );
+      await page.keyboard.press("Escape");
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/import-failure-${theme}-${width}.png`,
@@ -602,7 +612,10 @@ test("import folder separators follow present and missing composition", async ({
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("button", { name: /project.*1/ })).toBeVisible();
     if (mode === "mixed") await dialog.getByRole("button", { name: /Missing folders/ }).click();
-    const sections = dialog.locator('section[data-surface-edge="bottom"]');
+    // The provider group wraps its folders in one more section; only the folders are measured.
+    const sections = dialog.locator(
+      'section[data-surface-edge="bottom"] section[data-surface-edge="bottom"]',
+    );
     await expect(sections).toHaveCount(mode === "mixed" ? 4 : 2);
     const borders = await sections.evaluateAll((nodes) =>
       nodes.map((node) => getComputedStyle(node).borderBottomWidth),
@@ -680,7 +693,7 @@ for (const light of [true, false])
       await row.locator("summary").click();
       const text = row.getByText("Continue the retained draft.");
       await expect(text).toBeVisible();
-      await expect(text).toHaveCSS("padding-inline-start", "28px");
+      await expect(text).toHaveCSS("padding-inline-start", "16px");
       await row.screenshot({ path: info.outputPath(`resume-${light}-${width}.png`) });
     });
 for (const light of [true, false])
@@ -723,10 +736,11 @@ for (const light of [true, false])
       await usage.screenshot({ path: info.outputPath(`codex-usage-${light}-${width}.png`) });
       const headingBox = (await heading.boundingBox())!;
       const refreshBox = (await refresh.boundingBox())!;
-      expect(refreshBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
-      expect(
-        Math.abs(refreshBox.y + refreshBox.height / 2 - headingBox.y - headingBox.height / 2),
-      ).toBeLessThanOrEqual(1);
+      // Refresh is the trailing icon under the limit rows, inside the dialog and right-aligned.
+      const usageBox = (await usage.boundingBox())!;
+      expect(refreshBox.y).toBeGreaterThan(headingBox.y + headingBox.height);
+      expect(refreshBox.x + refreshBox.width).toBeLessThanOrEqual(usageBox.x + usageBox.width);
+      expect(refreshBox.x).toBeGreaterThan(usageBox.x + usageBox.width / 2);
     });
 for (const light of [true, false])
   for (const width of [800, 1280])

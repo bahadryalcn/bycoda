@@ -15,7 +15,7 @@ for (const theme of ["light", "dark"])
     await expect(group.locator("svg")).toHaveCount(2);
     await expect(group.locator('[data-inline-reference="group"]')).toHaveCSS(
       "padding-inline",
-      "5px",
+      "4px",
     );
     await group.hover();
     const details = page.getByRole("dialog", { name: "Video" });
@@ -229,14 +229,14 @@ for (const theme of ["light", "dark"])
         await expect(page.getByText("Choose another account.", { exact: true })).toBeVisible();
         await expect(page.getByText("API Error: HTTP 429", { exact: false })).toHaveCount(0);
         const trigger = page.getByRole("button", {
-          name: "Technical details: Usage limit reached",
+          name: "Details: Usage limit reached",
           exact: true,
         });
         await trigger.focus();
         await expect(trigger).toBeFocused();
         await trigger.press("Enter");
         const dialog = page.getByRole("dialog", {
-          name: "Technical details: Usage limit reached",
+          name: "Details: Usage limit reached",
           exact: true,
         });
         await expect(dialog).toBeVisible();
@@ -277,7 +277,7 @@ for (const theme of ["light", "dark"])
         const error = page
           .getByRole("alert")
           .filter({ hasText: "The provider is temporarily unavailable." });
-        await error.getByRole("button", { name: /^Technical details:/ }).press("Enter");
+        await error.getByRole("button", { name: /^Details:/ }).press("Enter");
         const errorDetails = page.getByRole("dialog", {
           name: /The provider is temporarily unavailable/,
         });
