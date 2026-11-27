@@ -24,10 +24,9 @@ const ServerSnippets = lazy(() =>
   })),
 );
 
-export type TerminalShellActions = Pick<
-  SshShellController,
-  "invalidate" | "notifyInput" | "suspendAutomatic"
-> & { requestCurrent: () => void };
+export type TerminalShellActions = Pick<SshShellController, "invalidate" | "suspendAutomatic"> & {
+  requestCurrent: () => void;
+};
 
 type Props = Omit<
   ComponentProps<typeof TerminalTools>,
@@ -88,7 +87,6 @@ export function TerminalControls({
     setAutomatic,
     setSource,
     invalidate,
-    notifyInput,
     suspendAutomatic,
   } = shell;
 
@@ -96,14 +94,13 @@ export function TerminalControls({
   useLayoutEffect(() => {
     bindShellActions({
       invalidate,
-      notifyInput,
       suspendAutomatic,
       requestCurrent: () => {
         void request(source);
       },
     });
     return () => bindShellActions(null);
-  }, [bindShellActions, invalidate, notifyInput, suspendAutomatic, request, source]);
+  }, [bindShellActions, invalidate, suspendAutomatic, request, source]);
 
   const [reportedId, setReportedId] = useState<string>();
   const initialCommand = snippets?.initialCommand;

@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { localTerminalPrefix } from "../model/localTerminalCompletion";
+import { isTerminalTextEdit } from "../model/terminalKeys";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
 import { TerminalCursorPopover } from "./TerminalCursorPopover";
+
+/** A typed edit whose echo never arrives (echo off, a stalled link) closes the list. */
+const ECHO_GRACE_MS = 1000;
 
 export function RemoteShellSuggestionsOverlay({
   shell,
@@ -17,9 +21,19 @@ export function RemoteShellSuggestionsOverlay({
   onClose: () => void;
 }) {
   const [alternate, setAlternate] = useState(() => terminal.buffer.active.type === "alternate");
-  // undefined: not measured yet; null: the prompt line cannot be read.
-  const [promptPrefix, setPromptPrefix] = useState<string | null>();
-  const retaining = !!shell.preview && !selectionMode;
+  // The echoed prefix at the prompt, read from xterm's own buffer; null when none.
+  const [typed, setTyped] = useState<string | null>(null);
+  // Typed edits so far, and how many there were when the list last closed. A
+  // dismissal bumps the shell's preview epoch: the list then stays closed until
+  // the owner types again.
+  const [edits, setEdits] = useState(0);
+  const [closed, setClosed] = useState({ epoch: shell.previewEpoch, edits: 0 });
+  if (closed.epoch !== shell.previewEpoch) setClosed({ epoch: shell.previewEpoch, edits });
+  const armed = edits > closed.edits;
+  // Typed but not yet echoed: the list stays mounted, but accepting would use
+  // the previous prefix, so completion keys pass through to the shell.
+  const stale = useRef(false);
+  const passive = !selectionMode && shell.automatic;
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Hide suggestions when the xterm buffer switches to a TUI.
   useEffect(() => {
@@ -29,34 +43,47 @@ export function RemoteShellSuggestionsOverlay({
     return () => subscription.dispose();
   }, [terminal]);
 
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Narrow the display-only list as xterm echoes edits between native snapshots.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Follow the echoed prefix so only this list changes while the owner types.
   useEffect(() => {
-    if (!retaining) return;
-    const sync = () => setPromptPrefix(localTerminalPrefix(terminal));
-    sync();
-    const subscription = terminal.onWriteParsed(sync);
-    return () => {
-      subscription.dispose();
-      setPromptPrefix(undefined);
+    if (!passive) return;
+    let echoTimer: ReturnType<typeof setTimeout> | undefined;
+    const sync = () => {
+      clearTimeout(echoTimer);
+      stale.current = false;
+      setTyped(localTerminalPrefix(terminal));
     };
-  }, [terminal, retaining]);
+    sync();
+    const parsed = terminal.onWriteParsed(sync);
+    const input = terminal.onData((data) => {
+      clearTimeout(echoTimer);
+      if (!isTerminalTextEdit(data)) {
+        // Enter, history keys and control chords belong to the shell; the next
+        // echoed prompt line decides what is shown.
+        stale.current = false;
+        setTyped(null);
+        return;
+      }
+      stale.current = true;
+      setEdits((count) => count + 1);
+      echoTimer = setTimeout(() => {
+        stale.current = false;
+        setTyped(null);
+      }, ECHO_GRACE_MS);
+    });
+    return () => {
+      clearTimeout(echoTimer);
+      parsed.dispose();
+      input.dispose();
+      stale.current = false;
+      setTyped(null);
+    };
+  }, [terminal, passive]);
 
-  const shownPrefix = promptPrefix === undefined ? shell.preview?.prefix : promptPrefix;
-  const preview =
-    retaining && shell.preview && shownPrefix != null
-      ? {
-          prefix: shownPrefix,
-          suggestions: shell.preview.suggestions.filter(
-            (value) => value.startsWith(shownPrefix) && value !== shownPrefix,
-          ),
-        }
-      : undefined;
+  const matches = passive && typed && armed ? shell.catalogMatches(typed) : [];
+  const preview = typed && matches.length ? { prefix: typed, suggestions: matches } : undefined;
   const hasLiveSuggestions =
     shell.state?.status === "suggestions" && !!shell.state.suggestions?.length;
-  if (
-    alternate ||
-    (!selectionMode && !(shell.automatic && (hasLiveSuggestions || preview?.suggestions.length)))
-  )
+  if (alternate || (!selectionMode && !(shell.automatic && (hasLiveSuggestions || preview))))
     return null;
 
   return (
@@ -71,6 +98,7 @@ export function RemoteShellSuggestionsOverlay({
         shell={shell}
         terminal={terminal}
         preview={preview}
+        canAcceptPreview={() => !stale.current && localTerminalPrefix(terminal) === typed}
         selectionMode={selectionMode}
         onClose={onClose}
       />

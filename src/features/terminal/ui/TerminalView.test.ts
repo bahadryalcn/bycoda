@@ -25,10 +25,13 @@ const assistance = vi.hoisted(() => ({
   dismiss: vi.fn(),
   accept: vi.fn(async () => {}),
   invalidate: vi.fn(),
-  notifyInput: vi.fn(),
   suspendAutomatic: vi.fn(),
   setAutomatic: vi.fn(),
   setSource: vi.fn(),
+  promptReady: true,
+  previewEpoch: 0,
+  catalogMatches: vi.fn((): string[] => []),
+  acceptCatalog: vi.fn(async () => {}),
 }));
 const assistanceUpdates = new Set<() => void>();
 let assistanceRevision = 0;
@@ -99,9 +102,29 @@ vi.mock("@xterm/xterm", () => ({
       },
     };
     buffer = {
-      active: { type: "normal" },
+      active: {
+        type: "normal",
+        baseY: 0,
+        viewportY: 0,
+        cursorY: 0,
+        cursorX: 2,
+        getLine: () => ({
+          isWrapped: false,
+          translateToString: (trim: boolean, start = 0, end = 2) => {
+            const value = "$ ".slice(start, end);
+            return trim ? value.trimEnd() : value;
+          },
+        }),
+      },
       onBufferChange: () => ({ dispose() {} }),
     };
+    hasSelection() {
+      return false;
+    }
+    onWriteParsed() {
+      return { dispose() {} };
+    }
+    dataHandlers = new Set<(data: string) => void>();
     open() {}
     loadAddon(addon: { activate: (terminal: unknown) => void }) {
       addon.activate(this);
@@ -115,8 +138,10 @@ vi.mock("@xterm/xterm", () => ({
     write = vi.fn((_data: string | Uint8Array, callback?: () => void) => xterm.writes(callback));
     refresh = vi.fn();
     onData(handler: (data: string) => void) {
-      this.dataHandler = handler;
-      return { dispose() {} };
+      // The view and the suggestion list both listen; tests type through every listener.
+      this.dataHandlers.add(handler);
+      this.dataHandler = (data) => this.dataHandlers.forEach((listener) => listener(data));
+      return { dispose: () => this.dataHandlers.delete(handler) };
     }
     onRender() {
       return { dispose() {} };
@@ -1089,62 +1114,54 @@ it("waits for global event readiness before direct SSH spawn", async () => {
   }
 });
 
-it("notifies autocomplete only after the latest visible non-composing SSH edit is written", async () => {
+it("writes only the typed bytes while suggestions are on and never requests a shell snapshot", async () => {
   const { host, root } = setup();
   vi.stubGlobal("IntersectionObserver", undefined);
-  const render = (active = true) =>
-    root.render(
-      createElement(TerminalView, {
-        id: "auto-ssh",
-        cwd: "",
-        active,
-        sshConnectionId: "saved-server",
-        shellIntegration: "bash",
-      }),
-    );
-  const writes: (() => void)[] = [];
-  pty.writePty
-    .mockImplementationOnce(() => new Promise<void>((resolve) => writes.push(resolve)))
-    .mockImplementationOnce(() => new Promise<void>((resolve) => writes.push(resolve)));
+  assistance.automatic = true;
   try {
-    await act(async () => render());
-    const edit = xterm.instances.at(-1)!.dataHandler!;
-    await act(async () => {
-      edit("a");
-      edit("b");
-    });
-    expect(assistance.notifyInput).not.toHaveBeenCalled();
-    await act(async () => writes[0]());
-    expect(assistance.notifyInput).not.toHaveBeenCalled();
-    await act(async () => writes[1]());
-    expect(assistance.notifyInput).toHaveBeenCalledExactlyOnceWith();
-    await act(async () => {
-      edit("\x1b[A");
-      edit("\t");
-      edit("\x12");
-    });
-    expect(assistance.notifyInput).toHaveBeenCalledTimes(1);
-    await act(async () => render(false));
-    await act(async () => edit("c"));
-    expect(assistance.notifyInput).toHaveBeenCalledTimes(1);
-    await act(async () => render(true));
-    const terminalHost = host.querySelector(".bycoda-terminal-host")!;
-    // Composition bubbles from xterm's textarea into its containing host.
     await act(async () =>
-      terminalHost.dispatchEvent(new Event("compositionstart", { bubbles: true })),
+      root.render(
+        createElement(TerminalView, {
+          id: "auto-ssh",
+          cwd: "",
+          active: true,
+          sshConnectionId: "saved-server",
+          shellIntegration: "bash",
+        }),
+      ),
     );
-    await act(async () => edit("composed"));
-    expect(assistance.notifyInput).toHaveBeenCalledTimes(1);
+    const edit = xterm.instances.at(-1)!.dataHandler!;
+    for (const data of ["g", "i", "t", " ", "s", "", "[A", "	"])
+      await act(async () => edit(data));
+    // The keystrokes alone reach the shell: no suggestion chord is ever injected.
     expect(pty.writePty.mock.calls.map((call) => call[1])).toEqual([
-      "a",
-      "b",
-      "\x1b[A",
-      "\t",
-      "\x12",
-      "c",
-      "composed",
+      "g",
+      "i",
+      "t",
+      " ",
+      "s",
+      "",
+      "[A",
+      "	",
+    ]);
+    expect(native.invoke).not.toHaveBeenCalledWith(
+      "ssh_terminal_suggestions_request",
+      expect.anything(),
+    );
+    expect(assistance.request).not.toHaveBeenCalled();
+    // Text edits keep the passive list; history/completion keys close it.
+    expect(assistance.invalidate.mock.calls.map((call) => call[0])).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
     ]);
   } finally {
+    assistance.automatic = false;
     await act(async () => root.unmount());
     host.remove();
   }

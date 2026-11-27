@@ -12,14 +12,13 @@ import { TerminalGhostText } from "./TerminalGhostText";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 
 async function acceptSuggestion(
-  shell: SshShellController,
-  value: string,
+  insert: () => Promise<void>,
   done: () => void,
   fail: (reason: unknown) => void,
   settle: () => void,
 ) {
   try {
-    await shell.accept(value);
+    await insert();
     done();
   } catch (reason) {
     fail(reason);
@@ -28,19 +27,22 @@ async function acceptSuggestion(
   }
 }
 
-/** Explicit selection mode. Native code, not this UI, verifies safe insertion. */
+/** Passive catalog list or explicit selection. Native code, not this UI, verifies insertion. */
 export function RemoteShellSuggestions({
   shell,
   terminal,
   onClose,
   preview,
+  canAcceptPreview = () => true,
   selectionMode = true,
 }: {
   shell: SshShellController;
   terminal: Terminal | null;
   onClose: () => void;
-  /** Display-only list shown between passive snapshots; keys pass to the shell. */
+  /** Passive list filtered from the prompt catalog for the echoed prefix. */
   preview?: SshShellPreview;
+  /** False while a typed edit has not echoed yet: completion keys go to the shell. */
+  canAcceptPreview?: () => boolean;
   selectionMode?: boolean;
 }) {
   const t = useT();
@@ -50,14 +52,14 @@ export function RemoteShellSuggestions({
   const host = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const snapshot = shell.state?.status === "suggestions" ? shell.state : undefined;
-  // Only a live snapshot is interactive; the retained preview never accepts.
-  const suggestions = [...new Set(snapshot?.suggestions ?? [])];
-  const retained = !snapshot && !selectionMode ? preview : undefined;
-  const shown = snapshot ? suggestions : [...new Set(retained?.suggestions ?? [])];
+  // An explicit snapshot wins; otherwise the passive catalog list for the echoed prefix.
+  const catalogList = !snapshot && !selectionMode ? preview : undefined;
+  const active = snapshot ?? catalogList;
+  const suggestions = [...new Set(active?.suggestions ?? [])];
   const choice =
-    selection.prefix === snapshot?.prefix ? Math.max(0, suggestions.indexOf(selection.value)) : 0;
+    selection.prefix === active?.prefix ? Math.max(0, suggestions.indexOf(selection.value)) : 0;
   const select = (index: number) =>
-    setSelection({ prefix: snapshot?.prefix ?? "", value: suggestions[index] });
+    setSelection({ prefix: active?.prefix ?? "", value: suggestions[index] });
   useLayoutEffect(() => {
     host.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: "nearest" });
   }, [choice]);
@@ -70,14 +72,14 @@ export function RemoteShellSuggestions({
     terminal?.focus();
   };
   const accept = async (value: string) => {
-    if (pending.current || busy || !snapshot || terminal?.buffer.active.type === "alternate")
-      return;
+    if (pending.current || busy || !active || terminal?.buffer.active.type === "alternate") return;
+    const fromCatalog = !snapshot && catalogList;
+    if (fromCatalog && !canAcceptPreview()) return;
     pending.current = true;
     setBusy(true);
     setAcceptFailure("");
     await acceptSuggestion(
-      shell,
-      value,
+      () => (fromCatalog ? shell.acceptCatalog(fromCatalog.prefix, value) : shell.accept(value)),
       () => {
         onClose();
         terminal?.focus();
@@ -105,12 +107,14 @@ export function RemoteShellSuggestions({
       return;
     }
     if (event.altKey) return;
-    // Passive previews must not take over shell history or submission. Explicit
-    // selection mode below owns those keys only after the owner opens it.
+    // Passive lists must not take over shell history or submission. Explicit
+    // selection mode below owns those keys only after the owner opens it. An
+    // un-echoed edit leaves Tab/Right to the shell instead of a stale prefix.
     if (
       !event.shiftKey &&
       (event.key === "Tab" || event.key === "ArrowRight") &&
-      suggestions[choice]
+      suggestions[choice] &&
+      (snapshot || canAcceptPreview())
     ) {
       void accept(suggestions[choice]);
     } else if (event.key === "Escape") {
@@ -130,23 +134,23 @@ export function RemoteShellSuggestions({
     return () => element.removeEventListener("keydown", listener, true);
   }, [terminal, selectionMode]);
   const list = usePickerList({
-    options: shown.map((value) => ({ value, title: value, disabled: busy })),
-    value: shown[choice] ?? null,
-    activeValue: shown[choice] ?? null,
+    options: suggestions.map((value) => ({ value, title: value, disabled: busy })),
+    value: suggestions[choice] ?? null,
+    activeValue: suggestions[choice] ?? null,
     onActiveValueChange: (value) => {
       const index = suggestions.indexOf(value ?? "");
       if (index >= 0) select(index);
     },
     onChange: (value) => {
-      if (snapshot) void accept(value);
+      void accept(value);
     },
   });
   return (
     <>
-      {!selectionMode && terminal && snapshot?.prefix && suggestions[choice] ? (
+      {!selectionMode && terminal && active?.prefix && suggestions[choice] ? (
         <TerminalGhostText
           terminal={terminal}
-          suffix={suggestions[choice].slice(snapshot.prefix.length)}
+          suffix={suggestions[choice].slice(active.prefix.length)}
         />
       ) : null}
       <div
@@ -214,7 +218,7 @@ export function RemoteShellSuggestions({
         ) : acceptFailure ? (
           <InlineError details={acceptFailure}>{t("Could not insert the command.")}</InlineError>
         ) : null}
-        {snapshot || retained?.suggestions.length ? (
+        {snapshot || catalogList?.suggestions.length ? (
           <div className={styles.list}>
             <PickerList
               label={t("Remote command suggestions")}

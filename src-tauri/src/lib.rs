@@ -615,6 +615,7 @@ pub fn run() {
             ssh_terminal::ssh_terminal_quick_spawn,
             pty::ssh_terminal_suggestions_request,
             pty::ssh_terminal_suggestion_accept,
+            pty::ssh_terminal_catalog_accept,
             pty::ssh_terminal_suggestions_dismiss,
             pty::ssh_terminal_command_insert,
             ssh_sftp::ssh_sftp_list,

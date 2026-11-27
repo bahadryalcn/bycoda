@@ -19,12 +19,50 @@ else
         mode=${mode//;/ }
         [[ " $mode " != *" -echo "* ]]
     }
+    __bycoda_catalog_path=
+    # Prompt-time candidates. The view filters them on every keystroke, so no
+    # key binding runs (and readline never redraws the line) while typing.
+    __bycoda_catalog() {
+        local candidate values='' count=0 i
+        local -a recent
+        local -A seen
+        mapfile -t recent < <(HISTTIMEFORMAT= builtin history 200 2>/dev/null)
+        for (( i=${#recent[@]}-1; i>=0; i-- )); do
+            candidate=${recent[i]#*[0-9]  }
+            [[ -n $candidate && $candidate != ' '* && $candidate != -* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
+            seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 100 )) && break
+        done
+        __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;history;$values"
+        # Command names change only with PATH; the shell keeps the last list.
+        [[ $PATH == "$__bycoda_catalog_path" ]] && return
+        __bycoda_catalog_path=$PATH
+        local -a names
+        local -A known
+        if [[ $OSTYPE == msys* || $OSTYPE == cygwin* ]]; then
+            # Enumerating a Windows PATH takes seconds here and would hold the
+            # prompt: offer the names the shell already knows instead.
+            mapfile -t names < <(builtin compgen -A alias -A builtin -A function -A keyword; printf '%s\n' "${!BASH_CMDS[@]}")
+        else
+            mapfile -t names < <(builtin compgen -A command)
+        fi
+        for candidate in "${names[@]}"; do [[ -n $candidate ]] && known[$candidate]=1; done
+        seen=(); values=''; count=0
+        for candidate in 'git status' 'git diff' 'git diff --staged' 'git log --oneline' 'git stash list' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'docker compose up' 'docker compose logs -f' 'systemctl status' 'systemctl restart' 'pnpm install' 'pnpm dev' 'pnpm build' 'pnpm test' 'npm install' 'npm run dev' 'cargo check' 'cargo test'; do
+            [[ -n ${known[${candidate%% *}]-} ]] && values+="$candidate"$'\t'
+        done
+        for candidate in "${names[@]}"; do
+            [[ $candidate == [a-zA-Z0-9]* && $candidate != *' '* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
+            seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 3900 )) && break
+        done
+        __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;commands;$values"
+    }
     __bycoda_prompt() {
         local __bycoda_exit=$?
         (( ++__bycoda_prompt_seq ))
         if __bycoda_echo; then
             __bycoda_prompt_echo_ok=1
             __bycoda_emit "ready;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;$__bycoda_request_seq"
+            __bycoda_catalog
         else
             __bycoda_prompt_echo_ok=0
             __bycoda_unavailable

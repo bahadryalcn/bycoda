@@ -188,9 +188,6 @@ export function TerminalView({
     shellActions.current = actions;
   });
   const suspendShellSuggestions = useStableCallback(() => shellActions.current?.suspendAutomatic());
-  const isActive = useStableCallback(() => active);
-  const composingRef = useRef(false);
-  const editRevisionRef = useRef(0);
   const [snippets, setSnippets] = useState<{ initialCommand?: string } | null>(null);
   const toast = useToast();
   const alreadySaved = () => toast.show({ message: t("Command already saved."), tone: "info" });
@@ -204,7 +201,6 @@ export function TerminalView({
   // Same signal as the WebGL addon: the terminal is actually on screen. Without
   // IntersectionObserver there is no signal, so assume visible.
   const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
-  const isOnScreen = useStableCallback(() => onScreen);
   const getProfile = useStableCallback(() => profile);
   const getCwd = useStableCallback(() => cwd);
   const outerRef = useRef<HTMLDivElement>(null);
@@ -318,7 +314,6 @@ export function TerminalView({
       authorizeStart: authorizeStartRef,
       lifecycle: (state) => lifecycleRef.current?.(state),
       onExit: (code) => {
-        ++editRevisionRef.current;
         shellActions.current?.suspendAutomatic();
         setTool(null);
         setShellReady(false);
@@ -363,13 +358,9 @@ export function TerminalView({
       term,
       host,
       onCompositionStart: () => {
-        ++editRevisionRef.current;
-        composingRef.current = true;
         shellActions.current?.suspendAutomatic();
       },
-      onCompositionEnd: () => {
-        composingRef.current = false;
-      },
+      onCompositionEnd: () => {},
     });
 
     resumeInputRef.current = () => {
@@ -382,30 +373,13 @@ export function TerminalView({
     const dataSub = term.onData((data) => {
       // A submitted command may start a foreground process: refresh the title soon.
       if (data.includes("\r")) setTimeout(() => metaPokeRef.current(), 400);
-      const revision = ++editRevisionRef.current;
-      const composingInput = composingRef.current;
-      // Do not inject a snapshot chord between native history/completion/search
-      // keystrokes. PSReadLine/Readline own those navigation groups.
-      const textEdit = isTerminalTextEdit(data);
+      // Typing never writes a suggestion chord into the shell: the passive list
+      // is filtered from the prompt-time catalog, so only that list updates.
       if (integrated) {
-        shellActions.current?.invalidate(textEdit);
+        shellActions.current?.invalidate(isTerminalTextEdit(data));
         if (getTool() === "remote") setTool(null);
       }
-      void pty.enqueueInput(data).then((written) => {
-        if (!written) return;
-        if (
-          integrated &&
-          textEdit &&
-          pty.live &&
-          revision === editRevisionRef.current &&
-          isActive() &&
-          isOnScreen() &&
-          !composingInput &&
-          !composingRef.current &&
-          term.buffer.active.type !== "alternate"
-        )
-          shellActions.current?.notifyInput();
-      });
+      void pty.enqueueInput(data);
     });
 
     // xterm already decodes the stream, so cwd reports come from its parser
@@ -454,7 +428,6 @@ export function TerminalView({
       resize: (cols, rows) => pty.resize(cols, rows),
       isSpawned: () => pty.spawned,
       onEnterAlternateScreen: () => {
-        ++editRevisionRef.current;
         shellActions.current?.suspendAutomatic();
       },
     });
@@ -513,8 +486,6 @@ export function TerminalView({
     privateTerminal,
     getTool,
     suspendShellSuggestions,
-    isActive,
-    isOnScreen,
     getProfile,
     getCwd,
     getOnMetaChange,
@@ -522,7 +493,6 @@ export function TerminalView({
 
   useEffect(() => {
     if (!active || !onScreen) {
-      ++editRevisionRef.current;
       shellActions.current?.suspendAutomatic();
     }
   }, [active, onScreen]);

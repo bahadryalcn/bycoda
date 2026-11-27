@@ -23,6 +23,32 @@ __bycoda_echo() {
     mode=${mode//;/ }
     [[ " $mode " != *" -echo "* ]]
 }
+typeset -g __bycoda_catalog_path=
+# Prompt-time candidates. The view filters them on every keystroke, so no ZLE
+# widget runs (and the line is never redrawn) while typing.
+__bycoda_catalog() {
+    emulate -L zsh
+    local candidate values='' count=0
+    local -A seen
+    for candidate in "${(@f)$(builtin fc -rln -200 2>/dev/null)}"; do
+        [[ -n $candidate && $candidate != ' '* && $candidate != -* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
+        seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 100 )) && break
+    done
+    __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;history;$values"
+    # Command names change only with PATH; the shell keeps the last list.
+    [[ $PATH == "$__bycoda_catalog_path" ]] && return
+    __bycoda_catalog_path=$PATH
+    builtin rehash
+    seen=(); values=''; count=0
+    for candidate in 'git status' 'git diff' 'git diff --staged' 'git log --oneline' 'git stash list' 'ls -l' 'ls -la' 'docker ps' 'docker ps -a' 'docker compose up' 'docker compose logs -f' 'systemctl status' 'systemctl restart' 'pnpm install' 'pnpm dev' 'pnpm build' 'pnpm test' 'npm install' 'npm run dev' 'cargo check' 'cargo test'; do
+        builtin whence -w -- "${candidate%% *}" >/dev/null 2>&1 && values+="$candidate"$'\t'
+    done
+    for candidate in ${(ok)commands} ${(ok)builtins} ${(ok)functions} ${(ok)aliases}; do
+        [[ $candidate == [a-zA-Z0-9]* && $candidate != *' '* ]] && __bycoda_literal "$candidate" && [[ -z ${seen[$candidate]-} ]] || continue
+        seen[$candidate]=1; values+="$candidate"$'\t'; (( ++count >= 3900 )) && break
+    done
+    __bycoda_emit "catalog;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;commands;$values"
+}
 __bycoda_prompt() {
     local __bycoda_exit=$?
     emulate -L zsh
@@ -30,6 +56,7 @@ __bycoda_prompt() {
     if __bycoda_echo; then
         __bycoda_prompt_echo_ok=1
         __bycoda_emit "ready;$__bycoda_user;$__bycoda_host;$__bycoda_prompt_seq;$__bycoda_request_seq"
+        __bycoda_catalog
     else
         __bycoda_prompt_echo_ok=0
         __bycoda_unavailable
