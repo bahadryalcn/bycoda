@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  approvalHasInspection,
   ToolInspectionPanel,
   inspectionJson,
   hasToolInspection,
@@ -106,6 +107,29 @@ it.each(["  item: value\n  next: value\n", " \t\n"])(
     expect(clipboard.copy).toHaveBeenCalledExactlyOnceWith(output);
   },
 );
+
+it("drops an approval's details when they only repeat the command", () => {
+  const command = "git status --short | head -5";
+  const shell = (tool: Block["tool"]): Block => ({ id: "a", role: "tool", text: command, tool });
+  const preview = { kind: "shell" as const, title: command };
+  expect(approvalHasInspection(shell({ preview }), command)).toBe(false);
+  expect(approvalHasInspection(shell({ preview, detail: `Bash: ${command}` }), command)).toBe(false);
+  expect(
+    approvalHasInspection(
+      shell({ preview: { ...preview, inspection: { kind: "command", text: command } } }),
+      command,
+    ),
+  ).toBe(false);
+  // Anything the request line does not show keeps the disclosure.
+  expect(approvalHasInspection(shell({ preview, detail: "M src/a.ts" }), command)).toBe(true);
+  expect(approvalHasInspection(diffBlock("+one"), "Edit")).toBe(true);
+  expect(
+    approvalHasInspection(
+      { id: "m", role: "tool", text: "mcp__x__y", tool: { detail: 'mcp__x__y: {"id":1}' } },
+      "mcp__x__y",
+    ),
+  ).toBe(true);
+});
 
 it("keeps copy feedback local, blocks duplicates and permits retry after a failure", async () => {
   let reject!: (error: Error) => void;

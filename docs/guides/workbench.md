@@ -595,9 +595,9 @@ and a project's earlier pin is dropped when it joins a group. Group members are
 indented under the header on a guide line.
 
 One title bar runs across the top of every main window, in the same order on
-macOS, Windows and Linux: the sidebar toggle, the bycoda mark, Back, Forward,
-Search, then the open tabs. On macOS the window buttons sit before the toggle;
-on Windows and Linux the window buttons close the bar on the right. The bycoda
+macOS, Windows and Linux: the bycoda mark, the sidebar toggle, Back, Forward,
+Search, then the open tabs. The macOS window buttons sit before the mark.
+Windows and Linux place the window buttons at the right end of the bar. The bycoda
 wordmark shows beside the mark while the project rail is expanded. Search shrinks
 to its icon in a narrow window. The project rail and the sidebars below the bar
 hold no window controls, history buttons or Search of their own.

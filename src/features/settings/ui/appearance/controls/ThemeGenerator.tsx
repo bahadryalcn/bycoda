@@ -80,8 +80,8 @@ export type ChipImage =
   | { status: "error"; detail: string };
 
 /**
- * What choosing a chip does with its image: a drawing in flight is applied when it lands ("wait"),
- * a finished one is reused ("apply"), and a missing or failed one is drawn ("draw").
+ * The image state behind choosing a chip: a drawing in flight ("wait"), a finished one to review
+ * ("review"), or none yet ("draw", which the card's Generate image action starts).
  */
 export function chipImageAction(image: ChipImage | undefined): "wait" | "review" | "draw" {
   if (image?.status === "loading") return "wait";
@@ -97,6 +97,8 @@ const areaLabel = (area: ThemeSuggestionArea) => {
       return t("Typography");
     case "interface":
       return t("Interface");
+    case "chat":
+      return t("Chat");
     case "background":
       return t("Background");
     case "motion":
@@ -257,7 +259,10 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     );
   };
 
-  /** Apply the theme now and leave its optional image for explicit review. */
+  /**
+   * Apply the theme now; an image is drawn only from the card's Generate image action and used
+   * only from Use image. With images off, a look without one removes the previous look's image.
+   */
   const choose = (suggestion: ThemeSuggestion, index: number) => {
     session.invalidateImageIntent();
     const image: ChipImage | undefined = isDrawing(index, session.batch())
@@ -271,9 +276,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     session.select(index);
     setSelectedIndex(index);
     setImageFailure(null);
-    if (action === "draw" && withImage) {
-      startImage(suggestion, index);
-    } else if (action === "draw" && appearance.chatBackgroundPath) {
+    if (action === "draw" && !withImage && appearance.chatBackgroundPath) {
       appearance
         .onClearChatBackground()
         .catch((error: unknown) => setImageFailure(themeSuggestionFailureDetail(error)));

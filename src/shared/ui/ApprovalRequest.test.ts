@@ -4,6 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApprovalRequest, type ApprovalRequestProps } from "./ApprovalRequest";
 
+const clipboard = vi.hoisted(() => ({ copyText: vi.fn(async (_text: string) => {}) }));
+vi.mock("../../platform/tauri/clipboard", () => ({ copyText: clipboard.copyText }));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let cleanup: (() => void) | undefined;
 afterEach(() => cleanup?.());
@@ -32,12 +35,14 @@ function mount(overrides: Partial<ApprovalRequestProps> = {}) {
   };
   return { host, allow, deny, always };
 }
+const decisionButtons = (host: HTMLElement) =>
+  host.querySelectorAll<HTMLButtonElement>("section > div:last-child button");
 it("keeps exact request on the shared code ground and Allow as the sole primary", () => {
   const { host, allow, deny, always } = mount();
   expect(host.querySelector("pre")?.textContent).toBe("echo <exact>\nsecond line");
   expect(host.querySelector("pre")?.getAttribute("data-frame")).toBe("filled");
   expect(host.querySelectorAll('[data-button-variant="primary"]')).toHaveLength(1);
-  const buttons = host.querySelectorAll("button");
+  const buttons = decisionButtons(host);
   expect([...buttons].map((button) => button.textContent)).toEqual(["Always", "Deny", "Allow"]);
   expect(host.querySelector('[data-button-variant="primary"]')?.textContent).toBe("Allow");
   act(() => buttons.forEach((button) => button.click()));
@@ -56,7 +61,7 @@ it("preserves caller-owned pending and disabled state and details disclosure", (
   });
   expect(host.querySelector("details")?.open).toBe(false);
   expect(host.querySelector("details")?.textContent).toContain("Full request context");
-  const [always, denyButton, allowButton] = host.querySelectorAll("button");
+  const [always, denyButton, allowButton] = decisionButtons(host);
   expect(always.textContent).toBe("Always");
   expect(allowButton.getAttribute("aria-busy")).toBe("true");
   expect(denyButton.disabled).toBe(true);
@@ -66,6 +71,17 @@ it("preserves caller-owned pending and disabled state and details disclosure", (
   });
   expect(allow).not.toHaveBeenCalled();
   expect(deny).not.toHaveBeenCalled();
+});
+it("copies the exact request and toggles line wrapping from its corner", async () => {
+  const { host } = mount();
+  const copy = host.querySelector<HTMLButtonElement>('button[aria-label="Copy"]')!;
+  const wrap = host.querySelector<HTMLButtonElement>('button[aria-label="Wrap lines"]')!;
+  await act(async () => copy.click());
+  expect(clipboard.copyText).toHaveBeenCalledExactlyOnceWith("echo <exact>\nsecond line");
+  expect(host.querySelector("pre")?.getAttribute("data-wrap")).toBeNull();
+  act(() => wrap.click());
+  expect(host.querySelector("pre")?.getAttribute("data-wrap")).toBe("false");
+  act(() => wrap.click());
 });
 it("shows where and how far the decision reaches above the request", () => {
   const { host } = mount({ context: ["/repo", "This request only"] });

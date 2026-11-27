@@ -2,6 +2,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSessionListDisplay } from "../../../../sessions/model/sessionListDisplay";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
+import { loadTranscriptLayout } from "../../../model/appearance";
+import {
+  loadDecorativeMotionEnabled,
+  noteDisplayRefreshRate,
+} from "../../../model/decorativeMotion";
 import { loadInteractionTint } from "../../../model/interactionTint";
 import { loadLiveBackground, loadLiveBackgroundIntensity } from "../../../model/liveBackground";
 import { loadScrollbarStyle } from "../../../model/scrollbarStyle";
@@ -15,6 +20,13 @@ import { loadWorkingIndicator } from "../../../model/workingIndicator";
 import { loadWorkspaceBackground } from "../../../model/workspaceBackground";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { applyDrawnImageTuning, applyThemeSuggestion } from "./applyThemeSuggestion";
+
+// Streaming mode is a Host-acknowledged agent default; the test checks the request only.
+const streaming = vi.hoisted(() => vi.fn());
+vi.mock("../../../model/settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../model/settings")>()),
+  saveStreamingTextMode: streaming,
+}));
 
 function mockAppearance() {
   const fns = {
@@ -125,8 +137,11 @@ describe("applyThemeSuggestion", () => {
           scrollbarSize: "large",
           scrollbarVisibility: "always",
           tintSource: "accent",
+          interactionStrength: 150,
+          scrollbarStrength: 140,
           workingColor: "theme",
           workingStyle: "steady",
+          workingStrength: 200,
         },
       }),
     );
@@ -139,12 +154,63 @@ describe("applyThemeSuggestion", () => {
     expect(loadScrollbarStyle()).toMatchObject({
       size: "large",
       visibility: "always",
+      strength: 140,
     });
-    expect(loadInteractionTint().source).toBe("accent");
+    expect(loadInteractionTint()).toMatchObject({ source: "accent", strength: 150 });
     expect(loadWorkingIndicator()).toMatchObject({
       color: "theme",
       style: "steady",
+      strength: 200,
     });
+  });
+
+  it("applies the chat group to the transcript preferences, layout and streaming", () => {
+    const { appearance, fns } = mockAppearance();
+    applyThemeSuggestion(
+      appearance,
+      suggest({
+        chat: {
+          layout: "full",
+          width: "wide",
+          streaming: "paced",
+          surface: "column",
+          surfaceOpacity: 60,
+          surfaceBlur: 12,
+          messageColor: "neutral",
+          userMessageOpacity: 30,
+          bodyInk: 96,
+          chromeInk: 70,
+          cards: "outline",
+          actions: "hover",
+          fileRefs: "plain",
+        },
+      }),
+    );
+    expect(fns.onPreferences).toHaveBeenCalledOnce();
+    expect(fns.onPreferences.mock.calls[0]![0]).toMatchObject({
+      chatWidth: "wide",
+      transcriptSurface: "column",
+      transcriptSurfaceOpacity: 60,
+      transcriptSurfaceBlur: 12,
+      messageColor: "neutral",
+      userMessageOpacity: 30,
+      transcriptBodyInk: 96,
+      transcriptChromeInk: 70,
+      transcriptCards: "outline",
+      transcriptActions: "hover",
+      transcriptFileRefs: "plain",
+    });
+    expect(loadTranscriptLayout()).toBe("full");
+    expect(streaming).toHaveBeenCalledWith("paced");
+  });
+
+  it("turns decorative motion on even where the display default is off", () => {
+    const { appearance } = mockAppearance();
+    noteDisplayRefreshRate(240);
+    expect(loadDecorativeMotionEnabled()).toBe(false);
+    applyThemeSuggestion(appearance, suggest({ motion: { decorative: true } }));
+    expect(loadDecorativeMotionEnabled()).toBe(true);
+    noteDisplayRefreshRate(null);
   });
 
   it("applies the background group, with intensity as a fraction", () => {

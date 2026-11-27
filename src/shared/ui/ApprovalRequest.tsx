@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
+import { copyText } from "../../platform/tauri/clipboard";
+import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { useOutputWrap } from "../hooks/useOutputWrap";
+import { useT } from "../i18n";
 import { Button } from "./Button";
 import { Disclosure } from "./Disclosure";
+import { FloatingButtonGroup } from "./FloatingButtonGroup";
 import { Heading } from "./Heading";
+import { Check, Copy, RotateCcw, WrapText } from "./icons";
+import { LiveText } from "./LiveText";
 import { MiddleTruncate } from "./MiddleTruncate";
 import { NoticeGlyph, type NoticeAction } from "./Notice";
 import { OutputBlock } from "./OutputBlock";
@@ -25,6 +32,7 @@ export type ApprovalRequestProps = {
   context?: readonly string[];
   /** Persistent consent or review actions remain secondary. */
   actions?: readonly NoticeAction[];
+  /** Only what `detail` does not already show (a diff, output, arguments); never a copy of it. */
   details?: { label: string; content: ReactNode; defaultOpen?: boolean };
   /** `none` leaves the buttons to the caller, a dialog's footer with ApprovalActions. */
   actionsPlacement?: "header" | "none";
@@ -32,7 +40,7 @@ export type ApprovalRequestProps = {
 
 /**
  * Owner approval: a title line (subtle warning glyph), quiet folder and scope metadata, the exact
- * request on the code ground, optional details, then the decision buttons ending with Allow. A dialog
+ * request on the code ground with its own Copy and Wrap lines actions, optional details, then the decision buttons ending with Allow. A dialog
  * passes `actionsPlacement="none"` and puts ApprovalActions in its Modal footer instead. Frameless:
  * the caller places it in its card, pane or dialog. The caller owns authority, handlers and
  * pending state; only Allow gets primary emphasis.
@@ -89,11 +97,7 @@ export function ApprovalRequest({
           ))}
         </div>
       ) : null}
-      {summary ?? (
-        <OutputBlock frame="filled" scroll className="max-h-48 min-w-0">
-          {detail}
-        </OutputBlock>
-      )}
+      {summary ?? <ApprovalDetail detail={detail} />}
       {details ? (
         <Disclosure variant="compact" summary={details.label} defaultOpen={details.defaultOpen}>
           {details.content}
@@ -105,6 +109,55 @@ export function ApprovalRequest({
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** The exact request on the code ground, with Copy and Wrap lines in its top corner. */
+function ApprovalDetail({ detail }: { detail: string }) {
+  const t = useT();
+  const [wrap, setWrap] = useOutputWrap();
+  const feedback = useCopyFeedback({ resetKeys: [detail], successMs: 2000 });
+  return (
+    <div className="relative min-w-0">
+      <OutputBlock frame="filled" scroll wrap={wrap} className="max-h-48 min-w-0 pe-16">
+        {detail}
+      </OutputBlock>
+      <div className="absolute end-1 top-1" data-no-drag="">
+        <FloatingButtonGroup
+          label={t("Output actions")}
+          variant="muted"
+          padding="none"
+          size="xs"
+          iconOnly
+          items={[
+            {
+              id: "copy",
+              label: feedback.copied
+                ? t("Copied")
+                : feedback.failed
+                  ? t("Retry copy")
+                  : t("Copy"),
+              icon: feedback.copied ? <Check /> : feedback.failed ? <RotateCcw /> : <Copy />,
+              tone: feedback.copied ? "success" : feedback.failed ? "danger" : undefined,
+              loading: feedback.pending,
+              onSelect: () => feedback.copy(() => copyText(detail)),
+            },
+            {
+              id: "wrap",
+              label: t("Wrap lines"),
+              icon: <WrapText />,
+              pressed: wrap,
+              selectionIndicator: "dot",
+              onSelect: () => setWrap(!wrap),
+            },
+          ]}
+        />
+        <LiveText
+          className="sr-only"
+          text={feedback.copied ? t("Copied") : feedback.failed ? t("Copy failed") : ""}
+        />
+      </div>
+    </div>
   );
 }
 

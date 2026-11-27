@@ -42,7 +42,7 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   decorative animations start off until the user turns them on. Decorative
   pulses, the crew and the pacing walker hold their last frame while the bycoda
   window is behind another application. Existing appearance settings are reused.
-  Settings → Appearance is split into Theme, Background, Interface, Typography
+  Settings → Appearance is split into Theme, Background, Interface, Chat, Typography
   and Motion tabs; search opens the tab that holds a setting. Theme holds the
   palette, mode, accent, tone (hue, saturation, dark lightness) and Interaction
   color, which tints hover, selection and pressed fills from the theme, the accent
@@ -54,10 +54,11 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   showing active work and new results. Reopen the dialog to see individual jobs or
   cancel one. The theme generator's dice fills the prompt with a new combination of scene, light
   and finish. Generate themes and Random look show three suggestion cards; choosing a
-  card applies the whole look: a suggestion without its own gradient switches the
-  previous gradient off. Its image follows the image button (None, Codex or Gemini):
-  with a provider, choosing a card draws its image after applying the theme. Generate
-  image can also draw it directly from a card. Preview opens the finished image in
+  card applies the whole look across every tab, including Chat reading settings and
+  motion (a generated theme may turn animations on even on a high refresh display); a
+  suggestion without its own gradient switches the previous gradient off. Choosing a
+  card never draws an image: with an image provider (Codex or Gemini) each card shows
+  Generate image, which draws only when clicked. Preview opens the finished image in
   the shared viewer. Change image draws another candidate and keeps the previous one
   available while it runs. Use image applies the chosen drawing. With None, a theme
   without an image clears the previous background image. Failed images can be

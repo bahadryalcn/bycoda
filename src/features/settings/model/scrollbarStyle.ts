@@ -4,6 +4,7 @@ import {
   readAppearanceValue,
   writeAppearanceValue,
 } from "./appearancePersistence";
+import { APPEARANCE_RANGES } from "./themeRanges";
 
 /**
  * Scrollbars across the app (native bars, the editor rail and the terminal): the color the thumb
@@ -29,8 +30,8 @@ export const SCROLLBAR_STYLE_DEFAULT: ScrollbarStyle = {
   strength: 100,
 };
 export const SCROLLBAR_STYLE_KEY = "bycoda.scrollbarStyle.v1";
-export const SCROLLBAR_STRENGTH_MIN = 50;
-export const SCROLLBAR_STRENGTH_MAX = 200;
+export const SCROLLBAR_STRENGTH_MIN = APPEARANCE_RANGES.scrollbarStrength.min;
+export const SCROLLBAR_STRENGTH_MAX = APPEARANCE_RANGES.scrollbarStrength.max;
 /** Thickness in CSS pixels; "thin" matches `--ui-scrollbar-size` in src/styles/index.css. */
 export const SCROLLBAR_SIZE_PX: Record<ScrollbarSize, number> = {
   "extra-thin": 3,

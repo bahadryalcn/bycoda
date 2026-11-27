@@ -14,7 +14,7 @@ import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { Notice } from "./ApprovalToasts";
 import { HarnessIcon } from "./HarnessIcon";
 import { NotificationProjectLabel } from "./NotificationHistoryItem";
-import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
+import { approvalHasInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { bycodaToolCall } from "../model/bycodaToolCall";
 import { approvalTitle } from "./approvalPresentation";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
@@ -180,7 +180,7 @@ export function NotificationRequestCard({
             actions={decision.sessionAction ? [decision.sessionAction] : undefined}
             detail={detail}
             details={
-              block && hasToolInspection(block)
+              block && approvalHasInspection(block, detail)
                 ? {
                     label: t("Details"),
                     content: <ToolInspectionPanel block={block} />,

@@ -17,6 +17,7 @@ import {
   TRANSCRIPT_SURFACES,
   type AppearancePreferences,
 } from "../../../model/appearancePreferences";
+import { APPEARANCE_RANGES } from "../../../model/themeRanges";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { DraftSlider } from "./DraftSlider";
 
@@ -27,13 +28,7 @@ export type SliderField =
   | "transcriptBodyInk"
   | "transcriptChromeInk";
 
-const SLIDER_RANGES: Record<SliderField, { min: number; max: number }> = {
-  transcriptSurfaceOpacity: { min: 0, max: 100 },
-  transcriptSurfaceBlur: { min: 0, max: 24 },
-  userMessageOpacity: { min: 0, max: 100 },
-  transcriptBodyInk: { min: 80, max: 100 },
-  transcriptChromeInk: { min: 50, max: 100 },
-};
+const SLIDER_RANGES: Record<SliderField, { min: number; max: number }> = APPEARANCE_RANGES;
 
 const SURFACE_LABELS: Record<(typeof TRANSCRIPT_SURFACES)[number], () => string> = {
   reply: () => t("Reply"),

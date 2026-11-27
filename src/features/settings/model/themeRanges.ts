@@ -23,6 +23,14 @@ export const APPEARANCE_RANGES = {
   terminalSize: { min: 8, max: 40 },
   contrast: { min: 75, max: 150 },
   surfaceContrast: { min: 50, max: 200 },
+  interactionStrength: { min: 50, max: 200 },
+  scrollbarStrength: { min: 50, max: 200 },
+  workingStrength: { min: 50, max: 250 },
+  transcriptSurfaceOpacity: { min: 0, max: 100 },
+  transcriptSurfaceBlur: { min: 0, max: 24 },
+  userMessageOpacity: { min: 0, max: 100 },
+  transcriptBodyInk: { min: 80, max: 100 },
+  transcriptChromeInk: { min: 50, max: 100 },
 } as const;
 
 /** Enumerated choices a generated theme may set; drift tests check each against its normalizer. */
@@ -56,4 +64,12 @@ export const APPEARANCE_CHOICES = {
   tintSource: ["neutral", "theme", "accent"],
   workingColor: ["auto", "theme"],
   workingStyle: ["pulse", "steady", "off"],
+  transcriptLayout: ["full", "chat"],
+  chatWidth: ["comfortable", "wide", "full"],
+  streamingTextMode: ["paced", "adaptive"],
+  transcriptSurface: ["reply", "column", "off"],
+  transcriptCards: ["inset", "outline", "solid"],
+  transcriptActions: ["always", "hover"],
+  messageColor: ["theme", "neutral"],
+  fileRefStyle: ["colored", "plain"],
 } as const;

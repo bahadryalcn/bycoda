@@ -11,7 +11,7 @@ import type { Notice } from "./ApprovalToasts";
 import { HarnessIcon } from "./HarnessIcon";
 import { NotificationProjectLabel } from "./NotificationHistoryItem";
 import { noticeApproval } from "./NotificationRequestCard";
-import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
+import { approvalHasInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { approvalTitle } from "./approvalPresentation";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 
@@ -94,7 +94,7 @@ export function NotificationApprovalDialog({
           actionsPlacement="none"
           detail={detail}
           details={
-            block && hasToolInspection(block)
+            block && approvalHasInspection(block, detail)
               ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
               : undefined
           }

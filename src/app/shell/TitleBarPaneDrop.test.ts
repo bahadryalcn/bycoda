@@ -146,7 +146,7 @@ describe("title tab pane drops", () => {
     ).toEqual(
       IS_MAC
         ? ["Toggle sidebar", "Back", "Forward", "Search"]
-        : ["Toggle sidebar", "Application menu", "Back", "Forward", "Search"],
+        : ["Application menu", "Toggle sidebar", "Back", "Forward", "Search"],
     );
     expect(lead.nextElementSibling?.querySelector("[data-title-tab-strip]")).not.toBeNull();
     expect(container.textContent).not.toContain("Development");

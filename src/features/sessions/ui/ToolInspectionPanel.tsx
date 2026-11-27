@@ -3,9 +3,9 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { storedFlag } from "../../../shared/lib/storedSetting";
+import { useOutputWrap } from "../../../shared/hooks/useOutputWrap";
 import { FloatingButtonGroup } from "../../../shared/ui/FloatingButtonGroup";
 import { Check, Copy, RotateCcw, WrapText } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
@@ -23,13 +23,6 @@ import { JsonViewer } from "../../../shared/ui/JsonViewer";
 import { AnsiText } from "../../../shared/ui/AnsiText";
 import { stripAnsi } from "../../../shared/lib/ansi";
 import "./chat-controls.css";
-
-// Long commands and output wrap by default; aligned output (tables, diffs) can opt out, and the choice persists.
-const toolOutputWrap = storedFlag("bycoda.toolOutputWrap", true, "bycoda:tool-output-wrap", true);
-const loadToolOutputWrap = () => toolOutputWrap.load() ?? true;
-function useToolOutputWrap() {
-  return useSyncExternalStore(toolOutputWrap.subscribe, loadToolOutputWrap, () => true);
-}
 
 /** Only complete saved JSON objects/arrays qualify. Plain text and diffs stay intact. */
 export function inspectionJson(text: string): { data: unknown } | null {
@@ -84,60 +77,81 @@ export function hasToolInspection(block: Block): boolean {
   );
 }
 
+type InspectionSection = {
+  title: string;
+  text: string;
+  diff?: boolean;
+  truncated?: boolean;
+  legacy?: boolean;
+  error?: boolean;
+};
+
+/** The sections the inspector shows for a tool call, in display order. */
+export function toolInspectionSections(block: Block): InspectionSection[] {
+  const preview = boundedToolPreview(block.tool?.preview);
+  const inspection = preview?.inspection;
+  const items: InspectionSection[] = [];
+  // Same reconciliation as Command details and Copy (commandInspection.ts).
+  const { error, output: outputs } = toolResultTexts(block);
+  if (error) items.push({ title: "Error", text: error, error: true });
+  if (inspection) {
+    items.push({
+      title:
+        inspection.kind === "diff"
+          ? "Changes"
+          : inspection.kind === "content"
+            ? "Written content"
+            : "Command",
+      text: inspection.text,
+      diff: inspection.kind === "diff",
+      truncated: inspection.truncated,
+    });
+  } else if (preview?.lines?.length || preview?.contentOnly) {
+    items.push({
+      title: "Saved preview",
+      text: (preview.lines ?? [])
+        .map((line) => `${line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}${line.text}`)
+        .join("\n"),
+      diff: !preview.contentOnly,
+      legacy: true,
+    });
+  }
+  // Shell titles may be human-readable summaries; the preview retains the actual command.
+  if (!inspection && preview?.kind === "shell" && preview.title) {
+    items.unshift({ title: "Command", text: preview.title });
+  }
+  if (outputs.length) {
+    items.push({
+      title: "Output",
+      text: outputs.join("\n\n"),
+      truncated: block.tool?.outputTruncated,
+    });
+  }
+  return items;
+}
+
+const comparable = (text: string) => stripAnsi(text).replace(/\s+/g, " ").trim();
+// Some providers record the call as `Bash: <command>`; the tool name adds nothing to the command.
+const withoutToolName = (text: string) => text.replace(/^[\w.@/-]+:\s+/, "");
+
+/**
+ * Whether an approval's inspector shows more than the request it already prints: a diff, written
+ * content, output, an error or structured arguments. A panel that only repeats the command is dropped.
+ */
+export function approvalHasInspection(block: Block, detail: string): boolean {
+  if (!hasToolInspection(block)) return false;
+  const request = comparable(detail);
+  return toolInspectionSections(block).some((section) => {
+    if (section.diff || section.error || section.legacy || section.truncated) return true;
+    const text = comparable(section.text);
+    return text !== request && withoutToolName(text) !== request;
+  });
+}
+
 /** Mounted only after an explicit disclosure; never reads today's file as historical output. */
 export function ToolInspectionPanel({ block }: { block: Block }) {
   const t = useT();
-  const sections = useMemo(() => {
-    const preview = boundedToolPreview(block.tool?.preview);
-    const inspection = preview?.inspection;
-    const items: {
-      title: string;
-      text: string;
-      diff?: boolean;
-      truncated?: boolean;
-      legacy?: boolean;
-      error?: boolean;
-    }[] = [];
-    // Same reconciliation as Command details and Copy (commandInspection.ts).
-    const { error, output: outputs } = toolResultTexts(block);
-    if (error) items.push({ title: "Error", text: error, error: true });
-    if (inspection) {
-      items.push({
-        title:
-          inspection.kind === "diff"
-            ? "Changes"
-            : inspection.kind === "content"
-              ? "Written content"
-              : "Command",
-        text: inspection.text,
-        diff: inspection.kind === "diff",
-        truncated: inspection.truncated,
-      });
-    } else if (preview?.lines?.length || preview?.contentOnly) {
-      items.push({
-        title: "Saved preview",
-        text: (preview.lines ?? [])
-          .map(
-            (line) => `${line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}${line.text}`,
-          )
-          .join("\n"),
-        diff: !preview.contentOnly,
-        legacy: true,
-      });
-    }
-    // Shell titles may be human-readable summaries; the preview retains the actual command.
-    if (!inspection && preview?.kind === "shell" && preview.title) {
-      items.unshift({ title: "Command", text: preview.title });
-    }
-    if (outputs.length) {
-      items.push({
-        title: "Output",
-        text: outputs.join("\n\n"),
-        truncated: block.tool?.outputTruncated,
-      });
-    }
-    return items;
-  }, [block]);
+  const sections = useMemo(() => toolInspectionSections(block), [block]);
   // Copy states its own scope: shortened or summary-only text carries a notice so
   // the clipboard never presents an incomplete body as the full result.
   const copyNotices = [
@@ -156,7 +170,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
     resetKeys: [block.id, copyText],
     successMs: 2000,
   });
-  const wrap = useToolOutputWrap();
+  const [wrap, setWrap] = useOutputWrap();
   // The conversation always shows unified; the reader's split choice lasts only while this inspector is open.
   const [diffChoice, setDiffChoice] = useState<DiffLayoutChoice>("unified");
   const surface = useRef<HTMLElement>(null);
@@ -224,7 +238,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
             icon: <WrapText />,
             pressed: wrap,
             selectionIndicator: "dot" as const,
-            onSelect: () => toolOutputWrap.save(!wrap),
+            onSelect: () => setWrap(!wrap),
           },
         ]
       : []),

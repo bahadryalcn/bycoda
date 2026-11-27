@@ -11,6 +11,7 @@ import {
   sanitizeThemeGroup,
   resolveThemeTypography,
   type ThemeBackground,
+  type ThemeChat,
   type ThemeImage,
   type ThemeInterface,
   type ThemeMotion,
@@ -52,6 +53,8 @@ export type ThemeSuggestion = {
   typography?: ThemeTypography;
   /** Interface scale, contrast, diff colors, row display, scrollbars, hover tint, working rows. */
   interface?: ThemeInterface;
+  /** Transcript layout, width, streaming animation, reading surface, ink, cards and actions. */
+  chat?: ThemeChat;
   /** Pane opacity and blur, glass, live scene and the new-thread effect. */
   background?: ThemeBackground;
   /** How a background image is shown: scope, opacity per view and blur. */
@@ -300,10 +303,19 @@ export function suggestionSwatches(suggestion: ThemeSuggestion): [string, string
 }
 
 /** The Appearance tabs a suggestion changes, in tab order; tint and accent always change Theme. */
-export type ThemeSuggestionArea = "theme" | "typography" | "interface" | "background" | "motion";
+export type ThemeSuggestionArea =
+  | "theme"
+  | "background"
+  | "interface"
+  | "chat"
+  | "typography"
+  | "motion";
 
 export function suggestionAreas(suggestion: ThemeSuggestion): ThemeSuggestionArea[] {
   const areas: ThemeSuggestionArea[] = ["theme"];
+  if (suggestion.gradient || suggestion.background || suggestion.image) areas.push("background");
+  if (suggestion.density || suggestion.interface) areas.push("interface");
+  if (suggestion.chat) areas.push("chat");
   if (
     suggestion.interfaceFont ||
     suggestion.codeFont ||
@@ -311,8 +323,6 @@ export function suggestionAreas(suggestion: ThemeSuggestion): ThemeSuggestionAre
     suggestion.typography
   )
     areas.push("typography");
-  if (suggestion.density || suggestion.interface) areas.push("interface");
-  if (suggestion.gradient || suggestion.background || suggestion.image) areas.push("background");
   if (suggestion.motion) areas.push("motion");
   return areas;
 }

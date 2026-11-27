@@ -2,7 +2,7 @@ import { updateSessionListDisplay } from "../../../../sessions/public/sessionLis
 import type { AppearanceSnapshot } from "../../../model/appearanceSnapshot";
 import { captureAppearanceSnapshot } from "../../../model/appearanceSnapshot";
 import { ensureCurrentLibraryImage, listBackgroundLibrary } from "../../../model/backgroundLibrary";
-import { applyThemeDecorativeMotion } from "../../../model/decorativeMotion";
+import { saveDecorativeMotionEnabled } from "../../../model/decorativeMotion";
 import { saveInteractionTint } from "../../../model/interactionTint";
 import { saveLiveBackground, saveLiveBackgroundIntensity } from "../../../model/liveBackground";
 import {
@@ -78,7 +78,7 @@ export function applyAppearanceSnapshot(appearance: AppearanceSettings, look: Ap
     saveCrewTheme(motion.crewTheme);
     saveCrewSceneEnabled(motion.showCrew);
     saveCrewGrowthEnabled(motion.crewGrowth);
-    applyThemeDecorativeMotion(motion.decorative);
+    saveDecorativeMotionEnabled(motion.decorative);
     saveTabAnimationsEnabled(motion.tabAnimations);
   }
 }

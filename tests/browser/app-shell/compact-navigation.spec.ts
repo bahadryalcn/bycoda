@@ -1472,7 +1472,7 @@ for (const platform of ["MacIntel", "Win32"]) {
     for (const theme of ["dark", "light"]) {
       for (const width of [1280, 800]) {
         await page.setViewportSize({ width, height: 800 });
-        const toggleLeft: number[] = [];
+        const brandLeft: number[] = [];
         for (const expanded of [true, false]) {
           await open(expanded, theme);
           // The traffic lights get their space on macOS; elsewhere the bar starts at the edge.
@@ -1489,7 +1489,7 @@ for (const platform of ["MacIntel", "Win32"]) {
           else await expect(searchLabel).toBeHidden();
 
           // One order, nothing overlapping, and the tabs start after the last control.
-          const order = [toggle, brand, back, forward, search];
+          const order = [brand, toggle, back, forward, search];
           let previous = mac ? 78 : 0;
           for (const control of order) {
             const box = await edges(control);
@@ -1509,7 +1509,7 @@ for (const platform of ["MacIntel", "Win32"]) {
               page.locator(`aside button[aria-label="${name}"], nav button[aria-label="${name}"]`),
             ).toHaveCount(0);
           }
-          toggleLeft.push((await edges(toggle)).left);
+          brandLeft.push((await edges(brand)).left);
           await page.screenshot({
             path: testInfo.outputPath(
               `title-bar-${mac ? "macos" : "windows"}-${expanded ? "expanded" : "collapsed"}-${theme}-${width}.png`,
@@ -1517,8 +1517,7 @@ for (const platform of ["MacIntel", "Win32"]) {
             clip: { x: 0, y: 0, width, height: 220 },
           });
         }
-        // Collapsing the rail must not move the toggle from under the pointer.
-        expect(toggleLeft[1]).toBe(toggleLeft[0]);
+        expect(brandLeft[1]).toBe(brandLeft[0]);
       }
     }
   });

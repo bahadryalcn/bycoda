@@ -4,6 +4,7 @@ import {
   readAppearanceValue,
   writeAppearanceValue,
 } from "./appearancePersistence";
+import { APPEARANCE_RANGES } from "./themeRanges";
 
 /**
  * How a project row shows a working agent: which color the tint and pulse use, whether the pulse
@@ -26,8 +27,8 @@ export const WORKING_INDICATOR_DEFAULT: WorkingIndicator = {
   strength: 100,
 };
 export const WORKING_INDICATOR_KEY = "bycoda.workingIndicator.v1";
-export const WORKING_INDICATOR_STRENGTH_MIN = 50;
-export const WORKING_INDICATOR_STRENGTH_MAX = 250;
+export const WORKING_INDICATOR_STRENGTH_MIN = APPEARANCE_RANGES.workingStrength.min;
+export const WORKING_INDICATOR_STRENGTH_MAX = APPEARANCE_RANGES.workingStrength.max;
 const listeners = createStore();
 let watching = false;
 

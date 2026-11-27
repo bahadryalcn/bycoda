@@ -124,6 +124,9 @@ describe("theme suggestion Host command", () => {
       '"background": {"sidebarOpacity": 70-100',
       '"liveScene": "none"|"threads"',
       '"image": {"scope": "empty"|"all"',
+      '"chat": {"layout": "full"|"chat"',
+      '"streaming": "paced"|"adaptive"',
+      '"workingStrength": 50-250',
       '"motion": {"crewTheme": "classic"|"star-wars"|"lotr"|"matrix"',
     ])
       expect(prompt).toContain(field);

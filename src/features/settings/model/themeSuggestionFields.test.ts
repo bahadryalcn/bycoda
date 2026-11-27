@@ -5,7 +5,7 @@ import {
   parseSessionListDisplay,
 } from "../../sessions/model/sessionListDisplay";
 import { normalizeAppearancePreferences } from "./appearancePreferences";
-import { DIFF_PALETTE_DEFAULT } from "./appearance";
+import { DIFF_PALETTE_DEFAULT, loadTranscriptLayout, saveTranscriptLayout } from "./appearance";
 import { normalizeInteractionTint } from "./interactionTint";
 import { normalizeScrollbarStyle } from "./scrollbarStyle";
 import { normalizeWorkingIndicator } from "./workingIndicator";
@@ -158,10 +158,11 @@ describe("normalizeThemeSuggestion groups", () => {
           codeTheme: "dracula",
           density: "touch",
           image: { blur: 4 },
+          chat: { surface: "column" },
           motion: { decorative: false },
         })!,
       ),
-    ).toEqual(["theme", "typography", "interface", "background", "motion"]);
+    ).toEqual(["theme", "background", "interface", "chat", "typography", "motion"]);
   });
 });
 
@@ -227,5 +228,16 @@ describe("choice lists match the settings models", () => {
     for (const density of APPEARANCE_CHOICES.rowDensity)
       expect(parseSessionListDisplay(JSON.stringify({ density })).density).toBe(density);
     expect(APPEARANCE_CHOICES.rowDensity).toContain(DEFAULT_SESSION_LIST_DISPLAY.density);
+  });
+
+  it("chat width, message color and transcript layout", () => {
+    for (const chatWidth of APPEARANCE_CHOICES.chatWidth)
+      expect(normalizeAppearancePreferences({ chatWidth }).chatWidth).toBe(chatWidth);
+    for (const messageColor of APPEARANCE_CHOICES.messageColor)
+      expect(normalizeAppearancePreferences({ messageColor }).messageColor).toBe(messageColor);
+    for (const layout of APPEARANCE_CHOICES.transcriptLayout) {
+      saveTranscriptLayout(layout);
+      expect(loadTranscriptLayout()).toBe(layout);
+    }
   });
 });

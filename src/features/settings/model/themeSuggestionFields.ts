@@ -81,8 +81,29 @@ export const THEME_FIELD_SPECS = {
     scrollbarSize: choice(CHOICES.scrollbarSize),
     scrollbarVisibility: choice(CHOICES.scrollbarVisibility),
     tintSource: choice(CHOICES.tintSource),
+    interactionStrength: number(RANGES.interactionStrength.min, RANGES.interactionStrength.max),
+    scrollbarStrength: number(RANGES.scrollbarStrength.min, RANGES.scrollbarStrength.max),
     workingColor: choice(CHOICES.workingColor),
     workingStyle: choice(CHOICES.workingStyle),
+    workingStrength: number(RANGES.workingStrength.min, RANGES.workingStrength.max),
+  },
+  chat: {
+    layout: choice(CHOICES.transcriptLayout),
+    width: choice(CHOICES.chatWidth),
+    streaming: choice(CHOICES.streamingTextMode),
+    surface: choice(CHOICES.transcriptSurface),
+    surfaceOpacity: number(
+      RANGES.transcriptSurfaceOpacity.min,
+      RANGES.transcriptSurfaceOpacity.max,
+    ),
+    surfaceBlur: number(RANGES.transcriptSurfaceBlur.min, RANGES.transcriptSurfaceBlur.max),
+    messageColor: choice(CHOICES.messageColor),
+    userMessageOpacity: number(RANGES.userMessageOpacity.min, RANGES.userMessageOpacity.max),
+    bodyInk: number(RANGES.transcriptBodyInk.min, RANGES.transcriptBodyInk.max),
+    chromeInk: number(RANGES.transcriptChromeInk.min, RANGES.transcriptChromeInk.max),
+    cards: choice(CHOICES.transcriptCards),
+    actions: choice(CHOICES.transcriptActions),
+    fileRefs: choice(CHOICES.fileRefStyle),
   },
   background: {
     sidebarOpacity: percent(RANGES.sidebarOpacity, THEME_SUGGESTION_GUARDS.paneOpacityMin),
@@ -115,6 +136,7 @@ export type ThemeTypography = GroupValues<typeof THEME_FIELD_SPECS.typography>;
 export type ThemeInterface = GroupValues<typeof THEME_FIELD_SPECS.interface>;
 export type ThemeBackground = GroupValues<typeof THEME_FIELD_SPECS.background>;
 export type ThemeImage = GroupValues<typeof THEME_FIELD_SPECS.image>;
+export type ThemeChat = GroupValues<typeof THEME_FIELD_SPECS.chat>;
 export type ThemeMotion = GroupValues<typeof THEME_FIELD_SPECS.motion>;
 
 /** Generated code and terminal text share one scale; manual preferences keep their full range. */

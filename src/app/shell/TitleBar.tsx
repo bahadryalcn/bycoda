@@ -1218,14 +1218,12 @@ function TitleBarComponent({
       data-tauri-drag-region="deep"
     >
       {spansWindow ? (
-        // One fixed order on every platform and in every rail state. The toggle comes before
-        // the brand because the wordmark shows only while the rail is expanded: placed after
-        // it, the toggle would move under the pointer on every click.
         <div
           data-title-lead
           className={`flex shrink-0 items-center gap-1 pe-1 ${IS_MAC ? "" : "ps-1.5"}`}
         >
           <WindowChromeInset />
+          <TitleBarBrand wordmark={projectRailOpen} />
           <IconButton
             label={t("Toggle sidebar")}
             command="App: Toggle Sidebar"
@@ -1234,7 +1232,6 @@ function TitleBarComponent({
           >
             <PanelLeft className="icon-sm" strokeWidth={1.75} />
           </IconButton>
-          <TitleBarBrand wordmark={projectRailOpen} />
           <TabVisitNav
             canGoBack={canGoBack}
             canGoForward={canGoForward}

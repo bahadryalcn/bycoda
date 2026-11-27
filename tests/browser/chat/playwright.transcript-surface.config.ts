@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     command:
-      "pnpm exec vite build --config tests/browser/chat/vite.transcript-scenario.config.ts && pnpm exec vite preview --config tests/browser/chat/vite.transcript-scenario.config.ts",
+      "pnpm exec vp build --config tests/browser/chat/vite.transcript-scenario.config.ts && pnpm exec vp preview --config tests/browser/chat/vite.transcript-scenario.config.ts",
     url: "http://127.0.0.1:15710/tests/browser/chat/transcript-scenario.html",
     reuseExistingServer: false,
     timeout: 300000,

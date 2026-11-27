@@ -66,6 +66,15 @@ function button(label: string) {
   if (!found) throw new Error(`Missing button ${label}: ${host.textContent}`);
   return found;
 }
+/** The card's own Generate image action; choosing a look never draws. */
+function draw(look: string) {
+  const card = host.querySelector(`[role="group"][aria-label="${look}"]`);
+  const found = [...(card?.querySelectorAll("button") ?? [])].find((item) =>
+    item.textContent?.includes("Generate image"),
+  );
+  if (!found) throw new Error(`Missing Generate image for ${look}: ${host.textContent}`);
+  found.click();
+}
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
@@ -116,14 +125,24 @@ afterEach(() => {
   host.remove();
   vi.unstubAllGlobals();
 });
+it("choosing a look applies it without drawing an image", async () => {
+  await act(async () => {
+    button("Apply Ocean").click();
+    button("Apply Forest").click();
+  });
+  expect(mocks.apply).toHaveBeenCalledTimes(2);
+  expect(mocks.image).not.toHaveBeenCalled();
+  expect(clearBackground).not.toHaveBeenCalled();
+});
 it("draws once and waits for explicit use after preview", async () => {
   const pending = deferred<string>();
   mocks.image.mockReturnValue(pending.promise);
   await act(async () => {
     button("Apply Ocean").click();
-    button("Apply Ocean").click();
+    draw("Ocean");
+    draw("Ocean");
   });
-  expect(mocks.apply).toHaveBeenCalledTimes(2);
+  expect(mocks.apply).toHaveBeenCalledOnce();
   expect(mocks.image).toHaveBeenCalledOnce();
   expect(clearBackground).not.toHaveBeenCalled();
   await act(async () => {
@@ -149,6 +168,7 @@ it("keeps the first preview and installed background while drawing a replacement
   await render();
   mocks.image.mockResolvedValueOnce("/first.png").mockReturnValueOnce(replacement.promise);
   await act(async () => button("Apply Ocean").click());
+  await act(async () => draw("Ocean"));
   await act(async () => button("Change image").click());
   await act(async () => button("Preview Ocean").click());
   expect(host.querySelector("[data-image-preview]")?.getAttribute("data-image-preview")).toBe(
@@ -167,15 +187,15 @@ it("keeps the first preview and installed background while drawing a replacement
 });
 it("does not apply a drawing after the owner moved to another look", async () => {
   const pending = deferred<string>();
-  mocks.image.mockReturnValueOnce(pending.promise).mockReturnValueOnce(new Promise(() => {}));
-  await act(async () => button("Apply Ocean").click());
+  mocks.image.mockReturnValueOnce(pending.promise);
+  await act(async () => draw("Ocean"));
   await act(async () => {
     button("Apply Forest").click();
     pending.resolve("/source.png");
     await pending.promise;
   });
   expect(chooseBackground).not.toHaveBeenCalled();
-  expect(mocks.image).toHaveBeenCalledTimes(2);
+  expect(mocks.image).toHaveBeenCalledOnce();
 });
 it("removes the previous look's image when the new look has none", async () => {
   await act(async () => writeGeneratorValue("withImage", false, false));
@@ -198,11 +218,11 @@ it("tracks an earlier drawing after new suggestions arrive and cancels it indepe
   mocks.image.mockReturnValueOnce(ocean.promise).mockReturnValueOnce(forest.promise);
   mocks.themes.mockResolvedValue([{ ...suggestions[0], name: "Dawn" }]);
   mocks.cancel.mockResolvedValue(true);
-  await act(async () => button("Apply Ocean").click());
+  await act(async () => draw("Ocean"));
   await act(async () => button("Generate themes").click());
   expect(button("Apply Dawn")).toBeTruthy();
   expect(button("Cancel Ocean")).toBeTruthy();
-  await act(async () => button("Apply Dawn").click());
+  await act(async () => draw("Dawn"));
   await act(async () => button("Cancel Ocean").click());
   expect(host.textContent).toContain("Cancelled");
   expect(button("Cancel Dawn")).toBeTruthy();
@@ -217,7 +237,7 @@ it("keeps a drawing visible when cancellation is unconfirmed", async () => {
   const pending = deferred<string>();
   mocks.image.mockReturnValueOnce(pending.promise);
   mocks.cancel.mockResolvedValueOnce(false);
-  await act(async () => button("Apply Ocean").click());
+  await act(async () => draw("Ocean"));
   await act(async () => button("Cancel Ocean").click());
   expect(host.textContent).toContain("Cancellation could not be confirmed.");
   expect(button("Cancel Ocean")).toBeTruthy();
@@ -230,7 +250,7 @@ it("previews a finished earlier drawing without applying it to the new theme", a
   const pending = deferred<string>();
   mocks.image.mockReturnValueOnce(pending.promise);
   mocks.themes.mockResolvedValue([{ ...suggestions[0], name: "Dawn" }]);
-  await act(async () => button("Apply Ocean").click());
+  await act(async () => draw("Ocean"));
   await act(async () => button("Generate themes").click());
   await act(async () => pending.resolve("/ocean.png"));
   expect(mocks.add).toHaveBeenCalledExactlyOnceWith("/ocean.png", expect.anything());
@@ -242,7 +262,7 @@ it("previews a finished earlier drawing without applying it to the new theme", a
 it("keeps earlier drawings visible after closing and reopening the generator", async () => {
   const pending = deferred<string>();
   mocks.image.mockReturnValueOnce(pending.promise);
-  await act(async () => button("Apply Ocean").click());
+  await act(async () => draw("Ocean"));
   await act(async () => root.render(null));
   await render();
   expect(button("Cancel Ocean")).toBeTruthy();
@@ -252,7 +272,7 @@ it("keeps earlier drawings visible after closing and reopening the generator", a
 it("shows the chosen look's image failure and permits retry", async () => {
   const pending = deferred<string>();
   mocks.image.mockReturnValueOnce(pending.promise).mockReturnValueOnce(new Promise(() => {}));
-  await act(async () => button("Apply Ocean").click());
+  await act(async () => draw("Ocean"));
   await act(async () => {
     pending.reject(new Error("provider unavailable"));
     try {

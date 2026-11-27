@@ -22,7 +22,7 @@ import {
   type FileRefKind,
   type FileRefTone,
 } from "../../../shared/lib/fileReferenceKind";
-import { APPEARANCE_RANGES } from "./themeRanges";
+import { APPEARANCE_CHOICES, APPEARANCE_RANGES } from "./themeRanges";
 
 export const APPEARANCE_PREFERENCES_EVENT = "bycoda.appearancePreferencesChanged";
 const KEY = "bycoda.appearancePreferences.v1";
@@ -40,15 +40,15 @@ export const CANVAS_BACKGROUNDS = ["pure", "tinted"] as const;
 export type CanvasBackground = (typeof CANVAS_BACKGROUNDS)[number];
 export const CANVAS_BACKGROUND_DEFAULT: CanvasBackground = "pure";
 /** Reading surface behind assistant replies: a column of the reply, the whole column, or none. */
-export const TRANSCRIPT_SURFACES = ["reply", "column", "off"] as const;
+export const TRANSCRIPT_SURFACES = APPEARANCE_CHOICES.transcriptSurface;
 export type TranscriptSurface = (typeof TRANSCRIPT_SURFACES)[number];
-export const TRANSCRIPT_CARDS = ["inset", "outline", "solid"] as const;
+export const TRANSCRIPT_CARDS = APPEARANCE_CHOICES.transcriptCards;
 export type TranscriptCards = (typeof TRANSCRIPT_CARDS)[number];
 /** "hover" reveals the message actions on hover or focus; the latest turn always shows them. */
-export const TRANSCRIPT_ACTIONS = ["always", "hover"] as const;
+export const TRANSCRIPT_ACTIONS = APPEARANCE_CHOICES.transcriptActions;
 export type TranscriptActions = (typeof TRANSCRIPT_ACTIONS)[number];
 /** "colored" tints file references by kind; "plain" keeps their icon on a neutral ground. */
-export const FILE_REF_STYLES = ["colored", "plain"] as const;
+export const FILE_REF_STYLES = APPEARANCE_CHOICES.fileRefStyle;
 export type FileRefStyle = (typeof FILE_REF_STYLES)[number];
 /** Stored field of each kind's tone: `fileToneCode`, `fileToneDocs`, ... */
 export type FileToneField = `fileTone${Capitalize<FileRefKind>}`;
@@ -156,6 +156,9 @@ function bounded(value: unknown, fallback: number, min: number, max: number) {
     ? Math.min(max, Math.max(min, Math.round(value)))
     : fallback;
 }
+function inRange(range: keyof typeof APPEARANCE_RANGES, value: unknown, fallback: number) {
+  return bounded(value, fallback, APPEARANCE_RANGES[range].min, APPEARANCE_RANGES[range].max);
+}
 function oneOf<T extends string>(options: readonly T[], value: unknown, fallback: T): T {
   return options.find((option) => option === value) ?? fallback;
 }
@@ -249,22 +252,20 @@ export function normalizeAppearancePreferences(
         : "compact",
     chatWidth:
       value.chatWidth === "wide" || value.chatWidth === "full" ? value.chatWidth : "comfortable",
-    userMessageOpacity: bounded(
+    userMessageOpacity: inRange(
+      "userMessageOpacity",
       value.userMessageOpacity,
       APPEARANCE_DEFAULTS.userMessageOpacity,
-      0,
-      100,
     ),
     transcriptSurface: oneOf(TRANSCRIPT_SURFACES, value.transcriptSurface, "reply"),
-    transcriptSurfaceOpacity: bounded(
+    transcriptSurfaceOpacity: inRange(
+      "transcriptSurfaceOpacity",
       value.transcriptSurfaceOpacity,
       APPEARANCE_DEFAULTS.transcriptSurfaceOpacity,
-      0,
-      100,
     ),
-    transcriptSurfaceBlur: bounded(value.transcriptSurfaceBlur, 0, 0, 24),
-    transcriptBodyInk: bounded(value.transcriptBodyInk, 92, 80, 100),
-    transcriptChromeInk: bounded(value.transcriptChromeInk, 61, 50, 100),
+    transcriptSurfaceBlur: inRange("transcriptSurfaceBlur", value.transcriptSurfaceBlur, 0),
+    transcriptBodyInk: inRange("transcriptBodyInk", value.transcriptBodyInk, 92),
+    transcriptChromeInk: inRange("transcriptChromeInk", value.transcriptChromeInk, 61),
     transcriptCards: oneOf(TRANSCRIPT_CARDS, value.transcriptCards, "inset"),
     transcriptActions: oneOf(TRANSCRIPT_ACTIONS, value.transcriptActions, "always"),
     transcriptFileRefs: oneOf(FILE_REF_STYLES, value.transcriptFileRefs, "colored"),

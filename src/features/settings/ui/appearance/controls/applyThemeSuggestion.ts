@@ -1,7 +1,8 @@
 import { updateSessionListDisplay } from "../../../../sessions/public/sessionListDisplay";
 import { backgroundGradientChange } from "../../../model/backgroundGradient";
 import type { AppearancePreferences } from "../../../model/appearancePreferences";
-import { applyThemeDecorativeMotion } from "../../../model/decorativeMotion";
+import { saveTranscriptLayout } from "../../../model/appearance";
+import { saveDecorativeMotionEnabled } from "../../../model/decorativeMotion";
 import { loadInteractionTint, saveInteractionTint } from "../../../model/interactionTint";
 import { saveLiveBackground, saveLiveBackgroundIntensity } from "../../../model/liveBackground";
 import { loadScrollbarStyle, saveScrollbarStyle } from "../../../model/scrollbarStyle";
@@ -9,6 +10,7 @@ import {
   saveCrewGrowthEnabled,
   saveCrewSceneEnabled,
   saveCrewTheme,
+  saveStreamingTextMode,
   saveTabAnimationsEnabled,
 } from "../../../model/settings";
 import { resolveImageTuning, resolveThemeTypography } from "../../../model/themeSuggestionFields";
@@ -47,6 +49,18 @@ function preferenceChanges(
   if (ui?.contrast !== undefined) changes.contrast = ui.contrast;
   if (ui?.surfaceContrast !== undefined) changes.surfaceContrast = ui.surfaceContrast;
   if (ui?.accentReadability) changes.accentReadability = ui.accentReadability;
+  const chat = suggestion.chat;
+  if (chat?.width) changes.chatWidth = chat.width;
+  if (chat?.surface) changes.transcriptSurface = chat.surface;
+  if (chat?.surfaceOpacity !== undefined) changes.transcriptSurfaceOpacity = chat.surfaceOpacity;
+  if (chat?.surfaceBlur !== undefined) changes.transcriptSurfaceBlur = chat.surfaceBlur;
+  if (chat?.messageColor) changes.messageColor = chat.messageColor;
+  if (chat?.userMessageOpacity !== undefined) changes.userMessageOpacity = chat.userMessageOpacity;
+  if (chat?.bodyInk !== undefined) changes.transcriptBodyInk = chat.bodyInk;
+  if (chat?.chromeInk !== undefined) changes.transcriptChromeInk = chat.chromeInk;
+  if (chat?.cards) changes.transcriptCards = chat.cards;
+  if (chat?.actions) changes.transcriptActions = chat.actions;
+  if (chat?.fileRefs) changes.transcriptFileRefs = chat.fileRefs;
   return changes;
 }
 
@@ -66,13 +80,19 @@ function applyInterface(
     ...(ui.scrollbarColor ? { color: ui.scrollbarColor } : {}),
     ...(ui.scrollbarSize ? { size: ui.scrollbarSize } : {}),
     ...(ui.scrollbarVisibility ? { visibility: ui.scrollbarVisibility } : {}),
+    ...(ui.scrollbarStrength !== undefined ? { strength: ui.scrollbarStrength } : {}),
   };
   if (Object.keys(scrollbar).length > 0)
     saveScrollbarStyle({ ...loadScrollbarStyle(), ...scrollbar });
-  if (ui.tintSource) saveInteractionTint({ ...loadInteractionTint(), source: ui.tintSource });
+  const tint = {
+    ...(ui.tintSource ? { source: ui.tintSource } : {}),
+    ...(ui.interactionStrength !== undefined ? { strength: ui.interactionStrength } : {}),
+  };
+  if (Object.keys(tint).length > 0) saveInteractionTint({ ...loadInteractionTint(), ...tint });
   const working = {
     ...(ui.workingColor ? { color: ui.workingColor } : {}),
     ...(ui.workingStyle ? { style: ui.workingStyle } : {}),
+    ...(ui.workingStrength !== undefined ? { strength: ui.workingStrength } : {}),
   };
   if (Object.keys(working).length > 0)
     saveWorkingIndicator({ ...loadWorkingIndicator(), ...working });
@@ -149,12 +169,14 @@ export function applyThemeSuggestion(
     );
   }
   if (suggestion.interface) applyInterface(appearance, suggestion.interface);
+  if (suggestion.chat?.layout) saveTranscriptLayout(suggestion.chat.layout);
+  if (suggestion.chat?.streaming) saveStreamingTextMode(suggestion.chat.streaming);
   if (suggestion.background) applyBackground(appearance, suggestion.background);
   if (suggestion.image && !deferImageTuning) applyImageTuning(appearance, suggestion.image);
   const motion = suggestion.motion;
   if (motion?.crewTheme) saveCrewTheme(motion.crewTheme);
   if (motion?.showCrew !== undefined) saveCrewSceneEnabled(motion.showCrew);
   if (motion?.crewGrowth !== undefined) saveCrewGrowthEnabled(motion.crewGrowth);
-  if (motion?.decorative !== undefined) applyThemeDecorativeMotion(motion.decorative);
+  if (motion?.decorative !== undefined) saveDecorativeMotionEnabled(motion.decorative);
   if (motion?.tabAnimations !== undefined) saveTabAnimationsEnabled(motion.tabAnimations);
 }

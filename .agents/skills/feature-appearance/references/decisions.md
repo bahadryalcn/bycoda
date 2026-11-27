@@ -57,3 +57,11 @@ Raised surfaces are reserved for floating surfaces, the composer writing area, c
 This supersedes the earlier default that standard panel and card surfaces use the shared raised surface role everywhere in the desktop app. The raised role is kept only for the cases above. Tinted canvas and custom surface colors keep the same hierarchy one step above their own ground.
 
 The Pure background tone (default) and Tinted tone are the origin of this rule; the 2026-10-31 Pure canvas quote above is their provenance.
+
+## Generated themes cover every tab, images only on request
+
+Owner quote, 2026-11-28 (translated):
+
+> as soon as I pick any option it generates an image, I shouldn't need to press Generate image under it... the AI was supposed to edit every Appearance setting but it doesn't; it always leaves things without animation, it doesn't even know about the Chat tab. Let it know and edit everything.
+
+Choosing a generated or random look applies it but never draws; only the card's Generate image draws. Generated themes carry a group per Appearance tab, including Chat, and a theme or saved look applies decorative motion as given, so the high refresh default no longer blocks a look from turning motion on. Behavior and accessibility preferences (word wrap, wheel zoom, collapsed rail, follow system motion) and per-kind file tones stay outside generated themes.

@@ -6,6 +6,7 @@ import {
   readAppearanceValue,
   writeAppearanceValue,
 } from "./appearancePersistence";
+import { APPEARANCE_RANGES } from "./themeRanges";
 
 export type InteractionTintSource = "neutral" | "theme" | "accent" | "custom";
 export type InteractionTint = {
@@ -50,7 +51,10 @@ export function normalizeInteractionTint(value: unknown): InteractionTint {
       : null;
   const strength =
     typeof input.strength === "number" && Number.isFinite(input.strength)
-      ? Math.max(50, Math.min(200, Math.round(input.strength)))
+      ? Math.max(
+          APPEARANCE_RANGES.interactionStrength.min,
+          Math.min(APPEARANCE_RANGES.interactionStrength.max, Math.round(input.strength)),
+        )
       : 100;
   return { source, customColor, strength };
 }

@@ -33,7 +33,11 @@ import {
 import { FilePreview } from "../../files/public/FilePreview";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
-import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
+import {
+  approvalHasInspection,
+  hasToolInspection,
+  ToolInspectionPanel,
+} from "./ToolInspectionPanel";
 import { WebSearchRow } from "./WebSearchRow";
 import { isWebSearchBlock } from "../model/searchSources";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -1526,7 +1530,7 @@ function ConnectedApprovalControls({
           ) : undefined
         }
         details={
-          hasToolInspection(block)
+          approvalHasInspection(block, detail)
             ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
             : undefined
         }

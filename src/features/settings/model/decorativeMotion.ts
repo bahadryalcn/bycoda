@@ -49,13 +49,6 @@ export function defaultDecorativeMotion(): boolean {
     ? false
     : DECORATIVE_MOTION_DEFAULT;
 }
-/** A theme or saved look may switch decorative motion off anywhere, but switches it on
- * only where the display default already allows it: a high refresh display keeps the
- * cheaper default until the user chooses motion in Appearance. */
-export function applyThemeDecorativeMotion(enabled: boolean): void {
-  if (enabled && !defaultDecorativeMotion()) return;
-  saveDecorativeMotionEnabled(enabled);
-}
 /** Records the display refresh rate (frames per second); drives the default above. */
 export function noteDisplayRefreshRate(hz: number | null): void {
   if (hz !== null && (!Number.isFinite(hz) || hz <= 0)) return;

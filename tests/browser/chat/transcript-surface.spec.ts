@@ -38,6 +38,23 @@ const interleavedTurn = (page: Page) =>
 const interleavedReply = (page: Page) =>
   interleavedTurn(page).locator("[data-transcript-reply]").first();
 
+for (const theme of ["light", "dark"] as const) {
+  test(`clicking the transcript and pressing Escape leaves no visible outline (${theme})`, async ({
+    page,
+  }) => {
+    await open(page, { theme, scene: "interleaved", streaming: "1" });
+    const transcript = page.locator(".agent-transcript");
+    await transcript.click({ position: { x: 8, y: 20 } });
+    await page.keyboard.press("Escape");
+    await expect(transcript).toBeFocused();
+    const outline = await transcript.evaluate((element, transparent) => {
+      const { outlineColor, outlineStyle, outlineWidth } = getComputedStyle(element);
+      return outlineStyle !== "none" && outlineColor !== transparent && outlineWidth !== "0px";
+    }, TRANSPARENT);
+    expect(outline).toBe(false);
+  });
+}
+
 async function resolveColor(page: Page, css: string): Promise<Rgba> {
   return page.evaluate((value) => {
     const canvas = document.createElement("canvas");
