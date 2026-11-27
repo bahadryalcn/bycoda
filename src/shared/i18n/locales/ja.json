@@ -32,7 +32,6 @@
   "Account recovery": "アカウントからの復旧",
   "Manage this computer from my account": "アカウントからこのコンピューターを管理",
   "Your account stores device names and permissions. Changes apply when bycoda is open and signed in on this computer.": "アカウントにデバイス名と権限が保存されます。このコンピューターで bycoda を開き、サインインしているときに変更が適用されます。",
-  "Set up an SSH connection to this project's machine to open a terminal.": "ターミナルを開くには、このプロジェクトのマシンへの SSH 接続を設定してください。",
   "Workflow status": "ワークフローのステータス",
   "Status category": "ステータスカテゴリ",
   "No projects selected": "プロジェクトが選択されていません",

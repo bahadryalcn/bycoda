@@ -71,11 +71,8 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
     dock;
   const remoteProject = parseRemotePath(projectCwd);
   const { machines } = useRemoteMachines(!!remoteProject);
-  const remoteTerminalAvailable =
-    !!remoteProject &&
-    machines.some(
-      (machine) => machine.environmentId === remoteProject.environmentId && !!machine.ssh,
-    );
+  // Saved SSH opens a native shell; otherwise the project's Host runs one itself.
+  const remoteTerminalAvailable = !!remoteProject;
 
   const focusProjectTerminal = useCallback(() => {
     recordGuideActivity("terminal-opened");
@@ -92,21 +89,23 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
       const machine =
         remote &&
         machines.find((entry) => entry.environmentId === remote.environmentId && !!entry.ssh);
+      const sameMachine = !!remoteWorkdir && remoteWorkdir.environmentId === remote?.environmentId;
       const ssh =
-        machine && remoteWorkdir?.environmentId === remote?.environmentId && remoteWorkdir
+        machine && sameMachine
           ? {
               connectionId: machine.id,
               project: { environmentId: machine.environmentId, cwd: remoteWorkdir.hostPath },
             }
           : undefined;
+      const hostShell = remote && sameMachine && !ssh ? { projectCwd: projectPath } : undefined;
       if (
         remote
-          ? !ssh || !!profile || !!terminalId
+          ? !(ssh || hostShell) || !!profile || !!terminalId
           : !canOpenTerminalIn(projectPath) || !canOpenTerminalIn(workdir)
       )
         return false;
       // Chosen once, so the terminal keeps its shell when the default changes.
-      const shellProfile = ssh ? undefined : (profile ?? loadTerminalProfile());
+      const shellProfile = remote ? undefined : (profile ?? loadTerminalProfile());
       setProjectTerminals((prev) => {
         const existing = findProjectTerminal(prev, projectPath);
         if (terminalId && existing?.pane.files.some((file) => file.id === terminalId))
@@ -121,7 +120,11 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
         const next = existing
           ? addTerminalToDock(existing, file)
           : createProjectTerminal(projectPath, file, lastDockSideRef.current ?? "bottom");
-        const opened = ssh ? { ...next, sshShells: { ...next.sshShells, [file.id]: ssh } } : next;
+        const opened = ssh
+          ? { ...next, sshShells: { ...next.sshShells, [file.id]: ssh } }
+          : hostShell
+            ? { ...next, hostShells: { ...next.hostShells, [file.id]: hostShell } }
+            : next;
         return existing ? mapProjectTerminal(prev, projectPath, () => opened) : [...prev, opened];
       });
       focusProjectTerminal();
@@ -192,7 +195,8 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
         mapProjectTerminal(prev, projectPath, (dock) => {
           const source = dock.pane.files.find((file) => file.id === fileId);
           const ssh = dock.sshShells?.[fileId];
-          if (!source || (!ssh && !canOpenTerminalIn(projectPath))) return dock;
+          const hostShell = dock.hostShells?.[fileId];
+          if (!source || (!ssh && !hostShell && !canOpenTerminalIn(projectPath))) return dock;
           const file = newTerminalFile(
             source.cwd,
             nextDockTerminalTitle(dock, source.cwd),
@@ -200,7 +204,10 @@ export function useProjectTerminalOpen(deps: ProjectTerminalOpenDeps) {
             source.shellProfile,
           );
           const next = splitTerminalInDock(dock, fileId, file);
-          return ssh ? { ...next, sshShells: { ...next.sshShells, [file.id]: ssh } } : next;
+          if (ssh) return { ...next, sshShells: { ...next.sshShells, [file.id]: ssh } };
+          if (hostShell)
+            return { ...next, hostShells: { ...next.hostShells, [file.id]: hostShell } };
+          return next;
         }),
       );
       focusProjectTerminal();

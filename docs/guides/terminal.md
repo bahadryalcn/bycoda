@@ -3,10 +3,13 @@
 ## Open a remote project terminal
 
 Use **Terminal** in the project's footer to open an interactive shell in the
-selected checkout on its saved SSH machine. The dock supports new terminals and
-splits. Windows starts PowerShell; macOS and Linux start the account's login
-shell. A machine paired through a Host URL needs a saved SSH connection for
-this action. The project dock uses the paired machine's SSH host key.
+selected checkout on the project's machine. The dock supports new terminals and
+splits. A machine with a saved SSH connection opens the shell over SSH and uses
+the paired machine's SSH host key; Windows starts PowerShell, macOS and Linux
+start the account's login shell. A machine paired only through a Host URL runs
+the shell on its bycoda Host in that machine's default shell. Its output is read
+from the Host about every second while idle and faster while you type or the
+shell prints. Closing the terminal ends the shell on the Host.
 
 ## Run commands from chat
 

@@ -11,8 +11,24 @@ const pty = vi.hoisted(() => ({
   setPtyVisible: vi.fn(async () => {}),
 }));
 const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}) }));
+const hostShell = vi.hoisted(() => ({
+  handlers: undefined as
+    | undefined
+    | { onOutput(data: string): void; onExit(code: number | null): void },
+  start: vi.fn(async (_cols: number, _rows: number) => {}),
+  write: vi.fn(async (_data: string) => {}),
+  resize: vi.fn(async () => {}),
+  setVisible: vi.fn(),
+  close: vi.fn(async () => {}),
+}));
 vi.mock("@tauri-apps/api/core", () => native);
 vi.mock("../../../platform/tauri/pty", () => pty);
+vi.mock("./hostShell", () => ({
+  createHostShell: (_target: unknown, handlers: typeof hostShell.handlers) => {
+    hostShell.handlers = handlers;
+    return hostShell;
+  },
+}));
 
 import {
   createTerminalPtyRuntime,
@@ -65,6 +81,42 @@ beforeEach(() => {
   vi.clearAllMocks();
   pty.killPty.mockReset().mockResolvedValue(undefined);
   pty.subscribePty.mockReset().mockReturnValue(() => {});
+});
+
+it("runs a Host shell without the native PTY bridge and closes it on retire", async () => {
+  const launch = terminalPtyLaunch({
+    cwd: "remote://env/srv/app",
+    profile: () => undefined,
+    hostShellProject: "remote://env/srv/app",
+  });
+  expect(launch).toEqual({
+    kind: "host",
+    projectCwd: "remote://env/srv/app",
+    cwd: "remote://env/srv/app",
+  });
+  const { instance, writeOutput, onExit, onSpawned } = runtime("host-shell", true, launch);
+  instance.setOutputVisible(true);
+  instance.start();
+  await flush();
+  expect(hostShell.start).toHaveBeenCalledExactlyOnceWith(80, 24);
+  expect(onSpawned).toHaveBeenCalledOnce();
+  expect(pty.subscribePty).not.toHaveBeenCalled();
+  expect(pty.readyPtyBridge).not.toHaveBeenCalled();
+  hostShell.handlers?.onOutput("$ ");
+  await instance.enqueueInput("ls\r");
+  await instance.resize(100, 30);
+  await flush();
+  expect(hostShell.write).toHaveBeenCalledWith("ls\r");
+  expect(hostShell.resize).toHaveBeenCalledWith(100, 30);
+  expect(pty.writePty).not.toHaveBeenCalled();
+  expect(pty.resizePty).not.toHaveBeenCalled();
+  expect(writeOutput.mock.calls.map(([data]) => data).join("")).toContain("$ ");
+  hostShell.handlers?.onExit(0);
+  expect(onExit).toHaveBeenCalledWith(0);
+  await instance.retire();
+  expect(hostShell.close).toHaveBeenCalledOnce();
+  expect(pty.killPty).not.toHaveBeenCalled();
+  expect(native.invoke).not.toHaveBeenCalled();
 });
 
 it("opens a paired project PTY using its saved machine and exact remote checkout", async () => {

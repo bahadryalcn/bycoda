@@ -32,7 +32,6 @@
   "Account recovery": "账户恢复",
   "Manage this computer from my account": "通过我的账户管理此计算机",
   "Your account stores device names and permissions. Changes apply when bycoda is open and signed in on this computer.": "你的账户会保存设备名称和权限。此计算机上的 bycoda 打开且已登录时，变更才会生效。",
-  "Set up an SSH connection to this project's machine to open a terminal.": "要打开终端，请为此项目所在的计算机设置 SSH 连接。",
   "Workflow status": "工作流状态",
   "Status category": "状态类别",
   "No projects selected": "未选择项目",

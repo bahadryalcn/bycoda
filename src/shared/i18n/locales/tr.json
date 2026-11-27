@@ -32,7 +32,6 @@
   "Account recovery": "Hesaptan kurtarma",
   "Manage this computer from my account": "Bu bilgisayarı hesabımdan yönet",
   "Your account stores device names and permissions. Changes apply when bycoda is open and signed in on this computer.": "Hesabınız cihaz adlarını ve yetkilerini saklar. Değişiklikler bu bilgisayarda bycoda açıkken ve hesabınıza oturum açılmışken uygulanır.",
-  "Set up an SSH connection to this project's machine to open a terminal.": "Terminal açmak için projenin bulunduğu makineye SSH bağlantısı kurun.",
   "Workflow status": "İş akışı durumu",
   "Status category": "Durum kategorisi",
   "No projects selected": "Proje seçilmedi",
