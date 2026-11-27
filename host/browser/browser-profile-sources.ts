@@ -404,6 +404,8 @@ type Dependencies = {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   command?: typeof deviceCommand;
+  /** Filesystem root for system-wide installs on macOS and Linux; tests point it at a fixture. */
+  root?: string;
 };
 
 /** The OS default web browser, or null when unknown or not one of the supported browsers. */
@@ -494,7 +496,7 @@ async function readText(file: string) {
 }
 
 /** Turns a place into an absolute path; `PATH` entries resolve to the first matching file. */
-function resolver(env: NodeJS.ProcessEnv, platform: SupportedPlatform) {
+function resolver(env: NodeJS.ProcessEnv, platform: SupportedPlatform, root = "/") {
   const home = env.HOME ?? env.USERPROFILE ?? homedir();
   const bases: Partial<Record<Root, string>> = {
     PROGRAMFILES: env.PROGRAMFILES,
@@ -503,7 +505,7 @@ function resolver(env: NodeJS.ProcessEnv, platform: SupportedPlatform) {
     APPDATA: env.APPDATA,
     HOME: home,
     CONFIG: env.XDG_CONFIG_HOME || join(home, ".config"),
-    ROOT: platform === "win32" ? undefined : "/",
+    ROOT: platform === "win32" ? undefined : root,
   };
   return ([root, path]: [Root, string]) => {
     if (root === "PATH")
@@ -531,7 +533,7 @@ export async function detectBrowserSources(
     : null;
   if (platform !== "win32" && platform !== "darwin" && platform !== "linux")
     return { defaultBrowser, sources: [] };
-  const resolve = resolver(env, platform);
+  const resolve = resolver(env, platform, dependencies.root);
   const sources: BrowserSource[] = [];
   for (const definition of DEFINITIONS) {
     const place = definition.places[platform];

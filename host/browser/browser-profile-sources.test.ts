@@ -247,6 +247,7 @@ it("detects macOS browsers in the user's Applications folder", async () => {
     const result = await detectBrowserSources({
       platform: "darwin",
       env: { HOME: home },
+      root: join(home, "system"),
       command: async (command) => {
         commands.push(command);
         return JSON.stringify([
@@ -288,6 +289,7 @@ it("detects Linux browsers on PATH, in XDG config and in snap folders", async ()
     const result = await detectBrowserSources({
       platform: "linux",
       env: { HOME: home, XDG_CONFIG_HOME: config, PATH: ["", bin].join(delimiter) },
+      root: join(home, "system"),
       command: async () => "google-chrome.desktop\n",
     });
     expect(result.defaultBrowser?.browser).toBe("chrome");

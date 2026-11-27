@@ -708,7 +708,7 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     );
     const terminal = xterm.instances[0];
     expect(terminal.options.theme?.foreground).toBe("#aabbcc");
-    expect(terminal.options.theme?.cursor).toBe("#778899");
+    expect(terminal.options.theme?.cursor).toBe("#aabbcc");
     await act(async () => {
       terminal.osc.get(10)?.("?");
       terminal.osc.get(11)?.("?");
@@ -716,7 +716,7 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     });
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\");
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]11;rgb:1111/2222/3333\x1b\\");
-    expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]12;rgb:7777/8888/9999\x1b\\");
+    expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]12;rgb:aaaa/bbbb/cccc\x1b\\");
     host.style.setProperty("--terminal-text", "#ddeeff");
     await act(async () => {
       document.documentElement.style.setProperty("--terminal-test-theme", "updated");

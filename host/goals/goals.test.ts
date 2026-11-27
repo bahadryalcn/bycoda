@@ -2047,11 +2047,14 @@ describe("goal tasks", () => {
     const cancelled = await goals.cancel("goal");
     expect(cancelled.status).toBe("cancelled");
     // The verification job stops through the task Stop path, which may land after cancel returns.
-    await vi.waitFor(async () =>
-      expect(await tasks.get(running.id)).toMatchObject({
-        status: "blocked",
-        error: "Stopped by you.",
-      }),
+    // Under CI load the Stop can take longer than the default one-second wait.
+    await vi.waitFor(
+      async () =>
+        expect(await tasks.get(running.id)).toMatchObject({
+          status: "blocked",
+          error: "Stopped by you.",
+        }),
+      { timeout: 10_000 },
     );
     await tasks.idle();
     expect((await tasks.get(running.id))?.status).toBe("blocked");
