@@ -16,14 +16,11 @@ export type SharingPermission = {
 };
 type Transfer = SharingDetails & {
   id: number;
-  automatic: boolean;
   allowToday?: () => boolean;
   /** Persists the category mode from the review, e.g. Always send or Never send. */
   save(mode: SharingMode): boolean;
   inspect(open: boolean): void;
   decide(send: boolean, source?: "user"): void;
-  start(): void;
-  reschedule(): void;
 };
 type Receipt = SharingDetails & { id: number; sentAt: number };
 
@@ -74,12 +71,11 @@ export const sharingNotices = createStoredSetting({
   serialize: (value) => (value ? "on" : "off"),
 });
 
-// Only the head of the queue is visible. Automatic transfers start their review delay there.
-export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10_000) {
+// Only the head of the queue is visible. Send every time skips the queue and leaves a receipt.
+export function createTransferQueue(receiptsEnabled: () => boolean) {
   let pending: Transfer[] = [];
   let receipts: Receipt[] = [];
   let accountGeneration = 0;
-  let presenters = 0;
   let sequence = 0;
   let lastActivityReceiptDay = "";
   const listeners = new Set<() => void>();
@@ -87,14 +83,6 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
   return {
     pending: () => pending[0] ?? null,
     receipts: () => receipts,
-    present() {
-      presenters++;
-      pending[0]?.reschedule();
-      return () => {
-        presenters--;
-        if (presenters === 0) pending[0]?.inspect(false);
-      };
-    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -140,48 +128,27 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
           (current === "ask" &&
             !!activityAccountId &&
             activityPreference.load() === activityGrant(activityAccountId)));
+      // A choice made in the open details already answered the notice; no receipt repeats it.
+      let answeredInDetails = false;
       const review = () =>
         new Promise<boolean>((resolve) => {
-          let timer: ReturnType<typeof setTimeout> | undefined;
           let unsubscribe: (() => void) | undefined;
-          let active = false;
           let inspecting = false;
           const cancel = () => transfer.decide(false);
-          const visible = () => presenters > 0 && !globalThis.document?.hidden;
-          const schedule = () => {
-            clearTimeout(timer);
-            if (active && transfer.automatic && !inspecting && visible()) {
-              timer = setTimeout(() => {
-                if (visible()) transfer.decide(permission.load() === "auto");
-              }, delayMs);
-            }
-          };
           const transfer: Transfer = {
             ...details,
             id,
-            automatic: mode === "auto",
             allowToday:
               isActivity && activityAccountId
                 ? () => activityPreference.save(activityGrant(activityAccountId))
                 : undefined,
             save: (next) => permission.save(next),
-            reschedule: schedule,
-            start() {
-              active = true;
-              if (transfer.automatic) {
-                globalThis.document?.addEventListener("visibilitychange", schedule);
-                schedule();
-              }
-            },
             inspect(open) {
               inspecting = open;
-              schedule();
             },
             decide(yes, source) {
               if (!pending.includes(transfer)) return;
-              clearTimeout(timer);
-              globalThis.document?.removeEventListener("visibilitychange", schedule);
-              active = false;
+              answeredInDetails = inspecting;
               unsubscribe?.();
               if (
                 source === "user" &&
@@ -192,9 +159,7 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
                 activityPreference.save(activityReviewDeferred(activityAccountId));
               }
               signal?.removeEventListener("abort", cancel);
-              const wasFirst = pending[0] === transfer;
               pending = pending.filter((item) => item !== transfer);
-              if (wasFirst) pending[0]?.start();
               notify();
               resolve(yes);
             },
@@ -208,10 +173,10 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
             });
           }
           signal?.addEventListener("abort", cancel, { once: true });
-          if (pending[0] === transfer) transfer.start();
           notify();
         });
-      const approved = maySyncActivity(mode) || (await review());
+      // Send every time is the user's standing answer: only Ask every time shows a review.
+      const approved = mode === "auto" || maySyncActivity(mode) || (await review());
       const sameAccount = () => !details.linkedToAccount || generation === accountGeneration;
       if (!approved || signal?.aborted || permission.load() === "off" || !sameAccount())
         return false;
@@ -225,7 +190,8 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
           activityReceiptDay.save(day);
           receipts = receipts.filter((receipt) => receipt.kind !== "activity");
         }
-        receipts = [...receipts.slice(-4), { ...details, id, sentAt: sentAt.getTime() }];
+        if (!answeredInDetails)
+          receipts = [...receipts.slice(-4), { ...details, id, sentAt: sentAt.getTime() }];
         notify();
       }
       return true;

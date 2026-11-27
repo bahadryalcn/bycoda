@@ -40,6 +40,9 @@ export type QueuedConfigurationChange = {
  */
 export function useQueuedSendDrain(input: {
   next: QueuedMessage | undefined;
+  /** `next` is a row the owner picked with Steer: it goes out even while the queue is
+   * paused and wherever it sits, and only that row (the rest keeps its status). */
+  selected?: boolean;
   /** The snapshot is a page-cache copy or the conversation is gone: never drain. */
   pageCacheOnly: boolean;
   remoteDeleted: boolean;
@@ -59,7 +62,7 @@ export function useQueuedSendDrain(input: {
   submit: (
     text: string,
     attachments: Attachment[],
-    options: Pick<ComposerTurnOptions, "intent">,
+    options: Pick<ComposerTurnOptions, "intent" | "followUpBehavior">,
     asDraft: boolean,
     planBlockId: undefined,
     queuedId: string,
@@ -143,17 +146,19 @@ export function useQueuedSendDrain(input: {
     const attempt = () => {
       const currentQueue = queue.current();
       if (
-        currentQueue.status === "paused" ||
-        currentQueue.status === "restored" ||
-        currentQueue.status === "resuming" ||
-        currentQueue.messages[0] !== next ||
+        (input.selected
+          ? !currentQueue.messages.includes(next)
+          : currentQueue.status === "paused" ||
+            currentQueue.status === "restored" ||
+            currentQueue.status === "resuming" ||
+            currentQueue.messages[0] !== next) ||
         Date.now() < input.leaseWait.current
       )
         return;
       const accepted = submitRef.current(
         next.text,
         next.attachments,
-        { intent: next.intent },
+        { intent: next.intent, ...(input.selected ? { followUpBehavior: "steer" } : {}) },
         false,
         undefined,
         next.id,
@@ -173,6 +178,7 @@ export function useQueuedSendDrain(input: {
     return () => clearTimeout(timer);
   }, [
     next,
+    input.selected,
     drainRetry,
     saved?.harness,
     saved?.model,

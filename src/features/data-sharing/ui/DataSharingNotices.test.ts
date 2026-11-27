@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { activitySharing, dataTransfers, type SharingMode } from "../model/transfers";
 import { DataSharingNotices } from "./DataSharingNotices";
 
-it("applies all five active-time choices and shows one daily receipt", async () => {
+it("applies all five active-time choices and closes the notice without a receipt once answered", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -63,7 +63,9 @@ it("applies all five active-time choices and shows one daily receipt", async () 
     });
     expect(activitySharing.load()).toBe("ask");
     expect(sentModes).toEqual(["ask"]);
-    expect(dataTransfers.receipts()).toHaveLength(1);
+    expect(dataTransfers.receipts()).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("Approve data sharing");
+    expect(document.body.textContent).not.toContain("Data sent");
     act(() => dataTransfers.clearReceipts());
     await expect(transfer()).resolves.toBe(false);
     expect(dataTransfers.pending()).toBeNull();
@@ -76,7 +78,7 @@ it("applies all five active-time choices and shows one daily receipt", async () 
       expect(await today).toBe(true);
     });
     expect(activitySharing.load()).toBe("ask");
-    expect(dataTransfers.receipts()).toHaveLength(1);
+    expect(dataTransfers.receipts()).toHaveLength(0);
     act(() => dataTransfers.clearReceipts());
     await act(async () => {
       const following = transfer();
@@ -105,13 +107,13 @@ it("applies all five active-time choices and shows one daily receipt", async () 
     expect(sentModes).toEqual(["ask", "ask", "ask", "auto"]);
     expect(activitySharing.load()).toBe("auto");
     expect(localStorage.getItem("bycoda.data-sharing.activity")).toBe("auto");
-    expect(dataTransfers.receipts()).toHaveLength(1);
+    expect(dataTransfers.receipts()).toHaveLength(0);
     await act(async () => {
       const following = transfer();
       expect(dataTransfers.pending()).toBeNull();
       await expect(following).resolves.toBe(true);
     });
-    expect(dataTransfers.receipts()).toHaveLength(1);
+    expect(dataTransfers.receipts()).toHaveLength(0);
     act(() => {
       dataTransfers.clearReceipts();
       activitySharing.save("ask");
@@ -201,6 +203,69 @@ it("offers Always send for every category and saves it through the category perm
   } finally {
     act(() => root.unmount());
     dataTransfers.pending()?.decide(false);
+    dataTransfers.clearReceipts();
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("walks the open details through every queued request and closes the notice after the last answer", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const permission = { load: (): SharingMode => "ask", save: () => true };
+  const request = (kind: "statistics" | "tokens") =>
+    dataTransfers.run(
+      {
+        kind,
+        destination: `https://account.test/v1/anonymous/${kind}`,
+        files: [{ name: `${kind}.json`, text: "{}" }],
+        linkedToAccount: false,
+      },
+      permission,
+      async () => undefined,
+    );
+  const click = (label: string) => {
+    const button = [...document.querySelectorAll<HTMLElement>("button")].find(
+      (item) => item.textContent?.trim() === label,
+    );
+    expect(button, label).toBeDefined();
+    button!.click();
+  };
+  try {
+    act(() => root.render(createElement(DataSharingNotices)));
+    let statistics: Promise<boolean> | undefined;
+    let tokens: Promise<boolean> | undefined;
+    act(() => {
+      statistics = request("statistics");
+      tokens = request("tokens");
+    });
+    act(() => click("Details"));
+    expect(document.body.textContent).toContain("Anonymous usage statistics");
+    await act(async () => {
+      click("Send once");
+      expect(await statistics).toBe(true);
+    });
+    expect(document.body.textContent).toContain("Anonymous token totals");
+    await act(async () => {
+      click("Do not send");
+      expect(await tokens).toBe(false);
+    });
+    expect(dataTransfers.pending()).toBeNull();
+    expect(document.body.textContent).not.toContain("Approve data sharing");
+    expect(document.body.textContent).not.toContain("Anonymous token totals");
+  } finally {
+    act(() => root.unmount());
+    while (dataTransfers.pending()) dataTransfers.pending()?.decide(false);
     dataTransfers.clearReceipts();
     container.remove();
     vi.unstubAllGlobals();

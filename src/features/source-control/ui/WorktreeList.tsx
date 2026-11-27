@@ -7,7 +7,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { CheckoutIdentity, CheckoutStatus } from "./CheckoutIdentity";
 import { collapseAgentRows, worktreeGroupLabel, type WorktreeRow } from "../model/worktreeRows";
 
-/** Active-path marker of the leading "All worktrees" row. */
+/** Active-path marker of the leading "All repositories" row. */
 export const ALL_WORKTREES_ACTIVE = "*all-worktrees*";
 /** Active-path marker of the "… N more" row that ends a long agent group. */
 export const MORE_AGENTS_ACTIVE = "*more-agents*";
@@ -41,7 +41,7 @@ export function useWorktreeList({
   /** Non-interactive end content of a row, e.g. open tabs. */
   trailing?: (row: WorktreeRow) => ReactNode;
   onPick: (row: WorktreeRow) => void;
-  /** A leading "All worktrees" row; `selected` takes the place of `value`. */
+  /** A leading "All repositories" row; `selected` takes the place of `value`. */
   all?: { selected: boolean; onPick: () => void; changes?: number };
   /** Uncommitted file count per worktree (by `pathKey`); a row without one shows a plain dot when dirty. */
   counts?: ReadonlyMap<string, number>;
@@ -56,7 +56,7 @@ export function useWorktreeList({
     ? [
         {
           value: ALL_WORKTREES_ACTIVE,
-          title: t("All worktrees"),
+          title: t("All repositories"),
           icon: <FolderTree className="icon-sm shrink-0" tone="secondary" />,
           disabled,
           trailing: all?.changes ? <CheckoutStatus changes={all.changes} /> : undefined,

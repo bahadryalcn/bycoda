@@ -114,7 +114,7 @@ it("requests a switch without publishing the destination and permits a newer sel
   expect(worktreeFocus("/picker")).toBeUndefined();
   await render(true);
   expect(trigger().getAttribute("aria-busy")).toBe("true");
-  expect(copyName()).toBe("All worktrees");
+  expect(copyName()).toBe("All repositories");
   await act(async () => trigger().click());
   await act(async () => option("feature-b").click());
   expect(select).toHaveBeenLastCalledWith({
@@ -131,7 +131,7 @@ it("shows a switch failure in the reopened picker", async () => {
   expect(document.querySelector('[role="alert"]')?.textContent).toContain(
     "Couldn’t switch worktree",
   );
-  expect(copyName()).toBe("All worktrees");
+  expect(copyName()).toBe("All repositories");
 });
 
 it("names the project and the focused working copy in the trigger", async () => {
@@ -352,7 +352,7 @@ it("labels detached and folder-only working copies with the shared messages", as
   await act(async () => trigger().click());
   const options = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
   expect(options).toHaveLength(3);
-  expect(options[0]!.textContent).toContain("All worktrees");
+  expect(options[0]!.textContent).toContain("All repositories");
   expect(options[1]!.textContent).toContain("Detached abcdef1");
   expect(options[1]!.textContent).not.toContain("Project folder");
   expect(options[2]!.textContent).toContain("Detached abcdef1");
@@ -376,32 +376,32 @@ it("hides missing and prunable worktrees and lists dirty ones before clean ones"
   await act(async () => trigger().click());
   const titles = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
   expect(titles).toHaveLength(4);
-  expect(titles[0]).toContain("All worktrees");
+  expect(titles[0]).toContain("All repositories");
   // Worktrees with changes lead; the project folder follows, then the clean ones.
   expect(titles[1]).toContain("dirty");
   expect(titles[2]).toContain("main");
   expect(titles[3]).toContain("clean");
 });
 
-it("lists All worktrees first, selected by default, and picks it as no focus", async () => {
+it("lists All repositories first, selected by default, and picks it as no focus", async () => {
   setWorktreeFocus("/picker", { path: "/picker-a", branch: "feature-a" });
   await render();
   await act(async () => trigger().click());
   const first = document.querySelector<HTMLButtonElement>('[role="option"]')!;
-  expect(first.textContent).toContain("All worktrees");
+  expect(first.textContent).toContain("All repositories");
   expect(first.getAttribute("aria-selected")).not.toBe("true");
   await act(async () => first.click());
   expect(select).toHaveBeenLastCalledWith(undefined);
 });
 
-it("marks All worktrees selected without a focus and hides it for one worktree", async () => {
+it("marks All repositories selected without a focus and hides it for one worktree", async () => {
   await render();
   await act(async () => trigger().click());
   const first = document.querySelector<HTMLButtonElement>('[role="option"]')!;
-  expect(first.textContent).toContain("All worktrees");
+  expect(first.textContent).toContain("All repositories");
   expect(first.getAttribute("aria-selected")).toBe("true");
   await typeQuery("feature");
-  expect(option("All worktrees")).toBeUndefined();
+  expect(option("All repositories")).toBeUndefined();
 
   vi.mocked(useProjectWorktrees).mockReturnValue({
     data: { worktrees: [tree("/picker", "main", true)], defaultRoot: "/w" },
@@ -409,7 +409,7 @@ it("marks All worktrees selected without a focus and hides it for one worktree",
   });
   await render();
   await typeQuery("");
-  expect(option("All worktrees")).toBeUndefined();
+  expect(option("All repositories")).toBeUndefined();
   expect(trigger().textContent).toBe("pickermain");
 });
 
@@ -439,9 +439,9 @@ it("reads as a breadcrumb: project, separator, branch icon and branch, then the 
   expect(trigger().textContent).not.toContain("/picker-a");
 });
 
-it("names the project and All worktrees without a branch icon when none is selected", async () => {
+it("names the project and All repositories without a branch icon when none is selected", async () => {
   await render();
-  expect(copyName()).toBe("All worktrees");
+  expect(copyName()).toBe("All repositories");
   expect(trigger().querySelector("svg.lucide-git-branch")).toBeNull();
 });
 
@@ -453,7 +453,7 @@ it("lists the picker as the repository list: changes, project folder, other, age
   await render();
   await act(async () => trigger().click());
   const options = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
-  expect(options[0]).toContain("All worktrees");
+  expect(options[0]).toContain("All repositories");
   expect(options[1]).toContain("feat/dirty-one");
   expect(options[2]).toContain("main");
   expect(options[3]).toContain("feat/ahead-one");
@@ -538,7 +538,7 @@ it("shows the total and per-worktree counts of uncommitted files, with no chip f
   try {
     await render();
     await act(async () => trigger().click());
-    expect(option("All worktrees").textContent).toContain("324");
+    expect(option("All repositories").textContent).toContain("324");
     expect(option("feat/dirty-one").textContent).toContain("321");
     expect(option("feat/unknown").querySelector('[aria-label^="Changes"]')).toBeNull();
     expect(option("feat/unknown").textContent).not.toContain("↑");

@@ -29,7 +29,6 @@ import {
   PanelLeft,
   PanelRight,
   RefreshCw,
-  Undo2,
 } from "../../../shared/ui/icons";
 import {
   Suspense,
@@ -55,7 +54,7 @@ import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { isMissingPathError } from "../model/checkoutSelection";
-import { isAgentWorktree } from "../model/worktreeRows";
+import { isAgentWorktree, worktreeRowFolder } from "../model/worktreeRows";
 import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
@@ -343,14 +342,14 @@ export function GitChangesPanel({
     );
   }
 
-  // The one branch control: leads the header of the single panel and sits with
-  // the actions in a grouped repository row.
-  // A worktree section names its own branch; an in-worktree branch is never switched here.
+  // The one branch control: leads the header of the single panel and sits with the actions in
+  // every repository row, open or collapsed (as in VS Code), so each worktree switches its own
+  // branch from the overview just as from its focused panel.
   const worktreeSection = !!repository?.checkout && !repository.checkout.isMain;
   const branchControl =
-    detailsOpen &&
-    !worktreeSection &&
-    (checkout || (index?.repository !== false && (index?.branch || repository))) ? (
+    (repository
+      ? !!index?.branch
+      : detailsOpen && (checkout || (index?.repository !== false && index?.branch))) ? (
       <Text
         className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
       >
@@ -461,9 +460,16 @@ export function GitChangesPanel({
     <CheckoutIdentity
       repository={!repository.checkout}
       agent={!!repository.checkout && isAgentWorktree(repository.checkout)}
-      icon={!branchControl || !repository.checkout}
-      // A worktree is named by its live branch (it may have moved since the list was read).
-      title={worktreeSection ? (branchLabel ?? repository.name) : repository.name}
+      // The picker carries the branch icon; an agent's worktree keeps its own.
+      icon={!branchControl || !repository.checkout || isAgentWorktree(repository.checkout)}
+      // The branch picker beside it names the branch; a worktree reads as its folder.
+      title={
+        worktreeSection && branchControl
+          ? worktreeRowFolder(repository.checkout!)
+          : worktreeSection
+            ? (branchLabel ?? repository.name)
+            : repository.name
+      }
       detail={branchControl || worktreeSection ? undefined : branchLabel}
     />
   ) : null;
@@ -1546,10 +1552,11 @@ function ChangedFiles({
         </Popover>
       ) : null}
       <div
-        // Grouped repositories scroll in the workspace list. A nested scroll
-        // container would contain wheel gestures even when its files fit.
+        // A grouped repository's files scroll within a capped height, so a long list never
+        // pushes the other repositories out of reach; wheel gestures chain to the overview
+        // list at either end.
         ref={fill ? lockOverscroll : undefined}
-        className={`min-h-0 py-1 ${fill ? "flex-1 overflow-y-auto overscroll-none" : "shrink-0"} ${failure ? "opacity-60" : ""}`}
+        className={`min-h-0 py-1 ${fill ? "flex-1 overflow-y-auto overscroll-none" : `shrink-0 ${styles.sectionFiles}`} ${failure ? "opacity-60" : ""}`}
       >
         {files.length === 0 &&
         conflicts.length === 0 &&
@@ -1690,25 +1697,6 @@ function ChangedFiles({
                 view={view}
                 onToggleView={toggleView}
                 headerActions={[
-                  {
-                    get title() {
-                      return t("Open All Changes");
-                    },
-                    icon: <FileDiff className="icon-sm" strokeWidth={1.75} />,
-                    overflow: true,
-                    onClick: () => onOpenAllChanges("unstaged"),
-                  },
-                  {
-                    get title() {
-                      return deferredFileQuery
-                        ? t("Discard {p0} shown", { p0: visibleUnstaged.length })
-                        : t("Discard All Changes");
-                    },
-                    icon: <Undo2 className="icon-sm" strokeWidth={1.75} />,
-                    overflow: true,
-                    danger: true,
-                    onClick: () => void runAll("discard"),
-                  },
                   {
                     get title() {
                       return deferredFileQuery

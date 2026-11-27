@@ -141,7 +141,10 @@ export class HostAssistantQuickAutomations {
       await store.ready;
       await store.db.scope(() =>
         store.db.exec(
-          "CREATE TABLE IF NOT EXISTS assistant_quick_automations(job_id TEXT PRIMARY KEY,value TEXT NOT NULL)",
+          `CREATE TABLE IF NOT EXISTS assistant_quick_automations(job_id TEXT PRIMARY KEY,value TEXT NOT NULL);
+           CREATE INDEX IF NOT EXISTS assistant_quick_automations_owner
+             ON assistant_quick_automations(json_extract(value,'$.automationId'))
+             WHERE json_extract(value,'$.state')='completed';`,
         ),
       );
     })();

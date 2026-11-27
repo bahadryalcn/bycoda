@@ -35,24 +35,16 @@ it("shows the same payload before and after approval and only dismisses the curr
   expect(queue.receipts()).toHaveLength(1);
 });
 
-it("pauses automatic sharing while details are open and rechecks permission", async () => {
-  vi.useFakeTimers();
+it("sends every time without asking again and still leaves a receipt", async () => {
   const queue = createTransferQueue(() => true);
   const send = vi.fn(async () => undefined);
-  let mode: SharingMode = "auto";
-  const result = queue.run(details, { load: () => mode, save: () => true }, send);
-  await vi.advanceTimersByTimeAsync(10_000);
-  expect(send).not.toHaveBeenCalled();
-  const unpresent = queue.present();
-  queue.pending()?.inspect(true);
-  await vi.advanceTimersByTimeAsync(30_000);
-  expect(send).not.toHaveBeenCalled();
-  queue.pending()?.inspect(false);
-  mode = "off";
-  await vi.advanceTimersByTimeAsync(10_000);
-  expect(await result).toBe(false);
-  expect(send).not.toHaveBeenCalled();
-  unpresent();
+  for (const kind of ["statistics", "tokens", "diagnostics"] as const) {
+    const result = queue.run({ ...details, kind }, fixed("auto"), send);
+    expect(queue.pending()).toBeNull();
+    expect(await result).toBe(true);
+  }
+  expect(send).toHaveBeenCalledTimes(3);
+  expect(queue.receipts()).toHaveLength(3);
 });
 
 it("does not send canceled requests or show receipts for hidden or failed uploads", async () => {

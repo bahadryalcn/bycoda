@@ -112,6 +112,7 @@ export function DraftProjectPicker({
         localOnly={!environmentId}
         chooseLabel={t("Choose project")}
         actionLabel={t("Switch project")}
+        className="mx-auto w-fit max-w-full"
         buttonClassName="[font:inherit]"
         onSelectProject={onProjectChange}
         onOpenProject={environmentId && !machineId ? undefined : () => void addProject()}

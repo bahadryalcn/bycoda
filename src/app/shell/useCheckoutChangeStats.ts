@@ -19,10 +19,10 @@ import type { ChangeScope } from "./ChangesTabTooltip";
 
 /**
  * Changes tab totals of one repository. A focused sidebar header shows that worktree; under
- * "All worktrees" the badge follows the repository the panel's Graph follows ("Auto"): the
+ * "All repositories" the badge follows the repository the panel's Graph follows ("Auto"): the
  * Graph choice, else the row last used, else the first worktree with changes.
  *
- * Deliberately no repository discovery here: All worktrees is the default, and
+ * Deliberately no repository discovery here: All repositories is the default, and
  * walking every worktree's tree for child repositories queued 20+ scans on the
  * Host at startup. Totals are plain per-worktree diff stats; the Changes panel
  * discovers child repositories only for a worktree that is opened.
@@ -36,7 +36,7 @@ export function useCheckoutChangeStats({
   gitRoot: string;
   /** Workspace repositories; the worktree scope only applies without them. */
   repositoryPaths: readonly string[] | undefined;
-  /** The sidebar header's worktree; undefined means All worktrees. */
+  /** The sidebar header's worktree; undefined means All repositories. */
   focus: WorktreeFocus | undefined;
   /** The panel is visible and the sidebar available. */
   active: boolean;
