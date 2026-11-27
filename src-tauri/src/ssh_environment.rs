@@ -221,7 +221,8 @@ mod tests {
         assert!(
             remote_command(&target, Some(&ShellIntegration::for_shell("bash").unwrap())).is_err()
         );
-        let large = endpoint(RemoteShellKind::Powershell, &"x".repeat(4096));
+        // Larger than the 8000-byte budget on its own, independent of the bootstrap's size.
+        let large = endpoint(RemoteShellKind::Powershell, &"x".repeat(8000));
         assert!(remote_command(
             &large,
             Some(&ShellIntegration::for_shell("powershell").unwrap())
