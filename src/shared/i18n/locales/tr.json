@@ -15241,7 +15241,7 @@
   "A site running on this computer, like localhost:3000. Anyone with the link can open it.": "Bu bilgisayarda çalışan bir site, örneğin localhost:3000. Linki olan herkes açabilir.",
   "Your phone and other computers reach bycoda on this computer. Each one still has to be a paired device.": "Telefonun ve diğer bilgisayarların bu bilgisayardaki bycoda’ya bağlanır. Her biri yine eşleştirilmiş bir cihaz olmalı.",
   "Anyone with the link can open this app. bycoda puts no sign-in in front of it, so the app needs its own.": "Linki olan herkes bu uygulamayı açabilir. bycoda önüne giriş koymaz, uygulamanın kendi girişi olmalı.",
-  "This port is bycoda itself. Choose Remote access to share it.": "Bu port bycoda’nın kendisi. Paylaşmak için Uzaktan erişim’i seç.",
+  "This port is bycoda itself. Choose Remote access to share it.": "Bu port bycoda’nın kendisi. Paylaşmak için Uzaktan erişim’i seçin.",
   "Anyone on the internet can open a shared link. Phones use one only if you allow it in Devices. Same Wi-Fi and Tailscale (private) connections are not shared links and stay private.": "Paylaşılan bir linki internetteki herkes açabilir. Telefonlar onu yalnızca Cihazlar’da izin verirsen kullanır. Aynı Wi-Fi ve Tailscale (özel) bağlantıları paylaşılan link değildir, özel kalır.",
   "Create a link to open a web app or reach this computer from anywhere.": "Bir web uygulamasını açmak ya da bu bilgisayara her yerden ulaşmak için link oluştur.",
   "Sign in over SSH": "SSH ile giriş",
