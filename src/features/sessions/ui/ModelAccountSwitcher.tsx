@@ -286,8 +286,9 @@ export function ModelAccountList({
           label={inline ? t("Account") : t("Accounts")}
           value={accountId}
           keepFocus
-          className="grid min-w-0 gap-0.5"
-          tileClassName="min-w-0 text-start"
+          tileLayout="list"
+          className="p-1"
+          tileClassName="min-h-9 text-start"
           tile={{ fullWidth: true }}
           options={shown.map((account) => {
             const selected = account.id === accountId;

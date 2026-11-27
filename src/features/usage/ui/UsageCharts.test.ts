@@ -2,7 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ContinuousUsageTable, formatMetric } from "./UsageCharts";
+import { setLanguagePreference } from "../../../shared/i18n";
+import { ContinuousUsageTable, formatMetric, formatMetricTick } from "./UsageCharts";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { HARNESS_ICONS } from "../../../shared/ui/identity/HarnessIcon";
 
@@ -114,4 +115,15 @@ it("localizes duration units without changing the chart rounding contract", asyn
   } finally {
     await setLanguagePreference("en");
   }
+});
+
+it("never abbreviates thousands to a bare B", async () => {
+  await setLanguagePreference("tr");
+  try {
+    expect(formatMetric(54_600, "tokens")).toMatch(/bin/);
+    expect(formatMetricTick(1_200, "cost")).toMatch(/bin/);
+  } finally {
+    await setLanguagePreference("en");
+  }
+  expect(formatMetric(54_600, "tokens")).toMatch(/K$/);
 });

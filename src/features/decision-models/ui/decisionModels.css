@@ -5,11 +5,6 @@
   min-width: 0;
   gap: var(--settings-group-gap, var(--ui-space-6, 1.5rem));
 }
-.decision-discovery-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
 .decision-routing-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 10rem;

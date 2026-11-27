@@ -16,7 +16,6 @@ import {
   loadHiddenPickerProviders,
   subscribeModels,
   getModelSnapshot,
-  loadLastModelChoice,
 } from "../../../sessions/public/models";
 import {
   providerAccounts,
@@ -36,21 +35,19 @@ import {
 import { persistProviderPreference } from "../../../providers/public/providerPreferenceOutcome";
 import {
   EMPTY_DRAFT,
+  defaultsTargetLabel,
   parseAccountDraftKey,
-  selectedTargetValues,
+  parseTargetValue,
+  targetValue,
 } from "../../model/providerDefaultsDraft";
 import { defaultsDraftChanges } from "./defaultsChanges";
 import { saveDefaultsTargetsWithDelegation } from "../../model/providerDefaultsSave";
 import { useDelegationProfile } from "../../../model-routing/public/delegation";
 import { prepareDefaultsDraft } from "../../model/providerDefaultsSupport";
-import { ProviderDefaultsPanel } from "../ProviderDefaultsPanel";
+import { ProviderDefaultsPanel, storedDefaultProvider } from "../ProviderDefaultsPanel";
 import { BykitSettingsPage } from "../ToolSettings";
 import { ProviderDefaultsScopeRow } from "../providerDefaultsTargetsPicker";
-import {
-  ProviderDefaultsSaveBar,
-  useDefaultsTargets,
-  type DefaultsSaveState,
-} from "../ProviderDefaultsSaveBar";
+import { ProviderDefaultsSaveBar, type DefaultsSaveState } from "../ProviderDefaultsSaveBar";
 import { hasProjectOverrides } from "../providerDefaultsScope";
 import {
   useSettingsPageReset,
@@ -149,10 +146,10 @@ export function ModelsPage({
   const leave = useLeaveGuard();
   const [accountScope, setAccountScope] = useState(retained.accountScope);
   const [activeProvider, setProvider] = useState<HarnessId>(
-    retained.provider ?? loadLastModelChoice()?.harness ?? HARNESSES[0],
+    retained.provider ?? storedDefaultProvider({ kind: "global" }),
   );
   // One draft spans every provider and account, so switching them never hides an edit.
-  const transactionKey = `defaults:${JSON.stringify([scope.local?.id ?? "", cwd ?? "", [...selectedTargetValues(targetChoice)].sort()])}`;
+  const transactionKey = `defaults:${JSON.stringify([scope.local?.id ?? "", cwd ?? "", targetChoice])}`;
   const [draft, setDraftState] = useRetainedTransaction(transactionKey + ":draft", EMPTY_DRAFT);
   const [saving, setSaving] = useRetainedTransaction(transactionKey + ":saving", false);
   const [saveState, setSaveState] = useRetainedTransaction<DefaultsSaveState>(
@@ -167,9 +164,7 @@ export function ModelsPage({
   const orderedHarnesses = [...HARNESSES].sort(
     (left, right) => Number(isHarnessAvailable(right)) - Number(isHarnessAvailable(left)),
   );
-  const targets = useDefaultsTargets(cwd, recents);
-  const parsedTarget = targets.parse(targetChoice);
-  const target = targets.has(parsedTarget) ? parsedTarget : ({ kind: "global" } as const);
+  const target = parseTargetValue(targetChoice);
   const changes = defaultsDraftChanges(draft, setDraft);
   const editedProviders = new Set(
     Object.keys(draft.providers).concat(
@@ -184,11 +179,10 @@ export function ModelsPage({
       setSaveState({ state: "error", message: t("Checking Host capabilities. Try again.") });
       return false;
     }
-    const selected = selectedTargetValues(targetChoice).map(targets.parse).filter(targets.has);
     const destinations =
       saveState.state === "error" && saveState.failed
-        ? saveState.failed.map(targets.parse).filter(targets.has)
-        : selected;
+        ? saveState.failed.map(parseTargetValue)
+        : [target];
     const prepared = activeProvider
       ? prepareDefaultsDraft(
           draft,
@@ -196,6 +190,7 @@ export function ModelsPage({
           orderedHarnesses.filter(
             (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
           ),
+          target,
         )
       : { draft };
     setSaving(true);
@@ -208,15 +203,9 @@ export function ModelsPage({
     if (outcome.failed.length) {
       setSaveState({
         state: "error",
-        failed: outcome.failed.map(({ target }) =>
-          target.kind === "global"
-            ? "global"
-            : target.kind === "project"
-              ? `project:${target.path}`
-              : `group:${target.id}`,
-        ),
+        failed: outcome.failed.map(({ target }) => targetValue(target)),
         message: outcome.failed
-          .map(({ target, message }) => `${targets.label(target)}: ${message}`)
+          .map(({ target, message }) => `${defaultsTargetLabel(target)}: ${message}`)
           .join("; "),
       });
       return false;
@@ -225,15 +214,10 @@ export function ModelsPage({
     // acknowledge, so "Save and leave" never drops it.
     const unchanged = retainedTransactionValue<typeof draft>(`${transactionKey}:draft`) === draft;
     if (unchanged) setDraft(EMPTY_DRAFT);
-    setSaveState({ state: "saved", target: outcome.saved.map(targets.label).join(", ") });
+    setSaveState({ state: "saved", target: outcome.saved.map(defaultsTargetLabel).join(", ") });
     return unchanged;
   };
 
-  const targetOptions = targets.options.map((option) =>
-    delegation.supported && option.value !== "global"
-      ? { ...option, label: `${option.label} (${t("Chats only")})` }
-      : option,
-  );
   const project = target.kind === "project" ? target.path : null;
   // The settings shell offers "Restore defaults" for a project; visibility and accounts stay.
   useSettingsPageReset(
@@ -245,7 +229,7 @@ export function ModelsPage({
           );
           setSaveState(
             outcome.state === "saved"
-              ? { state: "saved", target: targets.label(target) }
+              ? { state: "saved", target: defaultsTargetLabel(target) }
               : { state: "error", message: outcome.message },
           );
         }
@@ -296,8 +280,10 @@ export function ModelsPage({
               </HostModelSource>
             ) : null}
           </div>
+          {/* Agent behavior saves at once and applies to this computer's Host, so it follows the
+              Host-scoped editor instead of looking like part of its draft and Save bar. */}
+          {tab === "work" ? <BykitSettingsPage /> : null}
         </div>
-        {tab === "work" ? <BykitSettingsPage /> : null}
       </div>
       <div
         id={settingDomId("models-chat")}
@@ -305,12 +291,10 @@ export function ModelsPage({
         hidden={tab !== "defaults"}
       >
         <ProviderDefaultsScopeRow
-          selection={targetChoice}
           target={target}
-          options={targetOptions}
-          draft={changes.length > 0 ? draft : undefined}
-          onDraftChange={setDraft}
-          activeProvider={activeProvider ?? undefined}
+          cwd={cwd}
+          recents={recents}
+          projectsOnlyChats={delegation.supported}
           onTargetChange={(value) => {
             if (value === targetChoice) return;
             leave.guard(() => {
@@ -330,14 +314,17 @@ export function ModelsPage({
           target={target}
           draft={draft}
           onDraftChange={setDraft}
+          hostDelegation={delegation.supported ? delegation.state?.delegation : undefined}
           providerControl={{
             // A provider with unsaved edits says so in the picker.
-            options: orderedHarnesses.map((id) => ({
-              value: id,
-              label: editedProviders.has(id)
-                ? `${HARNESS_TITLE[id]} · ${t("Unsaved")}`
-                : HARNESS_TITLE[id],
-            })),
+            // Only usable providers; the open one stays listed so the control never loses it.
+            options: orderedHarnesses
+              .filter((id) => id === activeProvider || isHarnessAvailable(id))
+              .map((id) => ({
+                value: id,
+                label: HARNESS_TITLE[id],
+                edited: editedProviders.has(id),
+              })),
             onChange: (id) => {
               updateRetainedModelsPage({ provider: id });
               setProvider(id);
@@ -346,14 +333,13 @@ export function ModelsPage({
         />
         {tab === "defaults" ? (
           <ProviderDefaultsSaveBar
-            selection={targetChoice}
             draft={draft}
+            onDraftChange={setDraft}
             activeProvider={activeProvider ?? undefined}
+            target={target}
             providers={orderedHarnesses.filter(
               (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
             )}
-            target={target}
-            options={targetOptions}
             changes={changes}
             saveState={saveState}
             saving={saving}

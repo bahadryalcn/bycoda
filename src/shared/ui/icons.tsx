@@ -167,6 +167,7 @@ import {
   Crosshair as LucideCrosshair,
   Download as LucideDownload,
   Wrench as LucideWrench,
+  FlaskConical as LucideFlaskConical,
   X as LucideX,
   Zap as LucideZap,
   UsersRound as LucideUsersRound,
@@ -559,5 +560,6 @@ export const Apple = wrap(LucideApple, "Apple");
 export const Crosshair = wrap(LucideCrosshair, "Crosshair");
 export const Download = wrap(LucideDownload, "Download");
 export const Wrench = wrap(LucideWrench, "Wrench");
+export const FlaskConical = wrap(LucideFlaskConical, "FlaskConical");
 export const X = wrap(LucideX, "X");
 export const Zap = wrap(LucideZap, "Zap");

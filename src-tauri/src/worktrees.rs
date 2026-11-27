@@ -39,13 +39,33 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
             .arg(path_to_js(root))
             .args(args)
             .env("GIT_TERMINAL_PROMPT", "0")
-            .env("GIT_OPTIONAL_LOCKS", "0"),
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            // Extra-project worktree preparation recognizes Git's English non-repository diagnostic.
+            .env("LC_ALL", "C"),
     )
     .map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
     String::from_utf8(output.stdout).map_err(|_| "Git returned a non-UTF-8 path".into())
+}
+
+/// True when Host marked this branch as owned by a managed workspace
+/// (`git config branch.<name>.bycodaWorkspace`); a hand-made `by/x` branch is not.
+/// Every guard uses this, so an unreadable marker (Git failed, timed out) counts as managed:
+/// `--default ""` makes an absent key a successful empty answer, leaving only real failures as errors.
+pub(crate) fn branch_is_managed(dir: &Path, branch: &str) -> bool {
+    git(
+        dir,
+        &[
+            "config",
+            "--get",
+            "--default",
+            "",
+            &format!("branch.{branch}.bycodaWorkspace"),
+        ],
+    )
+    .map_or(true, |value| !value.trim().is_empty())
 }
 
 fn parse_worktrees(text: &str) -> Vec<Worktree> {
@@ -264,8 +284,23 @@ fn probe_worktree(path: &Path) -> WorktreeProbe {
     }
 }
 
+/// Light listing: only whether the directory still exists. Dirty and unpushed stay
+/// unknown, so pickers that never show them skip two Git processes per worktree.
+fn light_probe(path: &Path) -> WorktreeProbe {
+    WorktreeProbe {
+        missing: !path.is_dir(),
+        dirty: None,
+        unpushed: None,
+    }
+}
+
 #[tauri::command]
-pub async fn git_worktrees(app: tauri::AppHandle, cwd: String) -> Result<Worktrees, String> {
+pub async fn git_worktrees(
+    app: tauri::AppHandle,
+    cwd: String,
+    light: Option<bool>,
+) -> Result<Worktrees, String> {
+    let light = light.unwrap_or(false);
     crate::harness::run_blocking("git_worktrees", move || {
         let store = app.state::<SessionStore>();
         let mut worktrees = list(&expand_home(&cwd))?;
@@ -278,7 +313,13 @@ pub async fn git_worktrees(app: tauri::AppHandle, cwd: String) -> Result<Worktre
             .iter()
             .map(|tree| PathBuf::from(&tree.path))
             .collect();
-        let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| probe_worktree(path))?;
+        let probes = map_bounded(&paths, STATUS_PARALLELISM, |path| {
+            if light {
+                light_probe(path)
+            } else {
+                probe_worktree(path)
+            }
+        })?;
         for (tree, probe) in worktrees.iter_mut().zip(probes) {
             tree.session_ids = sessions.ids_under(&WorkingDirKey::new(Path::new(&tree.path)));
             tree.missing = probe.missing;
@@ -549,7 +590,8 @@ fn rename_branch(root: &Path, path: &Path, branch: &str) -> Result<Worktree, Str
         return Err("The main working copy cannot be renamed here".into());
     }
     let current = tree.branch.as_deref().ok_or("The worktree is detached")?;
-    if !current.starts_with("mc/") && !current.starts_with("bycoda/") {
+    // Managed branches are renamed by Host (workspaces.renameBranch), never here.
+    if !current.starts_with("by/") || branch_is_managed(root, current) {
         return Err("Only automatically created worktree branches can be renamed".into());
     }
     if current == branch {
@@ -605,9 +647,10 @@ fn removal_target(root: &Path, path: &Path) -> Result<Worktree, String> {
             })
         });
     if reserved_directory
-        || tree.branch.as_deref().is_some_and(|branch| {
-            branch.starts_with("bycoda/s/") || branch.starts_with("bycoda/t/")
-        })
+        || tree
+            .branch
+            .as_deref()
+            .is_some_and(|branch| branch_is_managed(root, branch))
     {
         return Err(
             "Managed workspaces must be removed through Host workspace cleanup plan/apply.".into(),

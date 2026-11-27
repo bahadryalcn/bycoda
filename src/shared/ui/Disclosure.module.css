@@ -78,6 +78,13 @@
 .count {
   flex: none;
 }
+/* A count sits right after its label; the rest of the row (actions, end chevron) stays at the far end. */
+.label:has(+ .count) {
+  flex: 0 1 auto;
+}
+.label + .count {
+  margin-inline-end: auto;
+}
 .actions {
   display: flex;
   flex: none;

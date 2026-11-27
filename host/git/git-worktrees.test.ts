@@ -72,7 +72,7 @@ it.each([false, true])(
       rmSync(root, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     });
-    const tree = await createHostWorktree(cwd, "mc/12345678", "HEAD", false);
+    const tree = await createHostWorktree(cwd, "by/12345678", "HEAD", false);
     const { sessionId } = await engine.command({
       type: "create",
       commandId: "create-named",
@@ -112,7 +112,7 @@ it.each([false, true])(
         );
         expect(
           (await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)?.branch,
-        ).toBe("mc/12345678");
+        ).toBe("by/12345678");
       } finally {
         logged.mockRestore();
       }
@@ -123,7 +123,7 @@ it.each([false, true])(
       async () => {
         expect((await store.session(sessionId)).session).toMatchObject({
           title: "codex · Fix remote naming",
-          branch: "mc/remote-naming",
+          branch: "by/remote-naming",
           worktreeCwd: tree.path,
         });
       },
@@ -131,7 +131,7 @@ it.each([false, true])(
     );
     expect(
       (await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)?.branch,
-    ).toBe("mc/remote-naming");
+    ).toBe("by/remote-naming");
     expect(title).toHaveBeenCalledTimes(1);
     expect(branch).toHaveBeenCalledTimes(1);
     await waitForIdle();
@@ -145,7 +145,7 @@ it.each([false, true])(
     expect(title).toHaveBeenCalledTimes(1);
     expect(branch).toHaveBeenCalledTimes(1);
     await expect(
-      renameHostWorktreeBranch(cwd, tree.path, "mc/12345678", "mc/other"),
+      renameHostWorktreeBranch(cwd, tree.path, "by/12345678", "by/other"),
     ).rejects.toThrow("changed");
   },
   90_000,

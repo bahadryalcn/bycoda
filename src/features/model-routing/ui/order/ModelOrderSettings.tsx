@@ -12,6 +12,7 @@ import {
   subscribeProviderAccounts,
 } from "../../../providers/public/providerAccounts";
 import { loadUsageLimitFailover } from "../../../settings/public/settings";
+import { setupCandidates } from "../../model/smartSetup";
 import { useModelRoutingStatus } from "../../model/modelRoutingClient";
 import { hostProvidersFrom } from "../../model/hostProviders";
 import {
@@ -19,10 +20,10 @@ import {
   unavailableOrderEntryId,
   type OrderDraft,
 } from "../../model/modelRoutingDraft";
-import { DelegationSettings } from "../delegation/DelegationSettings";
 import { ModelRolesGroups } from "../roles/ModelRolesGroups";
 import { ModelOrderLimitsTab } from "./ModelOrderLimitsTab";
 import { ModelOrderList, type FocusRequest, type OrderView } from "./ModelOrderList";
+import { SmartSetupAction } from "./SmartSetupAction";
 import { ModelOrderPools } from "./ModelOrderPools";
 import { orderChanges } from "./orderChanges";
 import { kindOf } from "./orderGrouping";
@@ -43,7 +44,7 @@ export type ModelOrderSettingsProps = {
 };
 
 /**
- * Settings > Models > Background work: jobs, the model order, groups, agents and limits in
+ * Settings > Models > Background work: jobs, the model order, groups and limits in
  * tabs over one draft with one Save, bound to one capable Host.
  */
 export function ModelOrderSettings({ machineId, supported }: ModelOrderSettingsProps) {
@@ -118,6 +119,8 @@ function OrderSettingsForm({
   const change = (next: OrderDraft) => editor.change(groupEntriesByKind(next, kindFor));
   const edit = (operation: (current: OrderDraft) => OrderDraft) =>
     editor.edit((current) => groupEntriesByKind(operation(current), kindFor));
+  // The edited Host's remote choices feed setup and the list's Add model.
+  const addChoices = setupCandidates(source, settings.catalog.data);
   const savedRouting = settings.routing.state ?? initial.routing;
   const listed = editor.dirty ? orderChanges(editor.base, draft, change) : [];
   // Anything the list does not name still counts, so Save never hides behind a clean count.
@@ -143,11 +146,21 @@ function OrderSettingsForm({
     { id: "jobs", label: t("Jobs") },
     { id: "models", label: t("Models & order") },
     { id: "groups", label: t("Groups") },
-    { id: "agents", label: t("Agents") },
     { id: "limits", label: t("Limits") },
   ];
   return (
     <div className="flex flex-col gap-4">
+      {/* Setup rewrites the order, groups and job bindings of the one draft, so it sits above every tab. */}
+      <FieldGroup variant="bare" disabled={editor.pending} inert={editor.pending}>
+        <SmartSetupAction
+          key={setupRevision}
+          variant={draft.routing.entries.length ? "secondary" : "primary"}
+          onEdit={edit}
+          catalogChoices={addChoices}
+          choice={setupPlanner}
+          onChoice={setSetupPlanner}
+        />
+      </FieldGroup>
       <Tabs value={tab} onValueChange={setTab} panels="shared">
         <TabList label={t("Background work")} scrollbar="hidden">
           {tabs.map((item) => (
@@ -176,22 +189,16 @@ function OrderSettingsForm({
                 change={change}
                 edit={edit}
                 status={status}
-                catalog={settings.catalog.data}
                 chatFallback={loadUsageLimitFailover() === "order"}
                 view={view}
                 onView={setView}
                 invalid={invalid}
                 focusRequest={focusRequest}
-                setupRevision={setupRevision}
-                setupPlanner={setupPlanner}
-                onSetupPlannerChange={setSetupPlanner}
+                addChoices={addChoices}
               />
             ) : null}
             {tab === "groups" ? (
               <ModelOrderPools draft={draft} onChange={change} onEdit={edit} />
-            ) : null}
-            {tab === "agents" ? (
-              <DelegationSettings draft={draft} disabled={editor.pending} onChange={change} />
             ) : null}
             {tab === "limits" && settings.limits.data ? (
               <ModelOrderLimitsTab

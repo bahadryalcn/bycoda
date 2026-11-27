@@ -216,12 +216,32 @@ fn require_acknowledged_projection(
     Ok(())
 }
 
-// Admission remains closed while the owner reviews this exact live scope.
+// Admission remains closed while the owner reviews this exact live scope. A
+// legacy record cannot prove its locks; a modern one may be rebuilt from a
+// diverged live policy only while this window keeps every committed lock.
 fn require_closed_recovery(previous: &Projection, scope: &Value) -> Result<(), String> {
-    if previous.snapshot.get("lockedGroupIds").is_some() {
-        return Err("Privacy projection is not eligible for closed recovery".into());
+    if previous.snapshot.get("lockedGroupIds").is_some()
+        && !locked_ids(&previous.snapshot)?.is_subset(&locked_ids(&scope["stableStorageKeys"])?)
+    {
+        return Err("Privacy lock state has not reached this window".into());
     }
     require_recovery_scope(scope)
+}
+
+fn locked_ids(value: &Value) -> Result<std::collections::BTreeSet<String>, String> {
+    value
+        .get("lockedGroupIds")
+        .and_then(Value::as_array)
+        .ok_or("Privacy lock state is unavailable")?
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| "Privacy lock state is invalid".to_string())
+        })
+        .collect()
 }
 
 fn require_recovery_scope(scope: &Value) -> Result<(), String> {
@@ -277,23 +297,8 @@ fn ensure_cross_window_locks(
     let Some(previous) = previous else {
         return Ok(());
     };
-    let locked = |value: &Value| -> Result<std::collections::BTreeSet<String>, String> {
-        value
-            .get("lockedGroupIds")
-            .and_then(Value::as_array)
-            .ok_or("Privacy lock state is unavailable")?
-            .iter()
-            .map(|entry| {
-                entry
-                    .as_str()
-                    .filter(|id| !id.is_empty())
-                    .map(str::to_owned)
-                    .ok_or_else(|| "Privacy lock state is invalid".to_string())
-            })
-            .collect()
-    };
-    let previous_locked = locked(&previous.snapshot)?;
-    let next_locked = locked(next)?;
+    let previous_locked = locked_ids(&previous.snapshot)?;
+    let next_locked = locked_ids(next)?;
     if previous.actor == actor {
         return Ok(());
     }
@@ -862,11 +867,20 @@ mod tests {
         assert!(require_closed_recovery(&old, &unlocked).is_ok());
         unlocked["visibleProjects"] = json!([{"cwd":""}]);
         assert!(require_closed_recovery(&old, &unlocked).is_err());
+        // A diverged modern record is rebuilt only while every committed lock stays.
         let modern = Projection {
-            snapshot: json!({"lockedGroupIds":[]}),
+            snapshot: json!({"lockedGroupIds":[],"recents":["/stale"]}),
             ..old
         };
-        assert!(require_closed_recovery(&modern, &scope).is_err());
+        assert!(require_closed_recovery(&modern, &scope).is_ok());
+        let locked_modern = Projection {
+            snapshot: json!({"lockedGroupIds":["private"]}),
+            ..modern.clone()
+        };
+        assert!(require_closed_recovery(&locked_modern, &scope).is_ok());
+        let mut dropped = scope.clone();
+        dropped["stableStorageKeys"]["lockedGroupIds"] = json!([]);
+        assert!(require_closed_recovery(&locked_modern, &dropped).is_err());
         let missing = Projection {
             snapshot: json!({"groups":[]}),
             ..modern

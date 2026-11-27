@@ -32,7 +32,8 @@ const HELPER_KEYS = [CROSS_SUBAGENTS_KEY, CROSS_ADVISOR_KEY, CROSS_SUBAGENT_MAX_
 /** The task's helper choice in the wire values the shared delegation rows edit. */
 function helperValues(helpers: WorkHelpers): Record<string, string> {
   return {
-    [CROSS_SUBAGENTS_KEY]: (helpers.models?.length && encodeSubagents(helpers.models)) || "auto",
+    // Automatic subagents are the unset value, so only a chosen list shows a reset.
+    ...(helpers.models?.length ? { [CROSS_SUBAGENTS_KEY]: encodeSubagents(helpers.models)! } : {}),
     ...(helpers.advisor === null
       ? { [CROSS_ADVISOR_KEY]: "null" }
       : helpers.advisor

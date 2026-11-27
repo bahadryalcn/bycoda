@@ -98,7 +98,7 @@ it.each([
   ["worktree path", { worktreeCwd: "C:/Windows" }],
   ["workspace id", { workspaceId: "workspace-1" }],
   ["worktree mode", { workspaceMode: "worktree" }],
-  ["generated branch", { worktreeCwd: "C:/Windows", autoWorktreeBranch: "mc/abcd1234" }],
+  ["generated branch", { worktreeCwd: "C:/Windows", autoWorktreeBranch: "by/abcd1234" }],
 ])("refuses a client-supplied %s", async (_name, extra) => {
   const { engine, store } = await setup();
   await expect(engine.command(create("projectless-denied", extra))).rejects.toThrow(

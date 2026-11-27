@@ -1,6 +1,8 @@
 import {
   MODEL_ROUTING_DELEGATION_KEYS,
+  MODEL_ROUTING_MAX_ENTRIES,
   ModelRoutingDraftSchema,
+  sameModelRoutingTarget,
   type ModelRoutingDraft,
   type ModelRoutingEntry,
   type ModelRoutingPool,
@@ -13,6 +15,11 @@ import {
 } from "../../../shared/model/modelRoutingPools";
 import { parseHostSettings, type HostSettings } from "../../tasks/public/hostSettings";
 import { supportsProviderAccounts } from "../../providers/public/providerAccounts";
+import {
+  defaultModelSettings,
+  modelEffortSetting,
+  resolveModel,
+} from "../../sessions/public/models";
 import { roleBindingsForSave } from "./modelRoutingRoles";
 import type { SetupCatalog } from "./smartSetupCatalog";
 
@@ -36,11 +43,21 @@ export type OrderDraft = {
   limits: { maxRunningTasks: string; dailyAgentMinutes: string };
 };
 
-/** Match the Host's validation: absent and empty provider lists aren't authoritative. */
-export function findUnavailableOrderEntry(entries: ModelRoutingEntry[], catalog?: SetupCatalog) {
+/** Only new or changed targets need catalog validation, as on the Host. */
+export function findUnavailableOrderEntry(
+  entries: ModelRoutingEntry[],
+  catalog?: SetupCatalog,
+  persistedEntries: ModelRoutingEntry[] = [],
+) {
+  if (!catalog) return undefined;
+  const persistedById = new Map(persistedEntries.map((entry) => [entry.id, entry]));
   return entries.find((entry) => {
-    const models = catalog?.models[entry.harness];
-    return models?.length && !models.some((model) => model.id === entry.model);
+    const models = catalog.models[entry.harness];
+    return (
+      models?.length &&
+      !sameModelRoutingTarget(persistedById.get(entry.id), entry) &&
+      !models.some((model) => model.id === entry.model)
+    );
   });
 }
 
@@ -102,10 +119,26 @@ export function entrySettings(settings: Record<string, string>): Record<string, 
   );
 }
 
+/** Moves a group-wide effort from an earlier save onto the pool's own models, where the editor shows it. */
+function spreadPoolEffort(pool: ModelRoutingPool, entries: ModelRoutingEntry[]): ModelRoutingPool {
+  const { effort, ...rest } = pool;
+  if (!effort) return pool;
+  const memberSettings = { ...rest.memberSettings };
+  for (const id of pool.entryIds) {
+    const entry = entries.find((candidate) => candidate.id === id);
+    const setting = entry && modelEffortSetting(resolveModel(entry.harness, entry.model));
+    if (!setting?.options?.some((option) => option.value === effort)) continue;
+    if (memberSettings[id]?.[setting.id]) continue;
+    memberSettings[id] = { ...memberSettings[id], [setting.id]: effort };
+  }
+  return Object.keys(memberSettings).length ? { ...rest, memberSettings } : rest;
+}
+
 export function orderDraft(state: ModelRoutingState, limits: HostSettings): OrderDraft {
   const { version: _version, updatedAt: _updatedAt, ...routing } = state;
+  const copy = structuredClone(routing);
   return {
-    routing: structuredClone(routing),
+    routing: { ...copy, pools: copy.pools.map((pool) => spreadPoolEffort(pool, copy.entries)) },
     workCaps: {
       total: capDraft(state.workCaps?.total),
       providers: Object.fromEntries(
@@ -130,7 +163,8 @@ export function orderDraft(state: ModelRoutingState, limits: HostSettings): Orde
     maxRunMinutes: String(state.defaultMaxRunMinutes ?? ""),
     limits: {
       maxRunningTasks: String(limits.maxRunningTasks),
-      dailyAgentMinutes: String(limits.dailyAgentMinutes),
+      // The Host stores 0 for "no limit"; the field shows that as empty, like the run-time limit.
+      dailyAgentMinutes: limits.dailyAgentMinutes > 0 ? String(limits.dailyAgentMinutes) : "",
     },
   };
 }
@@ -302,12 +336,144 @@ export function removeOrderEntry(draft: OrderDraft, id: string): OrderDraft {
     routing: {
       ...draft.routing,
       entries: draft.routing.entries.filter((entry) => entry.id !== id),
-      pools: draft.routing.pools.map((pool) => ({
-        ...pool,
-        entryIds: pool.entryIds.filter((entryId) => entryId !== id),
-      })),
+      pools: draft.routing.pools.map((pool) =>
+        withMembers(
+          pool,
+          pool.entryIds.filter((entryId) => entryId !== id),
+          pool.poolIds ?? [],
+        ),
+      ),
     },
   };
+}
+
+/** A pool with new members; settings of models it no longer lists are dropped. */
+function withMembers(
+  pool: ModelRoutingPool,
+  entryIds: string[],
+  poolIds: string[],
+): ModelRoutingPool {
+  const { poolIds: _poolIds, memberSettings, ...rest } = pool;
+  const kept = Object.fromEntries(
+    Object.entries(memberSettings ?? {}).filter(([id]) => entryIds.includes(id)),
+  );
+  return {
+    ...rest,
+    entryIds,
+    ...(poolIds.length ? { poolIds } : {}),
+    ...(Object.keys(kept).length ? { memberSettings: kept } : {}),
+  };
+}
+
+export type PoolTarget = Pick<ModelRoutingEntry, "harness" | "model" | "providerAccountId">;
+
+/**
+ * The order entry for a picked model and account, appended to the order when it is not there
+ * yet: a group lists order entries, so a new model joins the order with default settings.
+ */
+export function orderEntryFor(
+  draft: OrderDraft,
+  target: PoolTarget,
+): { draft: OrderDraft; id: string } {
+  const account = supportsProviderAccounts(target.harness)
+    ? (target.providerAccountId ?? "default")
+    : undefined;
+  const existing = draft.routing.entries.find(
+    (entry) =>
+      entry.harness === target.harness &&
+      entry.model === target.model &&
+      (account === undefined || (entry.providerAccountId ?? "default") === account),
+  );
+  if (existing) return { draft, id: existing.id };
+  if (draft.routing.entries.length >= MODEL_ROUTING_MAX_ENTRIES)
+    throw new Error("The model order is full. Remove a model first.");
+  const id = crypto.randomUUID();
+  const entry: ModelRoutingEntry = {
+    id,
+    harness: target.harness,
+    model: target.model,
+    ...(account === undefined || account === "default" ? {} : { providerAccountId: account }),
+    modelSettings: entrySettings(defaultModelSettings(resolveModel(target.harness, target.model))),
+    unknownLimit: "use",
+  };
+  return {
+    id,
+    draft: {
+      ...draft,
+      percentages: { ...draft.percentages, [id]: "" },
+      routing: { ...draft.routing, entries: [...draft.routing.entries, entry] },
+    },
+  };
+}
+
+function updatePool(
+  draft: OrderDraft,
+  poolId: string,
+  update: (pool: ModelRoutingPool) => ModelRoutingPool,
+): OrderDraft {
+  return {
+    ...draft,
+    routing: {
+      ...draft.routing,
+      pools: draft.routing.pools.map((pool) => (pool.id === poolId ? update(pool) : pool)),
+    },
+  };
+}
+
+/** Adds a picked model to the end of a pool. */
+export function addPoolModel(draft: OrderDraft, poolId: string, target: PoolTarget): OrderDraft {
+  const found = orderEntryFor(draft, target);
+  const pool = found.draft.routing.pools.find((candidate) => candidate.id === poolId);
+  if (!pool) return draft;
+  if (pool.entryIds.includes(found.id)) throw new Error("This model is already in the group.");
+  return updatePool(found.draft, poolId, (current) =>
+    withMembers(current, [...current.entryIds, found.id], current.poolIds ?? []),
+  );
+}
+
+/** Swaps one model of a pool for a picked one at the same position; its pool settings reset. */
+export function replacePoolModel(
+  draft: OrderDraft,
+  poolId: string,
+  entryId: string,
+  target: PoolTarget,
+): OrderDraft {
+  const found = orderEntryFor(draft, target);
+  if (found.id === entryId) return draft;
+  const pool = found.draft.routing.pools.find((candidate) => candidate.id === poolId);
+  if (!pool) return draft;
+  if (pool.entryIds.includes(found.id)) throw new Error("This model is already in the group.");
+  return updatePool(found.draft, poolId, (current) =>
+    withMembers(
+      current,
+      current.entryIds.map((id) => (id === entryId ? found.id : id)),
+      current.poolIds ?? [],
+    ),
+  );
+}
+
+/** Merges effort or speed changes for one model of a pool over its pool settings. */
+export function setPoolMemberSettings(
+  draft: OrderDraft,
+  poolId: string,
+  entryId: string,
+  settings: Record<string, string>,
+): OrderDraft {
+  return updatePool(draft, poolId, (pool) => ({
+    ...pool,
+    memberSettings: {
+      ...pool.memberSettings,
+      [entryId]: entrySettings({ ...pool.memberSettings?.[entryId], ...settings }),
+    },
+  }));
+}
+
+/** The settings a pool runs one of its own models with: order settings, then the pool's. */
+export function poolMemberValues(
+  pool: ModelRoutingPool,
+  entry: ModelRoutingEntry,
+): Record<string, string> {
+  return entrySettings({ ...entry.modelSettings, ...pool.memberSettings?.[entry.id] });
 }
 
 /** `base`, then `base 2`, `base 3`…, skipping names already used (case-insensitive). */
@@ -346,15 +512,9 @@ export function setPoolMembers(
 ): OrderDraft {
   if (!members.entryIds.length && !members.poolIds.length)
     throw new Error("Keep at least one model or group in a group.");
-  const pools = draft.routing.pools.map((pool) => {
-    if (pool.id !== poolId) return pool;
-    const { poolIds: _previous, ...rest } = pool;
-    return {
-      ...rest,
-      entryIds: members.entryIds,
-      ...(members.poolIds.length ? { poolIds: members.poolIds } : {}),
-    };
-  });
+  const pools = draft.routing.pools.map((pool) =>
+    pool.id === poolId ? withMembers(pool, members.entryIds, members.poolIds) : pool,
+  );
   if (modelRoutingPoolCycle(pools)) throw new Error("Groups cannot include each other in a loop.");
   return { ...draft, routing: { ...draft.routing, pools } };
 }

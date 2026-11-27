@@ -12,7 +12,11 @@ import {
 import { antigravityImageModel, listImageModels } from "../images/image-models";
 import { generateAntigravityImage } from "../images/antigravity-images";
 import type { Session } from "../../src/features/sessions/model/session";
-import { imageModelAllowed } from "../../src/shared/model/host-contracts/image-models";
+import {
+  IMAGE_MODELS_KEY,
+  decodeImageModels,
+  imageModelAllowed,
+} from "../../src/shared/model/host-contracts/image-models";
 import type { HostStore } from "../store";
 import type { SessionRunEngine } from "../sessions/sessionRuns";
 import { writeFileAtomic } from "../storage/atomic-write";
@@ -89,6 +93,11 @@ export async function callImageConversationTool(
   await check();
   const { session } = options;
   const allowed = (id: string) => imageModelAllowed(session.modelSettings, id);
+  // The owner turned image generation off: no model is offered and nothing is generated.
+  const off = decodeImageModels(session.modelSettings?.[IMAGE_MODELS_KEY])?.length === 0;
+  if (off && action === "images.status") return { models: [], off: true, remaining: 0 };
+  if (off && action === "images.generate")
+    throw new Error("Image generation is off for this session.");
   const antigravity = options.antigravity ?? (() => antigravityImageModel());
   const all =
     options.adapters ??

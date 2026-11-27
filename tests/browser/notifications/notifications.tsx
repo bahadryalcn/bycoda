@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { ApprovalToasts } from "../../../src/features/sessions/ui/ApprovalToasts";
+import { resetSessionsStore } from "../../../src/features/sessions/model/sessionsStore";
+import { SessionProjectIcon } from "../../../src/app/shell/useSessionProjectAppearance";
+import { OwnerRequestSource } from "../../../src/features/sessions/ui/OwnerRequestSource";
+import { NotificationProjectIconContext } from "../../../src/features/sessions/ui/NotificationHistoryItem";
 import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
 import { ComposerNoticeStack } from "../../../src/features/sessions/ui/ComposerNoticeStack";
 import { requestOwnerApproval } from "../../../src/features/notifications/model/ownerApprovals";
@@ -97,11 +101,13 @@ if (!params.has("toasts") && !localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
 }
 // A live owner approval: the pending card lists its title and time left, never its message.
 if (!params.has("empty") && !params.has("toasts") && !params.has("owner")) {
+  // The row names the project and conversation that asked from the open sessions.
+  resetSessionsStore(notices.map((notice) => notice.session));
   requestOwnerApproval({
     id: "fixture-owner",
     sessionId: "fixture-0",
     input: {
-      title: "Run the release script",
+      title: "bycoda — Run the release script",
       message: "Command: pnpm release",
       confirmLabel: "Run",
       cancelLabel: "Cancel",
@@ -109,6 +115,11 @@ if (!params.has("empty") && !params.has("toasts") && !params.has("owner")) {
     },
   }).catch(() => undefined);
 }
+// The owner scenario's conversation, so the dialog can name the project and conversation that asked.
+if (params.has("owner"))
+  resetSessionsStore([
+    { ...notices[0].session, id: "fixture-chat", title: "Release checklist review" },
+  ]);
 function OwnerApprovalScenario() {
   const [inChat, setInChat] = useState(true);
   const [batchResult, setBatchResult] = useState("");
@@ -126,6 +137,7 @@ function OwnerApprovalScenario() {
     requestOwnerApproval({
       id: "fixture-jira",
       sessionId: "fixture-chat",
+      cwd,
       input: {
         title: "bycoda — Inbox operation approval",
         message: `Exact request for PFDEV-1123\n\n${body}`,
@@ -207,7 +219,20 @@ Command: ${command}`,
           </Surface>
         </div>
       ) : null}
-      <OwnerApprovalInbox onOpenSession={() => setInChat(true)} />
+      <NotificationProjectIconContext value={SessionProjectIcon}>
+        <OwnerApprovalInbox
+          onOpenSession={() => setInChat(true)}
+          source={(request) => (
+            <Text as="div" size="secondary" tone="secondary">
+              <OwnerRequestSource
+                sessionId={request.sessionId}
+                threadId={request.threadId}
+                cwd={request.cwd}
+              />
+            </Text>
+          )}
+        />
+      </NotificationProjectIconContext>
     </main>
   );
 }
@@ -232,6 +257,7 @@ function Fixture() {
           setResult(`${id}:${requestId}:${decision}`);
           setPending((current) => current.filter((notice) => notice.sessionId !== id));
         }}
+        projectIcon={SessionProjectIcon}
       />
       <output aria-label="Fixture result">{result}</output>
     </>

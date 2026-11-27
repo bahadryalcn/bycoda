@@ -62,7 +62,7 @@ async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["st
   git(project, "config", "user.email", "test@example.test");
   git(project, "config", "commit.gpgsign", "false");
   git(project, "commit", "-q", "--allow-empty", "-m", "base");
-  git(project, "worktree", "add", "-q", "-b", "bycoda/t/test-123456789012", tree);
+  git(project, "worktree", "add", "-q", "-b", "by/test-123456789012", tree);
   const service = { review: vi.fn(), merge: vi.fn(), publish: vi.fn(), recover: vi.fn() };
   const registry = {
     list: vi.fn().mockResolvedValue([
@@ -70,7 +70,7 @@ async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["st
         id: "w",
         projectId: "p",
         path: tree,
-        branchRef: "refs/heads/bycoda/t/test-123456789012",
+        branchRef: "refs/heads/by/test-123456789012",
       },
     ]),
   };

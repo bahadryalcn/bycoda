@@ -76,6 +76,7 @@ import {
   TerminalsCreateParamsSchema,
   TerminalsReadParamsSchema,
   TerminalsWriteParamsSchema,
+  TerminalsResizeParamsSchema,
   TerminalsControlParamsSchema,
 } from "./terminals";
 import {
@@ -1041,6 +1042,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "terminals.create": terminalOperation(TerminalsCreateParamsSchema, HostTerminalSchema),
   "terminals.read": terminalOperation(TerminalsReadParamsSchema, HostTerminalReadSchema, true),
   "terminals.write": terminalOperation(TerminalsWriteParamsSchema, ControlAcceptedSchema),
+  "terminals.resize": terminalOperation(TerminalsResizeParamsSchema, ControlAcceptedSchema),
   "terminals.interrupt": terminalOperation(
     TerminalsControlParamsSchema,
     ControlAcceptedSchema,

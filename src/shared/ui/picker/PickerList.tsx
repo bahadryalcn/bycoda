@@ -67,8 +67,8 @@ export function PickerListRoot(props: PickerListRootProps) {
   );
 }
 
-/** Value lists show the shared leading check; action lists without a committed value may omit it. */
-export type PickerCheckPlacement = "leading" | "none";
+/** Value lists show the shared check at the row end; action lists without a committed value may omit it. */
+export type PickerCheckPlacement = "end" | "none";
 
 type PickerListSource =
   | (PickerListOptions & { controller?: undefined })
@@ -131,7 +131,7 @@ export type PickerListProps = PickerListSource & {
 export function PickerList({
   label,
   query = "",
-  checkPlacement = "leading",
+  checkPlacement = "end",
   selectionIndicator,
   density = "md",
   autoFocus = false,

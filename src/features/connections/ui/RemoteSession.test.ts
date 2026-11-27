@@ -27,6 +27,11 @@ import {
   resetDisabledModels,
   saveModelEnabled,
 } from "../../sessions/model/models";
+import {
+  additionalDirsForSession,
+  saveSessionAdditionalDirs,
+} from "../../projects/public/additionalDirs";
+import { saveAdditionalDirs } from "../../projects/model/additionalDirs";
 import { rememberRemoteProject, remoteProjectFor } from "../model/remoteProjects";
 import { RemoteSession, type RemoteSessionOverrides } from "./RemoteSession";
 import { saveRemoteAutoReconnect } from "../../settings/model/settings";
@@ -251,6 +256,8 @@ let conversationRewindSupported = false;
 let managedCreationSupported = true;
 let contextReplaySupported = true;
 let workspaceDefaultMode: "current" | "worktree" = "current";
+let additionalDirsSupported = false;
+let creationV2Supported = false;
 let workspacePreparationFailure: string | undefined;
 let machineSessionDeleted = false;
 let machineSessionRevisionHint: number | undefined;
@@ -337,6 +344,8 @@ beforeEach(() => {
   managedCreationSupported = true;
   contextReplaySupported = true;
   workspaceDefaultMode = "current";
+  additionalDirsSupported = false;
+  creationV2Supported = false;
   workspacePreparationFailure = undefined;
   machineSessionDeleted = false;
   machineSessionRevisionHint = undefined;
@@ -347,7 +356,6 @@ beforeEach(() => {
   historyReadDelay = undefined;
   tailReadDelay = undefined;
   localStorage.setItem("bycoda.modelControls", "beside");
-  localStorage.setItem("bycoda.managedCreate:env:shell", "host-session");
   commands = [];
   host = undefined;
   syncDelay = undefined;
@@ -380,6 +388,8 @@ beforeEach(() => {
     name: "repo",
     cwd: "/home/me/repo",
   }).key;
+  localStorage.setItem(`bycoda.managedCreate:env:shell:${projectKey}`, "host-session");
+  localStorage.setItem("bycoda.managedCreate:env:shell:~", "host-session");
   vi.mocked(invoke).mockImplementation(async (command, input) => {
     if (command === "session_attachment_references")
       return {
@@ -400,7 +410,11 @@ beforeEach(() => {
     }
     if (command === "read_attachment_chunk") {
       if (attachmentReadDelay) await attachmentReadDelay;
-      const { size, offset, length } = input as { size: number; offset: number; length: number };
+      const { size, offset, length } = input as {
+        size: number;
+        offset: number;
+        length: number;
+      };
       const end = Math.min(size, offset + length);
       return { data: btoa("x".repeat(end - offset)), offset: end, size };
     }
@@ -441,6 +455,8 @@ beforeEach(() => {
           ...(contextReplaySupported ? ["sessions.contextReplay.v1"] : []),
           "workspaces.managed.v1",
           "workspaces.policy.v1",
+          ...(creationV2Supported ? ["workspaces.creation.v2"] : []),
+          ...(additionalDirsSupported ? ["sessions.additionalDirs.v1", "git.worktreeCreate"] : []),
           ...(managedCreationSupported ? ["sessions.managedCreation.v1"] : []),
           ...(steerSupported
             ? ["sessions.steer", ...providers.map((id) => `sessions.steer.${id}`)]
@@ -464,7 +480,9 @@ beforeEach(() => {
       }
       const reset = machineChangesReset;
       machineChangesReset = false;
-      const request = params as { sessions?: { sessionId: string; revision: number }[] };
+      const request = params as {
+        sessions?: { sessionId: string; revision: number }[];
+      };
       return {
         instanceId: "test-host",
         reset,
@@ -504,6 +522,18 @@ beforeEach(() => {
       createdBranch = "bycoda/session/host-session";
       createdWorktree = "/home/me/repo-worktrees/managed-session";
       return {
+        // A creation-v2 Host also makes one worktree per requested repository.
+        ...(creationV2Supported
+          ? {
+              extraWorktrees: Object.fromEntries(
+                (params.repositories ?? []).map((dir: string) => [
+                  dir,
+                  "/home/me/docs-worktrees/session",
+                ]),
+              ),
+              baseSource: "local",
+            }
+          : {}),
         workspace: {
           id: "workspace-session",
           revision: 1,
@@ -642,7 +672,10 @@ beforeEach(() => {
     if (method === "attachments.claim" || method === "attachments.release") return {};
     if (method === "attachments.claims") return { claims: [] };
     if (method.startsWith("sessions.queue.")) {
-      const queueParams = params as unknown as { before: SharedQueue; after: SharedQueue };
+      const queueParams = params as unknown as {
+        before: SharedQueue;
+        after: SharedQueue;
+      };
       if (method.endsWith(".change"))
         hostQueue = {
           ...mergeQueueChange(hostQueue, { before: queueParams.before, after: queueParams.after }),
@@ -1532,7 +1565,13 @@ describe("warm session open identity", () => {
     vi
       .mocked(invoke)
       .mock.calls.filter(([command]) => command === "remote_request")
-      .map(([, input]) => input as { method: string; params?: { supportedProviders?: unknown } });
+      .map(
+        ([, input]) =>
+          input as {
+            method: string;
+            params?: { supportedProviders?: unknown };
+          },
+      );
   // Only the session's own identity check asks with the provider list and blocks its read;
   // the shared machine status watcher describes on its own schedule.
   const sessionDescribes = () =>
@@ -2163,11 +2202,8 @@ it("transport: keeps the first turn active while its accepted message awaits hos
 
 it("starts a remote session in the worktree chosen before its first message", async () => {
   await render();
-  await act(async () => byLabel("Workspace Current checkout")!.click());
-  const existing = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent?.trim() === "Existing worktree…",
-  );
-  await act(async () => existing!.click());
+  // Existing worktrees are chosen from the branch chip's "Existing worktrees" group.
+  await act(async () => byLabel("Branch main")!.click());
   await settle();
   const worktree = [...document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
     (button) => button.textContent?.includes("repo-worktrees/dev") ?? false,
@@ -2188,12 +2224,13 @@ it("creates a host worktree through the composer and selects it", async () => {
   await render();
   await act(async () => byLabel("Workspace Current checkout")!.click());
   expect(document.body.querySelector('[aria-label="Workspace"]')).not.toBeNull();
-  expect(document.body.textContent).toContain("Existing worktree…");
+  expect(document.body.textContent).toContain("New worktree");
+  expect(document.body.textContent).not.toContain("Existing worktree…");
   expect(document.body.textContent).not.toContain("Worktree settings");
   expect(document.body.querySelector('[aria-label="Existing worktrees"]')).toBeNull();
   expect(document.body.querySelector('input[placeholder="Search worktrees…"]')).toBeNull();
   const create = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent?.trim() === "New worktree",
+    (button) => button.textContent?.trim().startsWith("New worktree") ?? false,
   );
   await act(async () => create!.click());
   expect(byLabel("Workspace New worktree")).not.toBeNull();
@@ -2252,6 +2289,101 @@ it("uses Host worktree policy and binds preparation to the reserved authoritativ
     worktreeCwd: "/home/me/repo-worktrees/managed-session",
   });
   expect(host?.session.workspaceId).toBe("workspace-session");
+});
+
+it("starts a new creation identity when the draft moves to another project after a failed send", async () => {
+  workspaceDefaultMode = "worktree";
+  workspacePreparationFailure = "Workspace storage is busy";
+  await render();
+  await sendTransport("First attempt");
+  expect(commands).toEqual([]);
+  workspacePreparationFailure = undefined;
+  const other = rememberRemoteProject("env", {
+    id: "other-project",
+    name: "other",
+    cwd: "/home/me/other",
+  });
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const call = input as { method?: string } | undefined;
+    if (command === "remote_request" && call?.method === "projects.list")
+      return [
+        { id: "project", cwd: "/home/me/repo" },
+        { id: "other-project", cwd: "/home/me/other" },
+      ];
+    if (command === "remote_request" && call?.method === "projects.open")
+      return { id: "other-project", cwd: "/home/me/other" };
+    return original(command, input);
+  });
+  await render({ ...shell(), cwd: other.key, workspaceMode: "worktree" });
+  await sendTransport("Second project");
+  const owners = vi
+    .mocked(invoke)
+    .mock.calls.filter(
+      ([, input]) => (input as { method?: string })?.method === "workspaces.prepare",
+    )
+    .map(([, input]) => (input as { params: { owner: { id: string } } }).params.owner.id);
+  expect(owners).toHaveLength(2);
+  expect(owners).toEqual(["host-session", expect.any(String)]);
+  expect(owners[1]).not.toBe("host-session");
+});
+
+describe("extra folders of a new-worktree Host session", () => {
+  const methodCalls = (method: string) =>
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(([, input]) => (input as { method?: string })?.method === method);
+  const setUp = (supported: boolean) => {
+    workspaceDefaultMode = "worktree";
+    additionalDirsSupported = supported;
+    creationV2Supported = supported;
+    saveSessionAdditionalDirs("shell", projectKey, ["remote://env/home/me/docs"]);
+    // The chosen repositories of the project are what each gets a worktree for.
+    if (supported) saveAdditionalDirs(projectKey, ["remote://env/home/me/docs"]);
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, input) => {
+      const call = input as
+        | { method?: string; params?: { command?: string; args?: { cwd?: string } } }
+        | undefined;
+      if (
+        command === "remote_request" &&
+        call?.method === "workspace.run" &&
+        call.params?.command === "git_worktrees" &&
+        call.params.args?.cwd === "/home/me/docs"
+      )
+        return {
+          defaultRoot: "/home/me/docs-worktrees",
+          worktrees: [
+            { path: "/home/me/docs", branch: "main", head: "abc", isMain: true, missing: false },
+          ],
+        };
+      return original(command, input);
+    });
+  };
+
+  it("asks the Host for a worktree per chosen repository and sends its path while the picker keeps the folder", async () => {
+    setUp(true);
+    await render();
+    await send("Work with docs");
+    expect(methodCalls("git.worktreeCreate")).toHaveLength(0);
+    expect(methodCalls("workspaces.prepare")[0]![1]).toMatchObject({
+      params: { repositories: ["/home/me/docs"] },
+    });
+    expect(commands.find((command) => command.type === "send")).toMatchObject({
+      additionalDirs: ["/home/me/docs-worktrees/session"],
+    });
+    expect(additionalDirsForSession("shell", projectKey)).toEqual(["remote://env/home/me/docs"]);
+  });
+
+  it("leaves extra folders alone on a Host without the capability", async () => {
+    setUp(false);
+    await render();
+    await send("Work with docs");
+    expect(methodCalls("git.worktreeCreate")).toHaveLength(0);
+    expect(commands.find((command) => command.type === "send")).not.toHaveProperty(
+      "additionalDirs",
+    );
+  });
 });
 
 it("keeps managed preparation failures off the project checkout and retries the same owner", async () => {
@@ -2640,7 +2772,10 @@ it("settles a send whose response was lost once the Host reports its receipt, wi
   const original = vi.mocked(invoke).getMockImplementation()!;
   let lost = true;
   vi.mocked(invoke).mockImplementation(async (command, input) => {
-    const request = input as { method?: string; params?: HostCommand & { commandId?: string } };
+    const request = input as {
+      method?: string;
+      params?: HostCommand & { commandId?: string };
+    };
     if (request?.method === "commands.dispatch" && request.params?.type === "send" && lost) {
       lost = false;
       dispatch(request.params);
@@ -4222,7 +4357,11 @@ slow(
       vi
         .mocked(invoke)
         .mock.calls.map(
-          ([, args]) => args as { method?: string; params?: { type?: string; commandId?: string } },
+          ([, args]) =>
+            args as {
+              method?: string;
+              params?: { type?: string; commandId?: string };
+            },
         )
         .filter(
           (request) => request?.method === "commands.dispatch" && request.params?.type === "shell",
@@ -4895,7 +5034,11 @@ slow(
       vi
         .mocked(invoke)
         .mock.calls.map(
-          ([, args]) => args as { method?: string; params?: { type?: string; commandId?: string } },
+          ([, args]) =>
+            args as {
+              method?: string;
+              params?: { type?: string; commandId?: string };
+            },
         )
         .filter(
           (request) => request?.method === "commands.dispatch" && request.params?.type === "steer",

@@ -9,16 +9,15 @@ import {
 
 /**
  * How the account control looks for a given number of accounts: nothing to pick with one,
- * a one-click switch with two, a short list up to five and a searchable list beyond that.
+ * a collapsible list up to five and a searchable one beyond that.
  */
-export type AccountSwitcherKind = "none" | "label" | "switch" | "menu" | "search";
+export type AccountSwitcherKind = "none" | "label" | "menu" | "search";
 
 export const ACCOUNT_MENU_SEARCH_FROM = 6;
 
 export function accountSwitcherKind(count: number): AccountSwitcherKind {
   if (count <= 0) return "none";
   if (count === 1) return "label";
-  if (count === 2) return "switch";
   return count < ACCOUNT_MENU_SEARCH_FROM ? "menu" : "search";
 }
 

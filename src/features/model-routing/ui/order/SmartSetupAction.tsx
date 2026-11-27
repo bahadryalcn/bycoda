@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { ButtonGroup } from "../../../../shared/ui/ButtonGroup";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { Text } from "../../../../shared/ui/Text";
 import { SlidersHorizontal, Sparkles } from "../../../../shared/ui/icons";
 import { HarnessIcon } from "../../../../shared/ui/identity/HarnessIcon";
 import { useModelSource } from "../../../sessions/public/modelSource";
@@ -38,14 +39,12 @@ export function SmartSetupAction({
   catalogChoices,
   choice,
   onChoice,
-  children,
 }: {
   variant?: "primary" | "secondary";
   onEdit: (operation: (draft: OrderDraft) => OrderDraft) => boolean;
   catalogChoices: SetupCandidate[];
   choice?: ModelRoutingTarget;
   onChoice: (choice: ModelRoutingTarget | undefined) => void;
-  children?: ReactNode;
 }) {
   const t = useT();
   const source = useModelSource();
@@ -159,9 +158,9 @@ export function SmartSetupAction({
           loadingLabel={t("Preparing draft…")}
           onClick={() => void run("rules")}
         >
-          {t("Prepare setup draft")}
+          {t("Set up with rules")}
         </Button>
-        <ButtonGroup aria-label={t("Plan setup with AI")} className="min-w-0 max-w-full">
+        <ButtonGroup aria-label={t("Set up with AI")} className="min-w-0 max-w-full">
           <Button
             ref={aiButton}
             variant="ghost"
@@ -177,14 +176,20 @@ export function SmartSetupAction({
             loadingLabel={planner ? t("Planning with {p0}", { p0: planner }) : t("Planning…")}
             onClick={() => void run("ai")}
           >
-            {t("Plan setup with AI")}
+            {t("Set up with AI")}
           </Button>
+          {/* The planning model is named on the trigger, never hidden behind its provider icon. */}
           <Button
             ref={pickerButton}
             variant="ghost"
             size="sm"
-            iconOnly
-            label={t("Model and settings")}
+            startIcon={
+              selected ? (
+                <HarnessIcon harness={selected.harness} size="sm" />
+              ) : (
+                <SlidersHorizontal className="icon-sm" />
+              )
+            }
             disabled={!!running || !pickerHarness}
             disabledReason={
               running
@@ -195,11 +200,7 @@ export function SmartSetupAction({
             aria-expanded={pickerOpen}
             onClick={() => setPickerOpen(!pickerOpen)}
           >
-            {selected ? (
-              <HarnessIcon harness={selected.harness} size="sm" />
-            ) : (
-              <SlidersHorizontal className="icon-sm" />
-            )}
+            {choice ? source.resolve(choice.harness, choice.model).name : t("Automatic")}
           </Button>
         </ButtonGroup>
         {pickerOpen && pickerHarness ? (
@@ -247,8 +248,10 @@ export function SmartSetupAction({
             {t("Cancel")}
           </Button>
         ) : null}
-        {children}
       </div>
+      <Text size="caption" tone="secondary">
+        {t("Fills models, groups and jobs in one draft.")}
+      </Text>
       {result ? (
         <InlineMessage tone={fallback ? "warning" : "success"}>
           {result.plannedBy

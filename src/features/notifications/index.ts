@@ -1,5 +1,7 @@
 export {
+  hasOwnerApprovalChat,
   ownerApprovalsSnapshot,
+  presentOwnerApproval,
   reopenOwnerApproval,
   subscribeOwnerApprovals,
 } from "./model/ownerApprovals";
@@ -9,7 +11,12 @@ export {
   type OwnerSecretInput,
 } from "./model/ownerSecretInputs";
 export { logOwnerRequest } from "./model/notificationLog";
-export { OwnerApprovalChat, OwnerApprovalInbox } from "./ui/OwnerApprovalRequests";
+export { ownerPromptTitle } from "./model/ownerPromptLabels";
+export {
+  OwnerApprovalChat,
+  OwnerApprovalInbox,
+  ownerRequestTitle,
+} from "./ui/OwnerApprovalRequests";
 export { useServerNotifications } from "./hooks/useServerNotifications";
 export { useOwnerApprovalMirror } from "./hooks/useOwnerApprovalMirror";
 export {

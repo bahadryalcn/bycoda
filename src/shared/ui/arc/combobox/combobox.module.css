@@ -150,6 +150,15 @@
 .choiceIcon {
   composes: icon from "../../ListRow.module.css";
 }
+/* A composite glyph (provider mark plus account badge) widens the slot instead of painting over
+   the label; a lone glyph keeps the 16px slot. Doubled to outrank the composed fixed width. */
+.choiceIcon.choiceIcon {
+  inline-size: auto;
+  min-inline-size: var(--ui-icon-md);
+}
+.choiceIcon.choiceIcon > :is(svg, img) {
+  inline-size: var(--ui-icon-md);
+}
 .choiceBody {
   min-inline-size: 0;
   flex: 1;

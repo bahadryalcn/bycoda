@@ -558,9 +558,19 @@ handoff. Scoped Conversation Tools do not receive the account catalog.
 Authorization header. Browser Origins are rejected. `connection.hello` verifies
 the expected environment and advertises only actually routed capabilities.
 The composition exposes session reads, command dispatch/status, logical
-subscriptions, queues, files, pipe terminals, Notes and explicit Git operations.
+subscriptions, queues, files, project terminals, Notes and explicit Git operations.
 Each method requires both an advertised route
 and its explicit capability family; schemas alone never enable a route.
+
+Interactive project terminals (`terminals.create` without `command`) run the
+default or chosen shell in a real PTY owned by the Host service
+(`@lydell/node-pty`, ConPTY on Windows), with `TERM=xterm-256color` and the
+client's initial `cols`/`rows`. `terminals.write` delivers raw keystrokes (LF is
+sent as Enter), `terminals.resize` changes the PTY size, and
+`terminals.interrupt` sends Ctrl-C to the foreground program without ending the
+shell. `terminals.close` ends the shell's process tree. Output keeps the bounded
+cursor buffer read by `terminals.read`. Host packages ship the binding for each
+target (`scripts/build/host-pty.mjs`, verified against the lockfile).
 
 `transport.ws.terminals.command.v1` adds one-shot `terminals.create` commands.
 `command` carries at most 10,000 source characters; `shellKind` selects `powershell`,

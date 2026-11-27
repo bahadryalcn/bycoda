@@ -29,6 +29,8 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   count?: number | null;
   /** Accessible context for the count, such as "4 conversations". */
   countLabel?: string;
+  /** Largest count shown as a number; above it the badge reads `max+`. Defaults to 99; the accessible name keeps the real number. */
+  countMax?: number;
   /** Controlled open state; pair with `onOpenChange`. */
   open?: boolean;
   /** Initial open state when uncontrolled. */
@@ -91,6 +93,7 @@ export function Disclosure({
   summaryActions,
   count,
   countLabel,
+  countMax,
   open,
   defaultOpen,
   onOpenChange,
@@ -159,7 +162,7 @@ export function Disclosure({
     </span>
   );
   const countNode = hasCount ? (
-    <Badge variant="count" size="xs" label={countLabel} className={styles.count}>
+    <Badge variant="count" size="xs" label={countLabel} max={countMax} className={styles.count}>
       {count}
     </Badge>
   ) : null;

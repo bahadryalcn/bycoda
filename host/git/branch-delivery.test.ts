@@ -48,7 +48,7 @@ async function fixture() {
   git("add", ".");
   git("commit", "-qm", "base");
   const baseCommit = git("rev-parse", "HEAD");
-  git("worktree", "add", "-qb", "bycoda/t/test", source);
+  git("worktree", "add", "-qb", "by/test", source);
   write("shared.txt", "source\n", source);
   run(source, "add", "shared.txt");
   run(source, "commit", "-qm", "source work");
@@ -60,7 +60,7 @@ async function fixture() {
     environmentId: "local",
     owner: { kind: "task", id: "task" },
     path: source,
-    branchRef: "refs/heads/bycoda/t/test",
+    branchRef: "refs/heads/by/test",
     baseRef: "refs/heads/main",
     baseCommit,
     targetBranchRef: "refs/heads/main",
@@ -219,9 +219,9 @@ describe("SHA-bound branch delivery", () => {
   it("explains a review whose source branch was deleted outside bycoda", async () => {
     const r = await fixture();
     r.git("worktree", "remove", "--force", r.source);
-    r.git("branch", "-D", "bycoda/t/test");
+    r.git("branch", "-D", "by/test");
     await expect(r.review()).rejects.toThrow(
-      "Branch bycoda/t/test no longer exists, so there is nothing to review",
+      "Branch by/test no longer exists, so there is nothing to review",
     );
   });
 
@@ -442,7 +442,7 @@ describe("publication receipts", () => {
         repository: "owner/repo",
         remote: "origin",
         baseBranchRef: "refs/heads/main",
-        headBranchRef: "refs/heads/bycoda/t/test",
+        headBranchRef: "refs/heads/by/test",
         title: "Title",
         body: "Body\nsecond line",
       },

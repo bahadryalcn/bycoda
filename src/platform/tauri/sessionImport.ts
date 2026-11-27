@@ -1,6 +1,24 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ImportProvider = "claude" | "codex";
+/** Providers whose stored conversations can be imported, in the order the dialog lists them. */
+export const IMPORT_PROVIDERS = [
+  "claude",
+  "codex",
+  "cursor",
+  "grok",
+  "opencode",
+  "pi",
+  "omp",
+  "hermes",
+  "antigravity",
+  "openclaw",
+] as const;
+
+export type ImportProvider = (typeof IMPORT_PROVIDERS)[number];
+
+export function isImportProvider(value: string): value is ImportProvider {
+  return (IMPORT_PROVIDERS as readonly string[]).includes(value);
+}
 
 /** Interactive chats, non-interactive runs, and threads another agent spawned. */
 export type ImportKind = "interactive" | "exec" | "subagent";
@@ -44,7 +62,7 @@ export type ClaudeTranscript = {
   oversizeSkipped: number;
 };
 
-/** A Codex rollout record reduced to what a read-back transcript needs. */
+/** A provider transcript record (a Codex rollout, or any non-Claude store) reduced to what a read-back transcript needs. */
 export type CodexEntry = {
   kind: "user" | "assistant" | "tool";
   at: number;
@@ -64,7 +82,7 @@ export type CodexTranscript = {
 };
 
 /**
- * Scans `~/.claude` and `~/.codex` read-only; reads no more than a head and tail of each file.
+ * Scans every provider's history store read-only; reads no more than a head and tail of each file.
  * The list is complete, newest first. A transcript is only re-read when its size or modification
  * time changed, so reopening the dialog costs one stat per file.
  */
@@ -78,6 +96,19 @@ export function readClaudeTranscript(path: string, maxBytes: number): Promise<Cl
 
 export function readCodexTranscript(path: string, maxBytes: number): Promise<CodexTranscript> {
   return invoke<CodexTranscript>("import_read_codex", { path, maxBytes });
+}
+
+/** A conversation of any provider other than Claude Code and Codex, read from its own store. */
+export function readImportEntries(
+  candidate: Pick<ImportCandidate, "provider" | "path" | "providerSessionId">,
+  maxBytes: number,
+): Promise<CodexTranscript> {
+  return invoke<CodexTranscript>("import_read_entries", {
+    provider: candidate.provider,
+    path: candidate.path,
+    sessionId: candidate.providerSessionId,
+    maxBytes,
+  });
 }
 
 /** A real folder to file conversations under when their own folder is gone. */

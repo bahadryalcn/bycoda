@@ -145,6 +145,26 @@
   fill: var(--accent);
 }
 
+/* Stacked or per-series bars take their own colour; scrubbing dims the others instead of swapping the fill. */
+.chart .bar[data-color],
+:global([data-theme="dark"]) .chart .bar[data-color],
+.chart[data-scrubbing] .bar[data-color],
+:global([data-theme="dark"]) .chart[data-scrubbing] .bar[data-color],
+.chart .bar[data-color][data-active],
+:global([data-theme="dark"]) .chart .bar[data-color][data-active] {
+  fill: var(--bar-color);
+}
+.chart[data-scrubbing] .bar[data-color]:not([data-active]) {
+  opacity: 0.45;
+}
+.bar[data-stacked] {
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+.swatch[style*="--bar-color"] {
+  background-color: var(--bar-color);
+}
+
 /* A pattern overlay marks every category after the first with more than colour; it follows the bar path. */
 .barPattern {
   pointer-events: none;

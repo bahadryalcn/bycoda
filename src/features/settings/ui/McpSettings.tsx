@@ -746,6 +746,8 @@ function McpConnections({
                 ? t("Saving…")
                 : undefined
           }
+          modified={!!policy && policy.mode !== "onDemand"}
+          onReset={() => void hub.setMode("onDemand")}
         >
           <SharedSelect
             hideLabel

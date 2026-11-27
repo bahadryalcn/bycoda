@@ -3,7 +3,11 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 const { history } = vi.hoisted(() => ({ history: [] as Record<string, unknown>[] }));
+const prefs = vi.hoisted(() => ({ remaining: false }));
 vi.mock("../../providers/model/rateLimitHistory", () => ({ useRateLimitHistory: () => history }));
+vi.mock("../../settings/model/displayPrefs", () => ({
+  useShowRemainingUsage: () => prefs.remaining,
+}));
 import { QuotaHistory } from "./UsageQuotaHistory";
 const at = (s: string) => Date.parse(s);
 // The table mounts only while its disclosure is open; open it the way a native toggle does.
@@ -20,7 +24,6 @@ it("shows distinct accounts together by default and obeys provider/account filte
     history.length,
     { at: 100, account: "codex:default", kind: "session", used: 10, minutes: 300, resetsAt: null },
     { at: 100, account: "claude:work", kind: "session", used: 80, minutes: 300, resetsAt: null },
-    { at: 100, account: "claude:work", kind: "weekly", used: 35, minutes: 10080, resetsAt: null },
     { at: 300, account: "claude:work", kind: "session", used: 99, minutes: 300, resetsAt: null },
   );
   const host = document.createElement("div");
@@ -45,13 +48,26 @@ it("shows distinct accounts together by default and obeys provider/account filte
     await render();
     expect(host.textContent).toContain("All accounts");
     expect(host.querySelectorAll(".usage-quota-point")).toHaveLength(2);
-    expect(
-      [...host.querySelectorAll(".usage-quota-legend-item")].map((node) => node.textContent),
-    ).toEqual([
-      "Codex · Personal10.0%",
-      "Claude Code · Work80.0%",
+    const legend = () =>
+      [...host.querySelectorAll(".usage-quota-legend-item")].map(
+        (node) =>
+          `${node.children[1].textContent}${node.querySelector(".usage-quota-legend-value")!.textContent}`,
+      );
+    expect(legend()).toEqual([
+      "Codex · Personal10%",
+      "Claude Code · Work80%",
       "Claude Code · UnusedNo records",
     ]);
+    // The legend follows the page's remaining/used switch, as the account rows do.
+    prefs.remaining = true;
+    await render();
+    expect(legend()).toEqual([
+      "Codex · Personal90%",
+      "Claude Code · Work20%",
+      "Claude Code · UnusedNo records",
+    ]);
+    prefs.remaining = false;
+    await render();
     await openTable(host);
     expect(
       new Set(
@@ -63,7 +79,7 @@ it("shows distinct accounts together by default and obeys provider/account filte
     expect(host.querySelector("tbody")?.textContent).toContain("Claude Code · Work");
     await render(["claude"]);
     expect(host.querySelectorAll(".usage-quota-point")).toHaveLength(1);
-    expect(host.textContent).not.toContain("Codex · Personal10.0%");
+    expect(host.textContent).not.toContain("Codex · Personal");
     await render([], ["codex:default"]);
     expect(host.querySelectorAll(".usage-quota-point")).toHaveLength(1);
     expect(host.querySelector("tbody")?.textContent).toContain("Codex · Personal");

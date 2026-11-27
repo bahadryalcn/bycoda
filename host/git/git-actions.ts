@@ -2,10 +2,10 @@ import { hostGitExec } from "./git-exec-pool";
 import {
   gitMutationScope,
   isHostGitMutation,
-  isManagedWorkspaceBranch,
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "./git-mutations";
+import { isManagedWorkspaceBranch } from "../managed/workspace-branch-naming";
 import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -596,6 +596,24 @@ export const branchCache = new BranchCache(async (cwd) => {
   return stdout.trim();
 });
 
+type ManagedBranchRegistry = (root: string, branchRef: string) => Promise<boolean>;
+let managedBranchRegistry: ManagedBranchRegistry | null = null;
+/** The Host registers its workspace records here: the fail-safe when a branch marker is missing. */
+export function setManagedBranchRegistry(registry: ManagedBranchRegistry | null): void {
+  managedBranchRegistry = registry;
+}
+
+/** Marker or registry says managed; ownership that cannot be read counts as managed (never fails open). */
+const managedBranchOrUnknown = async (root: string, branch: string) => {
+  try {
+    if (await isManagedWorkspaceBranch(root, branch)) return true;
+    const ref = branch.startsWith("refs/heads/") ? branch : `refs/heads/${branch}`;
+    return (await managedBranchRegistry?.(root, ref)) === true;
+  } catch {
+    return true;
+  }
+};
+
 /** Runs one command in `root`, a validated working copy. */
 export async function runGitAction(
   command: GitActionCommand,
@@ -604,7 +622,11 @@ export async function runGitAction(
 ): Promise<unknown> {
   // A managed source cannot be integrated through the old reference-only API,
   // even when a caller bypasses WorkspaceCommands and invokes this helper.
-  if (command === "git_merge" && isManagedWorkspaceBranch(input.reference))
+  if (
+    command === "git_merge" &&
+    typeof input.reference === "string" &&
+    (await managedBranchOrUnknown(root, input.reference))
+  )
     throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
   const run = () => runGitActionSerialized(command, root, input);
   return isHostGitMutation(command) || command === "git_management_snapshot"
@@ -623,10 +645,11 @@ async function runGitActionSerialized(
       "for-each-ref",
       `--points-at=${sha}`,
       "--format=%(refname)",
-      "refs/heads/bycoda/s/",
-      "refs/heads/bycoda/t/",
+      "refs/heads/by/",
     ]);
-    if (managedSources.trim()) throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
+    for (const ref of managedSources.split("\n").filter(Boolean))
+      if (await managedBranchOrUnknown(root, ref))
+        throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
   }
   if (command === "git_init") {
     // A new repository may only start where Git finds none, never nested in one.

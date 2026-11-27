@@ -5,15 +5,23 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { shortSha } from "../../../shared/lib/shortSha";
+import type { WorkspaceContext } from "../model/workspaceClient";
 import type { WorkspaceCreationPreview } from "../model/workspaceCreation";
+import { CreationProgressCard } from "./CreationProgressCard";
 import { shortWorkspaceRef } from "../model/workspaceCreation";
 
 export function WorkspaceCreationStatus({
+  progressId,
+  context,
   preview,
   error,
   onRetry,
   onUseCurrentCheckout,
 }: {
+  /** Id of the creation that is running; its stages and Cancel replace the preview line. */
+  progressId?: string | null;
+  /** Owning machine of the creation, for status and cancel calls. */
+  context?: WorkspaceContext;
   preview?: WorkspaceCreationPreview;
   /** Kept for callers; the brief check shows nothing while pending. */
   pending: boolean;
@@ -27,9 +35,11 @@ export function WorkspaceCreationStatus({
   // there is a result (the new worktree preview) or an error.
   // A machine connection failure is explained once by the central notice, which owns reconnecting.
   const centrally = useConnectionErrorShownCentrally(error);
-  if (!error && !preview) return null;
-  if (centrally && !onUseCurrentCheckout) return null;
-  return (
+  const progress = progressId ? (
+    <CreationProgressCard progressId={progressId} context={context} />
+  ) : null;
+  if ((!error && (!preview || progressId)) || (centrally && !onUseCurrentCheckout)) return progress;
+  const line = (
     <Text
       as="div"
       size="caption"
@@ -56,7 +66,7 @@ export function WorkspaceCreationStatus({
             </Button>
           )}
         </>
-      ) : preview ? (
+      ) : preview && !progressId ? (
         // The consequence leads; the exact ref and commit are the hover detail.
         <Tooltip
           label={t("Based on {p0} @ {p1}", {
@@ -79,5 +89,13 @@ export function WorkspaceCreationStatus({
         </Tooltip>
       ) : null}
     </Text>
+  );
+  return progress ? (
+    <>
+      {progress}
+      {line}
+    </>
+  ) : (
+    line
   );
 }

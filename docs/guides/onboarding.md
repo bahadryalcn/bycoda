@@ -105,8 +105,10 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   editor for computers and sharing. The local sync host is excluded
   from the remote computer list. Remote presence is not presented as proof of a
   successful connection.
-- Projects discovers local Claude/Codex interactive conversations and groups them
-  by usable folder. Already imported conversations and missing folders are excluded.
+- Projects discovers local interactive conversations from Claude Code, Codex,
+  Cursor, Grok, OpenCode, Pi, omp, Hermes, Antigravity CLI and OpenClaw and groups
+  them by provider, then by usable folder. Providers without a resumable session
+  id import as read-only history. Already imported conversations and missing folders are excluded.
   Selected folders import through the existing bounded, cancellable import runner.
   Failures and shortened/history-only imports stay visible in the result screen.
   New folders can be added with the native folder picker. Remote folders use the
@@ -143,7 +145,7 @@ update actions in the detail header. Settings search opens the relevant part.
   provider's path control to configure its executable; missing providers offer
   **Set up**. Custom ACP providers use **Add provider**.
 - **Settings > Models > Chats** sets the provider, model, effort and permissions
-  for new conversations. **Settings > Models > Subagents** holds advisor, subagent and image model defaults. Effort uses a stepped scale with the selected label beside it.
+  for new conversations. **Helpers and delegation** on the same page holds advisor, image model and subagent defaults. Effort uses a stepped scale with the selected label beside it.
   Use the apply bar to choose provider scope and several save
   destinations, then save. See [provider defaults](agent-tools.md#cross-provider-advisor-and-subagents)
   for inheritance, skipped fields and retrying failed destinations.

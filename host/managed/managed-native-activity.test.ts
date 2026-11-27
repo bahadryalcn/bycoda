@@ -31,7 +31,7 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
   await turnGit(main, ["add", "."]);
   await turnGit(main, ["commit", "-m", "base"]);
   const path = join(root, "worktree");
-  await turnGit(main, ["worktree", "add", "-b", "bycoda/s/native", path]);
+  await turnGit(main, ["worktree", "add", "-b", "by/native", path]);
   const workspace: ManagedWorkspace = {
     id: "workspace",
     repositoryId: await realpath(join(main, ".git")),
@@ -39,7 +39,7 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
     environmentId: "environment",
     owner: { kind: "session", id: "session" },
     path: linkedAncestor ? path : await realpath(path),
-    branchRef: "refs/heads/bycoda/s/native",
+    branchRef: "refs/heads/by/native",
     baseRef: "refs/heads/main",
     baseCommit: "base",
     targetBranchRef: "refs/heads/main",

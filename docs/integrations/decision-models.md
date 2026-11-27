@@ -25,7 +25,7 @@ returns either an answer or an error:
 Task types are closed. They are `screen_state`, `element_choice`, `audience_classify`,
 `interest_score`, `sentiment`, `optout`, `inbox_priority` and `generic`.
 
-The task board's `auto` executor (`host/tasks/executor-choice.ts`) asks one `generic` `choice` question with the owner's request, each fitting crew and an `agent` option. The request is marked personal data, so only loopback local sources answer. Below the threshold, no source or an error means one agent runs and the reason is recorded on the task.
+The task board's `auto` executor (`host/tasks/executor-choice.ts`) asks one `generic` `choice` question with the owner's request, each fitting crew and an `agent` option. The request is marked personal data, so with local-only personal data on only loopback local sources answer. Below the threshold, no source or an error means one agent runs and the reason is recorded on the task.
 
 Confidence is the gateway's own scale in [0, 1]. Provider values stay in the raw field. For a
 yes/no question with probability p, confidence is max(p, 1 - p). With the default threshold of

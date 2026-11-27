@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Sparkles } from "../../../shared/ui/icons";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { Text } from "../../../shared/ui/Text";
 import { useDetectedDictationLanguage } from "../model/dictationActivity";
@@ -78,12 +77,9 @@ export function DictationSettingsSuggestion({
   return (
     <>
       <Row
-        label={t("Draft settings with AI")}
-        descriptionVisible
-        description={t(
-          "Codex uses {p0} to suggest instructions and a correction phrase. Only the language and model choice are sent.",
-          { p0: label },
-        )}
+        id="dictation-cleanup-suggest"
+        label={t("Suggest instructions")}
+        description={t("Codex gets only the language ({p0}) and your model choice.", { p0: label })}
         feedback={
           error ? (
             <SettingsFeedback state="error">
@@ -92,22 +88,18 @@ export function DictationSettingsSuggestion({
           ) : undefined
         }
       >
-        <Button
-          startIcon={<Sparkles aria-hidden />}
-          loading={pending}
-          loadingLabel={t("Generating…")}
-          onClick={() => void suggest()}
-        >
-          {t("Generate suggestion")}
-        </Button>
         {pending ? (
-          <Button variant="ghost" onClick={cancel}>
+          <Button variant="secondary" size="sm" onClick={cancel}>
             {t("Cancel")}
           </Button>
-        ) : null}
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => void suggest()}>
+            {t("Suggest")}
+          </Button>
+        )}
       </Row>
       {suggestion ? (
-        <Row label={t("Suggested settings · {p0}", { p0: suggestion.label })} stacked>
+        <Row label={t("Suggestion · {p0}", { p0: suggestion.label })} stacked>
           <div className="grid gap-2">
             {suggestion.language !== language ? (
               <SettingsFeedback state="warning">
@@ -115,22 +107,23 @@ export function DictationSettingsSuggestion({
               </SettingsFeedback>
             ) : null}
             {cleanup.instructions || cleanup.correctionCue ? (
-              <Text tone="secondary">
+              <SettingsFeedback state="warning">
                 {t(
                   "Applying this suggestion replaces your current instructions and correction phrase.",
                 )}
-              </Text>
+              </SettingsFeedback>
             ) : null}
-            <Text>{t("Cleanup instructions")}</Text>
-            <Text tone="secondary" wrap="anywhere">
-              {suggestion.instructions}
+            <Text size="caption" tone="secondary">
+              {t("Instructions")}
             </Text>
-            <Text>{t("Correction phrase")}</Text>
-            <Text tone="secondary" wrap="anywhere">
-              {suggestion.correctionCue}
+            <Text wrap="anywhere">{suggestion.instructions}</Text>
+            <Text size="caption" tone="secondary">
+              {t("Correction phrase")}
             </Text>
+            <Text wrap="anywhere">{suggestion.correctionCue}</Text>
             <div className="flex flex-wrap gap-2">
               <Button
+                size="sm"
                 disabled={pending}
                 onClick={() => {
                   const saved = apply({
@@ -143,7 +136,7 @@ export function DictationSettingsSuggestion({
               >
                 {t("Apply suggestion")}
               </Button>
-              <Button variant="ghost" onClick={() => setSuggestion(null)}>
+              <Button variant="ghost" size="sm" onClick={() => setSuggestion(null)}>
                 {t("Discard")}
               </Button>
             </div>

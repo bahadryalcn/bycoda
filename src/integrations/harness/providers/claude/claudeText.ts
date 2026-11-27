@@ -64,6 +64,7 @@ type TextSettings = {
   promptEffort?: string;
   settings: ClaudeCliSettings;
   permissionMode?: "plan";
+  allowedTools: string[];
 };
 
 type InFlightTool = {
@@ -107,7 +108,9 @@ function textSettings(
   modelSettings?: Record<string, string>,
   intent?: TurnIntent,
   maxOutputTokens?: number,
+  webLookup?: TextPromptInput["webLookup"],
 ): TextSettings {
+  const allowedTools = webFetchRules(webLookup);
   const effort = modelSettings?.effort?.trim() || undefined;
   const context = modelSettings?.context?.trim() || undefined;
   const thinking = modelSettings?.thinking === "true";
@@ -133,7 +136,9 @@ function textSettings(
       subagentModel,
       subagentPolicy,
       maxOutputTokens,
+      allowedTools,
     }),
+    allowedTools,
     advisor,
     subagentModel,
     subagentPolicy,
@@ -143,6 +148,15 @@ function textSettings(
     settings,
     ...(readOnly ? { permissionMode: "plan" as const } : {}),
   };
+}
+
+/** Pre-allow only a domain-scoped fetch; Claude denies every other unlisted tool without a prompt tool. */
+function webFetchRules(webLookup: TextPromptInput["webLookup"]): string[] {
+  return (webLookup?.domains ?? []).map((domain) => {
+    if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(domain))
+      throw new Error("Web lookup domain must be a plain hostname.");
+    return `WebFetch(domain:${domain})`;
+  });
 }
 
 function pickTextModel(requested?: string): string {
@@ -202,7 +216,13 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
   const model = pickTextModel(input.model);
   validateTextOutputLimit(input.maxOutputTokens);
   validateTextOutputLimit(input.maxOutputChars);
-  const settings = textSettings(model, input.modelSettings, input.intent, input.maxOutputTokens);
+  const settings = textSettings(
+    model,
+    input.modelSettings,
+    input.intent,
+    input.maxOutputTokens,
+    input.webLookup,
+  );
   const session = await ensureLive(
     input.cwd,
     input.providerAccountId,
@@ -446,6 +466,7 @@ async function startLive(
         effort: settings.effort,
         settings: settings.settings,
         permissionMode: settings.permissionMode,
+        allowedTools: settings.allowedTools,
       }),
       cwd,
       { provider: "claude", id: providerAccountId ?? "default" },

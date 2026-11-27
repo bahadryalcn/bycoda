@@ -8,7 +8,7 @@ import {
   rebuildClosedRoomPrivacyProjection,
   recoverRoomPrivacyProjection,
   getRoomPrivacyStatus,
-  isRoomPrivacyRecoveryPending,
+  canRebuildRoomPrivacyProjection,
   subscribeRoomPrivacyStatus,
 } from "../../group-lock/model/roomPrivacyProjection";
 import { isAppQuitting } from "../../../app/model/appLifecycle";
@@ -303,24 +303,22 @@ export function AssistantView(props: AssistantViewProps) {
             {hostBusy ? t("The Host is busy. Try again in a moment.") : undefined}
           </Alert>
         )}
-        {roomPrivacy.error &&
-          (roomPrivacy.error === "Privacy lock state is unavailable" ||
-            isRoomPrivacyRecoveryPending()) && (
-            <div className={`${shell.notice} ${shell.noticeBody}`}>
-              <InlineMessage tone="info">
-                {t("Review current project visibility before rebuilding Room privacy protection.")}
-              </InlineMessage>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  void rebuildClosedRoomPrivacyProjection().catch(() => {});
-                }}
-              >
-                {t("Rebuild Room privacy protection")}
-              </Button>
-            </div>
-          )}
+        {roomPrivacy.error && canRebuildRoomPrivacyProjection() && (
+          <div className={`${shell.notice} ${shell.noticeBody}`}>
+            <InlineMessage tone="info">
+              {t("Review current project visibility before rebuilding Room privacy protection.")}
+            </InlineMessage>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void rebuildClosedRoomPrivacyProjection().catch(() => {});
+              }}
+            >
+              {t("Rebuild Room privacy protection")}
+            </Button>
+          </div>
+        )}
         {/* Without a snapshot the failure panel below owns the message and the one Try again. */}
         {readError && snapshot && (
           <InlineError

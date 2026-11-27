@@ -1,5 +1,9 @@
 import type { PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
 import { rememberProjectInMutation } from "../../../features/projects/model/recents";
+import {
+  loadProjectBaseRemote,
+  saveProjectBaseRemote,
+} from "../../../features/projects/model/additionalDirs";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
@@ -43,6 +47,7 @@ import { forgetHarnessSession } from "../../../integrations/harness";
 import { projectName } from "../../../shared/lib/paths";
 import type { WorktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { remoteExecutionEnvironment } from "../../../features/connections/model/sessionMachineTarget";
 
 export interface WorkspaceDirectoryActionsDeps {
   activeTab: WorkspaceTab | undefined;
@@ -171,14 +176,23 @@ export function useWorkspaceDirectoryActions({
           // A blank session moving into a project adopts its provider defaults;
           // a conversation keeps its own provider.
           const base = isBlankSession(s) ? retargetSessionToProject(s, normalized) : s;
+          // "No project" on a draft that lives on another machine stays a scratch workspace there.
+          const machine = remoteExecutionEnvironment(s);
+          const remoteScratch = normalized === "~" && machine;
           return {
             ...base,
+            ...(remoteScratch
+              ? { remoteExecutionEnvironmentId: machine, providerAccountId: undefined }
+              : {}),
             cwd: normalized,
             branch: undefined,
             worktreeCwd: undefined,
             worktreeRemoved: undefined,
             workspaceMode: undefined,
             worktreeBase: undefined,
+            worktreeBaseRemote: undefined,
+            worktreeRepositories: undefined,
+            worktreeSlug: undefined,
           };
         }),
       );
@@ -243,11 +257,15 @@ export function useWorkspaceDirectoryActions({
                 ...session,
                 workspaceMode: "worktree",
                 worktreeBase: base || session.worktreeBase,
+                // The project's remembered "Start from remote" choice, unless already chosen.
+                worktreeBaseRemote:
+                  session.worktreeBaseRemote ?? (loadProjectBaseRemote(session.cwd) || undefined),
               }
             : {
                 ...session,
                 workspaceMode: "current",
                 worktreeBase: undefined,
+                worktreeBaseRemote: undefined,
               };
         }),
       );
@@ -271,6 +289,24 @@ export function useWorkspaceDirectoryActions({
     },
     [setSessions],
   );
+  const onWorktreeBaseRemoteChange = useCallback(
+    (sessionId: string, remote: boolean) => {
+      const owner = sessionsRef.current.find((s) => s.id === sessionId);
+      if (owner) saveProjectBaseRemote(owner.cwd, remote);
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId &&
+          !hostSessionBinding(session) &&
+          (isBlankSession(session) ||
+            (!!session.workspaceMode && !session.worktreeCwd && !session.busy)) &&
+          session.workspaceMode !== "current"
+            ? { ...session, worktreeBaseRemote: remote }
+            : session,
+        ),
+      );
+    },
+    [sessionsRef, setSessions],
+  );
   const onSelectWorkspace = useCallback(
     (focus?: WorktreeFocus) => {
       setProjectCwd(sidebarCwdRef.current);
@@ -287,6 +323,7 @@ export function useWorkspaceDirectoryActions({
     onBranchChange,
     onWorkspaceModeChange,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onSelectWorkspace,
   };
 }

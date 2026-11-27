@@ -8,6 +8,7 @@ import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { EffortScale } from "../../../shared/ui/EffortScale";
 import { RUNTIME_MODE_ICONS } from "../../sessions/public/runtimeModeOptions";
 import { WandSparkles } from "../../../shared/ui/icons";
+import { missingProviderWideSettings, providerWideSetting } from "../model/providerWideSetting";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -34,6 +35,8 @@ import {
   modelEffortSetting,
   modelsFor,
   resolveModel,
+  type AgentModel,
+  type ModelSetting,
 } from "../../sessions/public/models";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
@@ -46,15 +49,21 @@ import { modelSettingText } from "../model/modelSettingText";
 import { ProviderDefaultExtras, inheritedChoiceLabel } from "./ProviderDefaultExtras";
 import { Group, Row, Select, Toggle } from "../../../shared/ui/settings";
 
-/** Rows that choose subagents, the advisor and their limits, shown together. */
-const DELEGATION_SETTINGS = new Set([
-  CROSS_SUBAGENTS_KEY,
-  "subagentPolicy",
+/**
+ * Rows that choose the advisor, image models, subagents and their limit, shown together in this
+ * order: the single helpers first, then the subagent rows.
+ */
+const DELEGATION_ORDER: readonly string[] = [
   CROSS_ADVISOR_KEY,
-  CROSS_SUBAGENT_MAX_EFFORT_KEY,
   IMAGE_MODELS_KEY,
-]);
-const isDelegationSetting = (setting: { id: string }) => DELEGATION_SETTINGS.has(setting.id);
+  CROSS_SUBAGENTS_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+];
+const isDelegationSetting = (setting: { id: string }) => DELEGATION_ORDER.includes(setting.id);
+const delegationRows = (settings: readonly ModelSetting[]) =>
+  settings
+    .filter(isDelegationSetting)
+    .sort((a, b) => DELEGATION_ORDER.indexOf(a.id) - DELEGATION_ORDER.indexOf(b.id));
 
 function modelDisplayName(harness: HarnessId, id: string | undefined): string {
   if (!id) return t("Automatic");
@@ -92,9 +101,21 @@ export function ProviderDefaultsForm({
   picker,
   section,
   providerControl,
+  helpers,
 }: {
   section?: "chat" | "delegation";
   providerControl?: ReactNode;
+  /**
+   * Global target: the helper rows (advisor, image models, subagents, their effort ceiling) edit
+   * the All providers layer or this provider's own values, chosen by `control`.
+   */
+  helpers?: {
+    control: ReactNode;
+    scopeDefaults: ProviderSessionDefaults;
+    inheritedDefaults: ProviderSessionDefaults;
+    onChange: (next: ProviderSessionDefaults) => void;
+    resetLabel: string;
+  };
   harness: HarnessId;
   selectedModel: string;
   inheritedDefaults?: ProviderSessionDefaults;
@@ -147,67 +168,74 @@ export function ProviderDefaultsForm({
   const validInheritedRuntimeMode =
     inheritedRuntimeMode != null && !runtimeModeUnavailableReason(harness, inheritedRuntimeMode);
   // Other model controls can also get defaults for new conversations.
+  const extrasFor = (model: AgentModel): ModelSetting[] =>
+    menuSettings({
+      current: model,
+      harnesses: HARNESSES.filter(isHarnessAvailable),
+      source: { modelsFor },
+      accountChoices: true,
+      currentAccountId: supportsProviderAccounts(harness)
+        ? (accountId ?? projectAccountId ?? defaultProviderAccountId(harness))
+        : undefined,
+      signedOutAccounts: signedOutAccountKeys(delegationUsage),
+      signedOutLabel: t("Not signed in"),
+      values: {
+        ...mergeProviderExtras(harness, inheritedDefaults?.extras, scopeDefaults.extras),
+        ...(helpers
+          ? mergeProviderExtras(
+              harness,
+              helpers.inheritedDefaults.extras,
+              helpers.scopeDefaults.extras,
+            )
+          : {}),
+      },
+      unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
+    });
   const extras = current
-    ? menuSettings({
-        current,
-        harnesses: HARNESSES.filter(isHarnessAvailable),
-        source: { modelsFor },
-        accountChoices: true,
-        currentAccountId: supportsProviderAccounts(harness)
-          ? (accountId ?? projectAccountId ?? defaultProviderAccountId(harness))
-          : undefined,
-        signedOutAccounts: signedOutAccountKeys(delegationUsage),
-        signedOutLabel: t("Not signed in"),
-        values: mergeProviderExtras(harness, inheritedDefaults?.extras, scopeDefaults.extras),
-        unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
-      })
-        .filter((setting) => setting.id !== effort?.id)
-        .map((setting) =>
-          offeredDelegationSetting(
-            setting,
-            models,
-            scopeDefaults.extras?.[setting.id] ?? inheritedDefaults?.extras?.[setting.id],
-            current,
-          ),
-        )
+    ? (() => {
+        const own = extrasFor(current);
+        return [...own, ...missingProviderWideSettings(own, models, extrasFor)]
+          .filter((setting) => setting.id !== effort?.id)
+          .map((setting) =>
+            providerWideSetting(
+              offeredDelegationSetting(
+                setting,
+                models,
+                scopeDefaults.extras?.[setting.id] ?? inheritedDefaults?.extras?.[setting.id],
+                current,
+              ),
+              models,
+            ),
+          );
+      })()
     : [];
   // Inheritance is shown per row: a row that holds its own value offers a way back.
-  const resetLabel = inherits ? t("Use Bycoda defaults") : t("Reset to automatic");
+  // A project inherits from All projects; an account inherits from the provider's own defaults.
+  const inheritLabel = accountId ? t("Use Bycoda defaults") : t("Use the All projects value");
+  const resetLabel = inherits ? inheritLabel : t("Reset to automatic");
 
   useEffect(() => {
     if (!available || hasLiveCatalog(harness)) return;
     refreshProviderCatalog(harness).catch(() => undefined);
   }, [available, harness]);
 
+  // The helper rows edit their own layer when the page offers one, else this target's values.
+  const helperRows = {
+    harness,
+    inheritedDefaults: helpers ? helpers.inheritedDefaults : inheritedDefaults,
+    scopeDefaults: helpers ? helpers.scopeDefaults : scopeDefaults,
+    onSessionDefaultsChange: helpers ? helpers.onChange : onSessionDefaultsChange,
+    resetLabel: helpers ? helpers.resetLabel : resetLabel,
+  };
   const effortOptions = effort
-    ? [
-        {
-          value: "",
-          icon: <WandSparkles className="icon-sm" />,
-          label: inheritedChoiceLabel(
-            inheritedDefaults?.effort
-              ? modelSettingText(
-                  effort.options.find((option) => option.value === inheritedDefaults.effort)
-                    ?.label ?? inheritedDefaults.effort,
-                )
-              : undefined,
-            Boolean(validInheritedEffort),
-          ),
-        },
-        ...(scopeDefaults.effort && !validEffort
-          ? [
-              {
-                value: scopeDefaults.effort,
-                label: `${scopeDefaults.effort} (${t("Unavailable")})`,
-              },
-            ]
-          : []),
-        ...ascendingEffortOptions(effort.options).map((option) => ({
-          ...option,
-          label: modelSettingText(option.label),
-        })),
-      ]
+    ? ascendingEffortOptions(effort.options).map((option) => ({
+        value: option.value,
+        label: modelSettingText(option.label),
+      }))
     : [];
+  // Automatic (nothing saved) runs the level above: the inherited default, else the model's own.
+  const automaticEffort = validInheritedEffort ? inheritedDefaults?.effort : effort?.value;
+  const unavailableEffort = scopeDefaults.effort && !validEffort ? scopeDefaults.effort : undefined;
   const main = (
     <Group
       id={section === "delegation" ? "models-delegation" : "agent-clis"}
@@ -234,7 +262,7 @@ export function ProviderDefaultsForm({
               label={t("Model")}
               modified={inherits && Boolean(modelOverride)}
               onReset={onModelReset}
-              resetLabel={t("Use Bycoda defaults")}
+              resetLabel={inheritLabel}
             >
               <SearchableSelect
                 hideLabel
@@ -270,6 +298,12 @@ export function ProviderDefaultsForm({
             <Row
               controlWidth="wide"
               label={t("Effort")}
+              description={
+                unavailableEffort
+                  ? t("Saved level {p0} is unavailable for this model.", { p0: unavailableEffort })
+                  : undefined
+              }
+              descriptionVisible={Boolean(unavailableEffort)}
               modified={Boolean(scopeDefaults.effort)}
               onReset={() => onSessionDefaultsChange({ ...scopeDefaults, effort: undefined })}
               resetLabel={resetLabel}
@@ -278,8 +312,14 @@ export function ProviderDefaultsForm({
                 <EffortScale
                   label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
                   showLabel={false}
-                  value={scopeDefaults.effort ?? ""}
-                  inheritedValue={validInheritedEffort ? inheritedDefaults?.effort : undefined}
+                  value={validEffort ? scopeDefaults.effort! : ""}
+                  inheritedValue={automaticEffort}
+                  automatic={{
+                    on: !scopeDefaults.effort,
+                    onChange: (on) => {
+                      if (on) onSessionDefaultsChange({ ...scopeDefaults, effort: undefined });
+                    },
+                  }}
                   options={effortOptions}
                   onValueChange={(next) =>
                     onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })
@@ -343,39 +383,34 @@ export function ProviderDefaultsForm({
           </Row>
         </>
       ) : null}
-      <ProviderDefaultExtras
-        extras={
-          section === "delegation"
-            ? extras.filter(isDelegationSetting)
-            : extras.filter((setting) => !isDelegationSetting(setting))
-        }
-        harness={harness}
-        inheritedDefaults={inheritedDefaults}
-        scopeDefaults={scopeDefaults}
-        onSessionDefaultsChange={onSessionDefaultsChange}
-        projectScope={inherits}
-        resetLabel={resetLabel}
-      />
+      {section === "delegation" ? (
+        <>
+          {helpers?.control}
+          <ProviderDefaultExtras extras={delegationRows(extras)} {...helperRows} />
+        </>
+      ) : (
+        <ProviderDefaultExtras
+          extras={extras.filter((setting) => !isDelegationSetting(setting))}
+          harness={harness}
+          inheritedDefaults={inheritedDefaults}
+          scopeDefaults={scopeDefaults}
+          onSessionDefaultsChange={onSessionDefaultsChange}
+          resetLabel={resetLabel}
+        />
+      )}
     </Group>
   );
   if (section) return main;
   // Both together: conversation defaults, then who the agent delegates to, as its own section
   // for the same provider and account.
-  const delegation = extras.filter(isDelegationSetting);
+  const delegation = delegationRows(extras);
   return (
     <>
       {main}
       {delegation.length ? (
-        <Group id="models-delegation" layout="full" title={t("Subagents")}>
-          <ProviderDefaultExtras
-            extras={delegation}
-            harness={harness}
-            inheritedDefaults={inheritedDefaults}
-            scopeDefaults={scopeDefaults}
-            onSessionDefaultsChange={onSessionDefaultsChange}
-            projectScope={inherits}
-            resetLabel={resetLabel}
-          />
+        <Group id="models-delegation" layout="full" title={t("Helpers and delegation")}>
+          {helpers?.control}
+          <ProviderDefaultExtras extras={delegation} {...helperRows} />
         </Group>
       ) : null}
     </>

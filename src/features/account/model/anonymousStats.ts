@@ -24,9 +24,12 @@ const statisticsMode = sharingMode("statistics", "ask");
 export const getStatisticsMode = (): SharingMode =>
   getStatsChoice() === "on" ? (statisticsMode.load() === "auto" ? "auto" : "ask") : "off";
 export const subscribeStatisticsMode = subscribeAnonymousStats;
-export function setStatisticsMode(mode: SharingMode) {
-  if (statisticsMode.save(mode)) setAnonymousStatsEnabled(mode !== "off");
+export function setStatisticsMode(mode: SharingMode): boolean {
+  if (!statisticsMode.save(mode)) return false;
+  setAnonymousStatsEnabled(mode !== "off");
+  return true;
 }
+const statisticsPermission = { load: getStatisticsMode, save: setStatisticsMode };
 
 /** The local calendar day, `YYYY-MM-DD`. */
 export function localDay(now: Date): string {
@@ -74,7 +77,7 @@ export async function sendDailyPing(deps: PingDeps): Promise<PingResult> {
           linkedToAccount: false,
           files: [jsonSharingFile("anonymous-ping.json", ping.data)],
         },
-        getStatisticsMode,
+        statisticsPermission,
         send,
         deps.signal,
       );

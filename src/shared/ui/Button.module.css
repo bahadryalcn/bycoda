@@ -831,6 +831,12 @@
 .label[data-label-reserved] {
   text-align: center;
 }
+/* Beside a start icon the text hugs the icon; a wider reserved label trails as space
+   instead of opening a gap between icon and text. */
+.icon + .label[data-label-reserved],
+.progressIcon + .label[data-label-reserved] {
+  text-align: start;
+}
 /* Confirmed check overlays the label start; the success ghost reserves the same inset. */
 .stableLabel[data-confirm-icon],
 .labelGhost[data-reserve-icon] {

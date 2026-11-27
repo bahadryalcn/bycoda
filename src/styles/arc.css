@@ -497,8 +497,9 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 .bycoda-arc-filters [role="group"] {
   min-inline-size: 0;
 }
+/* No inset: the table frame lines up with the siblings in its column. */
 .bycoda-arc-table {
-  padding: var(--space-2);
+  padding: 0;
 }
 .bycoda-arc-table table {
   font-variant-numeric: tabular-nums;

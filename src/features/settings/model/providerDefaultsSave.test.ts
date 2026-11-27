@@ -70,13 +70,13 @@ it("saves Global delegation to the Host first and keeps other targets retryable 
   expect(save).toHaveBeenCalledExactlyOnceWith(draft, targets[1]);
 });
 
-it("project/group targets and older Hosts keep renderer-only saves", async () => {
+it("project targets and older Hosts keep renderer-only saves", async () => {
   const draft = { ...EMPTY_DRAFT, providers: { claude: { extras: { crossAdvisor: "auto" } } } };
   const host = { saveChanges: vi.fn() };
   const save = vi.fn(() => ({ state: "saved" as const }));
   const targets = [
-    { kind: "group", id: "team", workspace: false } as const,
     { kind: "project", path: "/one" } as const,
+    { kind: "project", path: "/two" } as const,
   ];
   expect((await saveDefaultsTargetsWithDelegation(draft, targets, host, save)).saved).toEqual(
     targets,

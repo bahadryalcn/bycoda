@@ -7,7 +7,7 @@ import { Plus } from "../../../../shared/ui/icons";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../../shared/ui/SearchInput";
-import { Skeleton } from "../../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../../shared/ui/SkeletonList";
 import { Select } from "../../../../shared/ui/Select";
 import { useAssistantRoom } from "./assistantRoomContext";
 import styles from "./Conversation.module.css";
@@ -120,12 +120,7 @@ export function ConversationThreadList({
       <div className={styles.threads}>
         {!threads.length && pending && (
           <div className={styles.threadSkeleton}>
-            {[0, 1, 2, 3].map((row) => (
-              <div key={row} className={styles.threadSkeletonRow}>
-                <Skeleton inline width="100%" aria-hidden />
-                <Skeleton inline width="2.25rem" aria-hidden />
-              </div>
-            ))}
+            <SkeletonList rows={4} lines={1} trailing="text" density="compact" seed={3} />
           </div>
         )}
         {!threads.length && !pending && (

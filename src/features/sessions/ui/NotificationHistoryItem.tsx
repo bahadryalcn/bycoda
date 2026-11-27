@@ -1,10 +1,10 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { useRef, useState } from "react";
+import { createContext, use, useRef, useState, type ComponentType } from "react";
 import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { ActionHost, InlineAction, actionContentAttributes } from "../../../shared/ui/ActionHost";
-import { Alert } from "../../../shared/ui/Alert";
+import { Toast } from "../../../shared/ui/ToastRegion";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -12,7 +12,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Check, ExternalLink, X } from "../../../shared/ui/icons";
 import { NoticeGlyph } from "../../../shared/ui/Notice";
 import { useNotificationProjects } from "../../notifications/hooks/useNotificationProjects";
-import { historyTone, type NotificationHistoryEntry } from "../../notifications";
+import { historyTone, ownerPromptTitle, type NotificationHistoryEntry } from "../../notifications";
 import { HARNESS_LABEL, sessionDisplayTitle, type HarnessId } from "../model/session";
 
 /** The conversation title without the provider prefix stored for the tab strip. */
@@ -137,7 +137,10 @@ export function HistoryItem({
   const isSession = Boolean(entry.sessionId);
   const title = isSession
     ? entry.label || historyTitle(entry) || t("Untitled")
-    : entry.title || entry.label || t("Untitled");
+    : // An owner request reads as what it asked, translated, without the native source prefix.
+      (entry.kind === "owner" && entry.title ? ownerPromptTitle(t, entry.title) : entry.title) ||
+      entry.label ||
+      t("Untitled");
   const detail = isSession ? "" : entry.title ? entry.label : "";
   const context = [
     isSession ? project : featureLabel(entry.target, t),
@@ -271,37 +274,46 @@ export function HistoryItem({
                 loading={busy === "open"}
                 onClick={() => void run("open")}
               >
-                {entry.target ? t("Open") : t("Open session")}
+                {t("Open")}
               </Button>
             </div>
           ) : null}
-          {error ? <HistoryFailureAlert failure={error} /> : null}
         </div>
       ) : null}
-      {!expanded && error ? (
-        <div className="notification-history-details" data-no-drag="">
-          <HistoryFailureAlert failure={error} />
-        </div>
-      ) : null}
+      {error ? <HistoryFailureToast failure={error} onDismiss={() => setError(null)} /> : null}
     </ActionHost>
   );
 }
 
-function HistoryFailureAlert({ failure }: { failure: HistoryFailure }) {
+/** A failed action is a passing event, so it is a toast; Details only when it adds something. */
+function HistoryFailureToast({
+  failure,
+  onDismiss,
+}: {
+  failure: HistoryFailure;
+  onDismiss: () => void;
+}) {
+  const t = useT();
+  const detail = failure.detail?.trim();
+  const distinct = detail && detail !== failure.title && t(detail) !== failure.title;
   return (
-    <Alert
+    <Toast
       tone="warning"
-      extra={
-        failure.detail ? <ErrorDetails title={failure.title} detail={failure.detail} /> : undefined
-      }
-    >
-      {failure.title}
-    </Alert>
+      message={failure.title}
+      extra={distinct ? <ErrorDetails title={failure.title} detail={detail} /> : undefined}
+      onDismiss={onDismiss}
+    />
   );
 }
 
+/** The rail's project icon, supplied by the app shell; features cannot read the rail appearance. */
+export const NotificationProjectIconContext = createContext<ComponentType<{ cwd: string }> | null>(
+  null,
+);
+
 export function NotificationProjectLabel({ cwd }: { cwd: string }) {
   const name = useNotificationProjectName(cwd);
+  const ProjectIcon = use(NotificationProjectIconContext);
   return (
     <Tooltip label={cwd} asChild>
       <Text
@@ -310,8 +322,13 @@ export function NotificationProjectLabel({ cwd }: { cwd: string }) {
         tone="secondary"
         weight="regular"
         leading="inherit"
-        className="notification-project"
+        className="notification-project items-center gap-1.5"
       >
+        {ProjectIcon ? (
+          <span className="grid size-4 shrink-0 place-items-center" aria-hidden>
+            <ProjectIcon cwd={cwd} />
+          </span>
+        ) : null}
         <Text
           as="span"
           size="inherit"

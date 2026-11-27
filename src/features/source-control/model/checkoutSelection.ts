@@ -24,8 +24,33 @@ export function sessionCheckout(cwd: string, paths: readonly string[]): string |
 }
 
 /** State scope: the session's own checkout, so a session in one worktree never shares row state with another. */
-export function checkoutSelectionScope(cwd: string, paths: readonly string[]): string {
+function checkoutSelectionScope(cwd: string, paths: readonly string[]): string {
   return projectKey(sessionCheckout(cwd, paths) ?? cwd);
+}
+
+/**
+ * Retained-state key prefix of the worktree panel. The Changes tab badge reads the panel's
+ * last-used row and Graph choice under it, so both follow the same repository.
+ */
+export function checkoutStateKey(cwd: string, paths: readonly string[]): string {
+  return `source-control:checkouts:${checkoutSelectionScope(cwd, paths)}`;
+}
+
+/**
+ * The repository the All-worktrees panel follows for Stashes and Graph (and the Changes badge):
+ * the Graph choice, else the row last used, else the first section. A choice only counts while
+ * its worktree is still one of the sections.
+ */
+export function followedCheckoutRepository(
+  sectionRoots: readonly string[],
+  paths: readonly string[],
+  choices: readonly string[],
+): string | undefined {
+  const listed = (path: string) => {
+    const owner = path ? sessionCheckout(path, paths) : undefined;
+    return !!owner && sectionRoots.some((root) => same(root, owner));
+  };
+  return choices.find(listed) ?? sectionRoots[0];
 }
 
 /** Each checkout and its discovered child repositories are separate Git targets. */

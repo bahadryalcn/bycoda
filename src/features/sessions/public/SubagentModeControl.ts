@@ -1,2 +1,3 @@
 export { SubagentModeControl } from "../ui/SubagentModeControl";
-export { SubagentSelectionControl } from "../ui/SubagentSelectionControl";
+export { DelegationSelectionControl } from "../ui/DelegationSelectionControl";
+export { AdvisorControl } from "../ui/AdvisorControl";

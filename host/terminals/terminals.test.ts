@@ -3,6 +3,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostTerminals, TERMINAL_OUTPUT_LIMIT } from "./terminals";
+import { loadPtyModule, PtyUnavailableError } from "./terminal-pty";
 import { listShellProfiles } from "../execution/shellProfiles";
 import { OutputBuffer } from "../execution/output-buffer";
 
@@ -182,6 +183,16 @@ function setup(locate = async (root: string) => root, now?: () => number) {
     exit = onExit;
     return child;
   });
+  // Interactive shells use the PTY launcher; the same fake child serves both transports.
+  const launchPty = vi.fn(
+    (
+      profile: Parameters<typeof launch>[0],
+      cwd: string,
+      _size: { cols: number; rows: number },
+      onOutput: (data: string) => void,
+      onExit: (code: number | null) => void,
+    ) => launch(profile, cwd, onOutput, onExit),
+  );
   const service = new HostTerminals(
     launch,
     () => ({
@@ -191,12 +202,14 @@ function setup(locate = async (root: string) => root, now?: () => number) {
     }),
     locate,
     now,
+    launchPty,
   );
   services.push(service);
   return {
     service,
     child,
     launch,
+    launchPty,
     output: (data: string) => output(data),
     exit: (code: number | null) => exit(code),
   };
@@ -417,45 +430,77 @@ it("rechecks owner authority after resolving cwd and rejects unavailable profile
   expect(s.launch).not.toHaveBeenCalled();
 });
 
-it("runs a real persistent shell through its guardian and confirms shutdown", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-terminal-")));
-  const service = new HostTerminals();
-  services.push(service);
-  try {
-    const p = { id: "real", cwd: root };
-    const terminal = await service.create(p, { requestId: "real-shell-01" }, "owner", () => true);
-    const profile = listShellProfiles().profiles.find((profile) => profile.name === terminal.shell);
-    const command =
-      profile?.kind === "pwsh" || profile?.kind === "powershell"
-        ? "$bycodaTerminalValue = 'PERSISTENT'; Write-Output $bycodaTerminalValue\n\n"
-        : profile?.kind === "cmd"
-          ? "set BYCODA_TERMINAL_VALUE=PERSISTENT\necho %BYCODA_TERMINAL_VALUE%\n"
-          : "BYCODA_TERMINAL_VALUE=PERSISTENT; printf '%s\\n' \"$BYCODA_TERMINAL_VALUE\"\n";
-    await service.write(p.id, { id: terminal.id, data: command });
-    await vi.waitFor(
-      () => expect(service.read(p.id, { id: terminal.id }).output).toContain("PERSISTENT"),
-      { timeout: 10000 },
-    );
-    const next =
-      profile?.kind === "pwsh" || profile?.kind === "powershell"
-        ? "Write-Output ('SECOND-' + $bycodaTerminalValue)\n\n"
-        : profile?.kind === "cmd"
-          ? "echo SECOND-%BYCODA_TERMINAL_VALUE%\n"
-          : "printf 'SECOND-%s\\n' \"$BYCODA_TERMINAL_VALUE\"\n";
-    await service.write(p.id, { id: terminal.id, data: next });
-    await vi.waitFor(
-      () => expect(service.read(p.id, { id: terminal.id }).output).toContain("SECOND-PERSISTENT"),
-      { timeout: 10000 },
-    );
-    await service.interrupt(p.id, terminal.id);
-    expect(service.read(p.id, { id: terminal.id }).terminal.state).toBe("exited");
-  } finally {
-    await service.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+const ptyIt = loadPtyModule() ? it : it.skip;
 
-it("stops only its owned shell tree, including a running shell descendant", async () => {
+ptyIt(
+  "runs a real PTY shell: shell echo, resize, Ctrl-C to the foreground program, close",
+  async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-terminal-")));
+    const service = new HostTerminals();
+    services.push(service);
+    try {
+      const p = { id: "real", cwd: root };
+      const terminal = await service.create(
+        p,
+        { requestId: "real-shell-01", cols: 100, rows: 30 },
+        "owner",
+        () => true,
+      );
+      expect(terminal.transport).toBe("pty");
+      const profile = listShellProfiles().profiles.find((entry) => entry.name === terminal.shell);
+      const powershell = profile?.kind === "pwsh" || profile?.kind === "powershell";
+      const output = () => service.read(p.id, { id: terminal.id, limit: 65536 }).output;
+      const command = powershell
+        ? "$bycodaTerminalValue = 'PERSISTENT'; Write-Output ('A-' + $bycodaTerminalValue)\r"
+        : profile?.kind === "cmd"
+          ? "set BYCODA_TERMINAL_VALUE=PERSISTENT\recho A-%BYCODA_TERMINAL_VALUE%\r"
+          : "BYCODA_TERMINAL_VALUE=PERSISTENT; printf 'A-%s\\n' \"$BYCODA_TERMINAL_VALUE\"\r";
+      await service.write(p.id, { id: terminal.id, data: command });
+      await vi.waitFor(() => expect(output()).toContain("A-PERSISTENT"), { timeout: 15000 });
+      await service.resize(p.id, { id: terminal.id, cols: 120, rows: 40 });
+      await expect(service.resize(p.id, { id: terminal.id, cols: 1, rows: 40 })).rejects.toThrow(
+        "size",
+      );
+      // A long foreground program; Ctrl-C ends it and the same shell keeps its state.
+      await service.write(p.id, {
+        id: terminal.id,
+        data: powershell
+          ? "Write-Output ('SLEEP-' + $bycodaTerminalValue); Start-Sleep 60\r"
+          : profile?.kind === "cmd"
+            ? "echo SLEEP-%BYCODA_TERMINAL_VALUE% & ping -n 60 127.0.0.1\r"
+            : "printf 'SLEEP-%s\\n' \"$BYCODA_TERMINAL_VALUE\"; sleep 60\r",
+      });
+      await vi.waitFor(() => expect(output()).toContain("SLEEP-PERSISTENT"), { timeout: 15000 });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const before = output().length;
+      await service.interrupt(p.id, terminal.id);
+      expect(service.read(p.id, { id: terminal.id }).terminal.state).toBe("running");
+      // The console drops input typed while it handles Ctrl-C; type once the prompt returns.
+      await vi.waitFor(() => expect(output().length).toBeGreaterThan(before), { timeout: 15000 });
+      // Then wait until the redrawn prompt has settled (no output for a second).
+      for (let seen = -1; seen !== output().length;) {
+        seen = output().length;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      // Agents end lines with LF; the PTY receives Enter.
+      const next = powershell
+        ? "Write-Output ('B-' + $bycodaTerminalValue)\n"
+        : profile?.kind === "cmd"
+          ? "echo B-%BYCODA_TERMINAL_VALUE%\n"
+          : "printf 'B-%s\\n' \"$BYCODA_TERMINAL_VALUE\"\n";
+      await service.write(p.id, { id: terminal.id, data: next });
+      await vi.waitFor(() => expect(output()).toContain("B-PERSISTENT"), { timeout: 15000 });
+      await service.remove(p.id, terminal.id);
+      expect(service.list(p.id).terminals).toEqual([]);
+    } finally {
+      await service.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+  40000,
+);
+
+ptyIt("stops only its owned shell tree, including a running shell descendant", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-terminal-tree-")));
   const service = new HostTerminals();
   services.push(service);
@@ -470,16 +515,16 @@ it("stops only its owned shell tree, including a running shell descendant", asyn
     const quote = (value: string) => `'${value.replace(/'/g, "''")}'`;
     const command =
       profile?.kind === "pwsh" || profile?.kind === "powershell"
-        ? `& ${quote(process.execPath)} heartbeat.cjs\n\n`
+        ? `& ${quote(process.execPath)} heartbeat.cjs\r`
         : profile?.kind === "cmd"
-          ? `"${process.execPath}" heartbeat.cjs\n`
-          : `'${process.execPath.replace(/'/g, "'\\''")}' heartbeat.cjs\n`;
+          ? `"${process.execPath}" heartbeat.cjs\r`
+          : `'${process.execPath.replace(/'/g, "'\\''")}' heartbeat.cjs\r`;
     await service.write(p.id, { id: terminal.id, data: command });
     await vi.waitFor(
       async () => expect(await readFile(join(root, "heartbeat.txt"), "utf8")).toMatch(/^\d+$/),
       { timeout: 10000 },
     );
-    await service.interrupt(p.id, terminal.id);
+    await service.remove(p.id, terminal.id);
     const stopped = await readFile(join(root, "heartbeat.txt"), "utf8");
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(await readFile(join(root, "heartbeat.txt"), "utf8")).toBe(stopped);
@@ -696,4 +741,88 @@ it("tiny terminal chunks retain exact ANSI/UTF16 ranges without append-time mate
   } finally {
     reads.mockRestore();
   }
+});
+
+it("starts interactive shells in a PTY at the client size and one-shot commands in a pipe", async () => {
+  const s = setup();
+  const shell = await s.service.create(
+    project,
+    { requestId: "pty-size-01", cols: 120, rows: 33 },
+    "owner",
+    () => true,
+  );
+  expect(shell.transport).toBe("pty");
+  expect(s.launchPty.mock.calls[0][2]).toEqual({ cols: 120, rows: 33 });
+  await s.service.create(project, { requestId: "pty-size-02" }, "owner", () => true);
+  expect(s.launchPty.mock.calls[1][2]).toEqual({ cols: 80, rows: 24 });
+  const command = await s.service.create(
+    project,
+    { requestId: "pipe-cmd-01", command: "echo hi", shellKind: "posix" },
+    "owner",
+    () => true,
+  );
+  expect(command.transport).toBe("pipe");
+  expect(s.launchPty).toHaveBeenCalledTimes(2);
+});
+
+it("sends Ctrl-C to a PTY without stopping it, resizes PTYs only and validates sizes", async () => {
+  const s = setup();
+  const child = Object.assign(s.child, {
+    interrupt: vi.fn(async () => {}),
+    resize: vi.fn(async () => {}),
+  });
+  const terminal = await s.service.create(
+    project,
+    { requestId: "pty-ctl-01" },
+    "owner",
+    () => true,
+  );
+  await s.service.interrupt(project.id, terminal.id);
+  expect(child.interrupt).toHaveBeenCalledOnce();
+  expect(child.stop).not.toHaveBeenCalled();
+  expect(s.service.read(project.id, { id: terminal.id }).terminal.state).toBe("running");
+  await s.service.resize(project.id, { id: terminal.id, cols: 90, rows: 20 });
+  expect(child.resize).toHaveBeenCalledWith(90, 20);
+  for (const size of [
+    { cols: 1, rows: 20 },
+    { cols: 401, rows: 20 },
+    { cols: 90, rows: 201 },
+    { cols: 90.5, rows: 20 },
+    { cols: "90", rows: 20 },
+  ])
+    await expect(s.service.resize(project.id, { id: terminal.id, ...size })).rejects.toThrow(
+      "Invalid terminal size",
+    );
+  s.exit(0);
+  await expect(s.service.interrupt(project.id, terminal.id)).rejects.toThrow("exited");
+  await expect(
+    s.service.resize(project.id, { id: terminal.id, cols: 90, rows: 20 }),
+  ).rejects.toThrow("exited");
+});
+
+it("refuses to resize a pipe command terminal", async () => {
+  const s = setup();
+  const terminal = await s.service.create(
+    project,
+    { requestId: "pipe-resize-01", command: "sleep 1", shellKind: "posix" },
+    "owner",
+    () => true,
+  );
+  await expect(
+    s.service.resize(project.id, { id: terminal.id, cols: 90, rows: 20 }),
+  ).rejects.toThrow("interactive");
+});
+
+it("releases admission when this Host has no PTY binding, since nothing was spawned", async () => {
+  const s = setup();
+  const release = vi.fn(async () => {});
+  s.service.setActivityGate(async () => release);
+  s.launchPty.mockImplementation(() => {
+    throw new PtyUnavailableError();
+  });
+  await expect(
+    s.service.create(project, { requestId: "no-pty-01" }, "owner", () => true),
+  ).rejects.toThrow("Interactive terminals are unavailable");
+  expect(release).toHaveBeenCalledOnce();
+  expect(s.service.list(project.id).terminals).toEqual([]);
 });

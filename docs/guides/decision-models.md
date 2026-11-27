@@ -57,11 +57,10 @@ accuracy. A task using Automatic keeps the default threshold.
 
 ## Advanced discovery
 
-Discovery is collapsed by default. Expand it to review found models and scan
-settings when a model lives outside the usual folders or a service uses another
-port. Add the folder or local port and save the scan settings to scan again.
-Results list candidates; they are not connected until
-you explicitly add them.
+**Found on this computer** lists models and local services the scan found that
+are not connected yet. They are not connected until you explicitly add them.
+When a model lives outside the usual folders or a service uses another port,
+open **Scan settings**, add the folder or port, and choose **Save and scan**.
 
 For a discovered model file, **Add** opens its installation for review. The app
 finds the matching runtime and keeps the selected model; **Test and add** then
@@ -77,9 +76,12 @@ sooner. A scan that fails shows its error and is not remembered.
 
 ## Privacy
 
-**Personal data stays on this computer** restricts personal-data requests to local
-sources with loopback endpoints. It does not fall back to a remote API for those
-requests. Provider keys stay in the credential store and are not written into
+**Send personal data only to models on this computer**, under Task routing,
+restricts personal-data requests to local sources with loopback endpoints. The
+app marks three kinds of request as personal data: a contact's interest score,
+the sentiment of a message, and choosing who runs a task board task. When the
+switch is on and no local model is connected, those decisions are skipped; they
+never fall back to a remote API. When it is off, API sources can answer them too. Provider keys stay in the credential store and are not written into
 the model configuration.
 
 For the gateway contract and maintainer details, see

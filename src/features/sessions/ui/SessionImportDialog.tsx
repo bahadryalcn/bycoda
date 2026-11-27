@@ -1,32 +1,28 @@
 import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
-import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Popover } from "../../../shared/ui/Popover";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../shared/ui/SkeletonList";
 import { Switch } from "../../../shared/ui/Switch";
-import { useFormat, useLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
+  IMPORT_PROVIDERS,
   discoverImportableSessions,
   type DiscoveryReport,
   type ImportCandidate,
-  type ImportProvider,
 } from "../../../platform/tauri/sessionImport";
-import { parentPath, prettyCwd, projectName } from "../../../shared/lib/paths";
-import { CircleAlert, Clock, Folder } from "../../../shared/ui/icons";
+import { prettyCwd } from "../../../shared/lib/paths";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { importedSessionKeys } from "../data/sessionStore";
 import {
@@ -37,18 +33,16 @@ import {
   groupByFolder,
   isAlreadyImported,
   isTemporaryFolder,
-  type FolderGroup,
   type SessionImportContext,
 } from "../import/importModel";
 import {
-  isUsableProjectFolder,
   previewProjectGroups,
   runSessionImport,
   type ImportProgress,
   type ImportSummary,
 } from "../import/importRunner";
-import { HarnessIcon } from "./HarnessIcon";
 import { DoneView, RunningView, importCount } from "./SessionImportResult";
+import { ProviderSection } from "./SessionImportList";
 
 type Props = {
   initialContext?: SessionImportContext;
@@ -67,21 +61,9 @@ type Run =
   | { status: "running"; progress: ImportProgress }
   | { status: "done"; summary: ImportSummary };
 
-const PROVIDERS: readonly ImportProvider[] = ["claude", "codex"];
-const ALL_PROVIDERS: ReadonlySet<ImportProvider> = new Set(PROVIDERS);
-
-const PROVIDER_LABEL: Record<ImportProvider, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-};
-
-/** Conversations rendered per open folder before "Show more"; keeps huge folders cheap to open. */
-const ITEM_PAGE = 150;
-
-/** Whether the chat will only be history, with no way to continue it. */
-function isHistoryOnly(candidate: ImportCandidate): boolean {
-  return !isUsableProjectFolder(candidate) || !candidate.resumable;
-}
+const ALL_PROVIDERS = new Set(IMPORT_PROVIDERS);
+/** With this many providers or fewer, every provider group starts open. */
+const OPEN_PROVIDER_GROUPS = 2;
 
 /** Drive roots (`G:/`) that hold conversations, busiest first. */
 function driveRoots(candidates: readonly ImportCandidate[]): string[] {
@@ -154,17 +136,14 @@ async function performImport({
 }
 
 /**
- * Bring the conversations Claude Code and Codex stored on disk into Bycoda,
- * grouped by the folder each ran in. Nothing is touched until Import is
- * pressed, and the provider files are only ever read.
+ * Bring the conversations provider CLIs stored on disk into Bycoda, grouped by
+ * provider and then by the folder each ran in. Nothing is touched until Import
+ * is pressed, and the provider files are only ever read.
  */
 export function SessionImportDialog({ onClose, onImported, initialContext }: Props) {
   const t = useT();
   const locale = useLocale();
   const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [providers, setProviders] = useState<ReadonlySet<ImportProvider>>(
-    () => new Set(initialContext ? [initialContext.provider] : PROVIDERS),
-  );
   const [text, setText] = useState("");
   const deferredText = useDeferredValue(text);
   // "" means every folder.
@@ -174,8 +153,6 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [missingOpen, setMissingOpen] = useState(false);
   const [groupProjects, setGroupProjects] = useState(true);
   const [run, setRun] = useState<Run>({ status: "idle" });
   const abort = useRef<AbortController | null>(null);
@@ -192,7 +169,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         setSelected(
           new Set(
             filterCandidates(report.candidates, {
-              providers: new Set(initialContext ? [initialContext.provider] : PROVIDERS),
+              providers: initialContext ? new Set([initialContext.provider]) : ALL_PROVIDERS,
               root: initialContext?.cwd ?? null,
               text: "",
               showAutomation: false,
@@ -236,7 +213,6 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
           .map((root) => ({ value: root, label: root.replace("/", "\\") }))
       : []),
   ];
-  // Conversations that match everything except the provider toggle, so each toggle can show its count.
   const matched = useMemo(
     () =>
       report
@@ -249,23 +225,24 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         : [],
     [report, deferredText, rootFilter, showAutomation],
   );
-  const { visible, providerCounts, temporaryCount } = useMemo(() => {
+  const { visible, temporaryCount } = useMemo(() => {
     const temporary = new Set<ImportCandidate>();
     for (const candidate of matched) if (isTemporaryFolder(candidate.cwd)) temporary.add(candidate);
-    const scoped = hideTemporary
-      ? matched.filter((candidate) => !temporary.has(candidate))
-      : matched;
-    const byProvider: Record<ImportProvider, number> = { claude: 0, codex: 0 };
-    for (const candidate of scoped) byProvider[candidate.provider] += 1;
     return {
-      visible: scoped.filter((candidate) => providers.has(candidate.provider)),
-      providerCounts: byProvider,
+      visible: hideTemporary ? matched.filter((candidate) => !temporary.has(candidate)) : matched,
       temporaryCount: temporary.size,
     };
-  }, [matched, hideTemporary, providers]);
+  }, [matched, hideTemporary]);
   const folders = useMemo(() => groupByFolder(visible), [visible]);
-  const presentFolders = folders.filter((folder) => folder.exists);
-  const missingFolders = folders.filter((folder) => !folder.exists);
+  // Providers in the order the dialog lists them, each with its visible conversations.
+  const groups = useMemo(
+    () =>
+      IMPORT_PROVIDERS.map((provider) => ({
+        provider,
+        items: visible.filter((candidate) => candidate.provider === provider),
+      })).filter((group) => group.items.length > 0),
+    [visible],
+  );
   const counts = useMemo(
     () => countSelection(visible, selected, stored),
     [visible, selected, stored],
@@ -288,10 +265,8 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
 
   const running = run.status === "running";
   const searching = deferredText.trim() !== "";
-  const autoExpand = folders.length <= 6 || searching;
   const filterCount = (showAutomation ? 1 : 0) + (hideTemporary ? 0 : 1);
-  const filtering =
-    providers.size !== PROVIDERS.length || rootFilter !== "" || searching || filterCount > 0;
+  const filtering = rootFilter !== "" || searching || filterCount > 0;
 
   const toggleKeys = (keys: string[], on: boolean) =>
     setSelected((current) => {
@@ -304,28 +279,18 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
     });
   const selectable = (items: ImportCandidate[]) =>
     items.filter((item) => !isAlreadyImported(item, stored)).map(candidateKey);
-  const toggleOpen = (key: string) =>
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   const resetFilters = () => {
     setShowAutomation(false);
     setHideTemporary(true);
   };
   const resetAll = () => {
     resetFilters();
-    setProviders(new Set(PROVIDERS));
     setRootFilter("");
     setText("");
   };
 
   const shownKeys = selectable(visible);
   const shownChosen = shownKeys.filter((key) => selected.has(key)).length;
-  const missingKeys = selectable(missingFolders.flatMap((folder) => folder.items));
-  const missingChosen = missingKeys.filter((key) => selected.has(key)).length;
 
   const start = async () => {
     if (toImport.length === 0 || running) return;
@@ -396,11 +361,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         {load.status === "loading" ? (
           <div className="flex flex-col gap-2 py-4">
             <LoadingText layout="fill" inset="none" size="secondary" delay={false}>
-              {t("Scanning Claude Code and Codex history…")}
+              {t("Scanning conversation history…")}
             </LoadingText>
-            {[0, 1, 2, 3, 4].map((row) => (
-              <Skeleton key={row} aria-hidden className="h-7 w-full" />
-            ))}
+            <SkeletonList rows={5} framed leading="icon" trailing="text" seed={9} />
           </div>
         ) : null}
         {load.status === "error" ? (
@@ -413,33 +376,6 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         {report && run.status === "idle" ? (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <ButtonGroup aria-label={t("Providers")}>
-                {PROVIDERS.map((provider) => {
-                  const on = providers.has(provider);
-                  return (
-                    <Button
-                      variant="secondary"
-                      key={provider}
-                      type="button"
-                      pressed={on}
-                      onClick={() =>
-                        setProviders((current) => {
-                          const next = new Set(current);
-                          if (next.has(provider)) next.delete(provider);
-                          else next.add(provider);
-                          return next;
-                        })
-                      }
-                    >
-                      <HarnessIcon harness={provider} className="size-3" />
-                      {PROVIDER_LABEL[provider]}
-                      <Text size="inherit" tone="muted" className="tabular-nums">
-                        {providerCounts[provider].toLocaleString(locale)}
-                      </Text>
-                    </Button>
-                  );
-                })}
-              </ButtonGroup>
               {rootOptions.length > 1 ? (
                 <SearchableSelect
                   hideLabel
@@ -551,7 +487,9 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                     <Text as="p" size="caption" tone="secondary">
                       {report.candidates.length === 0
-                        ? t("No Claude Code or Codex conversations were found on this computer.")
+                        ? t(
+                            "No conversations from supported coding agents were found on this computer.",
+                          )
                         : t("Nothing matches these filters.")}
                     </Text>
                     {report.candidates.length > 0 && filtering ? (
@@ -561,70 +499,22 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     ) : null}
                   </div>
                 ) : (
-                  <>
-                    {presentFolders.map((folder, index) => (
-                      <FolderSection
-                        key={folder.key}
-                        divider={index < presentFolders.length - 1 || missingFolders.length > 0}
-                        folder={folder}
-                        stored={stored}
-                        selected={selected}
-                        open={autoExpand || expanded.has(folder.key)}
-                        onToggleOpen={() => toggleOpen(folder.key)}
-                        onToggleKeys={toggleKeys}
-                        selectable={selectable}
-                      />
-                    ))}
-                    {missingFolders.length > 0 ? (
-                      <section {...surfaceAttributes({ frame: "pane", edge: "top" })}>
-                        <div className="flex items-center gap-2 px-3 py-0.5">
-                          <Checkbox
-                            aria-label={t("Select all missing folders")}
-                            disabled={missingKeys.length === 0}
-                            disabledReason={t("No conversations to select.")}
-                            checked={missingKeys.length > 0 && missingChosen === missingKeys.length}
-                            indeterminate={missingChosen > 0 && missingChosen < missingKeys.length}
-                            onChange={(event) => toggleKeys(missingKeys, event.target.checked)}
-                          />
-                          <Button
-                            variant="ghost"
-                            type="button"
-                            align="start"
-                            expanded={missingOpen || searching}
-                            chevron="start"
-                            onClick={() => setMissingOpen((value) => !value)}
-                            className="min-w-0 flex-1"
-                          >
-                            <Text
-                              size="secondary"
-                              tone="secondary"
-                              truncate
-                              className="min-w-0 flex-1"
-                            >
-                              {t("Missing folders ({p0})", {
-                                p0: missingFolders.length.toLocaleString(locale),
-                              })}
-                            </Text>
-                          </Button>
-                        </div>
-                        {missingOpen || searching
-                          ? missingFolders.map((folder, index) => (
-                              <FolderSection
-                                key={folder.key}
-                                divider={index < missingFolders.length - 1}
-                                folder={folder}
-                                stored={stored}
-                                selected={selected}
-                                open={autoExpand || expanded.has(folder.key)}
-                                onToggleOpen={() => toggleOpen(folder.key)}
-                                onToggleKeys={toggleKeys}
-                                selectable={selectable}
-                              />
-                            ))
-                          : null}
-                      </section>
-                    ) : null}
-                  </>
+                  groups.map((group, index) => (
+                    <ProviderSection
+                      key={group.provider}
+                      provider={group.provider}
+                      items={group.items}
+                      // `/resume` opens its own provider; the rest stay closed and unselected.
+                      defaultOpen={
+                        initialContext
+                          ? group.provider === initialContext.provider
+                          : groups.length <= OPEN_PROVIDER_GROUPS
+                      }
+                      searching={searching}
+                      divider={index < groups.length - 1}
+                      selection={{ stored, selected, onToggleKeys: toggleKeys, selectable }}
+                    />
+                  ))
                 )}
               </div>
             </Surface>
@@ -732,186 +622,5 @@ function ToggleRow({
         onCheckedChange={onChange}
       />
     </ActionHost>
-  );
-}
-
-function FolderSection({
-  divider,
-  folder,
-  stored,
-  selected,
-  open,
-  onToggleOpen,
-  onToggleKeys,
-  selectable,
-}: {
-  divider: boolean;
-  folder: FolderGroup;
-  stored: ReadonlySet<string>;
-  selected: ReadonlySet<string>;
-  open: boolean;
-  onToggleOpen: () => void;
-  onToggleKeys: (keys: string[], on: boolean) => void;
-  selectable: (items: ImportCandidate[]) => string[];
-}) {
-  const t = useT();
-  const locale = useLocale();
-  const { formatImportDate } = useFormat();
-  const [limit, setLimit] = useState(ITEM_PAGE);
-  const keys = selectable(folder.items);
-  const chosen = keys.filter((key) => selected.has(key)).length;
-  const parent = parentPath(folder.path);
-  const parentLabel = parent && parent !== folder.path ? prettyCwd(parent) : "";
-
-  return (
-    // Offscreen folders skip layout and paint, so ~3k conversations stay cheap to scroll and filter.
-    <section
-      {...surfaceAttributes(
-        { frame: divider ? "pane" : "none", edge: "bottom" },
-        "[contain-intrinsic-size:auto_36px] [content-visibility:auto]",
-      )}
-    >
-      <div className="flex items-center gap-2 px-3 py-0.5">
-        <Checkbox
-          aria-label={t("Select every conversation in {p0}", { p0: folder.path })}
-          disabled={keys.length === 0}
-          disabledReason={t("No conversations to select.")}
-          checked={keys.length > 0 && chosen === keys.length}
-          indeterminate={chosen > 0 && chosen < keys.length}
-          onChange={(event) => onToggleKeys(keys, event.target.checked)}
-        />
-        <Button
-          variant="ghost"
-          type="button"
-          align="start"
-          expanded={open}
-          chevron="start"
-          onClick={onToggleOpen}
-          className="min-w-0 flex-1"
-        >
-          <Folder className="icon-sm shrink-0" tone="secondary" />
-          <Text size="secondary" weight="medium" truncate className="max-w-[45%] shrink-0">
-            {projectName(folder.path)}
-          </Text>
-          {parentLabel ? (
-            <MiddleTruncate
-              mode="path"
-              title={folder.path}
-              size="micro"
-              tone="muted"
-              className="min-w-0 flex-1"
-            >
-              {parentLabel}
-            </MiddleTruncate>
-          ) : (
-            <span className="flex-1" />
-          )}
-          {!folder.exists ? (
-            <Tooltip label={t("Folder not found. Imported as history only.")} asChild>
-              <Text size="inherit" tone="muted" className="grid shrink-0 place-items-center">
-                <CircleAlert aria-hidden className="icon-sm" />
-              </Text>
-            </Tooltip>
-          ) : null}
-          <Text
-            size="micro"
-            tone="muted"
-            className="shrink-0 whitespace-nowrap text-end tabular-nums"
-          >
-            {chosen > 0 && chosen < keys.length
-              ? `${chosen.toLocaleString(locale)} / ${folder.items.length.toLocaleString(locale)}`
-              : folder.items.length.toLocaleString(locale)}
-          </Text>
-        </Button>
-      </div>
-      {open ? (
-        <ul className="@container/import-rows pb-1">
-          {folder.items.slice(0, limit).map((item) => {
-            const key = candidateKey(item);
-            const imported = isAlreadyImported(item, stored);
-            return (
-              <ActionHost
-                as="li"
-                key={key}
-                {...surfaceAttributes({ radius: "none" }, "[--control-padding-start:2.25rem]")}
-              >
-                <Checkbox
-                  disabled={imported}
-                  disabledReason={imported ? t("Already imported.") : undefined}
-                  checked={imported || selected.has(key)}
-                  onChange={(event) => onToggleKeys([key], event.target.checked)}
-                  label={
-                    <>
-                      <Tooltip label={PROVIDER_LABEL[item.provider]} asChild>
-                        <span className="grid shrink-0 place-items-center">
-                          <HarnessIcon harness={item.provider} className="size-3.5" />
-                        </span>
-                      </Tooltip>
-                      <OverflowTooltip label={item.firstPrompt}>
-                        <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
-                          {item.firstPrompt}
-                        </Text>
-                      </OverflowTooltip>
-                      {imported ? (
-                        <Text size="micro" tone="muted" className="shrink-0">
-                          {t("imported")}
-                        </Text>
-                      ) : isHistoryOnly(item) ? (
-                        <Tooltip
-                          label={t(
-                            "Imported as history; sending a message starts a new conversation",
-                          )}
-                          asChild
-                        >
-                          <Text
-                            size="inherit"
-                            tone="muted"
-                            className="grid shrink-0 place-items-center"
-                          >
-                            <Clock aria-hidden className="icon-sm" />
-                          </Text>
-                        </Tooltip>
-                      ) : null}
-                      {item.kind !== "interactive" ? (
-                        <Text size="micro" tone="muted" className="shrink-0">
-                          {item.kind === "exec" ? t("automation") : t("subagent")}
-                        </Text>
-                      ) : null}
-                      <Text
-                        size="micro"
-                        tone="secondary"
-                        className="shrink-0 whitespace-nowrap text-end"
-                      >
-                        {formatImportDate(item.lastAt)}
-                      </Text>
-                      <Text
-                        size="micro"
-                        tone="secondary"
-                        className="shrink-0 whitespace-nowrap text-end @max-[480px]/import-rows:hidden"
-                      >
-                        {formatBytes(item.sizeBytes)}
-                      </Text>
-                    </>
-                  }
-                  padding={{ block: "sm", start: "md", end: "xl" }}
-                  className={`flex min-w-0 flex-1 items-center gap-2.5 ${
-                    imported ? "" : "cursor-pointer"
-                  }`}
-                />
-              </ActionHost>
-            );
-          })}
-          {folder.items.length > limit ? (
-            <li className="ps-[calc(2rem+0.25rem)] pe-3 pt-1">
-              <Button variant="ghost" type="button" onClick={() => setLimit(limit + ITEM_PAGE)}>
-                {t("Show {p0} more", {
-                  p0: Math.min(ITEM_PAGE, folder.items.length - limit).toLocaleString(locale),
-                })}
-              </Button>
-            </li>
-          ) : null}
-        </ul>
-      ) : null}
-    </section>
   );
 }

@@ -137,7 +137,7 @@ fn lookup_subagent_runs(
     let mut runs = Vec::new();
     let mut seen = HashSet::new();
     for path in candidates {
-        let Ok(connection) = open_cursor_store(&path) else {
+        let Ok(connection) = open_read_only(&path) else {
             continue;
         };
         let Ok(metadata) = read_cursor_metadata(&connection) else {
@@ -268,7 +268,7 @@ fn store_signature(path: &Path) -> Option<StoreSignature> {
 }
 
 fn read_parent_agent_id(path: &Path) -> Option<String> {
-    let connection = open_cursor_store(path).ok()?;
+    let connection = open_read_only(path).ok()?;
     let metadata = read_cursor_metadata(&connection).ok()?;
     metadata
         .pointer("/subagentInfo/parentAgentId")
@@ -276,7 +276,7 @@ fn read_parent_agent_id(path: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn read_cursor_metadata(connection: &Connection) -> Result<Value, String> {
+pub(crate) fn read_cursor_metadata(connection: &Connection) -> Result<Value, String> {
     let raw: String = connection
         .query_row("SELECT value FROM meta WHERE key = '0'", [], |row| {
             row.get(0)
@@ -525,14 +525,16 @@ fn forget_store_path(session_id: &str) {
 }
 
 fn read_tool_calls(path: &Path, tool_call_ids: &[String]) -> Result<Vec<CursorToolCall>, String> {
-    let connection = open_cursor_store(path)?;
+    let connection = open_read_only(path)?;
     connection
         .busy_timeout(std::time::Duration::from_millis(100))
         .map_err(|e| e.to_string())?;
     lookup_tool_calls(&connection, tool_call_ids).map_err(|e| e.to_string())
 }
 
-fn open_cursor_store(path: &Path) -> Result<Connection, String> {
+/// Opens a SQLite database another program owns, read-only and without
+/// creating sidecar files. Shared with the history import readers.
+pub(crate) fn open_read_only(path: &Path) -> Result<Connection, String> {
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
     let mut wal = path.as_os_str().to_os_string();
     wal.push("-wal");
@@ -544,7 +546,7 @@ fn open_cursor_store(path: &Path) -> Result<Connection, String> {
     // file even on a read-only connection. No sidecars are needed to read it.
     let name = path
         .to_str()
-        .ok_or("Invalid Cursor store path")?
+        .ok_or("Invalid database path")?
         .replace('%', "%25")
         .replace('?', "%3F")
         .replace('#', "%23");
@@ -795,7 +797,7 @@ mod tests {
             serde_json::json!({"role":"assistant","content":[{"type":"text","text":"Live WAL message"}]}),
         );
         assert!(path.with_file_name("store.db-wal").exists());
-        let live = open_cursor_store(&path).unwrap();
+        let live = open_read_only(&path).unwrap();
         assert_eq!(
             read_subagent_steps(&live, "child").unwrap().1[0].text,
             "Live WAL message"
@@ -804,7 +806,7 @@ mod tests {
         drop((live, writer));
         assert!(!path.with_file_name("store.db-wal").exists());
         let bytes = std::fs::read(&path).unwrap();
-        let closed = open_cursor_store(&path).unwrap();
+        let closed = open_read_only(&path).unwrap();
         assert_eq!(read_subagent_steps(&closed, "child").unwrap().1.len(), 1);
         assert!(closed.execute("DELETE FROM blobs", []).is_err());
         drop(closed);

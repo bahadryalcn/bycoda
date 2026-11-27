@@ -31,13 +31,13 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - Empty order resolves to `notConfigured`; callers keep their stored model. Items without a routing choice remain fixed.
 - All skipped entries resolve to `noEligibleEntry`; work waits until `nextResetAt` when known. Never turn exhausted eligibility into the stored-model fallback.
 - Unbound `text.*` roles retain each helper's cheap automatic model selection. Explicit role bindings override that behavior.
-- Pools flatten entry and pool references depth-first with deduplication; cycles are rejected. The selected pool's optional `effort` maps to a catalog-supported value at run start, including for nested members. Without it, entry settings apply.
+- Pools flatten entry and pool references depth-first with deduplication; cycles are rejected. A pool's `memberSettings` (effort, speed) override entry settings for models it lists; nested members use their own pool's. An older pool-wide `effort` moves into `memberSettings` on editor load.
 - Smart setup uses the known Host catalog, preferring concrete IDs over duplicate aliases. Both planners add pool members and account tier fallbacks at medium when supported, preserving existing rows. The rule plan and Plan with AI (`baselineOrder`, then rule fallback) update the order, pools, roles and global delegation in one draft.
 - Live facts: `host/model-routing/catalog-facts.ts` (OpenRouter) to `model/liveCatalogFacts.ts`; known families keep the table's score.
 - Order entries move within their work, personal or shared group (`groupEntriesByKind`). `enforceRoleNeeds` checks AI bindings against `ROLE_NEED`. Smart setup refills same-named pools at low for light-only roles, high for any heavy role, and medium otherwise. Save via the version-bound transaction.
 - Scope filtering: a run with a project folder skips entries whose account kind is the other scope (`otherScope`). Known provider accounts without a saved kind are Personal. Entries without a resolvable account can remain shared, and fixed choices are never filtered.
 - Helper policy and the recorded `resolved` choice follow [work executor](../feature-tasks-goals/references/work-executor.md); `resolveHelpers` may only narrow the settings layers.
-- Delegation layers apply global, then provider, then account, then item. Subagents, advisor, effort ceiling and image models live separately from order-entry model settings.
+- Delegation layers apply global, then provider, then account, then item, apart from entry settings. Only Defaults edits them; saves drop values equal to inherited ones.
 - Saves are owner-only and use `expectedVersion`; stale saves retain drafts and require reconciliation. The Host marks a stale `expectedVersion` with `MODEL_ROUTING_CONFLICT`; clients accept that code or the exact legacy message (`isRoutingSaveConflict`), only for the routing save, never by matching "version" or "changed". Reading capability or showing a control grants no write authority.
 - Hosts without `models.routing.v1` retain fixed model behavior; unavailable reads must not masquerade as an authoritative empty order.
 

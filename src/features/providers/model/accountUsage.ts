@@ -23,6 +23,8 @@ import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 
 /** At or below this much headroom an account reads as "Running low". */
 export const LOW_HEADROOM_PERCENT = 20;
+/** At or below this much headroom a low account reads as critical (red instead of yellow). */
+export const CRITICAL_HEADROOM_PERCENT = 10;
 
 /** Same `provider:id` key the identity cache uses. */
 export const accountUsageKey = identityKey;
@@ -34,6 +36,8 @@ export type AccountStatus = {
   label: string;
   /** Extra context, e.g. "back in 31m" for an exhausted account. */
   detail: string | null;
+  /** A low account at or below `CRITICAL_HEADROOM_PERCENT`. */
+  critical?: boolean;
 };
 
 /**
@@ -112,6 +116,7 @@ export function accountStatusWith(
       tone: "low",
       label: "Running low",
       detail: translate("{p0}% left", { p0: Math.round(headroom) }),
+      critical: headroom <= CRITICAL_HEADROOM_PERCENT,
     };
   }
   return { tone: "ready", label: "Ready", detail: null };

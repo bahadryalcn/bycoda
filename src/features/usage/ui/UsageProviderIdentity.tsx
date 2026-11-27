@@ -23,6 +23,8 @@ export function usageLabel(label: string): string {
       return t("Other");
     case "Default account":
       return t("Default account");
+    case "This machine":
+      return t("This machine");
     default:
       return label;
   }

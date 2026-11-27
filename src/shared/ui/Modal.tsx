@@ -347,7 +347,8 @@ export function ModalPanel({
               data-surface-variant={surface}
               data-surface-role={surface === "floating" ? surface : undefined}
               className={[
-                "relative isolate flex min-h-0 flex-col overflow-hidden",
+                // clip, not hidden: a nested focus or scrollIntoView must never scroll the frame itself.
+                "relative isolate flex min-h-0 flex-col overflow-clip",
                 popupHost
                   ? `max-h-[var(--native-popup-max-height,100dvh)] ${sheet || bottom ? "" : heightClass}`
                   : expanded
@@ -397,7 +398,7 @@ export function ModalPanel({
                   }}
                   {...optionalTextAttributes(
                     bodyText ?? {},
-                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? DIALOG_BODY_PADDING_CLASS_NAME : ""} ${minimalHeader ? "" : `border-t ${scrolled ? "border-(--ui-pane-border)" : "border-transparent"}`}`,
+                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-clip" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? DIALOG_BODY_PADDING_CLASS_NAME : ""} ${minimalHeader ? "" : `border-t ${scrolled ? "border-(--ui-pane-border)" : "border-transparent"}`}`,
                   )}
                 >
                   {children}

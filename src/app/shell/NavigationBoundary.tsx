@@ -92,8 +92,8 @@ function NavigationLoading({ label, onBack }: { label: string; onBack: () => voi
       >
         {/* Neutral page shapes: a heading line, then a few content lines. */}
         <SkeletonBar width="45%" height="0.875rem" />
-        {["92%", "78%", "86%", "64%"].map((width, index) => (
-          <SkeletonBar key={width} width={width} height="0.625rem" index={index + 1} />
+        {["92%", "78%", "86%", "64%"].map((width) => (
+          <SkeletonBar key={width} width={width} height="0.625rem" />
         ))}
       </SurfaceLoading>
     </Text>

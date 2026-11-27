@@ -11,7 +11,10 @@ import {
   useAnonymousStats,
 } from "../../features/account";
 import { useDiagnostics } from "../../features/diagnostics";
-import { getDiagnosticsMode } from "../../features/diagnostics/model/diagnosticsConsent";
+import {
+  getDiagnosticsMode,
+  setDiagnosticsMode,
+} from "../../features/diagnostics/model/diagnosticsConsent";
 import { dataTransfers } from "../../features/data-sharing";
 import { useActivitySync, useActivityTracker } from "../../features/activity";
 import { useRemoteMachines } from "../../features/connections/public/connections";
@@ -54,7 +57,12 @@ export function useAccountPlatform(): void {
     deviceInfo: accountDeviceInfo,
     identity: accountIdentity,
     destination: accountSharingDestination,
-    review: (details, send) => dataTransfers.run(details, getDiagnosticsMode, send),
+    review: (details, send) =>
+      dataTransfers.run(
+        details,
+        { load: getDiagnosticsMode, save: (mode) => setDiagnosticsMode(mode) },
+        send,
+      ),
     onFailure: reportAccountFailure,
     environment: () => appDiagnosticsFacts(machinesRef.current),
     readPerformance: readLocalHostPerformance,

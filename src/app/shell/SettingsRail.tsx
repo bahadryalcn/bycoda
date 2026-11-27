@@ -90,7 +90,7 @@ export function SettingsNav({ section: requestedSection, onSelect, onClose }: Pr
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const rows = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   // Account is not a list group: it is the avatar row under the list.
-  const groups = settingsSectionsByGroup(section).filter((group) => group.id !== "account");
+  const groups = settingsSectionsByGroup().filter((group) => group.id !== "account");
   const sections = groups.flatMap((group) => group.sections);
   // The account row sits outside the list; keep one list row tabbable while it is active.
   const stop = sections.some((item) => item.id === section) ? section : sections[0]?.id;

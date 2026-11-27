@@ -28,6 +28,7 @@ import { DateTimeRangePicker } from "../../../shared/ui/DateTimeRangePicker";
 import { ArrowDownCircle, Calendar, ListFilter, RefreshCw } from "../../../shared/ui/icons";
 import {
   PROVIDER_ACCOUNT_PROVIDERS,
+  accountDisplayLabel,
   providerAccounts,
   subscribeProviderAccounts,
 } from "../../providers/model/providerAccounts";
@@ -37,6 +38,7 @@ import {
   type ModelPrices,
 } from "../../providers/model/providerUsage";
 import { loadUsageSources } from "../data/usageSources";
+import { useMachineUsage } from "../hooks/useMachineUsage";
 import { usagePresetWindow } from "../model/usageWindows";
 import { subscribeUsageViewIntent, takeUsageViewIntent } from "../model/usageViewIntent";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
@@ -53,6 +55,7 @@ import {
   durationSamples,
   effectiveResolution,
   emptyUsageFilters,
+  LOCAL_USAGE_MACHINE,
   filterUsage,
   previousUsageWindow,
   sessionUsage,
@@ -156,8 +159,11 @@ export function UsageOverview({
   refresh = 0,
   limits,
   limitsOnly = false,
+  onRefresh,
 }: {
   refresh?: number;
+  /** Page-level reload; the toolbar refresh calls it on every tab. Without it the page reloads its own usage. */
+  onRefresh?: () => void;
   limits?: (filters: UsageFilters) => ReactNode;
   limitsOnly?: boolean;
 }) {
@@ -230,7 +236,13 @@ export function UsageOverview({
   const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
   const since = preset === "all" ? 0 : Math.max(0, previousUsageWindow(interval).start);
   const queryKey = `${since}:${interval.end}:${reload}:${refresh}:${version}`;
-  const refreshing = !limitsOnly && load.queryKey !== queryKey;
+  const machineUsage = useMachineUsage(
+    since,
+    `${interval.end}:${reload}:${refresh}`,
+    !limitsOnly && view !== "limits",
+  );
+  const otherMachines = machineUsage.machines;
+  const refreshing = !limitsOnly && (load.queryKey !== queryKey || machineUsage.loading);
   useEffect(() => {
     if (limitsOnly) return;
     let cancelled = false;
@@ -285,14 +297,15 @@ export function UsageOverview({
   const samples = useMemo(
     () =>
       usageSamples(
-        load.usage.map(({ account, rows }) => ({
+        [...load.usage, ...machineUsage.usage].map(({ account, rows, machine }) => ({
           account,
+          machine,
           rows: rows.filter((row) => !row.project || !isProjectLockedIn(lock, row.project)),
         })),
         pricing,
         groupFor,
       ),
-    [load.usage, lock, pricing, groupFor],
+    [load.usage, machineUsage.usage, lock, pricing, groupFor],
   );
   const turns = useMemo(
     () =>
@@ -401,6 +414,7 @@ export function UsageOverview({
       result.model.set(s.model, modelDisplayName(s.model, s.provider));
       result.project.set(s.project, s.projectLabel);
       result.group.set(s.group, s.groupLabel);
+      result.machine.set(s.machine, usageLabel(s.machineLabel));
     }
     if (view === "limits") {
       result.provider.clear();
@@ -412,12 +426,12 @@ export function UsageOverview({
       result.provider.set(account.provider, usageProviderLabel(account.provider));
       result.account.set(
         `${account.provider}:${account.id}`,
-        `${usageProviderLabel(account.provider)} · ${account.label}`,
+        `${usageProviderLabel(account.provider)} · ${accountDisplayLabel(account, accounts)}`,
       );
     }
     if (view === "limits") {
-      result.provider.set("grok", "Grok");
-      result.account.set("grok:default", "Grok");
+      result.provider.set("grok", usageProviderLabel("grok"));
+      result.account.set("grok:default", usageProviderLabel("grok"));
     }
     return result;
   }, [samples, runtime, accounts, view]);
@@ -462,6 +476,7 @@ export function UsageOverview({
     project: t("Project"),
     model: t("Model"),
     group: t("Workspace"),
+    machine: t("Machine"),
   };
   const chooseFilter = (key: keyof UsageFilters, value: string) => {
     setFilters((f) => ({ ...f, [key]: [value] }));
@@ -562,6 +577,55 @@ export function UsageOverview({
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const metricTile = (key: UsageMetric) => {
+    const previousValue = previousTotals[key];
+    const change =
+      key !== "duration" &&
+      preset !== "all" &&
+      previousValue > 0 &&
+      !load.failed &&
+      (key !== "cost" || (!unpriced.length && previous.every((s) => s.priced)))
+        ? ((totals[key] - previousValue) / previousValue) * 100
+        : null;
+    const subline =
+      key === "cost" && (!totals.tokens || pricedTokens < totals.tokens)
+        ? `${t("Priced token coverage")}: ${
+            totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"
+          }`
+        : change != null
+          ? t("{p0} vs previous period", {
+              p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
+            })
+          : null;
+    return (
+      <Button
+        key={key}
+        variant="item"
+        layout="stacked"
+        align="start"
+        className="usage-metric-tile"
+        pressed={metric === key}
+        onClick={() => setMetric(key)}
+      >
+        <Text size="caption" tone="muted" leading="inherit">
+          {metricName(key)}
+        </Text>
+        <Text as="strong" size="heading" tone="primary" weight="medium" leading="inherit">
+          {!load.refreshedAt ||
+          (key !== "duration" && !!load.error && !filtered.length) ||
+          (key === "duration" && load.turns === null) ||
+          (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
+            ? "—"
+            : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
+        </Text>
+        {/* One subline at most, always one line tall so tiles keep equal heights. What the numbers
+        are ("API-equivalent, not billed", elapsed time) is stated in the data notes. */}
+        <Text as="small" size="caption" tone="secondary" leading="inherit">
+          {subline ?? " "}
+        </Text>
+      </Button>
+    );
+  };
   return (
     <section
       id="setting-cost-overview"
@@ -581,6 +645,8 @@ export function UsageOverview({
         {!limitsOnly && (
           <TabStrip
             label={t("Usage views")}
+            appearance="track"
+            size="md"
             value={view}
             onValueChange={setView}
             items={[
@@ -592,33 +658,31 @@ export function UsageOverview({
           />
         )}
         <div className="usage-analytics-actions">
-          <div className="usage-band-scope">
-            <InfoPopover label={t("Data sources and coverage")}>
-              <p>{limitsOnly ? t("This machine") : t("This machine · Local session logs")}</p>
-              {/* shortcut: the zone id is shown as the platform reports it; no i18n formatter returns only the zone. */}
-              <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
-              {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
-                <p>
-                  {t("Updated")}{" "}
-                  {formatDate(load.refreshedAt, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                  })}
-                </p>
-              )}
-              {view === "limits" ? (
-                <p>
-                  {t(
-                    "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
-                  )}
-                </p>
-              ) : null}
-            </InfoPopover>
-          </div>
           <div className="usage-controls" ref={dateAnchor}>
+            {otherMachines.length > 0 && view !== "limits" ? (
+              <SearchableSelect
+                multiple
+                hideLabel
+                label={t("Machine")}
+                placeholder={t("All machines")}
+                value={filters.machine}
+                options={[
+                  { value: LOCAL_USAGE_MACHINE.id, label: t("This machine") },
+                  ...otherMachines.map((machine) => ({ value: machine.id, label: machine.label })),
+                ]}
+                onChange={(values) => {
+                  // Every machine chosen is the same as no machine filter.
+                  setFilters((current) => ({
+                    ...current,
+                    machine: values.length > otherMachines.length ? [] : values,
+                  }));
+                  setSelectedSession(null);
+                }}
+              />
+            ) : null}
             <Select
               hideLabel
+              controlWidth="compact"
               label={t("Date range")}
               value={preset}
               options={presets.map((value) => ({
@@ -656,6 +720,7 @@ export function UsageOverview({
             variant="ghost"
             iconOnly
             label={`${t("Filters")}${activeFilterCount ? ` (${activeFilterCount})` : ""}`}
+            badge={activeFilterCount ? activeFilterCount : undefined}
             selected={!!activeFilters.length}
             aria-haspopup="dialog"
             aria-expanded={openFilters}
@@ -663,17 +728,46 @@ export function UsageOverview({
           >
             <ListFilter aria-hidden className="icon-sm" strokeWidth={1.75} />
           </Button>
-          {!limitsOnly && view !== "limits" && (
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Refresh usage")}
-              loading={refreshing}
-              onClick={refreshData}
-            >
-              <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh usage")}
+            loading={refreshing}
+            onClick={onRefresh ?? refreshData}
+          >
+            <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+          </Button>
+          <div className="usage-band-scope">
+            <InfoPopover label={t("Data sources and coverage")}>
+              <p>{limitsOnly ? t("This machine") : t("This machine · Local session logs")}</p>
+              {view !== "limits" && otherMachines.length > 0 ? (
+                <p>
+                  {t("Other machines · Provider logs read through their Host: {p0}", {
+                    p0: otherMachines.map((machine) => machine.label).join(", "),
+                  })}
+                </p>
+              ) : null}
+              {/* shortcut: the zone id is shown as the platform reports it; no i18n formatter returns only the zone. */}
+              <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+              {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
+                <p>
+                  {t("Updated")}{" "}
+                  {formatDate(load.refreshedAt, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  })}
+                </p>
+              )}
+              {view === "limits" ? (
+                <p>
+                  {t(
+                    "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
+                  )}
+                </p>
+              ) : null}
+            </InfoPopover>
+          </div>
         </div>
       </div>
       {openDateRange && preset === "custom" && (
@@ -765,7 +859,12 @@ export function UsageOverview({
           </div>
         </Popover>
       )}
-      {view !== "limits" && firstLoad && <SettingsPageLoading label={t("Loading usage…")} />}
+      {view !== "limits" && firstLoad && (
+        // Reserves the height the tiles and panels take, so the content does not jump in below it.
+        <div className="usage-first-load">
+          <SettingsPageLoading label={t("Loading usage…")} />
+        </div>
+      )}
       {view !== "limits" && unavailable && (
         <InlineError retry={{ onRetry: refreshData, pending: refreshing }}>
           {load.error
@@ -775,6 +874,23 @@ export function UsageOverview({
               )}
         </InlineError>
       )}
+      {view !== "limits" && machineUsage.unavailable.length > 0 && (
+        <Alert tone="warning">
+          {t("Usage of {p0} could not be read. It is not included.", {
+            p0: machineUsage.unavailable.map((machine) => machine.label).join(", "),
+          })}
+        </Alert>
+      )}
+      {view !== "limits" &&
+        otherMachines.length > 0 &&
+        ((machineUsage.coveredSince !== null && machineUsage.coveredSince > since) ||
+          machineUsage.truncated) && (
+          <Text as="p" size="caption" tone="secondary" leading="inherit">
+            {machineUsage.truncated
+              ? t("Other machines' usage is limited to its newest rows. Select a shorter interval.")
+              : t("Other machines show at most their last 90 days of usage.")}
+          </Text>
+        )}
       {view !== "limits" && partial && (
         <Alert tone="warning">
           {(load.failed > 0 || stale) &&
@@ -827,67 +943,8 @@ export function UsageOverview({
             ? null
             : view === "overview" && (
                 <>
-                  <div className="usage-metrics">
-                    {(
-                      [
-                        "cost",
-                        "tokens",
-                        "duration",
-                        ...(showDetails ? ["input", "output", "cacheRead", "cacheWrite"] : []),
-                      ] as UsageMetric[]
-                    ).map((key) => {
-                      const previousValue = previousTotals[key];
-                      const change =
-                        key !== "duration" &&
-                        preset !== "all" &&
-                        previousValue > 0 &&
-                        !load.failed &&
-                        (key !== "cost" || (!unpriced.length && previous.every((s) => s.priced)))
-                          ? ((totals[key] - previousValue) / previousValue) * 100
-                          : null;
-                      return (
-                        <div key={key}>
-                          <Button
-                            variant="link"
-                            selected={metric === key}
-                            onClick={() => setMetric(key)}
-                          >
-                            {metricName(key)}
-                          </Button>
-                          <Text
-                            as="strong"
-                            size="heading"
-                            tone="primary"
-                            weight="medium"
-                            leading="inherit"
-                          >
-                            {!load.refreshedAt ||
-                            (key !== "duration" && !!load.error && !filtered.length) ||
-                            (key === "duration" && load.turns === null) ||
-                            (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
-                              ? "—"
-                              : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
-                          </Text>
-                          {/* One subline at most: the change against the previous period. What the numbers
-                          are ("API-equivalent, not billed", elapsed time) is stated in the data notes. */}
-                          {key === "cost" && (!totals.tokens || pricedTokens < totals.tokens) ? (
-                            <Text as="small" size="caption" tone="secondary" leading="inherit">
-                              {`${t("Priced token coverage")}: ${
-                                totals.tokens
-                                  ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
-                                  : "—"
-                              }`}
-                            </Text>
-                          ) : change != null ? (
-                            <Text as="small" size="caption" tone="secondary" leading="inherit">
-                              {t("{p0} vs previous period", {
-                                p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
-                              })}
-                            </Text>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                  <div role="group" aria-label={t("Chart metric")} className="usage-metrics">
+                    {(["cost", "tokens", "duration"] as UsageMetric[]).map(metricTile)}
                   </div>
                   <Disclosure
                     size="sm"
@@ -896,6 +953,11 @@ export function UsageOverview({
                     open={showDetails}
                     onOpenChange={setShowDetails}
                   >
+                    <div role="group" aria-label={t("Chart metric")} className="usage-metrics">
+                      {(["input", "output", "cacheRead", "cacheWrite"] as UsageMetric[]).map(
+                        metricTile,
+                      )}
+                    </div>
                     <Text
                       as="div"
                       size="caption"
@@ -944,11 +1006,15 @@ export function UsageOverview({
             </Text>
           )}
           {!isEmptyPeriod && !limitsOnly && view !== "limits" && (
-            <div className="usage-controls usage-chart-options">
+            <div
+              role="group"
+              aria-label={t("Chart options")}
+              className="usage-controls usage-chart-options"
+            >
               {/* The metric tiles choose the metric on Overview; the other views have no tiles. */}
               {view !== "overview" && (
                 <Select
-                  hideLabel
+                  controlWidth="compact"
                   label={t("Chart metric")}
                   value={metric}
                   onValueChange={(v) => setMetric(v as UsageMetric)}
@@ -960,11 +1026,19 @@ export function UsageOverview({
               )}
               {view !== "time" && (
                 <Select
-                  hideLabel
+                  controlWidth="compact"
                   label={t("Group by")}
                   value={dimension}
                   onValueChange={(v) => setDimension(v as UsageDimension)}
-                  options={(["provider", "account", "model", "project"] as const).map((value) => ({
+                  options={(
+                    [
+                      "provider",
+                      "account",
+                      "model",
+                      "project",
+                      ...(otherMachines.length ? (["machine"] as const) : []),
+                    ] as const
+                  ).map((value) => ({
                     value,
                     label: names[value],
                   }))}
@@ -972,7 +1046,7 @@ export function UsageOverview({
               )}
               {view === "overview" && (
                 <Select
-                  hideLabel
+                  controlWidth="compact"
                   label={t("Resolution")}
                   value={resolution}
                   onValueChange={(v) => setResolution(v as UsageResolution)}
@@ -1003,6 +1077,8 @@ export function UsageOverview({
                   metric={metric}
                   colors={providerColors}
                   onSelect={(value) => chooseFilter("provider", value)}
+                  activeKey={filters.provider.length === 1 ? filters.provider[0] : null}
+                  onClear={() => setFilters((f) => ({ ...f, provider: [] }))}
                 />
               </div>
               <div className="usage-analysis-grid">
@@ -1047,6 +1123,9 @@ export function UsageOverview({
                 <div className="usage-controls usage-search-actions">
                   <SearchInput
                     appearance="field"
+                    fieldSize="sm"
+                    textSize="secondary"
+                    containerClassName="usage-search-field"
                     aria-label={t("Search usage")}
                     placeholder={t("Search usage")}
                     value={search}
@@ -1055,7 +1134,7 @@ export function UsageOverview({
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label={t("Export CSV")}
+                    disabled={!matchedRows.length}
                     onClick={exportCsv}
                   >
                     <ArrowDownCircle aria-hidden className="icon-sm" strokeWidth={1.75} />
@@ -1067,6 +1146,7 @@ export function UsageOverview({
                 <Contribution
                   title={names[dimension]}
                   rows={matchedRows}
+                  total={usageTotals(breakdown)[metric]}
                   metric={metric}
                   colors={colors}
                   onSelect={(value) => chooseFilter(dimension, value)}
@@ -1078,6 +1158,8 @@ export function UsageOverview({
                     metric={metric}
                     colors={providerColors}
                     onSelect={(value) => chooseFilter("provider", value)}
+                    activeKey={filters.provider.length === 1 ? filters.provider[0] : null}
+                    onClear={() => setFilters((f) => ({ ...f, provider: [] }))}
                   />
                 )}
               </div>
@@ -1088,7 +1170,7 @@ export function UsageOverview({
                 onOpenChange={setShowProjectTable}
               >
                 <ContinuousUsageTable
-                  stateKey={JSON.stringify(["usage-breakdown", dimension, filters, search, preset])}
+                  stateKey={JSON.stringify(["usage-breakdown", dimension, metric])}
                   caption={t("Usage breakdown")}
                   rows={matchedRows}
                   metric={metric}
@@ -1097,7 +1179,8 @@ export function UsageOverview({
               </Disclosure>
               <UsageRecordedSessions
                 unavailable={load.turns === null}
-                stateKey={JSON.stringify(["usage-sessions", selectedSession, filters, preset])}
+                metric={metric}
+                stateKey={JSON.stringify(["usage-sessions", metric])}
                 sessionRows={sessionRows}
                 turnRows={turnRows}
                 selectedSession={selectedSession}

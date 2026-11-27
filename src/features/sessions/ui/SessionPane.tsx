@@ -235,6 +235,8 @@ export type SessionPaneProps = {
   onPrepareSessionHistory?: (sessionId: string, mode?: "prefetch") => Promise<boolean>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
+  /** Start the draft's new worktree from the fetched remote base. */
+  onWorktreeBaseRemoteChange?: (sessionId: string, remote: boolean) => void;
   onManageWorktrees?: () => void;
   onModelChange: (sessionId: string, harness: HarnessId, model: string, accountId?: string) => void;
   onModelSettingsChange: (sessionId: string, settings: Record<string, string>) => void;
@@ -354,6 +356,11 @@ type Props = SessionPaneProps & {
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
   remoteSessionRetargetBlocked?: boolean;
+  /**
+   * Re-points the shell of a blank remote draft at another project of its machine (or "~" for
+   * its scratch workspace). `onCwdChange` stays a no-op there: a started remote session keeps its project.
+   */
+  remoteDraftProjectChange?: SessionPaneProps["onCwdChange"];
   managedWorkspaceCreationReady?: boolean;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
@@ -424,7 +431,13 @@ const OwnedSessionPane = memo(function OwnedSessionPane(props: SessionPaneProps)
             ? (environmentId) => props.onSessionMachineChange?.(paneSession.id, environmentId)
             : undefined
         }
-        render={(remote) => <LocalSessionPane {...props} {...remote} />}
+        render={(remote) => (
+          <LocalSessionPane
+            {...props}
+            {...remote}
+            remoteDraftProjectChange={props.embedded ? undefined : props.onCwdChange}
+          />
+        )}
       />
     );
   return <LocalSessionPane {...props} session={paneSession} />;
@@ -454,6 +467,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteSessionLoading = false,
   remoteSessionStarted = false,
   remoteSessionRetargetBlocked = false,
+  remoteDraftProjectChange,
   remoteLifecycleTarget,
   managedWorkspaceCreationReady = false,
   headerStatus,
@@ -489,6 +503,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onPrepareSessionHistory,
   onWorkspaceModeChange: onWorkspaceModeChangeProp,
   onWorktreeBaseChange: onWorktreeBaseChangeProp,
+  onWorktreeBaseRemoteChange: onWorktreeBaseRemoteChangeProp,
   onManageWorktrees,
   onModelChange: onModelChangeProp,
   onModelSettingsChange: onModelSettingsChangeProp,
@@ -590,6 +605,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     if (!canMutateParentInputs(session.id)) rootParentRef.current?.();
     return afterStoredHistory(() => onWorktreeBaseChangeProp(...args));
   };
+  const onWorktreeBaseRemoteChange = onWorktreeBaseRemoteChangeProp
+    ? (...args: Parameters<NonNullable<Props["onWorktreeBaseRemoteChange"]>>) => {
+        if (!canMutateParentInputs(session.id)) rootParentRef.current?.();
+        return afterStoredHistory(() => onWorktreeBaseRemoteChangeProp(...args));
+      }
+    : undefined;
   const onQuestionReply = (...args: Parameters<Props["onQuestionReply"]>) =>
     rootMutation(() => onQuestionReplyProp(...args));
   const onCompactContext = (...args: Parameters<Props["onCompactContext"]>) =>
@@ -1063,6 +1084,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
     remoteSessionLoading ||
     ((!draftBlock || savedDraftProjection.ready) &&
       (!isEmpty || inSplit || embedded || !!session.inboxAsk));
+  // A blank local draft chooses its project from the hero heading instead of the chip row.
+  // A remote draft picks among its machine's projects while nothing has started on the host.
+  const remoteDraftRetargetable =
+    !!remoteDraftProjectChange &&
+    !remoteSessionStarted &&
+    !remoteSessionRetargetBlocked &&
+    !session.hostBinding &&
+    !session.providerSessionId &&
+    !session.queuedMessages?.length &&
+    isBlankSession(session);
+  const projectInHero =
+    isEmpty &&
+    !dockComposer &&
+    !embedded &&
+    !session.inboxAsk &&
+    !managed &&
+    (!remoteSession || remoteDraftRetargetable);
   const {
     centeredRef: composerCenteredRef,
     dockedRef: composerDockedRef,
@@ -1147,6 +1185,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
         : onNewSession?.(session.id, options),
   );
   const composerCwdChange = useStableCallback((cwd: string) => onCwdChange(session.id, cwd));
+  const heroProjectChange = useStableCallback((cwd: string) =>
+    remoteSession ? remoteDraftProjectChange?.(session.id, cwd) : onCwdChange(session.id, cwd),
+  );
   const composerBranchChange = useStableCallback(() => onBranchChange(session.id));
   const composerWorktreeChange = useStableCallback(
     onWorktreeChangeProp ? (tree: Worktree) => onWorktreeChange!(session.id, tree) : undefined,
@@ -1156,6 +1197,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const composerWorktreeBaseChange = useStableCallback((base: string) =>
     onWorktreeBaseChange(session.id, base),
+  );
+  const composerWorktreeBaseRemoteChange = useStableCallback(
+    onWorktreeBaseRemoteChangeProp
+      ? (remote: boolean) => onWorktreeBaseRemoteChange!(session.id, remote)
+      : undefined,
   );
   const composerNewTerminal = useStableCallback(() => onNewTerminal(session.id));
   const composerModelChange = useStableCallback(
@@ -1538,7 +1584,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
       compactSupported={canCompactHarnessContext(session.harness)}
       recents={recents}
       hideProjectPicker={
-        embedded || !!session.inboxAsk || (hideProjectPicker ? !showDeckProjectPicker : false)
+        embedded ||
+        !!session.inboxAsk ||
+        projectInHero ||
+        (hideProjectPicker ? !showDeckProjectPicker : false)
       }
       hideBranchPicker={embedded || managed}
       machineEnvironmentId={
@@ -1637,6 +1686,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
       worktreeBase={session.worktreeBase}
       onWorkspaceModeChange={composerWorkspaceModeChange}
       onWorktreeBaseChange={composerWorktreeBaseChange}
+      worktreeBaseRemote={session.worktreeBaseRemote}
+      creationProgressId={session.worktreeProgressId}
+      onWorktreeBaseRemoteChange={
+        onWorktreeBaseRemoteChangeProp ? composerWorktreeBaseRemoteChange : undefined
+      }
       worktreeRemoved={session.worktreeRemoved}
       onManageWorktrees={onManageWorktrees}
       onNewTerminal={composerNewTerminal}
@@ -2002,6 +2056,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
             ) : (
               <EmptySession
                 cwd={session.cwd}
+                onProjectChange={projectInHero ? heroProjectChange : undefined}
+                environmentId={remoteSession ? remoteExecutionEnvironment(session) : undefined}
                 hasChatBackground={Boolean(projectBackground || globalBackgroundPath)}
                 composer={
                   dockComposer ? undefined : (

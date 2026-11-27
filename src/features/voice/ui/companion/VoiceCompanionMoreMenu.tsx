@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
-import { MoreHorizontal, Settings } from "../../../../shared/ui/icons";
+import { MoreHorizontal } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
 import { openSettingsSection } from "../../../settings/public/settingsLink";
+import { pickVoiceDevice, useVoiceDeviceMenuItems } from "./voiceDeviceMenus";
 
 /**
  * The companion's one overflow menu. Compact: Finish turn and speaker mute, which the pill has
  * no room for (the microphone and the disconnect stay on the pill; the turn-ending choice lives on
- * the expanded dock). Both sizes: Float outside the app and the link to Voice settings, where
- * provider, reply voice and speaker are chosen.
+ * the expanded dock). Both sizes: microphone and audio output devices, Float outside the app and
+ * the link to Voice settings, where provider, reply voice and speaker are chosen.
  */
 export function VoiceCompanionMoreMenu({
   compact,
@@ -32,6 +33,7 @@ export function VoiceCompanionMoreMenu({
   onFloat?: () => void;
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
+  const deviceItems = useVoiceDeviceMenuItems();
   const pillItems: DropdownMenuItem[] = compact
     ? [
         ...(live && manual
@@ -49,22 +51,11 @@ export function VoiceCompanionMoreMenu({
   const items: DropdownMenuItem[] = [
     ...pillItems,
     ...(pillItems.length ? [{ kind: "sep" as const }] : []),
+    ...deviceItems,
+    { kind: "sep" },
     ...(onFloat ? [{ kind: "item" as const, id: "float", label: t("Float outside the app") }] : []),
     { kind: "item", id: "settings", label: t("Voice settings") },
   ];
-  // Voice settings alone is a direct action, not a menu of one.
-  if (items.length === 1) {
-    return (
-      <Button
-        touchTarget="control"
-        iconOnly
-        label={t("Voice settings")}
-        onClick={() => openSettingsSection("voice")}
-      >
-        <Settings className="icon-sm" />
-      </Button>
-    );
-  }
   return (
     <>
       <Button
@@ -88,6 +79,7 @@ export function VoiceCompanionMoreMenu({
           onClose={() => setAnchor(null)}
           onPick={(id) => {
             setAnchor(null);
+            if (pickVoiceDevice(id)) return;
             if (id === "finish") onFinish();
             else if (id === "speaker") onToggleSpeaker();
             else if (id === "float") onFloat?.();

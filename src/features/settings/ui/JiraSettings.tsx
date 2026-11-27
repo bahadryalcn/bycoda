@@ -91,6 +91,14 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
   const hiddenIds = projectScope.value;
   const allowedBoardIds = boardScope.value;
   const [backgroundState, setBackgroundState] = useState(readBackgroundSync);
+  const setBackgroundSync = (next: boolean) => {
+    try {
+      saveJiraBackgroundSync(next);
+      setBackgroundState(readBackgroundSync());
+    } catch {
+      setBackgroundState((previous) => ({ ...previous, available: false }));
+    }
+  };
   const projectOwner = useRef("");
   const [catalog, setCatalog] = useState<JiraBoard[]>([]);
   const [boardsError, setBoardsError] = useState<string | null>(null);
@@ -506,6 +514,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       {status?.connected ? (
         <Row
           label={t("Automatically refresh Jira in the background")}
+          modified={backgroundState.available && backgroundState.value}
+          onReset={() => setBackgroundSync(false)}
           info={t(
             "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
           )}
@@ -528,14 +538,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
             label={t("Automatically refresh Jira in the background")}
             on={backgroundState.value}
             disabled={busy || !backgroundState.available}
-            onChange={(next) => {
-              try {
-                saveJiraBackgroundSync(next);
-                setBackgroundState(readBackgroundSync());
-              } catch {
-                setBackgroundState((previous) => ({ ...previous, available: false }));
-              }
-            }}
+            onChange={setBackgroundSync}
           />
         </Row>
       ) : null}

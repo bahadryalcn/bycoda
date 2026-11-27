@@ -1,8 +1,8 @@
 import { errorText } from "../../../shared/lib/errors";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
-import { gitHistory, subscribeGitChanged } from "../../../platform/tauri/fs";
+import { gitHistory, isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 import { subscribeRemoteCapabilities } from "../../connections/model/connections";
 import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
@@ -24,7 +24,17 @@ export type WorkspaceCreationPreview = {
   baseRef: string;
   baseCommit: string;
   excludedPaths: number;
+  /** The new worktree starts from the base's fetched upstream (`workspaces.creation.v2`). */
+  baseFromRemote?: boolean;
+  /** Display name of the base, e.g. "main" or "From main (remote)"; absent on hand-built previews. */
+  baseLabel?: string;
 };
+
+/** "main", or "From main (remote)" when the worktree starts from the fetched upstream. */
+export const workspaceBaseLabel = (baseRef: string, baseFromRemote: boolean) =>
+  baseFromRemote
+    ? t("From {p0} (remote)", { p0: shortWorkspaceRef(baseRef) })
+    : shortWorkspaceRef(baseRef);
 export const shortWorkspaceRef = (ref: string) => ref.replace(/^refs\/(heads|remotes)\//, "");
 
 /** Bound for the policy reads that gate Send; a slow Host must not block a new draft. */
@@ -36,13 +46,26 @@ export type WorkspaceCreationResult = {
   preview?: WorkspaceCreationPreview;
   /** Set when the policy could not be read and the current checkout is used instead. */
   warning?: string;
+  /** Checkout whose Git index backs `preview.excludedPaths`, so a count refresh can re-read only it. */
+  sourceCwd?: string;
 };
+
+type GitIndexCount = { files: { relative: string }[]; conflicts?: { relative: string }[] };
+const countExcludedPaths = (index: GitIndexCount) =>
+  new Set([
+    ...index.files.map((file) => file.relative),
+    ...(index.conflicts ?? []).map((file) => file.relative),
+  ]).size;
+
+/** Quiet period after the last working-tree change before the dirty-file count is re-read. */
+const EXCLUDED_COUNT_DEBOUNCE_MS = 500;
 
 /** Read-only observation. Creation always resolves the ref again on the owning Host. */
 export async function loadWorkspaceCreation(
   cwd: string,
   selectedBase?: string,
   choice?: WorkspaceMode,
+  baseFromRemote = false,
 ): Promise<WorkspaceCreationResult> {
   // Only an explicit worktree choice is a hard error; anything else falls back to the
   // current checkout with a warning so an unavailable Host never blocks Send.
@@ -62,7 +85,7 @@ export async function loadWorkspaceCreation(
   if (read.done) return read.done;
   try {
     return await withTimeout(
-      readWorkspacePreview(cwd, selectedBase, read.policy),
+      readWorkspacePreview(cwd, selectedBase, read.policy, baseFromRemote),
       explicit ? EXPLICIT_WORKTREE_READ_TIMEOUT_MS * 3 : timeoutMs * 4,
       "Workspace preview",
     );
@@ -91,6 +114,7 @@ async function readWorkspacePolicy(cwd: string, choice?: WorkspaceMode): Promise
     },
     context,
   );
+  // A policy that resolves to the current checkout needs no worktree preview chain.
   if ((choice ?? resolved.policy.defaultMode) === "current")
     return { done: { policy: resolved.policy } };
   await requireWorkspaceCapability("workspaces.managed.v1", context);
@@ -101,9 +125,10 @@ async function readWorkspacePreview(
   cwd: string,
   selectedBase: string | undefined,
   policy: WorkspacePolicy,
+  baseFromRemote: boolean,
 ): Promise<WorkspaceCreationResult> {
   const baseRef = selectedBase || policy.integrationBranchRef;
-  const trees = await listWorktrees(cwd);
+  const trees = await listWorktrees(cwd, { light: true });
   const main = trees.worktrees.find((tree) => tree.isMain);
   const parsed = parseRemotePath(cwd);
   const sourceCwd = main
@@ -127,11 +152,18 @@ async function readWorkspacePreview(
     throw new Error(
       t("The selected base could not be verified. Refresh or choose another branch."),
     );
-  const excludedPaths = new Set([
-    ...index.files.map((file) => file.relative),
-    ...(index.conflicts ?? []).map((file) => file.relative),
-  ]).size;
-  return { policy, preview: { baseRef, baseCommit, excludedPaths } };
+  const excludedPaths = countExcludedPaths(index);
+  return {
+    policy,
+    preview: {
+      baseRef,
+      baseCommit,
+      excludedPaths,
+      baseFromRemote,
+      baseLabel: workspaceBaseLabel(baseRef, baseFromRemote),
+    },
+    sourceCwd,
+  };
 }
 
 export function useWorkspaceCreation(
@@ -139,73 +171,172 @@ export function useWorkspaceCreation(
   active: boolean,
   choice?: WorkspaceMode,
   base?: string,
+  baseFromRemote = false,
 ) {
   const hasProject = Boolean(cwd) && !isProjectlessCwd(cwd);
   const managedActive = active && hasProject && choice !== "current";
-  const [reload, setReload] = useState(0);
   const [result, setResult] = useState<{
     cwd: string;
     choice?: WorkspaceMode;
     base?: string;
-    reload: number;
+    baseFromRemote?: boolean;
     policy?: WorkspacePolicy;
     preview?: WorkspaceCreationPreview;
     error?: string;
     warning?: string;
     updateRequired?: boolean;
   }>();
-  const refresh = useCallback(() => setReload((value) => value + 1), []);
+  // The running load for the current cwd/choice/base. A plain refresh never cancels it: it marks the
+  // load dirty and one more read runs after it settles, so a busy checkout cannot starve the result.
+  // A `supersede` refresh (Host recovered, capabilities changed) makes the running answer stale.
+  const requestRef = useRef<(supersede?: boolean) => void>(undefined);
+  const refresh = useCallback(() => requestRef.current?.(), []);
+  const supersede = useCallback(() => requestRef.current?.(true), []);
+  // Working-tree changes only move the dirty-file count; this re-reads just that, never the full chain.
+  const countRef = useRef<() => void>(undefined);
+  const refreshCount = useCallback(() => countRef.current?.(), []);
   useEffect(() => {
     if (!managedActive) return;
-    window.addEventListener("focus", refresh);
-    const unsubscribe = subscribeGitChanged(refresh, { cwd });
+    // A watched checkout reports ref changes itself; focus only catches up on an unwatched one.
+    const onFocus = () => {
+      if (!isGitWatched(cwd)) refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    // The preview reads refs; working-tree churn must not restart it.
+    const unsubscribe = subscribeGitChanged(refresh, { cwd, refsOnly: true });
+    // Index-only changes (edits, staging) refresh the cheap dirty-file count; every other change
+    // kind already arrived through the refs subscription above.
+    const unsubscribeIndex = subscribeGitChanged(
+      (change) => {
+        if (change?.scope === "index") refreshCount();
+      },
+      { cwd },
+    );
     const unsubscribeRecovered = subscribeRemoteRecovered((environmentId) => {
       const remote = parseRemotePath(cwd);
-      if (!remote || !environmentId || remote.environmentId === environmentId) refresh();
+      if (!remote || !environmentId || remote.environmentId === environmentId) supersede();
     });
     const unsubscribeCapabilities = subscribeRemoteCapabilities(() => {
       // Descriptors can change without a disconnect. The snapshot cache must
       // forget its previous answer before the hook asks for the new policy.
       invalidateMachineSnapshot();
-      refresh();
+      supersede();
     });
     return () => {
-      window.removeEventListener("focus", refresh);
+      window.removeEventListener("focus", onFocus);
       unsubscribe();
+      unsubscribeIndex();
       unsubscribeRecovered();
       unsubscribeCapabilities();
     };
-  }, [managedActive, cwd, refresh]);
+  }, [managedActive, cwd, refresh, refreshCount, supersede]);
   useEffect(() => {
     if (!managedActive) {
+      requestRef.current = undefined;
+      countRef.current = undefined;
       setResult(undefined);
       return;
     }
-    // A refresh (focus, git change, capability event) keeps the last answer for the
-    // same project/choice/base until the new one lands, so Send does not flicker disabled.
+    // A refresh keeps the last answer for the same project/choice/base until the new one
+    // lands, so Send does not flicker disabled; only a changed key discards it.
     let cancelled = false;
-    void loadWorkspaceCreation(cwd, base, choice).then(
-      (value) => {
-        if (!cancelled) setResult({ cwd, choice, base, reload, ...value });
-      },
-      (error: unknown) => {
-        if (!cancelled)
-          setResult({
-            cwd,
-            choice,
-            base,
-            reload,
-            error: errorText(error),
-            updateRequired: error instanceof WorkspaceCapabilityError,
-          });
-      },
-    );
+    let running = false;
+    let dirty = false;
+    let generation = 0;
+    let sourceCwd: string | undefined;
+    let countTimer: ReturnType<typeof setTimeout> | undefined;
+    let countRunning = false;
+    let countDirty = false;
+    const readCount = () => {
+      countTimer = undefined;
+      // The full load reads the index itself; a change during either read is re-counted afterwards.
+      if (!sourceCwd || running || countRunning) {
+        countDirty = true;
+        return;
+      }
+      countRunning = true;
+      countDirty = false;
+      const loadGeneration = generation;
+      fetchGitIndex(sourceCwd, { full: true })
+        .then(
+          (index) => {
+            // A newer load owns the preview now; this count would be older than its own read.
+            if (cancelled || running || loadGeneration !== generation) return;
+            const excludedPaths = countExcludedPaths(index);
+            setResult((previous) =>
+              previous?.preview &&
+              previous.cwd === cwd &&
+              previous.choice === choice &&
+              previous.base === base &&
+              previous.baseFromRemote === baseFromRemote &&
+              previous.preview.excludedPaths !== excludedPaths
+                ? { ...previous, preview: { ...previous.preview, excludedPaths } }
+                : previous,
+            );
+          },
+          (error: unknown) => console.warn("[workspaces] dirty-file count unavailable", error),
+        )
+        .finally(() => {
+          countRunning = false;
+          if (!cancelled && countDirty) scheduleCount();
+        });
+    };
+    const scheduleCount = () => {
+      clearTimeout(countTimer);
+      countTimer = setTimeout(readCount, EXCLUDED_COUNT_DEBOUNCE_MS);
+    };
+    const run = (replace = false) => {
+      if (running && !replace) {
+        dirty = true;
+        return;
+      }
+      running = true;
+      dirty = false;
+      const mine = ++generation;
+      loadWorkspaceCreation(cwd, base, choice, baseFromRemote)
+        .then(
+          ({ sourceCwd: source, ...value }) => {
+            if (cancelled || mine !== generation) return;
+            sourceCwd = source;
+            setResult({ cwd, choice, base, baseFromRemote, ...value });
+          },
+          (error: unknown) => {
+            if (cancelled || mine !== generation) return;
+            sourceCwd = undefined;
+            setResult({
+              cwd,
+              choice,
+              base,
+              baseFromRemote,
+              error: errorText(error),
+              updateRequired: error instanceof WorkspaceCapabilityError,
+            });
+          },
+        )
+        .finally(() => {
+          if (mine !== generation) return;
+          running = false;
+          if (cancelled) return;
+          if (dirty) run();
+          else if (countDirty) scheduleCount();
+        });
+    };
+    requestRef.current = run;
+    countRef.current = scheduleCount;
+    run();
     return () => {
       cancelled = true;
+      clearTimeout(countTimer);
+      if (countRef.current === scheduleCount) countRef.current = undefined;
+      if (requestRef.current === run) requestRef.current = undefined;
     };
-  }, [cwd, managedActive, choice, base, reload]);
+  }, [cwd, managedActive, choice, base, baseFromRemote]);
   const current =
-    managedActive && result?.cwd === cwd && result.choice === choice && result.base === base
+    managedActive &&
+    result?.cwd === cwd &&
+    result.choice === choice &&
+    result.base === base &&
+    result.baseFromRemote === baseFromRemote
       ? result
       : undefined;
   return {

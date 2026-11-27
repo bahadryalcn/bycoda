@@ -2,6 +2,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Group, Row, Select } from "../../../shared/ui/settings";
 import {
   REMOTE_MEDIA_MODES,
+  REMOTE_MEDIA_MODE_DEFAULT,
   saveRemoteMediaMode,
   useRemoteMediaMode,
   type RemoteMediaMode,
@@ -21,7 +22,12 @@ export function RemoteMediaSettings() {
   const mode = useRemoteMediaMode();
   return (
     <Group title={null}>
-      <Row id="remote-media" label={t("Remote media")}>
+      <Row
+        id="remote-media"
+        label={t("Remote media")}
+        modified={mode !== REMOTE_MEDIA_MODE_DEFAULT}
+        onReset={() => saveRemoteMediaMode(REMOTE_MEDIA_MODE_DEFAULT)}
+      >
         <Select
           hideLabel
           label={t("Remote media")}

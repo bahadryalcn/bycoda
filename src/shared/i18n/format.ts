@@ -129,6 +129,26 @@ export function formatCompactCount(value: number, locale?: string): string {
   }).format(Math.max(0, Math.round(value)));
 }
 
+/**
+ * Where the short compact form of a thousand is a bare "B" (Turkish "bin"), it reads as bytes or
+ * billions, so those locales use the long form ("54,6 bin").
+ */
+export function compactNumberDisplay(locale: Locale = getLocale()): "short" | "long" {
+  const short = numberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(
+    1000,
+  );
+  return /^\d+\s*B$/.test(short.trim()) ? "long" : "short";
+}
+
+/** Compact number with one fraction digit that never reads as bytes or billions. */
+export function formatUnambiguousCompact(value: number, locale: Locale = getLocale()): string {
+  return numberFormat(locale, {
+    notation: "compact",
+    compactDisplay: compactNumberDisplay(locale),
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 /** Import history keeps the runtime's invalid-date label and the selected app locale. */
 export function formatImportDate(at: number): string {
   if (!at) return "unknown date";
@@ -155,18 +175,23 @@ export function formatArchiveDate(value: number): string {
   }
 }
 
-export function formatResetDuration(ms: number): string {
-  if (ms <= 0) return "now";
+/** Remaining time to a reset ("3d 15h", "3 gün 15 sa." in Turkish) with the unit names of the app language. */
+export function formatResetDuration(ms: number, locale: Locale = getLocale()): string {
+  if (ms <= 0) return t("now");
+  // Turkish narrow units ("47d", "15s") read as days and seconds, so Turkish uses the short names.
+  const unitDisplay = locale.startsWith("tr") ? "short" : "narrow";
+  const unit = (value: number, name: "minute" | "hour" | "day") =>
+    numberFormat(locale, { style: "unit", unit: name, unitDisplay }).format(value);
   const totalMins = Math.floor(ms / 60_000);
-  if (totalMins < 60) return `${totalMins}m`;
+  if (totalMins < 60) return unit(totalMins, "minute");
   const hours = Math.floor(totalMins / 60);
   const mins = totalMins % 60;
   if (hours >= 24) {
     const days = Math.floor(hours / 24);
     const remHours = hours % 24;
-    return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+    return remHours > 0 ? `${unit(days, "day")} ${unit(remHours, "hour")}` : unit(days, "day");
   }
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  return mins > 0 ? `${unit(hours, "hour")} ${unit(mins, "minute")}` : unit(hours, "hour");
 }
 
 export function formatUsageTokens(value: number): string {

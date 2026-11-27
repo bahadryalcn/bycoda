@@ -39,6 +39,7 @@ import { VoiceCallScene } from "./VoiceCallScene";
 import { VoiceChatTranscript } from "./VoiceChatTranscript";
 import { VoiceCompanionControls } from "./VoiceCompanionControls";
 import { VoiceCompanionMoreMenu } from "./VoiceCompanionMoreMenu";
+import { useVoiceDeviceContextMenu } from "./voiceDeviceMenus";
 import { VoiceCompanionStatus } from "./VoiceCompanionStatus";
 import { VoiceErrorMark, VoiceErrorNotice, voiceErrorTitle } from "./VoiceErrorNotice";
 import { VoiceSidePanel } from "./VoiceSidePanel";
@@ -126,6 +127,7 @@ export type VoiceCompanionViewProps = {
 export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompanionViewProps) {
   const live = p.status === "live";
   const canTalk = p.status === "idle" || p.status === "sleeping" || p.status === "ready";
+  const microphoneMenu = useVoiceDeviceContextMenu("audioinput");
   const connecting = p.status === "connecting" || p.status === "reconnecting";
   const micLabel = canTalk
     ? p.status === "idle"
@@ -247,6 +249,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               selected={live && p.muted}
               pressed={canTalk ? undefined : p.muted}
               onClick={() => (canTalk ? p.onStart() : p.onToggleMute())}
+              {...microphoneMenu.trigger}
             >
               {p.muted || p.status === "ready" || p.status === "sleeping" ? (
                 <MicOff className="icon-sm" />
@@ -254,6 +257,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
                 <Mic className="icon-sm" />
               )}
             </Button>
+            {microphoneMenu.menu}
             {p.status !== "idle" && (
               <Button
                 touchTarget="control"

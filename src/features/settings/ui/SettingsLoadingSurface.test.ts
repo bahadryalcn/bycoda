@@ -20,28 +20,35 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-it("announces one loading status for the destination", async () => {
+it("announces one loading status for the destination after the delay", async () => {
   await act(async () =>
     root.render(createElement(SettingsLoadingSurface, { section: "appearance" })),
   );
+  // The dialog header owns the visible page identity; the placeholder shows shapes only.
   expect(node.querySelector("h2")).toBeNull();
+  expect(node.textContent).not.toContain("Appearance");
+  expect(node.querySelector('[role="status"]')).toBeNull();
   await act(async () => vi.advanceTimersByTime(500));
   const statuses = node.querySelectorAll('[role="status"]');
   expect(statuses).toHaveLength(1);
   expect(statuses[0]!.getAttribute("aria-label")).toBe("Appearance");
 });
 
-it("shows one set of settings rows without manufactured progress", async () => {
+it("mirrors the workbench with a category rail and framed topic rows, no invented values", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
   const card = node.querySelector("[data-settings-loading]")!;
-  expect(card.querySelectorAll(".settings-skeleton-row")).toHaveLength(4);
+  const rail = card.querySelector(".settings-skeleton-rail")!;
+  expect(rail.getAttribute("aria-hidden")).toBe("true");
+  expect(rail.querySelectorAll('[data-shape="square"]').length).toBeGreaterThan(8);
+  expect(
+    card.querySelectorAll('.settings-skeleton-content [data-surface-separator="block"]'),
+  ).toHaveLength(7);
   expect(node.querySelector('[role="progressbar"]')).toBeNull();
   expect(node.textContent).not.toMatch(/\d+\s?%/);
 });
 
 it("keeps a single loading state during a slow load and clears timers on unmount", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
-  expect(node.textContent).not.toContain("taking longer");
   await act(async () => vi.advanceTimersByTime(3_000));
   expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
   await act(async () => root.render(createElement("div")));

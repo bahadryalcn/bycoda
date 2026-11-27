@@ -84,6 +84,41 @@ it("scopes a requested output allowance to the isolated child settings and resum
     expect(args).toContain("--strict-mcp-config");
   }
 });
+it("pre-allows only the requested domain fetch when web lookup is set, and nothing otherwise", async () => {
+  await runClaudeTextPrompt({ cwd: "/repo", prompt: "plain", ephemeral: true });
+  await runClaudeTextPrompt({
+    cwd: "/repo",
+    prompt: "lookup",
+    ephemeral: true,
+    webLookup: { domains: ["artificialanalysis.ai"] },
+  });
+  const plain = mocks.spawn.mock.calls[0][2] as string[];
+  const lookup = mocks.spawn.mock.calls[1][2] as string[];
+  expect(plain).not.toContain("--allowedTools");
+  const at = lookup.indexOf("--allowedTools");
+  expect(lookup.slice(at, at + 3)).toEqual([
+    "--allowedTools",
+    "WebFetch(domain:artificialanalysis.ai)",
+    "--include-partial-messages",
+  ]);
+  for (const args of [plain, lookup]) {
+    expect(args).toContain("--strict-mcp-config");
+    expect(args).not.toContain("--permission-prompt-tool");
+    expect(args).not.toContain("--dangerously-skip-permissions");
+    expect(args).not.toContain("--allow-dangerously-skip-permissions");
+  }
+});
+it("rejects a web lookup domain that is not a plain hostname before spawning", async () => {
+  await expect(
+    runClaudeTextPrompt({
+      cwd: "/repo",
+      prompt: "lookup",
+      ephemeral: true,
+      webLookup: { domains: ["a.com) Bash(*"] },
+    }),
+  ).rejects.toThrow("plain hostname");
+  expect(mocks.spawn).not.toHaveBeenCalled();
+});
 it("retires the captured utility on a streamed text bound without waiting for a provider result", async () => {
   mocks.hold = true;
   const pending = runClaudeTextPrompt({ cwd: "/chief", prompt: "status", maxOutputChars: 8 });

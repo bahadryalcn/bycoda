@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useT } from "../../../../shared/i18n";
+import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
 import {
   HOST_USAGE_PLAN_SHARE,
   type PlanShareWindow,
@@ -20,13 +21,21 @@ import { useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import type { HostProviders } from "../../model/hostProviders";
 import { ModelOrderLimits } from "./ModelOrderLimits";
+import { entryAccountName } from "./useEntryAccount";
 import { PlanShareList } from "../limits/PlanShareList";
+
+/** Provider title and account name: the plan-share header of one account. */
+const planShareAccountLabel = (provider: string, name: string) =>
+  `${HARNESS_TITLE[provider as keyof typeof HARNESS_TITLE] ?? provider} · ${name}`;
 
 const labelsSnapshot = () =>
   JSON.stringify(
     Object.fromEntries(
       PROVIDER_ACCOUNT_PROVIDERS.flatMap((provider) =>
-        providerAccounts(provider).map((account) => [`${provider}:${account.id}`, account.label]),
+        providerAccounts(provider).map((account) => [
+          `${provider}:${account.id}`,
+          planShareAccountLabel(provider, entryAccountName(provider, account)),
+        ]),
       ),
     ),
   );
@@ -63,7 +72,10 @@ export function ModelOrderLimitsTab({
   const labels: Record<string, string> = source.accounts
     ? Object.fromEntries(
         Object.entries(source.accounts).flatMap(([provider, accounts]) =>
-          accounts.map((account) => [`${provider}:${account.id}`, account.label]),
+          accounts.map((account) => [
+            `${provider}:${account.id}`,
+            planShareAccountLabel(provider, entryAccountName(provider, account, source)),
+          ]),
         ),
       )
     : JSON.parse(localLabels);

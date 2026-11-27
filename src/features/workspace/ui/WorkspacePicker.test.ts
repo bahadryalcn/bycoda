@@ -24,6 +24,12 @@ vi.mock("../../source-control/hooks/useProjectWorktrees", () => ({
   }),
 }));
 
+const previousFor = vi.hoisted(() => vi.fn());
+vi.mock("../../workspaces/model/previousWorktree", () => ({
+  previousWorktreeFor: previousFor,
+  previousWorktreeCandidates: () => [],
+}));
+
 let root: Root;
 let container: HTMLDivElement;
 const change = vi.fn();
@@ -47,6 +53,8 @@ beforeEach(async () => {
   );
   change.mockReset();
   close.mockReset();
+  previousFor.mockReset();
+  previousFor.mockReturnValue(null);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -218,4 +226,81 @@ it("opens Existing worktree on mouse movement without moving focus", async () =>
   expect(row.hasAttribute("aria-controls")).toBe(true);
   expect(document.activeElement).toBe(before);
   expect(change).not.toHaveBeenCalled();
+});
+
+const previousTree = {
+  path: "/work/project-wt",
+  branch: "by/1a2b3c4d",
+  head: "abcdef123456",
+  isMain: false,
+  missing: false,
+};
+const rowByTitle = (title: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((row) =>
+    row.textContent?.includes(title),
+  );
+
+async function renderComposerPicker(previous: boolean, onSelect = vi.fn(async () => {})) {
+  await act(async () =>
+    root.render(
+      createElement(WorkspacePicker, {
+        cwd: "/work/project",
+        mode: "current",
+        base: "main",
+        initialPicker: "workspace",
+        onModeChange: change,
+        onBaseChange: vi.fn(),
+        previousWorktree: previous
+          ? { project: "/work/project", getSessions: () => [], onSelect }
+          : undefined,
+      }),
+    ),
+  );
+  return onSelect;
+}
+
+it("offers the previous worktree with its branch and binds it through the existing handler", async () => {
+  previousFor.mockReturnValue(previousTree);
+  const onSelect = await renderComposerPicker(true);
+  const row = rowByTitle("Previous worktree")!;
+  expect(row.textContent).toContain("by/1a2b3c4d");
+  expect(rowByTitle("Existing worktree…")).toBeUndefined();
+  await act(async () => row.click());
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith(previousTree);
+  expect(change).not.toHaveBeenCalled();
+});
+
+it("hides the previous worktree when there is none or no source", async () => {
+  await renderComposerPicker(true);
+  expect(rowByTitle("New worktree")).toBeDefined();
+  expect(rowByTitle("Previous worktree")).toBeUndefined();
+  previousFor.mockReturnValue(previousTree);
+  await renderComposerPicker(false);
+  expect(rowByTitle("Previous worktree")).toBeUndefined();
+});
+
+it("shows the start-from-remote checkbox and the remote chip label", async () => {
+  const onRemote = vi.fn();
+  const base = {
+    branches: [{ name: "main", remote: null }],
+    selected: "main",
+    loading: false,
+    enabled: true,
+    initialOpen: true,
+    onChange: change,
+    onRemoteChange: onRemote,
+  };
+  await act(async () => root.render(createElement(WorktreeBasePicker, base)));
+  const box = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(box.checked).toBe(false);
+  expect(document.body.textContent).toContain("Start from remote");
+  await act(async () => box.click());
+  expect(onRemote).toHaveBeenCalledExactlyOnceWith(true);
+  await act(async () => root.render(createElement(WorktreeBasePicker, { ...base, remote: true })));
+  expect(document.body.textContent).toContain("From main (remote)");
+  expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
+});
+
+it("has no remote checkbox without a handler", async () => {
+  expect(document.querySelector('input[type="checkbox"]')).toBeNull();
 });

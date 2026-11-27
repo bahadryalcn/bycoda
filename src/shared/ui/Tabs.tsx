@@ -164,6 +164,9 @@ export type TabListProps = Omit<ComponentPropsWithRef<"div">, "role" | "aria-lab
   /** `sm`: the strip carries its own edge padding, for a strip that sits directly in a panel
    *  (never a caller margin or padding class). Unset: no padding. */
   inset?: "sm";
+  /** `track`: the tabs sit in one bordered track and the selected tab is raised, for the
+   *  top-level topics of a page (Settings). Unset: the plain strip. */
+  appearance?: "track";
 };
 
 /**
@@ -184,6 +187,7 @@ export function TabList({
   scrollbar,
   scroll,
   inset,
+  appearance,
   className,
   children,
   onKeyDown,
@@ -229,6 +233,32 @@ export function TabList({
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [scroll, scrollbar, tabs.orientation, tabs.value]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- moves the track indicator under the selected DOM tab after selection and resize
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list || appearance !== "track") return;
+    const tab = ownTabs(list).find((entry) => entry.dataset.tabValue === tabs.value);
+    if (!tab) {
+      list.style.removeProperty("--tab-indicator-inline-size");
+      return;
+    }
+    const place = () => {
+      // A hidden strip measures 0; keep the last position until it is shown again.
+      if (!tab.offsetWidth) return;
+      list.style.setProperty("--tab-indicator-x", `${tab.offsetLeft}px`);
+      list.style.setProperty("--tab-indicator-y", `${tab.offsetTop}px`);
+      list.style.setProperty("--tab-indicator-inline-size", `${tab.offsetWidth}px`);
+      list.style.setProperty("--tab-indicator-block-size", `${tab.offsetHeight}px`);
+      // The first placement jumps; only later moves slide.
+      if (!list.hasAttribute("data-indicator-ready")) {
+        requestAnimationFrame(() => list.setAttribute("data-indicator-ready", ""));
+      }
+    };
+    place();
+    const cleanups = [list, tab].map((node) => observeResize(node, place));
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [appearance, tabs.value]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -255,7 +285,11 @@ export function TabList({
     event.preventDefault();
     event.stopPropagation();
     target.focus({ preventScroll: true });
-    target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+    target.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "instant",
+    });
     const next = target.dataset.tabValue;
     if (tabs.activation === "automatic" && next !== undefined) tabs.select(next);
   };
@@ -276,6 +310,7 @@ export function TabList({
       data-scrollbar={scrollbar}
       data-scroll={scroll}
       data-inset={inset}
+      data-appearance={appearance}
       className={[styles.list, className].filter(Boolean).join(" ")}
       onKeyDown={handleKeyDown}
     >

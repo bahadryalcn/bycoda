@@ -90,7 +90,10 @@ vi.mock("../../../../shared/ui/settings", async () => {
       createElement("div", null, label, children),
   };
 });
-vi.mock("../../../providers/public/providerAccounts", () => ({
+vi.mock("../../../providers/public/providerAccounts", async (importOriginal) => ({
+  accountDisplayLabel: (
+    await importOriginal<typeof import("../../../providers/public/providerAccounts")>()
+  ).accountDisplayLabel,
   subscribeProviderAccounts: () => () => {},
   providerAccounts: () => [
     { id: "default", label: "Default account" },
@@ -194,13 +197,20 @@ it("shows one cap scope at a time and keeps saved provider caps available", asyn
     root.render(createElement(ModelOrderLimits, { draft, usage: limits, onChange: vi.fn() })),
   );
   expect(container.textContent).toContain("All providers");
-  const tokenInputs = [
-    ...container.querySelectorAll<HTMLInputElement>('input[placeholder="No limit"]'),
-  ].filter((input) => input.getAttribute("role") === "combobox");
-  expect(tokenInputs.filter((input) => !input.closest("[hidden]"))).toHaveLength(3);
-  expect(
-    tokenInputs.filter((input) => input.closest("[hidden]")).map((input) => input.value),
-  ).toContain("500");
+  const tokenInputs = () =>
+    [...container.querySelectorAll<HTMLInputElement>("input")].filter(
+      (input) => input.getAttribute("role") === "combobox",
+    );
+  // Only the chosen scope's fields are shown; the saved Codex cap stays one pick away.
+  expect(tokenInputs().map((input) => input.value)).toEqual(["", "", ""]);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Provider:"]')?.click(),
+  );
+  const codex = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent === "Codex",
+  );
+  await act(async () => codex?.click());
+  expect(tokenInputs().map((input) => input.value)).toContain("500");
   expect(container.textContent).not.toContain("Daily cost");
 });
 
@@ -245,7 +255,8 @@ it("renders one line with picker, profile, settings, quota and skip reason", asy
   await act(() => root.render(createElement(ModelOrderRow, rowProps())));
   expect(picker.presentation).toBe("field");
   expect(container.textContent).toContain("15% left");
-  expect(container.querySelector('[aria-label="Below the reserved limit"]')).not.toBeNull();
+  // The skip reason is visible text, not a tooltip behind an icon.
+  expect(container.textContent).toContain("Below the reserved limit");
   expect(container.textContent).toContain("4/5 · $$");
   // The picker names the account itself; the row has no account column of its own.
   expect(picker.hideAgentSettings).toBe(true);
@@ -266,7 +277,15 @@ it("passes the account to the picker and shows the row settings inline", async (
     "Keep % for my own use",
   );
   expect(percent.value).toBe("25");
-  expect(container.textContent).toContain("Unknown limit: use");
+  // A switch, so the selection stays the row's only checkbox.
+  const skip = container.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Skip if limit unknown"]',
+  )!;
+  expect(skip.getAttribute("aria-checked")).toBe("false");
+  await act(() => skip.click());
+  expect(props.onChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({ unknownLimit: "skip" }),
+  );
 });
 
 it("strips delegation defaults on model selection, preserves picker account selection", async () => {
@@ -448,21 +467,27 @@ it("returns the Host save promise to the shared leave guard", async () => {
 it("starts an empty catalog with setup instead of the role assignment form", async () => {
   await renderScreen([]);
   expect(container.textContent).toContain("No models configured");
-  expect(container.textContent).toContain("Prepare setup draft");
-  expect(container.textContent).toContain("Plan setup with AI");
+  expect(container.textContent).toContain("Set up with rules");
+  expect(container.textContent).toContain("Set up with AI");
   expect(tabButton("Models & order").getAttribute("aria-selected")).toBe("true");
 });
 
-it("offers five tabs over one save bar and opens on Jobs", async () => {
+it("offers four tabs over one save bar and opens on Jobs", async () => {
   await renderScreen([modelEntry("s1", "grok")]);
   const tabs = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
-  expect(tabs).toEqual(["Jobs", "Models & order", "Groups", "Agents", "Limits"]);
+  // Helpers (subagents, advisor) live in Defaults only, so there is no Agents tab.
+  expect(tabs).toEqual(["Jobs", "Models & order", "Groups", "Limits"]);
   expect(tabButton("Jobs").getAttribute("aria-selected")).toBe("true");
   expect(container.textContent).toContain("Task worker");
   expect(container.querySelectorAll("[data-settings-save-bar]")).toHaveLength(1);
-  await openTab("Agents");
-  expect(container.textContent).toContain("Defaults");
-  expect(container.textContent).not.toContain("Task worker");
+});
+
+it("offers setup above every tab, not only Models & order", async () => {
+  await renderScreen([modelEntry("s1", "grok")]);
+  expect(container.textContent).toContain("Set up with rules");
+  expect(container.textContent).toContain("Fills models, groups and jobs in one draft.");
+  await openTab("Groups");
+  expect(container.textContent).toContain("Set up with rules");
 });
 
 it("marks the tab with unsaved changes and keeps one Save for all of them", async () => {
@@ -475,18 +500,17 @@ it("marks the tab with unsaved changes and keeps one Save for all of them", asyn
   expect(dot("Limits")).toBeNull();
 });
 
-it("counts the jobs that follow the order and names the chat fallback only when it is on", async () => {
+it("names every job that follows the order and the chat fallback only when it is on", async () => {
   await renderScreen([modelEntry("s1", "grok")]);
   await openTab("Models & order");
-  const jobs = container.textContent!.match(/Jobs using this order: (\d+)(, plus chat fallback)?/);
-  expect(jobs?.[1]).toMatch(/^\d+$/);
-  expect(jobs?.[2]).toBeUndefined();
+  expect(container.textContent).toMatch(/Used by: Task worker, Task reviewer, /);
+  expect(container.textContent).not.toContain("Chat fallback");
   await act(() => root.unmount());
   root = createRoot(container);
   failover = "order";
   await renderScreen([modelEntry("s1", "grok")]);
   await openTab("Models & order");
-  expect(container.textContent).toContain(", plus chat fallback");
+  expect(container.textContent).toMatch(/Used by: Task worker, .*, Chat fallback/);
 });
 
 it("shows the refused row from the save bar and highlights it", async () => {
@@ -590,22 +614,22 @@ it("removes the selected models in bulk and clears the selection with Escape", a
   expect(container.querySelector('[role="toolbar"]')).toBeNull();
 });
 
-it("edits the group effort and saves it with the draft", async () => {
+it("edits one group model's effort and speed and saves them with the draft", async () => {
   saves.length = 0;
   await renderScreen(
     [modelEntry("s1", "grok")],
     [{ id: "p", name: "Fast pool", entryIds: ["s1"] }],
   );
   await openTab("Groups");
-  const high = [...container.querySelectorAll<HTMLElement>('[role="radio"]')].find(
-    (item) => item.textContent === "High",
-  )!;
-  await act(async () => high.click());
+  await act(async () => picker.onSettingsChange({ effort: "high", fast: "true" }));
   const save = [...container.querySelectorAll("button")].find(
     (item) => item.textContent === "Save changes",
   );
   await act(async () => save!.click());
-  expect(saves[0]!.routing.pools[0]!.effort).toBe("high");
+  expect(saves[0]!.routing.pools[0]).toMatchObject({
+    memberSettings: { s1: { effort: "high", fast: "true" } },
+  });
+  expect(saves[0]!.routing.pools[0]!.effort).toBeUndefined();
 });
 
 it("splits models into work, personal and shared lists by account kind", async () => {
@@ -623,12 +647,7 @@ it("splits models into work, personal and shared lists by account kind", async (
   const labels = [...container.querySelectorAll('[aria-label^="Remove model"]')].map((item) =>
     item.getAttribute("aria-label"),
   );
-  expect(labels).toEqual([
-    "Remove model 1",
-    "Remove model 1",
-    "Remove model 2",
-    "Remove model 1",
-  ]);
+  expect(labels).toEqual(["Remove model 1", "Remove model 1", "Remove model 2", "Remove model 1"]);
 });
 
 it("uses one All models title when no entry has a resolvable provider account", async () => {

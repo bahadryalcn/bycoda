@@ -64,14 +64,12 @@ describe("validation", () => {
   it("requires delivery review for a managed source, including SHA-only legacy requests", async () => {
     const r = repo();
     r.commit("base.txt", "base\n");
-    r.git("checkout", "-qb", "bycoda/t/worker-123456789012");
+    r.git("checkout", "-qb", "by/worker-12345678");
+    r.git("config", "branch.by/worker-12345678.bycodaWorkspace", "ws-1");
     const source = r.commit("result.txt", "worker\n");
     r.git("checkout", "-q", "main");
     const target = r.git("rev-parse", "HEAD");
-    for (const reference of [
-      "bycoda/t/worker-123456789012",
-      "refs/heads/bycoda/t/worker-123456789012",
-    ])
+    for (const reference of ["by/worker-12345678", "refs/heads/by/worker-12345678"])
       await expect(r.run("git_merge", { reference, confirmed: true })).rejects.toThrow(
         "fresh review plan",
       );
@@ -80,6 +78,16 @@ describe("validation", () => {
     );
     expect(r.git("rev-parse", "HEAD")).toBe(target);
     expect(() => readFileSync(join(r.cwd, "result.txt"))).toThrow();
+  });
+  it("does not treat a hand-made by/ branch as managed", async () => {
+    const r = repo();
+    r.commit("base.txt", "base\n");
+    r.git("checkout", "-qb", "by/hand-made");
+    const source = r.commit("result.txt", "work\n");
+    r.git("checkout", "-q", "main");
+    await expect(
+      r.run("git_merge", { reference: "by/hand-made", expectedTargetSha: source }),
+    ).resolves.not.toThrow("fresh review plan");
   });
   it("rejects a stale management snapshot after target ref, config or dirty changes", async () => {
     const r = repo();

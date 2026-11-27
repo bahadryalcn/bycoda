@@ -19,6 +19,7 @@ import { readBuildIdentity } from "../scripts/build/build-info.mjs";
 import { readDesktopHelper, copyDesktopHelperBundle } from "../scripts/setup/agent-desktop.mjs";
 import { readCuaDriver, copyCuaDriverBundle } from "../scripts/setup/cua-driver.mjs";
 import { signDesktopHelperBundle } from "../scripts/release/sign-desktop-helper.mjs";
+import { copyHostPty } from "../scripts/build/host-pty.mjs";
 import {
   buildHostServiceLauncher,
   copyHostServiceLauncher,
@@ -301,6 +302,8 @@ for (const target of targets) {
     join(folder, "workspace-cleanup-worker.mjs"),
   );
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
+  // Interactive project terminals need the native PTY binding for this target.
+  await copyHostPty({ target, folder, cache });
   if (windows)
     await copyHostServiceLauncher({
       target,

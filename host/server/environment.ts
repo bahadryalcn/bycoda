@@ -17,6 +17,8 @@ import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contra
 import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
 import { DEVICE_VIEWER_CAPABILITY } from "../../src/shared/model/host-contracts/native-devices";
 import { DELEGATION_MESSAGES_STREAM } from "../../src/shared/model/host-contracts/delegation";
+import { HOST_USAGE_ROWS } from "../../src/shared/model/host-contracts/usage-rows";
+import { HOST_ADDITIONAL_DIRS_CAPABILITY } from "../../src/shared/model/host-contracts/session-additional-dirs";
 import { GITHUB_WORK_ITEMS } from "../../src/shared/model/host-contracts/work-items";
 export function createEnvironmentRuntime(
   dependencies: Pick<
@@ -129,6 +131,7 @@ export function createEnvironmentRuntime(
         DEVICE_PROOF_CAPABILITY,
         WORKSPACE_CAPABILITIES.managed,
         WORKSPACE_CAPABILITIES.policy,
+        WORKSPACE_CAPABILITIES.creationV2,
         "workspaces.delivery.v1",
         "workspaces.pr-publication.v1",
         "workspaces.lifecycle.v1",
@@ -197,6 +200,7 @@ export function createEnvironmentRuntime(
         "sessions.edit-from-here.v1",
         "sessions.plan.review",
         "sessions.contextual",
+        HOST_ADDITIONAL_DIRS_CAPABILITY,
         ...(dependencies.providers.includes("claude") &&
         dependencies.engine.supportsItemStop("claude")
           ? ["sessions.stopItem.claude"]
@@ -319,6 +323,7 @@ export function createEnvironmentRuntime(
         "usage.quota.read",
         "usage.cost.read",
         "usage.planShare.v1",
+        HOST_USAGE_ROWS,
         "pullRequests.link.v1",
         "providers.center.read",
         "providers.desktop.v1",

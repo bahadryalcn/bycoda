@@ -8,19 +8,36 @@ import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Group, Row, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { preparedFileSize, readTextFile } from "../../../platform/tauri/fs";
+import { BrowserProfileImportDialog, type BrowserImportSource } from "./BrowserProfileImportDialog";
 
 type State = {
   agentAccess: boolean;
   claudeChrome: boolean;
   autoShow: boolean;
   recordingFps: number;
+  liveFps?: number;
   defaultProfileId: string | null;
   developmentProfileId?: string | null;
   profiles: { id: string; name: string; agents: boolean }[];
 };
 
-function requestProfiles(method: "list" | "update", params: Record<string, unknown> = {}) {
-  return hostToolRequest<State>("", "browser.profiles.v1", `browser.profiles.${method}`, params, {
+/** Mirrors the Host's initial browser settings (`host/browser/browser-profiles.ts`). */
+const BROWSER_PREFERENCE_DEFAULTS = {
+  autoShow: true,
+  liveFps: 60,
+  recordingFps: 4,
+} as const;
+
+type Sources = {
+  defaultBrowser: { browser: string; name: string } | null;
+  sources: BrowserImportSource[];
+};
+
+function requestProfiles<T = State>(
+  method: "list" | "sources" | "update",
+  params: Record<string, unknown> = {},
+) {
+  return hostToolRequest<T>("", "browser.profiles.v1", `browser.profiles.${method}`, params, {
     kind: "local",
   });
 }
@@ -28,10 +45,25 @@ function requestProfiles(method: "list" | "update", params: Record<string, unkno
 export function BrowserProfileSettings() {
   useLocale();
   const [state, setState] = useState<State>();
+  const [sources, setSources] = useState<Sources>();
+  const [sourcesError, setSourcesError] = useState<string>();
+  const [choosing, setChoosing] = useState(false);
+  const [importing, setImporting] = useState(false);
   const { confirm, dialog } = useConfirm();
   const [problem, setProblem] = useState("");
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
+
+  /** Detects installed browsers; a failure is kept so the import dialog never reads it as "none found". */
+  const loadSources = async (isCurrent: () => boolean = () => true) => {
+    setSourcesError(undefined);
+    try {
+      const result = await requestProfiles<Sources>("sources");
+      if (isCurrent()) setSources(result);
+    } catch (error) {
+      if (isCurrent()) setSourcesError(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Loads profile names and grants from this desktop's Host while this settings section is mounted; retry re-runs it.
   useEffect(() => {
@@ -44,6 +76,7 @@ export function BrowserProfileSettings() {
       .catch(() => {
         if (current) setProblem(t("Could not load browser profiles."));
       });
+    void loadSources(() => current);
     return () => {
       current = false;
     };
@@ -65,6 +98,48 @@ export function BrowserProfileSettings() {
     void operation()
       .catch(() => setProblem(problem))
       .finally(() => setBusy(false));
+  };
+  const importFile = () =>
+    run(async () => {
+      const file = await open({
+        multiple: false,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (typeof file !== "string") return;
+      const size = await preparedFileSize(file);
+      if (size === undefined || size > 256 * 1024)
+        throw new Error("Browser profile file exceeds its limit.");
+      const name =
+        file
+          .split(/[\\/]/)
+          .pop()
+          ?.replace(/\.json$/i, "")
+          .trim() ?? "";
+      await update("import", { name, json: await readTextFile(file) });
+    }, t("Could not import the profile. Choose a Playwright state JSON file up to 256 KB with a unique filename."));
+  const importFromBrowser = ({ id, browserName }: BrowserImportSource) => {
+    setChoosing(false);
+    setImporting(true);
+    setBusy(true);
+    setProblem("");
+    void update("importBrowser", { sourceId: id })
+      .catch((error: unknown) => {
+        // The Host's refusal is one fixed English sentence per cause; show the matching translation.
+        const appBound = error instanceof Error && error.message.includes("app-bound");
+        setProblem(
+          appBound
+            ? t("{p0} protects its cookies in a way that cannot be imported automatically.", {
+                p0: browserName,
+              })
+            : t("Could not import {p0}. If it is open, close it completely and try again.", {
+                p0: browserName,
+              }),
+        );
+      })
+      .finally(() => {
+        setBusy(false);
+        setImporting(false);
+      });
   };
   const save = (action: string, value: unknown) =>
     run(() => update(action, value), t("Could not save browser profile settings."));
@@ -99,6 +174,8 @@ export function BrowserProfileSettings() {
             </SettingsFeedback>
           ) : !state ? (
             <SettingsFeedback state="loading">{t("Loading browser profiles…")}</SettingsFeedback>
+          ) : importing ? (
+            <SettingsFeedback state="loading">{t("Importing browser profile…")}</SettingsFeedback>
           ) : undefined
         }
       >
@@ -170,33 +247,24 @@ export function BrowserProfileSettings() {
             <Row
               id="browser-profile-import"
               label={t("Import browser profile")}
-              description={t(
-                "Import Playwright browser state to reuse sign-ins in an isolated profile on this computer.",
-              )}
+              description={
+                sources?.defaultBrowser
+                  ? t("Default browser: {p0}", {
+                      p0: sources.defaultBrowser.name,
+                    })
+                  : t("Reuse sign-ins from a browser on this computer in an isolated profile.")
+              }
+              descriptionVisible
             >
               <Button
                 size="sm"
                 variant="secondary"
                 disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    const file = await open({
-                      multiple: false,
-                      filters: [{ name: "JSON", extensions: ["json"] }],
-                    });
-                    if (typeof file !== "string") return;
-                    const size = await preparedFileSize(file);
-                    if (size === undefined || size > 256 * 1024)
-                      throw new Error("Browser profile file exceeds its limit.");
-                    const name =
-                      file
-                        .split(/[\\/]/)
-                        .pop()
-                        ?.replace(/\.json$/i, "")
-                        .trim() ?? "";
-                    await update("import", { name, json: await readTextFile(file) });
-                  }, t("Could not import the profile. Choose a Playwright state JSON file up to 256 KB with a unique filename."))
-                }
+                onClick={() => {
+                  setChoosing(true);
+                  // Detect again on open: a browser installed or signed in since load must appear.
+                  void loadSources();
+                }}
               >
                 {t("Import")}
               </Button>
@@ -204,6 +272,19 @@ export function BrowserProfileSettings() {
           </>
         )}
         {dialog}
+        {choosing && (
+          <BrowserProfileImportDialog
+            sources={sources?.sources}
+            error={sourcesError}
+            onRetry={() => void loadSources()}
+            onImport={importFromBrowser}
+            onFile={() => {
+              setChoosing(false);
+              importFile();
+            }}
+            onClose={() => setChoosing(false)}
+          />
+        )}
       </Group>
       {state && (
         <Group title={t("Browser behavior")} layout="full">
@@ -235,6 +316,8 @@ export function BrowserProfileSettings() {
             description={t(
               "Show the Browser panel when an agent opens a preview, unless requested otherwise.",
             )}
+            modified={!busy && state.autoShow !== BROWSER_PREFERENCE_DEFAULTS.autoShow}
+            onReset={() => save("autoShow", BROWSER_PREFERENCE_DEFAULTS.autoShow)}
           >
             <Toggle
               label={t("Auto-show browser preview")}
@@ -243,18 +326,45 @@ export function BrowserProfileSettings() {
               onChange={(value) => save("autoShow", value)}
             />
           </Row>
-          <Row id="browser-recording-fps" label={t("Browser recording frame rate")}>
+          <Row
+            id="browser-live-fps"
+            label={t("Browser panel frame rate")}
+            description={t("How smoothly the live Browser panel updates. Lower uses less CPU.")}
+            modified={
+              !busy &&
+              (state.liveFps ?? BROWSER_PREFERENCE_DEFAULTS.liveFps) !==
+                BROWSER_PREFERENCE_DEFAULTS.liveFps
+            }
+            onReset={() => save("liveFps", BROWSER_PREFERENCE_DEFAULTS.liveFps)}
+          >
+            <Select
+              label={t("Browser panel frame rate")}
+              hideLabel
+              value={String(state.liveFps ?? BROWSER_PREFERENCE_DEFAULTS.liveFps)}
+              disabled={busy}
+              options={[10, 15, 30, 60].map((fps) => ({
+                value: String(fps),
+                label: t("{p0} fps", { p0: fps }),
+              }))}
+              onChange={(value) => save("liveFps", Number(value))}
+            />
+          </Row>
+          <Row
+            id="browser-recording-fps"
+            label={t("Browser recording frame rate")}
+            description={t("Frame rate of browser videos that agents record.")}
+            modified={!busy && state.recordingFps !== BROWSER_PREFERENCE_DEFAULTS.recordingFps}
+            onReset={() => save("recordingFps", BROWSER_PREFERENCE_DEFAULTS.recordingFps)}
+          >
             <Select
               label={t("Browser recording frame rate")}
               hideLabel
               value={String(state.recordingFps)}
               disabled={busy}
-              options={[...new Set([4, 8, 10, state.recordingFps])]
-                .sort((left, right) => left - right)
-                .map((fps) => ({
-                  value: String(fps),
-                  label: t("{p0} fps", { p0: fps }),
-                }))}
+              options={[4, 8, 10, 15, 30, 60].map((fps) => ({
+                value: String(fps),
+                label: t("{p0} fps", { p0: fps }),
+              }))}
               onChange={(value) => save("recordingFps", Number(value))}
             />
           </Row>

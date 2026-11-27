@@ -415,6 +415,8 @@ export function Group({
  * - `controlWidth`: `"aligned"` (16rem) to share a fixed column across a group,
  *   `"wide"` (28rem) for a pair of selects or a short field, `"fill"` for a control that takes all the
  *   room the label leaves (segmented choice, card strip). Default keeps the 12-18rem right column.
+ *   In a narrow row (below 35rem) every non-stacked control stays beside its label while both fit
+ *   and wraps under it only when they do not, so a switch or short select never stacks.
  * - `density="compact"`: the row inset steps down (`--ui-row-inset-block-compact`) for short rows.
  * - `feedbackPosition="start"`: the feedback (a preview) sits above the label and control.
  * @group layout

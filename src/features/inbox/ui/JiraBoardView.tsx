@@ -1377,11 +1377,11 @@ function BoardCardsLoading() {
           className="grid gap-1"
         >
           <div className="grid gap-2 px-3 py-2">
-            <SkeletonBar width="64%" height="0.875rem" index={row} />
-            <SkeletonBar width="34%" index={row + 1} />
+            <SkeletonBar width="64%" height="0.875rem" />
+            <SkeletonBar width="34%" />
           </div>
           <div className="flex min-h-7 items-center">
-            <SkeletonBar width="28%" shape="pill" index={row + 2} />
+            <SkeletonBar width="28%" shape="pill" />
           </div>
         </Surface>
       ))}

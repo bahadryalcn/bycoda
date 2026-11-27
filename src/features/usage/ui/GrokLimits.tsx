@@ -1,14 +1,20 @@
-import { Text } from "../../../shared/ui/Text";
 import { useEffect } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Heading } from "../../../shared/ui/Heading";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useRateLimitQuery, loadRateLimits } from "../../providers/public/rateLimitsCache";
 import { useShowRemainingUsage } from "../../settings/public/settings";
-import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { UsageQuotaWindows } from "./UsageQuotaWindows";
+import {
+  accountDisplayLabel,
+  providerAccountColorValue,
+  providerAccounts,
+  type ProviderAccount,
+} from "../../providers/public/providerAccounts";
+import { UsageAccountRow } from "./UsageAccountRow";
+
+const GROK_DEFAULT_ACCOUNT: ProviderAccount = {
+  id: "default",
+  provider: "grok",
+  label: "Default account",
+};
 
 /** Grok exposes one CLI login, not isolated provider-account profiles. */
 export function GrokLimits({ refresh }: { refresh: number }) {
@@ -19,35 +25,19 @@ export function GrokLimits({ refresh }: { refresh: number }) {
   useEffect(() => {
     if (refresh > 0) void loadRateLimits("grok", "default", true);
   }, [refresh]);
-  const loading = limits.status === "idle" || limits.status === "fetching";
-  const windows = (["session", "weekly", "monthly"] as const).flatMap((kind) =>
-    limits[kind] ? [{ kind, window: limits[kind]! }] : [],
-  );
+  // The history legend colours the same stored account, so the bar and its legend dot match.
+  const account = providerAccounts("grok").find((a) => a.id === "default") ?? GROK_DEFAULT_ACCOUNT;
+  const name = accountDisplayLabel(account, [account]);
   return (
-    <section className="usage-account" aria-label="Grok" aria-busy={loading}>
-      <div className="usage-account-heading">
-        <Heading size="item" level={3} className="inline-flex items-center gap-2">
-          <HarnessIcon harness="grok" className="icon-sm" />
-          Grok
-        </Heading>
-        {limits.updatedAt > 0 ? (
-          <Text size="caption" tone="muted" leading="inherit" className="usage-account-observed">
-            <span className="sr-only">{t("Last observed")}: </span>
-            <Timestamp value={limits.updatedAt} format="relative" />
-          </Text>
-        ) : null}
-      </div>
-      <UsageQuotaWindows name="Grok" windows={windows} showRemaining={showRemaining} />
-      {/* The stale windows stay visible while refreshing; only an empty card shows a loading line. */}
-      {loading && !windows.length ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
-      {limits.error ? (
-        <InlineError
-          details={limits.error}
-          retry={{ onRetry: () => void loadRateLimits("grok", "default", true), pending: loading }}
-        >
-          {t("Usage unavailable")}
-        </InlineError>
-      ) : null}
-    </section>
+    <UsageAccountRow
+      provider="grok"
+      account={account}
+      name={name}
+      limits={limits}
+      showRemaining={showRemaining}
+      color={providerAccountColorValue(account)}
+      retryLabel={`${t("Retry")}: ${name}`}
+      onRetry={() => void loadRateLimits("grok", "default", true)}
+    />
   );
 }

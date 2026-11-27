@@ -70,6 +70,8 @@ import {
   useBundledHostStatus,
 } from "../../connections/public/bundledHostStatus";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { useRemoteSupports } from "../../connections/public/remoteCapabilities";
+import { HOST_ADDITIONAL_DIRS_CAPABILITY } from "../../../shared/model/host-contracts/session-additional-dirs";
 import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
 import { SessionWorkspaceActions } from "../../workspaces/ui/SessionWorkspaceActions";
 import { WorkspaceRewindPreviewHost } from "../../workspaces/ui/WorkspaceRewindPreview";
@@ -140,6 +142,7 @@ import {
   type MentionToken,
 } from "../../files/public/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
+import { isImportProvider } from "../../../platform/tauri/sessionImport";
 import { composeInboxMessage, type InboxComposerCard } from "../../inbox/model/githubTasks";
 import type { HandoffComposerCard } from "../model/handoff";
 import {
@@ -452,6 +455,11 @@ type Props = {
   worktreeBase?: string;
   onWorkspaceModeChange?: (mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange?: (base: string) => void;
+  /** The draft's new worktree starts from the fetched remote base. */
+  worktreeBaseRemote?: boolean;
+  onWorktreeBaseRemoteChange?: (remote: boolean) => void;
+  /** Progress id of the creation that is running for this draft; null or unset when idle. */
+  creationProgressId?: string | null;
   worktreeRemoved?: boolean;
   onManageWorktrees?: () => void;
   onNewTerminal?: () => void;
@@ -672,6 +680,9 @@ export const Composer = memo(function Composer({
   worktreeBase,
   onWorkspaceModeChange,
   onWorktreeBaseChange,
+  worktreeBaseRemote = false,
+  onWorktreeBaseRemoteChange,
+  creationProgressId = null,
   worktreeRemoved = false,
   onManageWorktrees,
   onNewTerminal,
@@ -1217,8 +1228,16 @@ export const Composer = memo(function Composer({
     skillGroups.length > 0 && expandSkillGroupTokens(draft, skillGroups) !== draft;
   const sessionDirsHarness =
     harness === "claude" || harness === "codex" || harness === "antigravity";
+  const remoteDirsSupported = useRemoteSupports(
+    cwd ?? executionCwd,
+    HOST_ADDITIONAL_DIRS_CAPABILITY,
+  );
   const showSessionDirs =
-    !remote && !compact && sessionDirsHarness && isLocalProject(cwd ?? executionCwd);
+    !compact &&
+    sessionDirsHarness &&
+    (remote
+      ? !!parseRemotePath(cwd ?? executionCwd) && !!remoteDirsSupported
+      : isLocalProject(cwd ?? executionCwd));
   const attachmentsSupported =
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
@@ -1239,7 +1258,8 @@ export const Composer = memo(function Composer({
     !mayHaveComposerMarkdown(draft) &&
     !/[/@$]/.test(draft) &&
     !((attachments.length || citations.length) && draft.includes("["));
-  const showClearText = draft.length > 0 && !shell && !disabled && !parentClosed;
+  const showClearText =
+    (draft.length > 0 || attachments.length > 0) && !shell && !disabled && !parentClosed;
   useLayoutEffect(() => {
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
@@ -2394,7 +2414,7 @@ export const Composer = memo(function Composer({
       return;
     }
     if (isResumeCommand(value)) {
-      if (remote || !onResumeProviderSession || (harness !== "claude" && harness !== "codex")) {
+      if (remote || !onResumeProviderSession || !isImportProvider(harness)) {
         setPasteError(
           remote
             ? t(
@@ -3418,11 +3438,7 @@ export const Composer = memo(function Composer({
         project={cwd ?? executionCwd}
         workingDirectory={executionCwd}
         recents={recents}
-        onProjectChange={
-          hideProjectPicker || hideTopBar
-            ? undefined
-            : (...args) => mutateParentInput(parentChanged, () => onCwdChange(...args))
-        }
+        worktreeMode={draftWorkspace && workspaceCreation.mode === "worktree"}
         enabled={enabled}
         onClose={() => ref.current?.focus()}
       />
@@ -3560,14 +3576,39 @@ export const Composer = memo(function Composer({
             variant="ghost"
             size="xs"
             iconOnly
-            label={t("Clear text")}
+            label={t("Clear")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               const field = ref.current;
-              if (!field?.value || !canMutateDraft() || composingRef.current) return;
+              if (!field || !canMutateDraft() || composingRef.current) return;
               field.focus();
+              // Recorded like a cut, so undo brings back the text and its attachments together.
+              const generation = pasteGenerationRef.current;
+              const borrowed = borrowedAttachmentIdsRef.current;
+              const entry = {
+                generation,
+                before: {
+                  text: field.value,
+                  attachments: attachmentsRef.current,
+                  start: 0,
+                  end: field.value.length,
+                },
+                after: { text: "", attachments: [], start: 0, end: 0 },
+                borrowed,
+                native: false,
+              };
+              attachmentCutHistory.current = [
+                entry,
+                ...attachmentCutHistory.current.filter((item) => item.generation === generation),
+              ].slice(0, 12);
+              draftRevisionRef.current += 1;
+              restoreCutAttachments([], borrowed);
+              setPasteError(null);
               userEditBeforeRef.current = null;
-              applyUndoableTextareaEdit(field, "", 0, applyingAttachmentCut);
+              if (field.value) {
+                entry.native = applyUndoableTextareaEdit(field, "", 0, applyingAttachmentCut);
+              }
+              syncHasText("");
             }}
           >
             <X className="icon-xs" />
@@ -4558,26 +4599,40 @@ export const Composer = memo(function Composer({
                       cwd={executionCwd}
                       mode={workspaceCreation.mode}
                       base={resolvedWorktreeBase}
-                      enabled={enabled && !busy && !workspaceCreation.pending}
+                      enabled={enabled && !busy}
+                      pending={workspaceCreation.pending}
                       onModeChange={(...args) =>
                         mutateParentInput(parentChanged, () => onWorkspaceModeChange?.(...args))
                       }
                       onBaseChange={(...args) =>
                         mutateParentInput(parentChanged, () => onWorktreeBaseChange?.(...args))
                       }
-                      onSelectWorktree={
+                      baseRemote={worktreeBaseRemote}
+                      onBaseRemoteChange={
+                        onWorktreeBaseRemoteChange
+                          ? (remote) =>
+                              mutateParentInput(parentChanged, () =>
+                                onWorktreeBaseRemoteChange(remote),
+                              )
+                          : undefined
+                      }
+                      previousWorktree={
                         onWorktreeChange
-                          ? async (...args) => {
-                              const result = mutateParentInput(parentChanged, () =>
-                                onWorktreeChange(...args),
-                              );
-                              if (result === false)
-                                throw new Error("Session input is temporarily closed.");
-                              return await result;
+                          ? {
+                              project: cwd ?? executionCwd,
+                              sessionId,
+                              getSessions,
+                              onSelect: async (...args) => {
+                                const result = mutateParentInput(parentChanged, () =>
+                                  onWorktreeChange(...args),
+                                );
+                                if (result === false)
+                                  throw new Error("Session input is temporarily closed.");
+                                await result;
+                              },
                             }
                           : undefined
                       }
-                      onOpenSettings={onManageWorktrees}
                       onClose={() => ref.current?.focus()}
                     />
                   )}
@@ -4671,6 +4726,8 @@ export const Composer = memo(function Composer({
             {hasProject && draftWorkspace ? (
               <div className="basis-full pb-1">
                 <WorkspaceCreationStatus
+                  progressId={creationProgressId}
+                  context={{ cwd: cwd ?? executionCwd }}
                   preview={
                     workspaceCreation.mode === "worktree" ? workspaceCreation.preview : undefined
                   }

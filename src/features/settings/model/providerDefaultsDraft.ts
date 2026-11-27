@@ -1,18 +1,13 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
-import { pathKey } from "../../../shared/lib/paths";
-import {
-  loadProjectGroupAssignments,
-  loadProjectGroups,
-  projectGroupWorkspaceRoot,
-  type ProjectGroup,
-} from "../../projects/public/projectGroups";
+import { t } from "../../../shared/i18n";
+import { projectDisplayName } from "../../projects/public/projectNames";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 
 /**
  * Providers > Defaults edits a change set, not a stored scope. Each field holds the value the
  * owner picked (`null` clears it back to inheritance); Save writes the set to the chosen target.
- * The same change set can be applied to Global, one project, or every project of a group or
- * workspace, so the target is picked at save time.
+ * The same change set can be applied to Global or to one project, so the target is picked at
+ * save time.
  */
 export type DraftValue = string | null;
 
@@ -21,9 +16,9 @@ export type ProviderDefaultsChange = {
   effort?: DraftValue;
   runtimeMode?: DraftValue;
   extras?: Record<string, DraftValue>;
-  /** Project and group targets: keep the provider out of the picker there. */
+  /** Project target: keep the provider out of the picker there. */
   hidden?: boolean;
-  /** Project and group targets: the account new conversations start on (`null` follows the provider's default). */
+  /** Project target: the account new conversations start on (`null` follows the provider's default). */
   account?: DraftValue;
 };
 
@@ -33,54 +28,30 @@ export type DefaultsDraft = {
   providers: Partial<Record<HarnessId, ProviderDefaultsChange>>;
   /** Account overrides are machine-wide whatever the target. Keyed by `accountDraftKey`. */
   accounts: Record<string, ProviderDefaultsChange>;
+  /** Helpers for every provider (the Host's All providers delegation layer); `null` clears a key. */
+  delegation?: Record<string, DraftValue>;
 };
 
-export type DefaultsTarget =
-  | { kind: "global" }
-  | { kind: "project"; path: string }
-  | { kind: "group"; id: string; workspace: boolean };
+export type DefaultsTarget = { kind: "global" } | { kind: "project"; path: string };
 
 export const EMPTY_DRAFT: DefaultsDraft = { providers: {}, accounts: {} };
 
-const GROUP_PREFIX = "group:";
 const PROJECT_PREFIX = "project:";
 
 export function targetValue(target: DefaultsTarget): string {
-  if (target.kind === "global") return "global";
-  return target.kind === "group"
-    ? `${GROUP_PREFIX}${target.id}`
-    : `${PROJECT_PREFIX}${target.path}`;
+  return target.kind === "project" ? `${PROJECT_PREFIX}${target.path}` : "global";
 }
 
-export function parseTargetValue(value: string, groups: readonly ProjectGroup[]): DefaultsTarget {
-  if (value.startsWith("["))
-    return parseTargetValue(selectedTargetValues(value)[0] ?? "global", groups);
-  if (value.startsWith(PROJECT_PREFIX))
-    return { kind: "project", path: value.slice(PROJECT_PREFIX.length) };
-  if (value.startsWith(GROUP_PREFIX)) {
-    const group = groups.find((entry) => entry.id === value.slice(GROUP_PREFIX.length));
-    if (group) return { kind: "group", id: group.id, workspace: Boolean(group.workspaceFile) };
-  }
-  return { kind: "global" };
+/** Window-local selection encoding: `global` or `project:<path>`; anything else is Global. */
+export function parseTargetValue(value: string): DefaultsTarget {
+  return value.startsWith(PROJECT_PREFIX) && value.length > PROJECT_PREFIX.length
+    ? { kind: "project", path: value.slice(PROJECT_PREFIX.length) }
+    : { kind: "global" };
 }
 
-/** Window-local selection encoding; Global always supplies the preview when selected. */
-export function selectedTargetValues(value: string, available?: readonly string[]): string[] {
-  let values: string[];
-  try {
-    const parsed: unknown = value.startsWith("[") ? JSON.parse(value) : [value];
-    values = Array.isArray(parsed)
-      ? parsed.filter((entry): entry is string => typeof entry === "string")
-      : [];
-  } catch {
-    values = [];
-  }
-  const unique = [
-    ...new Set(values.map((entry) => (available && !available.includes(entry) ? "global" : entry))),
-  ];
-  return unique.includes("global")
-    ? ["global", ...unique.filter((entry) => entry !== "global")]
-    : unique;
+/** What the page and save bar call a target. */
+export function defaultsTargetLabel(target: DefaultsTarget): string {
+  return target.kind === "project" ? projectDisplayName(target.path) : t("All projects");
 }
 
 export function accountDraftKey(harness: HarnessId, accountId: string): string {
@@ -93,37 +64,6 @@ export function parseAccountDraftKey(key: string): {
 } {
   const split = key.indexOf("\n");
   return { harness: key.slice(0, split) as HarnessId, accountId: key.slice(split + 1) };
-}
-
-/**
- * Project keys a group target writes to: the group's own projects plus the projects of
- * workspaces nested in it. Projects added to the group later do not inherit.
- * shortcut: copies values into each member project; upgrade to a stored group layer in
- * new-session resolution if groups must stay live for future members.
- */
-export function groupProjectKeys(
-  groupId: string,
-  groups: readonly ProjectGroup[] = loadProjectGroups(),
-  assignments: Record<string, string> = loadProjectGroupAssignments(groups),
-): string[] {
-  const out = new Set<string>();
-  const visit = (id: string, seen: Set<string>) => {
-    if (seen.has(id)) return;
-    seen.add(id);
-    for (const [key, owner] of Object.entries(assignments)) if (owner === id) out.add(key);
-    for (const group of groups) {
-      const root = projectGroupWorkspaceRoot(group);
-      if (group.id !== id && root && assignments[pathKey(root)] === id) visit(group.id, seen);
-    }
-    // A workspace root is a project of its own only when the workspace file lists it.
-    const self = groups.find((group) => group.id === id);
-    const root = self ? projectGroupWorkspaceRoot(self) : null;
-    if (root && self?.workspaceFolders?.some((path) => pathKey(path) === pathKey(root))) {
-      out.add(pathKey(root));
-    }
-  };
-  visit(groupId, new Set());
-  return [...out];
 }
 
 /** Stored values with the pending change applied on top. */
@@ -209,8 +149,8 @@ export type DraftChangeItem = {
   id: string;
   harness?: HarnessId;
   accountId?: string;
-  /** `defaultProvider`, a top-level field, or an extras key (`extra`). */
-  field: DraftChangeField | "defaultProvider" | "extra";
+  /** `defaultProvider`, a top-level field, an extras key (`extra`) or an All providers helper (`delegation`). */
+  field: DraftChangeField | "defaultProvider" | "extra" | "delegation";
   extraKey?: string;
   value: DraftValue | boolean | undefined;
 };
@@ -248,6 +188,14 @@ export function draftChangeItems(draft: DefaultsDraft): DraftChangeItem[] {
     const { harness, accountId } = parseAccountDraftKey(key);
     add(change, harness, accountId);
   }
+  for (const [key, value] of Object.entries(draft.delegation ?? {}))
+    items.push({
+      id: `delegation
+${key}`,
+      field: "delegation",
+      extraKey: key,
+      value,
+    });
   return items;
 }
 
@@ -256,6 +204,11 @@ export function withoutDraftItem(draft: DefaultsDraft, item: DraftChangeItem): D
   if (item.field === "defaultProvider") {
     const { defaultProvider: _drop, ...rest } = draft;
     return rest;
+  }
+  if (item.field === "delegation" && item.extraKey) {
+    const { [item.extraKey]: _drop, ...delegation } = draft.delegation ?? {};
+    const { delegation: _old, ...rest } = draft;
+    return Object.keys(delegation).length ? { ...rest, delegation } : rest;
   }
   if (!item.harness) return draft;
   const slot = { harness: item.harness, accountId: item.accountId };
@@ -268,13 +221,14 @@ export function withoutDraftItem(draft: DefaultsDraft, item: DraftChangeItem): D
     const { [item.extraKey]: _drop, ...extras } = current.extras ?? {};
     if (Object.keys(extras).length) next.extras = extras;
     else delete next.extras;
-  } else if (item.field !== "extra") delete next[item.field];
+  } else if (item.field !== "extra" && item.field !== "delegation") delete next[item.field];
   return withChange(draft, slot, changeSize(next) ? next : undefined);
 }
 
 export function draftSize(draft: DefaultsDraft): number {
   return (
     Number(draft.defaultProvider !== undefined) +
+    Object.keys(draft.delegation ?? {}).length +
     Object.values(draft.providers).reduce((sum, change) => sum + changeSize(change), 0) +
     Object.values(draft.accounts).reduce((sum, change) => sum + changeSize(change), 0)
   );
@@ -294,11 +248,4 @@ export function withChange(
   if (change) bucket[key] = change;
   else delete bucket[key];
   return slot.accountId ? { ...draft, accounts: bucket } : { ...draft, providers: bucket };
-}
-
-/** Projects a target writes to; empty for Global. */
-export function targetProjects(target: DefaultsTarget): string[] {
-  if (target.kind === "project") return [target.path];
-  if (target.kind === "group") return groupProjectKeys(target.id);
-  return [];
 }

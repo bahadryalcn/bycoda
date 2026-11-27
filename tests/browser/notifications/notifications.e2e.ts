@@ -42,14 +42,14 @@ for (const theme of ["dark", "light"]) {
       await page.getByRole("button", { name: "Open settings" }).click();
       await expect(dialog).toHaveCount(0);
 
-      // A new request opens the dialog again; Review goes to the conversation that asked.
+      // A new request opens the dialog again; Go goes to the conversation that asked.
       await page.getByRole("button", { name: "Request approval" }).click();
       await expect(dialog.getByText("Needs approval", { exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
       await page.screenshot({
         path: `temp/verification/owner-approval/single-dialog-${theme}-${width}.png`,
       });
-      await dialog.getByRole("button", { name: "Review", exact: true }).click();
+      await dialog.getByRole("button", { name: "Go", exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await expect(card.getByText("5 requests need approval")).toBeVisible();
       await card.getByRole("button", { name: "Deny", exact: true }).click();
@@ -102,8 +102,12 @@ for (const theme of ["dark", "light"]) {
       await expect(dialog).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Later", exact: true })).toBeFocused();
       await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(0);
+      // The dialog names the project and conversation that asked.
+      await expect(dialog.locator(".notification-request-source")).toContainText(
+        "Release checklist review",
+      );
       await page.screenshot({
-        path: `temp/verification/owner-approval/dialog-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-26-owner-request-row/dialog-${theme}-${width}.png`,
       });
       await dialog.getByText("Exact request text", { exact: true }).click();
       await expect(
@@ -199,16 +203,39 @@ for (const theme of ["dark", "light"]) {
       await expect(panel.locator(".approval-toast").first()).toHaveCSS("animation-name", "none");
       const owner = panel.locator(".notification-owner-request");
       await expect(owner).toHaveCount(1);
-      await expect(owner).toContainText("Run the release script");
+      await expect(owner.locator(".notification-request-title")).toHaveText(
+        "Run the release script",
+      );
+      await expect(owner.locator(".notification-request-source")).toContainText(
+        "Dev uygulamasının yavaş açılma nedeni",
+      );
       await expect(owner).toContainText("left");
+      await expect(owner.getByRole("button", { name: "Go", exact: true })).toBeVisible();
+      await expect(owner.getByRole("button", { name: "Answer", exact: true })).toBeVisible();
       await expect(owner).not.toContainText("pnpm release");
       await page.screenshot({
-        path: `temp/verification/2026-11-11-notification-center/pending-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-26-owner-request-row/pending-${theme}-${width}.png`,
       });
       const list = panel.locator(".notification-sheet-list");
       expect((await list.boundingBox())!.y - (await panel.boundingBox())!.y).toBeLessThan(110);
-      await page.getByRole("button", { name: "Allow", exact: true }).click();
+      // The sheet decides nothing in place: Answer opens the approval in a dialog.
+      await expect(panel.getByRole("button", { name: "Allow", exact: true })).toHaveCount(0);
+      await panel
+        .locator(".approval-toast")
+        .filter({ has: page.getByRole("button", { name: "Go", exact: true }) })
+        .first()
+        .getByRole("button", { name: "Answer", exact: true })
+        .click();
+      await expect(panel).toHaveCount(0);
+      const answer = page.getByRole("dialog");
+      await expect(answer.getByRole("button", { name: "Go", exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-26-owner-request-row/approval-dialog-${theme}-${width}.png`,
+      });
+      await answer.getByRole("button", { name: "Allow", exact: true }).click();
       await expect(page.getByLabel("Fixture result")).toHaveText("fixture-1:1:allow");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.getByRole("button", { name: "Notifications", exact: true }).click();
       await expect(panel.locator(".approval-toast")).toHaveCount(2);
       const clearBox = (await page
         .getByRole("button", { name: "Clear all", exact: true })
@@ -245,8 +272,8 @@ for (const theme of ["dark", "light"]) {
       // A conversation that is gone says so in its row and keeps the panel open.
       const gone = panel.locator(".notification-history-item").filter({ hasText: "old-gone" });
       await gone.locator(".notification-row-toggle").click();
-      await gone.getByRole("button", { name: "Open session", exact: true }).click();
-      await expect(gone.getByText("This conversation is no longer available.")).toBeVisible();
+      await gone.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(page.getByText("This conversation is no longer available.")).toBeVisible();
       // One entry leaves on its own; the row is still expanded from the failed open.
       const rows = await panel.locator(".notification-history-item").count();
       await gone.getByRole("button", { name: "Remove", exact: true }).click();
@@ -290,8 +317,7 @@ test("empty state, persisted preferences and clearing history", async ({ page })
   ).toBeVisible();
   await page.getByRole("button", { name: "Notification options", exact: true }).click();
   await page.getByRole("switch", { name: "Show request popups", exact: true }).click();
-  await page.keyboard.press("Escape");
-  // Clearing asks in place, beside the list, and only empties it once the write is confirmed.
+  // Clearing asks in place, in the options popover, and only empties it once the write is confirmed.
   await page.getByRole("button", { name: "Clear all", exact: true }).click();
   // A press right after the question opens is its own tail, not an answer.
   await page.waitForTimeout(400);
@@ -340,3 +366,48 @@ for (const theme of ["light", "dark"])
       });
     });
   }
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`options popover rows share one inset ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/notifications/notifications.html?theme=${theme}`);
+      await page.getByRole("button", { name: "Notifications", exact: true }).click();
+      await page.getByRole("button", { name: "Notification options", exact: true }).click();
+      const settings = page.getByRole("region", { name: "Notification options", exact: true });
+      const box = async (role: "switch" | "button", name: string, text = false) => {
+        const control = settings.getByRole(role, { name, exact: true });
+        return (await (text ? control.getByText(name, { exact: true }) : control).boundingBox())!;
+      };
+      // Text rows share one inset; the bordered Clear all starts at the rows' own edge.
+      const switchText = (await box("switch", "Show request popups", true)).x;
+      expect(Math.abs(switchText - (await box("button", "Hide all popups", true)).x)).toBeLessThan(
+        2,
+      );
+      const rowEdge = (await box("button", "Hide all popups")).x;
+      expect(Math.abs(rowEdge - (await box("button", "Clear all")).x)).toBeLessThan(2);
+      await settings.screenshot({
+        path: `temp/verification/2026-11-26-notification-options/options-${theme}-${width}.png`,
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  test(`a missing conversation reports once, as a toast ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/notifications/notifications.html?theme=${theme}`);
+    await page.getByRole("button", { name: "Notifications", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "Notifications", exact: true });
+    const gone = panel.locator(".notification-history-item").filter({ hasText: "old-gone" });
+    await gone.locator(".notification-row-toggle").click();
+    await gone.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(page.getByText("This conversation is no longer available.")).toHaveCount(1);
+    await expect(gone.getByText("This conversation is no longer available.")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Details", exact: true })).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await page.screenshot({
+      path: `temp/verification/2026-11-26-notification-options/missing-toast-${theme}.png`,
+    });
+  });

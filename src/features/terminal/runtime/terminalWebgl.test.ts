@@ -10,7 +10,16 @@ type FakeAddon = {
 const webgl = vi.hoisted(() => ({
   addons: [] as FakeAddon[],
   constructFailures: 0,
+  mac: false,
+  tauri: false,
 }));
+
+vi.mock("../../../platform/tauri/platform", () => ({
+  get IS_MAC() {
+    return webgl.mac;
+  },
+}));
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => webgl.tauri }));
 
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: class {
@@ -63,9 +72,22 @@ function expectNoPtyTraffic(pty: ReturnType<typeof fakeTerminal>["pty"]) {
 beforeEach(() => {
   webgl.addons.length = 0;
   webgl.constructFailures = 0;
+  webgl.mac = false;
+  webgl.tauri = false;
 });
 
 describe("terminal WebGL renderer adapter", () => {
+  it("keeps the native macOS terminal on the DOM renderer", async () => {
+    webgl.mac = true;
+    webgl.tauri = true;
+    const { term, loadAddon, pty } = fakeTerminal();
+    const adapter = createTerminalWebgl(term, () => true);
+    await adapter.load();
+    expect(loadAddon).not.toHaveBeenCalled();
+    expectNoPtyTraffic(pty);
+    adapter.dispose();
+  });
+
   it("refits the same terminal after renderer cell metrics change without a host resize", async () => {
     const { term, loadAddon, refresh } = fakeTerminal();
     let cell = { width: 8, height: 12 };

@@ -139,7 +139,7 @@ export function Skeleton({
 }: SkeletonProps) {
   const reduce = useReducedMotion();
   const count = Math.min(Math.max(Math.floor(lines), 1), 6);
-  // Each block pulses a beat after the one above it, so the wait reads as one calm wave.
+  // Every block shares one viewport-anchored shimmer, so the wait reads as one surface.
   const placeholder = (extra?: string) => (
     <SkeletonStatus
       className={[styles.root, extra].filter(Boolean).join(" ")}

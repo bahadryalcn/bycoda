@@ -496,9 +496,19 @@ it("runs light pools at low, the order at medium and heavy pools at high, never 
     "medium",
     "medium",
   ]);
-  expect(pool("Smartest")).toMatchObject({ effort: "high", entryIds: [strong!.id] });
-  expect(pool("Balanced").effort).toBe("medium");
-  expect(pool("Low")).toMatchObject({ effort: "low", entryIds: [mini!.id] });
+  // Each group sets the effort per model; the order entries stay at medium.
+  expect(pool("Smartest")).toMatchObject({
+    entryIds: [strong!.id],
+    memberSettings: { [strong!.id]: { effort: "high" } },
+  });
+  expect(Object.values(pool("Balanced").memberSettings ?? {})).toEqual(
+    pool("Balanced").entryIds.map(() => ({ effort: "medium" })),
+  );
+  expect(pool("Low")).toMatchObject({
+    entryIds: [mini!.id],
+    memberSettings: { [mini!.id]: { effort: "low" } },
+  });
+  expect(next.routing.pools.some((item) => item.effort)).toBe(false);
   expect(next.routing.entries.some((e) => e.modelSettings.effort === "xhigh")).toBe(false);
   expect(setup(next, list).routing.entries).toHaveLength(next.routing.entries.length);
 });
@@ -514,8 +524,8 @@ it("keeps legacy copies and refills pools using the existing medium entry when a
   const tuned = [{ ...list[0]!, effort: { id: "effort", options: ["medium", "high", "max"] } }];
   const next = setup(owner, tuned);
   expect(next.routing.pools.find((p) => p.name === "Smartest")).toMatchObject({
-    effort: "high",
     entryIds: ["medium"],
+    memberSettings: { medium: { effort: "high" } },
   });
   expect(next.routing.entries.map((e) => e.id)).toEqual(["medium", "own"]);
   expect(next.routing.entries.find((e) => e.id === "own")!.modelSettings.effort).toBe("max");

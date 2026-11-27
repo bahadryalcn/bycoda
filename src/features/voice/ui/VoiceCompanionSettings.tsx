@@ -6,7 +6,11 @@ import { Toggle } from "../../../shared/ui/settings";
 import { saveVoicePreference } from "../model/voiceSettingsSave";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { loadVoiceMemory, saveVoiceMemory, useVoiceMemory } from "../model/voiceMemory";
-import type { VoiceSettings as Preferences, VoiceVisual } from "../model/voiceSettings";
+import {
+  VOICE_SETTINGS_DEFAULTS,
+  type VoiceSettings as Preferences,
+  type VoiceVisual,
+} from "../model/voiceSettings";
 
 /** Opens the Assistant Room on its settings or memory tab; the Room owns identity and memory notes. */
 export function openAssistantRoom(tab: "settings" | "memory") {
@@ -17,10 +21,16 @@ export function openAssistantRoom(tab: "settings" | "memory") {
 export function VoiceMemoryRow({ assistantMemoryCount }: { assistantMemoryCount?: number }) {
   const memory = useVoiceMemory();
   return (
-    <Row id="voice-memory" label={t("Memory")}>
-      <Button onClick={() => openAssistantRoom("memory")}>
-        {t("Manage ({p0})", { p0: assistantMemoryCount ?? memory.notes.length })}
-      </Button>
+    <Row
+      id="voice-memory"
+      label={t("Memory")}
+      // The note count opens the Room's memory tab; the switch stays the row's only control.
+      dependency={
+        <Button variant="link" size="sm" onClick={() => openAssistantRoom("memory")}>
+          {t("{p0} notes", { p0: assistantMemoryCount ?? memory.notes.length })}
+        </Button>
+      }
+    >
       <Toggle
         label={t("Memory")}
         on={memory.enabled}
@@ -46,7 +56,13 @@ export function VoiceVisualStyleRow({
 }) {
   return (
     // A deliberate full-width chooser: four previews need more room than the control column.
-    <Row id="voice-visual-style" label={t("Visual style")} stacked>
+    <Row
+      id="voice-visual-style"
+      label={t("Visual style")}
+      stacked
+      modified={settings.visual !== VOICE_SETTINGS_DEFAULTS.visual}
+      onReset={() => change({ visual: VOICE_SETTINGS_DEFAULTS.visual })}
+    >
       <SegmentedControl
         label={t("Visual style")}
         value={settings.visual}

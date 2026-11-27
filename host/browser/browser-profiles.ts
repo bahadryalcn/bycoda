@@ -3,8 +3,17 @@ import { join } from "node:path";
 import { z } from "zod";
 import { isBrowserDevelopmentAddress } from "../../src/shared/lib/browserProfile";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
+import { RECORDING_FPS_OPTIONS } from "./browser-recording";
+import { importBrowserState, type PlaywrightLauncher } from "./browser-profile-import";
+import { detectBrowserSources, publicSource, type BrowserSource } from "./browser-profile-sources";
 
 const MAX_PROFILES = 12;
+const isRecordingFps = (value: unknown): value is number =>
+  RECORDING_FPS_OPTIONS.some((option) => option === value);
+/** Frame rates the owner can pick for the live Browser panel stream. */
+export const LIVE_FPS_OPTIONS = [10, 15, 30, 60] as const;
+const isLiveFps = (value: unknown): value is number =>
+  LIVE_FPS_OPTIONS.some((option) => option === value);
 const MAX_IMPORT_BYTES = 256 * 1024;
 const stateSchema = z.object({
   cookies: z
@@ -51,7 +60,9 @@ const settingsSchema = z.object({
   agentAccess: z.boolean(),
   claudeChrome: z.boolean(),
   autoShow: z.boolean().default(true),
-  recordingFps: z.number().int().min(1).max(10).default(4),
+  // A stored rate outside the offered set reads as the default.
+  recordingFps: z.number().refine(isRecordingFps).default(4).catch(4),
+  liveFps: z.number().refine(isLiveFps).default(60).catch(60),
   defaultProfileId: z.string().uuid().nullable(),
   developmentProfileId: z.string().uuid().nullable().default(null),
   profiles: z.array(profileSchema).max(MAX_PROFILES),
@@ -62,12 +73,19 @@ const initial: Settings = {
   claudeChrome: false,
   autoShow: true,
   recordingFps: 4,
+  liveFps: 60,
   defaultProfileId: null,
   developmentProfileId: null,
   profiles: [],
 };
 type StoredProfile = Settings["profiles"][number];
 const keyOf = (name: string) => name.normalize("NFKC").toLowerCase();
+/** "Chrome – Personal": the short browser name and the profile's own name, without control characters. */
+function importedName({ browserName, profileName }: BrowserSource) {
+  const browser = browserName.replace(/^(Google|Microsoft|Mozilla) /, "");
+  const profile = profileName.replace(/\p{C}/gu, "").trim();
+  return `${browser}${profile && profile !== browser ? ` – ${profile}` : ""}`.slice(0, 60).trim();
+}
 const summary = ({ id, name, agents }: StoredProfile) => ({ id, name, agents });
 
 export class BrowserProfiles {
@@ -75,7 +93,13 @@ export class BrowserProfiles {
   private pending: Promise<unknown> = Promise.resolve();
   private current?: Promise<Settings>;
 
-  constructor(directory: string) {
+  constructor(
+    directory: string,
+    private readonly browserImport: {
+      detect?: typeof detectBrowserSources;
+      load?: PlaywrightLauncher;
+    } = {},
+  ) {
     this.file = join(directory, "browser-profiles.json");
   }
 
@@ -113,6 +137,7 @@ export class BrowserProfiles {
       claudeChrome: settings.claudeChrome,
       autoShow: settings.autoShow,
       recordingFps: settings.recordingFps,
+      liveFps: settings.liveFps,
       defaultProfileId: settings.defaultProfileId,
       developmentProfileId: settings.developmentProfileId,
       profiles: settings.profiles.map(summary),
@@ -121,6 +146,46 @@ export class BrowserProfiles {
 
   async list() {
     return this.describe(await this.read());
+  }
+
+  /** Installed browsers whose profiles can be imported, the OS default browser first. */
+  async sources() {
+    const { defaultBrowser, sources } = await (this.browserImport.detect ?? detectBrowserSources)();
+    return { defaultBrowser, sources: sources.map(publicSource) };
+  }
+
+  /** Imports one detected browser profile; the client names it by id, never by path. */
+  private async importBrowser(value: unknown) {
+    const { sourceId } = z.object({ sourceId: z.string().max(120) }).parse(value);
+    const { sources } = await (this.browserImport.detect ?? detectBrowserSources)();
+    const source = sources.find(({ id }) => id === sourceId);
+    if (!source) throw new Error("This browser profile is no longer available.");
+    if (!this.browserImport.load) throw new Error("The browser runtime is unavailable.");
+    const storage = stateSchema.parse(await importBrowserState(source, this.browserImport.load));
+    return this.addProfile(importedName(source), storage, true);
+  }
+
+  private addProfile(name: string, storage: BrowserProfileStorage, unique = false) {
+    return this.change((settings) => {
+      if (settings.profiles.length >= MAX_PROFILES)
+        throw new Error("Browser profile limit reached.");
+      const taken = (candidate: string) =>
+        keyOf(candidate) === "isolated" ||
+        settings.profiles.some((profile) => keyOf(profile.name) === keyOf(candidate));
+      let unused = name;
+      for (let number = 2; unique && taken(unused); number++) {
+        const suffix = ` ${number}`;
+        unused = `${name.slice(0, 60 - suffix.length).trimEnd()}${suffix}`;
+      }
+      if (taken(unused)) throw new Error("Choose a unique browser profile name.");
+      return {
+        ...settings,
+        profiles: [
+          ...settings.profiles,
+          { id: randomUUID(), name: unused, storage, agents: false },
+        ],
+      };
+    });
   }
 
   async chromeEnabled() {
@@ -168,23 +233,18 @@ export class BrowserProfiles {
       } catch {
         throw new Error("Invalid Playwright browser state JSON.");
       }
-      return this.change((settings) => {
-        if (settings.profiles.length >= MAX_PROFILES)
-          throw new Error("Browser profile limit reached.");
-        if (
-          keyOf(name) === "isolated" ||
-          settings.profiles.some((profile) => keyOf(profile.name) === keyOf(name))
-        )
-          throw new Error("Choose a unique browser profile name.");
-        return {
-          ...settings,
-          profiles: [...settings.profiles, { id: randomUUID(), name, storage, agents: false }],
-        };
-      });
+      return this.addProfile(name, storage);
     }
+    if (action === "importBrowser") return this.importBrowser(value);
     if (action === "recordingFps") {
-      const recordingFps = settingsSchema.shape.recordingFps.parse(value);
+      if (!isRecordingFps(value)) throw new Error("Choose a recording frame rate from the list.");
+      const recordingFps = value;
       return this.change((settings) => ({ ...settings, recordingFps }));
+    }
+    if (action === "liveFps") {
+      if (!isLiveFps(value)) throw new Error("Choose a live view frame rate from the list.");
+      const liveFps = value;
+      return this.change((settings) => ({ ...settings, liveFps }));
     }
     if (action === "agentAccess" || action === "claudeChrome" || action === "autoShow") {
       if (typeof value !== "boolean") throw new Error("Invalid browser access setting.");

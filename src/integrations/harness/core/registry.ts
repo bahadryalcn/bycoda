@@ -120,6 +120,9 @@ export type TextPromptInput = import("./providerRetirement").ProviderRetirementO
   /** Local bound on received assistant/reasoning text, not provider tokens or charges. */
   maxOutputChars?: number;
   timeoutMs?: number;
+  /** Opt-in read-only page fetch limited to these exact domains. Only adapters that can
+   * pre-allow a domain-scoped fetch (Claude) honor it; others keep their no-web isolation. */
+  webLookup?: { domains: readonly string[] };
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
 };

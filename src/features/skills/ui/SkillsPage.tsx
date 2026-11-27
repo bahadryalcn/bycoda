@@ -1035,7 +1035,7 @@ export function SkillsPage({
               </div>
               <Text as="p" size="caption" tone="secondary" leading="inherit">
                 {previewSkill.scope === "user"
-                  ? t("Personal")
+                  ? t("All projects")
                   : previewSkill.scope === "builtin"
                     ? PRODUCT_IDENTITY.displayName
                     : t("Project")}{" "}

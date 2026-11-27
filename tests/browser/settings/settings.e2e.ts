@@ -906,11 +906,11 @@ test("category keyboard navigation retains focus and search opens an advanced co
   await expect(target.locator("xpath=ancestor::details")).toHaveCount(0);
   await page.getByRole("button", { name: "Search settings", exact: true }).click();
   const search = page.getByRole("combobox", { name: "Search settings", exact: true });
-  await search.fill("Codex · Terminal account profiles");
+  await search.fill("Codex · Add existing account");
   await expect(page.getByRole("option").first()).toContainText("Codex");
   await search.press("Enter");
   const terminalProfiles = page.getByRole("dialog", {
-    name: "Terminal account profiles",
+    name: "Accounts on this computer",
     exact: true,
   });
   await expect(terminalProfiles).toBeVisible();
@@ -921,7 +921,7 @@ test("category keyboard navigation retains focus and search opens an advanced co
   await page.keyboard.press("Escape");
   await expect(terminalProfiles).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Terminal account profiles", exact: true }),
+    page.getByRole("button", { name: "Add existing account", exact: true }),
   ).toBeFocused();
   await expect(page.getByRole("button", { name: "Search settings", exact: true })).toBeVisible();
 });

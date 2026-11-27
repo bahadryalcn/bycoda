@@ -4,6 +4,7 @@ import { localVoiceBackend } from "./localVoiceClient";
 import { voiceRuntimeSettings, type VoiceSettings } from "./voiceSettings";
 import { voiceLanguageCode } from "../../../shared/model/voice-realtime/voiceLanguage";
 import { voicePlaybackTimeoutMs } from "./voicePlaybackDeadline";
+import { routeVoiceOutput } from "./voiceOutputDevice";
 
 /** Output-only preview. Never acquires a microphone or grants tools. */
 export async function previewVoice(
@@ -179,6 +180,7 @@ export async function previewVoice(
     return;
   }
   const context = new AudioContext();
+  routeVoiceOutput(context);
   let lease: Awaited<ReturnType<typeof localVoiceBackend.start>>;
   try {
     lease = await localVoiceBackend.start(voiceRuntimeSettings(settings));

@@ -59,6 +59,20 @@ export function AccountStatusLabel({
   /** Text roles of the line: `size` and `truncate` apply to the root, `tone` to the detail text (default muted); the badge keeps its own. */
 } & Pick<TextRoles, "size" | "tone" | "truncate">) {
   useLocale();
+  // A low account shows only its remaining percent, yellow or red, instead of a "Running low" badge.
+  if (status.tone === "low" && status.detail) {
+    return (
+      <Text
+        size={size ?? "inherit"}
+        tone={status.critical ? "danger" : "warning"}
+        weight="medium"
+        truncate={truncate}
+        className={`min-w-0 tabular-nums ${className}`}
+      >
+        {status.detail}
+      </Text>
+    );
+  }
   return (
     <span
       {...optionalTextAttributes(

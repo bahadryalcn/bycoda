@@ -243,14 +243,9 @@ export function WebSearchRow({ block, working }: { block: Block; working: boolea
                     "flex min-h-14 min-w-0 flex-col justify-between gap-1 p-2",
                   )}
                 >
-                  <SkeletonBar width="88%" index={index * 3} />
-                  <SkeletonBar width="60%" index={index * 3 + 1} />
-                  <SkeletonBar
-                    width="40%"
-                    height="0.5rem"
-                    index={index * 3 + 2}
-                    className="mt-auto"
-                  />
+                  <SkeletonBar width="88%" />
+                  <SkeletonBar width="60%" />
+                  <SkeletonBar width="40%" height="0.5rem" className="mt-auto" />
                 </li>
               ))}
             </ol>

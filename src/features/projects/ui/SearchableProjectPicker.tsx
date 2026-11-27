@@ -99,10 +99,18 @@ type Props = {
   compact?: boolean;
   onSelectProject: (path: string) => void;
   onOpenProject?: () => void;
+  /** Label of the `onOpenProject` row; defaults to "New project". */
+  openProjectLabel?: string;
+  /** Offers a "No project" row (a scratch workspace); it is marked while no project is chosen. */
+  onSelectNoProject?: () => void;
   /** Opens the project's context menu; the search input receives focus back. */
   onProjectContextMenu?: (path: string, x: number, y: number, trigger: HTMLElement | null) => void;
   /** Keeps the dropdown open while the project's context menu or its dialogs show. */
   projectMenuActive?: boolean;
+  /** Opens the dropdown once on mount, for a caller that just asked the user to choose. */
+  openOnMount?: boolean;
+  /** The dropdown closed without a project being picked (Escape, outside click, toggle). */
+  onDismiss?: () => void;
 };
 
 export function SearchableProjectPicker({
@@ -121,8 +129,12 @@ export function SearchableProjectPicker({
   compact = false,
   onSelectProject,
   onOpenProject,
+  openProjectLabel,
+  onSelectNoProject,
   onProjectContextMenu,
   projectMenuActive = false,
+  openOnMount = false,
+  onDismiss,
 }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -149,11 +161,20 @@ export function SearchableProjectPicker({
   if (open && selected) paths.unshift(selected);
 
   const closePicker = () => setOpen(false);
+  const dismissPicker = () => {
+    closePicker();
+    onDismiss?.();
+  };
 
   const openPicker = () => {
     if (disabled) return;
     setOpen(true);
   };
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- open after mount so the popover anchors to the placed trigger
+  useEffect(() => {
+    if (openOnMount) setOpen(true);
+  }, [openOnMount]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- focus search on open and again after the anchored popover is placed
   useEffect(() => {
@@ -226,7 +247,7 @@ export function SearchableProjectPicker({
         aria-expanded={open}
         aria-haspopup="dialog"
         data-tauri-drag-region="false"
-        onClick={() => (open ? closePicker() : openPicker())}
+        onClick={() => (open ? dismissPicker() : openPicker())}
         onKeyDown={(event) => {
           if (open) return;
           if (event.key !== "ArrowDown") return;
@@ -268,7 +289,7 @@ export function SearchableProjectPicker({
           size="md"
           maxHeight={380}
           label={t("Project picker")}
-          onDismiss={closePicker}
+          onDismiss={dismissPicker}
           dismissible={!projectMenuActive}
           inputRef={searchRef}
         >
@@ -278,6 +299,23 @@ export function SearchableProjectPicker({
             searchRef={searchRef}
             onPick={pickProject}
           />
+          {onSelectNoProject ? (
+            <div className="shrink-0">
+              <Button
+                variant="item"
+                motion="none"
+                type="button"
+                selected={!inProject}
+                onClick={() => {
+                  closePicker();
+                  if (inProject) onSelectNoProject();
+                }}
+                className="flex w-full items-center gap-2.5 text-start"
+              >
+                <span>{t("No project")}</span>
+              </Button>
+            </div>
+          ) : null}
           {onOpenProject ? (
             <div className="shrink-0">
               <Button
@@ -291,7 +329,7 @@ export function SearchableProjectPicker({
                 className="flex w-full items-center gap-2.5 text-start"
               >
                 <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
-                <span>{t("New project")}</span>
+                <span>{openProjectLabel ?? t("New project")}</span>
               </Button>
             </div>
           ) : null}

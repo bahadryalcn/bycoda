@@ -1,9 +1,11 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
 import { loadProjectGroupAssignments, projectGroupIdForPath } from "./projectGroups";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   isLocalProject,
   loadRecents,
+  looksLikeProject,
   normalizeProjectPath,
   notifyProjectPathsChanged,
   subscribeProjectPathsChanged,
@@ -161,6 +163,115 @@ export function additionalDirCandidatesFrom(
     );
 }
 
+/** Repositories a worktree session may materialize beside its primary one. */
+export const MAX_PROJECT_REPOSITORIES = 8;
+
+const REPOSITORY_CHOICE_KEY = "bycoda.projectRepositoryChoice";
+const repositoryChoiceStore = storedDirsMap(REPOSITORY_CHOICE_KEY);
+
+/** `dirs` without repeats (by path key) and without the excluded keys. */
+function dedupeDirs(dirs: readonly string[], exclude: ReadonlySet<string>): string[] {
+  const seen = new Set<string>(exclude);
+  return dirs.filter((dir) => {
+    const key = pathKey(dir);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The project folders offered as repositories for a new worktree session: the project's stored
+ * folders (`loadAdditionalDirs`), in order. Whether a folder is a git repository is decided at
+ * send time, so non-repositories stay live additional folders.
+ */
+export function projectRepositoryCandidates(project: string): string[] {
+  return loadAdditionalDirs(project);
+}
+
+/**
+ * The project folders chosen as repositories for new sessions (a subset of the project's
+ * folders), kept per project. With nothing saved, all project folders up to
+ * MAX_PROJECT_REPOSITORIES. Folders removed from the project drop out of a saved choice.
+ */
+export function loadProjectRepositoryChoice(project: string): string[] {
+  const candidates = loadAdditionalDirs(project);
+  const own = pathKey(normalizeProjectPath(project));
+  const saved = repositoryChoiceStore.read().value[own];
+  if (!saved) return candidates.slice(0, MAX_PROJECT_REPOSITORIES);
+  const chosen = new Set(saved.map((dir) => pathKey(dir)));
+  return candidates.filter((dir) => chosen.has(pathKey(dir))).slice(0, MAX_PROJECT_REPOSITORIES);
+}
+
+/** Remembers the chosen folders for the project. False when nothing was saved. */
+export function saveProjectRepositoryChoice(project: string, dirs: readonly string[]): boolean {
+  const stored = repositoryChoiceStore.read();
+  if (!stored.valid) return false;
+  const all = { ...stored.value };
+  const own = pathKey(normalizeProjectPath(project));
+  // An empty array is a real choice ("no extra repositories"), unlike the folder list.
+  all[own] = dedupeDirs(dirs.map(normalizeProjectPath), new Set([own])).slice(
+    0,
+    MAX_PROJECT_REPOSITORIES,
+  );
+  const text = JSON.stringify(all);
+  try {
+    localStorage.setItem(REPOSITORY_CHOICE_KEY, text);
+  } catch {
+    return false;
+  }
+  repositoryChoiceStore.written(text, all);
+  notifyProjectPathsChanged();
+  return true;
+}
+
+/**
+ * Appends a folder to the project's folder list and to its remembered repository choice (when
+ * under the cap). False when nothing was saved or the folder is already a project folder.
+ */
+export function addProjectFolder(project: string, dir: string): boolean {
+  const normalized = normalizeProjectPath(dir);
+  const current = loadAdditionalDirs(project);
+  if (current.some((existing) => pathKey(existing) === pathKey(normalized))) return false;
+  const choice = loadProjectRepositoryChoice(project);
+  if (!saveAdditionalDirs(project, [...current, normalized])) return false;
+  if (choice.length < MAX_PROJECT_REPOSITORIES)
+    saveProjectRepositoryChoice(project, [...choice, normalized]);
+  return true;
+}
+
+const BASE_REMOTE_KEY = "bycoda.projectBaseRemote";
+
+function loadBaseRemoteMap(): Record<string, true> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(BASE_REMOTE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, true>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Whether new worktrees of this project start from the fetched remote base ("Start from remote"). */
+export function loadProjectBaseRemote(project: string): boolean {
+  return loadBaseRemoteMap()[pathKey(project)] === true;
+}
+
+/** Remembers the "Start from remote" choice for the project. False when nothing was saved. */
+export function saveProjectBaseRemote(project: string, remote: boolean): boolean {
+  const all = loadBaseRemoteMap();
+  if (remote) all[pathKey(project)] = true;
+  else delete all[pathKey(project)];
+  try {
+    if (Object.keys(all).length === 0) localStorage.removeItem(BASE_REMOTE_KEY);
+    else localStorage.setItem(BASE_REMOTE_KEY, JSON.stringify(all));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const SESSION_KEY = "bycoda.sessionAdditionalDirs";
 const SESSION_CHANGE_EVENT = "bycoda:session-additional-dirs-change";
 
@@ -195,6 +306,14 @@ export function loadSessionAdditionalDirs(sessionId: string): string[] | undefin
   return override ? [...override] : undefined;
 }
 
+/** A local project takes local folders; a project on another machine takes folders on that machine. */
+export function acceptsSessionDir(project: string, dir: string): boolean {
+  const owner = parseRemotePath(project);
+  if (!owner) return isLocalProject(dir);
+  const extra = parseRemotePath(dir);
+  return extra?.environmentId === owner.environmentId && looksLikeProject(extra.hostPath);
+}
+
 /**
  * Extra folders a session may use. Explicit choices can come from any local
  * project or the system folder picker, independently of rail group membership.
@@ -208,7 +327,7 @@ export function additionalDirsForSession(sessionId: string, project: string): st
   const seen = new Set<string>([own]);
   return override.map(normalizeProjectPath).filter((dir) => {
     const key = pathKey(dir);
-    if (seen.has(key) || !isLocalProject(dir)) return false;
+    if (seen.has(key) || !acceptsSessionDir(project, dir)) return false;
     seen.add(key);
     return true;
   });
@@ -230,7 +349,7 @@ export function saveSessionAdditionalDirs(
   const seen = new Set<string>([own]);
   const next = (dirs ?? []).map(normalizeProjectPath).filter((dir) => {
     const key = pathKey(dir);
-    if (seen.has(key) || !isLocalProject(dir)) return false;
+    if (seen.has(key) || !acceptsSessionDir(project, dir)) return false;
     seen.add(key);
     return true;
   });
@@ -242,8 +361,61 @@ export function saveSessionAdditionalDirs(
   return saveSessionOverrides(all);
 }
 
+const WORKTREES_KEY = "bycoda.sessionExtraWorktrees";
+
+type ExtraWorktrees = Record<string, Record<string, string>>;
+
+function loadExtraWorktrees(): ExtraWorktrees {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(WORKTREES_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as ExtraWorktrees)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveExtraWorktrees(all: ExtraWorktrees): boolean {
+  try {
+    if (Object.keys(all).length === 0) localStorage.removeItem(WORKTREES_KEY);
+    else localStorage.setItem(WORKTREES_KEY, JSON.stringify(all));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Records the worktrees a new-worktree session made for its extra folders (original folder
+ * to worktree path). The session's chosen folders stay the originals, so the picker keeps
+ * showing project names; only `providerAdditionalDirsForSession` swaps in the worktrees.
+ */
+export function saveSessionExtraWorktrees(
+  sessionId: string,
+  worktrees: Readonly<Record<string, string>>,
+): boolean {
+  const all = loadExtraWorktrees();
+  const entries = Object.entries(worktrees).map(([dir, path]) => [pathKey(dir), path] as const);
+  if (entries.length > 0) all[sessionId] = Object.fromEntries(entries);
+  else delete all[sessionId];
+  return saveExtraWorktrees(all);
+}
+
+/** `additionalDirsForSession` with each folder replaced by the worktree made for it, if any. */
+export function providerAdditionalDirsForSession(sessionId: string, project: string): string[] {
+  const worktrees = loadExtraWorktrees()[sessionId];
+  const dirs = additionalDirsForSession(sessionId, project);
+  return worktrees ? dirs.map((dir) => worktrees[pathKey(dir)] ?? dir) : dirs;
+}
+
 /** Called when a session is deleted for good. */
 export function removeSessionAdditionalDirs(sessionId: string): void {
+  const worktrees = loadExtraWorktrees();
+  if (sessionId in worktrees) {
+    delete worktrees[sessionId];
+    saveExtraWorktrees(worktrees);
+  }
   const stored = sessionOverridesStore.read();
   if (!stored.valid || !(sessionId in stored.value)) return;
   const next = { ...stored.value };

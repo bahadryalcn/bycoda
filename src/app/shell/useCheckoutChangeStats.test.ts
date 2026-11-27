@@ -2,7 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { resetRetainedState } from "../../shared/hooks/useRetainedState";
+import { resetRetainedState, useRetainedState } from "../../shared/hooks/useRetainedState";
+import { checkoutStateKey } from "../../features/source-control/model/checkoutSelection";
 import type { WorktreeFocus } from "../../features/source-control/model/worktreeFocus";
 import type { Worktree } from "../../features/source-control/model/worktrees";
 import { useCheckoutChangeStats } from "./useCheckoutChangeStats";
@@ -36,6 +37,20 @@ const FILES: Record<string, number> = {};
 let focus: WorktreeFocus | undefined;
 let root: Root;
 let host: HTMLDivElement;
+/** Stands in for the worktree panel, which keeps the same retained keys; renders before the hook. */
+function Panel({
+  stateKey,
+  lastUsed,
+  graph,
+}: {
+  stateKey: string;
+  lastUsed: string;
+  graph: string;
+}) {
+  useRetainedState(`${stateKey}:last-used`, lastUsed);
+  useRetainedState(`${stateKey}:sections`, graph);
+  return null;
+}
 function View() {
   const result = useCheckoutChangeStats({
     gitRoot: "/repo",
@@ -80,19 +95,45 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("badges the sum of the sections: every worktree with changes and its separate repositories", async () => {
+it("follows the first worktree with changes, like Graph's Auto, not the sum of all worktrees", async () => {
   data.modules = { "/trees/worker": ["/trees/worker/mobile"] };
-  Object.assign(FILES, { "/trees/worker": 3, "/trees/worker/mobile": 321 });
+  data.trees = data.trees.map((tree) => (tree.path === "/repo" ? { ...tree, dirty: true } : tree));
+  Object.assign(FILES, { "/repo": 7, "/trees/worker": 3, "/trees/worker/mobile": 321 });
   await act(async () => root.render(createElement(View)));
-  // Only the worktree with known uncommitted changes is read, plus what is nested inside it.
-  expect(data.discovery).toHaveBeenLastCalledWith(["/trees/worker"], true, true);
-  expect(data.multiple).toHaveBeenLastCalledWith(["/trees/worker", "/trees/worker/mobile"], true);
+  // The session's worktree leads the dirty sections; the other dirty worktree is not added.
+  expect(data.multiple).toHaveBeenLastCalledWith(["/repo"], true);
   const result = JSON.parse(host.textContent!);
-  // 3 + 321: equal to the section chips, with no cap.
-  expect(result.changeStats).toEqual({ files: 324, additions: 4, deletions: 2 });
-  expect(result.changeScope.title).toBe("All worktrees");
+  expect(result.changeStats).toEqual({ files: 7, additions: 2, deletions: 1 });
+  expect(result.changeScope.title).toBe("main");
+  delete FILES["/repo"];
   delete FILES["/trees/worker"];
   delete FILES["/trees/worker/mobile"];
+});
+
+it.each([
+  ["the row last used", "/trees/worker/mobile", "", ["/trees/worker", "/trees/worker/mobile"]],
+  ["the Graph choice", "/trees/worker/mobile", "/repo", ["/repo"]],
+  // A choice whose worktree is no longer a section (clean) is ignored.
+  ["no stale choice", "/trees/clean", "/trees/clean", ["/repo"]],
+])("follows %s of the panel", async (_name, lastUsed, graph, expected) => {
+  data.modules = { "/trees/worker": ["/trees/worker/mobile"] };
+  data.trees = data.trees.map((tree) => (tree.path === "/repo" ? { ...tree, dirty: true } : tree));
+  const stateKey = checkoutStateKey(
+    "/repo",
+    data.trees.map((tree) => tree.path),
+  );
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(Panel, { stateKey, lastUsed, graph }),
+        createElement(View),
+      ),
+    ),
+  );
+  // The badge counts the whole worktree of the followed row, with its separate repositories.
+  expect(data.multiple).toHaveBeenLastCalledWith(expected, true);
 });
 
 it("does not cap the total: four digits stay exact", async () => {
@@ -129,15 +170,15 @@ it("follows a focused worktree, including the project folder", async () => {
 });
 
 it("ignores the legacy stored Changes selection", async () => {
-  localStorage.setItem("bycoda.sourceControl.checkout.v1:/repo", "/trees/worker");
+  localStorage.setItem("bycoda.sourceControl.checkout.v1:/repo", "/trees/clean");
   await act(async () => root.render(createElement(View)));
-  expect(JSON.parse(host.textContent!).changeScope.title).toBe("All worktrees");
+  expect(JSON.parse(host.textContent!).changeScope.title).toBe("feature/worker");
 });
 
-it("shows the overview when the focused worktree is no longer listed", async () => {
+it("follows the panel when the focused worktree is no longer listed", async () => {
   focus = { path: "/trees/gone", branch: "gone" };
   await act(async () => root.render(createElement(View)));
-  expect(JSON.parse(host.textContent!).changeScope.title).toBe("All worktrees");
+  expect(JSON.parse(host.textContent!).changeScope.title).toBe("feature/worker");
 });
 
 it("keeps totals unknown until every section has a reading", async () => {

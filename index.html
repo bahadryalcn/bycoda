@@ -34,7 +34,8 @@
             root.style.setProperty("--sidebar-opacity", String(o));
           }
           var scheme = localStorage.getItem("bycoda.colorScheme");
-          if (scheme === "system") {
+          // No stored choice follows the system, matching THEME_PREFERENCE_DEFAULT.
+          if (scheme === null || scheme === "system") {
             scheme = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
           }
           if (scheme === "light") {

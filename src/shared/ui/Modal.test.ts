@@ -20,6 +20,13 @@ describe("ModalPanel", () => {
     expect(docked).toContain("bg-(--ui-surface-panel)");
     expect(docked).not.toContain("popover-backdrop");
   });
+  it("clips the frame and a scroll-less body so nested scrollIntoView cannot shift them", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ModalPanel, { title: "Settings", onClose: vi.fn(), scroll: "none" }, "Body"),
+    );
+    expect(markup).not.toContain("overflow-hidden");
+    expect(markup.match(/overflow-clip/g)).toHaveLength(2);
+  });
   it("names the dialog and close action", () => {
     const markup = renderToStaticMarkup(
       createElement(ModalPanel, {

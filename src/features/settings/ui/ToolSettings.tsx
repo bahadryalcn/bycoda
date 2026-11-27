@@ -7,6 +7,7 @@ import {
 } from "../../../shared/lib/browserViewport";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { AppWindow, Globe, Server, Terminal } from "../../../shared/ui/icons";
 import { toolSettingsTabForAnchor, type ToolSettingsTab } from "../model/toolSettingsSections";
 import {
   resetToolPreferences,
@@ -56,34 +57,36 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
   }
   return (
     <ActiveToolSettingsTab.Provider value={tab}>
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabList label={t("Conversation tools")} scroll="auto">
-          <Tab value="browser" className="shrink-0">
-            {t("Browser")}
-          </Tab>
-          <Tab value="devices" className="shrink-0">
-            {t("Devices")}
-          </Tab>
-          <Tab value="logs" className="shrink-0">
-            {t("Logs")}
-          </Tab>
-          <Tab value="devServers" className="shrink-0">
-            {t("Development servers")}
-          </Tab>
-        </TabList>
-        <TabPanel value="browser" keepMounted>
-          <BrowserProfileSettings />
-          <BrowserSettingsPage />
-        </TabPanel>
-        <TabPanel value="devices" keepMounted>
-          <DevicesSettingsPage />
-        </TabPanel>
-        <TabPanel value="logs" keepMounted>
-          <LogsSettingsPage />
-        </TabPanel>
-        <TabPanel value="devServers" keepMounted>
-          <DevServersSettingsPage />
-        </TabPanel>
+      <Tabs value={tab} onValueChange={setTab} size="md">
+        <div className="settings-topics">
+          <TabList label={t("Conversation tools")} scroll="auto" appearance="track">
+            <Tab value="browser" className="shrink-0" icon={<Globe aria-hidden />}>
+              {t("Browser")}
+            </Tab>
+            <Tab value="devices" className="shrink-0" icon={<AppWindow aria-hidden />}>
+              {t("Devices")}
+            </Tab>
+            <Tab value="logs" className="shrink-0" icon={<Terminal aria-hidden />}>
+              {t("Logs")}
+            </Tab>
+            <Tab value="devServers" className="shrink-0" icon={<Server aria-hidden />}>
+              {t("Development servers")}
+            </Tab>
+          </TabList>
+          <TabPanel value="browser" keepMounted>
+            <BrowserProfileSettings />
+            <BrowserSettingsPage />
+          </TabPanel>
+          <TabPanel value="devices" keepMounted>
+            <DevicesSettingsPage />
+          </TabPanel>
+          <TabPanel value="logs" keepMounted>
+            <LogsSettingsPage />
+          </TabPanel>
+          <TabPanel value="devServers" keepMounted>
+            <DevServersSettingsPage />
+          </TabPanel>
+        </div>
       </Tabs>
     </ActiveToolSettingsTab.Provider>
   );
@@ -262,7 +265,10 @@ function ChoicePreference<T extends string | number>({
         hideLabel
         label={label}
         value={String(value)}
-        options={options.map((option) => ({ value: String(option.value), label: option.label }))}
+        options={options.map((option) => ({
+          value: String(option.value),
+          label: option.label,
+        }))}
         onChange={(next) => {
           const option = options.find((item) => String(item.value) === next);
           if (option) save(option.value);
@@ -379,7 +385,10 @@ export function BrowserSettingsPage() {
             validBrowserViewportDimension(Number(draft), BROWSER_VIEWPORT_MAX_WIDTH)
           }
           invalidMessage={t("Viewport dimensions must fit the supported limits.")}
-          bounds={{ min: BROWSER_VIEWPORT_MIN, max: BROWSER_VIEWPORT_MAX_WIDTH }}
+          bounds={{
+            min: BROWSER_VIEWPORT_MIN,
+            max: BROWSER_VIEWPORT_MAX_WIDTH,
+          }}
         />
         <DraftPreference
           id="browser-viewport-height"
@@ -391,7 +400,10 @@ export function BrowserSettingsPage() {
             validBrowserViewportDimension(Number(draft), BROWSER_VIEWPORT_MAX_HEIGHT)
           }
           invalidMessage={t("Viewport dimensions must fit the supported limits.")}
-          bounds={{ min: BROWSER_VIEWPORT_MIN, max: BROWSER_VIEWPORT_MAX_HEIGHT }}
+          bounds={{
+            min: BROWSER_VIEWPORT_MIN,
+            max: BROWSER_VIEWPORT_MAX_HEIGHT,
+          }}
         />
       </div>
       <DraftPreference
@@ -419,7 +431,9 @@ export function BrowserSettingsPage() {
         <DraftPreference
           id="browser-search-template"
           label={t("Search URL template")}
-          description={t("{p0} is replaced with your encoded search terms.", { p0: "{query}" })}
+          description={t("{p0} is replaced with your encoded search terms.", {
+            p0: "{query}",
+          })}
           dependsOn={searchEngine === "custom"}
           preference={toolPreferences.browserSearchTemplate}
           parse={(draft) => draft}

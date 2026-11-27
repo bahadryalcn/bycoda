@@ -61,6 +61,52 @@ describe("BrowserScreencast", () => {
     await cast.stop();
   });
 
+  it("acks every picture at once while a recorder boosts the cast, then paces again", async () => {
+    const { page, session, paint } = fakePage();
+    const acks = () =>
+      session.send.mock.calls.filter(([method]) => method === "Page.screencastFrameAck").length;
+    const cast = new BrowserScreencast(() => ({ stamp: "doc", width: 1, height: 1 }));
+    const first = cast.next(page, 0, 1000);
+    await vi.advanceTimersByTimeAsync(0);
+    cast.boostAck(1000);
+    paint("AAAA");
+    await first;
+    expect(acks()).toBe(1);
+    paint("BBBB");
+    expect(acks()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1000);
+    paint("CCCC");
+    expect(acks()).toBe(2);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(acks()).toBe(3);
+    await cast.stop();
+  });
+
+  it("paces live stream readers to the chosen frame rate", async () => {
+    const { page, session, paint } = fakePage();
+    const acks = () =>
+      session.send.mock.calls.filter(([method]) => method === "Page.screencastFrameAck").length;
+    const cast = new BrowserScreencast(() => ({ stamp: "doc", width: 1, height: 1 }));
+    cast.setLiveFps(15);
+    const release = cast.retainFastReader();
+    const first = cast.next(page, 0, 1000);
+    await vi.advanceTimersByTimeAsync(0);
+    paint("AAAA");
+    await first;
+    expect(acks()).toBe(1);
+    paint("BBBB");
+    expect(acks()).toBe(1);
+    await vi.advanceTimersByTimeAsync(67);
+    expect(acks()).toBe(2);
+
+    cast.setLiveFps(60);
+    paint("CCCC");
+    paint("DDDD");
+    expect(acks()).toBe(4);
+    release();
+    await cast.stop();
+  });
+
   it("cancels a pending ack when the cast stops", async () => {
     const { page, session, paint } = fakePage();
     const cast = new BrowserScreencast(() => ({ stamp: "doc", width: 1, height: 1 }));

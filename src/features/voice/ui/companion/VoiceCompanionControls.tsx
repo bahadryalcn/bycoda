@@ -13,12 +13,13 @@ import {
 import { t } from "../../../../shared/i18n";
 import { VoiceTurnControl } from "../VoiceTurnControl";
 import type { VoiceCompanionStatus } from "./voiceCompanionTypes";
+import { useVoiceDeviceContextMenu } from "./voiceDeviceMenus";
 import styles from "./VoiceCompanionParts.module.css";
 
 /**
  * The expanded footer: a centred, phone-style dock of round buttons. While live, the turn-ending
  * choice sits above conversation, mic, silence, speaker and the red disconnect. Every icon has the
- * same accessible name as its tooltip.
+ * same accessible name as its tooltip. Right-click on the mic or speaker picks its device.
  */
 export function VoiceCompanionControls({
   status,
@@ -59,6 +60,8 @@ export function VoiceCompanionControls({
   onFinish: () => void;
   onManualChange: (manual: boolean) => void;
 }) {
+  const microphoneMenu = useVoiceDeviceContextMenu("audioinput");
+  const outputMenu = useVoiceDeviceContextMenu("audiooutput");
   const canTalk = status === "idle" || status === "sleeping" || status === "ready";
   const connecting = status === "connecting" || status === "reconnecting";
   const chat = onToggleChat && (
@@ -148,9 +151,11 @@ export function VoiceCompanionControls({
           disabledReason={t("Voice is not connected yet.")}
           pressed={muted}
           onClick={onToggleMute}
+          {...microphoneMenu.trigger}
         >
           {muted ? <MicOff className="icon-sm" /> : <Mic className="icon-sm" />}
         </Button>
+        {microphoneMenu.menu}
         <Button iconOnly shape="pill" size="lg" label={t("Stop speaking")} onClick={onSilence}>
           <Hand className="icon-sm" />
         </Button>
@@ -161,9 +166,11 @@ export function VoiceCompanionControls({
           label={t("Mute speaker")}
           pressed={speakerMuted}
           onClick={onToggleSpeaker}
+          {...outputMenu.trigger}
         >
           {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
         </Button>
+        {outputMenu.menu}
         <Button
           iconOnly
           shape="pill"

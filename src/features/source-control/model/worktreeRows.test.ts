@@ -100,7 +100,7 @@ it("never reads an unknown state as changes or as clean", () => {
 
 it("recognises agent worktrees by branch prefix or managed folder, never the project folder", () => {
   expect(isAgentWorktree(tree("/t/x", { branch: "by/live-games" }))).toBe(true);
-  expect(isAgentWorktree(tree("/t/x", { branch: "bycoda/s/fix-1a2b3c4d5e6f" }))).toBe(true);
+  expect(isAgentWorktree(tree("/t/x", { branch: "by/fix-1a2b3c4d" }))).toBe(true);
   expect(isAgentWorktree(tree("/t/wt-1a2b3c4d5e6f", { branch: "feature/y" }))).toBe(true);
   expect(isAgentWorktree(tree("C:/Users/me/.t3/worktrees/p/x", { branch: "feature/y" }))).toBe(
     true,

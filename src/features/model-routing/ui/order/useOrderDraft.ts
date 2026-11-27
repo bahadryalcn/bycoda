@@ -129,9 +129,11 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
     });
   }
   const conflict = saveConflict || (dirty && changedElsewhere && !pending);
-  const unavailable = sameOrderDraft({ ...draft, limits: base.limits }, base)
-    ? undefined
-    : findUnavailableOrderEntry(draft.routing.entries, settings.catalog.data);
+  const unavailable = findUnavailableOrderEntry(
+    draft.routing.entries,
+    settings.catalog.data,
+    baseline.routing.entries,
+  );
   let validation = "";
   try {
     prepareOrderSave(draft);

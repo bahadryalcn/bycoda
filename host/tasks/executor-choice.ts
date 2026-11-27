@@ -66,7 +66,7 @@ export async function chooseExecutor(
   const result = await deps.decisions
     .decide({
       taskType: "generic",
-      // The request is the owner's own text, so only local sources may read it.
+      // The request is the owner's own text: with local-only personal data on, only local sources read it.
       personalData: true,
       state: { request: truncateGraphemes(task.request ?? task.prompt, REQUEST_LIMIT) },
       questions: {

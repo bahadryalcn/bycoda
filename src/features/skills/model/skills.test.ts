@@ -341,7 +341,7 @@ describe("rankSkills", () => {
       expect(rankSkills(rows, "group-")[0]?.invocation).toBe("group-build");
     });
 
-    it("puts the skill prefix first and shows only groups with a matching member", () => {
+    it("puts matching groups before skills and shows only groups with a matching member", () => {
       const skill = {
         ...fileRows("Design guidance")[0]!,
         name: "ui-ux-pro-max",
@@ -356,7 +356,7 @@ describe("rankSkills", () => {
         members: ["frontend-design", "unslop"],
         memberCount: 2,
       };
-      expect(rankSkills([unrelated, related, skill], "ui-u")).toEqual([skill, related]);
+      expect(rankSkills([unrelated, related, skill], "ui-u")).toEqual([related, skill]);
     });
 
     it("keeps groups past the limit after commands for an empty query", () => {

@@ -9,7 +9,7 @@ import { Text } from "../../../../shared/ui/Text";
 import { ModelLabel } from "../../../sessions/public/ModelLabel";
 import { useModelRoutingPreview } from "../../model/useModelRoutingPreview";
 import { useModelSource } from "../../../sessions/public/modelSource";
-import { entryProviderAccount } from "../order/useEntryAccount";
+import { entryAccountName, entryProviderAccount } from "../order/useEntryAccount";
 
 /** Preview only: failure never prevents editing or saving the containing form. */
 export function ModelRoutingResolution({
@@ -72,12 +72,27 @@ export function ResolvedRoutingModel({
   const account = compact ? entryProviderAccount(target, source) : undefined;
   const name = compact ? source.resolve(target.harness, target.model).name : undefined;
   return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      {t("Now uses")}
+    // One line: the arrow, icon and name stay together and a long name truncates.
+    <span className="inline-flex max-w-full min-w-0 items-center gap-1">
+      {compact ? (
+        <>
+          <span className="sr-only">{t("Now uses")}</span>
+          <span aria-hidden>→</span>
+        </>
+      ) : (
+        t("Now uses")
+      )}
       <ModelLabel
         model={target.model}
         harness={target.harness}
-        name={account && name ? t("{p0} · {p1}", { p0: name, p1: account.label }) : name}
+        name={
+          account && name
+            ? t("{p0} · {p1}", {
+                p0: name,
+                p1: entryAccountName(target.harness, account, source),
+              })
+            : name
+        }
       />
     </span>
   );

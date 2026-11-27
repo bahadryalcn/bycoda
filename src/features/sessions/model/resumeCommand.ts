@@ -12,7 +12,7 @@ export const RESUME_COMMAND: BuiltinSkill = {
   name: "resume",
   invocation: "resume",
   get description() {
-    return t("Import and continue a Claude Code or Codex conversation in this project.");
+    return t("Import and continue a conversation from another coding agent in this project.");
   },
   scope: "builtin",
   source: "bycoda",

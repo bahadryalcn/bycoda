@@ -140,13 +140,13 @@ In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Sen
 
 Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
 
-Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. For active time, **Send once** sends the reviewed data and pauses further requests until local midnight. **Send for today** lets active time sync for this account on this computer until local midnight. **Always send** saves **Send every time** and lets future active-time transfers sync automatically. Under **More options**, **Ask later** skips this transfer and waits until midnight. Dismissing the pending notice has the same effect. **Never send** disables active-time sharing until you change the preference in **Settings → Privacy**.
+Open **Details** in the lower-left notice to see the destination. Expand a file to read its full contents. In every category, **Send once** sends only the reviewed data and **Always send** saves **Send every time** for that category. For active time, **Send once** sends the reviewed data and pauses further requests until local midnight. **Send for today** lets active time sync for this account on this computer until local midnight. **Always send** saves **Send every time** and lets future active-time transfers sync automatically. Under **More options**, **Ask later** skips this transfer and waits until midnight. Dismissing the pending notice has the same effect. **Never send** disables active-time sharing until you change the preference in **Settings → Privacy**.
 
 Active time shows at most one successful upload receipt per day. The receipt shows the time sent and lets you inspect the same destination and files. Dismiss the receipt from its notice. **Data sharing receipts** controls the receipts independently of permission.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
 once in first-run setup or in a small non-blocking notice for existing installations.
-Statistics stay off until you opt in. When on, bycoda sends at most once a day a random install id, the
+Statistics stay off until you opt in. Saying yes there saves **Send every time**, so the daily signal is not reviewed again. When on, bycoda sends at most once a day a random install id, the
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
 

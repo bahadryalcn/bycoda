@@ -1114,6 +1114,7 @@ pub fn run() {
             session_import::import_discover,
             session_import::import_read_claude,
             session_import::import_read_codex,
+            session_import::import_read_entries,
             session_import::import_placeholder_dir,
             session_store::session_upsert,
             sync_owner::sync_cycle_begin,
@@ -1247,6 +1248,7 @@ pub fn run() {
             voice_overlay::voice_overlay_nudge,
             voice_overlay::voice_overlay_room,
             voice_overlay::voice_overlay_close,
+            voice_system_speech::voice_system_speech,
             voice_overlay::voice_overlay_show_owner,
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             quick_composer::quick_composer_set_enabled,
@@ -1541,6 +1543,9 @@ pub fn ensure_macos_dev_bundle() {
 #[cfg(any(target_os = "linux", test))]
 #[path = "voice/media_origin.rs"]
 mod voice_media_origin;
+
+#[path = "voice/system_speech.rs"]
+mod voice_system_speech;
 
 #[cfg(test)]
 mod tests {

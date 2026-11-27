@@ -467,6 +467,10 @@ function planPools(
   current: ModelRoutingPool[],
   plan: SetupPlan,
   memberIds: (indexes: number[]) => string[],
+  memberEffort: (
+    indexes: number[],
+    effort: SetupEffort,
+  ) => NonNullable<ModelRoutingPool["memberSettings"]>,
 ) {
   let pools = [...current];
   const byName = (name: string) => {
@@ -477,11 +481,15 @@ function planPools(
   for (const proposal of plan.pools) {
     const entryIds = memberIds(proposal.members);
     if (!proposal.name.trim() || (!entryIds.length && !proposal.includes.length)) continue;
-    const effort = poolEffort(plan, proposal.name);
+    // Each model runs at the effort the group's jobs need, set per model like the editor does.
+    const settings = memberEffort(proposal.members, poolEffort(plan, proposal.name));
+    const memberSettings = Object.keys(settings).length ? { memberSettings: settings } : {};
     const existing = byName(proposal.name);
     if (existing) {
-      const { poolIds: _previous, ...rest } = existing;
-      pools = pools.map((pool) => (pool.id === existing.id ? { ...rest, entryIds, effort } : pool));
+      const { poolIds: _previous, effort: _effort, memberSettings: _settings, ...rest } = existing;
+      pools = pools.map((pool) =>
+        pool.id === existing.id ? { ...rest, entryIds, ...memberSettings } : pool,
+      );
       planned.set(existing.id, proposal.includes);
       continue;
     }
@@ -489,7 +497,7 @@ function planPools(
       id: crypto.randomUUID(),
       name: poolName(proposal.name),
       entryIds,
-      effort,
+      ...memberSettings,
     };
     pools.push(pool);
     planned.set(pool.id, proposal.includes);
@@ -559,11 +567,28 @@ export function applySmartSetup(
     ),
   ];
   const planned = memberIds(plannedOrder(candidates, plan));
-  const updatedPools = draft.routing.pools.map((pool) => ({
-    ...pool,
-    entryIds: pool.entryIds.filter((id) => !removed.has(id)),
-  }));
-  const { pools: proposedPools, byName } = planPools(updatedPools, plan, memberIds);
+  const updatedPools = draft.routing.pools.map((pool) => {
+    const entryIds = pool.entryIds.filter((id) => !removed.has(id));
+    const { memberSettings, ...rest } = pool;
+    const kept = Object.entries(memberSettings ?? {}).filter(([id]) => !removed.has(id));
+    return {
+      ...rest,
+      entryIds,
+      ...(kept.length ? { memberSettings: Object.fromEntries(kept) } : {}),
+    };
+  });
+  const memberEffort = (indexes: number[], effort: SetupEffort) =>
+    Object.fromEntries(
+      indexes
+        .filter((index) => Number.isInteger(index) && index >= 0 && index < candidates.length)
+        .flatMap((index) => {
+          const candidate = candidates[index]!;
+          const id = candidate.effort?.id;
+          const value = id ? settingsAtEffort(candidate, effort)[id] : undefined;
+          return id && value ? [[entryFor(index), { [id]: value }]] : [];
+        }),
+    );
+  const { pools: proposedPools, byName } = planPools(updatedPools, plan, memberIds, memberEffort);
   const pools = pruneEmptyPools(proposedPools);
   if (pools.length > MODEL_ROUTING_MAX_POOLS)
     throw new Error("Not enough room for catalog pools. Remove unused pools and try again.");

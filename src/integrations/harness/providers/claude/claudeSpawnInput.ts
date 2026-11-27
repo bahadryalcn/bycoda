@@ -24,4 +24,6 @@ export type ClaudeSpawnInput = {
   additionalDirs?: readonly string[];
   /** No skill listing and no auto memory: a chat-only delegated child needs neither. */
   leanContext?: boolean;
+  /** Permission rules pre-allowed for a non-interactive session, e.g. `WebFetch(domain:example.com)`. */
+  allowedTools?: readonly string[];
 } & ClaudeNativeLimits;

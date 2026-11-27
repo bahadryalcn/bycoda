@@ -14,7 +14,7 @@ const pty = vi.hoisted(() => ({
   getPtyStatus: vi.fn(async () => ({ foreground: null })),
   setPtyVisible: vi.fn(async () => {}),
 }));
-const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}) }));
+const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}), isTauri: () => false }));
 const assistance = vi.hoisted(() => ({
   state: undefined as import("../model/sshShellIntegration").SshShellState | undefined,
   waiting: false,

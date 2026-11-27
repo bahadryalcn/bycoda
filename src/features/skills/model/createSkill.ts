@@ -18,7 +18,7 @@ Write a portable Agent Skill so every harness (Claude, Cursor, Codex, Grok Build
 | Scope | Path |
 |-------|------|
 | This project | \`.agents/skills/<name>/SKILL.md\` |
-| Personal (all projects) | \`~/.agents/skills/<name>/SKILL.md\` |
+| All projects | \`~/.agents/skills/<name>/SKILL.md\` |
 
 Never write skills to \`.claude/skills\`, \`.cursor/skills\`, \`~/.cursor/skills-cursor\`, \`.fx/skills\`, \`~/.hermes/skills\`, or any other harness-only folder. One copy under \`.agents/skills\` is enough.
 

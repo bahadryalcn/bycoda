@@ -3,8 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   additionalDirCandidates,
   additionalDirsForSession,
+  addProjectFolder,
+  loadProjectRepositoryChoice,
+  saveProjectRepositoryChoice,
+  MAX_PROJECT_REPOSITORIES,
   loadSessionAdditionalDirs,
+  providerAdditionalDirsForSession,
   removeSessionAdditionalDirs,
+  saveSessionExtraWorktrees,
+  loadProjectBaseRemote,
+  saveProjectBaseRemote,
   saveSessionAdditionalDirs,
   loadAdditionalDirs,
   rebaseAdditionalDirs,
@@ -198,5 +206,62 @@ describe("unreadable stored folders", () => {
     expect(loadSessionAdditionalDirs("s1")).toEqual(["/work/ui"]);
     expect(saveSessionAdditionalDirs("s1", "/work/web", null)).toBe(false);
     expect(localStorage.getItem(SESSIONS_KEY)).toBe("not json");
+  });
+});
+
+describe("session extra worktrees", () => {
+  it("swaps in worktrees for the provider only and keeps the chosen folders", () => {
+    saveSessionAdditionalDirs("s1", "/work/web", ["/work/api", "/work/notes"]);
+    saveSessionExtraWorktrees("s1", { "/work/api": "/wt/api" });
+
+    expect(providerAdditionalDirsForSession("s1", "/work/web")).toEqual(["/wt/api", "/work/notes"]);
+    expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/work/api", "/work/notes"]);
+    expect(providerAdditionalDirsForSession("s2", "/work/web")).toEqual([]);
+
+    removeSessionAdditionalDirs("s1");
+    expect(providerAdditionalDirsForSession("s1", "/work/web")).toEqual([]);
+    expect(localStorage.getItem("bycoda.sessionExtraWorktrees")).toBeNull();
+  });
+});
+
+describe("project repository choice", () => {
+  it("defaults to all project folders, up to the cap", () => {
+    const many = Array.from({ length: MAX_PROJECT_REPOSITORIES + 2 }, (_, i) => `/work/r${i}`);
+    saveAdditionalDirs("/work/web", many);
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual(
+      many.slice(0, MAX_PROJECT_REPOSITORIES),
+    );
+  });
+
+  it("remembers a choice, including none, and drops folders no longer in the project", () => {
+    saveAdditionalDirs("/work/web", ["/work/api", "/work/ui"]);
+    expect(saveProjectRepositoryChoice("/work/web", ["/work/ui"])).toBe(true);
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual(["/work/ui"]);
+    saveProjectRepositoryChoice("/work/web", []);
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual([]);
+    saveProjectRepositoryChoice("/work/web", ["/work/api", "/work/ui"]);
+    saveAdditionalDirs("/work/web", ["/work/api"]);
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual(["/work/api"]);
+  });
+
+  it("adds a folder to the project list and the remembered choice", () => {
+    saveAdditionalDirs("/work/web", ["/work/api"]);
+    saveProjectRepositoryChoice("/work/web", []);
+    expect(addProjectFolder("/work/web", "/work/ui")).toBe(true);
+    expect(loadAdditionalDirs("/work/web")).toEqual(["/work/api", "/work/ui"]);
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual(["/work/ui"]);
+    expect(addProjectFolder("/work/web", "/work/ui")).toBe(false);
+  });
+});
+
+describe("remembered Start from remote", () => {
+  it("is kept per project and cleared when switched off", () => {
+    expect(loadProjectBaseRemote("/work/app")).toBe(false);
+    expect(saveProjectBaseRemote("/work/app", true)).toBe(true);
+    expect(loadProjectBaseRemote("/work/app")).toBe(true);
+    expect(loadProjectBaseRemote("/work/other")).toBe(false);
+    saveProjectBaseRemote("/work/app", false);
+    expect(loadProjectBaseRemote("/work/app")).toBe(false);
+    expect(localStorage.getItem("bycoda.projectBaseRemote")).toBeNull();
   });
 });

@@ -116,9 +116,7 @@ export function ModelPanel({
   }, [editingSubagents]);
   const shownAccounts = usePanelAccounts(accountHarness, accountUsage);
   const accountControl = accountSwitcherKind(shownAccounts.length);
-  const inlineAccounts =
-    accountControl === "switch" ||
-    (accountControl === "label" && shownAccounts[0].id !== accountId);
+  const inlineAccounts = accountControl === "label" && shownAccounts[0].id !== accountId;
   const showAccountMenu = accountControl === "menu" || accountControl === "search";
   const listOpen = accountListOpen && showAccountMenu;
   const defaultMark = useDefaultMark(

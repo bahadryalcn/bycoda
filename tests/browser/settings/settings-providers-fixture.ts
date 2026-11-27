@@ -140,18 +140,19 @@ export function seedProvidersFixture() {
   }));
 }
 
+const researchProfile = (args: Record<string, unknown>) => ({
+  id: "terminal-research",
+  provider: String(args.provider),
+  label: "International research and development workspace 🧑🏽‍💻",
+  path: "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+});
+
 /** Unknown commands still fail closed in the parent fixture. */
 export function providersFixtureCommand(command: string, args: Record<string, unknown>): unknown {
   if (!enabled) return undefined;
-  if (worstIdentities && command === "provider_terminal_profiles")
-    return [
-      {
-        id: "terminal-research",
-        provider: String(args.provider),
-        label: "International research and development workspace 🧑🏽‍💻",
-        path: "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
-      },
-    ];
+  if (worstIdentities && command === "provider_terminal_profiles") return [researchProfile(args)];
+  if (worstIdentities && command === "provider_terminal_profile_connect")
+    return researchProfile(args);
   if (command === "provider_account_list" || command === "provider_accounts")
     return Object.values(accounts).flat();
   if (command === "provider_account_identity")

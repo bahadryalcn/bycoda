@@ -184,6 +184,8 @@ export function ProviderStatusGroup({
             : check?.status === "current"
               ? Check
               : CircleHelp;
+  // The Update button already says an update is waiting, so the mark would say it twice.
+  const updateOffered = !notFound && check?.status === "behind";
   const hint =
     !canCheck && !notFound
       ? t("This CLI has no release feed. Update checks are not available.")
@@ -199,7 +201,7 @@ export function ProviderStatusGroup({
           </Code>
         ) : null}
         {/* While work runs, its own control shows the progress; the mark would say it twice. */}
-        {run.status === "updating" || busy ? null : (
+        {run.status === "updating" || busy || updateOffered ? null : (
           <Tooltip label={hint ?? status}>
             {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
             <span tabIndex={0} role="img" aria-label={status}>
@@ -222,7 +224,7 @@ export function ProviderStatusGroup({
           </Tooltip>
         )}
         <div className="provider-inventory-actions">
-          {!notFound && check?.status === "behind" ? (
+          {updateOffered && check ? (
             <Button
               size="sm"
               variant="primary"

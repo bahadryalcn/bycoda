@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import {
   AnonymousUsageSetting,
   getStatisticsMode,
@@ -20,7 +19,12 @@ import {
   PrivacyStorageError,
 } from "../../group-lock/public/privacySettings";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
-import { saveMaskEmails, useMaskEmails, useMaskEmailsSaved } from "../model/displayPrefs";
+import {
+  MASK_EMAILS_DEFAULT,
+  saveMaskEmails,
+  useMaskEmails,
+  useMaskEmailsSaved,
+} from "../model/displayPrefs";
 import { FileAccessSettings } from "./FileAccessSettings";
 import "../../group-lock/ui/GroupPrivacy.css";
 
@@ -73,6 +77,8 @@ export function PrivacyStartupSettings() {
           description={t(
             "Blur account emails in Settings and the usage popover until you click one, so they stay out of screenshots.",
           )}
+          modified={maskEmails !== MASK_EMAILS_DEFAULT}
+          onReset={() => saveMaskEmails(MASK_EMAILS_DEFAULT)}
           feedback={
             maskSaved ? undefined : (
               <SettingsFeedback
@@ -102,15 +108,7 @@ export function PrivacyStartupSettings() {
         <AnonymousUsageSetting />
         <ActivitySharingSetting />
         <SharingNoticeSetting />
-        <Row
-          label={t("Share diagnostic logs")}
-          description={t(
-            "Diagnostic logs are the app and Host logs, with secrets, e-mail addresses and your user name removed on this computer. They never include your conversations, prompts or code. They are kept {p0} days.",
-            { p0: DIAGNOSTIC_RETENTION_DAYS },
-          )}
-        >
-          <DiagnosticsSharingSetting />
-        </Row>
+        <DiagnosticsSharingSetting />
       </Group>
       <FileAccessSettings />
     </>

@@ -8,10 +8,10 @@ import {
   hostGitRepositoryKey,
   isBranchDeliveryCommand,
   isHostGitMutation,
-  isManagedWorkspaceBranch,
   MANAGED_DELIVERY_REVIEW_REQUIRED,
   withHostGitMutation,
 } from "../git/git-mutations";
+import { isManagedWorkspaceBranch } from "../managed/workspace-branch-naming";
 import type { WorkspaceRpcRequest } from "./workspace-rpc-contracts";
 import type {
   BranchDeliveryService,
@@ -381,8 +381,29 @@ export class WorkspaceCommands {
     return await this.runCommand(command as WorkspaceCommand, input, owner, authorized);
   }
 
+  /**
+   * Managed by marker or by registry: the store's workspace records are the fail-safe when the
+   * Git marker is missing, and an unreadable marker counts as managed.
+   */
+  private async isManagedSource(root: string, reference: string): Promise<boolean> {
+    try {
+      if (await isManagedWorkspaceBranch(root, reference)) return true;
+      const branchRef = reference.startsWith("refs/heads/") ? reference : `refs/heads/${reference}`;
+      const repositoryId = await hostGitRepositoryKey(root);
+      return (await this.store.managedWorkspaces({ repositoryId })).some(
+        (workspace) => workspace.branchRef === branchRef,
+      );
+    } catch {
+      return true;
+    }
+  }
+
   private async assertLegacyDeliveryAllowed(command: string, input: Record<string, unknown>) {
-    if (command === "git_merge" && isManagedWorkspaceBranch(input.reference))
+    if (
+      command === "git_merge" &&
+      typeof input.reference === "string" &&
+      (await this.isManagedSource(await this.gitRoot(input.cwd), input.reference))
+    )
       throw new Error(MANAGED_DELIVERY_REVIEW_REQUIRED);
     if (!this.delivery) return; // Existing unregistered sessions keep legacy source control.
     const cwd = await this.gitRoot(input.cwd);
@@ -634,7 +655,7 @@ export class WorkspaceCommands {
       case "git_create_branch":
         return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
-        return await this.gitWorktrees(input.cwd, input.background === true);
+        return await this.gitWorktrees(input.cwd, input.background === true, input.light === true);
       case "git_submodules": {
         const found = await sharedHostGitSubmodules(
           await this.gitRoot(input.cwd),
@@ -1839,9 +1860,9 @@ export class WorkspaceCommands {
       : await run();
   }
 
-  private async gitWorktrees(cwd: unknown, background: boolean) {
+  private async gitWorktrees(cwd: unknown, background: boolean, light: boolean) {
     // Probed state stays unknown (`null`) when Git could not say; clients never read it as clean.
-    const listed = await hostWorktreesWithState(await this.gitRoot(cwd), background);
+    const listed = await hostWorktreesWithState(await this.gitRoot(cwd), background, light);
     return {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({

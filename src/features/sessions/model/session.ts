@@ -655,8 +655,19 @@ export type Session = {
   workspaceMode?: WorkspaceMode;
   /** Base ref for a worktree that will be created on first send. */
   worktreeBase?: string;
+  /** Start the new worktree from the base's fetched upstream (`workspaces.creation.v2`). */
+  worktreeBaseRemote?: boolean;
+  /**
+   * Repositories and branch slug frozen at the first send's prepare, so a retry after a timeout
+   * repeats the same Host request (its idempotency signature) even if the project's choice or
+   * the title changed meanwhile. Cleared once the workspace exists.
+   */
+  worktreeRepositories?: string[];
+  worktreeSlug?: string;
   /** Internal guard while the first turn creates its selected worktree. */
   worktreePreparing?: boolean;
+  /** Client-chosen id of the running `workspaces.prepare`; the progress card polls it. In-memory only. */
+  worktreeProgressId?: string;
   /** Select a working copy before continuing after the previous one was deleted. */
   worktreeRemoved?: boolean;
   /** One-shot composer text when opening a session from Inbox. */

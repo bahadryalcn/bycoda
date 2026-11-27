@@ -44,7 +44,7 @@ export interface LineChartSeries {
   /** Stroke pattern, so series differ by more than color. Overrides `dashed`. When omitted, a chart with several series
    *  and no explicit `dashed` assigns solid, dashed, then dotted in series order. */
   pattern?: "solid" | "dash" | "dot";
-  /** Fills the area under the line with a faint tint of its color. Defaults to true for the first series. */
+  /** Fills the area under the line. Defaults to a neutral fill for the first series only; `true` tints the fill with this series' own color (translucent, so overlapping series stay readable), `false` draws none. */
   area?: boolean;
 }
 
@@ -764,6 +764,7 @@ export function LineChart({
                         else areas.current.delete(line.key);
                       }}
                       className={styles.area}
+                      data-tint={line.area === true || undefined}
                     />
                   )}
                   <path

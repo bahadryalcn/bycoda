@@ -36,6 +36,17 @@ it("never requests microphone access when opening settings", async () => {
   expect(container.textContent).not.toContain("Not checked");
   expect(container.textContent).not.toContain("Check microphone access");
 });
+it("keeps the Delete recording action in place but inert until something is recorded", async () => {
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { enumerateDevices: vi.fn(async () => []) },
+  });
+  await render();
+  const remove = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Delete recording"]',
+  )!;
+  expect(remove.disabled).toBe(true);
+});
 it("survives a browser without device enumeration", async () => {
   Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: {} });
   await render();

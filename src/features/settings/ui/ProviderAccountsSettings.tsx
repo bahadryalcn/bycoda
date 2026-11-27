@@ -20,6 +20,7 @@ import {
   PROVIDER_ACCOUNT_PROVIDERS,
   removeProviderAccount,
   editProviderAccount,
+  saveTerminalProviderAccount,
   setDefaultProviderAccount,
   DEFAULT_PROVIDER_ACCOUNT_ID,
   isTerminalProviderAccount,
@@ -67,7 +68,7 @@ import { AccountStatusLabel, AccountUsageRefresh } from "../../providers/ui/Prov
 
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { AccountKindTag, SharedCliAccountCard } from "./SharedCliAccountCard";
-import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
+import { TerminalProfileDiscovery, type TerminalProfile } from "./TerminalProfileDiscovery";
 import { ProviderAccountDialog, type AccountEditor } from "../../providers/public/accountIdentity";
 import { Button } from "../../../shared/ui/Button";
 import {
@@ -186,6 +187,23 @@ export function ProviderAccountsSettings({
     });
   };
 
+  // Folders named by a generated id or the generic default title make poor account names.
+  const startAddExisting = (profile: TerminalProfile, trigger: HTMLButtonElement | null) => {
+    if (busy.current) return;
+    addTrigger.current = trigger;
+    setError(null);
+    const generic =
+      profile.label === "Terminal account" || /^account-[0-9a-f-]{36}$/i.test(profile.label);
+    setEditor({
+      provider: profile.provider,
+      accountId: profile.id,
+      label: generic ? "" : profile.label,
+      kind: "personal",
+      adding: true,
+      existing: { identity: profile.identity ?? null },
+    });
+  };
+
   const startRename = (account: ProviderAccount) => {
     if (busy.current) return;
     setError(null);
@@ -206,7 +224,15 @@ export function ProviderAccountsSettings({
     const key = editor.adding ? `add:${provider}` : `rename:${provider}:${editor.accountId}`;
     if (!begin(key)) return;
     try {
-      if (!editor.adding) {
+      if (editor.existing) {
+        saveTerminalProviderAccount({
+          id: editor.accountId,
+          provider,
+          label: editor.label.trim(),
+          kind: editor.kind,
+          color: editor.color,
+        });
+      } else if (!editor.adding) {
         if (!editProviderAccount(provider, editor.accountId, editor))
           throw new ProviderAccountError("accountMissing", "Account no longer exists");
       } else {
@@ -383,6 +409,12 @@ export function ProviderAccountsSettings({
                   <Plus className="icon-sm" strokeWidth={1.75} aria-hidden />
                   {t("Add account")}
                 </Button>
+                <TerminalProfileDiscovery
+                  key={accountProvider}
+                  provider={accountProvider}
+                  disabled={Boolean(working)}
+                  onAdd={startAddExisting}
+                />
                 <AccountUsageRefresh
                   usage={{
                     ...usage,
@@ -392,11 +424,6 @@ export function ProviderAccountsSettings({
                       usage.refresh();
                     },
                   }}
-                />
-                <TerminalProfileDiscovery
-                  key={accountProvider}
-                  provider={accountProvider}
-                  disabled={Boolean(working)}
                 />
               </div>
             ) : undefined
@@ -616,15 +643,17 @@ export function ProviderAccountsSettings({
         <ProviderAccountDialog
           editor={editor}
           identity={
-            editor.adding
-              ? null
-              : identities[
-                  identityKey({
-                    provider: editor.provider,
-                    id: editor.accountId,
-                    label: editor.label,
-                  })
-                ]
+            editor.existing
+              ? editor.existing.identity
+              : editor.adding
+                ? null
+                : identities[
+                    identityKey({
+                      provider: editor.provider,
+                      id: editor.accountId,
+                      label: editor.label,
+                    })
+                  ]
           }
           existingLabels={providerAccounts(editor.provider)
             .filter((account) => account.id !== editor.accountId)

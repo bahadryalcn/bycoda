@@ -29,6 +29,15 @@ vi.mock("../../group-lock/hooks/useGroupLock", () => ({
 }));
 vi.mock("../../group-lock/model/lockState", () => ({ isProjectLockedIn: () => false }));
 vi.mock("../model/railGroups", () => ({ railGroupLookup: () => () => null }));
+const noMachineUsage = {
+  machines: [],
+  usage: [],
+  unavailable: [],
+  coveredSince: null,
+  truncated: false,
+  loading: false,
+};
+vi.mock("../hooks/useMachineUsage", () => ({ useMachineUsage: () => noMachineUsage }));
 vi.mock("./UsageVisualizations", () => ({
   UsageTrend: (props: unknown) => {
     chart(props);
@@ -251,7 +260,9 @@ it("advances workspace refresh across a bucket and midnight, keeping charts and 
   await act(async () =>
     [...host.querySelectorAll("button")].find((b) => b.textContent === "Projects")!.click(),
   );
-  const exportButton = host.querySelector<HTMLButtonElement>('button[aria-label="Export CSV"]')!;
+  const exportButton = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === "Export CSV",
+  )!;
   expect(exportButton).toBeTruthy();
   expect(exportButton.textContent).toContain("Export CSV");
   const tableDetails = [...host.querySelectorAll("details")].find((el) =>
@@ -288,7 +299,7 @@ it("keeps one date owner and chart options outside the Filters popover", async (
   vi.setSystemTime(new Date(2026, 9, 19, 10, 20));
   await render(0);
   // The metric tiles choose the metric on Overview, so there is no second chooser.
-  expect(host.querySelector('[aria-label="Chart metric"]')).toBeNull();
+  expect(host.querySelector('button[aria-label="Chart metric"]')).toBeNull();
   expect(host.querySelector('[aria-label="Group by"]')).toBeTruthy();
   expect(host.querySelector('[aria-label="Resolution"]')).toBeTruthy();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
@@ -364,7 +375,7 @@ it("marks missing session data as partial without suppressing readable provider 
   chart.mockClear();
   await act(async () =>
     [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Agent time")!
+      .find((button) => button.textContent?.startsWith("Agent time"))!
       .click(),
   );
   expect(chart).not.toHaveBeenCalled();
@@ -405,9 +416,9 @@ it("preserves independent Grok provider and account filters for limits", async (
       expect(button).toBeTruthy();
       button!.click();
     });
-  await choose("Select Provider Grok");
+  await choose("Select Provider Grok Build");
   expect(limits.mock.lastCall?.[0]).toMatchObject({ provider: ["grok"], account: [] });
-  await choose("Select Account Grok");
+  await choose("Select Account Grok Build");
   expect(limits.mock.lastCall?.[0]).toMatchObject({
     provider: ["grok"],
     account: ["grok:default"],

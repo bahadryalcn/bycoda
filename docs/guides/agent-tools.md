@@ -192,9 +192,17 @@ and the default viewport. A preview can
 request its own visibility, and a recording can request its own supported frame
 rate.
 
-Use **Import browser profile** to import a Playwright storage-state JSON file up to
-256 KB. The filename becomes the profile name. Bycoda stores the imported cookies
-and local storage on the computer and opens a fresh isolated context from that
+Use **Import browser profile** to choose an installed browser profile (Chrome, Edge,
+Brave, Vivaldi, Opera, Chromium or Firefox on Windows). The row shows your default
+browser, and its profile is preselected. Bycoda copies the profile's cookie files to a
+temporary folder, lets the browser itself decrypt them in a hidden run, and stores
+the cookies on the computer; the temporary copy is deleted. Close the source browser
+first, because an open browser locks its cookie file. Chrome 127+ and Edge protect
+cookies with app-bound encryption that a copy cannot decrypt; Bycoda reports this
+instead of importing nothing. Firefox cookies import directly. **From file…** in the
+same dialog imports a Playwright storage-state JSON file up to 256 KB, named after
+the file. Imports keep at most 500 unexpired cookies, signed-in (secure or HTTP-only)
+cookies first. Bycoda opens a fresh isolated context from that
 snapshot when a conversation starts using the profile. New website sign-ins and
 other changes stay in that active context. Turning off a profile grant blocks
 subsequent agent reads and input for that profile.
@@ -380,8 +388,9 @@ configured). Timeout defaults to 60 seconds and can be set up to 300 seconds.
 
 Any conversation, task worker or crew member can create image assets. Choose which
 image models a conversation may use in the model picker under **Agents and images**
-→ **Image models**. With nothing picked the row reads **Automatic** and every
-available model may be used; picking models restricts the conversation to them.
+→ **Image models**: **Automatic** lets every available model be used, **Custom**
+shows a checklist that restricts the conversation to the checked models, and **Off**
+offers no image model and refuses generation.
 Codex ImageGen appears when Codex is connected and Nano Banana when Antigravity is
 connected. The choice is saved with the conversation's model settings, carries into
 tasks created from it, can be set as a provider default in Settings, and is never
@@ -410,11 +419,16 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 
 When Work concurrency is one, an active Work turn cannot start a delegated child while it holds the only slot. The child returns a failed result immediately; the caller can do the work itself or the owner can increase Work concurrency. An advisor requested after the parent turn has retired can still run.
 
-**Settings > Models > Subagents** sets advisor and subagent defaults for new
-conversations. **Chats** holds provider, model, effort, permissions and
-Fast / Service Tier choices. Codex shows Ultrafast when the provider catalog offers it for the model.
-Main-model effort uses a stepped scale; Subagent max
-effort uses a select.
+**Settings > Accounts and defaults > Defaults** holds provider, model, effort,
+permissions, auto-compact and Fast or Service tier choices for new conversations. Service
+tier lists every tier any of the provider's models offers, such as Codex Standard, Fast
+and Ultrafast. Claude auto-compact is **Automatic**, **On** or **Off**, with its window
+beside it while it is not off. **Helpers and delegation** on the same page sets the
+advisor, image models, subagents and subagent max effort, in that order. Effort and
+Subagent max effort use the same stepped scale with an **Automatic** switch; choosing a
+level turns Automatic off. The advisor is a switch with its model beside it while it is
+on; a project follows the level above until it saves its own value, and the row's reset
+returns it.
 The apply bar separates provider scope from save destinations. **Apply to** chooses
 the current provider or **All providers**. All providers copies only supported,
 portable changes; model and account choices are never copied between providers.
@@ -444,8 +458,10 @@ When no choice has been saved, every account starts with product defaults:
 
 Automatic resolves enabled models from connected providers at use time, up to 24
 references, ranked as Best, Strong, Medium, Light and Unranked for the agent; the
-settings use an Automatic / Custom / Off segmented control. Custom opens the
-model list picker; unset defaults follow inherited choices, then Automatic.
+settings use an Automatic / Custom / Off segmented control. Custom lists every chosen
+model with its provider icon, name, account and a remove button, and **Add model** opens
+a searchable picker grouped by provider. Removing the last model turns subagents Off.
+Unset defaults follow inherited choices, then Automatic.
 Subagent max effort sets a
 separate ceiling without changing the main effort. Unknown families remain available. Claude Fable/Mythos, Opus, Sonnet and Haiku are
 ordered in those four tiers. Other known families use the shared family anchors;

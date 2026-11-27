@@ -61,7 +61,6 @@ import { SessionFolderGroup } from "./SessionFolderSettings";
 import { NewProjectFolderGroup } from "./NewProjectFolderSettings";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import { PoliciesSettings } from "./PoliciesSettings";
 import { NotificationAlerts } from "./NotificationsSettings";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
@@ -79,6 +78,7 @@ import { ProvidersSection } from "./ProvidersSection";
 import { ProviderDecisionModels } from "./ProviderDecisionModels";
 import { ArchivePage } from "./ArchiveSettings";
 import { ToolSettingsPage } from "./ToolSettings";
+import { SHOW_EXCLUDED_FILES_DEFAULT } from "../model/appearance";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -164,12 +164,15 @@ export function SettingsView({
   const panelId = useId();
   const categoryRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   const panelRef = useRef<HTMLDivElement>(null);
-  const categoryGroups = settingsSectionsByGroup(section);
+  const categoryGroups = settingsSectionsByGroup();
   const categories = categoryGroups.flatMap((group) => group.sections);
   const [horizontalNavigation, setHorizontalNavigation] = useState(false);
   const navigationRef = useRef<HTMLDivElement>(null);
   // A reveal belongs to the section it targets; it is dropped when another section opens.
-  const [reveal, setReveal] = useState<{ id: string | null; section: SettingsSectionId }>({
+  const [reveal, setReveal] = useState<{
+    id: string | null;
+    section: SettingsSectionId;
+  }>({
     id: anchor,
     section,
   });
@@ -570,6 +573,12 @@ export function SettingsView({
                               <Row
                                 id="show-excluded-files"
                                 label={t("Show excluded files")}
+                                modified={
+                                  appearance.showExcludedFiles !== SHOW_EXCLUDED_FILES_DEFAULT
+                                }
+                                onReset={() =>
+                                  appearance.onShowExcludedFiles(SHOW_EXCLUDED_FILES_DEFAULT)
+                                }
                                 feedback={
                                   <AppearanceSaveFeedback settingIds={["show-excluded-files"]} />
                                 }
@@ -650,28 +659,16 @@ export function SettingsView({
                         {section === "account" ? <AccountScreen /> : null}
                         {section === "secrets" ? <SecretsSettings /> : null}
                         {section === "archive" ? (
-                          <>
-                            <Row id="import-history" label={null}>
-                              <Button
-                                variant="ghost"
-                                onClick={() =>
-                                  window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))
-                                }
-                              >
-                                {t("Import history")}
-                              </Button>
-                            </Row>
-                            <ArchivePage
-                              cwd={cwd}
-                              sessions={sessions}
-                              sessionsStatus={sessionsStatus}
-                              onOpenSession={onOpenSession}
-                              onArchiveSession={onArchiveSession}
-                              onDeleteSession={onDeleteSession}
-                              onRestoreProject={onRestoreProject}
-                              onDeleteProject={onDeleteProject}
-                            />
-                          </>
+                          <ArchivePage
+                            cwd={cwd}
+                            sessions={sessions}
+                            sessionsStatus={sessionsStatus}
+                            onOpenSession={onOpenSession}
+                            onArchiveSession={onArchiveSession}
+                            onDeleteSession={onDeleteSession}
+                            onRestoreProject={onRestoreProject}
+                            onDeleteProject={onDeleteProject}
+                          />
                         ) : null}
                       </div>
                     </ScrollArea>

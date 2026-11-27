@@ -35,6 +35,7 @@ import { SetLockPasswordDialog } from "./SetLockPasswordDialog";
 import { HiddenGroupsSettings } from "./HiddenGroupsSettings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import { PrivacyStorageError } from "./PrivacyStorageError";
+import { GROUP_LOCK_SETTINGS_DEFAULT } from "../model/lockSettings";
 
 /** The Settings building blocks, passed in so this page matches the others. */
 export type GroupLockControls = {
@@ -58,6 +59,9 @@ export type GroupLockControls = {
     descriptionVisible?: boolean;
     /** Local save result shown with the row. */
     feedback?: ReactNode;
+    /** Shows the Restore default action while the value differs from its default. */
+    modified?: boolean;
+    onReset?: () => void;
     children?: ReactNode;
   }) => ReactNode;
   Toggle: (props: {
@@ -72,6 +76,8 @@ export type GroupLockControls = {
     options: { value: string; label: string }[];
     onChange: (value: string) => void;
     disabled?: boolean;
+    /** The row title names the choice, so the select keeps its label for assistive tech only. */
+    hideLabel?: boolean;
   }) => ReactNode;
 };
 
@@ -215,6 +221,11 @@ export function GroupLockSettings({
             p0: PRODUCT_IDENTITY.displayName,
           })}
           feedback={unsavedNote("relock")}
+          // Resets here only ever restore the stricter default; idle locking has none to offer.
+          modified={lock.settings.relockOnLaunch !== GROUP_LOCK_SETTINGS_DEFAULT.relockOnLaunch}
+          onReset={() =>
+            commit("relock", () => setRelockOnLaunch(GROUP_LOCK_SETTINGS_DEFAULT.relockOnLaunch))
+          }
         >
           <Toggle
             label={t("Lock on startup")}
@@ -231,6 +242,7 @@ export function GroupLockSettings({
         >
           <Select
             label={t("Auto-lock after inactivity")}
+            hideLabel
             value={String(lock.settings.autoLockMinutes)}
             disabled={Boolean(pendingWrites.idle)}
             options={AUTO_LOCK_MINUTES.map((minutes) => ({
@@ -247,6 +259,10 @@ export function GroupLockSettings({
           id="group-unlock-together"
           description={t("One password entry opens all locked groups.")}
           feedback={unsavedNote("together")}
+          modified={lock.settings.unlockAll !== GROUP_LOCK_SETTINGS_DEFAULT.unlockAll}
+          onReset={() =>
+            commit("together", () => setUnlockAll(GROUP_LOCK_SETTINGS_DEFAULT.unlockAll))
+          }
         >
           <Toggle
             label={t("Unlock groups together")}
@@ -262,23 +278,27 @@ export function GroupLockSettings({
         title={t("Group protection")}
         description={t("Choose which groups require your password.")}
         action={
-          <Button
-            className="shrink-0"
-            disabled={!hasLockable}
-            disabledReason={t("Protect or hide a group first to use Lock all groups.")}
-            loading={Boolean(pendingWrites["lock-all"])}
-            loadingLabel={t("Updating…")}
-            startIcon={<Lock className="icon-sm" />}
-            tooltip={hasLockable ? t("Also hides groups that are temporarily visible.") : undefined}
-            onClick={() =>
-              commit("lock-all", async () => {
-                await lockAllGroups();
-                return true;
-              })
-            }
-          >
-            {t("Lock all groups")}
-          </Button>
+          lock.groups.length === 0 ? undefined : (
+            <Button
+              className="shrink-0"
+              disabled={!hasLockable}
+              disabledReason={t("Protect or hide a group first to use Lock all groups.")}
+              loading={Boolean(pendingWrites["lock-all"])}
+              loadingLabel={t("Updating…")}
+              startIcon={<Lock className="icon-sm" />}
+              tooltip={
+                hasLockable ? t("Also hides groups that are temporarily visible.") : undefined
+              }
+              onClick={() =>
+                commit("lock-all", async () => {
+                  await lockAllGroups();
+                  return true;
+                })
+              }
+            >
+              {t("Lock all groups")}
+            </Button>
+          )
         }
       >
         {unsaved["lock-all"] ? (

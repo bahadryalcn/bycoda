@@ -9,7 +9,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Heading } from "../../../shared/ui/Heading";
 import { Popover } from "../../../shared/ui/Popover";
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../shared/ui/SkeletonList";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Switch } from "../../../shared/ui/Switch";
 import {
@@ -211,11 +211,7 @@ export function OnboardingAgents({
       <div className="onboarding-scroll">
         {checking && listed.length === 0 ? (
           // The skeleton and the single live line below are the only scanning indicators.
-          <div className="onboarding-agent-skeleton" aria-hidden="true">
-            {[0, 1, 2].map((row) => (
-              <Skeleton key={row} aria-hidden className="h-9 w-full" />
-            ))}
-          </div>
+          <SkeletonList rows={3} framed leading="icon" trailing="badge" seed={2} />
         ) : null}
         {probed && listed.length === 0 ? (
           <div className="onboarding-provider-empty">

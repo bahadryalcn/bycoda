@@ -12,8 +12,10 @@ export type ProviderAuthTone = "ready" | "low" | "exhausted" | "signedOut" | "ch
 
 export type ProviderAuthState = {
   tone: ProviderAuthTone;
-  /** Short word for a badge or list line: Signed in, Running low, Exhausted, Signed out. */
+  /** Short word for a badge or list line: Signed in, 15% left, Exhausted, Signed out. */
   label: string;
+  /** A low account at or below the critical headroom: red instead of yellow. */
+  critical?: boolean;
 };
 
 /** Only an authenticated billing result proves Grok sign-in; transport failures do not. */
@@ -60,7 +62,8 @@ export function providerAuthState(
   if (providerAccountSignedOut(limits)) return { tone: "signedOut", label: t("Signed out") };
   const status = accountStatus(limits, now);
   if (status.tone === "exhausted") return { tone: "exhausted", label: t("Exhausted") };
-  if (status.tone === "low") return { tone: "low", label: t("Running low") };
+  if (status.tone === "low")
+    return { tone: "low", label: status.detail ?? t("Running low"), critical: status.critical };
   if (status.tone === "ready") return { tone: "ready", label: t("Signed in") };
   return null;
 }

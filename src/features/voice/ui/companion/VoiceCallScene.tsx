@@ -34,7 +34,8 @@ export function VoiceCallScene({
   const motion = useAudioFeedbackMotionEnabled();
   const reduced = usePrefersReducedMotion();
   const windowVisible = useMotionWindowVisible();
-  const active = state !== "off" && state !== "muted" && state !== "error";
+  // The idle, not-yet-connected scene keeps a slow drift so the panel never looks frozen.
+  const active = state !== "muted" && state !== "error";
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- paints the call canvas and suspends its frame loop while out of view
   useEffect(() => {

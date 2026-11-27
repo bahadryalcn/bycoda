@@ -5,7 +5,6 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { useShowRemainingUsage } from "../../features/settings/model/displayPrefs";
 import {
   clampUsedPercent,
-  formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
   rateLimitWindowTooltipWith,
@@ -59,7 +58,7 @@ export function UsageWindowStat({ window, now }: { window: RateLimitWindow; now:
             tone="secondary"
             className="@max-[320px]/usage:hidden"
           >
-            {formatResetDuration(window.resetsAt - now)}
+            {format.formatResetDuration(window.resetsAt - now)}
           </Text>
         ) : null}
       </span>

@@ -57,7 +57,7 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&data=worst&surface=settings`,
       );
       await expect(
-        page.getByRole("switch", { name: "Enable dictation", exact: true }),
+        page.getByRole("switch", { name: "Dictation", exact: true }),
       ).toBeChecked();
       // One More options holds every rare choice; no nested dictionary or cleanup disclosure.
       await page.getByRole("button", { name: "More options", exact: true }).click();
@@ -84,12 +84,12 @@ for (const theme of ["light", "dark"]) {
         animations: "disabled",
       });
       await page.getByRole("radio", { name: "Empty", exact: true }).click();
-      await expect(page.getByText("No saved terms", { exact: true })).toBeVisible();
+      await expect(page.getByText("No terms yet.", { exact: true })).toBeVisible();
       await page.getByRole("radio", { name: "One", exact: true }).click();
       await expect(page.getByText("Jo", { exact: true })).toBeVisible();
       expect(await page.getByRole("button", { name: /^Edit / }).count()).toBe(1);
       await expect(
-        page.getByRole("switch", { name: "Clean up dictated text", exact: true }),
+        page.getByRole("switch", { name: "Clean up text with Codex", exact: true }),
       ).toBeChecked();
       expect(errors).toEqual([]);
     });
@@ -134,9 +134,9 @@ for (const theme of ["light", "dark"]) {
         path: join(output, `${theme}-${width}-transcription.png`),
         animations: "disabled",
       });
-      await page.getByRole("switch", { name: "Clean up dictated text", exact: true }).uncheck();
+      await page.getByRole("switch", { name: "Clean up text with Codex", exact: true }).check();
       const cleanup = page.getByRole("region", { name: "Text cleanup", exact: true });
-      await cleanup.getByRole("button", { name: "Generate suggestion", exact: true }).click();
+      await cleanup.getByRole("button", { name: "Suggest", exact: true }).click();
       await expect(
         cleanup.getByRole("button", { name: "Apply suggestion", exact: true }),
       ).toBeEnabled();
@@ -145,10 +145,6 @@ for (const theme of ["light", "dark"]) {
         animations: "disabled",
       });
       await cleanup.getByRole("button", { name: "Apply suggestion", exact: true }).click();
-      await expect(
-        cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }),
-      ).not.toBeChecked();
-      await cleanup.getByRole("switch", { name: "Clean up dictated text", exact: true }).check();
       await expect(
         cleanup.getByRole("textbox", { name: "Correction phrase", exact: true }),
       ).toHaveValue("Düzeltiyorum");
@@ -248,7 +244,7 @@ for (const theme of ["light", "dark"]) {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(`/tests/browser/voice/dictation-permissions.html?theme=${theme}`);
-      const dictation = page.getByRole("switch", { name: "Enable dictation", exact: true });
+      const dictation = page.getByRole("switch", { name: "Dictation", exact: true });
       const companion = page.getByRole("switch", { name: "Enable voice companion", exact: true });
       await expect(dictation).toBeChecked();
       await expect(companion).not.toBeChecked();
@@ -311,7 +307,7 @@ test("switches are independent, keyboard accessible and never open the microphon
   page,
 }) => {
   await page.goto("/tests/browser/voice/dictation-permissions.html?dictation=0");
-  const dictation = page.getByRole("switch", { name: "Enable dictation", exact: true });
+  const dictation = page.getByRole("switch", { name: "Dictation", exact: true });
   const companion = page.getByRole("switch", { name: "Enable voice companion", exact: true });
   await expect(dictation).not.toBeChecked();
   await expect(companion).not.toBeChecked();

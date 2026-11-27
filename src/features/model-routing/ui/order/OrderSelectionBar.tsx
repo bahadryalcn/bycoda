@@ -81,9 +81,6 @@ export function OrderSelectionBar({
         size="secondary"
         text={t("{p0} selected", { p0: format.formatNumber(selected.length) })}
       />
-      <Button size="sm" tone="danger" startIcon={<Trash2 className="icon-sm" />} onClick={onRemove}>
-        {t("Remove")}
-      </Button>
       <PickMenu
         label={t("Set effort…")}
         disabled={!efforts.length}
@@ -102,6 +99,9 @@ export function OrderSelectionBar({
         }))}
         onPick={onAddToGroup}
       />
+      <Button size="sm" tone="danger" startIcon={<Trash2 className="icon-sm" />} onClick={onRemove}>
+        {t("Remove")}
+      </Button>
       <Button iconOnly size="sm" variant="ghost" label={t("Clear selection")} onClick={onClear}>
         <X className="icon-sm" />
       </Button>

@@ -10,7 +10,13 @@ import {
   setStatsChoice,
   shouldPromptForStats,
 } from "./accountPrivacy";
-import { sendDailyPing, startAnonymousStats, localDay } from "./anonymousStats";
+import {
+  getStatisticsMode,
+  localDay,
+  sendDailyPing,
+  setStatisticsMode,
+  startAnonymousStats,
+} from "./anonymousStats";
 
 const LEGACY = "bycoda.account.anonymousStats";
 const DAY = new Date(2026, 10, 8, 12);
@@ -52,6 +58,14 @@ beforeEach(() => {
 });
 
 describe("statistics consent", () => {
+  it("a yes from onboarding or the first-run toast sends without asking again", () => {
+    expect(setStatisticsMode("auto")).toBe(true);
+    expect(getStatsConsent().choice).toBe("on");
+    expect(getStatisticsMode()).toBe("auto");
+    setStatisticsMode("off");
+    expect(getStatisticsMode()).toBe("off");
+  });
+
   it("is not asked yet by default", () => {
     expect(getStatsConsent()).toEqual({ choice: null, decidedAt: null });
   });

@@ -135,7 +135,54 @@ if (params.get("page") === "1") {
     });
 }
 let holdUsageVisualReads = params.has("visual-hold");
+// `machines=1`: one other machine answers `usage.rows.read`, a second one is unreachable.
+const machinesFixture = params.get("machines") === "1";
+const fixtureMachines = [
+  {
+    id: "m-local",
+    name: "This computer",
+    localHost: true,
+    endpoint: "http://127.0.0.1:9999",
+    environmentId: "env-local",
+  },
+  { id: "m-office", name: "Office PC", endpoint: "", environmentId: "env-office" },
+  { id: "m-lab", name: "Lab server", endpoint: "", environmentId: "env-lab" },
+];
 mockIPC((command, args) => {
+  if (machinesFixture && command === "remote_machines") return fixtureMachines;
+  if (machinesFixture && command === "remote_request") {
+    const request = args as { machineId: string; method: string; params: { sinceMs: number } };
+    if (request.machineId === "m-lab") throw new Error("Lab server is offline");
+    if (request.machineId === "m-office" && request.method === "usage.rows.read")
+      return {
+        environmentId: "env-office",
+        sampledAt: Date.now(),
+        sinceMs: request.params.sinceMs,
+        accounts: [
+          {
+            provider: "claude",
+            accountId: "default",
+            label: "Host default",
+            rows: Array.from({ length: 12 }, (_, index) => {
+              const date = new Date();
+              date.setDate(date.getDate() - (index + 1));
+              date.setHours(11, 0, 0, 0);
+              return {
+                slot: date.getTime() / 1000,
+                model: "claude-sonnet-4-6",
+                project: "/home/office/api",
+                input: 220000 + index * 9000,
+                output: 40000,
+                cacheRead: 30000,
+                cacheWrite5m: 2000,
+                cacheWrite1h: 0,
+              };
+            }),
+          },
+        ],
+        coverage: { filesScanned: 4, truncated: false },
+      };
+  }
   if (
     params.get("visualCaller") === "grok" ||
     (holdUsageVisualReads &&

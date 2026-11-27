@@ -16,14 +16,14 @@ import {
 const MODELS = [
   {
     id: "small",
-    label: "Whisper small",
+    label: "Whisper Small",
     folder: "whisper-small",
     repo: "Systran/faster-whisper-small",
     expectedBytes: 484_000_000,
   },
   {
     id: "turbo",
-    label: "Whisper large v3 turbo",
+    label: "Whisper Large v3 Turbo",
     expectedBytes: 1_620_000_000,
     folder: "whisper-large-v3-turbo",
     repo: "mobiuslabsgmbh/faster-whisper-large-v3-turbo",

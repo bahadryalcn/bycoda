@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useT } from "../../../../shared/i18n";
+import { modelRoleLabel } from "../../model/modelRoutingRoles";
 import { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
 import {
   MODEL_ROUTING_MAX_ENTRIES,
   type ModelRoutingEntry,
-  type ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -22,14 +22,13 @@ import {
   type EntryKind,
   type OrderDraft,
 } from "../../model/modelRoutingDraft";
-import { setupCandidates } from "../../model/smartSetup";
-import type { SetupCatalog } from "../../model/smartSetupCatalog";
+import type { SetupCandidate } from "../../model/smartSetup";
 import type { useModelRoutingStatus } from "../../model/modelRoutingClient";
 import { AccountGroupHeader } from "./AccountGroupHeader";
-import { ModelOrderRow } from "./ModelOrderRow";
+import { entryAccountName } from "./useEntryAccount";
+import { ModelOrderHeader, ModelOrderRow } from "./ModelOrderRow";
 import { OrderSelectionBar } from "./OrderSelectionBar";
 import { OrderSortMenu } from "./OrderSortMenu";
-import { SmartSetupAction } from "./SmartSetupAction";
 import {
   addAccountModels,
   addChoiceFor,
@@ -58,15 +57,12 @@ export function ModelOrderList({
   change,
   edit,
   status,
-  catalog,
   chatFallback,
   view,
   onView,
   invalid,
   focusRequest,
-  setupRevision,
-  setupPlanner,
-  onSetupPlannerChange,
+  addChoices,
 }: {
   draft: OrderDraft;
   /** Unsaved edits hide the Next marks, which describe the saved order. */
@@ -74,16 +70,14 @@ export function ModelOrderList({
   change: (draft: OrderDraft) => void;
   edit: (operation: (draft: OrderDraft) => OrderDraft) => boolean;
   status: ReturnType<typeof useModelRoutingStatus>;
-  catalog?: SetupCatalog;
   /** Chat conversations continue on this order at a usage limit. */
   chatFallback: boolean;
   view: OrderView;
   onView: (view: OrderView) => void;
   invalid?: InvalidEntry;
   focusRequest?: FocusRequest;
-  setupRevision: number;
-  setupPlanner?: ModelRoutingTarget;
-  onSetupPlannerChange: (choice: ModelRoutingTarget | undefined) => void;
+  /** The edited Host's available remote choices, for Add model. */
+  addChoices: SetupCandidate[];
 }) {
   const t = useT();
   const sectionTitles: Record<EntryKind, string> = {
@@ -121,8 +115,7 @@ export function ModelOrderList({
   };
   const sectioned = byKind.work.length > 0 || byKind.personal.length > 0;
   const selected = entries.filter((entry) => chosen.has(entry.id));
-  // The edited Host's available remote choices; the list's last provider wins when it still has one.
-  const addChoices = setupCandidates(source, catalog);
+  // The list's last provider wins when it still has a remote choice.
   const addChoice = addChoiceFor(addChoices, entries[entries.length - 1]?.harness);
   const listFull = entries.length >= MODEL_ROUTING_MAX_ENTRIES;
   const noProviderReason = t("No remote provider is available on this Host for unattended work.");
@@ -237,7 +230,13 @@ export function ModelOrderList({
     const accountQuota = quotaLabel(quota, status.loading, statusFailed);
     const ids = group.rows.map(({ entry }) => entry.id);
     return (
-      <div key={group.key} role="group" aria-label={group.account?.label ?? group.harness}>
+      <div
+        key={group.key}
+        role="group"
+        aria-label={
+          group.account ? entryAccountName(group.harness, group.account, source) : group.harness
+        }
+      >
         <AccountGroupHeader
           group={group}
           quota={accountQuota}
@@ -251,7 +250,11 @@ export function ModelOrderList({
     );
   };
 
-  const jobs = jobsUsingOrder(draft.routing.roles);
+  // Every job on this order by name, chat fallback last; never a bare count.
+  const jobs = [
+    ...jobsUsingOrder(draft.routing.roles).map(({ labelKey }) => modelRoleLabel(labelKey)),
+    ...(chatFallback ? [t("Chat fallback")] : []),
+  ];
   const listControls = (
     <div className="flex flex-wrap items-center gap-2">
       <SegmentedControl
@@ -281,22 +284,15 @@ export function ModelOrderList({
           <Heading as="h2" size="page">
             {t("Model priority")}
           </Heading>
-          <Text size="caption" tone="secondary">
-            {empty
-              ? t("Set the order Bycoda tries models for background jobs.")
-              : chatFallback
-                ? t("Jobs using this order: {p0}, plus chat fallback", { p0: jobs })
-                : t("Jobs using this order: {p0}", { p0: jobs })}
-          </Text>
+          {empty || jobs.length > 0 ? (
+            <Text size="caption" tone="secondary">
+              {empty
+                ? t("Set the order Bycoda tries models for background jobs.")
+                : t("Used by: {p0}", { p0: jobs.join(", ") })}
+            </Text>
+          ) : null}
         </div>
-        <SmartSetupAction
-          key={setupRevision}
-          variant={empty ? "primary" : "secondary"}
-          onEdit={edit}
-          catalogChoices={addChoices}
-          choice={setupPlanner}
-          onChoice={onSetupPlannerChange}
-        >
+        <div>
           <Button
             size="sm"
             variant={empty ? "ghost" : "primary"}
@@ -306,7 +302,7 @@ export function ModelOrderList({
           >
             {t("Add model")}
           </Button>
-        </SmartSetupAction>
+        </div>
       </div>
       {empty ? (
         <EmptyState
@@ -364,24 +360,21 @@ export function ModelOrderList({
                 : undefined
             }
           >
-            {view === "account" ? (
-              groupByAccount(byKind[kind], source).map((group) => accountSection(group, kind))
-            ) : (
-              <>
-                <div className="flex items-center gap-2 px-4 pt-2">
+            <ModelOrderHeader
+              selectAll={
+                view === "account" ? undefined : (
                   <Checkbox
-                    label={t("Select all")}
-                    size="caption"
-                    tone="secondary"
                     checked={selectedCount === ids.length}
                     indeterminate={selectedCount > 0 && selectedCount < ids.length}
                     aria-label={t("Select all models of {p0}", { p0: title })}
                     onChange={(event) => choose(ids, event.currentTarget.checked)}
                   />
-                </div>
-                {byKind[kind].map((entry, index) => row(entry, index, kind, true))}
-              </>
-            )}
+                )
+              }
+            />
+            {view === "account"
+              ? groupByAccount(byKind[kind], source).map((group) => accountSection(group, kind))
+              : byKind[kind].map((entry, index) => row(entry, index, kind, true))}
           </Group>
         );
       })}

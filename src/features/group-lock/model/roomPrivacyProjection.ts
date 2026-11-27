@@ -79,8 +79,17 @@ function sameSnapshot(a: unknown, b: unknown): boolean {
 export function getCommittedProjectionSeen(): number | null {
   return committedProjectionSeen;
 }
-export function isRoomPrivacyRecoveryPending(): boolean {
-  return operation?.recoverClosed === true;
+/** Held failures a plain retry cannot settle: the saved record cannot prove its locks, or
+ * this window's live policy diverged from it (a change saved without its commit). */
+const REBUILDABLE = [
+  "Privacy lock state is unavailable",
+  "Privacy policy has not been acknowledged by this window",
+];
+/** Whether the owner may rebuild protection from this window's live scope after native review. */
+export function canRebuildRoomPrivacyProjection(): boolean {
+  return (
+    !!status.error && (operation?.recoverClosed === true || REBUILDABLE.includes(status.error))
+  );
 }
 export function getRoomPrivacyStatus(): RoomPrivacyStatus {
   return isTauri() && !ready && !status.error ? notReady : status;
@@ -268,13 +277,7 @@ export function retryRoomPrivacyProjection(): void {
 /** Plain retry settles a held failure; closed-state recovery needs the explicit rebuild flow,
  * and an inactive window would leave the retry waiting. */
 export function canRetryRoomPrivacyProjection(): boolean {
-  return (
-    isTauri() &&
-    ready &&
-    !!status.error &&
-    status.error !== "Privacy lock state is unavailable" &&
-    operation?.recoverClosed !== true
-  );
+  return isTauri() && ready && !!status.error && !canRebuildRoomPrivacyProjection();
 }
 /** Reconcile an uncertain native transition before retrying a user action. */
 export function recoverRoomPrivacyProjection(): Promise<void> {
@@ -305,10 +308,25 @@ export async function settleHeldRoomPrivacyProjection(): Promise<void> {
  * while Host admission remains closed before replacing old state. */
 export async function rebuildClosedRoomPrivacyProjection(): Promise<void> {
   try {
-    if (!operation || operation.leaseId || running || queuedMutations || !status.error)
+    if (running || queuedMutations || !status.error)
       throw new Error("Privacy recovery is unavailable.");
     const { readRoomPrivacyScope } = await import("./roomPrivacyScope");
-    if (!operation.recoverClosed) {
+    // A change that failed inside its native lease rebases onto a recovery operation that
+    // first proves the held one was never applied.
+    const held = operation ? operation.leaseId : uncertainBegin;
+    if (held) {
+      const current = await invoke<Projection | null>("control_privacy_projection_read");
+      operation = {
+        expected: current?.revision ?? null,
+        operationId: newRequestId(),
+        snapshot: readRoomPrivacyScope().stableStorageKeys,
+        recoverClosed: true,
+        rebaseFrom: held,
+      };
+      uncertainBegin = null;
+    } else if (!operation) {
+      throw new Error("Privacy recovery is unavailable.");
+    } else if (!operation.recoverClosed) {
       operation = {
         ...operation,
         snapshot: readRoomPrivacyScope().stableStorageKeys,

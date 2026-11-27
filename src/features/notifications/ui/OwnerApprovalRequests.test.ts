@@ -5,6 +5,7 @@ import { expect, it } from "vitest";
 import { OwnerApprovalChat, OwnerApprovalInbox } from "./OwnerApprovalRequests";
 import {
   ownerApprovalsSnapshot,
+  presentOwnerApproval,
   reopenOwnerApproval,
   requestOwnerApproval,
   settleOwnerApproval,
@@ -363,3 +364,51 @@ for (const [name, close] of Object.entries(closers)) {
     }
   });
 }
+
+it("opens a presented request in the dialog over its visible chat and names who asked", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          {},
+          createElement(OwnerApprovalChat, {
+            sessionId: "asker",
+            children: createElement("p", {}, "Conversation"),
+          }),
+          createElement(OwnerApprovalInbox, {
+            source: (request) => createElement("p", { "data-source": "" }, `from ${request.cwd}`),
+          }),
+        ),
+      ),
+    );
+    let answer!: Promise<boolean>;
+    await act(async () => {
+      answer = requestOwnerApproval({
+        id: "presented",
+        sessionId: "asker",
+        cwd: "/projects/clinic",
+        input: {
+          title: "bycoda — Inbox operation approval",
+          message: "Exact request",
+          confirmLabel: "Approve this operation",
+          cancelLabel: "Cancel",
+          deadline: Date.now() + 60_000,
+        },
+      });
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () => presentOwnerApproval("presented"));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("Inbox operation approval");
+    expect(dialog?.querySelector("[data-source]")?.textContent).toBe("from /projects/clinic");
+    await act(async () => void settleOwnerApproval("presented", false));
+    expect(await answer).toBe(false);
+  } finally {
+    act(() => root.unmount());
+    element.remove();
+  }
+});

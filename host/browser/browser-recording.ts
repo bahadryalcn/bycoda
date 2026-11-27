@@ -13,7 +13,14 @@ import {
 } from "./browser-recording-encode";
 
 export const BROWSER_RECORDING_DIRECTORY = "browser-recordings";
+export const RECORDING_FPS_OPTIONS = [4, 8, 10, 15, 30, 60] as const;
 const DEFAULT_FPS = 4;
+/** One long poll of the live screencast; short so a stop request is honoured quickly. */
+const LIVE_WAIT_MS = 250;
+/** A live poll that returns nothing this fast is paced so a stopped cast cannot spin the loop. */
+const LIVE_MIN_POLL_MS = 50;
+/** A static page may send no picture; after this long without one, a screenshot seeds the video. */
+const FIRST_FRAME_GRACE_MS = 1500;
 const DEFAULT_MAX_SECONDS = 120;
 /** A stop waits this long for the background ffmpeg download before reporting it still running. */
 const FFMPEG_WAIT_MS = 5 * 60 * 1000;
@@ -66,6 +73,8 @@ type Recording = {
   frameDir: string;
   frameNames: string[];
   frameTimes: number[];
+  /** Monotonic time capture stopped; the last frame is held until then. */
+  endedMono?: number;
   width?: number;
   height?: number;
   state: RecordingState;
@@ -97,6 +106,12 @@ function withinWait<T>(promise: Promise<T>, ms: number): Promise<T> {
   });
   return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
 }
+function fpsParam(value: unknown, fallback: number) {
+  if (value === undefined) return fallback;
+  if (!RECORDING_FPS_OPTIONS.some((option) => option === value))
+    throw new Error(`fps must be one of ${RECORDING_FPS_OPTIONS.join(", ")}`);
+  return value as number;
+}
 function integerParam(value: unknown, fallback: number, min: number, max: number, name: string) {
   if (value === undefined) return fallback;
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)
@@ -104,9 +119,11 @@ function integerParam(value: unknown, fallback: number, min: number, max: number
   return value;
 }
 
-/** Grid slots on the fps clock; the last captured frame is held for one more interval. */
-function slotCount(times: number[], interval: number) {
-  return Math.round((times[times.length - 1]! - times[0]!) / interval) + 1;
+/** Grid slots on the fps clock; the last captured frame is held for one interval or until capture ended. */
+function slotCount(times: number[], interval: number, endedAt = 0) {
+  return Math.round(
+    (Math.max(times[times.length - 1]! + interval, endedAt) - times[0]!) / interval,
+  );
 }
 
 /**
@@ -129,8 +146,11 @@ async function* heldFrames(
 }
 
 /**
- * Records the project browser by sampling the same `browser.frame` dispatch the UI uses.
- * Frames go to disk as they arrive; the loop never queues, so a slow capture drops slots.
+ * Records the project browser through the live screencast behind `browser.frame` (long polls
+ * with a cursor, every picture acknowledged), which follows the display at 30 to 60 fps. A
+ * browser without a screencast falls back to sampling screenshots, which cannot reach those
+ * rates. Frames go to disk as they arrive, at most one per fps slot (the newest wins), and
+ * the video holds each frame until the next one, so a still page costs almost nothing.
  */
 export class BrowserRecordingService {
   private readonly recordings = new Map<string, Recording>();
@@ -181,7 +201,7 @@ export class BrowserRecordingService {
     if (typeof params.leaseId !== "string" || !params.leaseId)
       throw new Error("Claim browser control before recording it.");
     const fallback = params.fps === undefined ? await this.options.defaultFps?.() : undefined;
-    const fps = integerParam(params.fps, fallback ?? DEFAULT_FPS, 1, 10, "fps");
+    const fps = fpsParam(params.fps, fallback ?? DEFAULT_FPS);
     const maxSeconds = integerParam(params.maxSeconds, DEFAULT_MAX_SECONDS, 5, 300, "maxSeconds");
     const scopeKey = scopeKeyOf(scope);
     this.pruneFinished();
@@ -316,19 +336,24 @@ export class BrowserRecordingService {
 
   private async run(recording: Recording, scope: BrowserRecordingScope, credential: string) {
     recording.stopReason = await this.capture(recording, scope, credential);
+    recording.endedMono = Math.min(this.now(), recording.startedMono + recording.maxMs);
     recording.state = "encoding";
     await this.encode(recording);
   }
 
-  /** Sequential sampling loop. Returns why capture ended; captured frames are kept either way. */
+  /**
+   * Capture loop. Returns why capture ended; captured frames are kept either way. Live mode
+   * long-polls the screencast with a cursor and never sleeps; screenshot mode sleeps to the grid.
+   */
   private async capture(recording: Recording, scope: BrowserRecordingScope, credential: string) {
     const interval = 1000 / recording.fps;
-    const params = { ...scope };
     let due = this.now();
+    let live = true;
+    let cursor = 0;
     let failures = 0;
     for (;;) {
       const wait = due - this.now();
-      if (wait > 0) await this.sleep(wait);
+      if (!live && wait > 0) await this.sleep(wait);
       if (recording.stopRequested) return recording.stopReason ?? "stopped";
       if (
         elapsedSince(recording.startedMono, this.now()) >= recording.maxMs ||
@@ -336,24 +361,43 @@ export class BrowserRecordingService {
       )
         return "max-duration";
       let outcome: string | undefined;
+      const polled = this.now();
       try {
-        const status = (await this.options.browser.dispatchForSession(
-          "browser.status",
-          params,
+        // Seed with a screenshot when a static page has sent no picture yet.
+        const seeding =
+          live &&
+          !recording.frameNames.length &&
+          elapsedSince(recording.startedMono, polled) >= FIRST_FRAME_GRACE_MS;
+        const frame = (await this.options.browser.dispatchForSession(
+          "browser.frame",
+          live && !seeding
+            ? { ...scope, after: cursor, waitMs: LIVE_WAIT_MS, fast: true }
+            : { ...scope },
           credential,
-        )) as StatusFrame;
-        recording.controlling = !!status.controlling && status.leaseId === recording.leaseId;
-        // Reading a frame needs no control lease, so a lapsed or moved lease never ends recording.
-        if (!status.open) outcome = "browser-closed";
-        else {
-          const at = this.now();
-          const frame = (await this.options.browser.dispatchForSession(
-            "browser.frame",
-            params,
-            credential,
-          )) as { data: string; width: number; height: number };
-          await this.appendFrame(recording, frame, at);
+        )) as {
+          open?: boolean;
+          controlling?: boolean;
+          leaseId?: string;
+          data?: string;
+          width: number;
+          height: number;
+          frameSequence?: number;
+        };
+        // A screenshot shows the page as of the request; a screencast picture as of its arrival.
+        let at = polled;
+        if (typeof frame.frameSequence === "number") {
+          cursor = frame.frameSequence;
+          at = this.now();
+        } else if (live && !seeding) live = false; // no screencast on this browser
+        if (frame.open !== undefined) {
+          recording.controlling = !!frame.controlling && frame.leaseId === recording.leaseId;
+          if (!frame.open) outcome = "browser-closed";
         }
+        // Reading a frame needs no control lease, so a lapsed or moved lease never ends recording.
+        if (!outcome && typeof frame.data === "string")
+          await this.appendFrame(recording, frame, at);
+        else if (!outcome && live && elapsedSince(polled, this.now()) < LIVE_MIN_POLL_MS)
+          await this.sleep(LIVE_MIN_POLL_MS);
         failures = 0;
       } catch (error) {
         const message = errorMessage(error);
@@ -364,6 +408,7 @@ export class BrowserRecordingService {
           recording.lastError = message;
           if (failures >= MAX_CONSECUTIVE_FAILURES) outcome = "capture-failed";
         }
+        if (live && !outcome) await this.sleep(LIVE_MIN_POLL_MS);
       }
       if (outcome) return outcome;
       due += interval;
@@ -373,13 +418,26 @@ export class BrowserRecordingService {
 
   private async appendFrame(
     recording: Recording,
-    frame: { data: string; width: number; height: number },
+    frame: { data?: string; width: number; height: number },
     at: number,
   ) {
-    const name = `frame-${String(recording.frameNames.length + 1).padStart(6, "0")}.jpg`;
-    await writeFile(join(recording.frameDir, name), Buffer.from(frame.data, "base64"));
-    recording.frameNames.push(name);
-    recording.frameTimes.push(at);
+    const interval = 1000 / recording.fps;
+    const last = recording.frameTimes.length - 1;
+    // Screencast pictures can outpace the grid: a second picture in the same slot replaces the
+    // first, so disk use and the frame cap follow the slot count, not the display rate.
+    const replace =
+      last >= 0 &&
+      Math.round((at - recording.frameTimes[0]!) / interval) ===
+        Math.round((recording.frameTimes[last]! - recording.frameTimes[0]!) / interval);
+    const name = replace
+      ? recording.frameNames[last]!
+      : `frame-${String(recording.frameNames.length + 1).padStart(6, "0")}.jpg`;
+    await writeFile(join(recording.frameDir, name), Buffer.from(frame.data!, "base64"));
+    if (replace) recording.frameTimes[last] = at;
+    else {
+      recording.frameNames.push(name);
+      recording.frameTimes.push(at);
+    }
     recording.width ??= frame.width;
     recording.height ??= frame.height;
   }
@@ -412,7 +470,7 @@ export class BrowserRecordingService {
         );
       const ffmpeg = await this.acquireFfmpeg(recording);
       const interval = 1000 / recording.fps;
-      const slots = slotCount(recording.frameTimes, interval);
+      const slots = slotCount(recording.frameTimes, interval, recording.endedMono);
       await this.encodeFrames(
         ffmpeg,
         frameEncodeArgs({

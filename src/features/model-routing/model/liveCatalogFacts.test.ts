@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 it("keeps the researched table alone while nothing is loaded", () => {
-  expect(catalogModelFacts("claude-opus-5-5")).toEqual({ score: 92, inputUsd: 4, outputUsd: 20 });
+  expect(catalogModelFacts("claude-opus-5-5")).toEqual({ score: 89, inputUsd: 4, outputUsd: 20 });
   expect(catalogModelFacts("acme-9")).toBeUndefined();
 });
 
@@ -33,14 +33,14 @@ it("takes live prices but the researched score for a known family", () => {
     { family: "claude-opus-5-5", inputUsd: 5, outputUsd: 25, intelligenceIndex: 70 },
     { family: "gpt-6-1-sol", inputUsd: 1.5, outputUsd: 9 },
   ]);
-  expect(catalogModelFacts("opus-5-5")).toEqual({ score: 92, inputUsd: 5, outputUsd: 25 });
+  expect(catalogModelFacts("opus-5-5")).toEqual({ score: 89, inputUsd: 5, outputUsd: 25 });
   expect(catalogModelFacts("claude-opus-5-5-20261101")).toEqual({
-    score: 92,
+    score: 89,
     inputUsd: 5,
     outputUsd: 25,
   });
   expect(catalogModelFacts("codex:gpt-6.1-sol")).toEqual({
-    score: 90,
+    score: 87,
     inputUsd: 1.5,
     outputUsd: 9,
   });

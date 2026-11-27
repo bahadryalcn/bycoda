@@ -1,12 +1,10 @@
 import "./decisionModels.css";
 import { DecisionTarget } from "./DecisionTarget";
 import { matchingTest, testedSources, type SourceTestSnapshot } from "../model/routingEditor";
-import { connectedCandidate } from "../model/presentation";
 import { Text } from "../../../shared/ui/Text";
 import { useId, useRef, useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { forEachConcurrent } from "../../../shared/lib/concurrent";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -42,8 +40,8 @@ type Dialog =
   | { kind: "edit"; source: DecisionSource }
   | null;
 /**
- * The "Decision models" settings page. Sources, what the scan found, decision routing and the
- * personal-data switch. Each add path opens its own dialog; nothing is connected without an explicit action.
+ * The "Decision models" settings page: connected sources, what the scan found, and task routing
+ * with its personal-data switch. Each add path opens its own dialog; nothing is connected without an explicit action.
  */
 export function DecisionModelsSettings({
   client,
@@ -187,6 +185,9 @@ export function DecisionModelsSettings({
     actions.changeLocalOnly(value).catch((error: unknown) => setTopError(error));
   };
   const closeDialog = () => setDialog(null);
+  const privacyLabel = remote
+    ? t("Send personal data only to models on Host {p1}", { p1: hostName ?? "" })
+    : t("Send personal data only to models on this computer");
   const scanAction = model.scanning ? (
     <Button
       variant="ghost"
@@ -209,44 +210,6 @@ export function DecisionModelsSettings({
   return (
     <DecisionTarget.Provider value={remote ? hostName : undefined}>
       <div className="decision-models-page">
-        <Group title={null}>
-          <Row
-            label={
-              <span className="flex min-w-0 items-center gap-2">
-                <Lock className="icon-sm shrink-0" aria-hidden="true" />
-                {remote
-                  ? t("Personal data stays on Host {p1}", { p1: hostName ?? "" })
-                  : t("Personal data stays on this computer")}
-              </span>
-            }
-            controlId={model.routingLoaded ? privacyControlId : undefined}
-            info={t(
-              "Messages, profiles and contacts are sent only to local sources when this is on.",
-            )}
-          >
-            {model.routingLoaded ? (
-              <Switch
-                id={privacyControlId}
-                aria-label={
-                  remote
-                    ? t("Personal data stays on Host {p1}", { p1: hostName ?? "" })
-                    : t("Personal data stays on this computer")
-                }
-                checked={model.localOnly}
-                disabled={
-                  !model.routingLoaded ||
-                  model.isPending("routing-read") ||
-                  model.isPending("routing-local-only")
-                }
-                onCheckedChange={changePersonalData}
-              />
-            ) : model.routingError !== null ? (
-              <Text>{t("Unavailable")}</Text>
-            ) : (
-              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
-            )}
-          </Row>
-        </Group>
         {topError !== null ? <ErrorNotice error={topError} /> : null}
         {batchTest !== null ? (
           <InlineError
@@ -296,55 +259,65 @@ export function DecisionModelsSettings({
             }
           />
         </Group>
-        <Disclosure
-          summary={
-            model.found === null
-              ? remote
-                ? t("Found on the Host")
-                : t("Found on this computer")
-              : remote
-                ? t("Found on the Host: {p1} not added", {
-                    p1: formatNumber(
-                      model.found.filter(
-                        (candidate) => !connectedCandidate(candidate, sources ?? []),
-                      ).length,
-                    ),
-                  })
-                : t("Found on this computer: {p1} not added", {
-                    p1: formatNumber(
-                      model.found.filter(
-                        (candidate) => !connectedCandidate(candidate, sources ?? []),
-                      ).length,
-                    ),
-                  })
-          }
-          summaryActions={scanAction}
-          variant="row"
-        >
-          <div className="decision-discovery-body">
-            <Group title={null}>
-              <FoundList
-                found={model.found}
-                sources={sources ?? []}
+        <Group
+          title={remote ? t("Found on the Host") : t("Found on this computer")}
+          description={t("Local services and model folders. Nothing connects until you add it.")}
+          descriptionVisible
+          action={
+            <div className="flex shrink-0 items-center justify-end gap-2">
+              <ScanSettings
+                hostId={hostId}
+                client={client}
+                onScan={actions.scan}
                 scanning={model.scanning}
-                scanError={model.scanError}
-                incomplete={model.scanIncomplete}
-                busy={busy}
-                onScan={() => void actions.scan().catch(() => undefined)}
-                onAdd={addCandidate}
               />
-            </Group>
-          </div>
-        </Disclosure>
-        <Disclosure summary={t("Scan settings")} variant="row">
-          <ScanSettings
-            hostId={hostId}
-            client={client}
-            onScan={actions.scan}
+              {scanAction}
+            </div>
+          }
+        >
+          <FoundList
+            found={model.found}
+            sources={sources ?? []}
             scanning={model.scanning}
+            scanError={model.scanError}
+            incomplete={model.scanIncomplete}
+            busy={busy}
+            onScan={() => void actions.scan().catch(() => undefined)}
+            onAdd={addCandidate}
           />
-        </Disclosure>
+        </Group>
         <Group title={t("Task routing")}>
+          <Row
+            label={
+              <span className="flex min-w-0 items-center gap-2">
+                <Lock className="icon-sm shrink-0" aria-hidden="true" />
+                {privacyLabel}
+              </span>
+            }
+            controlId={model.routingLoaded ? privacyControlId : undefined}
+            description={t(
+              "Applies to contact interest scores, message sentiment and choosing who runs a board task. When on and no local model is connected, these decisions are skipped.",
+            )}
+            descriptionVisible
+          >
+            {model.routingLoaded ? (
+              <Switch
+                id={privacyControlId}
+                aria-label={privacyLabel}
+                checked={model.localOnly}
+                disabled={
+                  !model.routingLoaded ||
+                  model.isPending("routing-read") ||
+                  model.isPending("routing-local-only")
+                }
+                onCheckedChange={changePersonalData}
+              />
+            ) : model.routingError !== null ? (
+              <Text>{t("Unavailable")}</Text>
+            ) : (
+              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+            )}
+          </Row>
           {!model.routingLoaded && model.routingError === null ? (
             <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : null}

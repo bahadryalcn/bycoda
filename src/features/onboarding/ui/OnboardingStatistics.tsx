@@ -7,7 +7,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
   getStatsChoice,
-  setStatsChoice,
+  setStatisticsMode,
   statsDisclosure,
   subscribeAnonymousStats,
 } from "../../account";
@@ -41,7 +41,8 @@ export function OnboardingStatistics() {
             label={t("Statistics")}
             value={choice ?? ""}
             selectionRole="pressed"
-            onValueChange={(value) => setStatsChoice(value as "on" | "off")}
+            // Yes is the daily consent itself, so the signal is sent without a further review.
+            onValueChange={(value) => setStatisticsMode(value === "on" ? "auto" : "off")}
             options={[
               { value: "on", label: t("Share anonymous statistics") },
               { value: "off", label: t("Don't share") },

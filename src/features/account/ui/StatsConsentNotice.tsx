@@ -5,11 +5,11 @@ import { Toast } from "../../../shared/ui/ToastRegion";
 import {
   getStatsChoice,
   recordStatsPromptShown,
-  setStatsChoice,
   shouldPromptForStats,
   subscribeAnonymousStats,
 } from "../model/accountPrivacy";
 import { useAccountState } from "../hooks/useAccount";
+import { setStatisticsMode } from "../model/anonymousStats";
 import { statsDisclosure } from "../model/statsDisclosure";
 
 const FIRST_DELAY_MS = 6000;
@@ -39,7 +39,7 @@ export function StatsConsentNotice() {
   }, [available]);
   if (!shown || choice !== null) return null;
   const answer = (value: "on" | "off") => {
-    setStatsChoice(value);
+    setStatisticsMode(value === "on" ? "auto" : "off");
     setShown(false);
   };
   return (

@@ -6,6 +6,7 @@ import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { parseRemotePath } from "../../../features/connections/public/remoteProjects";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
+import { SessionProjectIcon } from "../../shell/useSessionProjectAppearance";
 import { LocalHostVersionPrompt } from "../../../features/connections/public/LocalHostDownNotice";
 import { runUpdateFlow } from "../../model/updater";
 import { HiddenDictationIndicator } from "../../../features/voice/ui/HiddenDictationIndicator";
@@ -15,6 +16,8 @@ import { useT } from "../../../shared/i18n";
 import { requestBackgroundTarget } from "../input/backgroundTargets";
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Badge } from "../../../shared/ui/Badge";
+import { FlaskConical } from "../../../shared/ui/icons";
 
 type UsageFooterProps = ComponentProps<typeof UsageFooter>;
 type UsageFooterTools = NonNullable<UsageFooterProps["tools"]>;
@@ -101,6 +104,7 @@ function WorkspaceFooterComponent({
         onOpenBackground={requestBackgroundTarget}
         onOpenSettings={() => openSettings("notifications", "notifications")}
         onApproval={onApproval}
+        projectIcon={SessionProjectIcon}
       />
       {searchViewOpen ||
       inboxViewOpen ||
@@ -150,6 +154,18 @@ function WorkspaceFooterComponent({
       <div className="flex shrink-0 items-center gap-1">
         <LocalHostVersionPrompt onUpdateApp={updateApp} />
         <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
+        {import.meta.env.DEV ? (
+          <Badge
+            data-dev-mode-indicator=""
+            size="sm"
+            tone="info"
+            appearance="subtle"
+            role="img"
+            aria-label={t("Development build")}
+          >
+            <FlaskConical className="icon-sm" strokeWidth={1.75} aria-hidden />
+          </Badge>
+        ) : null}
       </div>
     </div>
   );

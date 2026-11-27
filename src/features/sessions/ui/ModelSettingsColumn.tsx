@@ -1,4 +1,4 @@
-import { EffortScale } from "../../../shared/ui/EffortScale";
+import { EffortScale, type EffortScaleAutomatic } from "../../../shared/ui/EffortScale";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -43,7 +43,6 @@ import { SubagentModeControl } from "./SubagentModeControl";
 import { subagentMode } from "../model/crossDelegation";
 import { ModelSettingPicker } from "./ModelSettingPicker";
 import type { AccountLimitReason } from "./ModelAccountSwitcher";
-import { SubagentEffortSwitch } from "./SubagentEffortSwitch";
 import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
@@ -433,19 +432,6 @@ function SettingRow({
             </Text>
           ),
         )}
-        {isCeiling ? (
-          <div className="flex items-center justify-between px-1.5 pb-1.5">
-            <Text as="span" size="caption" tone="secondary">
-              {value ? valueLabel : t("No limit")}
-            </Text>
-            <SubagentEffortSwitch
-              value={value}
-              levels={setting.options.map((option) => option.value).filter(Boolean)}
-              disabled={disabled}
-              onChange={onChoose}
-            />
-          </div>
-        ) : null}
         <EffortBars
           setting={setting}
           labels={labels}
@@ -453,6 +439,7 @@ function SettingRow({
           label={label}
           describedBy={describedBy}
           disabled={disabled}
+          automatic={isCeiling ? { on: !value, onChange: () => onChoose("") } : undefined}
           onChoose={onChoose}
         />
         {hiddenHelp}
@@ -460,13 +447,11 @@ function SettingRow({
     );
   }
 
-  // A short delegation choice fits a segmented switch too. The subagent policy always does, under
-  // its own name and help so its two choices read as a policy rather than a bare toggle.
-  const policy = setting.id === "subagentPolicy";
+  // A short delegation choice fits a segmented switch too.
   const shortChoice =
     kind === "choices" &&
     !isMultiSetting(setting) &&
-    (policy || settingControlKind({ ...setting, id: "" }, labels) === "segmented");
+    settingControlKind({ ...setting, id: "" }, labels) === "segmented";
   if (kind === "segmented" || shortChoice) {
     const control = (
       <SegmentedControl
@@ -480,13 +465,7 @@ function SettingRow({
         }))}
       />
     );
-    return policy ? (
-      <div data-setting-id={setting.id} className="pb-1">
-        {heading(null)}
-        <div className="px-1.5">{control}</div>
-        {hiddenHelp}
-      </div>
-    ) : (
+    return (
       <div data-setting-id={setting.id} className={row}>
         {name}
         {control}
@@ -797,6 +776,7 @@ function EffortBars({
   label,
   describedBy,
   disabled,
+  automatic,
   onChoose,
 }: {
   setting: ModelSetting;
@@ -805,6 +785,8 @@ function EffortBars({
   label: string;
   describedBy?: string;
   disabled: boolean;
+  /** The subagent ceiling: Automatic sets no limit. */
+  automatic?: EffortScaleAutomatic;
   onChoose: (value: string) => void;
 }) {
   const levels = ascendingEffortOptions(
@@ -820,7 +802,9 @@ function EffortBars({
       describedBy={describedBy}
       disabled={disabled}
       keepFocus
-      showValue={false}
+      showLabel={false}
+      showValue={automatic !== undefined}
+      automatic={automatic}
       onValueChange={onChoose}
     />
   );

@@ -14,7 +14,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Select } from "../../../shared/ui/Select";
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { SkeletonList } from "../../../shared/ui/SkeletonList";
 import {
   t,
   useLocale,
@@ -57,6 +57,7 @@ import {
 import { importedSessionKeys } from "../../sessions/data/sessionStore";
 import {
   groupByFolder,
+  importHarness,
   isAlreadyImported,
   isTemporaryFolder,
 } from "../../sessions/import/importModel";
@@ -441,7 +442,7 @@ function Projects({
         <OnboardingHeading
           title={t("Projects")}
           info={t(
-            "Import local projects and conversations from Claude Code and Codex, or choose a folder.",
+            "Import local projects and conversations from Claude Code, Codex and other coding agents, or choose a folder.",
           )}
         />
         <div className="onboarding-scroll">
@@ -459,9 +460,7 @@ function Projects({
               <LoadingText delay={false}>
                 {t("Scanning this computer’s conversation history…")}
               </LoadingText>
-              {[0, 1, 2, 3].map((row) => (
-                <Skeleton key={row} aria-hidden className="h-9 w-full" />
-              ))}
+              <SkeletonList rows={4} framed leading="icon" trailing="text" seed={5} />
             </div>
           ) : null}
           {listing && folders.length > 0 ? (
@@ -542,15 +541,11 @@ function Projects({
                             />
                           )}
                           <span className="onboarding-provider-icons">
-                            {[...new Set(folder.items.map((item) => item.provider))].map(
-                              (provider) => (
-                                <HarnessIcon
-                                  key={provider}
-                                  harness={provider}
-                                  className="icon-sm"
-                                />
-                              ),
-                            )}
+                            {[
+                              ...new Set(folder.items.map((item) => importHarness(item.provider))),
+                            ].map((provider) => (
+                              <HarnessIcon key={provider} harness={provider} className="icon-sm" />
+                            ))}
                           </span>
                           <Tooltip label={t("Sessions")} asChild>
                             <Text

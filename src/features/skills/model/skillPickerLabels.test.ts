@@ -56,7 +56,7 @@ describe("skill picker labels", () => {
     const project = { ...personal, scope: "project" } as Skill;
 
     expect(skillScopeLabel(template)).toBe("T:Templates");
-    expect(skillScopeLabel(personal)).toBe("T:Personal");
+    expect(skillScopeLabel(personal)).toBe("T:All projects");
     expect(skillScopeLabel(project)).toBe("T:Project");
   });
 });

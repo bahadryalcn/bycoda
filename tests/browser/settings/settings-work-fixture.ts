@@ -108,7 +108,21 @@ export function workSettingsFixture(
   args: Record<string, unknown>,
 ): { value: unknown } | undefined {
   if (!new URLSearchParams(location.search).has("workFixture")) return undefined;
-  if (command === "remote_machines") return { value: [machine] };
+  // `&twoHosts` adds an offline remote so the "Applying settings to" picker shows.
+  if (command === "remote_machines")
+    return {
+      value: new URLSearchParams(location.search).has("twoHosts")
+        ? [
+            machine,
+            {
+              id: "fixture-remote",
+              name: "Studio Mac",
+              endpoint: "http://127.0.0.1:9998",
+              environmentId: "fixture-remote",
+            },
+          ]
+        : [machine],
+    };
   if (command === "local_host_connect") return { value: machine };
   if (command !== "remote_request") return undefined;
   if (args.machineId !== machine.id) throw new Error("Work fixture Host identity changed.");

@@ -131,6 +131,16 @@ import {
   type ContextualSessionInput,
 } from "../src/features/connections/model/protocol";
 import type { HostProvider } from "./providers/providers";
+import { withTimeout } from "../src/shared/lib/withTimeout";
+import type {
+  WorkspaceRpcRequest,
+  WorkspaceRpcResponse,
+} from "./workspaces/workspace-rpc-contracts";
+import {
+  installHostAdditionalDirsResolver,
+  setSessionAdditionalDirs,
+  validateAdditionalDirs,
+} from "./sessions/session-additional-dirs";
 import {
   ProviderActivityRetirements,
   stopCapturedProvider,
@@ -258,7 +268,7 @@ function parseCommandBody(input: unknown): HostCommand {
       v.autoWorktreeBranch !== undefined &&
       (v.worktreeCwd === undefined ||
         typeof v.autoWorktreeBranch !== "string" ||
-        !/^mc\/[a-z0-9]{8}$/.test(v.autoWorktreeBranch))
+        !/^by\/[a-z0-9]{8}$/.test(v.autoWorktreeBranch))
     )
       throw new Error("Invalid automatically created worktree branch");
     if (v.projectId === PROJECTLESS_PROJECT_ID) assertProjectlessCreate(v);
@@ -449,6 +459,15 @@ function parseCommandBody(input: unknown): HostCommand {
         ? { secondOpinion: secondOpinionMeta(v.secondOpinion) }
         : {}),
       ...(v.type === "send" && noteCard ? { noteCard } : {}),
+      ...(v.type === "send" && v.additionalDirs !== undefined
+        ? {
+            additionalDirs: Array.isArray(v.additionalDirs)
+              ? (v.additionalDirs as string[])
+              : (() => {
+                  throw new Error("Invalid additional folders");
+                })(),
+          }
+        : {}),
     };
   }
   if (v.type === "removeDraft")
@@ -518,6 +537,9 @@ function parseCommandBody(input: unknown): HostCommand {
   throw new Error("Unsupported command");
 }
 
+/** Upper bound for generating a branch name before the temporary one is kept. */
+const BRANCH_NAME_DEADLINE_MS = 20_000;
+
 /** S1 supplies registry identity; S2 supplies capture and the durable recovery fence.
  * The resolver must reject unknown/broken managed ownership rather than return legacy.
  */
@@ -526,6 +548,10 @@ export interface ManagedTurnHistoryAdapter {
   exactGitRewindEnabled?(): boolean | Promise<boolean>;
   history: TurnGitHistory;
   workspaceForSession(value: HostSession): Promise<{ workspaceId: string; path?: string } | null>;
+  /** Renames the workspace's temporary `by/<8hex>` branch; the Host registry owns the rename. */
+  renameBranch?(
+    request: WorkspaceRpcRequest<"workspaces.renameBranch">,
+  ): Promise<WorkspaceRpcResponse<"workspaces.renameBranch">>;
   assertWritable(workspaceId: string): Promise<void>;
   prepareWorkspaceForCreate?(request: {
     projectId: string;
@@ -959,6 +985,9 @@ export class HostEngine {
     private managedTurns?: ManagedTurnHistoryAdapter,
     private readonly runWriters = new HostRunWriters(),
   ) {
+    installHostAdditionalDirsResolver(
+      join(dirname(store.attachmentDir), "session-additional-dirs.json"),
+    );
     const checkpointRoot = join(dirname(store.attachmentDir), "checkpoints");
     this.checkpoints = new HostCheckpoints(
       checkpointRoot,
@@ -2666,6 +2695,16 @@ export class HostEngine {
                 (defaults) => defaults.version > 0 && defaults.resumeAtReset,
               )))
             : undefined;
+        // Trust boundary: the client names folders on this Host; reject before any state changes.
+        const additionalDirs =
+          command.type === "send" && command.additionalDirs !== undefined
+            ? await validateAdditionalDirs(
+                command.additionalDirs,
+                await this.store
+                  .session(command.sessionId)
+                  .then(({ session: s }) => s.worktreeCwd ?? s.cwd),
+              )
+            : undefined;
         if (command.type === "contextual") return await this.contextualCommand(command, signature);
         if (command.type === "regenerateTitle")
           return this.regenerateTitleCommand(command, signature);
@@ -3250,6 +3289,8 @@ export class HostEngine {
                     // Install synchronously while the owners are held, but let the
                     // provider's async lifetime start outside this short SQL scope.
                     this.store.db.outsideScope(() => {
+                      if (additionalDirs)
+                        setSessionAdditionalDirs(command.sessionId, additionalDirs);
                       // Codex parses /goal only as the first token; context travels separately.
                       this.run(
                         current,
@@ -4429,6 +4470,69 @@ export class HostEngine {
         },
       );
     }
+    const managedId = value.session.workspaceId;
+    const renameManaged = this.managedTurns?.renameBranch?.bind(this.managedTurns);
+    if (managedId && renameManaged && provider.generateBranchName) {
+      const generate = provider.generateBranchName;
+      this.backgroundProviderWork(
+        value,
+        provider,
+        async (operationContext) => {
+          const workspace = await this.store.managedWorkspace(managedId);
+          // Only a temporary `by/<8hex>` branch is renamed; task and already-named branches stay.
+          if (!workspace || !/^refs\/heads\/by\/[0-9a-f]{8}$/.test(workspace.branchRef))
+            return null;
+          await this.store.assertAuthority(id, value.authorityGeneration);
+          await this.runWriters.setExecutionCwd(operationContext.hostRun!, workspace.path);
+          if (this.closing) return null;
+          // A slow provider keeps the temporary name; the name is cosmetic.
+          return await withTimeout(
+            generate.call(provider, workspace.path, message, operationContext),
+            BRANCH_NAME_DEADLINE_MS,
+            "Branch name generation",
+          );
+        },
+        async (fragment) => {
+          if (this.closing || !fragment) return;
+          await this.store.assertAuthority(id, value.authorityGeneration);
+          const workspace = await this.store.managedWorkspace(managedId);
+          if (!workspace) return;
+          const result = await renameManaged({
+            workspaceId: managedId,
+            expectedRevision: workspace.revision,
+            fragment,
+            idempotencyKey: `branch-name:${managedId}`,
+          }).catch((error: unknown) => {
+            // Active, upstream or delivery-pending workspaces keep the temporary name.
+            console.debug("[bycoda] managed branch rename skipped", error);
+            return null;
+          });
+          if (!result?.renamed || this.closing) return;
+          const branchName = result.branchRef.replace(/^refs\/heads\//, "");
+          await this.store.db.scope(() =>
+            this.operations.run(id, async () => {
+              if (this.closing) return;
+              await this.store.assertAuthority(id, value.authorityGeneration);
+              await this.flush(id);
+              const current = await this.store.session(id);
+              const saved = await this.save(
+                {
+                  ...current,
+                  session: {
+                    ...current.session,
+                    branch: branchName,
+                    workspaceRevision: result.revision,
+                  },
+                },
+                { type: "session.generatedBranch", branch: branchName },
+              );
+              const live = this.live.get(id);
+              if (live) live.value = saved;
+            }),
+          );
+        },
+      );
+    }
     const temporary = value.autoWorktreeBranch;
     if (temporary && !value.session.workspaceId && provider.generateBranchName) {
       const generate = provider.generateBranchName;
@@ -4448,8 +4552,6 @@ export class HostEngine {
           // A title/branch request may finish after the conversation was deleted.
           const currentBeforeRename = await this.store.session(id);
           if (this.closing || currentBeforeRename.autoWorktreeBranch !== temporary) return;
-          // Managed branch identity is fixed by the registry, never renamed by a title hint.
-          if (await this.managedWorkspace(currentBeforeRename)) return;
           const project = await this.store.project(value.projectId);
           if (this.closing) return;
           await renameHostWorktreeBranch(

@@ -412,11 +412,13 @@ describe("Composer question focus", () => {
     const trigger = document.querySelector<HTMLButtonElement>(
       '[aria-label="Folders for this session"]',
     );
-    expect(trigger?.textContent).toBe("repo");
+    expect(trigger?.textContent).toBe("Also work in");
     await act(async () => trigger!.click());
-    // The marker is an icon with an accessible name, not visible text.
-    expect(document.querySelector('[role="dialog"] [aria-label="Working folder"]')).not.toBeNull();
-    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Change project…");
+    // The project is fixed here: the list offers only "Also work in", never a project switch.
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).not.toContain("Change project…");
+    expect(dialog?.textContent).not.toContain("Project");
   });
 
   it.each([
@@ -2242,7 +2244,8 @@ describe("Composer question focus", () => {
     )!;
     expect(document.querySelector('[aria-label="Branch main"]')).not.toBeNull();
     await act(async () => workspace.click());
-    expect(document.body.textContent).toContain("Existing worktree…");
+    expect(document.body.textContent).toContain("New worktree");
+    expect(document.body.textContent).not.toContain("Existing worktree…");
     expect(document.querySelector('[aria-label="Branch main"]')).not.toBeNull();
     await act(async () => workspace.click());
 

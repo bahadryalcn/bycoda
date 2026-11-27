@@ -72,7 +72,7 @@ describe("conversation task configuration", () => {
   });
 
   it("reports completed but undelivered branches as blocking dependencies", () => {
-    const dependency = task("first", { status: "done", branch: "bycoda/t/first", merged: false });
+    const dependency = task("first", { status: "done", branch: "by/first", merged: false });
     expect(
       callConversationTaskRead(
         "tasks.dependencies.list",

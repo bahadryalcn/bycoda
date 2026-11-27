@@ -7,15 +7,22 @@ import {
 } from "../../sessions/public/models";
 import { menuSettings } from "../../sessions/public/modelPickerData";
 import { RUNTIME_MODES, runtimeModeUnavailableReason } from "../../sessions/public/session";
+import { loadProjectProviderSettings } from "../../sessions/public/projectProviders";
+import { loadGlobalSessionDefaults } from "../../sessions/public/providerSessionDefaults";
 import { mapDefaultsToProviders } from "./providerDefaultsMapping";
-import type { DefaultsDraft } from "./providerDefaultsDraft";
+import type { DefaultsDraft, DefaultsTarget } from "./providerDefaultsDraft";
 
 export function prepareDefaultsDraft(
   draft: DefaultsDraft,
   source: HarnessId,
   providers: readonly HarnessId[],
+  target: DefaultsTarget,
 ) {
   if (draft.providerScope !== "all") return { draft, skipped: [] };
+  const stored =
+    (target.kind === "project"
+      ? loadProjectProviderSettings(target.path).defaults?.[source]
+      : loadGlobalSessionDefaults()[source]) ?? {};
   return mapDefaultsToProviders(
     draft,
     source,
@@ -34,5 +41,6 @@ export function prepareDefaultsDraft(
         }),
       };
     }),
+    stored,
   );
 }

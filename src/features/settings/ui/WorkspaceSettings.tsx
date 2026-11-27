@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import {
+  FILE_TAB_MODE_DEFAULT,
+  LIVE_AGENTS_ENABLED_DEFAULT,
   loadFileTabMode,
   subscribeFileTabMode,
   loadLiveAgentsEnabled,
@@ -74,6 +76,8 @@ export function ExactGitRewindSetting() {
       description={t(
         "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.",
       )}
+      modified={loaded && enabled}
+      onReset={() => void save(false)}
       feedback={
         pending ? (
           <SettingsFeedback state="loading">
@@ -133,6 +137,8 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           id="file-tabs"
           label={t("File tabs")}
           info={t("Choose where files open. Both layouts support split panes.")}
+          modified={fileTabMode !== FILE_TAB_MODE_DEFAULT}
+          onReset={() => onFileTabMode(FILE_TAB_MODE_DEFAULT)}
           feedback={
             fileTabError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -168,6 +174,8 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           id="working-agents"
           label={t("Working agents")}
           info={t("Show running and recently finished chats in the project rail.")}
+          modified={liveAgentsEnabled !== LIVE_AGENTS_ENABLED_DEFAULT}
+          onReset={() => onLiveAgentsEnabled(LIVE_AGENTS_ENABLED_DEFAULT)}
           feedback={
             liveAgentsError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>

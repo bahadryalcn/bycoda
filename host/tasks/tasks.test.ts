@@ -926,7 +926,7 @@ async function setup(verifyTimeoutMs?: number) {
 }
 describe("explicit task workspaces and owner controls", () => {
   it("onTick stops verification recovery before checks, providers or commits begin", async () => {
-    for (const branch of [undefined, "mc/stopped-recovery"]) {
+    for (const branch of [undefined, "by/stopped-recovery"]) {
       const s = await setup();
       const sentinel = join(s.directory, "first", "stopped-check.txt");
       await s.tasks.save(
@@ -1085,7 +1085,7 @@ describe("explicit task workspaces and owner controls", () => {
     );
     await s.store.db
       .prepare(
-        "UPDATE tasks SET value=json_set(value, '$.status', 'verifying', '$.branch', 'mc/recovered', '$.baseBranch', 'main') WHERE id='main'",
+        "UPDATE tasks SET value=json_set(value, '$.status', 'verifying', '$.branch', 'by/recovered', '$.baseBranch', 'main') WHERE id='main'",
       )
       .run();
     const task = (await s.tasks.get("main"))!;
@@ -2993,7 +2993,7 @@ describe("a task on its own branch", () => {
     expect((await task()).status).toBe("review");
     expect((await task()).diffStat).toContain("report.md");
     expect((await task()).diffStat).toContain("notes.md");
-    expect(git(repo.cwd, "branch", "--list", "bycoda/t/*").split("\n")).toHaveLength(1);
+    expect(git(repo.cwd, "branch", "--list", "by/*").split("\n")).toHaveLength(1);
   });
 });
 describe("task verification", () => {

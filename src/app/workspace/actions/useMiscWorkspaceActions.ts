@@ -16,6 +16,7 @@ import { loadNotesEnabled } from "../../../features/settings/model/settings";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { requestSessionImport } from "../../../features/sessions/import/importModel";
+import { isImportProvider } from "../../../platform/tauri/sessionImport";
 import { sessionWorkCwd } from "../../../features/sessions/model/session";
 import type { ClaudeImportTarget } from "../../../features/sessions/model/claudeSessionImport";
 import type { useMoveTabsToNewWindow } from "../windows/useMoveTabsToNewWindow";
@@ -215,7 +216,7 @@ export function useNotesPanelToggle(deps: {
   return { onToggleNotesPanel };
 }
 
-/** Resumes a session in its provider: codex imports, claude opens the resume picker. */
+/** Resumes a session in its provider: claude opens the resume picker, other providers import. */
 export function useResumeProviderSession(deps: {
   sessionsRef: MutableRefObject<Session[]>;
   turnGen: MutableRefObject<Map<string, number>>;
@@ -228,11 +229,12 @@ export function useResumeProviderSession(deps: {
       const source = sessionsRef.current.find((session) => session.id === sessionId);
       if (!source) return;
       if (isRemoteProjectPath(source.cwd)) return;
-      if (source.harness === "codex") {
-        requestSessionImport({ cwd: sessionWorkCwd(source), provider: "codex" });
+      if (source.harness !== "claude") {
+        if (isImportProvider(source.harness)) {
+          requestSessionImport({ cwd: sessionWorkCwd(source), provider: source.harness });
+        }
         return;
       }
-      if (source.harness !== "claude") return;
       setResumePickerFor({
         sessionId,
         // Claude files conversations under the directory it ran in, which for a

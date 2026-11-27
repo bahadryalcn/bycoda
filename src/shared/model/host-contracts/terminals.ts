@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { IdentifierSchema, SafeCounterSchema, SignedSafeIntegerSchema } from "./schemas";
 
-/** Pipe shells only. PTY/SSH control leases retain their separate contracts. */
+/** Host-owned project terminals: interactive shells run in a PTY; one-shot commands in a pipe. */
 export const HostTerminalSchema = z.strictObject({
   id: IdentifierSchema,
   projectId: IdentifierSchema,
   name: z.string(),
   cwd: z.string(),
   shell: z.string(),
-  transport: z.literal("pipe"),
+  transport: z.enum(["pipe", "pty"]),
   state: z.enum(["running", "exited"]),
   createdAt: SafeCounterSchema,
   exitCode: SignedSafeIntegerSchema.nullable(),
@@ -35,6 +35,9 @@ export const TerminalsCreateParamsSchema = z.strictObject({
   profileId: z.string().optional(),
   command: z.string().min(1).max(10000).optional(),
   shellKind: z.enum(["powershell", "posix"]).optional(),
+  /** Initial PTY size from the client's fitted view; ignored for one-shot commands. */
+  cols: z.number().int().min(2).max(400).optional(),
+  rows: z.number().int().min(2).max(200).optional(),
 });
 export const TerminalsReadParamsSchema = z.strictObject({
   projectId: IdentifierSchema,
@@ -45,8 +48,14 @@ export const TerminalsReadParamsSchema = z.strictObject({
 export const TerminalsWriteParamsSchema = z.strictObject({
   projectId: IdentifierSchema,
   id: IdentifierSchema,
-  // UTF-8 byte limits remain in the shell owner, shared with legacy HTTP.
+  // Raw keystrokes for a PTY. UTF-8 byte limits remain in the shell owner, shared with legacy HTTP.
   data: z.string(),
+});
+export const TerminalsResizeParamsSchema = z.strictObject({
+  projectId: IdentifierSchema,
+  id: IdentifierSchema,
+  cols: z.number().int().min(2).max(400),
+  rows: z.number().int().min(2).max(200),
 });
 export const TerminalsControlParamsSchema = z.strictObject({
   projectId: IdentifierSchema,

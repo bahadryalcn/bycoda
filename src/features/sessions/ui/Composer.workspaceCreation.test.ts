@@ -24,6 +24,13 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
     settled: true,
   }),
 }));
+vi.mock("../../workspaces/model/creationProgress", () => ({
+  useCreationProgress: () => ({
+    phase: "running",
+    stages: [{ id: "checkout", status: "running" }],
+  }),
+  cancelCreation: vi.fn(),
+}));
 vi.mock("../../workspaces/model/workspaceCreation", () => ({
   shortWorkspaceRef: (ref: string) => ref,
   useWorkspaceCreation: (_cwd: string, _active: boolean, choice?: string) => ({
@@ -223,4 +230,11 @@ it("shows machine and project controls without Git or folder actions in a projec
   expect(submit).toHaveBeenCalledWith("/add-to-folder", [], expect.anything());
   expect(onPlaceInFolder).not.toHaveBeenCalled();
   expect(container.querySelector("[data-session-folder-picker]")).toBeNull();
+});
+
+it("shows the creation progress card while a progress id is set and drops it afterwards", async () => {
+  await draw({ workspaceMode: "worktree", creationProgressId: "p1" });
+  expect(container.querySelector("[data-workspace-creation-progress]")).not.toBeNull();
+  await draw({ workspaceMode: "worktree", creationProgressId: undefined });
+  expect(container.querySelector("[data-workspace-creation-progress]")).toBeNull();
 });

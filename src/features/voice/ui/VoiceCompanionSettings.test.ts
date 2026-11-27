@@ -36,7 +36,7 @@ it("links to the Room's memory notes, toggles local memory and chooses the visua
     expect(change).not.toHaveBeenCalled();
     // The row is a switch and a link; the description that restated the label is gone.
     expect(host.textContent).not.toContain("Keeps short notes about you");
-    await act(async () => button("Manage (7)").click());
+    await act(async () => button("7 notes").click());
     expect((open.mock.calls[0]![0] as CustomEvent).detail).toEqual({ tab: "memory" });
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Memory"]')!.click(),

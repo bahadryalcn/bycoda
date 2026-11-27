@@ -22,6 +22,10 @@
   .tiles[data-tile-layout="icon"] {
     gap: var(--space-1);
   }
+  .tiles[data-tile-layout="list"] {
+    display: grid;
+    gap: 0.125rem;
+  }
   .tile {
     min-inline-size: 0;
   }
@@ -29,7 +33,7 @@
 
 /* The selection ring is drawn inside the tile bounds, so it is never clipped at the edge
    of the group or its scroll container. Outranks the outer rings of Button's indicators. */
-.tiles
+.tiles:not([data-tile-layout="list"])
   .tile[role="radio"][aria-checked="true"][data-button-selected][data-button-hierarchy]:not(
     [data-selection-indicator="dot"]
   ) {

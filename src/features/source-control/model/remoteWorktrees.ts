@@ -5,7 +5,12 @@ import { parseRemotePath, remotePath } from "../../connections/public/remoteProj
 import { requireRemoteSupport } from "../../connections/public/remoteCapabilities";
 import { t } from "../../../shared/i18n/gitCore";
 import { isRemoteProjectPath } from "../../../shared/lib/paths";
-import { createWorktree, type Worktree, type WorktreeRemovalReview } from "./worktrees";
+import {
+  createWorktree,
+  normalizeWorktrees,
+  type Worktree,
+  type WorktreeRemovalReview,
+} from "./worktrees";
 
 export type RemoteWorktreeRemovalReview = WorktreeRemovalReview & {
   blockers: string[];
@@ -83,7 +88,26 @@ async function owningMachine(cwd: string) {
   if (!parsed) throw new Error(t("This project’s machine isn’t connected on this computer."));
   const machine = await remoteMachineFor(parsed.environmentId);
   if (!machine) throw new Error(t("This project’s machine isn’t connected on this computer."));
-  return { machine, hostPath: parsed.hostPath, environmentId: parsed.environmentId };
+  return {
+    machine,
+    hostPath: parsed.hostPath,
+    environmentId: parsed.environmentId,
+  };
+}
+
+/** Lists the worktrees of a repository on the Host that owns it; paths stay `remote://`. */
+export async function listRemoteWorktrees(cwd: string): Promise<Worktree[]> {
+  const { machine, environmentId } = await owningMachine(cwd);
+  const project = await hostProjectFor(machine, cwd);
+  const listed = await remoteRequest<Parameters<typeof normalizeWorktrees>[0]>(
+    machine.id,
+    "git.worktrees",
+    { projectId: project.id },
+  );
+  return normalizeWorktrees(listed).worktrees.map((tree) => ({
+    ...tree,
+    path: remotePath(environmentId, tree.path),
+  }));
 }
 
 /** Creates the worktree on the Host that owns the project, never on this computer. */

@@ -78,7 +78,7 @@ it("sends every candidate with researched facts, the baseline, accounts and role
     [make("codex:gpt-6.1-sol", false, { id: "x", label: "Spare" }), make("mystery", true)],
     names,
   );
-  expect(prompt).toContain('"researchedScore":90');
+  expect(prompt).toContain('"researchedScore":87');
   expect(prompt).toContain('"usdPerMInput":2');
   expect(prompt).toContain('"profile":"estimated"');
   expect(prompt).toContain('"baselineOrder":[');
@@ -229,7 +229,7 @@ it("never rejects: no model, garbage, failure and hang use the researched rules"
   vi.useFakeTimers();
   provider.run.mockReturnValueOnce(new Promise(() => {}));
   const pending = planSmartSetup(candidates, names, {});
-  await vi.advanceTimersByTimeAsync(200_000);
+  await vi.advanceTimersByTimeAsync(250_000);
   expect(await pending).toEqual({
     ...rules,
     failure: { planner: "helper · Codex · Personal", reason: "timeout" },

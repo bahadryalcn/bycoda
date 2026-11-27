@@ -72,7 +72,7 @@ it("keeps known quota visible when refresh fails", () => {
 it("keeps every provider account in the comparison with its own quota", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage, { limitsOnly: true }));
   expect(markup).toContain('aria-label="Codex · Default account"');
-  expect(markup).toContain('aria-label="Claude · Default account"');
+  expect(markup).toContain('aria-label="Claude Code · Default account"');
   expect(markup.match(/class="usage-account-identity"/g)).toHaveLength(2);
   expect(markup.match(/aria-valuenow="58"/g)).toHaveLength(2);
 });
@@ -80,7 +80,7 @@ it("keeps every provider account in the comparison with its own quota", () => {
 it("uses account colors for limits and exposes usage preferences", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
   expect(markup).toContain("hsl(330 70% 62%)");
-  expect(markup).toContain("Account actions");
+  expect(markup).toContain("Account color");
   expect(markup).not.toContain("Display preferences");
   expect(markup).toContain("Show remaining usage");
   const revealed = renderToStaticMarkup(
@@ -124,7 +124,7 @@ it("shows a known reset as a visible countdown, with the exact time left to its 
     const markup = renderToStaticMarkup(createElement(UsagePage));
     expect(markup).toMatch(/Resets in \d+d/);
     expect(markup).not.toContain("Reset time unavailable");
-    expect(markup).toContain('aria-label="Default account · 5 hours · left"');
+    expect(markup).toContain('aria-label="Codex · Default account · 5-hour · left"');
   } finally {
     limits.session.resetsAt = null;
   }

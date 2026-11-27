@@ -47,7 +47,7 @@ export function DictationModelSettings({
   return (
     <Row
       id="dictation-model"
-      label={t("Dictation model")}
+      label={t("Model")}
       feedback={
         // One message at a time: loading, load failure, or a saved model that is gone.
         engine === "openrouter" && pending ? (
@@ -74,7 +74,7 @@ export function DictationModelSettings({
     >
       <Select
         hideLabel
-        label={t("Dictation model")}
+        label={t("Model")}
         value={value}
         options={options}
         disabled={engine === "openrouter" && (pending || error || !models)}

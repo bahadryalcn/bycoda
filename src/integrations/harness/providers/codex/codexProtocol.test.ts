@@ -1229,6 +1229,35 @@ describe("parseCodexModelList", () => {
     expect(luna?.settings?.some((s) => s.id === "serviceTier")).toBe(true);
     expect(luna?.settings?.find((s) => s.id === "reasoningEffort")?.value).toBe("medium");
   });
+
+  it("offers every service tier the catalog lists with sentence-case labels", () => {
+    const [sol] = parseCodexModelList([
+      {
+        model: "gpt-6.2-sol",
+        displayName: "gpt-6.2-sol",
+        supportedReasoningEfforts: [],
+        serviceTiers: [{ id: "priority", name: "Fast" }, { id: "ultrafast" }],
+      },
+    ]);
+    const tier = sol?.settings?.find((s) => s.id === "serviceTier");
+    expect(tier?.label).toBe("Service tier");
+    expect(tier?.options).toEqual([
+      { value: "default", label: "Standard" },
+      { value: "priority", label: "Fast" },
+      { value: "ultrafast", label: "Ultrafast" },
+    ]);
+    const [flex] = parseCodexModelList([
+      {
+        model: "m",
+        displayName: "m",
+        supportedReasoningEfforts: [],
+        additionalSpeedTiers: ["flex", "fast"],
+      },
+    ]);
+    expect(
+      flex?.settings?.find((s) => s.id === "serviceTier")?.options.map((o) => o.label),
+    ).toEqual(["Standard", "Flex", "Fast"]);
+  });
 });
 
 describe("mapCodexNotification thread/tokenUsage/updated", () => {

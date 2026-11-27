@@ -333,18 +333,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
 ];
 
-export function settingsSectionsByGroup(active?: SettingsSectionId): {
+export function settingsSectionsByGroup(): {
   id: SettingsGroupId;
   label: string;
   sections: SettingsSection[];
 }[] {
   return SETTINGS_GROUPS.map((group) => ({
     ...group,
-    sections: SETTINGS_SECTIONS.filter(
-      (section) =>
-        section.group === group.id &&
-        (section.id === active || (section.id !== "archive" && section.id !== "tools")),
-    ).sort((a, b) => SETTINGS_SECTION_ORDER.indexOf(a.id) - SETTINGS_SECTION_ORDER.indexOf(b.id)),
+    sections: SETTINGS_SECTIONS.filter((section) => section.group === group.id).sort(
+      (a, b) => SETTINGS_SECTION_ORDER.indexOf(a.id) - SETTINGS_SECTION_ORDER.indexOf(b.id),
+    ),
   })).filter((group) => group.sections.length > 0);
 }
 
@@ -627,11 +625,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "import-history",
-    section: "archive",
+    section: "chat",
     get label() {
       return t("Import history");
     },
-    keywords: "history conversations terminal resume migrate existing claude codex",
+    keywords:
+      "history conversations terminal resume migrate existing claude codex cursor grok opencode pi omp hermes antigravity openclaw",
   },
   {
     id: "sounds",
@@ -857,7 +856,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "dictation-enabled",
     section: "voice",
     get label() {
-      return t("Enable dictation");
+      return t("Dictation");
     },
     keywords: "dictate dictation speech to text microphone diktate dikte yazdır mikrofon",
   },
@@ -890,7 +889,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "dictation-cleanup",
     section: "voice",
     get label() {
-      return t("Clean up dictated text");
+      return t("Clean up text with Codex");
     },
     keywords:
       "dictation cleanup punctuation model translate correction dikte düzelt noktalama çeviri",
@@ -899,7 +898,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "dictation-local-models",
     section: "voice",
     get label() {
-      return t("Local transcription models");
+      return t("Manage models");
     },
     keywords: "dictation whisper model download delete test local dikte model indir sil yerel",
   },
@@ -907,7 +906,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "voice-companion",
     section: "voice",
     get label() {
-      return t("Voice companion");
+      return t("Voice assistant");
     },
     keywords:
       "voice speech microphone whisper voxcpm python models ses konuşma mikrofon sesli model kurulum",
@@ -1207,9 +1206,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     {
       id: "terminal-account-profiles",
       section: "providers",
-      label: () => t("Terminal account profiles"),
+      label: () => t("Add existing account"),
       keywords:
-        "discover connect directory folder cli sign in profile terminal hesap profil klasör keşfet",
+        "existing import discover connect directory folder cli sign in profile terminal mevcut hesap profil klasör keşfet",
     },
     {
       id: "code-theme",
@@ -1266,10 +1265,10 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "terminal-account-profiles-codex",
     section: "providers",
     get label() {
-      return `Codex · ${t("Terminal account profiles")}`;
+      return `Codex · ${t("Add existing account")}`;
     },
     keywords:
-      "codex discover connect directory folder cli sign in profile terminal hesap profil klasör keşfet",
+      "codex existing import discover connect directory folder cli sign in profile terminal mevcut hesap profil klasör keşfet",
   },
   ...HARNESSES.map((harness) => ({
     id: `cli-path-${harness}`,
@@ -1359,102 +1358,97 @@ export function settingsRevealAnchor(anchor: string | null): string | null {
 /** Labels of controls inside a group target, searched in both UI and source language. */
 function settingsControlLabels(): Record<string, readonly string[]> {
   return {
-    "git-generation-defaultt(": [")Default generation modelt("],
-    theme: [")Theme and colorst(", ")Systemt(", ")Lightt(", ")Darkt("],
-    ")theme-palettest(": [")Bluet(", ")Violett(", ")Pinkt(", ")Redt(", ")Oranget(", ")Greent("],
-    ")canvas-backgroundt(": [")Puret(", ")Tintedt("],
-    ")file-accesst(": [")File accesst(", ")Change file accesst("],
-    ")file-access-permissionst(": [")File accesst("],
-    ")import-historyt(": [")Import Claude Code and Codex sessionst("],
-    ")file-tabst(": [")Beside chatt(", ")Top bart("],
-    ")collapsed-project-railt(": [")Icon railt(", ")Hiddent("],
-    ")session-listt(": [
-      ")Row densityt(",
-      ")Compactt(",
-      ")Standardt(",
-      ")Detailedt(",
-      ")Show modelt(",
-      ")Show brancht(",
-      ")Group after holdingt(",
+    "git-generation-default": [t("Default generation model")],
+    theme: [t("Theme and colors"), t("System"), t("Light"), t("Dark")],
+    "theme-palettes": [t("Blue"), t("Violet"), t("Pink"), t("Red"), t("Orange"), t("Green")],
+    "canvas-background": [t("Pure"), t("Tinted")],
+    "file-access": [t("File access"), t("Change file access")],
+    "file-access-permissions": [t("File access")],
+    "import-history": [t("Import sessions from other coding agents")],
+    "file-tabs": [t("Beside chat"), t("Top bar")],
+    "collapsed-project-rail": [t("Icon rail"), t("Hidden")],
+    "session-list": [
+      t("Row density"),
+      t("Compact"),
+      t("Standard"),
+      t("Detailed"),
+      t("Show model"),
+      t("Show branch"),
+      t("Group after holding"),
     ],
-    ")diff-colorst(": [")Red & greent(", ")Blue & oranget(", ")Blue & orange · strongert("],
-    ")chat-widtht(": [")Comfortablet(", ")Widet(", ")Full widtht("],
-    ")interface-fontt(": [")System defaultt("],
-    ")transcript-layoutt(": [")Full widtht(", ")Chatt("],
-    ")composer-spellingt(": [")Queuet(", ")Steert("],
-    ")model-controlst(": [
-      ")Compactt(",
-      ")Show active choicest(",
-      ")Advanced conversation settingst(",
-      ")Continuation and model optionst(",
+    "diff-colors": [t("Red & green"), t("Blue & orange"), t("Blue & orange · stronger")],
+    "chat-width": [t("Comfortable"), t("Wide"), t("Full width")],
+    "interface-font": [t("System default")],
+    "transcript-layout": [t("Full width"), t("Chat")],
+    "composer-spelling": [t("Queue"), t("Steer")],
+    "model-controls": [
+      t("Compact"),
+      t("Show active choices"),
+      t("Advanced conversation settings"),
+      t("Continuation and model options"),
     ],
-    ")streaming-text-modet(": [")Paced (default)t(", ")Immediate with adaptive fadet("],
-    ")crew-growtht(": [")Color with contextt(", ")Grow with contextt("],
-    ")chat-backgroundt(": [")Empty onlyt(", ")All sessionst("],
-    ")live-backgroundt(": [
-      ")Neural treet(",
-      ")Latent facet(",
-      ")Thought weavert(",
-      ")ASCII maskt(",
+    "streaming-text-mode": [t("Paced (default)"), t("Immediate with adaptive fade")],
+    "crew-growth": [t("Color with context"), t("Grow with context")],
+    "chat-background": [t("Empty only"), t("All sessions")],
+    "live-background": [t("Neural tree"), t("Latent face"), t("Thought weaver"), t("ASCII mask")],
+    "format-on-save": [t("Editor"), t("Advanced editor settings")],
+    "diff-view": [t("Editor"), t("Unified"), t("Code review")],
+    "models-delegation": [
+      t("Subagents"),
+      t("Advisor"),
+      t("Subagent max effort"),
+      t("Image models"),
     ],
-    ")format-on-savet(": [")Editort(", ")Advanced editor settingst("],
-    ")diff-viewt(": [")Editort(", ")Unifiedt(", ")Code reviewt("],
-    ")models-delegationt(": [
-      ")Subagentst(",
-      ")Advisort(",
-      ")Subagent max effortt(",
-      ")Image modelst(",
+    "agent-clis": [
+      t("Agent CLIs"),
+      t("Model"),
+      t("Default provider"),
+      t("Default model"),
+      t("Effort"),
+      t("Permissions"),
+      t("Default extras"),
+      t("Show in picker"),
+      t("Apply defaults to"),
+      t("Global"),
     ],
-    ")agent-clist(": [
-      ")Agent CLIst(",
-      ")Modelt(",
-      ")Default providert(",
-      ")Default modelt(",
-      ")Effortt(",
-      ")Permissionst(",
-      ")Default extrast(",
-      ")Show in pickert(",
-      ")Apply defaults tot(",
-      ")Globalt(",
+    "provider-accounts": [
+      t("Accounts"),
+      t("Default account"),
+      t("Provider CLI profile"),
+      t("Shared CLI profile"),
+      t("Isolated profile"),
     ],
-    ")provider-accountst(": [
-      ")Accountst(",
-      ")Default accountt(",
-      ")Provider CLI profilet(",
-      ")Shared CLI profilet(",
-      ")Isolated profilet(",
+    "acp-agents": [t("Agent id"), t("Name"), t("Executable path")],
+    "acp-advanced": [
+      t("Arguments (JSON array)"),
+      t("Environment (JSON object; blank preserves stored values)"),
+      t("ACP authentication method id (optional)"),
+      t("Context window tokens (optional)"),
     ],
-    ")acp-agentst(": [")Agent idt(", ")Namet(", ")Executable patht("],
-    ")acp-advancedt(": [
-      ")Arguments (JSON array)t(",
-      ")Environment (JSON object; blank preserves stored values)t(",
-      ")ACP authentication method id (optional)t(",
-      ")Context window tokens (optional)t(",
+    "prompt-templates": [t("Template name"), t("Template trigger"), t("Template text")],
+    "cost-overview": [t("Cost range"), t("Estimated cost"), t("Input"), t("Output"), t("Cache")],
+    "daily-summary": [t("Daily summary time")],
+    "terminal-available-shells": [
+      t("Advanced terminal settings"),
+      t("This computer · Available shells"),
     ],
-    ")prompt-templatest(": [")Template namet(", ")Template triggert(", ")Template textt("],
-    ")cost-overviewt(": [")Cost ranget(", ")Estimated costt(", ")Inputt(", ")Outputt(", ")Cachet("],
-    ")daily-summaryt(": [")Daily summary timet("],
-    ")terminal-available-shellst(": [
-      ")Advanced terminal settingst(",
-      ")This computer · Available shellst(",
-    ],
-    ")group-lock-optionst(": [")Advanced: automatic lockingt("],
-    ")claude-hookst(": [")Advanced provider optionst("],
-    ")archived-projectst(": [")Restoret(", ")Deletet("],
-    ")archived-conversationst(": [")Restoret(", ")Deletet("],
-    ")project-notificationst(": [
-      ")Mutet(",
-      ")Reminderst(",
-      ")Pull requests / Merge requestst(",
-      ")Issues and Linear taskst(",
-      ")Agent approvals and questionst(",
-      ")Agent failures and usage limitst(",
+    "group-lock-options": [t("Advanced: automatic locking")],
+    "claude-hooks": [t("Advanced provider options")],
+    "archived-projects": [t("Restore"), t("Delete")],
+    "archived-conversations": [t("Restore"), t("Delete")],
+    "project-notifications": [
+      t("Mute"),
+      t("Reminders"),
+      t("Pull requests / Merge requests"),
+      t("Issues and Linear tasks"),
+      t("Agent approvals and questions"),
+      t("Agent failures and usage limits"),
     ],
     ...integrationsControlLabels(),
-    ")group-lock-passwordt(": [
-      ")Change password…t(",
-      ")Remove password…t(",
-      ")Forgot password…t(",
+    "group-lock-password": [
+      t("Change password…"),
+      t("Remove password…"),
+      t("Forgot password…"),
       ")Set lock password…",
     ],
   };
@@ -1853,7 +1847,7 @@ export const subscribeLiveAgentsEnabled = liveAgentsEnabledSetting.subscribe;
 
 const MINIMIZE_TO_TRAY_KEY = "bycoda.minimizeToTray";
 
-export const KEEP_AWAKE_DEFAULT = false;
+export const KEEP_AWAKE_DEFAULT = true;
 export const KEEP_AWAKE_CHANGE_EVENT = "bycoda:keep-awake-change";
 
 export function loadKeepAwakeEnabled(): boolean {

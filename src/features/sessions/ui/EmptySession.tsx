@@ -14,6 +14,7 @@ import {
 import { loadCrewSceneEnabled, subscribeCrewSceneEnabled } from "../../settings/public/settings";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { CrewScene } from "./crewSurface";
+import { DraftProjectPicker } from "./DraftProjectPicker";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import { isProjectlessCwd } from "../model/recentSessions";
@@ -23,9 +24,19 @@ type Props = {
   cwd: string;
   composer?: ReactNode;
   hasChatBackground?: boolean;
+  /** Draft sessions only: the heading becomes a project picker that retargets the session. */
+  onProjectChange?: (path: string) => void;
+  /** The machine of a remote draft, so its project picker lists that machine's projects. */
+  environmentId?: string;
 };
 
-export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
+export function EmptySession({
+  cwd,
+  composer,
+  hasChatBackground,
+  onProjectChange,
+  environmentId,
+}: Props) {
   const t = useT();
   const hasProject = looksLikeProject(cwd) && !isProjectlessCwd(cwd);
   const remote = hasProject ? parseRemotePath(cwd) : null;
@@ -71,7 +82,18 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <BrandMark />
               <BrandMark variant="wordmark" className="bycoda-brand-lettering" />
             </div>
-            {project ? (
+            {onProjectChange ? (
+              <div className="bycoda-task-brief pointer-events-auto">
+                <Heading size="page">
+                  <DraftProjectPicker
+                    cwd={hasProject ? cwd : ""}
+                    environmentId={environmentId}
+                    onProjectChange={onProjectChange}
+                  />
+                </Heading>
+                {project ? <p className="bycoda-task-path">{projectLocation}</p> : null}
+              </div>
+            ) : project ? (
               <div className="bycoda-task-brief pointer-events-auto">
                 <Heading size="page">{project}</Heading>
                 <p className="bycoda-task-path">{projectLocation}</p>

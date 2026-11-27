@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { t } from "../../../shared/i18n";
@@ -96,7 +96,12 @@ export function VoiceCloudKey({
   return (
     <Row
       id={`voice-${provider}-key`}
-      label={copy.label()}
+      label={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          {copy.label()}
+          {saved ? <StatusText tone="done">{t("Saved")}</StatusText> : null}
+        </span>
+      }
       description={copy.description()}
       feedback={
         statusError ? (
@@ -128,19 +133,12 @@ export function VoiceCloudKey({
           if (saved !== undefined && !busy && key.trim()) void apply(key.trim());
         }}
       >
-        {saved ? <Badge tone="success">{t("Key saved")}</Badge> : null}
         <PasswordField
           label={copy.label()}
           hideLabel
           value={key}
           onChange={(event) => setKey(event.target.value)}
-          placeholder={
-            saved === undefined
-              ? t("Key status unknown")
-              : saved
-                ? t("Replace key")
-                : t("Paste API key")
-          }
+          placeholder={t("Paste API key")}
           disabled={busy !== null}
           autoComplete="off"
           spellCheck={false}
@@ -148,6 +146,8 @@ export function VoiceCloudKey({
         />
         <Button
           type="submit"
+          variant="secondary"
+          size="sm"
           loading={busy === "save"}
           loadingLabel={t("Checking key…")}
           disabled={busy !== null || saved === undefined || !key.trim()}
@@ -156,7 +156,7 @@ export function VoiceCloudKey({
               ? t("Wait for the current key action to finish.")
               : saved === undefined
                 ? t("Checking the saved key first.")
-                : t("Paste an API key first.")
+                : undefined
           }
         >
           {t("Save")}
@@ -164,7 +164,9 @@ export function VoiceCloudKey({
         {saved ? (
           <Button
             type="button"
-            variant="ghost"
+            variant="secondary"
+            size="sm"
+            tone="danger"
             loading={busy === "remove"}
             disabled={busy !== null}
             disabledReason={t("Wait for the current key action to finish.")}

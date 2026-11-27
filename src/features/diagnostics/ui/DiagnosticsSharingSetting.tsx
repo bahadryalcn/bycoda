@@ -1,11 +1,11 @@
 import { useRef, useState, useSyncExternalStore } from "react";
+import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Text } from "../../../shared/ui/Text";
+import { Row } from "../../../shared/ui/settings";
 import { TextField } from "../../../shared/ui/TextField";
 import {
   getDiagnosticsMode,
@@ -20,8 +20,8 @@ import { diagnosticResultText } from "./diagnosticsCopy";
 const NOTE_MAX = 2000;
 
 /**
- * Diagnostic sharing modes and their help, plus manual report review with an optional note.
- * The retention explanation belongs in the info icon of the host row (Settings → Privacy).
+ * The Settings → Privacy row for diagnostic sharing: the mode, manual report review with an
+ * optional note, and one info tooltip with what is sent, retention and the current mode.
  */
 export function DiagnosticsSharingSetting() {
   useLocale();
@@ -59,47 +59,51 @@ export function DiagnosticsSharingSetting() {
       setBusy(false);
     }
   };
+  const modeHelp =
+    mode === "off"
+      ? t("Nothing is sent. Pick a mode to review and share a report.")
+      : mode === "auto"
+        ? t("Review a crash report or weekly logs before they are sent automatically.")
+        : t("Every report requires approval.");
   return (
-    <div className="flex flex-col items-end gap-2">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <InfoPopover label={t("Share diagnostic logs")}>
-          <Text as="p" size="caption" tone="secondary">
-            {mode === "off"
-              ? t("Nothing is sent. Pick a mode to review and share a report.")
-              : mode === "auto"
-                ? t("Review a crash report or weekly logs before they are sent automatically.")
-                : t("Every report requires approval.")}
-          </Text>
-        </InfoPopover>
-        <SegmentedControl
-          label={t("Share diagnostic logs")}
-          value={mode}
-          onValueChange={(value) => setDiagnosticsMode(value as DiagnosticsMode)}
-          options={[
-            { value: "off", label: t("Do not send") },
-            { value: "ask", label: t("Ask every time") },
-            { value: "auto", label: t("Send every time") },
-          ]}
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={busy}
-          disabled={mode === "off"}
-          disabledReason={t("Choose a diagnostic sharing mode to review a report.")}
-          onClick={() => send().catch(() => undefined)}
-        >
-          {t("Send logs now")}
-        </Button>
-      </div>
-      {result ? (
-        <InlineMessage
-          tone={result === "sent" ? "success" : result === "declined" ? "info" : "danger"}
-        >
-          {diagnosticResultText(result)}
-        </InlineMessage>
-      ) : null}
+    <Row
+      label={t("Share diagnostic logs")}
+      controlWidth="fill"
+      description={`${t(
+        "Diagnostic logs are the app and Host logs, with secrets, e-mail addresses and your user name removed on this computer. They never include your conversations, prompts or code. They are kept {p0} days.",
+        { p0: DIAGNOSTIC_RETENTION_DAYS },
+      )} ${modeHelp}`}
+      feedback={
+        result ? (
+          <InlineMessage
+            tone={result === "sent" ? "success" : result === "declined" ? "info" : "danger"}
+          >
+            {diagnosticResultText(result)}
+          </InlineMessage>
+        ) : undefined
+      }
+    >
+      <SegmentedControl
+        label={t("Share diagnostic logs")}
+        value={mode}
+        onValueChange={(value) => setDiagnosticsMode(value as DiagnosticsMode)}
+        options={[
+          { value: "off", label: t("Do not send") },
+          { value: "ask", label: t("Ask every time") },
+          { value: "auto", label: t("Send every time") },
+        ]}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={busy}
+        disabled={mode === "off"}
+        disabledReason={t("Choose a diagnostic sharing mode to review a report.")}
+        onClick={() => send().catch(() => undefined)}
+      >
+        {t("Send logs now")}
+      </Button>
       {dialog}
-    </div>
+    </Row>
   );
 }

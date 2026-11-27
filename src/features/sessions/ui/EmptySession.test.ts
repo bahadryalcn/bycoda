@@ -30,6 +30,48 @@ describe("empty session heading", () => {
     expect(markup).toContain('<p class="bycoda-task-path">/work/demo</p>');
   });
 
+  it("turns the heading into a project picker for a draft that may change project", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "/work/demo",
+        composer: createElement("textarea"),
+        onProjectChange: () => {},
+      }),
+    );
+
+    expect(markup).toContain('aria-haspopup="dialog"');
+    expect(markup).toContain("Switch project, current project demo");
+    expect(markup).toContain('<p class="bycoda-task-path">/work/demo</p>');
+  });
+
+  it("offers the picker without a project so a draft can leave No project", () => {
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "~",
+        composer: createElement("textarea"),
+        onProjectChange: () => {},
+      }),
+    );
+
+    expect(markup).toContain('aria-label="Choose project"');
+    expect(markup).not.toContain("bycoda-task-path");
+  });
+
+  it("lets a remote draft pick among its machine's projects from the heading", () => {
+    adoptRemoteMachineInventory([]);
+    const markup = renderToStaticMarkup(
+      createElement(EmptySession, {
+        cwd: "remote://remote-host/srv/api",
+        environmentId: "remote-host",
+        composer: createElement("textarea"),
+        onProjectChange: () => {},
+      }),
+    );
+
+    expect(markup).toContain("Switch project, current project api");
+    expect(markup).toContain("bycoda-task-path");
+  });
+
   it("distinguishes projects that share the same folder name", () => {
     for (const cwd of ["/work/client-a/demo", "/work/client-b/demo"]) {
       const markup = renderToStaticMarkup(

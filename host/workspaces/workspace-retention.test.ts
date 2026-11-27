@@ -35,7 +35,7 @@ const workspace = (changes: Partial<ManagedWorkspace> = {}): ManagedWorkspace =>
   environmentId: "local",
   owner: { kind: "session", id: "owner" },
   path: "/managed/wt-workspace",
-  branchRef: "refs/heads/bycoda/s/test-123456789012",
+  branchRef: "refs/heads/by/test-123456789012",
   baseRef: "refs/heads/main",
   baseCommit: "abc",
   targetBranchRef: "refs/heads/main",

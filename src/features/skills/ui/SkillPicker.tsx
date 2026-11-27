@@ -408,7 +408,7 @@ export function CreateSkillForm({
           text={t("Preparing session checkpoint. Your draft is kept.")}
         />
       ) : null}
-      {/* Without a local project the skill can only be personal, so there is nothing to choose. */}
+      {/* Without a local project the skill can only go to all projects, so there is nothing to choose. */}
       {project ? (
         <SegmentedControl
           label={t("Scope")}
@@ -419,7 +419,7 @@ export function CreateSkillForm({
           }}
           options={[
             { value: "project", label: t("Project") },
-            { value: "user", label: t("Personal") },
+            { value: "user", label: t("All projects") },
           ]}
         />
       ) : null}

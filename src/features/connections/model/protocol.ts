@@ -603,6 +603,8 @@ type HostCommandBody =
       expectedPlanText?: string;
       /** Context delivered to the provider separately from the visible user prompt. */
       contextReplay?: string;
+      /** Extra folders on the Host (capability `sessions.additionalDirs.v1`); replaces the session's list. */
+      additionalDirs?: string[];
     }
   | {
       type: "draft";

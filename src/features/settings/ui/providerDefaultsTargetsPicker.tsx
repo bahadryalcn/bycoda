@@ -1,266 +1,86 @@
-import { useId, useRef, useState } from "react";
-import {
-  PickerList,
-  PickerFooter,
-  usePickerList,
-  type PickerOption,
-} from "../../../shared/ui/picker";
-import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
+import { useState } from "react";
 import { t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Globe, LayoutGrid } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import { Group, Row } from "../../../shared/ui/settings";
-import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
-import {
-  selectedTargetValues,
-  targetValue,
-  type DefaultsDraft,
-  type DefaultsTarget,
-} from "../model/providerDefaultsDraft";
-import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
-
-export function defaultsTargetsSummary(
-  values: readonly string[],
-  options: readonly SearchableSelectOption[],
-) {
-  if (!values.length || (values.length === 1 && values[0] === "global"))
-    return t("Bycoda defaults");
-  if (values.length === 1)
-    return options.find((option) => option.value === values[0])?.label ?? t("Project overrides");
-  const projects = options.filter(
-    (option) => option.value.startsWith("project:") && !option.disabled,
-  );
-  if (
-    !values.includes("global") &&
-    values.length === projects.length &&
-    projects.every((option) => values.includes(option.value))
-  )
-    return t("All projects ({p0})", { p0: projects.length });
-  return values.includes("global")
-    ? t("Bycoda defaults + {p0} overrides", { p0: values.length - 1 })
-    : t("{p0} overrides", { p0: values.length });
-}
-
-/** App defaults are the ordinary scope; project/group overrides are an explicit separate choice. */
-export function DefaultsTargetsPicker({
-  values,
-  options,
-  onChange,
-}: {
-  values: string[];
-  options: SearchableSelectOption[];
-  onChange: (values: string[]) => void;
-}) {
-  const anchor = useRef<HTMLButtonElement>(null);
-  const search = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
-  const doneReasonId = useId();
-  const [query, setQuery] = useState("");
-  const [group, setGroup] = useState("");
-  const hasOverrides = values.some((value) => value !== "global");
-  const [mode, setMode] = useState(hasOverrides ? "projects" : "default");
-  const available = options.filter((option) => !option.disabled && option.value !== "global");
-  const sections = [...new Set(available.map((option) => option.group ?? ""))];
-  const change = (next: string[]) => {
-    const overrides = next.filter((value) => value !== "global");
-    onChange(overrides.length ? overrides : ["global"]);
-    setMode(overrides.length ? "projects" : "default");
-  };
-  const toggle = (entries: string[], checked: boolean) =>
-    change(
-      checked
-        ? [...new Set([...values, ...entries])]
-        : values.filter((value) => !entries.includes(value)),
-    );
-  const pickerOptions: PickerOption[] = sections
-    .filter((section) => !group || section === group)
-    .flatMap((section) => {
-      const entries = available.filter(
-        (option) =>
-          (option.group ?? "") === section &&
-          `${option.label} ${option.keywords ?? ""} ${option.meta ?? ""}`
-            .toLocaleLowerCase()
-            .includes(query.toLocaleLowerCase()),
-      );
-      const keys = entries.map((option) => option.value);
-      return [
-        ...(section && entries.length
-          ? [
-              {
-                value: `section:${section}`,
-                title: t("Select all: {p0}", { p0: section }),
-                group: section,
-                onAction: () => toggle(keys, !keys.every((value) => values.includes(value))),
-              },
-            ]
-          : []),
-        ...entries.map((option) => ({
-          value: option.value,
-          title: option.label,
-          icon: option.icon,
-          meta: option.meta,
-          group: section || undefined,
-        })),
-      ];
-    });
-  const list = usePickerList({
-    options: pickerOptions,
-    multiple: true,
-    value: values.filter((value) => value !== "global"),
-    onChange: change,
-    inputRef: search,
-    resetKey: `${open}:${query}:${group}:${mode}`,
-  });
-  return (
-    <>
-      <Button
-        ref={anchor}
-        variant="ghost"
-        size="sm"
-        aria-label={t("Save in")}
-        startIcon={<Globe className="icon-sm" />}
-        aria-haspopup="dialog"
-        expanded={open}
-        onClick={() => {
-          setMode(hasOverrides ? "projects" : "default");
-          setOpen(!open);
-        }}
-      >
-        {defaultsTargetsSummary(values, options)}
-      </Button>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          side="top"
-          align="end"
-          maxHeight={520}
-          flow="auto"
-          kind="dialog"
-          aria-label={t("Apply defaults to")}
-          onDismiss={() => setOpen(false)}
-          variant="panel"
-        >
-          <div>
-            <SegmentedControl
-              label={t("Defaults scope")}
-              value={mode}
-              options={[
-                { value: "default", label: t("Bycoda defaults") },
-                { value: "projects", label: t("Project overrides") },
-              ]}
-              onValueChange={(next) => {
-                setMode(next);
-                if (next === "default") onChange(["global"]);
-              }}
-            />
-          </div>
-          {mode === "projects" ? (
-            <>
-              <PopoverSearchHeader
-                {...list.searchProps}
-                label={t("Search projects, groups and workspaces")}
-                value={query}
-                onValueChange={setQuery}
-              />
-              <SegmentedControl
-                label={t("Target categories")}
-                value={group}
-                onValueChange={setGroup}
-                options={[
-                  { value: "", label: t("All") },
-                  ...sections.filter(Boolean).map((value) => ({ value, label: value })),
-                ]}
-              />
-              <PickerList
-                label={t("Apply defaults to")}
-                controller={list}
-                className="min-h-0 overflow-y-auto"
-              />
-            </>
-          ) : null}
-          <PickerFooter align="between">
-            {mode === "projects" ? (
-              <Text size="caption" tone="secondary" id={doneReasonId}>
-                {hasOverrides
-                  ? t("{p0} selected", { p0: values.filter((value) => value !== "global").length })
-                  : t("Choose at least one project.")}
-              </Text>
-            ) : null}
-            <Button
-              onClick={() => setOpen(false)}
-              disabled={mode === "projects" && !hasOverrides}
-              aria-describedby={mode === "projects" ? doneReasonId : undefined}
-            >
-              {t("Done")}
-            </Button>
-          </PickerFooter>
-        </Popover>
-      ) : null}
-    </>
-  );
-}
+import type { RecentProject } from "../../projects/public/recents";
+import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
+import { targetValue, type DefaultsTarget } from "../model/providerDefaultsDraft";
 
 /**
- * Where the edits below are saved: Bycoda defaults, or the chosen projects and groups. It sits above
- * the fields it governs, so the target is read before a value is changed.
+ * Where the edits below apply: all projects, or one project. It sits above the fields it
+ * governs, so the target is read before a value is changed. Choosing Project opens the shared
+ * project picker; closing it without a pick returns to All projects.
  */
 export function ProviderDefaultsScopeRow({
-  selection,
   target,
-  options,
+  cwd,
+  recents,
   onTargetChange,
-  draft,
-  onDraftChange,
-  activeProvider,
+  projectsOnlyChats = false,
 }: {
-  selection?: string;
   target: DefaultsTarget;
-  options: SearchableSelectOption[];
+  /** The open project; it is offered in the picker even before it is in the recents. */
+  cwd?: string;
+  recents?: RecentProject[];
+  /** Receives `global` or `project:<path>`. */
   onTargetChange: (value: string) => void;
-  /** With these, the row also says whether the edits apply to one provider or to all. */
-  draft?: DefaultsDraft;
-  onDraftChange?: (draft: DefaultsDraft) => void;
-  activeProvider?: HarnessId;
+  /** Project values do not reach unattended work; the row says so. */
+  projectsOnlyChats?: boolean;
 }) {
-  const values = selectedTargetValues(
-    selection ?? targetValue(target),
-    options.filter((option) => !option.disabled).map((option) => option.value),
-  );
-  if (!values.length) values.push("global");
+  const [choosing, setChoosing] = useState(false);
+  const project = target.kind === "project" ? target.path : "";
+  const projectMode = choosing || target.kind === "project";
   return (
     <Group id="defaults-scope" layout="full" title={null}>
-      <Row label={t("Defaults saved to")}>
-        <DefaultsTargetsPicker
-          values={values}
-          options={options}
-          onChange={(next) => onTargetChange(JSON.stringify(next))}
-        />
-        {draft && onDraftChange ? (
-          <SegmentedControl
-            label={t("Provider scope")}
-            value={draft.providerScope ?? "this"}
-            options={[
-              {
-                value: "this",
-                label: activeProvider ? HARNESS_TITLE[activeProvider] : t("This provider"),
-                icon: activeProvider ? (
-                  <HarnessIcon harness={activeProvider} className="icon-sm" />
-                ) : undefined,
-              },
-              {
-                value: "all",
-                label: t("All providers"),
-                icon: <LayoutGrid className="icon-sm" />,
-              },
-            ]}
-            onValueChange={(value) =>
-              onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
+      <Row
+        label={t("Where these settings apply")}
+        description={
+          projectMode
+            ? t(
+                "These settings apply only to this project. A row with a reset button differs from All projects; reset returns it to that value.",
+              )
+            : t(
+                "Every new conversation starts with these settings. A project uses them for each setting it does not change.",
+              )
+        }
+        descriptionVisible
+      >
+        <SegmentedControl
+          label={t("Where these settings apply")}
+          value={projectMode ? "project" : "global"}
+          options={[
+            { value: "global", label: t("All projects") },
+            { value: "project", label: t("One project") },
+          ]}
+          onValueChange={(next) => {
+            if (next === "project") {
+              if (target.kind !== "project") setChoosing(true);
+              return;
             }
+            setChoosing(false);
+            if (target.kind !== "global") onTargetChange(targetValue({ kind: "global" }));
+          }}
+        />
+        {projectMode ? (
+          <SearchableProjectPicker
+            cwd={project}
+            railCwd={cwd}
+            recents={recents ?? []}
+            appearance="filled"
+            chooseLabel={t("Choose project")}
+            openOnMount={choosing}
+            onDismiss={() => setChoosing(false)}
+            onSelectProject={(path) => {
+              setChoosing(false);
+              onTargetChange(targetValue({ kind: "project", path }));
+            }}
           />
+        ) : null}
+        {projectMode && projectsOnlyChats ? (
+          <Text size="caption" tone="muted">
+            {t("Chats only")}
+          </Text>
         ) : null}
       </Row>
     </Group>

@@ -67,14 +67,17 @@ for (const theme of ["light", "dark"] as const) {
       const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
       await dialog.getByRole("tab", { name: "Background work", exact: true }).click();
       const heading = dialog.getByRole("heading", { name: "Model priority" });
-      const prepare = dialog.getByRole("button", { name: "Prepare setup draft" });
-      const plan = dialog.getByRole("button", { name: "Plan setup with AI", exact: true });
+      const prepare = dialog.getByRole("button", { name: "Set up with rules" });
+      const plan = dialog.getByRole("button", { name: "Set up with AI", exact: true });
       await expect(heading).toBeVisible();
       await expect(dialog.getByText("No models configured", { exact: true })).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Save changes" })).toBeDisabled();
-      const headingBox = await heading.boundingBox();
+      // Setup sits above the tabs; it rewrites the whole draft, not one tab.
+      const tablist = dialog.getByRole("tablist", { name: "Background work" });
       const prepareBox = await prepare.boundingBox();
-      expect(prepareBox?.x).toBe(headingBox?.x);
+      const tablistBox = await tablist.boundingBox();
+      expect(prepareBox?.y).toBeLessThan(tablistBox?.y ?? 0);
+      expect(prepareBox?.x).toBe(tablistBox?.x);
       await page.screenshot({ path: `${modelOrderEvidence}/empty-${theme}-${width}.png` });
       await prepare.focus();
       await page.keyboard.press("Tab");
@@ -96,13 +99,13 @@ for (const theme of ["light", "dark"] as const) {
       await dialog.getByRole("tab", { name: "Models & order", exact: true }).click();
       const removed = dialog.locator('[data-entry-id="r-opus"]');
       await expect(removed.getByText("Removed account", { exact: true })).toBeVisible();
-      await dialog.getByRole("button", { name: "Prepare setup draft", exact: true }).click();
+      await dialog.getByRole("button", { name: "Set up with rules", exact: true }).click();
       await expect(dialog.getByText("Rules prepared the draft.", { exact: true })).toBeVisible();
       await expect(removed).toHaveCount(0);
       await dialog.getByRole("button", { name: "Discard", exact: true }).click();
       await expect(removed).toBeVisible();
       await expect(dialog.getByText("Rules prepared the draft.", { exact: true })).toHaveCount(0);
-      await dialog.getByRole("button", { name: "Plan setup with AI", exact: true }).click();
+      await dialog.getByRole("button", { name: "Set up with AI", exact: true }).click();
       await expect(
         dialog.getByRole("status").filter({ hasText: "Rules prepared the draft." }),
       ).toBeVisible();
@@ -110,11 +113,9 @@ for (const theme of ["light", "dark"] as const) {
       await expect(dialog.getByRole("button", { name: "Save changes", exact: true })).toBeEnabled();
       await page.screenshot({ path: `${modelOrderEvidence}/draft-${theme}-${width}.png` });
       const planner = dialog
-        .getByRole("group", { name: "Plan setup with AI", exact: true })
+        .getByRole("group", { name: "Set up with AI", exact: true })
         .locator('button[aria-haspopup="dialog"]');
-      await expect(planner).toHaveAccessibleName("Model and settings");
-      await expect(planner).toHaveText("");
-      await expect(planner.locator("svg")).toHaveCount(1);
+      await expect(planner).toHaveText("Automatic");
       await planner.click();
       const picker = page.getByRole("dialog", { name: "Model and settings", exact: true });
       await expect(picker.getByRole("button", { name: /^Automatic \(.+\)$/ })).toBeVisible();
@@ -122,7 +123,7 @@ for (const theme of ["light", "dark"] as const) {
       const opus = picker.getByRole("option", { name: /Opus/ }).first();
       await opus.click();
       await expect(opus).toHaveAttribute("aria-selected", "true");
-      await expect(planner).toHaveText("");
+      await expect(planner).toHaveText(/Opus/);
       await expect(picker.locator('[data-setting-id="effort"]')).toBeVisible();
       await expect(picker.locator("[data-model-provider-settings]")).toHaveCount(0);
       await page.screenshot({ path: `${modelOrderEvidence}/planner-${theme}-${width}.png` });

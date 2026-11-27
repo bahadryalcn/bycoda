@@ -3,7 +3,7 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { t, useT } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { Select } from "../../../shared/ui/Select";
-import { SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import {
   chooseSettingsHost,
@@ -204,22 +204,28 @@ function HostStatusDot({ status }: { status?: SettingsHostStatus }) {
   }
 }
 
-/** "Applying settings to <machine>"; hidden while this computer is the only saved machine. */
+/**
+ * "Applying settings to <machine>" as one settings row, like the Defaults tab's "Defaults saved
+ * to"; hidden while this computer is the only saved machine.
+ */
 export function SettingsHostPicker({ scope }: { scope: SettingsHostScope }) {
   const t = useT();
   if (scope.entries.length < 2) return null;
+  const label = t("Applying settings to");
   return (
-    <div className="max-w-xs">
-      <Select
-        label={t("Applying settings to")}
-        value={scope.value}
-        options={scope.options.map(({ status, ...option }) => ({
-          ...option,
-          icon: <HostStatusDot status={status} />,
-        }))}
-        onValueChange={scope.select}
-        fieldSize="sm"
-      />
-    </div>
+    <Group layout="full" title={null}>
+      <Row label={label}>
+        <Select
+          label={label}
+          hideLabel
+          value={scope.value}
+          options={scope.options.map(({ status, ...option }) => ({
+            ...option,
+            icon: <HostStatusDot status={status} />,
+          }))}
+          onValueChange={scope.select}
+        />
+      </Row>
+    </Group>
   );
 }

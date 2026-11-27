@@ -1,7 +1,8 @@
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Gauge, Zap } from "../../../shared/ui/icons";
-import { ModelAccountNumber } from "./ModelAccountIdentity";
+import { Text } from "../../../shared/ui/Text";
+import { ModelAccountLabel } from "./ModelAccountIdentity";
 
 export type ModelTriggerBadgeData = {
   /** Number and label of the account the model runs on. */
@@ -15,7 +16,8 @@ export type ModelTriggerBadgeData = {
 };
 
 /**
- * Setting badges of the field-style model trigger. Account and effort always stay; Fast and the
+ * Setting badges of the field-style model trigger. The account reads as in every model list (number
+ * badge and plain label); account and effort always stay; Fast and the
  * non-default extras are optional and drop out first when the field narrows.
  */
 export function ModelTriggerBadges({ account, effort, fast, extras = [] }: ModelTriggerBadgeData) {
@@ -23,27 +25,23 @@ export function ModelTriggerBadges({ account, effort, fast, extras = [] }: Model
   return (
     <>
       {account ? (
-        <Badge
-          data-model-account
-          size="xs"
-          appearance="subtle"
-          truncate
+        <Text
+          as="span"
+          size="caption"
+          tone="muted"
+          className="flex min-w-0 shrink-[2]"
           role="img"
           aria-label={t("Account: {p0}", { p0: account.label })}
-          className="min-w-0 max-w-32"
-          icon={
-            account.number ? (
-              <ModelAccountNumber
-                account={{
-                  accountNumber: account.number,
-                  accountColor: account.color,
-                }}
-              />
-            ) : undefined
-          }
+          data-model-account
         >
-          {account.label}
-        </Badge>
+          <ModelAccountLabel
+            account={{
+              accountNumber: account.number,
+              accountColor: account.color,
+              accountLabel: account.label,
+            }}
+          />
+        </Text>
       ) : null}
       {effort ? (
         <Badge

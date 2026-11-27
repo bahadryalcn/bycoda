@@ -40,7 +40,7 @@ async function setup(linkedAncestor = false) {
   writeFileSync(join(cwd, ".gitignore"), "/temp/\n");
   git(cwd, "add", ".gitignore");
   git(cwd, "commit", "-q", "-m", "initial");
-  const tree = await createHostWorktree(cwd, "mc/test", "HEAD", false);
+  const tree = await createHostWorktree(cwd, "by/test", "HEAD", false);
   return {
     root,
     cwd,
@@ -50,7 +50,7 @@ async function setup(linkedAncestor = false) {
 }
 it("cleans a legacy aliased workspace while fencing process starts under either spelling", async () => {
   const { cwd, tree, aliasPath } = await setup(true);
-  await cleanupTaskWorktree(cwd, "task", aliasPath, "mc/test", { head: tree.head }, () => {
+  await cleanupTaskWorktree(cwd, "task", aliasPath, "by/test", { head: tree.head }, () => {
     expect(isTaskWorktreeRemoving(aliasPath)).toBe(true);
     expect(isTaskWorktreeRemoving(tree.path)).toBe(true);
     return false;
@@ -58,13 +58,13 @@ it("cleans a legacy aliased workspace while fencing process starts under either 
   expect(existsSync(tree.path)).toBe(false);
   expect(isTaskWorktreeRemoving(aliasPath)).toBe(false);
   expect(isTaskWorktreeRemoving(tree.path)).toBe(false);
-  expect(git(cwd, "rev-parse", "mc/test")).toBe(tree.head);
+  expect(git(cwd, "rev-parse", "by/test")).toBe(tree.head);
 }, 120_000);
 it("removes a delivered checkout while preserving ignored outputs in the archive", async () => {
   const { cwd, tree } = await setup();
   mkdirSync(join(tree.path, "temp/local/result"), { recursive: true });
   writeFileSync(join(tree.path, "temp/local/result/README.md"), "completed output");
-  const archives = await cleanupTaskWorktree(cwd, "task", tree.path, "mc/test", {
+  const archives = await cleanupTaskWorktree(cwd, "task", tree.path, "by/test", {
     deliveredCommit: tree.head,
   });
   expect(existsSync(tree.path)).toBe(false);
@@ -78,7 +78,7 @@ it("archives Windows-style unregistered residual directories without losing thei
   git(cwd, "worktree", "remove", tree.path);
   mkdirSync(tree.path);
   writeFileSync(join(tree.path, "package.json"), "retained file");
-  const archives = await cleanupTaskWorktree(cwd, "task", tree.path, "mc/test", {
+  const archives = await cleanupTaskWorktree(cwd, "task", tree.path, "by/test", {
     deliveredCommit: tree.head,
   });
   expect(existsSync(tree.path)).toBe(false);
@@ -88,13 +88,13 @@ it("retains post-delivery changes and refuses the main or unrelated checkout", a
   const { cwd, tree, root } = await setup();
   writeFileSync(join(tree.path, "owner-draft.txt"), "owner draft");
   await expect(
-    cleanupTaskWorktree(cwd, "task", tree.path, "mc/test", { head: tree.head }),
+    cleanupTaskWorktree(cwd, "task", tree.path, "by/test", { head: tree.head }),
   ).rejects.toThrow("changes made after delivery");
-  await expect(cleanupTaskWorktree(cwd, "task", cwd, "mc/test", {})).rejects.toThrow(
+  await expect(cleanupTaskWorktree(cwd, "task", cwd, "by/test", {})).rejects.toThrow(
     "outside its managed workspace",
   );
   await expect(
-    cleanupTaskWorktree(cwd, "task", join(root, "audit"), "mc/test", {}),
+    cleanupTaskWorktree(cwd, "task", join(root, "audit"), "by/test", {}),
   ).rejects.toThrow("outside its managed workspace");
   expect(readFileSync(join(tree.path, "owner-draft.txt"), "utf8")).toBe("owner draft");
 }, 120_000);
@@ -102,10 +102,10 @@ it("preserves locked checkouts and removes them after unlock", async () => {
   const { cwd, tree } = await setup();
   git(cwd, "worktree", "lock", tree.path);
   await expect(
-    cleanupTaskWorktree(cwd, "task", tree.path, "mc/test", { head: tree.head }),
+    cleanupTaskWorktree(cwd, "task", tree.path, "by/test", { head: tree.head }),
   ).rejects.toThrow("locked");
   expect(existsSync(tree.path)).toBe(true);
   git(cwd, "worktree", "unlock", tree.path);
-  await cleanupTaskWorktree(cwd, "task", tree.path, "mc/test", { head: tree.head });
+  await cleanupTaskWorktree(cwd, "task", tree.path, "by/test", { head: tree.head });
   expect(existsSync(tree.path)).toBe(false);
 }, 120_000);

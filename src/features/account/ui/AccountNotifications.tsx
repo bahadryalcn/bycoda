@@ -73,6 +73,8 @@ function QuietHoursRow({
     <Row
       label={t("Quiet hours")}
       description={t("Hold non-urgent notifications during these hours.")}
+      modified={quiet !== null}
+      onReset={() => onChange((s) => setQuietHours(s, null))}
     >
       {quiet ? (
         <div className={layout.times}>
@@ -199,6 +201,8 @@ export function AccountNotifications() {
             description={t(
               "Off by default: phone notifications then say only that something needs you, without project or session names.",
             )}
+            modified={settings.pushShowDetails}
+            onReset={() => update((s) => setPushDetails(s, false))}
           >
             <Toggle
               label={t("Show details in phone notifications")}

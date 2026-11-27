@@ -27,10 +27,12 @@ test("usage surfaces stay compact in both themes and show hour context on hover"
             "html, body, #root, [data-settings-scroller] { block-size: auto !important; max-block-size: none !important; overflow: visible !important; }",
         });
         if (view === "Limits") {
-          await page.locator('.usage-account[aria-label="Grok"]').screenshot({
-            path: `temp/verification/usage-polish-20261110/Grok-row-${theme}-${width}.png`,
-            animations: "disabled",
-          });
+          await page
+            .locator('.usage-account[aria-label="Grok Build · Default account"]')
+            .screenshot({
+              path: `temp/verification/usage-polish-20261110/Grok-row-${theme}-${width}.png`,
+              animations: "disabled",
+            });
         }
         if (view === "Time analysis") {
           const hour = page.locator('.usage-hour-cell:not([data-level="0"])').first();
@@ -151,7 +153,7 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
     await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
     for (const width of [1440, 768, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await expect(page.locator(".usage-metrics > div")).toHaveCount(3);
+      await expect(page.locator(".usage-metrics > :visible")).toHaveCount(3);
       const trend = page.locator('[data-usage-chart="trend"]');
       // The trend starts within two thirds of a screen below the analytics header, under the KPI
       // stack; the account's Active time card above the analytics is not part of this budget.
@@ -170,7 +172,7 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
     await usageDetails.locator("summary").focus();
     await page.keyboard.press("Enter");
     await expect(usageDetails).toHaveAttribute("open", "");
-    await expect(page.locator(".usage-metrics > div")).toHaveCount(7);
+    await expect(page.locator(".usage-metrics > :visible")).toHaveCount(7);
     await expect(page.locator(".usage-facts")).toBeVisible();
   }
 });
@@ -295,10 +297,10 @@ test("uses the full settings width, distinguishes views and follows configured a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/usage/usage-budgets.html?page=1&analytics=1");
   await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
-  // Usage uses the shared 60rem Settings column (960px including its inline padding).
+  // Usage fills the shared 80rem Settings column (1280px including its inline padding).
   const analyticsWidth = (await page.locator(".usage-analytics").boundingBox())!.width;
-  expect(analyticsWidth).toBeGreaterThan(800);
-  expect(analyticsWidth).toBeLessThanOrEqual(960);
+  expect(analyticsWidth).toBeGreaterThan(1000);
+  expect(analyticsWidth).toBeLessThanOrEqual(1280);
   const colors = () =>
     page
       .locator('[data-usage-chart="trend"]')
@@ -384,7 +386,8 @@ for (const theme of ["light", "dark"])
       const row = page.locator('[data-setting-id="show-remaining-usage"]');
       const toggle = row.getByRole("switch", { name: "Show remaining usage", exact: true });
       const initial = await toggle.getAttribute("aria-checked");
-      await expect(row).toHaveAttribute("data-press-feedback", "false");
+      // The switch is a plain toolbar label at the end of the section title row, not a settings row.
+      await expect(row).toHaveCSS("background-image", "none");
       await expect(row).toHaveCSS("border-top-left-radius", "0px");
       const accounts = page.locator(".usage-accounts > .usage-account");
       await expect(accounts).toHaveCount(4);
@@ -404,16 +407,18 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/usage-surfaces/limits-${theme}-${width}.png`,
         fullPage: true,
       });
+      // Hover and press add no row highlight; the label text is part of the switch's own hit area.
       await row.locator("span").first().hover();
-      const hover = await row.evaluate((node) => getComputedStyle(node).backgroundImage);
-      expect(hover).toContain("linear-gradient");
+      await expect(row).toHaveCSS("background-image", "none");
       await page.mouse.down();
-      expect(await row.evaluate((node) => getComputedStyle(node).backgroundImage)).toBe(hover);
-      await expect(toggle).toHaveAttribute("aria-checked", initial!);
+      await expect(row).toHaveCSS("background-image", "none");
       await page.screenshot({
         path: `temp/verification/usage-surfaces/inert-press-${theme}-${width}.png`,
       });
       await page.mouse.up();
+      await expect(toggle).toHaveAttribute("aria-checked", initial === "true" ? "false" : "true");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-checked", initial!);
       await toggle.click();
       await expect(toggle).toHaveAttribute("aria-checked", initial === "true" ? "false" : "true");
       await toggle.focus();
@@ -458,7 +463,8 @@ for (const theme of ["light", "dark"]) {
       await expect(grid.getByRole("gridcell").nth(7)).toBeFocused();
       await page.mouse.move(0, 0);
       await page.screenshot({ path: testInfo.outputPath("time.png"), animations: "disabled" });
-      await grid.getByRole("gridcell").nth(7).click();
+      // An hour without usage would narrow the window to an empty period, so drill into one with data.
+      await grid.locator('.usage-hour-cell:not([data-level="0"])').first().click();
       await expect(page.locator(".usage-hour-cell")).toHaveCount(24);
       expect(
         await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length),
@@ -486,7 +492,7 @@ for (const theme of ["light", "dark"]) {
         ),
       ).toBe(true);
       await page.screenshot({ path: testInfo.outputPath("quota.png"), animations: "disabled" });
-      await page.getByRole("button", { name: "Account actions", exact: true }).first().click();
+      await page.getByRole("button", { name: "Account color", exact: true }).first().click();
       await expect(page.getByRole("menu", { name: "Account color", exact: true })).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath("account-colors.png"),

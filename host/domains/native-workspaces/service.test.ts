@@ -45,7 +45,7 @@ it("retires a creation that never reached Git without running directory removal"
   const { managed, apply, service, context } = harness({
     id: "w",
     revision: 0,
-    branchRef: "refs/heads/bycoda/s/w",
+    branchRef: "refs/heads/by/w",
   });
   const plan = await service.call(
     "workspaces.cleanup.plan",
@@ -60,7 +60,7 @@ it("retires a creation that never reached Git without running directory removal"
     workspaceId: "w",
     directoryState: "removed",
     workspaceRevision: 1,
-    retainedBranchRef: "refs/heads/bycoda/s/w",
+    retainedBranchRef: "refs/heads/by/w",
     recoveryIds: [],
   });
   expect(apply).not.toHaveBeenCalled();

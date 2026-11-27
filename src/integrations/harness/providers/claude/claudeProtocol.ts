@@ -250,6 +250,7 @@ export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
     args.push(input.chrome ? "--chrome" : "--no-chrome");
   const disallowed = claudeDisallowedTools(input);
   if (disallowed.length) args.push("--disallowedTools", ...disallowed);
+  if (input.allowedTools?.length) args.push("--allowedTools", ...input.allowedTools);
   if (!input.isolated) {
     args.push("--permission-prompt-tool", "stdio");
   }

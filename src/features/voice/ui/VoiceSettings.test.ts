@@ -93,7 +93,7 @@ it("enables dictation independently without microphone capture or companion sett
     value: { getUserMedia: capture },
   });
   const toggle = container.querySelector<HTMLButtonElement>(
-    '[role="switch"][aria-label="Enable dictation"]',
+    '[role="switch"][aria-label="Dictation"]',
   )!;
   await act(async () => toggle.click());
   await advance();
@@ -103,7 +103,7 @@ it("enables dictation independently without microphone capture or companion sett
     natural: true,
   });
   expect(backend.inspect).toHaveBeenLastCalledWith({ natural: false });
-  expect(container.textContent).toContain("Dictation setup");
+  expect(container.textContent).toContain("Setup");
   expect(container.querySelector('[data-setting-id="voice-mode"]')).toBeNull();
   expect(container.querySelector('[data-setting-id="voice-microphone-input"]')).not.toBeNull();
   expect(capture).not.toHaveBeenCalled();
@@ -181,7 +181,9 @@ it("retains the saved automatic pause while ending turns manually, then returns 
   });
   await act(async () =>
     container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="I may interrupt speech"]')!
+      .querySelector<HTMLButtonElement>(
+        '[role="switch"][aria-label="Interrupt replies by speaking"]',
+      )!
       .click(),
   );
   expect(loadVoiceSettings().allowBargeIn).toBe(false);
@@ -219,7 +221,7 @@ it("does not check or install until enabled; shows only the next actions for mis
   expect(backend.setupStatus).not.toHaveBeenCalled();
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: true }));
   await advance();
-  expect(container.textContent).toContain("Voice setup is needed");
+  expect(container.textContent).toContain("Setup needed");
   expect(
     [...document.querySelectorAll("button")].some(
       (el) => el.textContent?.trim() === "Locate files",
@@ -246,7 +248,7 @@ it("keeps locations behind a dialog, saves a picked folder and discards stale de
   expect(buttons).toHaveLength(3);
   await act(async () => buttons[2].click());
   expect(loadVoiceSettings().ttsPath).toBe("G:\\Models\\VoxCPM2");
-  expect(container.textContent).toContain("Checking voice setup…");
+  expect(container.textContent).toContain("Checking…");
   await advance();
   expect(backend.inspect).toHaveBeenLastCalledWith({
     natural: true,
@@ -293,13 +295,13 @@ it("keeps installation reachable while detection is stalled and ignores the stal
   );
   await setup();
   await advance();
-  expect(container.textContent).toContain("Checking voice setup…");
+  expect(container.textContent).toContain("Checking…");
   backend.setup.mockResolvedValue({ state: "installing", stage: "packages" });
   await click("Install");
   expect(backend.setup).toHaveBeenCalledExactlyOnceWith({ natural: true });
   await act(async () => finish({ ready: true, missing: [] }));
   expect(container.textContent).toContain("Installing voice support…");
-  expect(container.textContent).not.toContain("Voice is ready");
+  expect(container.textContent).not.toContain("Ready");
 });
 
 it("ends a stalled check with retry and discards a late answer", async () => {
@@ -316,9 +318,9 @@ it("ends a stalled check with retry and discards a late answer", async () => {
   expect(container.textContent).toContain("This computer is unavailable. Try again.");
   backend.inspect.mockResolvedValue({ ready: true, missing: [] });
   await click("Try again");
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   await act(async () => finish({ ready: false, missing: ["Python"] }));
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
 });
 
 it("ignores a late initial job status after starting a new install", async () => {
@@ -388,7 +390,7 @@ it("installs once, polls progress, saves managed locations and verifies readines
   await advance(1001);
   await advance();
   expect(loadVoiceSettings().python).toBe("G:/voice/python.exe");
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   expect(backend.setup).toHaveBeenCalledTimes(1);
 });
 it("offers a simple retry for connection failures with details behind help", async () => {
@@ -400,7 +402,7 @@ it("offers a simple retry for connection failures with details behind help", asy
   expect(container.textContent).not.toContain("Install");
   backend.inspect.mockResolvedValue({ ready: true, missing: [] });
   await click("Try again");
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
 });
 it("does not call a detected interpreter ready when the backend rejects its version", async () => {
   await setup();
@@ -458,7 +460,7 @@ it("offers GPU support for a ready CPU-only High quality voice and installs with
   saveVoiceSettings({ ...loadVoiceSettings(), engine: "voxcpm2" });
   await setup();
   await advance();
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   expect(container.textContent).toContain("NVIDIA GeForce RTX 4070");
   backend.setup.mockResolvedValue({ state: "installing", stage: "gpu" });
   await click("Install GPU support");
@@ -510,9 +512,12 @@ it("shows conversation and companion preferences without changing saved values o
   ).toBeNull();
   expect(
     container
-      .querySelector('[data-setting-id="voice-turn-silence"] button')
+      .querySelector('[data-setting-id="voice-turn-silence"] button:not(.settings-reset)')
       ?.getAttribute("aria-label"),
   ).toBe("Wait before replying: I end my turn");
+  // Each changed preference offers its Restore default action; showing it saves nothing.
+  for (const id of ["voice-turn-silence", "voice-idle-sleep", "voice-visual-style", "voice-device"])
+    expect(container.querySelector(`[data-setting-id="${id}"] .settings-reset`), id).not.toBeNull();
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(backend.inspect).toHaveBeenCalledTimes(calls);
   expect(backend.setup).not.toHaveBeenCalled();
@@ -564,7 +569,7 @@ it("never offers GPU support for the default Natural voice, which runs on the CP
   });
   await setup();
   await advance();
-  expect(container.textContent).toContain("Voice is ready");
+  expect(container.textContent).toContain("Ready");
   expect(container.textContent).not.toContain("Install GPU support");
 });
 
@@ -583,7 +588,7 @@ it("keeps the ElevenLabs key on the Host and rechecks the setup after saving it"
   });
   await click("Save");
   expect(backend.setCloudKey).toHaveBeenCalledExactlyOnceWith("elevenlabs", "sk_test");
-  expect(container.textContent).toContain("Key saved");
+  expect(container.textContent).toContain("Saved");
   expect(field.value).toBe("");
   await advance();
   expect(backend.inspect).toHaveBeenCalledTimes(2);

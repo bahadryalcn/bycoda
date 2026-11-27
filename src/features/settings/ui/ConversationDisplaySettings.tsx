@@ -2,7 +2,10 @@ import { useSyncExternalStore } from "react";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
 import { loadStreamingTextMode, subscribeStreamingTextMode } from "../model/settings";
+import { DEFAULT_AGENT_DEFAULTS } from "../../tasks/public/agentDefaults";
+import { APPEARANCE_DEFAULTS } from "../model/appearancePreferences";
 import {
+  TRANSCRIPT_LAYOUT_DEFAULT,
   loadTranscriptLayout,
   saveTranscriptLayout,
   subscribeTranscriptLayout,
@@ -43,6 +46,8 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
         id="transcript-layout"
         feedback={feedback("transcript-layout")}
         label={t("Transcript layout")}
+        modified={transcriptLayout !== TRANSCRIPT_LAYOUT_DEFAULT && !pending("transcript-layout")}
+        onReset={() => saveLayout(TRANSCRIPT_LAYOUT_DEFAULT)}
         description={t("Choose a wider transcript or compact chat bubbles.")}
       >
         <Segmented
@@ -56,7 +61,12 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           onChange={saveLayout}
         />
       </Row>
-      <Row id="chat-width" label={t("Chat width")}>
+      <Row
+        id="chat-width"
+        label={t("Chat width")}
+        modified={p.chatWidth !== APPEARANCE_DEFAULTS.chatWidth}
+        onReset={() => a.onPreferences({ ...p, chatWidth: APPEARANCE_DEFAULTS.chatWidth })}
+      >
         <Segmented
           label={t("Chat width")}
           value={p.chatWidth}
@@ -88,7 +98,12 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           }
         />
       </Row>
-      <Row id="code-word-wrap" label={t("Word wrap")}>
+      <Row
+        id="code-word-wrap"
+        label={t("Word wrap")}
+        modified={p.wordWrap !== APPEARANCE_DEFAULTS.wordWrap}
+        onReset={() => a.onPreferences({ ...p, wordWrap: APPEARANCE_DEFAULTS.wordWrap })}
+      >
         <Toggle
           label={t("Word wrap")}
           on={p.wordWrap}
@@ -99,6 +114,11 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
         id="streaming-text-mode"
         feedback={feedback("streaming-text-mode")}
         label={t("Streaming text animation")}
+        modified={
+          streamingTextMode !== DEFAULT_AGENT_DEFAULTS.streamingTextMode &&
+          !pending("streaming-text-mode")
+        }
+        onReset={() => saveMode(DEFAULT_AGENT_DEFAULTS.streamingTextMode)}
       >
         <Segmented
           label={t("Streaming text animation")}

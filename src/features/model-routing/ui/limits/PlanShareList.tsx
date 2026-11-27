@@ -4,6 +4,7 @@ import type {
   PlanShareWindow,
 } from "../../../../shared/model/host-contracts/usage-plan-share";
 import { useFormat, useT } from "../../../../shared/i18n";
+import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
@@ -35,6 +36,13 @@ function jobTitle(t: ReturnType<typeof useT>, job: PlanShareJob): string {
   return job.label ?? t("Session {p0}", { p0: job.sessionId.slice(0, 8) });
 }
 
+/** The header of an account the caller has no name for: provider title, never the raw id. */
+function fallbackAccountLabel(t: ReturnType<typeof useT>, key: string): string {
+  const [provider = "", id = ""] = key.split(/:(.*)/s);
+  const title = HARNESS_TITLE[provider as keyof typeof HARNESS_TITLE] ?? provider;
+  return `${title} · ${id === "default" ? t("Default account") : t("Unavailable account")}`;
+}
+
 function AccountShare({
   account,
   label,
@@ -62,33 +70,30 @@ function AccountShare({
       >
         {label}
       </SectionLabel>
-      {/* An account without jobs shows only its header; "no usage" is said once for the whole list. */}
-      {account.jobs.length === 0 ? null : (
-        <DescriptionList size="sm">
-          {account.jobs.map((job) => (
-            <DescriptionItem
-              key={job.sessionId}
-              term={jobTitle(t, job)}
-              truncate
-              tooltip={job.sessionId}
-            >
-              {estimateText(t, format, job.estimatedPercent, job.partial)}
-            </DescriptionItem>
-          ))}
-          {known && account.untrackedPercent !== null ? (
-            <DescriptionItem
-              term={
-                <span className="inline-flex items-center gap-1">
-                  {untracked.label}
-                  <InfoTooltip label={untracked.label}>{untracked.info}</InfoTooltip>
-                </span>
-              }
-            >
-              {estimateText(t, format, account.untrackedPercent)}
-            </DescriptionItem>
-          ) : null}
-        </DescriptionList>
-      )}
+      <DescriptionList size="sm">
+        {account.jobs.map((job) => (
+          <DescriptionItem
+            key={job.sessionId}
+            term={jobTitle(t, job)}
+            truncate
+            tooltip={job.sessionId}
+          >
+            {estimateText(t, format, job.estimatedPercent, job.partial)}
+          </DescriptionItem>
+        ))}
+        {known && account.untrackedPercent !== null ? (
+          <DescriptionItem
+            term={
+              <span className="inline-flex items-center gap-1">
+                {untracked.label}
+                <InfoTooltip label={untracked.label}>{untracked.info}</InfoTooltip>
+              </span>
+            }
+          >
+            {estimateText(t, format, account.untrackedPercent)}
+          </DescriptionItem>
+        ) : null}
+      </DescriptionList>
     </section>
   );
 }
@@ -112,7 +117,7 @@ export function PlanShareList({
   supported: boolean;
   window: PlanShareWindow;
   accounts?: string[];
-  /** Display names by `provider:accountId`; an account without one shows its id. */
+  /** Display names by `provider:accountId`; an account without one shows its provider title. */
   accountLabels?: Record<string, string>;
   limit?: number;
 }) {
@@ -122,16 +127,16 @@ export function PlanShareList({
   if (share.loading) return <LoadingText>{t("Loading…")}</LoadingText>;
   if (share.error)
     return <InlineError details={share.error}>{t("Could not estimate plan usage.")}</InlineError>;
-  const shown = share.result?.accounts ?? [];
-  if (shown.every((account) => account.jobs.length === 0))
-    return <EmptyState size="inline" title={t("No usage in this window")} />;
+  // An account without jobs would be a bare header; it is dropped, "no usage" is said once.
+  const shown = (share.result?.accounts ?? []).filter((account) => account.jobs.length > 0);
+  if (shown.length === 0) return <EmptyState size="inline" title={t("No usage in this window")} />;
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {shown.map((account) => (
         <AccountShare
           key={account.account}
           account={account}
-          label={accountLabels?.[account.account] ?? account.account.replace(/^[^:]*:/, "")}
+          label={accountLabels?.[account.account] ?? fallbackAccountLabel(t, account.account)}
           host={host}
         />
       ))}

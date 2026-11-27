@@ -14,7 +14,11 @@ import {
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { runGitText } from "../src/shared/lib/processExecution.node";
 import { withHostGitMutation } from "./git/git-mutations";
-import { invalidateHostWorktrees } from "./git/git-worktrees";
+import {
+  invalidateHostWorktrees,
+  removeSiblingWorktree,
+  siblingBlocker,
+} from "./git/git-worktrees";
 
 import {
   assertNoFollowPath,
@@ -705,6 +709,10 @@ export interface WorkspaceCleanupDependencies {
     "get" | "update" | "saveOperation" | "getOperation" | "findOperation" | "listOperations"
   >;
   reservations: ExecutionActivityReservations;
+  /** Sibling worktrees (other repositories) of the workspace; retired together with it. */
+  siblings?(
+    workspace: ManagedWorkspace,
+  ): Promise<{ repository: string; path: string; branch: string }[]>;
   /** Resolve recorded materialization root, project checkout and private recovery root (not a changed policy root). */
   location(
     workspace: ManagedWorkspace,
@@ -780,6 +788,11 @@ export function createWorkspaceRemovalService(
         if ((await deps.reservations.list(workspace.id)).length)
           throw new Error("Workspace is still in use.");
         if (workspace.state === "active") throw new Error("Active workspace cannot be removed.");
+        // Siblings keep the primary's safety: locked, re-pointed or dirty ones block the removal.
+        for (const sibling of (await deps.siblings?.(workspace)) ?? []) {
+          const blocker = await siblingBlocker(sibling);
+          if (blocker) throw new Error(blocker);
+        }
       } catch (error) {
         blockers.push(error instanceof Error ? error.message : String(error));
       }
@@ -1044,6 +1057,11 @@ export function createWorkspaceRemovalService(
       const archiveRoot = op.archiveRoot ?? join(location.archiveRoot, op.id);
       op.archiveRoot = archiveRoot;
       await save(op.phase);
+      // Refuse before the primary is touched: a dirty sibling must not leave a half-removed workspace.
+      for (const sibling of (await deps.siblings?.(w)) ?? []) {
+        const blocker = await siblingBlocker(sibling);
+        if (blocker) throw new Error(blocker);
+      }
       await guardedRemoveWorkspace({
         assertAuthorized: async () => {
           await deps.assertAuthorized?.();
@@ -1065,6 +1083,13 @@ export function createWorkspaceRemovalService(
           await save(next);
         },
       });
+      // Retired with the primary; each keeps its branch like the primary does. Idempotent, so a
+      // recovered removal repeats it safely.
+      for (const sibling of (await deps.siblings?.(w)) ?? []) {
+        await deps.assertAuthorized?.();
+        assertLease?.();
+        await removeSiblingWorktree(sibling);
+      }
       w = await deps.registry.update({
         workspaceId: w.id,
         expectedRevision: op.workspaceRevision ?? w.revision,

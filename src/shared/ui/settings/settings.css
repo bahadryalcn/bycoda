@@ -123,6 +123,17 @@
   gap: var(--ui-space-2, 0.5rem);
   overflow-wrap: anywhere;
 }
+/* A control that grows into a list (custom model lists) keeps the label beside its first line
+   instead of floating to the middle of the list. */
+.settings-row:not([data-stacked]):has(> .settings-row-control ul) {
+  align-items: start;
+}
+.settings-row:not([data-stacked]):has(> .settings-row-control ul) > .settings-row-control {
+  align-self: start;
+}
+.settings-row:not([data-stacked]):has(> .settings-row-control ul) > .settings-row-label {
+  padding-block-start: var(--ui-space-1, 0.25rem);
+}
 /* One right column: every control kind ends on the row's right edge at the compact height, and a
    Select keeps a fixed minimum width so neighbouring rows do not zig-zag. */
 .settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc-select {
@@ -142,6 +153,13 @@
   --control-height-md: var(--ui-control-height-compact);
 }
 .settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc.bycoda-arc-select {
+  min-block-size: var(--ui-control-height-compact);
+  padding-block: 0;
+}
+/* A stacked row keeps the form height for multiline editors, but a Select in its control line
+   matches the Buttons and SearchInputs beside it. */
+.settings-row[data-stacked] > .settings-row-control .bycoda-arc.bycoda-arc-select {
+  --control-height-md: var(--ui-control-height-compact);
   min-block-size: var(--ui-control-height-compact);
   padding-block: 0;
 }
@@ -215,17 +233,26 @@
   overflow-wrap: anywhere;
 }
 
-/* Each row measures its own content area, including standalone rows. */
+/* Each row measures its own content area, including standalone rows. Below 35rem the row keeps
+   label left and control right while both fit (a switch, a short select or segmented choice), and
+   the control wraps under the label, start aligned, only when it does not; wide editors and lists
+   use `stacked`. */
 @container settings-row (inline-size < 35rem) {
-  .settings-row > :is(.settings-row-label, .settings-row-control) {
-    grid-column: 1 / -1;
+  .settings-row:not([data-stacked]) {
+    display: flex;
+    flex-wrap: wrap;
   }
-  .settings-row > .settings-row-control {
-    inline-size: 100%;
+  .settings-row:not([data-stacked]) > .settings-row-label {
+    flex: 1 1 10rem;
+  }
+  .settings-row:not([data-stacked]) > .settings-row-control {
+    flex: 0 1 auto;
+    inline-size: max-content;
     min-inline-size: 0;
     max-inline-size: 100%;
-    align-self: stretch;
-    justify-content: flex-start;
+  }
+  .settings-row:not([data-stacked]) > .settings-row-feedback {
+    flex-basis: 100%;
   }
   /* One wrapped alignment for every control: under the label, start aligned (a shared
      MorphSelect would otherwise push itself to the end with its own auto margin). */

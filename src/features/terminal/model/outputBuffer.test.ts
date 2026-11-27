@@ -74,3 +74,33 @@ it("withholds credits behind a hidden drain and releases all waiters exactly onc
   expect(draining).toHaveBeenCalledOnce();
   expect(queued).toHaveBeenCalledOnce();
 });
+
+it("resumes ordered output when a parser fence completes after a missing callback", () => {
+  vi.useFakeTimers();
+  const callbacks: (() => void)[] = [];
+  const write = vi.fn((_data: string | Uint8Array, done?: () => void) => callbacks.push(done!));
+  const output = terminalOutputBuffer(write, 8, true);
+  const first = vi.fn();
+  const second = vi.fn();
+  try {
+    output.setVisible(true);
+    output.append("one", first);
+    output.append("two", second);
+    vi.runOnlyPendingTimers();
+    expect(write.mock.calls.map(([data]) => data)).toEqual(["one", ""]);
+    expect(first).not.toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
+    expect(write).toHaveBeenCalledTimes(2);
+
+    callbacks[1]();
+    expect(write.mock.calls.map(([data]) => data)).toEqual(["one", "", "two"]);
+    callbacks[0]();
+    callbacks[2]();
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    output.dispose();
+    vi.useRealTimers();
+  }
+});

@@ -1,3 +1,4 @@
+import { routeVoiceOutput } from "./voiceOutputDevice";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import {
   localVoiceBackend,
@@ -8,10 +9,12 @@ import {
 import { VoiceVad, decodePcmBase64, pcmBase64, resamplePcm } from "../../../shared/model/voice-realtime/voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
+import { swapMicrophone, voiceMicrophoneConstraints } from "./microphoneSwap";
 import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { voiceRuntimeDeadline } from "./voiceRuntimeDeadline";
+import { renderSystemSpeech, shouldRenderSystemSpeech } from "./systemSpeechRender";
 
 export type SpeechBinding = { sessionId?: string; sequence: number };
 type Callbacks = {
@@ -53,6 +56,8 @@ export class LocalVoice {
   private readonly lifetime = new AbortController();
   private utterances = new Set<SpeechSynthesisUtterance>();
   private source?: MediaStreamAudioSourceNode;
+  /** Device switches run one after another; each awaits the previous capture's release. */
+  private microphoneSwap: Promise<void> = Promise.resolve();
   private capture?: AudioWorkletNode;
   private vad?: VoiceVad;
   private info?: LocalVoiceInfo;
@@ -108,20 +113,9 @@ export class LocalVoice {
         await localVoiceBackend.release(this.info.lease);
         return;
       }
-      this.stream = await openMicrophone(
-        {
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            ...(this.conversation.deviceId
-              ? { deviceId: { exact: this.conversation.deviceId } }
-              : {}),
-          },
-          video: false,
-        },
-        { signal: this.lifetime.signal },
-      );
+      this.stream = await openMicrophone(voiceMicrophoneConstraints(this.conversation.deviceId), {
+        signal: this.lifetime.signal,
+      });
       if (this.closed) {
         stopMicrophone(this.stream);
         return;
@@ -366,7 +360,21 @@ export class LocalVoice {
     if (!voice) return false; // Never silently send speech to a network voice.
     // Queued utterances play in order; a new reply replaces them.
     if (!append) this.silence();
-    const utterance = new SpeechSynthesisUtterance(text.slice(0, 700));
+    if (shouldRenderSystemSpeech()) {
+      const epoch = this.playbackEpoch;
+      this.naturalQueue = this.naturalQueue.then(() =>
+        this.closed || epoch !== this.playbackEpoch
+          ? undefined
+          : this.speakRendered(text.slice(0, 700), voice, epoch, delivered),
+      );
+      return true;
+    }
+    this.speakUtterance(text.slice(0, 700), voice, delivered);
+    return true;
+  }
+
+  private speakUtterance(text: string, voice: SpeechSynthesisVoice, delivered?: () => void) {
+    const utterance = new SpeechSynthesisUtterance(text);
     utterance.volume = this.outputMuted ? 0 : 1;
     this.utterances.add(utterance);
     utterance.voice = voice;
@@ -387,7 +395,6 @@ export class LocalVoice {
       if (epoch === this.playbackEpoch) this.setPlayback(false);
     };
     speechSynthesis.speak(utterance);
-    return true;
   }
 
   private async speakNatural(text: string, epoch: number, delivered?: () => void) {
@@ -406,12 +413,7 @@ export class LocalVoice {
         return;
       }
       this.speechId = id;
-      const context = (this.output ??= new AudioContext());
-      if (!this.outputGain) {
-        this.outputGain = context.createGain();
-        this.outputGain.gain.value = this.outputMuted ? 0 : 1;
-        this.outputGain.connect(context.destination);
-      }
+      const context = this.outputContext();
       await voiceRuntimeDeadline(() => context.resume(), this.lifetime.signal, 12_000);
       while (!this.closed && epoch === this.playbackEpoch) {
         const chunk = await localVoiceBackend.speechNext(lease, id);
@@ -429,36 +431,10 @@ export class LocalVoice {
         const buffer = context.createBuffer(1, samples.length, rate);
         const channel = buffer.getChannelData(0);
         for (let i = 0; i < channel.length; i++) channel[i] = samples[i] / 32768;
-        const source = context.createBufferSource();
-        source.buffer = buffer;
-        source.connect(this.outputGain);
-        this.playback.add(source);
-        let finishPlayback!: () => void;
+        // Only streamed VoxCPM2 audio needs a longer lead: Supertonic delivers each sentence complete.
         completed.push(
-          new Promise<void>((resolve) => {
-            finishPlayback = resolve;
-          }),
+          this.schedule(context, buffer, epoch, this.config?.engine === "voxcpm2" ? 0.35 : 0.05),
         );
-        source.onended = () => {
-          finishPlayback();
-          const timer = this.playbackStarts.get(source);
-          if (timer !== undefined) clearTimeout(timer);
-          this.playbackStarts.delete(source);
-          source.disconnect();
-          this.playback.delete(source);
-          if (epoch === this.playbackEpoch && !this.playback.size) this.setPlayback(false);
-        };
-        // Continue right after queued audio; after a gap, buffer again against
-        // underruns. Only streamed VoxCPM2 audio needs that buffer: Supertonic
-        // delivers each sentence complete.
-        const lead = this.config?.engine === "voxcpm2" ? 0.35 : 0.05;
-        const start =
-          this.nextTime !== undefined && this.nextTime > context.currentTime
-            ? this.nextTime
-            : context.currentTime + lead;
-        source.start(start);
-        this.watchPlaybackStart(source, context, start, epoch);
-        this.nextTime = start + buffer.duration;
       }
       if (successful && completed.length) {
         void Promise.all(completed)
@@ -475,6 +451,79 @@ export class LocalVoice {
     } finally {
       if (this.speechId === id) this.speechId = undefined;
       if (id) void localVoiceBackend.speechCancel(lease, id).catch(() => {});
+    }
+  }
+
+  private outputContext() {
+    const context = (this.output ??= new AudioContext());
+    if (!this.outputGain) {
+      routeVoiceOutput(context);
+      this.outputGain = context.createGain();
+      this.outputGain.gain.value = this.outputMuted ? 0 : 1;
+      this.outputGain.connect(context.destination);
+    }
+    return context;
+  }
+
+  /** Queues `buffer` after earlier audio; resolves when it finished playing or was stopped. */
+  private schedule(context: AudioContext, buffer: AudioBuffer, epoch: number, lead: number) {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(this.outputGain!);
+    this.playback.add(source);
+    const finished = new Promise<void>((resolve) => {
+      source.onended = () => {
+        resolve();
+        const timer = this.playbackStarts.get(source);
+        if (timer !== undefined) clearTimeout(timer);
+        this.playbackStarts.delete(source);
+        source.disconnect();
+        this.playback.delete(source);
+        if (epoch === this.playbackEpoch && !this.playback.size) this.setPlayback(false);
+      };
+    });
+    // Continue right after queued audio; after a gap, buffer again against underruns.
+    const start =
+      this.nextTime !== undefined && this.nextTime > context.currentTime
+        ? this.nextTime
+        : context.currentTime + lead;
+    source.start(start);
+    this.watchPlaybackStart(source, context, start, epoch);
+    this.nextTime = start + buffer.duration;
+    return finished;
+  }
+
+  /**
+   * The system voice rendered to audio, so it plays on the chosen output. If rendering fails the
+   * reply still plays through `speechSynthesis` on the default output.
+   */
+  private async speakRendered(
+    text: string,
+    voice: SpeechSynthesisVoice,
+    epoch: number,
+    delivered?: () => void,
+  ) {
+    let wav: ArrayBuffer;
+    try {
+      wav = await renderSystemSpeech(text, voice.lang.toLowerCase().split("-")[0]);
+    } catch {
+      if (!this.closed && epoch === this.playbackEpoch) this.speakUtterance(text, voice, delivered);
+      return;
+    }
+    if (this.closed || epoch !== this.playbackEpoch) return;
+    try {
+      const context = this.outputContext();
+      await voiceRuntimeDeadline(() => context.resume(), this.lifetime.signal, 12_000);
+      const buffer = await context.decodeAudioData(wav);
+      if (this.closed || epoch !== this.playbackEpoch) return;
+      void this.schedule(context, buffer, epoch, 0.05).then(() => {
+        if (!this.closed && epoch === this.playbackEpoch) delivered?.();
+      });
+    } catch (cause) {
+      if (!this.closed && epoch === this.playbackEpoch) {
+        this.silence();
+        this.callbacks.error(errorText(cause).trim() || "Local voice playback failed.");
+      }
     }
   }
 
@@ -532,6 +581,42 @@ export class LocalVoice {
     this.stream?.getAudioTracks().forEach((track) => {
       track.enabled = !value;
     });
+  }
+  /** Moves capture to another microphone without ending the conversation. */
+  switchMicrophone(deviceId: string | undefined): Promise<void> {
+    this.microphoneSwap = this.microphoneSwap.then(async () => {
+      const previous = this.conversation.deviceId;
+      if (previous === deviceId) return;
+      this.conversation.deviceId = deviceId;
+      if (this.closed || !this.audio || !this.stream || !this.source || !this.capture) return;
+      this.vad?.reset();
+      this.level.current = 0;
+      try {
+        const next = await swapMicrophone({
+          context: this.audio,
+          capture: this.capture,
+          stream: this.stream,
+          source: this.source,
+          deviceId,
+          previousDeviceId: previous,
+          muted: () => this.muted,
+          signal: this.lifetime.signal,
+        });
+        if (this.closed) {
+          next.source.disconnect();
+          stopMicrophone(next.stream);
+          return;
+        }
+        this.stream = next.stream;
+        this.source = next.source;
+        this.conversation.deviceId = next.deviceId;
+      } catch {
+        if (this.closed) return;
+        this.close();
+        this.callbacks.error("Microphone lost.", true);
+      }
+    });
+    return this.microphoneSwap;
   }
   setOutputMuted(value: boolean) {
     this.outputMuted = value;

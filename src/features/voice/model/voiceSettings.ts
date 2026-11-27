@@ -25,7 +25,11 @@ export const DICTATION_ENGINES: readonly DictationEngine[] = [
   "openrouter",
 ];
 
-export type DictationDictionaryEntry = { term: string; aliases: string[]; projectId?: string };
+export type DictationDictionaryEntry = {
+  term: string;
+  aliases: string[];
+  projectId?: string;
+};
 export type DictationCleanup = {
   enabled: boolean;
   model: string;
@@ -40,6 +44,8 @@ export type VoiceSettings = {
   manualTurnEnd?: boolean;
   manualTurnEndRevision?: number;
   microphoneId?: string;
+  /** Audio output device for spoken replies; missing means the system default. */
+  speakerOutputId?: string;
   turnEndSilence?: number;
   holdAnnouncements?: boolean;
   allowBargeIn?: boolean;
@@ -115,6 +121,8 @@ const defaults: VoiceSettings = {
   whisperPath: "",
   ttsPath: "",
 };
+/** Values a voice setting returns to with its Restore default action. */
+export const VOICE_SETTINGS_DEFAULTS: Readonly<VoiceSettings> = defaults;
 function wakePhraseField(key: "wakePhrase" | "sleepPhrase", raw: unknown) {
   const text = typeof raw === "string" ? raw.trim() : "";
   return text.length >= WAKE_PHRASE_LIMITS.min && text.length <= WAKE_PHRASE_LIMITS.max
@@ -197,6 +205,9 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
       : {}),
     ...(typeof value?.microphoneId === "string" && value.microphoneId.length <= 300
       ? { microphoneId: value.microphoneId }
+      : {}),
+    ...(typeof value?.speakerOutputId === "string" && value.speakerOutputId.length <= 300
+      ? { speakerOutputId: value.speakerOutputId }
       : {}),
     ...(typeof value?.turnEndSilence === "number" &&
     Number.isFinite(value.turnEndSilence) &&

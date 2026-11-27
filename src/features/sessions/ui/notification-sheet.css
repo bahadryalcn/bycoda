@@ -46,12 +46,17 @@
   /* A readable minimum: the row wraps before the source name collapses. */
   flex: 1 1 7rem;
 }
+/* Project, conversation and time share one line with the actions; the names truncate. */
 .notification-request-footer {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .notification-request-source {
-  flex: 1 1 16rem;
-  flex-wrap: wrap;
+  flex: 1 1 0;
+  flex-wrap: nowrap;
+}
+.notification-request-source .notification-project {
+  flex: 0 1 auto;
+  max-inline-size: 45%;
 }
 .notification-popup-dismiss {
   position: absolute;

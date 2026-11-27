@@ -41,7 +41,7 @@ export function useActivitySync(
             linkedToAccount: true,
             files: [jsonSharingFile("activity-days.json", body)],
           },
-          activitySharing.load,
+          activitySharing,
           () => {
             if (accountIdentity().accountId !== userId)
               throw new Error("Activity account changed before upload");

@@ -123,6 +123,8 @@ export const SendCommandSchema = z.strictObject({
   secondOpinion: SecondOpinionSchema.optional(),
   noteCard: NoteComposerCardSchema.optional(),
   expectedPlanText: text.optional(),
+  /** Extra Host folders the session may also use; replaces the session's list. Host validates paths. */
+  additionalDirs: z.array(text).max(16).optional(),
 });
 export const DraftCommandSchema = z.strictObject({
   ...commandBase,

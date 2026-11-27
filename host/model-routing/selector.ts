@@ -12,6 +12,7 @@ import { isEffortSettingId } from "../../src/features/sessions/model/models";
 import type { ModelRoutingCatalog } from "./validation";
 import {
   modelRoutingPoolEntryIds,
+  modelRoutingPoolMemberSettings,
   modelRoutingProjectKey,
 } from "../../src/shared/model/modelRoutingPools";
 
@@ -162,7 +163,14 @@ export function selectModelRouting(
     );
     if (!status.skip) {
       const { harness, model, providerAccountId } = entry;
-      const modelSettings = poolModelSettings(entry, effort, catalog);
+      // A pool's own per-model settings replace its older group-wide effort.
+      const own =
+        choice.kind === "pool"
+          ? modelRoutingPoolMemberSettings(state.pools, choice.poolId, entry.id)
+          : undefined;
+      const modelSettings = own
+        ? { ...entry.modelSettings, ...own }
+        : poolModelSettings(entry, effort, catalog);
       const target = targetWithDelegation(
         state,
         { harness, model, providerAccountId, modelSettings },

@@ -660,7 +660,7 @@ describe("Host HTTP/WS read composition", () => {
       (await host.rpc(socket, "projects.browse", { path: host.project.cwd, extra: true })).error,
     ).toMatchObject({ code: RPC_ERROR_CODES.invalidParams });
   });
-  it("shares pipe-shell creation and output across HTTP and WS without replaying writes", async () => {
+  it("shares terminal creation and output across HTTP and WS without replaying writes", async () => {
     let emit!: (data: string) => void;
     let exit!: (code: number | null) => void;
     const child = {
@@ -682,6 +682,8 @@ describe("Host HTTP/WS read composition", () => {
         chosenId: null,
       }),
       async (root) => root,
+      undefined,
+      (profile, cwd, _size, output, onExit) => launch(profile, cwd, output, onExit),
     );
     const host = await setup({}, terminals);
     const socket = await host.ready();

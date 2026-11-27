@@ -9,10 +9,17 @@ export type SharingDetails = {
   files: readonly SharingFile[];
   linkedToAccount: boolean;
 };
+/** A category's stored mode. `save` returns whether the choice was persisted. */
+export type SharingPermission = {
+  load(): SharingMode;
+  save(mode: SharingMode): boolean;
+};
 type Transfer = SharingDetails & {
   id: number;
   automatic: boolean;
   allowToday?: () => boolean;
+  /** Persists the category mode from the review, e.g. Always send or Never send. */
+  save(mode: SharingMode): boolean;
   inspect(open: boolean): void;
   decide(send: boolean, source?: "user"): void;
   start(): void;
@@ -111,12 +118,12 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
     },
     async run(
       details: SharingDetails,
-      permission: () => SharingMode,
+      permission: SharingPermission,
       send: () => Promise<unknown>,
       signal?: AbortSignal,
       activityAccountId?: string,
     ): Promise<boolean> {
-      const mode = permission();
+      const mode = permission.load();
       if (mode === "off" || signal?.aborted) return false;
       const id = ++sequence;
       const generation = accountGeneration;
@@ -145,7 +152,7 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
             clearTimeout(timer);
             if (active && transfer.automatic && !inspecting && visible()) {
               timer = setTimeout(() => {
-                if (visible()) transfer.decide(permission() === "auto");
+                if (visible()) transfer.decide(permission.load() === "auto");
               }, delayMs);
             }
           };
@@ -157,6 +164,7 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
               isActivity && activityAccountId
                 ? () => activityPreference.save(activityGrant(activityAccountId))
                 : undefined,
+            save: (next) => permission.save(next),
             reschedule: schedule,
             start() {
               active = true;
@@ -175,7 +183,12 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
               globalThis.document?.removeEventListener("visibilitychange", schedule);
               active = false;
               unsubscribe?.();
-              if (source === "user" && isActivity && activityAccountId && permission() === "ask") {
+              if (
+                source === "user" &&
+                isActivity &&
+                activityAccountId &&
+                permission.load() === "ask"
+              ) {
                 activityPreference.save(activityReviewDeferred(activityAccountId));
               }
               signal?.removeEventListener("abort", cancel);
@@ -189,7 +202,7 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
           pending = [...pending, transfer];
           if (isActivity) {
             unsubscribe = activitySharing.subscribe(() => {
-              const current = permission();
+              const current = permission.load();
               if (current === "off" || reviewDeferred(current)) transfer.decide(false);
               else if (maySyncActivity(current)) transfer.decide(true);
             });
@@ -200,7 +213,8 @@ export function createTransferQueue(receiptsEnabled: () => boolean, delayMs = 10
         });
       const approved = maySyncActivity(mode) || (await review());
       const sameAccount = () => !details.linkedToAccount || generation === accountGeneration;
-      if (!approved || signal?.aborted || permission() === "off" || !sameAccount()) return false;
+      if (!approved || signal?.aborted || permission.load() === "off" || !sameAccount())
+        return false;
       await send();
       if (receiptsEnabled() && sameAccount() && !signal?.aborted) {
         const sentAt = new Date();

@@ -15,7 +15,7 @@ import {
   type DraftChangeItem,
 } from "../../model/providerDefaultsDraft";
 
-function fieldLabels(): Record<Exclude<DraftChangeItem["field"], "extra">, string> {
+function fieldLabels(): Record<Exclude<DraftChangeItem["field"], "extra" | "delegation">, string> {
   return {
     defaultProvider: t("Default provider"),
     model: t("Model"),
@@ -44,6 +44,7 @@ function extraLabel(harness: HarnessId, key: string): string {
 }
 
 function scopeLabel(item: DraftChangeItem): string | undefined {
+  if (item.field === "delegation") return t("All providers");
   if (!item.harness) return undefined;
   const provider = HARNESS_TITLE[item.harness];
   if (!item.accountId || !supportsProviderAccounts(item.harness)) return provider;
@@ -69,9 +70,11 @@ export function defaultsDraftChanges(
     id: item.id,
     scope: scopeLabel(item),
     label:
-      item.field === "extra"
-        ? extraLabel(item.harness!, item.extraKey ?? "")
-        : fieldLabels()[item.field],
+      item.field === "delegation"
+        ? (delegationLabels()[item.extraKey ?? ""] ?? item.extraKey ?? "")
+        : item.field === "extra"
+          ? extraLabel(item.harness!, item.extraKey ?? "")
+          : fieldLabels()[item.field],
     detail: detail(item),
     revert: () => onDraftChange(withoutDraftItem(draft, item)),
   }));

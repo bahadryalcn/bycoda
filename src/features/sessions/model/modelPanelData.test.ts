@@ -34,11 +34,11 @@ const limits = (windows: Partial<ProviderRateLimits>): ProviderRateLimits => ({
 });
 
 describe("accountSwitcherKind", () => {
-  it("changes only at one, two, three and six accounts", () => {
+  it("changes only at one, two and six accounts", () => {
     expect([0, 1, 2, 3, 5, 6, 10].map(accountSwitcherKind)).toEqual([
       "none",
       "label",
-      "switch",
+      "menu",
       "menu",
       "menu",
       "search",

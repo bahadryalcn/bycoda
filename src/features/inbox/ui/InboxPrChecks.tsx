@@ -602,9 +602,9 @@ export function InboxPrChecks({
       <SurfaceLoading title={t("Loading checks…")}>
         {[0, 1, 2].map((index) => (
           <div key={index} className="flex items-center gap-2.5 px-2 py-1.5">
-            <SkeletonBar shape="square" width="1rem" height="1rem" index={index} />
-            <SkeletonBar width="40%" index={index} />
-            <SkeletonBar shape="pill" width="3.5rem" height="1rem" index={index} />
+            <SkeletonBar shape="square" width="1rem" height="1rem" />
+            <SkeletonBar width="40%" />
+            <SkeletonBar shape="pill" width="3.5rem" height="1rem" />
           </div>
         ))}
       </SurfaceLoading>

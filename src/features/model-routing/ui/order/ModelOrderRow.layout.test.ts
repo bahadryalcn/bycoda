@@ -14,8 +14,8 @@ const source = readFileSync(
   "utf8",
 );
 
-it("wraps the tag and quota column inside its fixed width", () => {
-  const column = source.match(/<div className="([^"]*\bw-56\b[^"]*)"/)?.[1] ?? "";
+it("wraps the tag and quota column inside its grid column", () => {
+  const column = source.match(/<div className="([^"]*model-order:col-start-6\b[^"]*)"/)?.[1] ?? "";
   expect(column.split(/\s+/)).toEqual(expect.arrayContaining(["flex-wrap", "max-w-full"]));
 });
 

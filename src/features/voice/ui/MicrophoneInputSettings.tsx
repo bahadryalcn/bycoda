@@ -3,10 +3,10 @@ import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import { useMicrophonePermission } from "./useMicrophonePermission";
 import { isMicrophoneBlocked, microphoneBlockedMessage } from "../model/microphoneAccess";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { audioDeviceChoices, useAudioDevices } from "./useAudioDevices";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
-import { X } from "../../../shared/ui/icons";
+import { Play, Square, Trash2 } from "../../../shared/ui/icons";
 import { Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { MicrophoneRecording, type MicrophoneRecordingState } from "../model/microphoneRecording";
 import { useVoiceSettings } from "../model/voiceSettings";
@@ -27,36 +27,10 @@ export function MicrophoneInputSettings() {
   );
   const dictations = useActiveDictations();
   const microphoneInUse = companion || dictations.length > 0;
-  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-  // Browsers list microphones without ids until capture permission is granted; the test is the
-  // only path that asks for it, so an unknown list must not look like an unplugged device.
-  const [unidentified, setUnidentified] = useState(false);
+  const { devices, unidentified } = useAudioDevices("audioinput");
   const [state, setState] = useState<MicrophoneRecordingState>("idle");
   const [testMessage, setTestMessage] = useState("");
   const recording = useRef<MicrophoneRecording | undefined>(undefined);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the devicechange listener attached only while microphone settings are mounted, without requesting capture.
-  useEffect(() => {
-    let live = true;
-    const refresh = () => {
-      void navigator.mediaDevices
-        ?.enumerateDevices?.()
-        .then((all) => {
-          if (!live) return;
-          const inputs = all.filter((device) => device.kind === "audioinput");
-          setDevices(inputs.filter((device) => device.deviceId));
-          setUnidentified(inputs.some((device) => !device.deviceId));
-        })
-        .catch(() => {
-          if (live) setDevices([]);
-        });
-    };
-    refresh();
-    navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
-    return () => {
-      live = false;
-      navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
-    };
-  }, []);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the recording controller and release its capture, playback and object URLs when settings close.
   useEffect(() => {
     const controller = new MicrophoneRecording((next, message) => {
@@ -77,14 +51,22 @@ export function MicrophoneInputSettings() {
   useEffect(() => {
     if (microphoneInUse) recording.current?.cancel();
   }, [microphoneInUse]);
-  const busy = state === "requesting" || state === "recording" || state === "playing";
   const missing =
-    settings.microphoneId &&
+    !!settings.microphoneId &&
     !unidentified &&
     !devices.some((device) => device.deviceId === settings.microphoneId);
   // Permission shows up only when something is wrong: a failed test, or a passive denial.
   const denied = useMicrophonePermission() === "denied";
   const problem = testMessage || (denied ? microphoneBlockedMessage() : "");
+  const hasRecording = state === "ready" || state === "playing";
+  // The test button keeps one slot; its label follows the state so the row never reflows.
+  const testLabels = [
+    t("Record test"),
+    t("Recording…"),
+    t("Listen"),
+    t("Stop playback"),
+    t("Cancel"),
+  ];
   return (
     <Row
       id="voice-microphone-input"
@@ -103,6 +85,12 @@ export function MicrophoneInputSettings() {
             <SettingsFeedback state="error">{problem}</SettingsFeedback>
             <MicrophoneRecoveryAction blocked={isMicrophoneBlocked(problem)} />
           </>
+        ) : missing ? (
+          <SettingsFeedback state="warning">
+            {t(
+              "The selected microphone is unavailable. Select another input device or reconnect it, then try again.",
+            )}
+          </SettingsFeedback>
         ) : undefined
       }
     >
@@ -111,60 +99,72 @@ export function MicrophoneInputSettings() {
           hideLabel
           label={t("Microphone")}
           value={settings.microphoneId ?? ""}
-          options={[
-            { value: "", label: t("System default") },
-            ...devices.map((device, index) => ({
-              value: device.deviceId,
-              label: device.label || t("Microphone {p1}", { p1: String(index + 1) }),
-            })),
-            ...(missing
-              ? [
-                  {
-                    value: settings.microphoneId!,
-                    label: t("Selected microphone unavailable"),
-                    disabled: true,
-                  },
-                ]
-              : []),
-          ]}
+          options={audioDeviceChoices("audioinput", devices, unidentified, settings.microphoneId)}
           onChange={(microphoneId) => saveVoiceSettingsPatch({ microphoneId })}
         />
-        <ButtonGroup aria-label={t("Microphone test")}>
-          {/* One primary that follows the recording: Record, then Stop, then Play. */}
-          {state === "recording" ? (
-            <Button onClick={() => recording.current?.stop()}>{t("Stop recording")}</Button>
-          ) : state === "ready" ? (
-            <Button onClick={() => void recording.current?.play()}>{t("Play recording")}</Button>
-          ) : (
-            <Button
-              disabled={busy || !!missing || microphoneInUse}
-              disabledReason={
-                microphoneInUse
-                  ? t("Stop voice or dictation before recording a microphone test.")
-                  : missing
-                    ? t(
-                        "The selected microphone is unavailable. Select another input device or reconnect it, then try again.",
-                      )
-                    : t("A microphone test is already running.")
-              }
-              loading={state === "requesting"}
-              onClick={() => void recording.current?.record(settings.microphoneId)}
-            >
-              {t("Record test")}
-            </Button>
-          )}
-          {state === "requesting" ? (
-            <Button onClick={() => recording.current?.cancel()}>{t("Cancel")}</Button>
-          ) : state !== "idle" ? (
-            <Button
-              iconOnly
-              label={t("Discard recording")}
-              onClick={() => recording.current?.cancel()}
-            >
-              <X className="icon-sm" />
-            </Button>
-          ) : null}
-        </ButtonGroup>
+        {state === "requesting" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            reserveLabels={testLabels}
+            onClick={() => recording.current?.cancel()}
+          >
+            {t("Cancel")}
+          </Button>
+        ) : state === "recording" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            startIcon={<Square className="icon-sm" />}
+            reserveLabels={testLabels}
+            tooltip={t("Stop recording")}
+            onClick={() => recording.current?.stop()}
+          >
+            {t("Recording…")}
+          </Button>
+        ) : state === "playing" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            startIcon={<Square className="icon-sm" />}
+            reserveLabels={testLabels}
+            onClick={() => recording.current?.stopPlayback()}
+          >
+            {t("Stop playback")}
+          </Button>
+        ) : state === "ready" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            startIcon={<Play className="icon-sm" />}
+            reserveLabels={testLabels}
+            onClick={() => void recording.current?.play()}
+          >
+            {t("Listen")}
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            reserveLabels={testLabels}
+            // ui-drift-ignore: disabled-without-reason -- the row warning beside this button names the cause
+            disabled={missing || microphoneInUse}
+            onClick={() => void recording.current?.record(settings.microphoneId)}
+          >
+            {t("Record test")}
+          </Button>
+        )}
+        {/* Always mounted so the Select keeps its place; only a finished recording can be deleted. */}
+        <Button
+          iconOnly
+          variant="ghost"
+          label={t("Delete recording")}
+          // ui-drift-ignore: disabled-without-reason -- nothing to delete until a test is recorded
+          disabled={!hasRecording}
+          onClick={() => recording.current?.cancel()}
+        >
+          <Trash2 className="icon-sm" />
+        </Button>
       </div>
     </Row>
   );

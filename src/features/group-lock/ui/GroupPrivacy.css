@@ -9,6 +9,11 @@
 .group-privacy-controls {
   display: contents;
 }
+/* The groups are flex items of .settings-topics through `display: contents`, so the topic gap is
+   their only spacing; the standalone group padding would double it. */
+.group-privacy-controls > .settings-group {
+  padding-block: 0;
+}
 /* Group list: the name (with a lock mark while locked) and the protection toggle. */
 .privacy-group-list .privacy-group-row {
   display: grid;

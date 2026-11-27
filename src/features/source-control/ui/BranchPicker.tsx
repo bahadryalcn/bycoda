@@ -102,7 +102,7 @@ function branchOption(entry: GitBranchInfo, tree?: Worktree, locked = false): Pi
     ) : undefined,
     ...(tree
       ? {
-          group: t("In a worktree"),
+          group: t("Existing worktrees"),
           description: where,
           disabled: locked || undefined,
           disabledReason: locked

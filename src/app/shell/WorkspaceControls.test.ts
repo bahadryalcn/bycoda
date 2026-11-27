@@ -25,7 +25,13 @@ it("opens each destination and refreshes without reloading the app", async () =>
     document.body.append(host);
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["More"]);
+    ).toEqual(["Refresh current view", "Sounds", "Full screen", "More"]);
+    // The wide-footer form: the container query only decides which form is visible.
+    const inline = host.querySelector<HTMLButtonElement>('[data-workspace-control="refresh"]')!;
+    expect(inline.closest(".hidden")?.className).toContain("@min-[40rem]/footer:flex");
+    await act(async () => inline.click());
+    expect(reload).toHaveBeenCalledOnce();
+    reload.mockClear();
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
     );
@@ -50,6 +56,12 @@ it("opens each destination and refreshes without reloading the app", async () =>
       host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
     );
     expect(refreshButton().disabled).toBe(true);
+    const inlineRefresh = host.querySelector<HTMLButtonElement>(
+      '[data-workspace-control="refresh"]',
+    )!;
+    expect(inlineRefresh.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => inlineRefresh.click());
+    expect(reload).toHaveBeenCalledOnce();
     await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
   } finally {

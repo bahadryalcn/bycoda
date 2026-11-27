@@ -72,6 +72,19 @@ export const ModelRoutingTargetSchema = z.strictObject({
 });
 export type ModelRoutingTarget = z.infer<typeof ModelRoutingTargetSchema>;
 
+/** Settings are editable without changing the persisted model and account identity. */
+export function sameModelRoutingTarget(
+  previous: ModelRoutingTarget | undefined,
+  target: ModelRoutingTarget,
+): boolean {
+  return (
+    previous !== undefined &&
+    previous.harness === target.harness &&
+    previous.model === target.model &&
+    (previous.providerAccountId ?? "default") === (target.providerAccountId ?? "default")
+  );
+}
+
 /** Account-expanded provider catalogs need more room than a hand-built shortlist. */
 export const MODEL_ROUTING_MAX_ENTRIES = 500;
 /** A row of the main order. The limit is defined here once and applies in every pool. */
@@ -96,8 +109,16 @@ export const ModelRoutingPoolSchema = z.strictObject({
   entryIds: z.array(id).max(MODEL_ROUTING_MAX_ENTRIES),
   /** Other pools included by reference after this pool's own entries. Cycles are rejected. */
   poolIds: z.array(id).max(MODEL_ROUTING_MAX_POOLS).optional(),
-  /** Run-start effort for this pool, including models reached through included pools. */
+  /**
+   * Group-wide effort written by earlier saves. The Groups editor moves it into
+   * `memberSettings` of the pool's own models and saves without it.
+   */
   effort: z.enum(["low", "medium", "high"]).optional(),
+  /**
+   * Per-model settings (effort, speed) this pool applies over its own models' order settings,
+   * keyed by entry id. Keys must be in `entryIds`; models of included pools use their own pool's.
+   */
+  memberSettings: z.record(id, ModelSettingsSchema).optional(),
 });
 export type ModelRoutingPool = z.infer<typeof ModelRoutingPoolSchema>;
 

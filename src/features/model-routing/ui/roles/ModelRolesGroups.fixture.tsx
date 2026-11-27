@@ -40,15 +40,18 @@ vi.mock("../../../../shared/ui/settings", () => ({
   ),
   Row: ({
     label,
+    scope,
     children,
     feedback,
   }: {
     label: ReactNode;
+    scope?: ReactNode;
     children: ReactNode;
     feedback?: ReactNode;
   }) => (
     <section data-role-row>
       <div data-role-label>{label}</div>
+      {scope}
       {children}
       {feedback}
     </section>
@@ -373,13 +376,15 @@ it("keeps a role bound to a missing group visible instead of dropping it", async
   expect(latest.routing.roles["task.worker"]).toEqual({ kind: "pool", poolId: "gone" });
 });
 
-it("shows Automatic for helpers and keeps explicit Model order, then resets", async () => {
+it("switches helpers between Automatic and an explicit choice, one click each way", async () => {
   await render(<Groups initial={draftOf()} />);
-  const row = rowOf("Title");
-  expect(selected(row)).toBe("Automatic");
-  await choose(row, "order");
+  const toggle = () => rowOf("Title").querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+  expect(rowOf("Title").querySelector("select")).toBeNull();
+  await act(async () => toggle().click());
   expect(latest.routing.roles["text.title"]).toEqual({ kind: "order" });
-  await choose(row, "automatic");
+  expect(selected(rowOf("Title"))).toBe("Any model, in order");
+  await act(async () => toggle().click());
   expect(latest.routing.roles["text.title"]).toBeUndefined();
   expect("text.title" in latest.routing.roles).toBe(false);
 });

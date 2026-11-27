@@ -3,6 +3,7 @@ import {
   TerminalsCreateParamsSchema,
   TerminalsReadParamsSchema,
   TerminalsWriteParamsSchema,
+  TerminalsResizeParamsSchema,
   TerminalsControlParamsSchema,
   type HostTerminal,
   type HostTerminalList,
@@ -16,6 +17,7 @@ const schemas = {
   create: TerminalsCreateParamsSchema,
   read: TerminalsReadParamsSchema,
   write: TerminalsWriteParamsSchema,
+  resize: TerminalsResizeParamsSchema,
   interrupt: TerminalsControlParamsSchema,
   close: TerminalsControlParamsSchema,
 };
@@ -32,6 +34,7 @@ export interface TerminalServicePorts {
     ): Promise<HostTerminal>;
     read(projectId: string, params: Params): HostTerminalRead;
     write(projectId: string, params: Params): Promise<{ accepted: true }>;
+    resize(projectId: string, params: Params): Promise<{ accepted: true }>;
     interrupt(projectId: string, id: unknown): Promise<{ accepted: true }>;
     remove(projectId: string, id: unknown): Promise<{ closed: true }>;
   };
@@ -82,7 +85,8 @@ export function createTerminalService(ports: TerminalServicePorts) {
     } else if (action === "write") {
       result = await ports.terminals.write(project.id, params);
       await touch(project.id, params.id);
-    } else if (action === "interrupt")
+    } else if (action === "resize") result = await ports.terminals.resize(project.id, params);
+    else if (action === "interrupt")
       result = await ports.terminals.interrupt(project.id, params.id);
     else {
       const cwd = ports.terminals
@@ -107,6 +111,7 @@ export function createTerminalService(ports: TerminalServicePorts) {
     create: operation("create"),
     read: operation("read"),
     write: operation("write"),
+    resize: operation("resize"),
     interrupt: operation("interrupt"),
     close: operation("close"),
   };

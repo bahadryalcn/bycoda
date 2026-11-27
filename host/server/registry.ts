@@ -311,6 +311,7 @@ export function createRegistryRuntime(
       "terminals.create": dependencies.terminalService.create,
       "terminals.read": dependencies.terminalService.read,
       "terminals.write": dependencies.terminalService.write,
+      "terminals.resize": dependencies.terminalService.resize,
       "terminals.interrupt": dependencies.terminalService.interrupt,
       "terminals.close": dependencies.terminalService.close,
       "environment.persistence.status": dependencies.persistenceService.status,

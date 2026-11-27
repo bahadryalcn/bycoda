@@ -92,12 +92,15 @@ old annotations and requires a new frame. It is not physical-device emulation.
 Runtime coordinates are checked against the actual viewport. Native-size mode
 keeps a narrow viewport at its real width rather than stretching it to the panel.
 
-`browser.recording.start` (leaseId, optional fps 1-10 default 4, maxSeconds 5-300
-default 120) samples the leased browser through the same frame path as `browser.frame`
-into a per-recording folder, one active recording per conversation browser. Frames are
-written to disk as they arrive and dropped rather than queued when capture is slow.
+`browser.recording.start` (leaseId, optional fps 4, 8, 10, 15, 30 or 60 default 4, maxSeconds 5-300
+default 120) records the leased browser from its live screencast (the stream behind
+`browser.frame` long polls, every picture acknowledged) into a per-recording folder, one
+active recording per conversation browser. Frames are written to disk as they arrive, one
+per fps slot (the newest wins), and each is held until the next, so a still page stays
+full length. A browser without a screencast falls back to screenshots, which cannot reach
+these rates.
 `browser.recording.stop` encodes WebM with Playwright's bundled ffmpeg
-(`libvpx-vp9`, deadline 120 s) and deletes the frames; `browser.recording.status`
+(`libvpx-vp9`, deadline 300 s) and deletes the frames; `browser.recording.status`
 reads its state. Recordings stop on maxSeconds, lease loss or browser close, and
 folders older than 24 hours are removed at Host start. Attaching the video to the chat
 is not supported.

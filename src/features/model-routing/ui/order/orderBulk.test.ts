@@ -52,10 +52,10 @@ it("groups by account in first-seen order and keeps each row's priority position
 });
 
 it("counts bound-to-order and unbound jobs, but not unbound text helpers", () => {
-  const all = jobsUsingOrder({});
+  const all = jobsUsingOrder({}).length;
   expect(all).toBeGreaterThan(0);
-  expect(jobsUsingOrder({ "task.worker": { kind: "pool", poolId: "p" } })).toBe(all - 1);
-  expect(jobsUsingOrder({ "text.title": { kind: "order" } } as never)).toBe(all + 1);
+  expect(jobsUsingOrder({ "task.worker": { kind: "pool", poolId: "p" } })).toHaveLength(all - 1);
+  expect(jobsUsingOrder({ "text.title": { kind: "order" } } as never)).toHaveLength(all + 1);
 });
 
 it("removes several entries and refuses to empty a group", () => {

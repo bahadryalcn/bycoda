@@ -228,7 +228,7 @@ it("disables minimize-to-tray outside Windows without consulting storage", () =>
 
 /** Preferences the Host owns: storage is only a legacy source until the Host accepts a record. */
 const HOST_OWNED = [
-  ["bycoda.keepAwakeWhileAgentsWork", "keepAwakeWhileAgentsWork", false],
+  ["bycoda.keepAwakeWhileAgentsWork", "keepAwakeWhileAgentsWork", true],
   ["bycoda.resumeAtReset", "resumeAtReset", true],
   ["bycoda.autoContinueInterrupted", "autoContinueInterrupted", true],
 ] as const;
@@ -308,9 +308,9 @@ describe("after the Host accepts a record", () => {
   );
 
   it("ignores legacy storage once the Host owns the value", () => {
-    localStorage.setItem("bycoda.keepAwakeWhileAgentsWork", "1");
+    localStorage.setItem("bycoda.keepAwakeWhileAgentsWork", "0");
     localStorage.setItem("bycoda.keepAwakeHoldAfter", "1h");
-    expect(settings.loadKeepAwakeEnabled()).toBe(false);
+    expect(settings.loadKeepAwakeEnabled()).toBe(true);
     expect(settings.loadKeepAwakeHoldAfter()).toBe("0");
   });
 
@@ -324,8 +324,8 @@ describe("after the Host accepts a record", () => {
 
   it("reads keep-awake on Linux and macOS from the Host record", () => {
     platform.isWindows = false;
-    acceptHost({ keepAwakeWhileAgentsWork: true }, 2);
-    expect(settings.loadKeepAwakeEnabled()).toBe(true);
+    acceptHost({ keepAwakeWhileAgentsWork: false }, 2);
+    expect(settings.loadKeepAwakeEnabled()).toBe(false);
   });
 
   it("notifies another window's change through the Host snapshot, not storage events", () => {
@@ -333,10 +333,10 @@ describe("after the Host accepts a record", () => {
     const unsubscribe = settings.subscribeKeepAwakeEnabled(listener);
     window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.keepAwakeWhileAgentsWork" }));
     expect(listener).not.toHaveBeenCalled();
-    acceptHost({ keepAwakeWhileAgentsWork: true }, 2);
+    acceptHost({ keepAwakeWhileAgentsWork: false }, 2);
     expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
-    acceptHost({ keepAwakeWhileAgentsWork: false }, 3);
+    acceptHost({ keepAwakeWhileAgentsWork: true }, 3);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 });

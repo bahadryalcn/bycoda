@@ -143,8 +143,11 @@ fn requires_host_activity(
                     if let Ok(output) = crate::fs::git_cmd_output(&mut command) {
                         if output.status.success() {
                             let branch = String::from_utf8_lossy(&output.stdout);
-                            return Ok(branch.trim().starts_with("bycoda/s/")
-                                || branch.trim().starts_with("bycoda/t/"));
+                            // Managed ownership is the workspace marker Host writes, not a name prefix.
+                            return Ok(crate::worktrees::branch_is_managed(
+                                ancestor,
+                                branch.trim(),
+                            ));
                         }
                     }
                 }
@@ -389,8 +392,18 @@ mod tests {
         assert!(requires_host_activity(&linked, &[], &[]).unwrap());
         assert!(!requires_host_activity(&linked, &[], &legacy).unwrap());
         assert!(requires_host_activity(&linked, &legacy, &legacy).unwrap());
-        git(&linked, &["branch", "-m", "bycoda/s/managed"]);
+        git(&linked, &["branch", "-m", "by/managed"]);
+        // A hand-made `by/` branch is not managed.
+        assert!(!requires_host_activity(&linked, &[], &legacy).unwrap());
+        git(
+            &linked,
+            &["config", "branch.by/managed.bycodaWorkspace", "ws-1"],
+        );
         assert!(requires_host_activity(&linked, &[], &legacy).unwrap());
+        git(
+            &linked,
+            &["config", "--unset", "branch.by/managed.bycodaWorkspace"],
+        );
         git(&linked, &["branch", "-m", "legacy"]);
         git(&linked, &["checkout", "--detach"]);
         assert!(requires_host_activity(&linked, &[], &legacy).unwrap());

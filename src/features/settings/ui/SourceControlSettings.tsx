@@ -2,6 +2,7 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
+  DIFF_VIEWER_DEFAULT,
   loadDiffViewer,
   saveDiffViewer,
   subscribeDiffViewer,
@@ -34,6 +35,8 @@ export function SourceControlSettings() {
         <Row
           id="diff-view"
           label={t("Diff view")}
+          modified={diffViewer !== DIFF_VIEWER_DEFAULT}
+          onReset={() => onDiffViewer(DIFF_VIEWER_DEFAULT)}
           feedback={
             diffError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>

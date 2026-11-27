@@ -159,6 +159,7 @@ type Shared = {
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
+  onWorktreeBaseRemoteChange?: (sessionId: string, remote: boolean) => void;
   onManageWorktrees?: () => void;
   onModelChange: (sessionId: string, harness: HarnessId, model: string, accountId?: string) => void;
   onModelSettingsChange: (sessionId: string, settings: Record<string, string>) => void;
@@ -308,6 +309,7 @@ function PaneTreeComponent({
   onWorktreeChange,
   onWorkspaceModeChange,
   onWorktreeBaseChange,
+  onWorktreeBaseRemoteChange,
   onManageWorktrees,
   onModelChange,
   onModelSettingsChange,
@@ -925,6 +927,7 @@ function PaneTreeComponent({
                           onWorktreeChange={onWorktreeChange}
                           onWorkspaceModeChange={onWorkspaceModeChange}
                           onWorktreeBaseChange={onWorktreeBaseChange}
+                          onWorktreeBaseRemoteChange={onWorktreeBaseRemoteChange}
                           onManageWorktrees={onManageWorktrees}
                           onModelChange={onModelChange}
                           onModelSettingsChange={onModelSettingsChange}

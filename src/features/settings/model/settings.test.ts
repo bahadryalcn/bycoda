@@ -753,13 +753,9 @@ describe("settings navigation", () => {
     ]);
     expect(groups[0]?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(21);
-    expect(new Set(ids).size).toBe(21);
-    expect([...ids].sort()).toEqual(
-      SETTINGS_SECTIONS.map((section) => section.id)
-        .filter((id) => id !== "tools" && id !== "archive")
-        .sort(),
-    );
+    expect(ids).toHaveLength(23);
+    expect(new Set(ids).size).toBe(23);
+    expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
     }
@@ -780,6 +776,17 @@ describe("settings navigation", () => {
     expect(settingsSectionForAnchor("providers", "provider-accounts")).toBe("providers");
   });
 
+  it("finds a setting by the label of a control inside it", () => {
+    for (const [query, settingId] of [
+      ["Tinted", "canvas-background"],
+      ["Default generation model", "git-generation-default"],
+      ["Import sessions from other coding agents", "import-history"],
+      ["Neural tree", "live-background"],
+    ]) {
+      expect(searchSettings(query, 100).map((result) => result.settingId)).toContain(settingId);
+    }
+  });
+
   it("keeps the old Models destination as a Providers alias without a separate rail entry", () => {
     expect(settingsSectionForAnchor("models")).toBe("providers");
     expect(settingsSectionForAnchor("models", "models-chat")).toBe("providers");
@@ -793,10 +800,10 @@ describe("settings navigation", () => {
     const byGroup = Object.fromEntries(
       settingsSectionsByGroup().map((group) => [group.id, group.sections.map((s) => s.id)]),
     );
-    expect(byGroup.app).toEqual(["general", "appearance", "keybindings"]);
+    expect(byGroup.app).toEqual(["general", "appearance", "keybindings", "archive"]);
     expect(byGroup.conversation).toEqual(["chat", "voice", "notifications"]);
     expect(byGroup.models).toEqual(["providers", "decisionModels", "usage"]);
-    expect(byGroup.tools).toEqual(["skills", "mcp"]);
+    expect(byGroup.tools).toEqual(["skills", "mcp", "tools"]);
     expect(byGroup.workspace).toEqual(["workspace", "terminal", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);
     expect(byGroup.privacy).toEqual(["groupLock", "permissions", "secrets"]);
@@ -814,7 +821,7 @@ describe("settings navigation", () => {
     ["general", "remote-media", "connections"],
     ["general", "performance-trace", "policies"],
     ["general", "getting-started", "policies"],
-    ["general", "import-history", "archive"],
+    ["general", "import-history", "chat"],
     ["general", "session-folder", "workspace"],
     ["workspace", "exact-git-rewind", "worktrees"],
     ["account", "anonymous-statistics", "groupLock"],

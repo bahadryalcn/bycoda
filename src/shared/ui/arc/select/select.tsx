@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, useState } from "react";
 import type { ComponentPropsWithoutRef } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import type { Variants } from "motion/react";
@@ -58,13 +58,29 @@ export const SelectTrigger = forwardRef<
 /** The popup row shared with SearchableSelect (see ComboboxItem), so short and searchable pickers read alike. */
 export const SelectOption = ComboboxItem;
 
+/**
+ * The label is visible from the first paint. The roll runs only after the value changes, never on
+ * mount, so a trigger can not stay blank when an enter animation is delayed or never starts.
+ */
 export function SelectValue({ value, label }: { value: string; label: string }) {
   const reduced = useReducedMotion();
+  const [seen, setSeen] = useState(value);
+  const [changed, setChanged] = useState(false);
+  if (seen !== value) {
+    setSeen(value);
+    setChanged(true);
+  }
   if (reduced) return <span className={styles.valueText}>{label}</span>;
   return (
     <span className={styles.valueText}>
       {/* Keep one label in the trigger, including during rapid value changes. */}
-      <motion.span key={value} variants={valueRoll} custom={1} initial="enter" animate="center">
+      <motion.span
+        key={value}
+        variants={valueRoll}
+        custom={1}
+        initial={changed ? "enter" : false}
+        animate="center"
+      >
         {label}
       </motion.span>
     </span>

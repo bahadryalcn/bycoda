@@ -10,11 +10,16 @@ for (const theme of ["light", "dark"]) {
       );
       const accounts = page.locator(".usage-account");
       await expect(accounts).toHaveCount(5);
-      await expect(accounts.nth(4)).toHaveAccessibleName("Grok");
+      await expect(accounts.nth(4)).toHaveAccessibleName("Grok Build · Default account");
       await expect(accounts.nth(4).getByText("81%", { exact: true })).toBeVisible();
-      await expect(accounts.nth(2).getByRole("alert")).toContainText(
-        "Previous limits remain visible.",
-      );
+      // The alert states the failure; the provider's own message sits behind "Details".
+      await expect(accounts.nth(2).getByRole("alert")).toContainText("Account limits unavailable.");
+      await accounts
+        .nth(2)
+        .getByRole("button", { name: /^Details/ })
+        .click();
+      await expect(page.getByText("Previous limits remain visible.")).toBeVisible();
+      await page.keyboard.press("Escape");
       await expect(accounts.nth(2).getByRole("meter")).toHaveCount(2);
       await expect(accounts.nth(2).getByText("39%", { exact: true })).toBeVisible();
       await expect(accounts.nth(2).getByText("85%", { exact: true })).toBeVisible();
@@ -105,7 +110,13 @@ for (const [theme, width] of [
       "68",
     );
     await expect(accounts.nth(1).getByText("18%", { exact: true })).toBeVisible();
-    await expect(accounts.nth(2).getByRole("alert")).toContainText("sign-in expired");
+    await expect(accounts.nth(2).getByRole("alert")).toContainText("Account limits unavailable.");
+    await accounts
+      .nth(2)
+      .getByRole("button", { name: /^Details/ })
+      .click();
+    await expect(page.getByText("Work: Claude sign-in expired")).toBeVisible();
+    await page.keyboard.press("Escape");
     const cards = await accounts.evaluateAll((nodes) =>
       nodes.map((node) => {
         const b = node.getBoundingClientRect();
@@ -155,11 +166,11 @@ for (const [theme, width] of [
       animations: "disabled",
     });
     await page.getByRole("button", { name: "Add budget", exact: true }).click();
-    const draft = page.getByLabel("Budget name (optional)", { exact: true });
-    await draft.fill("Unfinished budget");
+    const draft = page.getByLabel("Token capacity", { exact: true });
+    await draft.fill("12345");
     await cost.click();
     await page.getByRole("tab", { name: "Limits", exact: true }).click();
-    await expect(draft).toHaveValue("Unfinished budget");
+    await expect(draft).toHaveValue("12345");
     expect(errors).toEqual([]);
   });
 }
@@ -172,18 +183,17 @@ test("creates, edits, persists and removes a project token allocation", async ({
   await page.goto("/tests/browser/usage/usage-budgets.html");
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await select(page, "Budget target", "C:/fixture/app");
-  await page.getByLabel("Budget name (optional)", { exact: true }).fill("Project allocation");
   await page.getByLabel("Token capacity", { exact: true }).fill("10000");
   await page.getByLabel("Allocation (%)", { exact: true }).fill("25");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
-  await expect(page.getByText("Budget saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save budget", exact: true })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "C:/fixture/app", exact: true })).toBeVisible();
   // Budget tokens weight cached reads at 10%: 1000 input + 200 output + 50 * 0.1.
   await expect(page.getByRole("meter")).toHaveAttribute("aria-valuenow", "1205");
   await expect(page.getByRole("meter")).toHaveAttribute("aria-valuemax", "2500");
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Project allocation", exact: true }),
-  ).toBeVisible();
+  // A budget is named after its target; the editor has no separate name field.
+  await expect(page.getByRole("heading", { name: "C:/fixture/app", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Allocation (%)", { exact: true }).fill("10");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
@@ -197,19 +207,19 @@ test("supports session and workspace scopes and 5-hour account thresholds", asyn
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await select(page, "Scope", "Session");
   await select(page, "Budget target", "Fixture session · C:/fixture/app");
-  await page.getByLabel("Budget name (optional)", { exact: true }).fill("Session allowance");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Session allowance" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Fixture session · C:/fixture/app" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Add budget", exact: true }).click();
   await select(page, "Scope", "Workspace");
   await select(page, "Budget target", "Fixture workspace");
-  await page.getByLabel("Budget name (optional)", { exact: true }).fill("Account ceiling");
   await select(page, "Measurement", "Provider account threshold (%)");
   await select(page, "Period", "5 hours");
-  await select(page, "Provider account", "codex · Fixture account");
+  await select(page, "Provider account", "Codex · Fixture account");
   await page.getByLabel("Account usage threshold (%)", { exact: true }).fill("30");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
-  await expect(page.getByText("codex · Fixture account", { exact: true })).toBeVisible();
+  await expect(page.getByText("Codex · Fixture account", { exact: true })).toBeVisible();
   await expect(page.getByText("32.0% / 30.0%", { exact: false })).toBeVisible();
   await page.screenshot({
     path: "temp/test-results/usage-budgets/meters-dark.png",
@@ -220,7 +230,7 @@ test("supports session and workspace scopes and 5-hour account thresholds", asyn
 test("shows Turkish budget controls", async ({ page }) => {
   await page.goto("/tests/browser/usage/usage-budgets.html?lang=tr");
   await page.getByRole("button", { name: "Bütçe ekle", exact: true }).click();
-  await expect(page.getByLabel("Bütçe adı (isteğe bağlı)", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Token kapasitesi", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Ayrılan pay (%)", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bütçeyi kaydet", exact: true })).toBeVisible();
 });
@@ -232,7 +242,7 @@ test("keeps the editor usable at narrow width in light theme and reduced motion"
   await page.goto("/tests/browser/usage/usage-budgets.html?theme=light");
   await page.getByRole("button", { name: "Add budget", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Budget name (optional)", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Token capacity", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save budget", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
@@ -257,7 +267,8 @@ for (const [theme, width, motion] of [
     );
 
     // Key numbers are plain exact text; there is no decorative reel to wait for.
-    const values = page.locator(".usage-metrics strong");
+    // Detail tiles live inside the closed "Usage details" disclosure and are not visible yet.
+    const values = page.locator(".usage-metrics strong:visible");
     await expect(values).toHaveCount(3);
     const usageDetails = page.locator(".usage-details-disclosure");
     await usageDetails.locator("summary").focus();
@@ -322,7 +333,9 @@ for (const theme of ["light", "dark"] as const) {
           ).toBeVisible();
         }
         if (view === "grok")
-          await expect(page.getByRole("status").filter({ hasText: "Loading usage" })).toBeVisible();
+          await expect(
+            page.getByRole("status").filter({ hasText: "Loading account limits" }),
+          ).toBeVisible();
         if (view === "contribution")
           await expect(page.getByText("No records", { exact: true })).toBeVisible();
         await shot(view);
@@ -337,11 +350,8 @@ for (const theme of ["light", "dark"] as const) {
         fixture.holdUsageVisualReads();
         fixture.refreshUsageFixture();
       });
-      await expect(
-        page.getByRole("status").filter({
-          hasText: /Refreshing usage.*Previous results remain visible/,
-        }),
-      ).toBeVisible();
+      // A refresh keeps the previous results and marks the page busy; the toolbar button shows progress.
+      await expect(page.getByRole("button", { name: "Refresh usage", exact: true })).toBeVisible();
       await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "true");
       await shot("overview-pending");
       await page.goto(`/tests/browser/usage/usage-budgets.html?theme=${theme}`);
@@ -354,9 +364,11 @@ for (const theme of ["light", "dark"] as const) {
       );
       await expect(page.locator(".usage-account")).toHaveCount(5);
       await expect(page.locator(".usage-account").nth(2).getByRole("alert")).toContainText(
-        "Previous limits remain visible.",
+        "Account limits unavailable.",
       );
-      const grokHeading = page.locator('.usage-account[aria-label="Grok"] h4').first();
+      const grokHeading = page
+        .locator('.usage-account[aria-label="Grok Build · Default account"] h4')
+        .first();
       const separation = await grokHeading.evaluate((heading) => {
         const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
         let text = walker.nextNode();
@@ -418,7 +430,8 @@ for (const theme of ["light", "dark"])
       });
       const actual = await selected.evaluate((node) => {
         const p = document.createElement("span");
-        p.style.boxShadow = "0 0 0 2px var(--ui-selected-ring)";
+        // The selection ring is drawn inside the tile bounds (RadioTileGroup), so it is never clipped.
+        p.style.boxShadow = "inset 0 0 0 2px var(--ui-selected-ring)";
         p.style.background = "var(--ui-tone-accent-subtle)";
         node.appendChild(p);
         const s = getComputedStyle(node),

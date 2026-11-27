@@ -1,6 +1,8 @@
 import type { ModelRoutingEntry } from "../../../../shared/model/host-contracts/model-routing";
 import {
+  accountDisplayLabel,
   defaultProviderAccountId,
+  PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
   supportsProviderAccounts,
   type ProviderAccount,
@@ -49,6 +51,22 @@ export function entryAccountId(
     (source?.accounts === undefined
       ? defaultProviderAccountId(entry.harness)
       : (source.accounts[entry.harness]?.find((account) => account.isDefault)?.id ?? "default"))
+  );
+}
+
+/** The name every surface shows for an account of `harness` (never the generated account id). */
+export function entryAccountName(
+  providerId: string,
+  account: Pick<ProviderAccount, "id" | "label">,
+  source?: ModelSource,
+): string {
+  const harness = PROVIDER_ACCOUNT_PROVIDERS.find((candidate) => candidate === providerId);
+  if (!harness) return account.label;
+  const accounts =
+    source?.accounts === undefined ? providerAccounts(harness) : (source.accounts[harness] ?? []);
+  return accountDisplayLabel(
+    { id: account.id, provider: harness, label: account.label },
+    accounts.map((entry) => ({ id: entry.id, provider: harness })),
   );
 }
 

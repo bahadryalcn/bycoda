@@ -127,7 +127,7 @@ export function managedHistory() {
       begin: vi.fn(async (request) => {
         const record: TurnGitRecord = {
           ...request,
-          branchRef: "refs/heads/bycoda/s/test",
+          branchRef: "refs/heads/by/test",
           before: { status: "complete", snapshot },
         };
         records.set(request.userBlockId, record);

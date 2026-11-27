@@ -84,7 +84,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
   const keepAwake = useSyncExternalStore(
     subscribeKeepAwakeEnabled,
     loadKeepAwakeEnabled,
-    () => false,
+    () => KEEP_AWAKE_DEFAULT,
   );
   const keepAwakeHoldAfter = useSyncExternalStore(
     subscribeKeepAwakeHoldAfter,
@@ -174,7 +174,12 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       <LanguageSettings />
       {IS_WIN && (
         <Group title={t("Application behavior")}>
-          <Row id="minimize-to-tray" label={t("Minimize to tray")}>
+          <Row
+            id="minimize-to-tray"
+            label={t("Minimize to tray")}
+            modified={minimizeToTray !== MINIMIZE_TO_TRAY_DEFAULT}
+            onReset={() => onMinimizeToTray(MINIMIZE_TO_TRAY_DEFAULT)}
+          >
             <Toggle label={t("Minimize to tray")} on={minimizeToTray} onChange={onMinimizeToTray} />
           </Row>
         </Group>
@@ -184,6 +189,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           id="keep-awake"
           feedback={powerFeedback("keep-awake")}
           label={t("Prevent sleep while agents work")}
+          modified={keepAwake !== KEEP_AWAKE_DEFAULT && !powerPending("keep-awake")}
+          onReset={() => onKeepAwake(KEEP_AWAKE_DEFAULT)}
           info={
             <InfoTooltip className="shrink-0" label={t("Sleep behavior")}>
               {sleepBehavior}
@@ -202,6 +209,12 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           feedback={powerFeedback("keep-awake-duration")}
           label={t("After agents finish")}
           dependsOn={keepAwake}
+          modified={
+            keepAwake &&
+            keepAwakeHoldAfter !== KEEP_AWAKE_HOLD_AFTER_DEFAULT &&
+            !powerPending("keep-awake-duration")
+          }
+          onReset={() => onKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT)}
         >
           <Select
             hideLabel
@@ -212,7 +225,13 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             disabled={!keepAwake || powerPending("keep-awake-duration")}
           />
         </Row>
-        <Row id="keep-awake-screen" label={t("Keep the screen on")} dependsOn={keepAwake}>
+        <Row
+          id="keep-awake-screen"
+          label={t("Keep the screen on")}
+          dependsOn={keepAwake}
+          modified={keepAwake && keepAwakeScreen !== KEEP_AWAKE_SCREEN_DEFAULT}
+          onReset={() => onKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT)}
+        >
           <Toggle
             label={t("Keep the screen on")}
             on={keepAwakeScreen}

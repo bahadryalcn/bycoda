@@ -12,6 +12,7 @@ import {
   type StateInset,
 } from "./Notice";
 import { optionalTextAttributes } from "./Text";
+import { InfoTooltip } from "./InfoPopover";
 import { Search } from "./icons";
 import { useT } from "../i18n";
 import styles from "./EmptyState.module.css";
@@ -52,6 +53,7 @@ export type SharedEmptyStateProps = Omit<ArcEmptyStateProps, "action" | "help"> 
    * Keeps the description visible under the title. By default a titled state puts its description
    * behind the info affordance; set this only when the sentence states scope or consequence (a
    * `filtered` state always shows it). Without a title the description is the message and shows.
+   * `size="inline"` shows the sentence under the title by default; `false` tucks it behind the info glyph.
    */
   showDescription?: boolean;
   /** Adds a Reset action after `action` for a filtered state: clears the search and filters that hide the data. */
@@ -107,6 +109,7 @@ function InlineEmptyState({
   description,
   descriptionText,
   label,
+  showDescription,
   context: _context,
   ...props
 }: Omit<
@@ -119,8 +122,9 @@ function InlineEmptyState({
   | "onRetry"
   | "retryLabel"
   | "retrying"
-  | "showDescription"
 > & { steps: NoticeAction[] }) {
+  // The caption row shows its sentence by default; `showDescription={false}` moves it behind the info glyph.
+  const tucked = Boolean(title) && Boolean(description) && showDescription === false;
   return (
     <div
       {...props}
@@ -139,8 +143,18 @@ function InlineEmptyState({
     >
       {icon ? <NoticeGlyph tone="neutral" size="inline" icon={icon} /> : null}
       <span {...optionalTextAttributes(descriptionText ?? {}, "min-w-0 flex-1 break-words")}>
-        {title ? <strong className="font-medium">{title} </strong> : null}
-        {description}
+        {title ? (
+          <strong className={description && !tucked ? "block font-medium" : "font-medium"}>
+            {title}
+            {tucked ? (
+              <>
+                {" "}
+                <InfoTooltip>{description}</InfoTooltip>
+              </>
+            ) : null}
+          </strong>
+        ) : null}
+        {tucked ? null : description}
         {extra ? <> {extra}</> : null}
         {steps.map((step) => (
           <span key={step.label}>
@@ -156,8 +170,9 @@ function InlineEmptyState({
 /**
  * Block (page, panel or list `context`) or inline caption row explaining why nothing is shown:
  * title, one sentence and the next step (`action`, `secondaryAction`, `onReset` for a filter,
- * `onRetry`). A titled state keeps its sentence behind the info affordance unless `showDescription`
- * (or a `filtered` kind) says it states scope or consequence. `kind` sets the glyph and live role; no
+ * `onRetry`). A titled block state keeps its sentence behind the info affordance unless `showDescription`
+ * (or a `filtered` kind) says it states scope or consequence; an inline state shows it under the title unless `showDescription={false}`.
+ * Pass only `description` for a plain one-line caption (no bold title). `kind` sets the glyph and live role; no
  * glyph is drawn unless `icon` is passed (a filtered state gets the search glyph). `inset` sets inner spacing.
  * @group feedback
  * @use A list, panel or picker with no data or no filter matches. `size="inline"` replaces a bare "No ..." paragraph.
@@ -207,6 +222,7 @@ export function EmptyState({
         icon={icon}
         title={title}
         description={description}
+        showDescription={showDescription}
       />
     );
   const actions =

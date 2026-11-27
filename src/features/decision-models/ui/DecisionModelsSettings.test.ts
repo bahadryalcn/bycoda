@@ -215,6 +215,11 @@ async function renderSettings(options: Parameters<typeof createClient>[0] = {}) 
   return { mocks };
 }
 
+async function openScanSettings() {
+  clickButton("Scan settings");
+  await settleDecisionUi();
+}
+
 function clickInList(listLabel: string, buttonText: string) {
   const list = document.querySelector(`[aria-label="${listLabel}"]`);
 
@@ -587,7 +592,7 @@ describe("DecisionModelsSettings privacy and routing", () => {
     expect(control).not.toBeNull();
     expect(control?.id).toBeTruthy();
     const label = document.querySelector(`label[for="${control?.id}"]`);
-    expect(label?.textContent).toContain("Personal data stays on this computer");
+    expect(label?.textContent).toContain("Send personal data only to models on this computer");
     expect(control?.closest('[data-settings-part="row"]')).not.toBeNull();
   });
 
@@ -708,6 +713,7 @@ describe("DecisionModelsSettings scan settings", () => {
   it("rescans unchanged settings without rewriting them", async () => {
     const { mocks } = await renderSettings();
 
+    await openScanSettings();
     clickButton("Scan with these settings");
 
     await settleDecisionUi();
@@ -722,6 +728,7 @@ describe("DecisionModelsSettings scan settings", () => {
 
     expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
 
+    await openScanSettings();
     const ports = document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]');
 
     expect(ports?.value).toBe("8080");
@@ -748,6 +755,7 @@ describe("DecisionModelsSettings scan settings", () => {
   it("refuses an invalid port before calling the Host", async () => {
     const { mocks } = await renderSettings();
 
+    await openScanSettings();
     const ports = document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]');
 
     if (!ports) throw new Error("ports field not found");
@@ -765,6 +773,7 @@ describe("DecisionModelsSettings scan settings", () => {
 
   it("shows the folder example with single backslashes", async () => {
     await renderSettings();
+    await openScanSettings();
 
     const folders = Array.from(document.querySelectorAll("textarea")).find(
       (field) => field.placeholder === "D:\\Models",
@@ -920,32 +929,36 @@ it("keeps full model paths available through Details without repeating them in e
   expect(list.textContent).toContain(modelPath);
 });
 
-it("keeps scan settings collapsed and preserves drafts across disclosure toggles", async () => {
-  await renderSettings();
+it("keeps scan settings closed until opened and discards a draft only after confirmation", async () => {
+  const { mocks } = await renderSettings();
 
-  const disclosure = Array.from(document.querySelectorAll("details")).find(
-    (item) => item.querySelector("summary")?.textContent === "Scan settings",
-  )!;
+  expect(document.querySelector('input[placeholder="8080, 9000"]')).toBeNull();
 
-  expect(disclosure.open).toBe(false);
+  await openScanSettings();
 
-  const ports = disclosure.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')!;
+  setInputValue(
+    document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')!,
+    "9001",
+  );
 
-  act(() => {
-    disclosure.open = true;
-  });
+  clickButton("Cancel");
 
-  setInputValue(ports, "9001");
+  await settleDecisionUi();
 
-  act(() => {
-    disclosure.open = false;
-  });
+  expect(bodyText()).toContain("Your scan settings have not been saved.");
 
-  act(() => {
-    disclosure.open = true;
-  });
+  clickButton("Discard changes");
 
-  expect(ports.value).toBe("9001");
+  await settleDecisionUi();
+
+  expect(document.querySelector('input[placeholder="8080, 9000"]')).toBeNull();
+
+  await openScanSettings();
+
+  expect(document.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')?.value).toBe(
+    "8080",
+  );
+  expect(mocks.settingsSet).not.toHaveBeenCalled();
 });
 
 describe("decision source test freshness", () => {
@@ -1185,7 +1198,7 @@ it("names the selected remote Host in uninstall confirmation without uninstallin
 
   await settleDecisionUi();
 
-  expect(bodyText()).toContain("Personal data stays on Host Remote A");
+  expect(bodyText()).toContain("Send personal data only to models on Host Remote A");
 
   clickIconButton("More actions");
 
@@ -1341,6 +1354,7 @@ it("retains Host routing and scan drafts after a section remount", async () => {
   clickButton("Customize");
   await settleDecisionUi();
   setInputValue(document.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!, "0.74");
+  await openScanSettings();
   const folders = document.querySelector<HTMLTextAreaElement>("textarea")!;
   setInputValue(folders, "D:\\NewModels");
   unmountDecisionUi(mounted);
@@ -1387,6 +1401,7 @@ it("uses a neutral folder example and error for a remote Host", async () => {
 
   await settleDecisionUi();
 
+  await openScanSettings();
   const folders = document.querySelector<HTMLTextAreaElement>(
     'textarea[placeholder="Folder path, one per line"]',
   );
@@ -1408,6 +1423,7 @@ it("names the Windows folder example for a local scan on Windows", async () => {
   const { mocks } = await renderSettings();
 
   // A CSS attribute selector would read the backslash as an escape, so match the value directly.
+  await openScanSettings();
   const folders = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea")).find(
     (field) => field.placeholder === "D:\\Models",
   );
@@ -1436,12 +1452,14 @@ it("retains pending scan save and failure across Host remount and isolates anoth
   );
   mounted = mountDecisionUi(createElement(DecisionModelsSettings, { client, hostId: "scan-a" }));
   await settleDecisionUi();
+  await openScanSettings();
   setInputValue(document.querySelector<HTMLTextAreaElement>("textarea")!, "D:\\Pending");
   clickButton("Save and scan");
   await settleDecisionUi();
   unmountDecisionUi(mounted);
   mounted = mountDecisionUi(createElement(DecisionModelsSettings, { client, hostId: "scan-b" }));
   await settleDecisionUi();
+  await openScanSettings();
   expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("D:\\Models");
   unmountDecisionUi(mounted);
   mounted = mountDecisionUi(createElement(DecisionModelsSettings, { client, hostId: "scan-a" }));
@@ -1497,6 +1515,7 @@ it("acknowledges delayed scan settings saved while the page is unmounted", async
     createElement(DecisionModelsSettings, { client, hostId: "scan-success" }),
   );
   await settleDecisionUi();
+  await openScanSettings();
   setInputValue(document.querySelector<HTMLTextAreaElement>("textarea")!, "D:\\Saved");
   clickButton("Save and scan");
   await settleDecisionUi();
@@ -1508,6 +1527,7 @@ it("acknowledges delayed scan settings saved while the page is unmounted", async
     createElement(DecisionModelsSettings, { client, hostId: "scan-success" }),
   );
   await settleDecisionUi();
+  await openScanSettings();
   expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("D:\\Saved");
   expect(buttonByText("Scan with these settings")).toBeDefined();
   expect(mocks.settingsSet).toHaveBeenCalledTimes(1);

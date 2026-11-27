@@ -1,0 +1,61 @@
+/* Generated list placeholder (SkeletonList): groups of rows with the real list's rhythm.
+   Density sets the row height so the loaded list replaces the skeleton without a jump. */
+.list {
+  --skeleton-row-height: 2.75rem;
+  --skeleton-row-gap: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.list[data-density="compact"] {
+  --skeleton-row-height: var(--ui-control-height-compact);
+  --skeleton-row-gap: var(--space-2);
+  gap: var(--space-5);
+}
+.list[data-density="comfortable"] {
+  --skeleton-row-height: 3.5rem;
+  --skeleton-row-gap: var(--space-8);
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+.list[data-density="compact"] .group {
+  gap: var(--space-2);
+}
+.heading {
+  margin-inline-start: var(--space-1);
+}
+.list[data-density="compact"] .heading {
+  margin-inline-start: var(--space-2);
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--skeleton-row-gap);
+  min-block-size: var(--skeleton-row-height);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-2);
+}
+.rows[data-framed] > .row {
+  padding-inline: var(--space-5);
+}
+.list[data-density="compact"] .row {
+  padding-block: 0;
+}
+.text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}

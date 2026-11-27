@@ -5,6 +5,8 @@ import { IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
+  DAILY_SUMMARY_ENABLED_DEFAULT,
+  DAILY_SUMMARY_TIME_DEFAULT,
   loadDailySummaryEnabled,
   subscribeDailySummary,
   loadDailySummaryTime,
@@ -18,6 +20,7 @@ import {
   saveNotificationEvent,
 } from "../../notifications/model/notificationEvents";
 import {
+  NOTIFICATIONS_DEFAULT,
   cachedNotificationPermission,
   loadNotificationsEnabled,
   subscribeNotificationsEnabled,
@@ -27,7 +30,12 @@ import {
   type NotificationPermission,
 } from "../../notifications/model/notifications";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
+import {
+  SOUNDS_DEFAULT,
+  loadSoundsEnabled,
+  saveSoundsEnabled,
+  subscribeSoundsEnabled,
+} from "../model/sounds";
 import { TimePicker } from "../../../shared/ui/TimePicker";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
 import "./NotificationsSettings.css";
@@ -171,10 +179,37 @@ export function NotificationAlerts() {
       },
     );
   };
+  const onNotificationEvent = (
+    id: (typeof NOTIFICATION_EVENT_SETTINGS)[number]["id"],
+    on: boolean,
+  ) =>
+    commitPreference(
+      id,
+      () => saveNotificationEvent(id, on),
+      () => setNotificationEvents(loadNotificationEvents()),
+    );
+  const onSummaryEnabled = (on: boolean) =>
+    commitPreference(
+      "summary-enabled",
+      () => saveDailySummaryEnabled(on),
+      () => setSummaryEnabled(on),
+    );
+  const onSummaryTime = (time: string) =>
+    commitPreference(
+      "summary-time",
+      () => saveDailySummaryTime(time),
+      () => setSummaryTime(time),
+    );
   return (
     <div className="notification-alert-settings settings-topics">
       <Group title={t("This computer")}>
-        <Row id="sounds" label={t("Sounds")} feedback={saveFeedback("sounds")}>
+        <Row
+          id="sounds"
+          label={t("Sounds")}
+          feedback={saveFeedback("sounds")}
+          modified={soundsEnabled !== SOUNDS_DEFAULT}
+          onReset={() => onSoundsEnabled(SOUNDS_DEFAULT)}
+        >
           <Toggle label={t("Sounds")} on={soundsEnabled} onChange={onSoundsEnabled} />
         </Row>
         <Row
@@ -184,6 +219,8 @@ export function NotificationAlerts() {
             p0: PRODUCT_IDENTITY.displayName,
           })}
           feedback={saveFeedback("notifications")}
+          modified={notificationsEnabled !== NOTIFICATIONS_DEFAULT && permissionPending === null}
+          onReset={() => onNotificationsEnabled(NOTIFICATIONS_DEFAULT)}
         >
           <Toggle
             label={t("Desktop notifications")}
@@ -208,18 +245,19 @@ export function NotificationAlerts() {
             }
             feedback={saveFeedback(event.id)}
             disabled={event.id === "taskbar" && !IS_WIN}
+            // Every event notifies by default once Desktop notifications are on.
+            modified={
+              notificationsEnabled &&
+              !notificationEvents[event.id] &&
+              (event.id !== "taskbar" || IS_WIN)
+            }
+            onReset={() => onNotificationEvent(event.id, true)}
           >
             <Toggle
               label={event.label}
               on={notificationEvents[event.id]}
               disabled={!notificationsEnabled || (event.id === "taskbar" && !IS_WIN)}
-              onChange={(on) => {
-                commitPreference(
-                  event.id,
-                  () => saveNotificationEvent(event.id, on),
-                  () => setNotificationEvents(loadNotificationEvents()),
-                );
-              }}
+              onChange={(on) => onNotificationEvent(event.id, on)}
             />
           </Row>
         ))}
@@ -236,18 +274,14 @@ export function NotificationAlerts() {
             </InfoPopover>
           }
           feedback={saveFeedback("summary-enabled")}
+          modified={notificationsEnabled && summaryEnabled !== DAILY_SUMMARY_ENABLED_DEFAULT}
+          onReset={() => onSummaryEnabled(DAILY_SUMMARY_ENABLED_DEFAULT)}
         >
           <Toggle
             label={t("Daily summary")}
             on={summaryEnabled}
             disabled={!notificationsEnabled}
-            onChange={(on) => {
-              commitPreference(
-                "summary-enabled",
-                () => saveDailySummaryEnabled(on),
-                () => setSummaryEnabled(on),
-              );
-            }}
+            onChange={onSummaryEnabled}
           />
         </Row>
         {/* No row id: search indexes the delivery time under the "daily-summary" entry above. */}
@@ -260,17 +294,15 @@ export function NotificationAlerts() {
               : t("Enable Desktop notifications first")
           }
           feedback={saveFeedback("summary-time")}
+          modified={
+            notificationsEnabled && summaryEnabled && summaryTime !== DAILY_SUMMARY_TIME_DEFAULT
+          }
+          onReset={() => onSummaryTime(DAILY_SUMMARY_TIME_DEFAULT)}
         >
           <DailySummaryTime
             saved={summaryTime}
             disabled={!notificationsEnabled || !summaryEnabled}
-            onCommit={(time) => {
-              commitPreference(
-                "summary-time",
-                () => saveDailySummaryTime(time),
-                () => setSummaryTime(time),
-              );
-            }}
+            onCommit={onSummaryTime}
           />
         </Row>
       </Group>

@@ -31,6 +31,7 @@ export interface SessionPaneDeps {
   onPrepareSessionHistory: P["onPrepareSessionHistory"];
   onWorkspaceModeChange: P["onWorkspaceModeChange"];
   onWorktreeBaseChange: P["onWorktreeBaseChange"];
+  onWorktreeBaseRemoteChange?: P["onWorktreeBaseRemoteChange"];
   onManageWorktrees: P["onManageWorktrees"];
   onModelChange: P["onModelChange"];
   onModelSettingsChange: P["onModelSettingsChange"];
@@ -104,6 +105,7 @@ export function useSessionPaneProps({
   onPrepareSessionHistory,
   onWorkspaceModeChange,
   onWorktreeBaseChange,
+  onWorktreeBaseRemoteChange,
   onManageWorktrees,
   onModelChange,
   onModelSettingsChange,
@@ -183,6 +185,7 @@ export function useSessionPaneProps({
     onPrepareSessionHistory,
     onWorkspaceModeChange: useKeepSessionAction(onWorkspaceModeChange, onKeepSession)!,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onManageWorktrees,
     onModelChange: useKeepSessionAction(onModelChange, onKeepSession)!,
     onModelSettingsChange: useKeepSessionAction(onModelSettingsChange, onKeepSession)!,

@@ -46,8 +46,9 @@ export interface RadioTileGroupProps {
   disabled?: boolean;
   "aria-describedby"?: string;
   /** Tile arrangement owned by the group: `portrait` and `preview` flow into a wrapping grid,
-   *  `icon` packs square icon tiles. Unset wraps content-sized tiles. */
-  tileLayout?: "portrait" | "icon" | "preview";
+   *  `icon` packs square icon tiles, `list` stacks full-width rows that mark the choice
+   *  themselves (no selection ring). Unset wraps content-sized tiles. */
+  tileLayout?: "portrait" | "icon" | "preview" | "list";
   /** Placement of the group (width, columns, scroll area). Spacing and wrapping belong to the group. */
   className?: string;
   /** Applied to every tile; the selected tile is `[aria-checked="true"]`. */

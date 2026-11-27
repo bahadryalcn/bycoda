@@ -2223,7 +2223,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     mode: settings.mode,
     speaker: settings.mode === "local" ? undefined : settings.speakers[settings.mode],
     language: languageLock,
-    microphoneId: settings.microphoneId,
   });
   const connected = useRef(connection);
   useEffect(() => {
@@ -2231,6 +2230,10 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     connected.current = connection;
     closeFromEffect();
   }, [connection]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the live capture on the saved microphone; a switch swaps the stream without ending the call.
+  useEffect(() => {
+    void client.current?.switchMicrophone(settings.microphoneId).catch(() => {});
+  }, [settings.microphoneId]);
   function dismiss() {
     close();
     setFullScreen(false);

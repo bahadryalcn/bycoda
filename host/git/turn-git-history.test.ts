@@ -32,7 +32,7 @@ describe("managed turn Git history", () => {
     await turnGit(repo, ["add", "."]);
     await turnGit(repo, ["commit", "-m", "base"]);
     const base = await gitText(repo, ["rev-parse", "HEAD"]);
-    await turnGit(repo, ["checkout", "-b", "bycoda/s/test-workspace"]);
+    await turnGit(repo, ["checkout", "-b", "by/test-workspace"]);
     workspace = {
       id: "workspace",
       repositoryId: "repo",
@@ -40,7 +40,7 @@ describe("managed turn Git history", () => {
       environmentId: "local",
       owner: { kind: "session", id: "session" },
       path: repo,
-      branchRef: "refs/heads/bycoda/s/test-workspace",
+      branchRef: "refs/heads/by/test-workspace",
       targetBranchRef: "refs/heads/main",
       baseRef: "refs/heads/main",
       baseCommit: base,

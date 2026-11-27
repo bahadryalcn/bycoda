@@ -1,5 +1,7 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
+import { MODEL_ROUTING_DELEGATION_KEYS } from "../../../shared/model/host-contracts/model-routing";
 import type { ModelSetting } from "../../sessions/public/models";
+import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import type { DefaultsDraft, ProviderDefaultsChange } from "./providerDefaultsDraft";
 
 export type DefaultsProviderSupport = {
@@ -15,11 +17,18 @@ export function mapDefaultsToProviders(
   draft: DefaultsDraft,
   source: HarnessId,
   providers: readonly DefaultsProviderSupport[],
+  /** The source's saved values in the target: "All providers" copies what the page shows, not only the edit. */
+  stored: ProviderSessionDefaults = {},
 ) {
   const result: DefaultsDraft = { ...draft, providers: { ...draft.providers } };
   const skipped: DefaultsSkip[] = [];
-  const own = draft.providers[source];
-  if (!own) return { draft: result, skipped };
+  const edit = draft.providers[source];
+  if (!edit) return { draft: result, skipped };
+  const own: ProviderDefaultsChange = {
+    effort: edit.effort !== undefined ? edit.effort : stored.effort,
+    runtimeMode: edit.runtimeMode !== undefined ? edit.runtimeMode : stored.runtimeMode,
+    extras: { ...stored.extras, ...edit.extras },
+  };
   for (const support of providers) {
     if (support.harness === source) continue;
     const change: ProviderDefaultsChange = { ...result.providers[support.harness] };
@@ -32,18 +41,10 @@ export function mapDefaultsToProviders(
     copy("effort", support.effort);
     copy("runtimeMode", support.permissions);
     for (const [field, value] of Object.entries(own.extras ?? {})) {
-      if (field === "crossSubagentMaxEffort") {
-        change.extras = { ...change.extras, [field]: value };
-        continue;
-      }
-      // Delegate references and image/model lists carry provider/account identity.
-      if (field === "crossSubagents" || field === "crossAdvisor") {
-        if (value === null || value === "null" || value === "[]" || value === "auto")
-          change.extras = { ...change.extras, [field]: value };
-        else skipped.push({ harness: support.harness, field, value });
-        continue;
-      }
-      if (/advisor|subagentModel|imageModels/i.test(field)) {
+      // Helpers have their own All providers choice in their section; copying them here would
+      // leave a per-provider copy that hides later All providers changes.
+      if ((MODEL_ROUTING_DELEGATION_KEYS as readonly string[]).includes(field)) continue;
+      if (/advisor|subagentModel/i.test(field)) {
         skipped.push({ harness: support.harness, field, value });
         continue;
       }

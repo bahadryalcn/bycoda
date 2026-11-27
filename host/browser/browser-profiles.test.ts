@@ -195,3 +195,67 @@ it("selects independent default and development profiles while enforcing agent g
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+it("imports a detected browser profile by id, names it uniquely and rejects unknown ids", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-browser-profiles-"));
+  try {
+    const source = {
+      id: "chrome:Default",
+      browser: "chrome" as const,
+      browserName: "Google Chrome",
+      profileName: "Personal",
+      isDefault: true,
+      family: "chromium" as const,
+      executable: "chrome.exe",
+      userDataDir: join(directory, "missing"),
+      profileDir: "Default",
+    };
+    const load = vi.fn(async () => {
+      throw new Error("must not launch");
+    });
+    const profiles = new BrowserProfiles(directory, {
+      detect: async () => ({
+        defaultBrowser: { browser: "chrome", name: "Google Chrome" },
+        sources: [source],
+      }),
+      load,
+    });
+    expect(await profiles.sources()).toEqual({
+      defaultBrowser: { browser: "chrome", name: "Google Chrome" },
+      sources: [
+        {
+          id: "chrome:Default",
+          browser: "chrome",
+          browserName: "Google Chrome",
+          profileName: "Personal",
+          isDefault: true,
+        },
+      ],
+    });
+    await expect(profiles.update("importBrowser", { sourceId: "../../etc" })).rejects.toThrow(
+      "no longer available",
+    );
+    await expect(profiles.update("importBrowser", { path: "C:/x" })).rejects.toThrow();
+    expect(load).not.toHaveBeenCalled();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("stores the recording and live frame rates, rejecting rates outside the lists", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-browser-fps-"));
+  const profiles = new BrowserProfiles(directory);
+  try {
+    expect(await profiles.list()).toMatchObject({ recordingFps: 4, liveFps: 60 });
+    await profiles.update("recordingFps", 30);
+    await profiles.update("liveFps", 30);
+    expect(await new BrowserProfiles(directory).list()).toMatchObject({
+      recordingFps: 30,
+      liveFps: 30,
+    });
+    expect(() => profiles.update("recordingFps", 12)).toThrow("recording frame rate");
+    expect(() => profiles.update("liveFps", 4)).toThrow("live view frame rate");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

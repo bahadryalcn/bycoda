@@ -189,6 +189,18 @@ function parseModel(raw: unknown): AgentModel | null {
   });
 }
 
+/** Known speed tier names; a tier the catalog adds later reads as its id in sentence case. */
+const TIER_LABELS: Record<string, string> = {
+  fast: "Fast",
+  priority: "Fast",
+  ultrafast: "Ultrafast",
+  flex: "Flex",
+};
+
+function tierLabel(id: string): string {
+  return TIER_LABELS[id] ?? id.charAt(0).toUpperCase() + id.slice(1).replace(/[-_]/g, " ");
+}
+
 function parseModelSettings(rec: Record<string, unknown>): ModelSetting[] {
   const settings: ModelSetting[] = [];
   const efforts = Array.isArray(rec.supportedReasoningEfforts) ? rec.supportedReasoningEfforts : [];
@@ -230,27 +242,16 @@ function parseModelSettings(rec: Record<string, unknown>): ModelSetting[] {
         : []) ?? [];
   const tierOptions: ModelSettingChoice[] = [{ value: "default", label: "Standard" }];
   for (const entry of tiersRaw) {
-    if (typeof entry === "string") {
-      if (entry === "default") continue;
-      tierOptions.push({
-        value: entry,
-        label: entry === "fast" ? "Fast" : entry,
-      });
-      continue;
-    }
-    const row = asRecord(entry);
-    const id = stringField(row, "id");
-    if (!id || id === "default") continue;
-    tierOptions.push({
-      value: id,
-      label: stringField(row, "name") ?? id,
-    });
+    const row = typeof entry === "string" ? undefined : asRecord(entry);
+    const id = typeof entry === "string" ? entry : stringField(row, "id");
+    if (!id || id === "default" || tierOptions.some((option) => option.value === id)) continue;
+    tierOptions.push({ value: id, label: stringField(row, "name") ?? tierLabel(id) });
   }
   if (tierOptions.length > 1) {
     const defaultTier = stringField(rec, "defaultServiceTier") ?? "default";
     settings.push({
       id: "serviceTier",
-      label: "Service Tier",
+      label: "Service tier",
       kind: "select",
       value: tierOptions.some((o) => o.value === defaultTier) ? defaultTier : "default",
       options: tierOptions,

@@ -626,7 +626,11 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         | "host.settings.get"
         | "shell.profiles" => INTERACTIVE_READ_RPC_TIMEOUT,
         "conversation.desktop.take" => DESKTOP_TAKE_RPC_TIMEOUT,
-        "workspaces.get" | "workspaces.list" | "projects.workspacePolicy.get" => {
+        "workspaces.get"
+        | "workspaces.list"
+        | "workspaces.prepare.status"
+        | "workspaces.prepare.cancel"
+        | "projects.workspacePolicy.get" => {
             WORKSPACE_READ_RPC_TIMEOUT
         }
         // One 512 KiB chunk per call; allow slow SSH links.
@@ -709,6 +713,8 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         // the same Host work. The desktop runs these in the background, so outlast the Host.
         "workspaces.close"
         | "workspaces.finish"
+        | "workspaces.prepare"
+        | "workspaces.renameBranch"
         | "workspaces.cleanup.plan"
         | "workspaces.cleanup.status"
         | "workspaces.cleanup.apply" => GIT_MUTATION,

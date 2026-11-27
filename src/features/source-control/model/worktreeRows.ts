@@ -31,8 +31,8 @@ export type WorktreeRow = {
 /** A worktree that can be opened: neither deleted on disk nor awaiting prune. */
 export const isListedWorktree = (tree: Worktree) => !tree.missing && !tree.prunable;
 
-/** Branch prefixes agents use: managed workspaces (`bycoda/s|t/`), `by/` and temporary `mc/`. */
-const AGENT_BRANCH = /^(?:by|bycoda|mc)\//;
+/** Branch prefix agents use: managed workspaces and temporary worktrees are all `by/`. */
+const AGENT_BRANCH = /^by\//;
 /** Managed workspace folders (`wt-<id>`) and worktrees kept under a `.t3` or `.bycoda` root. */
 const AGENT_FOLDER = /^wt-[0-9a-f]{6,}$/i;
 const AGENT_ROOT = /(?:^|[\\/])\.(?:t3|bycoda)[\\/]/;

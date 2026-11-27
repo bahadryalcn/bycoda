@@ -68,7 +68,7 @@ function load(
     let loaded = false;
     try {
       const data = await (lane === "background"
-        ? listWorktrees(entry.cwd, true)
+        ? listWorktrees(entry.cwd, { background: true })
         : listWorktrees(entry.cwd));
       if (entry.generation !== generation) return false;
       publish(entry, { data, loading: false });

@@ -55,7 +55,6 @@ import { GitConflictRows } from "./GitConflictRows";
 import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
-import { actionHostAttributes } from "../../../shared/ui/ActionHost";
 import { isMissingPathError } from "../model/checkoutSelection";
 import { isAgentWorktree } from "../model/worktreeRows";
 import { BranchPicker } from "./BranchPicker";
@@ -480,7 +479,6 @@ export function GitChangesPanel({
       <header
         className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
-        {...(repository ? actionHostAttributes({ hoverReveal: true }, styles.header) : {})}
       >
         <Text
           as="div"
@@ -550,11 +548,8 @@ export function GitChangesPanel({
               </>
             ) : null}
             {repository ? branchControl : null}
-            <div
-              className={styles.branchSlots}
-              // A section header offers its actions on hover or keyboard focus only.
-              data-action-slot={repository ? "collapse" : undefined}
-            >
+            {/* Always shown: the branch label gives way first when the panel narrows. */}
+            <div className={styles.branchSlots}>
               {detailsOpen && !refreshInTarget ? (
                 <Button
                   variant="ghost"

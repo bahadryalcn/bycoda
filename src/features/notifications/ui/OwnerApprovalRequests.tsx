@@ -1,4 +1,4 @@
-import { ownerPromptLabel } from "../model/ownerPromptLabels";
+import { ownerPromptLabel, ownerPromptTitle } from "../model/ownerPromptLabels";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -23,6 +23,7 @@ import {
   deferOwnerApprovals,
   hasOwnerApprovalChat,
   isOwnerApprovalDeferred,
+  isOwnerApprovalPresented,
   ownerApprovalsSnapshot,
   registerOwnerApprovalChat,
   settleOwnerApproval,
@@ -32,7 +33,14 @@ import {
 import { ownerSecretInputsSnapshot, subscribeOwnerSecretInputs } from "../model/ownerSecretInputs";
 import { OwnerSecretDialog, OwnerSecretForm, OwnerSecretHeader } from "./OwnerSecretInput";
 
-function approvalTitle(request: OwnerApproval, t: (key: string) => string) {
+/**
+ * What an owner request asks, without the "bycoda — " source prefix every native prompt carries:
+ * the conversation and project that asked are shown beside it instead.
+ */
+export function ownerRequestTitle(
+  request: Pick<OwnerApproval, "title" | "inbox" | "management">,
+  t: (key: string) => string,
+) {
   if (request.inbox) {
     switch (request.inbox.action) {
       case "comment":
@@ -45,7 +53,7 @@ function approvalTitle(request: OwnerApproval, t: (key: string) => string) {
   }
   return request.management
     ? t(managementApprovalTitle(request.management))
-    : t(request.title.replace(/^bycoda — /, ""));
+    : ownerPromptTitle(t, request.title);
 }
 
 function SingleApprovalActions({
@@ -113,7 +121,7 @@ function ChatApproval({ requests }: { requests: readonly OwnerApproval[] }) {
   const [reviewing, setReviewing] = useState(false);
   const request = queue.request;
   const batch = queue.total > 1;
-  const title = approvalTitle(request, t);
+  const title = ownerRequestTitle(request, t);
   const review = { label: t("Review"), onClick: () => setReviewing(true) };
   const details = (
     <Surface
@@ -240,8 +248,11 @@ export function OwnerApprovalChat({
  */
 export function OwnerApprovalInbox({
   onOpenSession,
+  source,
 }: {
   onOpenSession?: (sessionId: string) => unknown;
+  /** The project and conversation (or Room) that asked, shown in the dialog. */
+  source?: (request: OwnerApproval) => ReactNode;
 }) {
   const t = useT();
   const requests = useSyncExternalStore(subscribeOwnerApprovals, ownerApprovalsSnapshot);
@@ -260,11 +271,16 @@ export function OwnerApprovalInbox({
       />
     );
   const parked = waitingSecrets.filter((request) => parkedSecrets.has(request.id));
+  // A request the owner chose to answer here opens even while its chat shows the card.
   const offPage = requests.filter(
-    (request) => !hasOwnerApprovalChat(request.sessionId) && !isOwnerApprovalDeferred(request.id),
+    (request) =>
+      (isOwnerApprovalPresented(request.id) || !hasOwnerApprovalChat(request.sessionId)) &&
+      !isOwnerApprovalDeferred(request.id),
   );
   if (offPage.length)
-    return <OwnerApprovalInboxDialog requests={offPage} onOpenSession={onOpenSession} />;
+    return (
+      <OwnerApprovalInboxDialog requests={offPage} onOpenSession={onOpenSession} source={source} />
+    );
   return parked.length ? (
     <div className="fixed bottom-3 end-3 z-(--layer-toast)">
       <Button
@@ -288,22 +304,33 @@ export function OwnerApprovalInbox({
 function OwnerApprovalInboxDialog({
   requests,
   onOpenSession,
+  source,
 }: {
   requests: readonly OwnerApproval[];
   onOpenSession?: (sessionId: string) => unknown;
+  source?: (request: OwnerApproval) => ReactNode;
 }) {
   const t = useT();
   const queue = useApprovalQueue(requests);
   const sessionId = queue.request.sessionId;
   const ids = queue.requests.map((request) => request.id);
-  // Review opens the conversation that asked; its chat card then takes over from this dialog.
+  // Go opens the conversation that asked; its chat card then takes over from this dialog.
   return (
     <OwnerApprovalDialog
       queue={queue}
+      source={source}
       actions={[
         { label: t("Later"), onClick: () => deferOwnerApprovals(ids) },
         ...(sessionId && onOpenSession
-          ? [{ label: t("Review"), onClick: () => void onOpenSession(sessionId) }]
+          ? [
+              {
+                label: t("Go"),
+                onClick: () => {
+                  deferOwnerApprovals(ids);
+                  void onOpenSession(sessionId);
+                },
+              },
+            ]
           : []),
       ]}
       onClose={() => deferOwnerApprovals(ids)}
@@ -315,10 +342,12 @@ function OwnerApprovalInboxDialog({
 function OwnerApprovalDialog({
   queue,
   actions,
+  source,
   onClose,
 }: {
   queue: ApprovalQueue;
   actions?: readonly NoticeAction[];
+  source?: (request: OwnerApproval) => ReactNode;
   onClose: () => void;
 }) {
   const t = useT();
@@ -328,7 +357,7 @@ function OwnerApprovalDialog({
     <Modal
       size="md"
       fitViewport
-      title={approvalTitle(request, t)}
+      title={ownerRequestTitle(request, t)}
       context={
         <StatusText tone="needs-you">
           {batch ? t("{p0} requests need approval", { p0: queue.total }) : t("Needs approval")}
@@ -363,6 +392,7 @@ function OwnerApprovalDialog({
       }
     >
       <div key={request.id} className="flex min-w-0 flex-col gap-3">
+        {source?.(request)}
         {request.inbox ? <InboxApprovalTarget details={request.inbox} /> : null}
         <ApprovalContent request={request} />
       </div>

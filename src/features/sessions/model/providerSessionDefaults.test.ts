@@ -45,6 +45,14 @@ describe("provider session defaults", () => {
     );
     expect(settings).toEqual({ reasoningEffort: "medium" });
   });
+  it("carries image models Off over a recent selection", () => {
+    const settings = applySessionDefaults(
+      resolveModel("codex", "codex:gpt-6.1-sol"),
+      { imageModels: '["codex"]' },
+      { extras: { imageModels: "[]" } },
+    );
+    expect(settings).toEqual({ imageModels: "[]" });
+  });
   beforeEach(() => {
     localStorage.clear();
     setHarnessModels("codex", [

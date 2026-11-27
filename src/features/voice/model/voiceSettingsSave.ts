@@ -53,6 +53,7 @@ const rowIds: Partial<Record<keyof VoiceSettings, string>> = {
   speakers: "voice-speaker",
   device: "voice-device",
   microphoneId: "voice-microphone-input",
+  speakerOutputId: "voice-speaker-output",
   visual: "voice-visual-style",
   turnEndSilence: "voice-turn-silence",
   allowBargeIn: "voice-barge-in",

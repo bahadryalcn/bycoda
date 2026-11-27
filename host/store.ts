@@ -741,6 +741,15 @@ export class HostStore {
         idempotency_key TEXT NOT NULL, phase TEXT NOT NULL, payload TEXT NOT NULL,
         UNIQUE(workspace_id, kind, idempotency_key)
       );
+      CREATE TABLE IF NOT EXISTS workspace_siblings (
+        operation_id TEXT NOT NULL, path TEXT NOT NULL, workspace_id TEXT NOT NULL,
+        repository TEXT NOT NULL, branch TEXT NOT NULL, base_commit TEXT, committed INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(operation_id, path)
+      );
+      CREATE INDEX IF NOT EXISTS workspace_siblings_workspace ON workspace_siblings(workspace_id);
+      CREATE TABLE IF NOT EXISTS workspace_branch_renames (
+        workspace_id TEXT PRIMARY KEY, old_branch TEXT NOT NULL, new_branch TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS workspace_mutation_receipts (
         scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, signature TEXT NOT NULL,
         response TEXT NOT NULL, created_at INTEGER, PRIMARY KEY(scope, idempotency_key)
@@ -1086,6 +1095,149 @@ export class HostStore {
       return row ? JSON.parse(String(row.payload)) : null;
     });
   }
+  /** Sibling (extra-repository) worktrees of a creation. `committed` flips with the prepare result,
+   * so an uncommitted row is a rollback candidate after a crash. */
+  async saveWorkspaceSibling(record: {
+    operationId: string;
+    workspaceId: string;
+    repository: string;
+    path: string;
+    branch: string;
+    base?: string;
+  }): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare(
+          `INSERT INTO workspace_siblings (operation_id, path, workspace_id, repository, branch, base_commit, committed)
+           VALUES (?, ?, ?, ?, ?, ?, 0)
+           ON CONFLICT(operation_id, path) DO UPDATE SET repository=excluded.repository, branch=excluded.branch, base_commit=excluded.base_commit`,
+        )
+        .run(
+          record.operationId,
+          record.path,
+          record.workspaceId,
+          record.repository,
+          record.branch,
+          record.base ?? null,
+        );
+    });
+  }
+  /** `operationId` lists only the rows still uncommitted (the rollback candidates of that attempt). */
+  async workspaceSiblings(
+    filter: { operationId: string } | { workspaceId: string; committedOnly: true },
+  ): Promise<{ repository: string; path: string; branch: string; base?: string }[]> {
+    return this.db.storeScope(async () => {
+      const rows =
+        "operationId" in filter
+          ? await this.db
+              .prepare(
+                "SELECT repository, path, branch, base_commit FROM workspace_siblings WHERE operation_id=? AND committed=0 ORDER BY rowid",
+              )
+              .all(filter.operationId)
+          : await this.db
+              .prepare(
+                "SELECT repository, path, branch, base_commit FROM workspace_siblings WHERE workspace_id=? AND committed=1 ORDER BY rowid",
+              )
+              .all(filter.workspaceId);
+      return rows.map((row) => ({
+        repository: String(row.repository),
+        path: String(row.path),
+        branch: String(row.branch),
+        ...(row.base_commit ? { base: String(row.base_commit) } : {}),
+      }));
+    });
+  }
+  /** Follows a branch rename in the workspace's committed sibling rows. */
+  async renameWorkspaceSiblingBranches(workspaceId: string, from: string, to: string) {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("UPDATE workspace_siblings SET branch=? WHERE workspace_id=? AND branch=?")
+        .run(to, workspaceId, from);
+    });
+  }
+  /** Whether any journal row of the operation is already committed. */
+  async hasCommittedSiblings(operationId: string): Promise<boolean> {
+    return this.db.storeScope(
+      async () =>
+        !!(await this.db
+          .prepare("SELECT 1 AS one FROM workspace_siblings WHERE operation_id=? AND committed=1")
+          .get(operationId)),
+    );
+  }
+  async deleteWorkspaceSibling(operationId: string, path: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("DELETE FROM workspace_siblings WHERE operation_id=? AND path=?")
+        .run(operationId, path);
+    });
+  }
+  async commitWorkspaceSiblings(operationId: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("UPDATE workspace_siblings SET committed=1 WHERE operation_id=?")
+        .run(operationId);
+    });
+  }
+  /** Operations that journaled siblings but never committed their prepare result. */
+  async uncommittedSiblingOperations(): Promise<string[]> {
+    return this.db.storeScope(async () =>
+      (
+        await this.db
+          .prepare("SELECT DISTINCT operation_id FROM workspace_siblings WHERE committed=0")
+          .all()
+      ).map((row) => String(row.operation_id)),
+    );
+  }
+  /** Durable intent of a branch rename: written before Git runs, cleared with the registry update. */
+  async saveWorkspaceBranchRename(workspaceId: string, from: string, to: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare(
+          `INSERT INTO workspace_branch_renames (workspace_id, old_branch, new_branch) VALUES (?, ?, ?)
+           ON CONFLICT(workspace_id) DO UPDATE SET old_branch=excluded.old_branch, new_branch=excluded.new_branch`,
+        )
+        .run(workspaceId, from, to);
+    });
+  }
+  async pendingWorkspaceBranchRenames(): Promise<
+    { workspaceId: string; from: string; to: string }[]
+  > {
+    return this.db.storeScope(async () =>
+      (await this.db.prepare("SELECT * FROM workspace_branch_renames").all()).map((row) => ({
+        workspaceId: String(row.workspace_id),
+        from: String(row.old_branch),
+        to: String(row.new_branch),
+      })),
+    );
+  }
+  async clearWorkspaceBranchRename(workspaceId: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("DELETE FROM workspace_branch_renames WHERE workspace_id=?")
+        .run(workspaceId);
+    });
+  }
+  /** Forgets a workspace whose creation was rolled back, so its writer can create a fresh one.
+   * Only for records no one else has seen: the operation journals go with it. */
+  async discardRolledBackWorkspace(workspaceId: string): Promise<void> {
+    return this.db.storeScope(async () => {
+      await this.db.checkAuthorization();
+      await this.db
+        .prepare("DELETE FROM workspace_operations WHERE workspace_id=?")
+        .run(workspaceId);
+      await this.db.prepare("DELETE FROM workspace_siblings WHERE workspace_id=?").run(workspaceId);
+      await this.db
+        .prepare("DELETE FROM workspace_branch_renames WHERE workspace_id=?")
+        .run(workspaceId);
+      await this.db.prepare("DELETE FROM managed_workspaces WHERE id=?").run(workspaceId);
+    });
+  }
   async managedWorkspaces(
     filter: {
       projectId?: string;
@@ -1150,7 +1302,7 @@ export class HostStore {
   async updateManagedWorkspace(
     workspace: ManagedWorkspace,
     expectedRevision: number,
-    options: { retarget?: boolean } = {},
+    options: { retarget?: boolean; renameBranch?: boolean } = {},
   ): Promise<void> {
     return this.db.storeScope(async () => {
       const previous = await this.managedWorkspace(workspace.id);
@@ -1168,7 +1320,8 @@ export class HostStore {
         "environmentId",
         "owner",
         "path",
-        "branchRef",
+        // Only the temporary-branch rename may change the branch identity.
+        ...(options.renameBranch ? [] : (["branchRef"] as const)),
         "baseRef",
         "baseCommit",
       ] as const)

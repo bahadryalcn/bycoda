@@ -2,14 +2,19 @@ import { t } from "../../../shared/i18n";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 
 /** Keeps unsaved source settings visible until the owner explicitly discards them. */
-export function useDecisionDialogClose(dirty: boolean, pending: boolean, onClose: () => void) {
+export function useDecisionDialogClose(
+  dirty: boolean,
+  pending: boolean,
+  onClose: () => void,
+  message = t("Your source settings have not been saved."),
+) {
   const { confirm, dialog } = useConfirm();
   const requestClose = () => {
     if (pending) return;
     if (!dirty) return onClose();
     void confirm({
       title: t("Discard changes?"),
-      message: t("Your source settings have not been saved."),
+      message,
       confirmLabel: t("Discard changes"),
     }).then((discard) => {
       if (discard) onClose();

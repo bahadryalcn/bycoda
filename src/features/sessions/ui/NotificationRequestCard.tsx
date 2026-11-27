@@ -7,7 +7,7 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
-import { X } from "../../../shared/ui/icons";
+import { ArrowRight, Chatting, X } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { sessionDisplayTitle } from "../model/session";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
@@ -19,27 +19,8 @@ import { bycodaToolCall } from "../model/bycodaToolCall";
 import { approvalTitle } from "./approvalPresentation";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 
-/**
- * One pending question or approval, as a floating popup or a row of the sheet's
- * pending card. The body opens the conversation; an approval is decided in
- * place, a question is answered in its conversation.
- */
-export function NotificationRequestCard({
-  notice,
-  occurredAt,
-  onFocusSession,
-  onApproval,
-  onDismiss,
-}: {
-  notice: Notice;
-  /** Shown in the sheet's pending card; floating popups omit it. */
-  occurredAt?: number;
-  onFocusSession: (sessionId: string) => void;
-  onApproval: ApprovalDispatch;
-  onDismiss?: () => void;
-}) {
-  const t = useT();
-  const { session, label, requestId } = notice;
+/** The undecided approval block behind a notice and the exact request it asks to allow. */
+export function noticeApproval({ session, label, requestId }: Notice) {
   const block = session.blocks.find(
     (item) => item.approval?.requestId === requestId && !item.approval.decided,
   );
@@ -49,6 +30,36 @@ export function NotificationRequestCard({
       block.tool?.title ??
       block.text)
     : label;
+  return { block, detail };
+}
+
+/**
+ * One pending question or approval, as a floating popup or a row of the sheet's
+ * pending card. The body and Go open the conversation. A popup decides an
+ * approval in place; a sheet row's Answer opens it in a dialog (`onAnswer`).
+ * A question is answered in its conversation.
+ */
+export function NotificationRequestCard({
+  notice,
+  occurredAt,
+  onFocusSession,
+  onApproval,
+  onDismiss,
+  onAnswer,
+}: {
+  notice: Notice;
+  /** Shown in the sheet's pending card; floating popups omit it. */
+  occurredAt?: number;
+  onFocusSession: (sessionId: string) => void;
+  onApproval: ApprovalDispatch;
+  onDismiss?: () => void;
+  /** Sheet rows open the approval in a dialog instead of deciding it inline. */
+  onAnswer?: (notice: Notice) => void;
+}) {
+  const t = useT();
+  const { session, label, requestId } = notice;
+  const { block, detail } = noticeApproval(notice);
+  const inline = notice.kind === "approval" && !onAnswer;
   const title = sessionDisplayTitle(session.title, session.harness);
   const decision = useApprovalDecisionControl(session, requestId, onApproval);
   return (
@@ -134,13 +145,35 @@ export function NotificationRequestCard({
             variant="ghost"
             size="sm"
             type="button"
+            startIcon={<Chatting className="icon-sm" />}
             onClick={() => onFocusSession(session.id)}
           >
             {t("Answer")}
           </Button>
+        ) : onAnswer ? (
+          <span className="ms-auto flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              startIcon={<ArrowRight className="icon-sm" />}
+              onClick={() => onFocusSession(session.id)}
+            >
+              {t("Go")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              startIcon={<Chatting className="icon-sm" />}
+              onClick={() => onAnswer(notice)}
+            >
+              {t("Answer")}
+            </Button>
+          </span>
         ) : null}
       </Text>
-      {notice.kind === "approval" ? (
+      {inline ? (
         <div className="px-3 pb-2">
           <ApprovalRequest
             title={approvalTitle(block, t)}
@@ -172,7 +205,7 @@ export function NotificationRequestCard({
           />
         </div>
       ) : null}
-      {notice.kind === "approval" && decision.feedback ? (
+      {inline && decision.feedback ? (
         decision.danger ? (
           <InlineError inset="row">{decision.feedback}</InlineError>
         ) : (

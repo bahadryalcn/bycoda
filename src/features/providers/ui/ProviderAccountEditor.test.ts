@@ -209,3 +209,40 @@ it("explains invalid names when adding an account", () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("adds an existing sign-in by name without a browser step", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(ProviderAccountEditor, {
+          editor: {
+            provider: "claude",
+            accountId: "terminal-work",
+            label: "Work",
+            kind: "work",
+            adding: true,
+            existing: { identity: { email: "me@example.com" } },
+          },
+          identity: { email: "me@example.com" },
+          working: false,
+          onLabel: vi.fn(),
+          onMetadata: vi.fn(),
+          onCancel: vi.fn(),
+          onSubmit: vi.fn(),
+        }),
+      ),
+    );
+    const submit = container.querySelector('button[type="submit"]');
+    expect(submit?.textContent).toBe("Add");
+    expect(container.textContent).not.toContain("Sign in and add");
+    expect(container.querySelector<HTMLInputElement>('input[value="work"]')?.checked).toBe(true);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

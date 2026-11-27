@@ -26,8 +26,9 @@ import {
   measureWorkspaceStorage,
   workspaceRetentionEligibility,
 } from "../workspaces/workspace-retention";
-import { managedWorkspaceRoot } from "../git/git-worktrees";
+import { deleteStaleFetchRefs, managedWorkspaceRoot } from "../git/git-worktrees";
 import { hostGitRepositoryKey } from "../git/git-mutations";
+import { setManagedBranchRegistry } from "../git/git-actions";
 import { GitTurnHistory, gitText } from "../git/turn-git-history";
 import { HostBranchDeliveryService } from "../git/branch-delivery";
 import { GhRuntime } from "../git/gh-runtime";
@@ -60,6 +61,11 @@ export function createManagedWorkspaceRuntime(
   const root = join(dirname(store.attachmentDir), "managed-workspaces");
   const exactGitRewind = createExactGitRewindPolicy(root);
   const policy = createWorkspacePolicyResolver(store);
+  setManagedBranchRegistry(async (cwd, branchRef) =>
+    (await store.managedWorkspaces({ repositoryId: await hostGitRepositoryKey(cwd) })).some(
+      (workspace) => workspace.branchRef === branchRef,
+    ),
+  );
   let started = false;
   const startupRecovery = new AsyncLocalStorage<boolean>();
   const authorities = new Set<WorkspaceOwnerAuthorization>();
@@ -172,6 +178,12 @@ export function createManagedWorkspaceRuntime(
     assertWritable,
     authorizeOwner: async (owner) => authorized(owner),
     isActive: async (workspace) => (await activity.list(workspace.id)).length > 0,
+    // The owning session's own provider activity (its running first turn and branch-naming
+    // job) must not block the rename that turn itself asks for.
+    isActiveForRename: async (workspace) =>
+      (await activity.list(workspace.id)).some(
+        (entry) => !(entry.kind === "provider" && entry.ownerId === workspace.owner.id),
+      ),
     canRetireMissing: async (workspace) =>
       (await activity.list(workspace.id)).every((entry) => entry.kind === "editor"),
     verifyReservation: (request) => activity.verifyReservation(request),
@@ -275,6 +287,7 @@ export function createManagedWorkspaceRuntime(
     recoveryBookkeeping: (work) => store.db.runRecoveryBookkeeping(work),
     registry,
     reservations: activity,
+    siblings: (value) => store.workspaceSiblings({ workspaceId: value.id, committedOnly: true }),
     location: async (value) => ({
       projectCwd: (await store.project(value.projectId)).cwd,
       managedRoot: dirname(value.path),
@@ -343,6 +356,7 @@ export function createManagedWorkspaceRuntime(
         throw new Error("Session managed workspace identity changed");
       return { workspaceId: id, path: registered.path };
     },
+    renameBranch: (request) => registry.renameBranch(request),
     prepareWorkspaceForCreate: async (request) => {
       const resolved = await policy.resolve({
         projectId: request.projectId,
@@ -526,6 +540,22 @@ export function createManagedWorkspaceRuntime(
       const results = await step("rewind", async () =>
         (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [],
       );
+      if (initialStartup)
+        await step("fetch-refs", async () => {
+          // Best effort and isolated per repository: a crash can leave fetch landing refs behind.
+          const repositories = new Set<string>();
+          for (const project of await store.projects()) repositories.add(project.cwd);
+          for (const workspace of await list())
+            for (const sibling of await store.workspaceSiblings({
+              workspaceId: workspace.id,
+              committedOnly: true,
+            }))
+              repositories.add(sibling.repository);
+          for (const repository of repositories)
+            await deleteStaleFetchRefs(repository).catch(() => undefined);
+        });
+      // Before the operation loop: a crash mid-rename must settle before anything reads branches.
+      await step("branch-renames", () => registry.recoverBranchRenames());
       await step("operations", async () => {
         for (const operation of await registry.listOperations()) {
           if (operation.kind === "rewind") continue;
@@ -561,6 +591,8 @@ export function createManagedWorkspaceRuntime(
           }
         }
       });
+      // One indexed query, not a receipt probe per completed creation.
+      await step("sibling-journal", () => registry.recoverSiblings());
       await step("orphan-reservations", () => activity.recoverOrphanReservations());
       // One-time removal of the retired native buffer directories; failures log and retry
       // on the next start, never blocking boot.

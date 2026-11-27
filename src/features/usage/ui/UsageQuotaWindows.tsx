@@ -7,7 +7,9 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import {
   clampUsedPercent,
+  formatQuotaPercent,
   formatResetCountdown,
+  rateLimitWindowNameWith,
   type RateLimitWindow,
   type RateLimitWindowKind,
 } from "../../providers/public/rateLimitsCache";
@@ -27,10 +29,9 @@ function ResetCountdown({ resetsAt }: { resetsAt: number }) {
   );
 }
 
-function windowLabel(kind: RateLimitWindowKind, window: RateLimitWindow): string {
-  if (kind === "weekly") return t("Weekly");
-  if (kind === "monthly") return t("Monthly");
-  return window.windowMinutes === 300 ? t("5 hours") : t("Session");
+export function windowLabel(kind: RateLimitWindowKind, window: RateLimitWindow): string {
+  if (kind === "session" && window.windowMinutes !== 300) return t("Session");
+  return rateLimitWindowNameWith(kind, t);
 }
 
 /**
@@ -58,7 +59,7 @@ export function UsageQuotaWindows({
         const direction = showRemaining ? t("left") : t("used");
         const label = windowLabel(kind, window);
         return (
-          <div key={kind} className="usage-quota">
+          <div key={kind} className="usage-quota" data-kind={kind}>
             <Text
               as="div"
               size="caption"
@@ -78,9 +79,9 @@ export function UsageQuotaWindows({
               </SectionLabel>
               <Text as="p" size="inherit" tone="secondary">
                 <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
-                  {Math.round(shown)}%
+                  {formatQuotaPercent(shown)}
                 </Text>
-                <span>{direction}</span>
+                <span className="usage-quota-unit">{direction}</span>
               </Text>
             </Text>
             <UsageMeter

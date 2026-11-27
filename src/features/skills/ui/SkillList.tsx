@@ -87,7 +87,7 @@ function SkillListGroup({
     group.scope === "project"
       ? t("Project")
       : group.scope === "user"
-        ? t("Personal")
+        ? t("All projects")
         : t("Managed");
   return (
     <section>

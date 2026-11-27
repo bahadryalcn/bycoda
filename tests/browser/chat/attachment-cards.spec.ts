@@ -587,5 +587,15 @@ test("real Composer shows pasted files in cards and inline and renumbers removal
       await expect(page.locator("html")).toHaveAttribute("data-copied-image", "2x2");
       await page.keyboard.press("Escape");
       await expect(remainingImage).toBeFocused();
+
+      // Clear empties the text and the cards together; undo restores both.
+      const restored = await draft.inputValue();
+      await page.getByRole("button", { name: "Clear", exact: true }).click();
+      await expect(cards).toHaveCount(0);
+      await expect(draft).toHaveValue("");
+      await page.keyboard.press("Control+z");
+      await expect(draft).toHaveValue(restored);
+      await expect(cards).toHaveCount(2);
+      await expect(references).toHaveCount(2);
     }
 });

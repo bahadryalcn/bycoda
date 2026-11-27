@@ -101,6 +101,14 @@ or waiting for an operation; the current custom value is kept.
 Search Phone or Sharing to open those Connections tabs; automatic reconnect
 continues to open its Machines setting.
 
+A setting that differs from its default shows a Restore default icon beside its
+title; the icon disappears once the default is back. Rows without a meaningful
+default have no icon: accounts and credentials, lists such as machines, profiles
+or skills, chosen folders and devices, permission and data-sharing consent, network
+exposure, agent access and protection settings whose default is less strict
+(Start in privacy mode, Lock when idle, local-only personal data). New installs
+follow the system light or dark mode and prevent idle sleep while agents work.
+
 Pages with a reset action show it in the Settings toolbar and ask for confirmation.
 General's Restore defaults restores Application language to System and the independent
 Git and Technical languages to English. If a reset step fails, completed steps remain

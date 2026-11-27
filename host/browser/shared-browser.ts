@@ -201,6 +201,9 @@ export function sharedBrowserUrl(input: unknown) {
   return url.href;
 }
 
+/** How long a recorder's fast request keeps every screencast picture acknowledged. */
+const FAST_ACK_MS = 1000;
+
 /** One host-owned browser context, optionally seeded from an owner-approved profile.
  * Mutations require a short lease. */
 export class SharedBrowser {
@@ -561,8 +564,11 @@ export class SharedBrowser {
   }
   private async liveFrame(params: Record<string, unknown>, owner: string) {
     const { after, waitMs } = browserFrameCursor(params.after, params.waitMs);
+    if (!this.page) throw new Error("Open a shared browser first");
     this.lastUse = this.now();
-    const frame = await this.screencast.next(this.page!, after, waitMs);
+    // A recorder asks for every picture; viewers keep the paced acks.
+    if (params.fast === true) this.screencast.boostAck(FAST_ACK_MS);
+    const frame = await this.screencast.next(this.page, after, waitMs);
     if (!frame || !this.page) return { ...this.status(owner), frameSequence: after };
     return {
       ...this.status(owner),
@@ -578,12 +584,20 @@ export class SharedBrowser {
     if (!this.screencast.available(this.page))
       throw new Error("Browser frame streaming is unavailable");
     const release = this.screencast.retainFastReader();
+    const pace = () =>
+      void this.options.profiles
+        ?.list()
+        .then(({ liveFps }) => this.screencast.setLiveFps(liveFps))
+        .catch(() => {});
+    pace();
     return {
       release,
       next: async (after: number) => {
         const page = this.page;
         if (!page) throw new Error("Browser page closed");
         this.lastUse = this.now();
+        // Picks up a changed live frame rate without reopening the stream.
+        pace();
         const frame = await this.screencast.next(page, after, 1000);
         if (page !== this.page) throw new Error("Browser page changed");
         if (!frame || frame.stamp !== this.documentId) return undefined;

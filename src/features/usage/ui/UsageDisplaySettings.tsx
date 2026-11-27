@@ -15,7 +15,7 @@ export function UsageDisplaySettings() {
       leading="inherit"
       id={settingDomId("show-remaining-usage")}
       data-setting-id="show-remaining-usage"
-      className="inline-flex items-center gap-2"
+      className="usage-display-setting"
     >
       <span>{t("Show remaining usage")}</span>
       <Toggle

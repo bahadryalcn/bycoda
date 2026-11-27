@@ -3,7 +3,11 @@ import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
 import { Group, RevealedSetting, Select, Toggle } from "../../../shared/ui/settings";
 import { DICTATION_LANGUAGES, DICTATION_PROVIDER_NAMES } from "../model/dictationModels";
-import type { DictationEngine, VoiceSettings as Preferences } from "../model/voiceSettings";
+import {
+  VOICE_SETTINGS_DEFAULTS as DEFAULTS,
+  type DictationEngine,
+  type VoiceSettings as Preferences,
+} from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";
 import { LocalDictationModels } from "./LocalDictationModels";
 import { CLEANUP_ROW_IDS, DictationCleanupSettings } from "./DictationCleanupSettings";
@@ -41,104 +45,160 @@ export function DictationSettings({
     !!revealed && revealed !== "dictation-enabled" && DETAIL_ROW_IDS.includes(revealed);
   const showDetails = settings.dictationEnabled || detailRevealed;
   return (
-    <Group title={t("Dictation")}>
-      <Row id="dictation-enabled" label={t("Enable dictation")}>
-        <Toggle
-          label={t("Enable dictation")}
-          on={settings.dictationEnabled}
-          onChange={(dictationEnabled) => change({ dictationEnabled })}
-        />
-      </Row>
-      {settings.dictationEnabled && (
-        <>
-          <Row
-            id="dictation-engine"
-            label={t("Dictation recognition")}
-            description={
-              settings.dictationEngine === "local"
-                ? undefined
-                : t("Dictation audio is sent to {p1}.", {
-                    p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
+    <>
+      <Group title={t("Dictation")}>
+        <Row
+          id="dictation-enabled"
+          label={t("Dictation")}
+          modified={settings.dictationEnabled !== DEFAULTS.dictationEnabled}
+          onReset={() => change({ dictationEnabled: DEFAULTS.dictationEnabled })}
+        >
+          <Toggle
+            label={t("Dictation")}
+            on={settings.dictationEnabled}
+            onChange={(dictationEnabled) => change({ dictationEnabled })}
+          />
+        </Row>
+        {settings.dictationEnabled && (
+          <>
+            <Row
+              id="dictation-engine"
+              label={t("Recognition")}
+              modified={settings.dictationEngine !== DEFAULTS.dictationEngine}
+              onReset={() => change({ dictationEngine: DEFAULTS.dictationEngine })}
+              description={
+                settings.dictationEngine === "local"
+                  ? undefined
+                  : t("Dictation audio is sent to {p1}.", {
+                      p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
+                    })
+              }
+              descriptionVisible
+            >
+              <Select
+                hideLabel
+                label={t("Recognition")}
+                value={settings.dictationEngine}
+                options={[
+                  { value: "local", label: t("This computer") },
+                  // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
+                  { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
+                  { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
+                  {
+                    value: "openrouter",
+                    label: DICTATION_PROVIDER_NAMES.openrouter,
+                  },
+                ]}
+                onChange={(value) => change({ dictationEngine: value as DictationEngine })}
+              />
+            </Row>
+            {speechEnabled &&
+            !settings.enabled &&
+            !/(?:^|[/\\])gguf-/i.test(settings.dictationLocalModelPath) ? (
+              <VoiceSetupRow setup={setup} settings={settings} change={change} />
+            ) : null}
+            <DictationModelSettings settings={settings} change={change} />
+            {settings.dictationEngine === "openrouter" ? (
+              <VoiceCloudKey provider="openrouter" />
+            ) : null}
+          </>
+        )}
+        {showDetails ? (
+          <>
+            {settings.dictationEngine === "local" || revealed === "dictation-local-models" ? (
+              <LocalDictationModels settings={settings} change={change} />
+            ) : null}
+            <Row
+              id="dictation-language"
+              label={t("Language")}
+              modified={settings.dictationLanguage !== DEFAULTS.dictationLanguage}
+              onReset={() => change({ dictationLanguage: DEFAULTS.dictationLanguage })}
+            >
+              <Select
+                hideLabel
+                label={t("Language")}
+                value={settings.dictationLanguage}
+                options={[
+                  { value: "auto", label: t("Automatic") },
+                  ...DICTATION_LANGUAGES.map(([value, label]) => ({
+                    value,
+                    label,
+                  })),
+                ]}
+                onChange={(value) =>
+                  change({
+                    dictationLanguage: value as Preferences["dictationLanguage"],
                   })
-            }
-          >
-            <Select
-              hideLabel
-              label={t("Dictation recognition")}
-              value={settings.dictationEngine}
-              options={[
-                { value: "local", label: t("This computer") },
-                // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
-                { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
-                { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
-                { value: "openrouter", label: DICTATION_PROVIDER_NAMES.openrouter },
-              ]}
-              onChange={(value) => change({ dictationEngine: value as DictationEngine })}
-            />
-          </Row>
-          {speechEnabled &&
-          !settings.enabled &&
-          !/(?:^|[/\\])gguf-/i.test(settings.dictationLocalModelPath) ? (
-            <VoiceSetupRow setup={setup} settings={settings} change={change} />
-          ) : null}
-          <DictationModelSettings settings={settings} change={change} />
-          {settings.dictationEngine === "openrouter" ? (
-            <VoiceCloudKey provider="openrouter" />
-          ) : null}
-        </>
-      )}
+                }
+              />
+            </Row>
+            <Row
+              id="dictation-shortcut-mode"
+              label={t("Shortcut mode")}
+              modified={settings.dictationShortcutMode !== DEFAULTS.dictationShortcutMode}
+              onReset={() =>
+                change({
+                  dictationShortcutMode: DEFAULTS.dictationShortcutMode,
+                })
+              }
+            >
+              <Select
+                hideLabel
+                label={t("Shortcut mode")}
+                value={settings.dictationShortcutMode}
+                options={[
+                  { value: "auto", label: t("Automatic") },
+                  { value: "hold", label: t("Hold to talk") },
+                  { value: "toggle", label: t("Press to toggle") },
+                ]}
+                onChange={(value) =>
+                  change({
+                    dictationShortcutMode: value as Preferences["dictationShortcutMode"],
+                  })
+                }
+              />
+            </Row>
+            <Row
+              id="dictation-silence-filter"
+              label={t("Filter silence and noise")}
+              modified={settings.dictationSilenceFilter !== DEFAULTS.dictationSilenceFilter}
+              onReset={() =>
+                change({
+                  dictationSilenceFilter: DEFAULTS.dictationSilenceFilter,
+                })
+              }
+            >
+              <Toggle
+                label={t("Filter silence and noise")}
+                on={settings.dictationSilenceFilter}
+                onChange={(dictationSilenceFilter) => change({ dictationSilenceFilter })}
+              />
+            </Row>
+            <Row
+              id="dictation-remove-fillers"
+              label={t("Remove filler words")}
+              modified={settings.dictationRemoveFillers !== DEFAULTS.dictationRemoveFillers}
+              onReset={() =>
+                change({
+                  dictationRemoveFillers: DEFAULTS.dictationRemoveFillers,
+                })
+              }
+            >
+              <Toggle
+                label={t("Remove filler words")}
+                on={settings.dictationRemoveFillers}
+                onChange={(dictationRemoveFillers) => change({ dictationRemoveFillers })}
+              />
+            </Row>
+          </>
+        ) : null}
+      </Group>
       {showDetails ? (
         <>
-          <Row id="dictation-language" label={t("Dictation language")}>
-            <Select
-              hideLabel
-              label={t("Dictation language")}
-              value={settings.dictationLanguage}
-              options={[
-                { value: "auto", label: t("Automatic") },
-                ...DICTATION_LANGUAGES.map(([value, label]) => ({ value, label })),
-              ]}
-              onChange={(value) =>
-                change({ dictationLanguage: value as Preferences["dictationLanguage"] })
-              }
-            />
-          </Row>
-          <Row id="dictation-shortcut-mode" label={t("Dictation shortcut mode")}>
-            <Select
-              hideLabel
-              label={t("Dictation shortcut mode")}
-              value={settings.dictationShortcutMode}
-              options={[
-                { value: "auto", label: t("Automatic") },
-                { value: "hold", label: t("Hold to talk") },
-                { value: "toggle", label: t("Press to toggle") },
-              ]}
-              onChange={(value) =>
-                change({ dictationShortcutMode: value as Preferences["dictationShortcutMode"] })
-              }
-            />
-          </Row>
-          {settings.dictationEngine === "local" || revealed === "dictation-local-models" ? (
-            <LocalDictationModels settings={settings} change={change} />
-          ) : null}
-          <DictationDictionarySettings settings={settings} change={change} />
           <DictationCleanupSettings settings={settings} change={change} />
-          <Row id="dictation-silence-filter" label={t("Filter silence and background noise")}>
-            <Toggle
-              label={t("Filter silence and background noise")}
-              on={settings.dictationSilenceFilter}
-              onChange={(dictationSilenceFilter) => change({ dictationSilenceFilter })}
-            />
-          </Row>
-          <Row id="dictation-remove-fillers" label={t("Remove filler words in dictation")}>
-            <Toggle
-              label={t("Remove filler words in dictation")}
-              on={settings.dictationRemoveFillers}
-              onChange={(dictationRemoveFillers) => change({ dictationRemoveFillers })}
-            />
-          </Row>
+          <DictationDictionarySettings settings={settings} change={change} />
         </>
       ) : null}
-    </Group>
+    </>
   );
 }

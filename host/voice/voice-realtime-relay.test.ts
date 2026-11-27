@@ -68,6 +68,7 @@ async function fakeProvider(): Promise<Provider> {
     socket.on("close", () => {
       connection.closed = true;
       provider.closed = true;
+      // oxlint-disable-next-line unicorn/no-useless-spread -- snapshot: a listener may unsubscribe while the set is iterated
       for (const listener of [...listeners]) listener();
     });
     socket.on("message", (data) => {
@@ -75,6 +76,7 @@ async function fakeProvider(): Promise<Provider> {
       provider.received.push(event);
       connection.received.push(event);
       if (event.type === "session.update") socket.send(JSON.stringify({ type: "session.updated" }));
+      // oxlint-disable-next-line unicorn/no-useless-spread -- snapshot: a listener may unsubscribe while the set is iterated
       for (const listener of [...listeners]) listener();
     });
   });

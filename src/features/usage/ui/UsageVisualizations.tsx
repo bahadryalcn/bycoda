@@ -30,6 +30,10 @@ import {
   type UsageWindow,
 } from "../model/usageAnalytics";
 import { usageChartColor } from "../model/usageColors";
+import { useUsageChartKind } from "../model/usageChartKinds";
+import { trendSeriesValues } from "../model/usageChartSeries";
+import { UsageChartKindControl } from "./UsageChartKindControl";
+import { hourCellState } from "../model/hourCell";
 import { UsageProviderIdentity, usageLabel, usageProviderLabel } from "./UsageProviderIdentity";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./UsageVisualizations.css";
@@ -43,7 +47,67 @@ import {
 } from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
+/** The bar chart adds a readout header above its plot; its plot is shorter by that much so switching chart type keeps the panel height. */
+const BAR_HEADER_HEIGHT = 92;
+const TREND_LINE_HEIGHT = 250;
+const TREND_BAR_HEIGHT = TREND_LINE_HEIGHT - BAR_HEADER_HEIGHT;
+const HOURLY_BAR_HEIGHT = 190;
+const HOURLY_LINE_HEIGHT = HOURLY_BAR_HEIGHT + BAR_HEADER_HEIGHT;
 /** A chart series name with its icon: the provider's, or the model's when the series are models. */
+const SERIES_DASH = { solid: undefined, dash: "5 3", dot: "1.5 3" } as const;
+/** Legend line sample in the series colour and stroke pattern, so the key survives without colour. */
+function SeriesSwatch({ color, pattern }: { color: string; pattern: keyof typeof SERIES_DASH }) {
+  return (
+    <svg
+      className="usage-series-swatch"
+      width="18"
+      height="8"
+      viewBox="0 0 18 8"
+      aria-hidden="true"
+    >
+      <line
+        x1="1"
+        y1="4"
+        x2="17"
+        y2="4"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray={SERIES_DASH[pattern]}
+      />
+    </svg>
+  );
+}
+/** Stacked-bar key: a filled square in the series colour with the bar's surface pattern, so it differs by more than colour. */
+const BAR_PATTERNS = ["solid", "diagonal", "dots", "cross"] as const;
+function BarSwatch({ color, index }: { color: string; index: number }) {
+  const pattern = BAR_PATTERNS[index % BAR_PATTERNS.length];
+  return (
+    <svg
+      className="usage-series-swatch"
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+    >
+      <rect width="12" height="12" rx="2" fill={color} />
+      <g className="usage-bar-swatch-mark">
+        {(pattern === "diagonal" || pattern === "cross") && (
+          <path d="M-1 5 L5 -1 M-1 11 L11 -1 M5 13 L13 5 M11 13 L13 11" fill="none" />
+        )}
+        {pattern === "cross" && <path d="M13 1 L1 13 M7 -1 L-1 7 M13 7 L7 13" fill="none" />}
+        {pattern === "dots" && (
+          <>
+            <circle cx="3" cy="3" r="1" stroke="none" />
+            <circle cx="9" cy="3" r="1" stroke="none" />
+            <circle cx="3" cy="9" r="1" stroke="none" />
+            <circle cx="9" cy="9" r="1" stroke="none" />
+          </>
+        )}
+      </g>
+    </svg>
+  );
+}
 function SeriesIdentity({ item, dimension }: { item: UsageBreakdown; dimension?: UsageDimension }) {
   const label = usageProviderLabel(usageLabel(item.label));
   if (dimension === "model")
@@ -72,6 +136,7 @@ export function UsageTrend({
   dimension?: UsageDimension;
 }) {
   const locale = useLocale();
+  const [kind, setKind] = useUsageChartKind("trend");
   const [active, setActive] = useState<string | null>(null);
   const [singleSeries, setSingleSeries] = useState<ReadonlySet<string> | null>(null);
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
@@ -82,33 +147,42 @@ export function UsageTrend({
   const point = buckets.find((bucket) => bucket.key === active);
   const format = (value: number) =>
     percent ? formatUsagePercent(value) : formatMetric(value, metric);
-  const data = useMemo(
-    () =>
-      buckets.map((bucket, index) => ({
-        key: bucket.key,
-        label: formatBucket(bucket.start, resolution),
-        axisLabel:
-          index % Math.max(1, Math.ceil(buckets.length / 6)) === 0
-            ? dateTimeFormat(
-                locale,
-                resolution === "hour" || resolution === "15m"
-                  ? { hour: "2-digit", minute: "2-digit", hour12: false }
-                  : { month: "short", day: "numeric" },
-              ).format(bucket.start)
-            : undefined,
-        values: Object.fromEntries(
-          series.map((s) => [
-            s.key,
-            percent
-              ? bucket[metric]
-                ? ((bucket.series[s.key]?.[metric] ?? 0) / bucket[metric]) * 100
-                : 0
-              : (bucket.series[s.key]?.[metric] ?? 0),
-          ]),
-        ),
-      })),
-    [buckets, series, resolution, percent, metric, locale],
-  );
+  const data = useMemo(() => {
+    const perBucket = trendSeriesValues(
+      buckets,
+      series.map((s) => s.key),
+      metric,
+      { percent, cumulative: kind === "cumulative" },
+    );
+    return buckets.map((bucket, index) => ({
+      key: bucket.key,
+      label: formatBucket(bucket.start, resolution),
+      axisLabel:
+        index % Math.max(1, Math.ceil(buckets.length / 6)) === 0
+          ? dateTimeFormat(
+              locale,
+              resolution === "hour" || resolution === "15m"
+                ? { hour: "2-digit", minute: "2-digit", hour12: false }
+                : { month: "short", day: "numeric" },
+            ).format(bucket.start)
+          : undefined,
+      values: perBucket[index]!,
+    }));
+  }, [buckets, series, resolution, percent, metric, locale, kind]);
+  const stacked = kind === "stacked-bar";
+  // Hidden series keep their lane (and pattern) but draw nothing and leave the total.
+  const barData = data.map((datum) => {
+    const values = series.map((s) => (hiddenSeries.includes(s.key) ? 0 : datum.values[s.key]!));
+    return {
+      key: datum.key,
+      label: datum.label,
+      axisLabel: datum.axisLabel,
+      value: values.reduce((sum, value) => sum + value, 0),
+      values,
+    };
+  });
+  const subtitle =
+    kind === "cumulative" ? `${metricName(metric)} · ${t("Cumulative")}` : metricName(metric);
   return (
     <section
       {...surfaceAttributes(
@@ -118,9 +192,17 @@ export function UsageTrend({
       data-usage-chart="trend"
     >
       <div className="usage-section-heading">
-        <Heading size="item" level={3}>
-          {t("Usage over time")}
-        </Heading>
+        <div>
+          <Heading size="item" level={3}>
+            {t("Usage over time")}
+          </Heading>
+          <Text as="p" leading="inherit" className="usage-muted">
+            {subtitle}
+          </Text>
+        </div>
+        <div className="usage-controls">
+          <UsageChartKindControl panel="trend" kind={kind} onChange={setKind} />
+        </div>
       </div>
       {buckets.length === 1 ? (
         <div className="usage-single-period">
@@ -153,7 +235,7 @@ export function UsageTrend({
       ) : (
         <>
           <div className="usage-provider-legend">
-            {series.map((item) => (
+            {series.map((item, index) => (
               <Button
                 key={item.key}
                 variant="ghost"
@@ -168,6 +250,14 @@ export function UsageTrend({
                   )
                 }
               >
+                {stacked ? (
+                  <BarSwatch color={usageChartColor(colors, item.key)} index={index} />
+                ) : (
+                  <SeriesSwatch
+                    color={usageChartColor(colors, item.key)}
+                    pattern={(["solid", "dash", "dot"] as const)[index % 3]}
+                  />
+                )}
                 <SeriesIdentity item={item} dimension={dimension} />
               </Button>
             ))}
@@ -184,29 +274,56 @@ export function UsageTrend({
               onSelect({ start: point.start, end: point.end });
             }}
           >
-            <LineChart
-              label={t("Usage over time")}
-              data={series.length ? data : []}
-              emptyLabel={t("No usage recorded in this period.")}
-              selectSeriesLabel={t("Choose a series to show")}
-              series={series.map((s, index) => ({
-                key: s.key,
-                label: usageProviderLabel(usageLabel(s.label)),
-                color: usageChartColor(colors, s.key),
-                area: false,
-                // Series differ by stroke pattern as well as colour (solid, dash, dot).
-                pattern: (["solid", "dash", "dot"] as const)[index % 3],
-              }))}
-              height={250}
-              curve="linear"
-              legend={false}
-              hiddenSeries={hiddenSeries}
-              onHiddenSeriesChange={setHiddenSeries}
-              formatValue={format}
-              formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
-              // The chart reports null when the pointer leaves, focus leaves or the data changes; clear the selection with it.
-              onActiveChange={(_, datum) => setActive(datum?.key ?? null)}
-            />
+            {stacked ? (
+              <BarChart
+                label={`${t("Usage over time")} · ${metricName(metric)}`}
+                period={`${formatBucket(buckets[0].start, resolution)} – ${formatBucket(buckets[buckets.length - 1].end, resolution)}`}
+                data={series.length ? barData : []}
+                stacked
+                legend={false}
+                seriesLabels={series.map((s) => usageProviderLabel(usageLabel(s.label)))}
+                seriesColors={series.map((s) => usageChartColor(colors, s.key))}
+                height={TREND_BAR_HEIGHT}
+                formatValue={format}
+                formatTick={
+                  percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)
+                }
+                averageLabel={t("Average per interval")}
+                valueLabel={metricName(metric)}
+                onActiveChange={(datum) => setActive(datum?.key ?? null)}
+              />
+            ) : (
+              <LineChart
+                label={
+                  kind === "cumulative"
+                    ? `${t("Usage over time")} · ${t("Cumulative")}`
+                    : t("Usage over time")
+                }
+                data={series.length ? data : []}
+                emptyLabel={t("No usage recorded in this period.")}
+                selectSeriesLabel={t("Choose a series to show")}
+                series={series.map((s, index) => ({
+                  key: s.key,
+                  label: usageProviderLabel(usageLabel(s.label)),
+                  color: usageChartColor(colors, s.key),
+                  // Area fills each series with a translucent tint of its own colour.
+                  area: kind === "area",
+                  // Series differ by stroke pattern as well as colour (solid, dash, dot).
+                  pattern: (["solid", "dash", "dot"] as const)[index % 3],
+                }))}
+                height={TREND_LINE_HEIGHT}
+                curve="linear"
+                legend={false}
+                hiddenSeries={hiddenSeries}
+                onHiddenSeriesChange={setHiddenSeries}
+                formatValue={format}
+                formatTick={
+                  percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)
+                }
+                // The chart reports null when the pointer leaves, focus leaves or the data changes; clear the selection with it.
+                onActiveChange={(_, datum) => setActive(datum?.key ?? null)}
+              />
+            )}
           </div>
         </>
       )}
@@ -235,14 +352,22 @@ export function UsageShare({
   metric,
   colors,
   onSelect,
+  activeKey,
+  onClear,
 }: {
   rows: UsageBreakdown[];
   metric: UsageMetric;
   colors: Colors;
   onSelect: (key: string) => void;
+  /** The provider the page is filtered to; keeps the donut slice pinned in sync with the filter. */
+  activeKey?: string | null;
+  /** Called when the pinned slice is clicked again. */
+  onClear?: () => void;
 }) {
   useLocale();
+  const [kind, setKind] = useUsageChartKind("share");
   const totals = usageTotals(rows);
+  const shown = rows.filter((row) => row[metric] > 0);
   return (
     <section
       {...surfaceAttributes(
@@ -252,40 +377,85 @@ export function UsageShare({
       data-usage-chart="share"
     >
       <div className="usage-section-heading">
-        <Heading size="item" level={3}>
+        <Heading size="item" level={4}>
           {t("By provider")}
         </Heading>
+        <div className="usage-controls">
+          <UsageChartKindControl panel="share" kind={kind} onChange={setKind} />
+        </div>
       </div>
-      <DonutChart
-        label={t("By provider")}
-        data={rows
-          .filter((row) => row[metric] > 0)
-          .map((row) => ({
-            key: row.key,
-            label: usageProviderLabel(usageLabel(row.label)),
-            value: row[metric],
-            color: usageChartColor(colors, row.key),
-          }))}
-        size={200}
-        thickness={24}
-        formatValue={(value) => formatMetric(value, metric)}
-        groupBelow={0}
-        legendAction="select"
-        legend={false}
-        onActiveChange={(key) => {
-          if (key !== null) onSelect(key);
-        }}
-      />
-      <div className="usage-provider-shares">
-        {rows
-          .filter((row) => row[metric] > 0)
-          .map((row) => (
-            <Button key={row.key} variant="ghost" onClick={() => onSelect(row.key)}>
-              <UsageProviderIdentity provider={row.key} />
-              <strong>{formatMetric(row[metric], metric)}</strong>
-              <span>{formatUsagePercent((row[metric] / totals[metric]) * 100)}</span>
+      {kind === "donut" ? (
+        <DonutChart
+          label={t("By provider")}
+          data={rows
+            .filter((row) => row[metric] > 0)
+            .map((row) => ({
+              key: row.key,
+              label: usageProviderLabel(usageLabel(row.label)),
+              value: row[metric],
+              color: usageChartColor(colors, row.key),
+            }))}
+          size={200}
+          thickness={24}
+          formatValue={(value) => formatMetric(value, metric)}
+          groupBelow={0}
+          legendAction="select"
+          legend={false}
+          activeKey={activeKey}
+          onActiveChange={(key) => {
+            if (key !== null) onSelect(key);
+            else onClear?.();
+          }}
+        />
+      ) : null}
+      <div
+        className="usage-provider-shares"
+        data-kind={kind}
+        role={kind === "bar" ? "group" : undefined}
+        aria-label={kind === "bar" ? t("By provider") : undefined}
+      >
+        {shown.map((row) => (
+          <div key={row.key} className="usage-share-row">
+            <Button
+              variant="ghost"
+              align="start"
+              pressed={activeKey === row.key}
+              onClick={() => onSelect(row.key)}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <svg
+                  className="flex-none"
+                  width="10"
+                  height="10"
+                  viewBox="0 0 10 10"
+                  aria-hidden="true"
+                >
+                  <circle cx="5" cy="5" r="5" fill={usageChartColor(colors, row.key)} />
+                </svg>
+                <UsageProviderIdentity provider={row.key} />
+              </span>
+              <Text as="span" size="caption" tone="primary" weight="medium" leading="inherit">
+                {formatMetric(row[metric], metric)}
+              </Text>
+              <Text as="span" size="caption" tone="secondary" leading="inherit">
+                {formatUsagePercent((row[metric] / totals[metric]) * 100)}
+              </Text>
             </Button>
-          ))}
+            {kind === "bar" ? (
+              <span className="usage-rank-track" aria-hidden="true">
+                <span
+                  {...surfaceAttributes({ variant: "user-color" })}
+                  style={
+                    {
+                      "--usage-rank-share": `${(row[metric] / totals[metric]) * 100}%`,
+                      "--surface-user-color": usageChartColor(colors, row.key),
+                    } as CSSProperties
+                  }
+                />
+              </span>
+            ) : null}
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -297,23 +467,31 @@ export function Contribution({
   title,
   onSelect,
   colors,
+  total: fullTotal,
 }: {
   rows: (UsageBreakdown & { providers?: string[] })[];
   metric: UsageMetric;
   title: string;
   onSelect: (key: string) => void;
   colors: Colors;
+  /** Total of the unfiltered list, so a search narrows the rows without rescaling their shares. */
+  total?: number;
 }) {
   useLocale();
   const [expanded, setExpanded] = useState(false);
   // Shares are against the whole list, so rows revealed below keep the same percentages.
-  const total = usageTotals(rows)[metric];
+  const total = fullTotal ?? usageTotals(rows)[metric];
   const renderRow = (row: (typeof rows)[number]) => (
     <div className="usage-contribution" key={row.key}>
-      <Button variant="link" truncate onClick={() => onSelect(row.key)}>
-        {row.providers?.map((provider) => (
-          <UsageProviderIdentity key={provider} provider={provider} label="" />
-        ))}
+      <Button
+        variant="link"
+        truncate
+        tooltip={usageLabel(row.label)}
+        onClick={() => onSelect(row.key)}
+      >
+        {row.providers?.length === 1 && (
+          <UsageProviderIdentity provider={row.providers[0]} label="" />
+        )}
         {usageLabel(row.label)}
       </Button>
       <Text size="caption" tone="primary" leading="inherit">
@@ -343,7 +521,7 @@ export function Contribution({
       )}
     >
       <div className="usage-section-heading">
-        <Heading size="item" level={3}>
+        <Heading size="item" level={4}>
           {title}
         </Heading>
       </div>
@@ -365,7 +543,11 @@ export function Contribution({
           onOpenChange={setExpanded}
         >
           {/* Rows past the first five mount only while open, so long tails stay cheap. */}
-          {expanded && <div className="usage-contributions">{rows.slice(5).map(renderRow)}</div>}
+          {expanded && (
+            <div className="usage-contributions usage-contributions-scroll">
+              {rows.slice(5).map(renderRow)}
+            </div>
+          )}
         </Disclosure>
       )}
     </section>
@@ -439,7 +621,7 @@ export function HourDetails({
         </span>
       ))}
       {sorted.length > 6 ? (
-        <span>{`+${formatNumber(sorted.length - 6)} ${t("records")}`}</span>
+        <span>{t("+{p0} records", { p0: formatNumber(sorted.length - 6) })}</span>
       ) : null}
     </span>
   );
@@ -457,7 +639,14 @@ export function TimeDistribution({
   window: UsageWindow;
 }) {
   const locale = useLocale();
+  const [hourlyKind, setHourlyKind] = useUsageChartKind("hourly");
   const [weekOffset, setWeekOffset] = useState(0);
+  // Week paging counts back from the period end, so a new period starts on its latest week.
+  const [pagedWindow, setPagedWindow] = useState(window);
+  if (pagedWindow.start !== window.start || pagedWindow.end !== window.end) {
+    setPagedWindow(window);
+    setWeekOffset(0);
+  }
   const [intervalMode, setIntervalMode] = useState<"clock" | UsageResolution>("clock");
   const [focus, setFocus] = useState("0:0");
   const startDay = bucketStart(window.start, "day");
@@ -470,7 +659,7 @@ export function TimeDistribution({
   const dates = Array.from({ length: 7 }, (_, day) => addDays(from, day)).filter(
     (at) => at <= endDay && (page === weekStarts.length - 1 || at < weekStarts[page + 1]),
   );
-  const { hours, cells, daily, details } = useMemo(() => {
+  const { hours, cells, daily, details, unpricedHours } = useMemo(() => {
     const hours = Array.from({ length: 24 }, (_, hour) => ({
       key: String(hour),
       label: `${String(hour).padStart(2, "0")}:00`,
@@ -480,12 +669,16 @@ export function TimeDistribution({
     const cells = new Map<string, number>();
     const daily = new Map<string, number>();
     const details = new Map<string, Map<string, { sample: UsageSample; value: number }>>();
+    // Hours holding tokens without a price: their cost is unknown, not zero.
+    const unpricedHours = new Set<string>();
     for (const sample of samples) {
       const hour = new Date(sample.at).getHours();
       const day = dayKey(sample.at);
       hours[hour].value += sample[metric];
       cells.set(`${day}:${hour}`, (cells.get(`${day}:${hour}`) ?? 0) + sample[metric]);
       daily.set(day, (daily.get(day) ?? 0) + sample[metric]);
+      if (metric === "cost" && !sample.priced && sample.tokens > 0)
+        unpricedHours.add(`${day}:${hour}`);
       if (sample[metric] > 0 || (metric === "cost" && !sample.priced && sample.tokens > 0)) {
         const key = `${day}:${hour}`;
         const entries = details.get(key) ?? new Map();
@@ -500,7 +693,7 @@ export function TimeDistribution({
         details.set(key, entries);
       }
     }
-    return { hours, cells, daily, details };
+    return { hours, cells, daily, details, unpricedHours };
   }, [samples, metric]);
   const maximum = Math.max(0, ...cells.values());
   const chronologicalResolution = effectiveResolution(
@@ -528,6 +721,13 @@ export function TimeDistribution({
       ),
     [samples, window, chronologicalResolution, metric, locale],
   );
+  const resolutionOptions = (["15m", "hour", "day", "week"] as const).map((value) => ({
+    value,
+    label: { "15m": t("15 minutes"), hour: t("Hourly"), day: t("Daily"), week: t("Weekly") }[value],
+    // A long period is drawn at a coarser step; offer only the steps that are really drawn.
+    disabled: effectiveResolution(window, value) !== value,
+    disabledReason: t("Too many intervals for this period; pick a coarser step."),
+  }));
   const focusParts = focus.split(":").map(Number);
   const focusDay = dates[focusParts[1]];
   const focusStart = focusDay === undefined ? null : new Date(focusDay);
@@ -539,6 +739,13 @@ export function TimeDistribution({
       ? focus
       : `${new Date(Math.max(from, window.start)).getHours()}:0`;
   const dateLabel = (at: number) => formatDate(at, { month: "short", day: "numeric" });
+  const hourlyData = intervalMode === "clock" ? hours : intervalBars;
+  const hourlyAverage = hourlyData.length
+    ? hourlyData.reduce((sum, datum) => sum + datum.value, 0) / hourlyData.length
+    : 0;
+  const hourlyAverageLabel =
+    intervalMode === "clock" ? t("Average per hour of day") : t("Average per interval");
+  const hourlyChartLabel = `${intervalMode === "clock" ? t("Hour of day") : t("Usage over time")} · ${metricName(metric)}`;
   const calendarDays = [];
   for (let date = Math.max(startDay, addDays(endDay, -89)); date <= endDay; date = addDays(date, 1))
     calendarDays.push({ date: dayKey(date), count: daily.get(dayKey(date)) ?? 0 });
@@ -553,30 +760,60 @@ export function TimeDistribution({
           data-usage-chart="hourly"
         >
           <div className="usage-section-heading">
-            <Heading size="item" level={3}>
-              {metricName(metric)}
-            </Heading>
-            <Select
-              hideLabel
-              label={t("Time grouping")}
-              value={intervalMode}
-              onValueChange={(value) => setIntervalMode(value as "clock" | UsageResolution)}
-              options={[
-                { value: "clock", label: t("Hour of day") },
-                { value: "15m", label: t("15 minutes") },
-                { value: "hour", label: t("Hourly") },
-                { value: "day", label: t("Daily") },
-                { value: "week", label: t("Weekly") },
-              ]}
-            />
+            <div>
+              {/* The grouping select beside it names the bars, so the title does not repeat it. */}
+              <Heading size="item" level={3}>
+                {t("Usage over time")}
+              </Heading>
+              <Text as="p" leading="inherit" className="usage-muted">
+                {metricName(metric)}
+                {/* The line chart has no average readout of its own, so the header carries it. */}
+                {hourlyKind === "line"
+                  ? ` · ${hourlyAverageLabel} ${formatMetric(hourlyAverage, metric)}`
+                  : ""}
+              </Text>
+            </div>
+            <div className="usage-controls">
+              <UsageChartKindControl panel="hourly" kind={hourlyKind} onChange={setHourlyKind} />
+              <Select
+                hideLabel
+                label={t("Time grouping")}
+                value={intervalMode === "clock" ? "clock" : chronologicalResolution}
+                onValueChange={(value) => setIntervalMode(value as "clock" | UsageResolution)}
+                options={[{ value: "clock", label: t("Hour of day") }, ...resolutionOptions]}
+              />
+            </div>
           </div>
-          <BarChart
-            label={`${intervalMode === "clock" ? t("Hour of day") : t("Usage over time")} · ${metricName(metric)}`}
-            period={`${dateLabel(window.start)} – ${dateLabel(window.end - 1)}`}
-            data={intervalMode === "clock" ? hours : intervalBars}
-            height={190}
-            formatValue={(value) => formatMetric(value, metric)}
-          />
+          {hourlyKind === "line" ? (
+            <LineChart
+              label={hourlyChartLabel}
+              data={hourlyData.map((datum) => ({
+                key: datum.key,
+                label: datum.label,
+                axisLabel: datum.axisLabel,
+                values: { value: datum.value },
+              }))}
+              series={[
+                { key: "value", label: metricName(metric), color: "var(--accent)", area: true },
+              ]}
+              height={HOURLY_LINE_HEIGHT}
+              curve="linear"
+              legend={false}
+              formatValue={(value) => formatMetric(value, metric)}
+              formatTick={(value) => formatMetricTick(value, metric)}
+            />
+          ) : (
+            <BarChart
+              label={hourlyChartLabel}
+              period={`${dateLabel(window.start)} – ${dateLabel(window.end - 1)}`}
+              data={hourlyData}
+              height={HOURLY_BAR_HEIGHT}
+              formatValue={(value) => formatMetric(value, metric)}
+              formatTick={(value) => formatMetricTick(value, metric)}
+              averageLabel={hourlyAverageLabel}
+              valueLabel={metricName(metric)}
+            />
+          )}
         </section>
         {calendarDays.length >= 56 && (
           <section
@@ -628,10 +865,15 @@ export function TimeDistribution({
               {t("Day and hour activity")}
             </Heading>
             <Text as="p" leading="inherit" className="usage-muted">
-              {dateLabel(from)} – {dateLabel(dates[dates.length - 1])}
+              {t("Week {p0} of {p1}", {
+                p0: formatNumber(page + 1),
+                p1: formatNumber(weekStarts.length),
+              })}
+              {" · "}
+              {metricName(metric)}
             </Text>
           </div>
-          <div className="usage-controls">
+          <div className="usage-week-nav">
             <Button
               variant="ghost"
               iconOnly
@@ -642,6 +884,14 @@ export function TimeDistribution({
             >
               <ChevronLeft className="icon-sm" />
             </Button>
+            <Text as="span" size="caption" tone="secondary" leading="inherit">
+              {formatDate(from, { month: "short", day: "numeric", weekday: "short" })} –{" "}
+              {formatDate(dates[dates.length - 1], {
+                month: "short",
+                day: "numeric",
+                weekday: "short",
+              })}
+            </Text>
             <Button
               variant="ghost"
               iconOnly
@@ -654,6 +904,10 @@ export function TimeDistribution({
             </Button>
           </div>
         </div>
+        <HeatScale className="mt-2" />
+        <Text as="p" size="caption" tone="secondary" leading="inherit" className="mt-1">
+          {t("Colors are relative to the busiest hour of the period.")}
+        </Text>
         <div
           className="usage-week-grid"
           role="grid"
@@ -675,11 +929,16 @@ export function TimeDistribution({
                 leading="inherit"
                 key={date}
                 role="columnheader"
+                aria-label={formatDate(date, { weekday: "long", day: "numeric", month: "long" })}
               >
                 <Text as="b" size="inherit" tone="primary" weight="medium">
                   {formatDate(date, { weekday: "short" })}
                 </Text>
-                {formatDate(date, { day: "numeric" })}
+                <span aria-hidden="true">
+                  {new Date(date).getDate() === 1 || date === dates[0]
+                    ? formatDate(date, { day: "numeric", month: "short" })
+                    : formatDate(date, { day: "numeric" })}
+                </span>
               </Text>
             ))}
           </div>
@@ -696,6 +955,18 @@ export function TimeDistribution({
                 end.setHours(rowIndex + 1);
                 const key = `${rowIndex}:${columnIndex}`;
                 const outside = isHourOutside(day, rowIndex, window);
+                const state = hourCellState({
+                  amount,
+                  outside,
+                  unpriced: unpricedHours.has(`${dayKey(day)}:${rowIndex}`),
+                });
+                const when = formatBucket(start.getTime(), "hour");
+                const reading =
+                  state === "outside"
+                    ? t("Outside the selected period.")
+                    : state === "unavailable"
+                      ? t("Unavailable")
+                      : `${state === "partial" ? "≥ " : ""}${formatMetric(amount, metric)}`;
                 return (
                   <Button
                     role="gridcell"
@@ -707,8 +978,9 @@ export function TimeDistribution({
                     disabled={outside}
                     disabledReason={t("Outside the selected period.")}
                     tabIndex={effectiveFocus === key ? 0 : -1}
+                    data-state={state}
                     data-level={
-                      amount === 0
+                      state === "outside" || state === "unavailable" || amount === 0
                         ? 0
                         : amount / maximum <= 0.25
                           ? 1
@@ -718,8 +990,8 @@ export function TimeDistribution({
                               ? 3
                               : 4
                     }
-                    aria-label={`${formatBucket(start.getTime(), "hour")}: ${formatMetric(amount, metric)}`}
-                    tooltip={`${formatBucket(start.getTime(), "hour")}: ${formatMetric(amount, metric)}`}
+                    aria-label={`${when}: ${reading}${outside ? "" : `. ${t("Select to filter to this hour.")}`}`}
+                    tooltip={`${when}: ${reading}`}
                     tooltipWide
                     tooltipDetails={[
                       <HourDetails
@@ -736,21 +1008,36 @@ export function TimeDistribution({
                       })
                     }
                     onKeyDown={(event) => {
-                      const delta = {
-                        ArrowLeft: [0, -1],
-                        ArrowRight: [0, 1],
-                        ArrowUp: [-1, 0],
-                        ArrowDown: [1, 0],
-                      }[event.key];
-                      if (!delta) return;
+                      // Home/End jump along the row; with Ctrl they jump along the column.
+                      const edge = event.ctrlKey || event.metaKey;
+                      const rows = hours.length;
+                      const columns = dates.length;
+                      const move: Record<
+                        string,
+                        { from: { row: number; column: number }; step: [number, number] }
+                      > = {
+                        ArrowLeft: { from: { row: rowIndex, column: columnIndex }, step: [0, -1] },
+                        ArrowRight: { from: { row: rowIndex, column: columnIndex }, step: [0, 1] },
+                        ArrowUp: { from: { row: rowIndex, column: columnIndex }, step: [-1, 0] },
+                        ArrowDown: { from: { row: rowIndex, column: columnIndex }, step: [1, 0] },
+                        Home: edge
+                          ? { from: { row: -1, column: columnIndex }, step: [1, 0] }
+                          : { from: { row: rowIndex, column: -1 }, step: [0, 1] },
+                        End: edge
+                          ? { from: { row: rows, column: columnIndex }, step: [-1, 0] }
+                          : { from: { row: rowIndex, column: columns }, step: [0, -1] },
+                      };
+                      const action = move[event.key];
+                      if (!action) return;
                       event.preventDefault();
                       const next = nextSelectableCell(
-                        { row: rowIndex, column: columnIndex },
-                        delta[0],
-                        delta[1],
-                        { rows: hours.length, columns: dates.length },
+                        action.from,
+                        action.step[0],
+                        action.step[1],
+                        { rows, columns },
                         (row, column) => !isHourOutside(dates[column], row, window),
                       );
+                      if (next === action.from) return;
                       const grid = event.currentTarget.closest('[role="grid"]');
                       const target =
                         grid?.querySelectorAll<HTMLButtonElement>('[role="gridcell"]')[
@@ -760,7 +1047,11 @@ export function TimeDistribution({
                     }}
                   >
                     <Text size="caption" tone="inherit" leading="inherit" aria-hidden>
-                      {amount > 0 ? formatMetric(amount, metric) : ""}
+                      {state === "unavailable"
+                        ? "—"
+                        : amount > 0
+                          ? `${state === "partial" ? "≥ " : ""}${formatMetricTick(amount, metric)}`
+                          : ""}
                     </Text>
                   </Button>
                 );
@@ -768,7 +1059,6 @@ export function TimeDistribution({
             </div>
           ))}
         </div>
-        <HeatScale className="mt-3" />
       </section>
     </div>
   );

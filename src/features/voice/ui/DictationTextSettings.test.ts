@@ -50,7 +50,7 @@ it("keeps cleanup off by default and preserves its options through disable and r
   expect(container.querySelector('[data-setting-id="dictation-cleanup-instructions"]')).toBeNull();
   const toggle = () =>
     container.querySelector<HTMLButtonElement>(
-      '[role="switch"][aria-label="Clean up dictated text"]',
+      '[role="switch"][aria-label="Clean up text with Codex"]',
     )!;
   await act(async () => toggle().click());
   expect(container.textContent).toContain("Surrounding drafts are not sent.");

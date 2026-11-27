@@ -8,6 +8,7 @@ import { pickFolders } from "../../../platform/tauri/fs";
 import {
   additionalDirsForSession,
   loadAdditionalDirs,
+  loadProjectRepositoryChoice,
   loadSessionAdditionalDirs,
   saveAdditionalDirs,
   saveSessionAdditionalDirs,
@@ -21,7 +22,6 @@ vi.mock("../../../platform/tauri/fs", async (original) => ({
 
 let container: HTMLDivElement;
 let root: Root;
-const onProjectChange = vi.fn();
 
 beforeEach(() => {
   localStorage.clear();
@@ -38,14 +38,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(workingDirectory = "/work/web") {
+function render(workingDirectory = "/work/web", worktreeMode = false) {
   act(() =>
     root.render(
       createElement(SessionDirsPicker, {
         sessionId: "s1",
         project: "/work/web",
         workingDirectory,
-        onProjectChange,
+        worktreeMode,
       }),
     ),
   );
@@ -65,45 +65,51 @@ function click(text: string) {
 function open() {
   act(() => container.querySelector<HTMLButtonElement>("button")!.click());
 }
-function checkbox(path: string) {
-  return [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (option) =>
-      document.getElementById(option.getAttribute("aria-describedby") ?? "")?.textContent === path,
-  );
+/** The row for a path; `section` is the group it sits in, or none in the repositories list. */
+function option(path: string, section?: "Project" | "Also work in") {
+  const roots = section
+    ? [...document.querySelectorAll('[role="group"]')].filter(
+        (element) =>
+          document.getElementById(element.getAttribute("aria-labelledby") ?? "")?.textContent ===
+          section,
+      )
+    : [document.body];
+  return roots
+    .flatMap((group) => [...group.querySelectorAll<HTMLButtonElement>('[role="option"]')])
+    .find(
+      (item) =>
+        document.getElementById(item.getAttribute("aria-describedby") ?? "")?.textContent === path,
+    );
 }
 
 async function browse(label = "Add folder…") {
   await act(async () => button(label).click());
 }
 
-describe("session folders", () => {
-  it("shows the session working folder by default, even with no other projects", () => {
+describe("session project and folders", () => {
+  it("labels the chip Also work in, whichever folder the session runs in", () => {
+    render("/work/web-worktree");
+    expect(visibleSessionTestText(container)).toBe("Also work in");
+  });
+
+  it("lists other projects under Also work in and has no Project section", () => {
+    rememberProject("/other/api");
     render();
-    expect(visibleSessionTestText(container)).toBe("web");
     open();
-    expect(checkbox("/work/web")?.getAttribute("aria-selected")).toBe("true");
-    expect(checkbox("/work/web")?.disabled).toBe(true);
-    expect(checkbox("/work/web")?.querySelector('[aria-label="Working folder"]')).not.toBeNull();
-    expect(document.body.textContent).not.toContain("No folders");
+    expect(option("/work/web", "Project")).toBeUndefined();
+    expect(option("/work/web", "Also work in")).toBeUndefined();
+    expect(option("/other/api", "Also work in")).toBeDefined();
     expect(additionalDirsForSession("s1", "/work/web")).toEqual([]);
   });
 
-  it("shows the actual worktree folder instead of the base project", () => {
-    render("/work/web-worktree");
-    expect(visibleSessionTestText(container)).toBe("web-worktree");
-    open();
-    expect(checkbox("/work/web-worktree")?.getAttribute("aria-selected")).toBe("true");
-    expect(checkbox("/work/web")).toBeUndefined();
-  });
-
-  it("offers every saved local project and scopes selections to this session", () => {
+  it("scopes extra folders to this session and shows +N on the chip", () => {
     rememberProject("/other/api");
     rememberProject("remote://host/project");
     expect(sessionDirCandidates("/work/web")).toEqual(["/work/web", "/other/api"]);
     render();
     open();
-    act(() => checkbox("/other/api")!.click());
-    expect(visibleSessionTestText(container)).toBe("2 folders");
+    act(() => option("/other/api", "Also work in")!.click());
+    expect(visibleSessionTestText(container)).toBe("Also work in +1");
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/other/api"]);
     expect(additionalDirsForSession("s2", "/work/web")).toEqual([]);
     expect(loadAdditionalDirs("/work/web")).toEqual([]);
@@ -116,12 +122,12 @@ describe("session folders", () => {
     await browse();
     expect(pickFolders).toHaveBeenCalledWith("Add folders to this session", true);
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/custom/api", "/custom/ui"]);
-    expect(visibleSessionTestText(container)).toBe("3 folders");
-    expect(checkbox("/custom/api")?.getAttribute("aria-selected")).toBe("true");
+    expect(visibleSessionTestText(container)).toBe("Also work in +2");
+    expect(option("/custom/api", "Also work in")?.getAttribute("aria-selected")).toBe("true");
     open();
     open();
-    expect(checkbox("/custom/api")?.getAttribute("aria-selected")).toBe("true");
-    act(() => checkbox("/custom/api")!.click());
+    expect(option("/custom/api", "Also work in")?.getAttribute("aria-selected")).toBe("true");
+    act(() => option("/custom/api", "Also work in")!.click());
     expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/custom/ui"]);
   });
 
@@ -160,42 +166,17 @@ describe("session folders", () => {
     }
   });
 
-  it("resets extra folders to the project setting while keeping the working folder", () => {
+  it("resets extra folders to the project setting", () => {
     saveAdditionalDirs("/work/web", ["/work/api"]);
     saveSessionAdditionalDirs("s1", "/work/web", ["/custom/ui"]);
     render();
     open();
     click("Reset");
     expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
-    expect(checkbox("/work/web")?.getAttribute("aria-selected")).toBe("true");
-    expect(checkbox("/work/api")?.getAttribute("aria-selected")).toBe("true");
+    expect(option("/work/api", "Also work in")?.getAttribute("aria-selected")).toBe("true");
   });
 
-  it("changes project through the existing session callback", () => {
-    rememberProject("/other/api");
-    render();
-    open();
-    click("Change project…");
-    // The "opens a new session" consequence rides the Change project tooltip, not visible copy.
-    expect(button("Back")).toBeDefined();
-    expect(document.body.textContent).not.toContain("new session");
-    click("api");
-    expect(onProjectChange).toHaveBeenCalledWith("/other/api");
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  });
-
-  it("changes project through a single-folder native dialog", async () => {
-    vi.mocked(pickFolders).mockResolvedValueOnce(["/custom/project"]);
-    render();
-    open();
-    click("Change project…");
-    await browse("Open a project");
-    expect(pickFolders).toHaveBeenCalledWith("Choose session project", false);
-    expect(onProjectChange).toHaveBeenCalledWith("/custom/project");
-    expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
-  });
-
-  it("filters projects by path while keeping the native picker available", () => {
+  it("filters both sections by path while keeping the native picker available", () => {
     rememberProject("/other/api");
     render();
     open();
@@ -206,26 +187,12 @@ describe("session folders", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(document.body.textContent).toContain("No matching folders");
-    expect(checkbox("/other/api")).toBeUndefined();
+    expect(option("/other/api", "Also work in")).toBeUndefined();
     expect(button("Add folder…").disabled).toBe(false);
     act(() => document.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!.click());
     expect(input.value).toBe("");
-    expect(checkbox("/other/api")).toBeDefined();
+    expect(option("/other/api", "Also work in")).toBeDefined();
     expect(document.activeElement).toBe(input);
-  });
-
-  it("shares combobox navigation and skips the fixed working folder", () => {
-    rememberProject("/other/api");
-    render();
-    open();
-    const list = document.querySelector('[role="listbox"]')!;
-    expect(list.getAttribute("aria-multiselectable")).toBe("true");
-    const search = document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
-    expect(search.getAttribute("aria-controls")).toBe(list.id);
-    act(() => search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
-    expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/other/api"]);
-    expect(checkbox("/work/web")?.disabled).toBe(true);
-    expect(checkbox("/other/api")?.getAttribute("aria-selected")).toBe("true");
   });
 
   it("rejects a drive root without changing session folders", async () => {
@@ -235,6 +202,50 @@ describe("session folders", () => {
     await browse();
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("drive root");
     expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
-    expect(visibleSessionTestText(container)).toBe("web");
+    expect(visibleSessionTestText(container)).toBe("Also work in");
+  });
+});
+
+describe("repositories of a new worktree", () => {
+  it("lists the project folders as repositories with the worktree hint", () => {
+    saveAdditionalDirs("/work/web", ["/work/api", "/work/ui"]);
+    rememberProject("/other/unrelated");
+    render("/work/web", true);
+    expect(visibleSessionTestText(container)).toBe("All repositories");
+    open();
+    expect(document.body.textContent).toContain(
+      "Each gets its own worktree on the session's branch",
+    );
+    expect(option("/work/api")?.getAttribute("aria-selected")).toBe("true");
+    expect(option("/work/ui")?.getAttribute("aria-selected")).toBe("true");
+    expect(option("/other/unrelated")).toBeUndefined();
+    expect(option("/work/web")).toBeUndefined();
+  });
+
+  it("counts, selects none and selects all, remembering the choice for the project", () => {
+    saveAdditionalDirs("/work/web", ["/work/api", "/work/ui"]);
+    render("/work/web", true);
+    open();
+    act(() => option("/work/ui")!.click());
+    expect(visibleSessionTestText(container)).toBe("1 repositories");
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual(["/work/api"]);
+    click("Select none");
+    expect(visibleSessionTestText(container)).toBe("No repositories");
+    click("Select all");
+    expect(visibleSessionTestText(container)).toBe("All repositories");
+    // The session's own folders stay untouched.
+    expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
+  });
+
+  it("adds picked folders to the project's folder list and the choice", async () => {
+    saveAdditionalDirs("/work/web", ["/work/api"]);
+    vi.mocked(pickFolders).mockResolvedValueOnce(["/custom/lib"]);
+    render("/work/web", true);
+    open();
+    await browse();
+    expect(pickFolders).toHaveBeenCalledWith("Add folders to this project", true);
+    expect(loadAdditionalDirs("/work/web")).toEqual(["/work/api", "/custom/lib"]);
+    expect(loadProjectRepositoryChoice("/work/web")).toEqual(["/work/api", "/custom/lib"]);
+    expect(additionalDirsForSession("s1", "/work/web")).toEqual(["/work/api", "/custom/lib"]);
   });
 });

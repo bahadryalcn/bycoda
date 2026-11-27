@@ -10,12 +10,13 @@ import { ArrowDownCircle, Bot, Star } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { Toggle } from "../../../shared/ui/settings";
-import type { ProviderAuthState, ProviderAuthTone } from "./providerStatus";
+import type { ProviderAuthState } from "./providerStatus";
 import { useGrokSignInState } from "./providerStatus";
 
-/** Ink of the auth line: a warning for a sign-in or quota problem, danger when exhausted. */
-function authMetaTone(tone: ProviderAuthTone | undefined) {
-  if (tone === "exhausted") return "danger";
+/** Ink of the auth line: a warning for a sign-in or quota problem, danger when exhausted or critically low. */
+function authMetaTone(auth: ProviderAuthState | null) {
+  const tone = auth?.tone;
+  if (tone === "exhausted" || (tone === "low" && auth?.critical)) return "danger";
   if (tone === "signedOut" || tone === "low") return "warning";
   return "secondary";
 }
@@ -127,7 +128,7 @@ function ProviderListItem({
             <Text
               as="span"
               size="caption"
-              tone={authMetaTone(entry.auth?.tone)}
+              tone={authMetaTone(entry.auth)}
               leading="snug"
               truncate
               className="provider-cli-option-meta"

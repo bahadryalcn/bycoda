@@ -15,7 +15,9 @@ import {
   formatRecentRelative,
   formatGitGraphAbsoluteTime,
   formatRelativeTime,
+  formatResetDuration,
   formatTokens,
+  formatUnambiguousCompact,
   formatUsageTokens,
 } from "./format";
 import { LANGUAGES } from "./languages";
@@ -176,5 +178,23 @@ describe("formatDays", () => {
     expect(formatDays(2, "de")).toBe("2 Tage");
     expect(formatDays(0, "en")).toBe("0 days");
     expect(formatDays(Number.NaN, "en")).toBe("0 days");
+  });
+});
+
+describe("formatResetDuration locale units", () => {
+  const span = 3 * 86_400_000 + 15 * 3_600_000;
+  it("keeps compact English units", () => {
+    expect(formatResetDuration(span, "en")).toBe("3d 15h");
+  });
+  it("uses the unit names of the requested language", () => {
+    expect(formatResetDuration(span, "tr")).toBe("3 gün 15 sa.");
+    expect(formatResetDuration(47 * 60_000, "tr")).toBe("47 dk.");
+  });
+});
+
+describe("formatUnambiguousCompact", () => {
+  it("spells out thousands where the short form is a bare B", () => {
+    expect(formatUnambiguousCompact(54_600, "tr")).toMatch(/bin/);
+    expect(formatUnambiguousCompact(54_600, "en")).toBe("54.6K");
   });
 });

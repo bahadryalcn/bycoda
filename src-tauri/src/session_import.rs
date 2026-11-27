@@ -1,9 +1,23 @@
-//! Finds the conversations Claude Code and Codex stored on disk and reads them
-//! back in bounded pieces, so Bycoda can import them as sessions.
+//! Finds the conversations provider CLIs stored on disk and reads them back
+//! in bounded pieces, so Bycoda can import them as sessions. Claude Code and
+//! Codex are read here; every other provider has its own module, listed in
+//! `sources`.
 //!
-//! Everything here is read-only: `~/.claude` and `~/.codex` are never written
-//! to. Discovery reads only a head and a tail window of each file, because a
+//! Everything here is read-only: no provider store is ever written to.
+//! Discovery reads only a head and a tail window of each file, because a
 //! single rollout can run past 100 MB and a user can have hundreds of them.
+
+mod antigravity;
+mod cursor;
+mod entries;
+mod grok;
+mod hermes;
+mod openclaw;
+mod opencode;
+mod pi;
+mod sources;
+
+pub(crate) use sources::ExtraRoots;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, Read, Seek, SeekFrom};
@@ -49,8 +63,9 @@ pub enum ImportKind {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportCandidate {
-    /// `claude` or `codex`.
+    /// The provider id (`claude`, `codex`, `opencode`, ...).
     pub provider: &'static str,
+    /// The transcript file, or the database holding the conversation.
     pub path: String,
     pub provider_session_id: String,
     /// The folder the conversation ran in, as the transcript recorded it.
@@ -127,9 +142,31 @@ pub struct CodexTranscript {
 #[tauri::command]
 pub async fn import_discover(app: AppHandle) -> Result<DiscoveryReport, String> {
     let (claude, codex) = source_roots(&app)?;
-    tauri::async_runtime::spawn_blocking(move || discover_in(&claude, &codex))
+    let extra = ExtraRoots::detect();
+    tauri::async_runtime::spawn_blocking(move || discover_with(&claude, &codex, &extra))
         .await
         .map_err(|error| error.to_string())
+}
+
+/// The conversation `session_id` of `provider` stored at `path`, reduced to
+/// entries. `path` must be inside that provider's store.
+#[tauri::command]
+pub async fn import_read_entries(
+    provider: String,
+    path: String,
+    session_id: String,
+    max_bytes: usize,
+) -> Result<CodexTranscript, String> {
+    if !sources::PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!("History from {provider} cannot be imported"));
+    }
+    let roots = ExtraRoots::detect().allowed(&provider);
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = allowed_in(&path, &roots)?;
+        sources::read(&provider, &path, &session_id, max_bytes)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -222,14 +259,23 @@ fn source_roots(app: &AppHandle) -> Result<(PathBuf, Vec<PathBuf>), String> {
 
 /// Only files under the provider stores may be read through these commands.
 fn allowed_source(path: &str, roots: &[PathBuf]) -> Result<PathBuf, String> {
+    let canonical = allowed_in(path, roots)?;
+    if !is_log(&canonical) {
+        return Err("Not a Claude Code or Codex transcript".into());
+    }
+    Ok(canonical)
+}
+
+/// `path`, canonical, when it is a file inside one of `roots`.
+fn allowed_in(path: &str, roots: &[PathBuf]) -> Result<PathBuf, String> {
     let canonical =
         std::fs::canonicalize(path).map_err(|error| format!("Cannot read {path}: {error}"))?;
     let inside = roots
         .iter()
         .filter_map(|root| std::fs::canonicalize(root).ok())
         .any(|root| canonical.starts_with(root));
-    if !inside || !is_log(&canonical) {
-        return Err("Not a Claude Code or Codex transcript".into());
+    if !inside || !canonical.is_file() {
+        return Err("Not a conversation in a provider's history".into());
     }
     Ok(canonical)
 }
@@ -384,7 +430,16 @@ fn par_filter_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> Option<R> + S
 
 // --- discovery ------------------------------------------------------------
 
+#[cfg(test)]
 pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> DiscoveryReport {
+    discover_with(claude_projects, codex_roots, &ExtraRoots::default())
+}
+
+pub(crate) fn discover_with(
+    claude_projects: &Path,
+    codex_roots: &[PathBuf],
+    extra: &ExtraRoots,
+) -> DiscoveryReport {
     let started = Instant::now();
 
     let mut claude_files: Vec<(PathBuf, String)> = Vec::new();
@@ -427,7 +482,7 @@ pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> Di
         }
     }
 
-    let files_scanned = claude_files.len() + codex_files.len();
+    let mut files_scanned = claude_files.len() + codex_files.len();
     // One discovery at a time: a second caller (onboarding next to the import
     // dialog, a review and its commit) waits and then reads the cache the
     // first one filled instead of parsing every transcript again.
@@ -444,16 +499,21 @@ pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> Di
             scan_codex_file(path, *archived)
         })
     }));
-    let files_skipped = files_scanned - candidates.len();
+    let more = sources::discover(extra);
+    files_scanned += more.scanned;
+    candidates.extend(more.candidates);
+    let files_skipped = files_scanned.saturating_sub(candidates.len());
     let roots: Vec<&Path> = std::iter::once(claude_projects)
         .chain(codex_roots.iter().map(PathBuf::as_path))
+        .chain(more.file_roots.iter().map(PathBuf::as_path))
         .collect();
     forget_unlisted(
         &roots,
         claude_files
             .iter()
             .map(|(path, _)| path)
-            .chain(codex_files.iter().map(|(path, _)| path)),
+            .chain(codex_files.iter().map(|(path, _)| path))
+            .chain(more.files.iter()),
     );
     drop(gate);
 
@@ -515,6 +575,8 @@ pub(crate) fn discover_in(claude_projects: &Path, codex_roots: &[PathBuf]) -> Di
 enum ScanScope {
     Claude(String),
     Codex(bool),
+    /// Any other provider's one-file-per-conversation store.
+    Plain(&'static str),
 }
 
 /// A file that still has this size and modification time is taken to be the
@@ -581,6 +643,44 @@ fn scan_cached(
         },
     );
     candidate
+}
+
+/// A database's size and modification time, with its write-ahead log's: a
+/// write that is not yet checkpointed changes only the log.
+type DbStamp = (FileStamp, Option<FileStamp>);
+
+fn db_stamp(path: &Path) -> Option<DbStamp> {
+    let mut wal = path.as_os_str().to_os_string();
+    wal.push("-wal");
+    Some((file_stamp(path)?, file_stamp(Path::new(&wal))))
+}
+
+type DbScan = (DbStamp, &'static str, Vec<ImportCandidate>, usize);
+
+/// `scan`'s conversations and scanned-row count for the database at `path`,
+/// reused while neither it nor its log changed.
+fn scan_db_cached(
+    path: &Path,
+    provider: &'static str,
+    scan: impl FnOnce() -> (Vec<ImportCandidate>, usize),
+) -> (Vec<ImportCandidate>, usize) {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, DbScan>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    let Some(stamp) = db_stamp(path) else {
+        return scan();
+    };
+    if let Some((_, _, candidates, scanned)) = lock(cache)
+        .get(path)
+        .filter(|(cached, scope, _, _)| *cached == stamp && *scope == provider)
+    {
+        return (candidates.clone(), *scanned);
+    }
+    let (candidates, scanned) = scan();
+    lock(cache).insert(
+        path.to_path_buf(),
+        (stamp, provider, candidates.clone(), scanned),
+    );
+    (candidates, scanned)
 }
 
 /// Drops the entries under `roots` for files discovery no longer lists, so the

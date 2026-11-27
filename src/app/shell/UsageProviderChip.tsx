@@ -24,7 +24,6 @@ import {
 import {
   clampUsedPercent,
   formatResetCountdownWith,
-  formatResetDuration,
   formatUsagePercent,
   formatWindowLabel,
   rateLimitWindowTooltipWith,
@@ -1071,7 +1070,9 @@ function BankedResetRow({
                 ? t("Expiry not provided")
                 : credit.expiresAt <= now
                   ? t("Expired")
-                  : t("Expires in {p0}", { p0: formatResetDuration(credit.expiresAt - now) })}
+                  : t("Expires in {p0}", {
+                      p0: format.formatResetDuration(credit.expiresAt - now),
+                    })}
             </Text>
           </Tooltip>
         </div>

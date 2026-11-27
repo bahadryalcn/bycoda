@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 
-export const RECORDING_ENCODE_DEADLINE_MS = 120_000;
+export const RECORDING_ENCODE_DEADLINE_MS = 300_000; // 300 s at 60 fps is 18,000 frames
 /** Used only when Playwright ships no ffmpeg for this platform and no ffmpeg is on PATH. */
 export const FFMPEG_UNAVAILABLE =
   "Browser recording cannot run on this computer: Playwright has no ffmpeg build for this platform and no ffmpeg is on PATH. Install ffmpeg, add it to PATH, then record again.";

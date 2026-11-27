@@ -991,7 +991,10 @@ describe("model picker", () => {
     )!;
     expect(extras).not.toBeNull();
     expect(container.querySelector('[role="listbox"]')).toBeNull();
-    const toggle = extras.querySelector<HTMLInputElement>('button[role="switch"]')!;
+    // The advisor row has its own switch, so pick Fast's by name.
+    const toggle = extras.querySelector<HTMLInputElement>(
+      'button[role="switch"][aria-label="Fast"]',
+    )!;
     await act(async () => toggle.click());
     expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ fast: "true" }));
     await act(async () =>

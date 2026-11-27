@@ -199,6 +199,18 @@ describe("buildClaudeSpawnArgs", () => {
     expect(args).not.toContain("--permission-prompt-tool");
   });
 
+  it("pre-allows only the listed rules in isolated sessions and never when unset", () => {
+    expect(buildClaudeSpawnArgs({ isolated: true })).not.toContain("--allowedTools");
+    const args = buildClaudeSpawnArgs({
+      isolated: true,
+      allowedTools: ["WebFetch(domain:artificialanalysis.ai)"],
+    });
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("WebFetch(domain:artificialanalysis.ai)");
+    expect(args).toContain("--strict-mcp-config");
+    expect(args).not.toContain("--permission-prompt-tool");
+    expect(args).not.toContain("--allow-dangerously-skip-permissions");
+  });
+
   it("locks isolated read-only prompts to plan mode", () => {
     const args = buildClaudeSpawnArgs({
       isolated: true,

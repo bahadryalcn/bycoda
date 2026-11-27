@@ -298,6 +298,19 @@ it("marks the session's selected models and refuses unselected providers", async
   expect(generate).not.toHaveBeenCalled();
 });
 
+it("offers no image model and refuses generation while images are off", async () => {
+  const { call, generate, runAntigravity } = setup(png(), true, {
+    selected: [],
+    antigravity: "agy-model",
+  });
+  expect(await call("images.status")).toEqual({ models: [], off: true, remaining: 0 });
+  await expect(call("images.generate", { prompt: "x", path: "a.png" })).rejects.toThrow(
+    "Image generation is off",
+  );
+  expect(generate).not.toHaveBeenCalled();
+  expect(runAntigravity).not.toHaveBeenCalled();
+});
+
 it("runs Nano Banana in Antigravity when it is the selected model", async () => {
   const { root, call, generate, runAntigravity } = setup(png(), true, {
     selected: ["antigravity"],

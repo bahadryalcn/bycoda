@@ -7,8 +7,7 @@ import { useKeybindingShortcut } from "../../features/settings/model/useKeybindi
 import { VoiceLauncherSlot } from "../../features/voice/ui/companion/voiceLauncherSlot";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
-import { Badge } from "../../shared/ui/Badge";
-import { Settings, Wrench } from "../../shared/ui/icons";
+import { Settings } from "../../shared/ui/icons";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import styles from "./SidebarAccountFooter.module.css";
 
@@ -71,18 +70,6 @@ export function SidebarAccountFooter({
     <div data-sidebar-account-footer={compact ? "compact" : ""} className={styles.footer}>
       <div className={styles.actions}>
         <VoiceLauncherSlot compact={compact} />
-        {import.meta.env.DEV ? (
-          <Badge
-            data-dev-mode-indicator=""
-            size="sm"
-            tone="info"
-            appearance="subtle"
-            role="img"
-            aria-label={t("Development build")}
-          >
-            <Wrench className="icon-sm" strokeWidth={1.75} aria-hidden />
-          </Badge>
-        ) : null}
         <div className={styles.status}>
           {recoveryControl}
           <div className={styles.updateNotice}>{updateNotice}</div>

@@ -9,7 +9,9 @@ import { MoreHorizontal } from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import { AccountColorDot } from "../../../providers/public/accountIdentity";
 import { PROVIDER_ACCOUNT_COLORS } from "../../../providers/public/providerAccounts";
+import { useModelSource } from "../../../sessions/public/modelSource";
 import type { AccountGroup } from "./orderGrouping";
+import { entryAccountName } from "./useEntryAccount";
 
 /** The account a run of rows belongs to: colour, name, provider, live quota and account actions. */
 export function AccountGroupHeader({
@@ -30,11 +32,12 @@ export function AccountGroupHeader({
   onAddAll: () => void;
 }) {
   const t = useT();
+  const source = useModelSource();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const { account, harness, rows } = group;
   const label =
-    account?.label ??
+    (account ? entryAccountName(harness, account, source) : undefined) ??
     (group.accountId && group.accountId !== "default" && group.accountsKnown !== false
       ? t("Unavailable account")
       : HARNESS_TITLE[harness]);

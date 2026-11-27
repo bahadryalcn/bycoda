@@ -36,9 +36,12 @@ export function subscribeTokensMode(listener: () => void) {
     stopSharing();
   };
 }
-export function setTokensMode(mode: SharingMode) {
-  if (tokensMode.save(mode)) setAnonymousUsageEnabled(mode !== "off");
+export function setTokensMode(mode: SharingMode): boolean {
+  if (!tokensMode.save(mode)) return false;
+  setAnonymousUsageEnabled(mode !== "off");
+  return true;
 }
+const tokensPermission = { load: getTokensMode, save: setTokensMode };
 
 export function setAnonymousUsageEnabled(enabled: boolean): void {
   if (enabled !== isAnonymousUsageEnabled()) sharing.save(enabled ? Date.now() : 0);
@@ -123,7 +126,7 @@ async function sendCompletedDays(
         linkedToAccount: false,
         files: [jsonSharingFile("anonymous-usage.json", body.data)],
       },
-      getTokensMode,
+      tokensPermission,
       send,
       signal,
     );

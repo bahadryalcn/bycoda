@@ -1,68 +1,90 @@
+import type { ReactNode } from "react";
+import { Heading } from "../../../shared/ui/Heading";
 import { SkeletonBar } from "../../../shared/ui/Skeleton";
+import { SkeletonList, skeletonSpread } from "../../../shared/ui/SkeletonList";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import "./SettingsLoadingSurface.css";
 
-// Fixed, varied widths so the placeholder reads like real labels without inventing values.
-const TITLE_WIDTHS = ["34%", "46%", "28%", "40%", "52%", "38%"];
-const DESCRIPTION_WIDTHS = ["58%", "72%", "50%", "64%", "44%", "68%"];
-const CONTROL_WIDTHS = ["2.5rem", "9rem", "6rem", "9rem", "2.5rem", "7rem"];
-
 /**
- * Decorative copy of Settings rows: title and description on the left, a control (toggle or
- * select) on the right, hairlines between rows. `start` offsets widths and the pulse wave.
+ * Decorative copy of Settings topics for in-page loading: a heading above a framed group of
+ * rows (title, description, a mix of switches and selects), so the loaded page replaces it in
+ * place. `rows` is the total row count spread over the groups.
  */
-export function SettingsRowsSkeleton({ rows = 4, start = 0 }: { rows?: number; start?: number }) {
+export function SettingsGroupsSkeleton({ rows = 6, seed = 0 }: { rows?: number; seed?: number }) {
   return (
-    <div className="settings-skeleton-rows" aria-hidden="true">
-      {Array.from({ length: Math.max(1, Math.round(rows)) }, (_, offset) => {
-        const at = start + offset;
-        const control = CONTROL_WIDTHS[at % CONTROL_WIDTHS.length]!;
-        const toggle = control === "2.5rem";
-        return (
-          <div {...surfaceAttributes({ separator: "block" }, "settings-skeleton-row")} key={at}>
-            <div className="settings-skeleton-label">
-              <SkeletonBar width={TITLE_WIDTHS[at % TITLE_WIDTHS.length]} index={at} />
-              <SkeletonBar
-                width={DESCRIPTION_WIDTHS[at % DESCRIPTION_WIDTHS.length]}
-                height="0.5rem"
-                index={at}
-              />
-            </div>
-            <SkeletonBar
-              shape={toggle ? "pill" : "bar"}
-              width={control}
-              height={toggle ? "1.25rem" : "var(--ui-control-height-compact)"}
-              index={at}
-            />
-          </div>
-        );
-      })}
-    </div>
+    <SkeletonList
+      rows={rows}
+      groups={rows <= 3 ? 1 : 2}
+      heading
+      framed
+      lines={2}
+      trailing="control"
+      density="comfortable"
+      seed={seed}
+    />
   );
 }
 
 /**
- * Decorative copy of Settings topics for in-page loading: a heading above a framed group of rows,
- * so the loaded page replaces it in place. `rows` is the total row count spread over the groups.
+ * Copy of the whole Settings workbench while its code loads: the category rail on the left, the
+ * page title row with an optional `status` line, then framed topics in the content column. Same
+ * widths as the loaded view. Without a `title` the title row is a shape too, so the composing
+ * surface (a labelled Skeleton) owns the one busy status; only a given title and status reach
+ * assistive technology.
  */
-export function SettingsGroupsSkeleton({ rows = 6 }: { rows?: number }) {
-  const total = Math.max(1, Math.round(rows));
-  const sizes = total <= 3 ? [total] : [Math.ceil(total / 2), Math.floor(total / 2)];
+export function SettingsShellSkeleton({
+  title,
+  status,
+  seed = 0,
+}: {
+  title?: ReactNode;
+  status?: ReactNode;
+  seed?: number;
+}) {
   return (
-    <div className="settings-skeleton-groups" aria-hidden="true">
-      {sizes.map((size, group) => (
-        <div className="settings-skeleton-group" key={group}>
-          <SkeletonBar width={group === 0 ? "9rem" : "7rem"} index={group * sizes[0]!} />
-          <div
-            {...surfaceAttributes(
-              { variant: "card", frame: "card", radius: "card" },
-              "settings-skeleton-frame",
-            )}
-          >
-            <SettingsRowsSkeleton rows={size} start={group * sizes[0]!} />
+    <div className="settings-skeleton-shell">
+      <div
+        {...surfaceAttributes(
+          { variant: "workspace-panel", frame: "pane", edge: "inline-end" },
+          "settings-skeleton-rail",
+        )}
+        aria-hidden="true"
+      >
+        <div className="settings-skeleton-account">
+          <SkeletonBar shape="pill" width="1.75rem" height="1.75rem" />
+          <div className="settings-skeleton-account-text">
+            <SkeletonBar width="70%" height="0.625rem" />
+            <SkeletonBar width="50%" height="0.5rem" />
           </div>
         </div>
-      ))}
+        <SkeletonList
+          rows={14}
+          groups={3}
+          heading
+          leading="icon"
+          lines={1}
+          density="compact"
+          seed={seed + 7}
+        />
+      </div>
+      <div className="settings-skeleton-content">
+        <div className="settings-skeleton-title">
+          {title === undefined ? (
+            <span aria-hidden="true">
+              <SkeletonBar width={`${skeletonSpread(seed, 2000, 8, 12)}rem`} height="1.125rem" />
+            </span>
+          ) : (
+            <Heading size="page" truncate>
+              {title}
+            </Heading>
+          )}
+          <SkeletonBar shape="square" height="var(--ui-control-height-compact)" />
+        </div>
+        {status ? <div className="settings-skeleton-status">{status}</div> : null}
+        <div aria-hidden="true">
+          <SettingsGroupsSkeleton rows={7} seed={seed} />
+        </div>
+      </div>
     </div>
   );
 }

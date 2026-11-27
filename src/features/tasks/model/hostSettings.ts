@@ -22,11 +22,15 @@ export type AgentDefaults = {
   archiveMergedSessions: boolean;
   archiveInactiveDays: number;
 };
-export type AgentDefaultsRecord = AgentDefaults & { schemaVersion: 1; version: number };
+export type AgentDefaultsRecord = AgentDefaults & {
+  schemaVersion: 1;
+  version: number;
+};
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaultsRecord = {
   schemaVersion: 1,
   version: 0,
-  keepAwakeWhileAgentsWork: false,
+  // Agent runs survive idle sleep by default; closing the lid or choosing Sleep still works.
+  keepAwakeWhileAgentsWork: true,
   keepAwakeHoldAfter: "0",
   autoContinueInterrupted: true,
   resumeAtReset: true,

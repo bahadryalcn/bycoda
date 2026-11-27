@@ -7,11 +7,11 @@ import { Button } from "../../../shared/ui/Button";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Pencil, Trash2 } from "../../../shared/ui/icons";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { TextField } from "../../../shared/ui/TextField";
 import { Text } from "../../../shared/ui/Text";
-import { Row, Select } from "../../../shared/ui/settings";
+import { Group, Row, Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { useRecents } from "../../projects/public/recents";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import type { VoiceSettings } from "../model/voiceSettings";
@@ -108,6 +108,12 @@ export function DictationDictionarySettings({
       setSaveError(true);
     }
   };
+  const fullReason = t("The dictionary is full at {p0} terms. Remove a term to add another.", {
+    p0: String(DICTIONARY_LIMIT),
+  });
+  const duplicateReason = t(
+    "This term is already saved in this scope. Edit the saved term instead.",
+  );
   const scopeOptions = [
     { value: "", label: t("Shared across projects") },
     ...projects.map(({ path }) => ({
@@ -119,104 +125,35 @@ export function DictationDictionarySettings({
       : []),
   ];
   return (
-    <Row id="dictation-dictionary" label={t("Dictionary")} stacked>
-      <div className="flex min-w-0 flex-col gap-2">
-        {removeError ? (
-          <InlineError>{t("The term could not be removed. Try Remove again.")}</InlineError>
-        ) : null}
-        {entries.length === 0 ? (
-          <EmptyState
-            size="inline"
-            title={t("No saved terms")}
-            description={t("Add names or technical terms you use often.")}
-          />
-        ) : (
-          <>
-            <ContinuousList
-              stateKey="voice-dictation-dictionary"
-              label={t("Dictionary")}
-              items={rows}
-              itemKey={(row) => row.key}
-              requiredKey={editingIndex === null ? null : (rows[editingIndex]?.key ?? null)}
-              renderItem={({ entry, index }) => (
-                <div className="flex min-w-0 items-start gap-2 py-2">
-                  <div className="min-w-0 flex-1">
-                    <Text as="div" wrap="anywhere">
-                      {entry.term}
-                    </Text>
-                    <Text as="div" size="caption" tone="secondary" wrap="anywhere">
-                      {entry.projectId
-                        ? projectDisplayNameFrom(entry.projectId, labels)
-                        : t("Shared across projects")}
-                      {entry.aliases.length ? ` · ${entry.aliases.join(", ")}` : ""}
-                    </Text>
-                  </div>
-                  <Button
-                    iconOnly
-                    variant="ghost"
-                    size="sm"
-                    disabled={editing !== null}
-                    disabledReason={t("Save or cancel the term you are editing first.")}
-                    label={t("Edit {p0}", { p0: entry.term })}
-                    onClick={() => begin(index)}
-                  >
-                    <Pencil className="icon-sm" />
-                  </Button>
-                  <Button
-                    iconOnly
-                    variant="ghost"
-                    size="sm"
-                    tone="danger"
-                    disabled={editing !== null}
-                    disabledReason={t("Save or cancel the term you are editing first.")}
-                    label={t("Remove {p0}", { p0: entry.term })}
-                    onClick={() => {
-                      const dictationDictionary = entries.filter((_, item) => item !== index);
-                      try {
-                        change({ dictationDictionary });
-                        setRemoveError(
-                          JSON.stringify(loadVoiceSettings().dictationDictionary) !==
-                            JSON.stringify(dictationDictionary),
-                        );
-                      } catch {
-                        setRemoveError(true);
-                      }
-                    }}
-                  >
-                    <Trash2 className="icon-sm" />
-                  </Button>
-                </div>
-              )}
-            />
-          </>
-        )}
-        {editing === null ? (
-          <div className="flex min-w-0 flex-col gap-2">
-            <div>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={full}
-                disabledReason={t(
-                  "The dictionary is full at {p0} terms. Remove a term to add another.",
-                  {
-                    p0: String(DICTIONARY_LIMIT),
-                  },
-                )}
-                onClick={() => begin("new")}
-              >
-                {t("Add term")}
-              </Button>
-            </div>
-            {full ? (
-              <InlineMessage tone="warning">
-                {t("The dictionary is full at {p0} terms. Remove a term to add another.", {
-                  p0: String(DICTIONARY_LIMIT),
-                })}
-              </InlineMessage>
-            ) : null}
-          </div>
-        ) : (
+    <Group
+      id="dictation-dictionary"
+      title={t("Dictionary")}
+      description={t("Names and technical terms you use often.")}
+      action={
+        editing === null ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            // ui-drift-ignore: disabled-without-reason -- the group warning shows the limit while full
+            disabled={full}
+            onClick={() => begin("new")}
+          >
+            {t("Add term")}
+          </Button>
+        ) : undefined
+      }
+      feedback={
+        removeError ? (
+          <SettingsFeedback state="error">
+            {t("The term could not be removed. Try Remove again.")}
+          </SettingsFeedback>
+        ) : full ? (
+          <SettingsFeedback state="warning">{fullReason}</SettingsFeedback>
+        ) : undefined
+      }
+    >
+      {editing !== null ? (
+        <Row label={editing === "new" ? t("New term") : t("Edit term")} stacked>
           <div className="flex min-w-0 flex-col gap-3">
             <TextField
               label={t("Preferred spelling")}
@@ -248,14 +185,12 @@ export function DictationDictionarySettings({
                   !hasTerm
                     ? t("Enter a term first.")
                     : duplicateError
-                      ? t("This term is already saved in this scope. Edit the saved term instead.")
-                      : t("The dictionary is full at {p0} terms. Remove a term to add another.", {
-                          p0: String(DICTIONARY_LIMIT),
-                        })
+                      ? duplicateReason
+                      : fullReason
                 }
                 onClick={() => save()}
               >
-                {t("Save term")}
+                {t("Save")}
               </Button>
               {conflict ? (
                 <Button
@@ -266,12 +201,8 @@ export function DictationDictionarySettings({
                     !hasTerm
                       ? t("Enter a term first.")
                       : duplicateAnywhere
-                        ? t(
-                            "This term is already saved in this scope. Edit the saved term instead.",
-                          )
-                        : t("The dictionary is full at {p0} terms. Remove a term to add another.", {
-                            p0: String(DICTIONARY_LIMIT),
-                          })
+                        ? duplicateReason
+                        : fullReason
                   }
                   onClick={() => save(true)}
                 >
@@ -282,14 +213,10 @@ export function DictationDictionarySettings({
                 {t("Cancel")}
               </Button>
             </div>
-            {duplicateError ? (
-              <InlineError>
-                {t("This term is already saved in this scope. Edit the saved term instead.")}
-              </InlineError>
-            ) : null}
+            {duplicateError ? <InlineError>{duplicateReason}</InlineError> : null}
             {saveError ? (
               <InlineError>
-                {t("The term could not be saved. Your draft is kept. Try Save term again.")}
+                {t("The term could not be saved. Your draft is kept. Try Save again.")}
               </InlineError>
             ) : null}
             {conflict ? (
@@ -300,8 +227,74 @@ export function DictationDictionarySettings({
               </InlineError>
             ) : null}
           </div>
-        )}
-      </div>
-    </Row>
+        </Row>
+      ) : null}
+      {entries.length === 0 ? (
+        <EmptyState size="inline" inset="row" description={t("No terms yet.")} />
+      ) : (
+        <Row label={t("Terms")} stacked>
+          <ContinuousList
+            stateKey="voice-dictation-dictionary"
+            label={t("Dictionary")}
+            items={rows}
+            itemKey={(row) => row.key}
+            requiredKey={editingIndex === null ? null : (rows[editingIndex]?.key ?? null)}
+            renderItem={({ entry, index }) => (
+              <div className="flex min-w-0 items-start gap-2 py-2">
+                <div className="min-w-0 flex-1">
+                  <Text as="div" wrap="anywhere">
+                    {entry.term}
+                  </Text>
+                  {entry.projectId || entry.aliases.length ? (
+                    <Text as="div" size="caption" tone="secondary" wrap="anywhere">
+                      {[
+                        entry.projectId ? projectDisplayNameFrom(entry.projectId, labels) : "",
+                        entry.aliases.join(", "),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </Text>
+                  ) : null}
+                </div>
+                <Button
+                  iconOnly
+                  variant="ghost"
+                  size="sm"
+                  disabled={editing !== null}
+                  disabledReason={t("Save or cancel the term you are editing first.")}
+                  label={t("Edit {p0}", { p0: entry.term })}
+                  onClick={() => begin(index)}
+                >
+                  <Pencil className="icon-sm" />
+                </Button>
+                <Button
+                  iconOnly
+                  variant="ghost"
+                  size="sm"
+                  tone="danger"
+                  disabled={editing !== null}
+                  disabledReason={t("Save or cancel the term you are editing first.")}
+                  label={t("Remove {p0}", { p0: entry.term })}
+                  onClick={() => {
+                    const dictationDictionary = entries.filter((_, item) => item !== index);
+                    try {
+                      change({ dictationDictionary });
+                      setRemoveError(
+                        JSON.stringify(loadVoiceSettings().dictationDictionary) !==
+                          JSON.stringify(dictationDictionary),
+                      );
+                    } catch {
+                      setRemoveError(true);
+                    }
+                  }}
+                >
+                  <Trash2 className="icon-sm" />
+                </Button>
+              </div>
+            )}
+          />
+        </Row>
+      )}
+    </Group>
   );
 }

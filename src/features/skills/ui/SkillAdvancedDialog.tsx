@@ -27,7 +27,7 @@ export function SkillAdvancedDialog({ cwd, onClose }: { cwd: string; onClose: ()
   const rows: FolderRow[] = [
     ...(cwd ? [{ id: "project", label: t("Project"), path: joinPath(cwd, ".agents/skills") }] : []),
     ...(home
-      ? [{ id: "personal", label: t("Personal"), path: joinPath(home, ".agents/skills") }]
+      ? [{ id: "personal", label: t("All projects"), path: joinPath(home, ".agents/skills") }]
       : []),
   ];
   return (

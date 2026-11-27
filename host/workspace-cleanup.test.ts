@@ -223,7 +223,7 @@ async function setup(linkedAncestor = false) {
   writeFileSync(join(project, "source.txt"), "initial");
   git(project, "add", ".");
   git(project, "commit", "-q", "-m", "initial");
-  git(project, "worktree", "add", "-q", "-b", "bycoda/t/test", path, "HEAD");
+  git(project, "worktree", "add", "-q", "-b", "by/test", path, "HEAD");
   let workspace: ManagedWorkspace = {
     id: "workspace",
     repositoryId: join(project, ".git"),
@@ -231,7 +231,7 @@ async function setup(linkedAncestor = false) {
     environmentId: "local",
     owner: { kind: "task", id: "owner" },
     path,
-    branchRef: "refs/heads/bycoda/t/test",
+    branchRef: "refs/heads/by/test",
     baseRef: "refs/heads/main",
     baseCommit: git(project, "rev-parse", "HEAD"),
     targetBranchRef: "refs/heads/main",
@@ -361,7 +361,7 @@ it("detaches a node_modules junction before Git removal and preserves the outsid
   const receipt = await s.apply({ kind: "retentionScheduler" });
   expect(existsSync(s.path)).toBe(false);
   expect(readFileSync(join(sentinel, "sentinel.txt"), "utf8")).toBe("never delete");
-  expect(git(s.project, "rev-parse", "refs/heads/bycoda/t/test")).toBe(head);
+  expect(git(s.project, "rev-parse", "refs/heads/by/test")).toBe(head);
   expect(git(s.project, "rev-parse", ref)).toBe(head);
   expect(
     readFileSync(join(receipt.evidenceArchivePath!, "temp/verification/result.txt"), "utf8"),
@@ -409,7 +409,7 @@ it.skipIf(process.platform === "win32")(
     await s.apply({ kind: "retentionScheduler" });
     expect(existsSync(s.path)).toBe(false);
     expect(readFileSync(join(target, "sentinel"), "utf8")).toBe("preserve");
-    expect(git(s.project, "rev-parse", "bycoda/t/test")).toBe(head);
+    expect(git(s.project, "rev-parse", "by/test")).toBe(head);
   },
   120_000,
 );
@@ -663,7 +663,7 @@ it("settles a missing workspace directory while preserving both stale registrati
   const listed = git(s.project, "worktree", "list", "--porcelain").split(/\r?\n/);
   expect(listed).toContain(`worktree ${s.path.replaceAll("\\", "/")}`);
   expect(listed).toContain(`worktree ${sibling.replaceAll("\\", "/")}`);
-  expect(git(s.project, "branch", "--list", "bycoda/t/test")).toContain("bycoda/t/test");
+  expect(git(s.project, "branch", "--list", "by/test")).toContain("by/test");
 }, 120_000);
 it("returns an idempotent receipt and rejects payload reuse", async () => {
   const s = await setup();

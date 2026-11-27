@@ -122,4 +122,12 @@ describe("resolveHelpers", () => {
       withoutHelperSettings({ effort: "high", crossSubagents: "[]", crossAdvisor: "x" }),
     ).toEqual({ effort: "high" });
   });
+
+  it("keeps image models Off from a closer layer over a global selection", () => {
+    const delegation = layers({
+      global: { imageModels: '["codex"]' },
+      accounts: { "claude\nwork": { imageModels: "[]" } },
+    });
+    expect(resolveHelpers({ delegation, target: claude }).settings.imageModels).toBe("[]");
+  });
 });

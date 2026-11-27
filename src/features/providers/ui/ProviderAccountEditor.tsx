@@ -22,6 +22,8 @@ export type AccountEditor = {
   provider: ProviderAccountProvider | SharedCliAccountProvider;
   accountId: string;
   adding?: boolean;
+  /** An account already signed in on this computer: adding it names it, never signs in. */
+  existing?: { identity: ProviderAccountIdentity | null };
   label: string;
   color?: ProviderAccountColor;
   kind?: "personal" | "work";
@@ -32,7 +34,13 @@ export function ProviderAccountDialog(props: ComponentProps<typeof ProviderAccou
   return (
     <Modal
       size="sm"
-      title={props.editor.adding ? t("Add account") : t("Edit account")}
+      title={
+        props.editor.existing
+          ? t("Add existing account")
+          : props.editor.adding
+            ? t("Add account")
+            : t("Edit account")
+      }
       initialFocus='input[type="text"]'
       onClose={props.onCancel}
       closeDisabled={props.working && !props.editor.adding}
@@ -97,11 +105,11 @@ export function ProviderAccountEditor({
         variant="primary"
         tone="accent"
         loading={working}
-        loadingLabel={adding ? t("Waiting for browser…") : undefined}
+        loadingLabel={adding && !editor.existing ? t("Waiting for browser…") : undefined}
         disabled={working || incomplete}
         disabledReason={error}
       >
-        {adding ? t("Sign in and add") : t("Save")}
+        {editor.existing ? t("Add") : adding ? t("Sign in and add") : t("Save")}
       </Button>
     </ModalActions>
   );

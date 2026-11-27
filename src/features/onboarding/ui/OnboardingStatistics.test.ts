@@ -10,7 +10,7 @@ const stats = vi.hoisted(() => ({
 }));
 vi.mock("../../account", () => ({
   getStatsChoice: () => stats.choice,
-  setStatsChoice: stats.setChoice,
+  setStatisticsMode: stats.setChoice,
   statsDisclosure: () => "Shared statistics disclosure",
   subscribeAnonymousStats: () => () => undefined,
 }));
@@ -72,10 +72,10 @@ describe("OnboardingStatistics choice", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it("saves the chosen answer through setStatsChoice, keeping consent as an explicit choice", async () => {
+  it("saves yes as automatic sharing so the daily signal is not reviewed again", async () => {
     await render();
     await act(async () => option("Share anonymous statistics").click());
-    expect(stats.setChoice).toHaveBeenCalledWith("on");
+    expect(stats.setChoice).toHaveBeenCalledWith("auto");
     await act(async () => option("Don't share").click());
     expect(stats.setChoice).toHaveBeenLastCalledWith("off");
   });

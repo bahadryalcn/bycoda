@@ -1,29 +1,19 @@
-import { Badge } from "../../../shared/ui/Badge";
-import { Text } from "../../../shared/ui/Text";
-import { useRef, useState } from "react";
-import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { SelectTrigger } from "../../../shared/ui/Select";
+import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
 import { WandSparkles, X } from "../../../shared/ui/icons";
 import {
-  delegationNextValue,
+  delegationOptionHarness,
   isDelegationSetting,
   isImageModelsSetting,
   isSubagentSetting,
-  delegationOptionSelected,
-  crossDelegationSummary,
   delegationShortLabel,
   type DelegationOption,
 } from "../model/crossDelegation";
-import { catalogText } from "../model/catalogText";
 import type { ModelSetting } from "../model/models";
 import type { HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { ModelAccountNumber } from "./ModelAccountIdentity";
+import { ModelAccountLabel, ModelAccountNumber } from "./ModelAccountIdentity";
 import { HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
-import type { DropdownMenuItem, DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
-import { decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
+import { CROSS_ADVISOR_KEY, decodeAdvisor } from "../../../shared/model/host-contracts/delegation";
 import {
   IMAGE_MODEL_INFO,
   type ImageModelId,
@@ -31,105 +21,6 @@ import {
 
 const providerIcon = (harness: HarnessId | undefined) =>
   harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : undefined;
-
-/**
- * Subagents (any provider): checkbox rows in a menu that stays open while
- * several models are toggled.
- */
-export function DelegationSubagentsControl({
-  label,
-  setting,
-  values,
-  disabled,
-  disabledReason,
-  onChange,
-  appearance = "ghost",
-}: {
-  label: string;
-  setting: ModelSetting;
-  values: Record<string, string>;
-  disabled: boolean;
-  /** Translated reason the control is disabled. */
-  disabledReason?: string;
-  onChange: (value: string) => void;
-  /** `field` matches the bordered selects beside it on settings rows. */
-  appearance?: "ghost" | "field";
-}) {
-  const t = useT();
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const automatic = isSubagentSetting(setting) && (values[setting.id] ?? setting.value) === "auto";
-  const summary = automatic ? (
-    <Badge size="xs" tone="accent" icon={<WandSparkles className="icon-xs" />}>
-      {t("Automatic")}
-    </Badge>
-  ) : (
-    catalogText(t, crossDelegationSummary(setting, values))
-  );
-  const firstPicked = setting.options.find(
-    (option) => option.value && delegationOptionSelected(setting, values, option.value),
-  )?.value;
-  return (
-    <div className="flex min-w-0 flex-col items-end gap-1">
-      {appearance === "field" ? (
-        <SelectTrigger
-          ref={anchor}
-          type="button"
-          aria-label={label}
-          aria-haspopup="menu"
-          expanded={open}
-          data-state={open ? "open" : "closed"}
-          data-disabled={disabled || undefined}
-          disabled={disabled}
-          onClick={() => setOpen((next) => !next)}
-          className="bycoda-arc-select w-auto max-w-52"
-        >
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            {firstPicked || setting.options.some((option) => option.value === "") ? (
-              <span className="grid size-4 shrink-0 place-items-center">
-                <DelegationOptionIcon setting={setting} value={firstPicked ?? ""} />
-              </span>
-            ) : null}
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
-              {summary}
-            </Text>
-          </span>
-        </SelectTrigger>
-      ) : (
-        <Button
-          ref={anchor}
-          variant="ghost"
-          type="button"
-          aria-label={label}
-          aria-haspopup="menu"
-          expanded={open}
-          disabled={disabled}
-          disabledReason={disabledReason}
-          onClick={() => setOpen((next) => !next)}
-          className="w-[52%] max-w-46 min-w-0 shrink-0"
-        >
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {summary}
-          </Text>
-        </Button>
-      )}
-      {open ? (
-        <DropdownMenu
-          anchor={anchor}
-          label={label}
-          items={delegationMenuItems(setting, values, t)}
-          onPick={(id) => onChange(delegationNextValue(setting, values, id))}
-          onClose={() => setOpen(false)}
-          returnFocusRef={anchor}
-          side="bottom"
-          align="end"
-          width="content"
-          maxHeight={360}
-        />
-      ) : null}
-    </div>
-  );
-}
 
 /** The provider icon of one any-provider delegation option; nothing for Off. */
 export function DelegationOptionIcon({
@@ -161,74 +52,68 @@ export function DelegationOptionIcon({
   );
 }
 
-/** Any-provider model lists need room for "Provider · Model" labels. */
-export function settingMenuWidth(setting: ModelSetting, base: number): number {
-  return isDelegationSetting(setting) ? Math.max(base, 320) : base;
-}
-
-/** Shared single-line delegation rows; source label remains accessible. */
-function delegationMenuItems(
+/**
+ * One delegation choice rendered like the composer's model picker: provider icon, model name,
+ * the account as a numbered tag with its name, grouped by provider. Searchable by provider and
+ * account too. The account sits in its own slot, so it never overlaps the model name.
+ */
+export function delegationPickerOption(
   setting: ModelSetting,
-  values: Record<string, string>,
+  option: DelegationOption,
   t: (text: string) => string,
-): DropdownMenuItem[] {
-  const groups = new Map<string, DropdownMenuAction[]>();
-  const leading: DropdownMenuAction[] = [];
-  const options: DelegationOption[] = setting.options;
-  for (const option of options) {
-    const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
-    const provider = ref ? HARNESS_TITLE[ref.harness] : "";
-    const parts = option.label.split(" · ");
-    const subagent = isSubagentSetting(setting);
-    const primary = subagent
-      ? (option.modelLabel ?? t(option.label))
-      : provider && parts.length > 1
-        ? parts[1]
-        : t(option.label);
-    const secondary = subagent
-      ? option.accountLabel
-      : provider
-        ? [provider, ...parts.slice(2)].join(" · ")
-        : "";
-    const item: DropdownMenuAction = {
-      kind: "item",
-      id: option.value,
-      label: t(option.label),
-      title: subagent
-        ? delegationShortLabel(setting, option.value, t(option.label))
-        : t(option.label),
-      checked: delegationOptionSelected(setting, values, option.value),
-      selectionRole: "checkbox",
-      icon: (
-        <DelegationOptionIcon setting={setting} value={option.value} showAccountNumber={false} />
-      ),
-      content: (
-        <span className="flex min-w-0 flex-1 items-center gap-3">
-          <Text size="inherit" tone="inherit" truncate>
-            {primary}
-          </Text>
-          <ModelAccountNumber account={option} />
-          {secondary ? (
-            <Text size="caption" tone="muted" truncate>
-              {secondary}
-            </Text>
-          ) : null}
-        </span>
-      ),
-    };
-    if (!provider) leading.push(item);
-    else groups.set(provider, [...(groups.get(provider) ?? []), item]);
-  }
-  return [
-    ...leading,
-    ...Array.from(groups, ([provider, items]) =>
-      groups.size > 1 ? [{ kind: "group" as const, id: provider, label: provider, items }] : items,
-    ).flat(),
-  ];
+): SearchableSelectOption {
+  const harness = isImageModelsSetting(setting)
+    ? IMAGE_MODEL_INFO[option.value as ImageModelId]?.harness
+    : delegationOptionHarness(setting, option.value);
+  const provider = harness ? HARNESS_TITLE[harness] : undefined;
+  // An advisor model several accounts offer names its account, so the closed field tells them
+  // apart. An unavailable choice keeps its full "Unavailable: …" label.
+  const advisorLabel =
+    setting.id === CROSS_ADVISOR_KEY && option.modelLabel
+      ? delegationSelectChoice(setting, option, t).label
+      : undefined;
+  const name = option.modelLabel ?? delegationShortLabel(setting, option.value, t(option.label));
+  const label = advisorLabel ?? name;
+  return {
+    value: option.value,
+    label,
+    keywords: [provider, option.accountLabel, option.detail].filter(Boolean).join(" "),
+    icon: providerIcon(harness),
+    meta: option.accountLabel ? (
+      label === name ? (
+        <ModelAccountLabel account={{ ...option, accountLabel: option.accountLabel }} />
+      ) : (
+        <ModelAccountNumber account={option} />
+      )
+    ) : undefined,
+    description: option.detail,
+    group: provider,
+    disabled: "disabled" in option && option.disabled === true,
+  };
 }
 
+/** Picker options for every model choice of a setting, deduplicated and grouped by provider. */
+export function delegationPickerOptions(
+  setting: ModelSetting,
+  t: (text: string) => string,
+): SearchableSelectOption[] {
+  const seen = new Set<string>();
+  const options = setting.options.flatMap((option) => {
+    const choice = isImageModelsSetting(setting)
+      ? option.value !== ""
+      : !!decodeAdvisor(option.value);
+    if (!choice || seen.has(option.value)) return [];
+    seen.add(option.value);
+    return [delegationPickerOption(setting, option, t)];
+  });
+  // Consecutive options share a heading, so keep each provider's rows together in first-seen order.
+  const order = [...new Set(options.map((option) => option.group))];
+  return options.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
+}
+
+/** The account of a model choice: its numbered colour tag and name, as the composer shows it. */
 /** Model as primary text, provider/account as quiet same-line metadata. */
-export function delegationSelectChoice(
+function delegationSelectChoice(
   setting: ModelSetting,
   option: ModelSetting["options"][number],
   t: (text: string) => string,

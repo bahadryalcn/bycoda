@@ -115,8 +115,14 @@ windows-sys = { version = "0.61", features = [
   "Win32_UI_Shell",
 ] }
 tauri-winrt-notification = "0.8"
-# WinRT toast settings (Windows.UI.Notifications) to read the per-app block.
-windows = { version = "0.62", features = ["UI_Notifications"] }
+# WinRT toast settings (Windows.UI.Notifications) to read the per-app block, and the
+# system voice rendered to WAV (Windows.Media.SpeechSynthesis) for a chosen audio output.
+windows = { version = "0.62", features = [
+  "Media_Core",
+  "Media_SpeechSynthesis",
+  "Storage_Streams",
+  "UI_Notifications",
+] }
 # WebView2 ProcessFailed handler; already in the tree through tauri-runtime-wry.
 webview2-com = "0.39"
 

@@ -82,7 +82,7 @@ function knownSetting(provider: RemoteProvider, id: string): ModelSetting | unde
     if (id === "serviceTier")
       return {
         id,
-        label: "Service Tier",
+        label: "Service tier",
         kind: "select",
         value: "default",
         options: [choice("default", "Standard"), choice("fast", "Fast")],

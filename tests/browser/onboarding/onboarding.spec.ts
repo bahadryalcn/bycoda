@@ -141,7 +141,7 @@ test("finds existing accounts, links another profile and lets the user choose a 
   await expect(codex.locator(".onboarding-agent-status")).toHaveText("Not signed in");
   await expect(codex.getByRole("button", { name: "Sign in to Codex", exact: true })).toBeEnabled();
   await claude.getByRole("button", { name: "More options for Claude Code", exact: true }).click();
-  await page.getByRole("button", { name: "Terminal account profiles", exact: true }).click();
+  await page.getByRole("button", { name: "Add existing account", exact: true }).click();
   await expect(page.getByText("D:/profiles/claude", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Use account", exact: true }).click();
   await expect
@@ -157,7 +157,7 @@ test("finds existing accounts, links another profile and lets the user choose a 
   // Escape closes one layer at a time: the profiles popover, then the provider's options.
   await page.keyboard.press("Escape");
   await expect(
-    page.getByRole("dialog", { name: "Terminal account profiles", exact: true }),
+    page.getByRole("dialog", { name: "Accounts on this computer", exact: true }),
   ).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(

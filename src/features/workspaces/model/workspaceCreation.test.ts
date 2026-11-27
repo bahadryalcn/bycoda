@@ -12,7 +12,7 @@ import {
 } from "./workspaceClient";
 import { listWorktrees } from "../../source-control/model/worktrees";
 import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
-import { gitHistory } from "../../../platform/tauri/fs";
+import { gitHistory, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { notifyRemoteRecovered } from "../../connections/model/remoteHealth";
 import { remotePath } from "../../connections/model/remoteProjects";
 import { projectlessMachineProject } from "../../connections/model/sessionMachineTarget";
@@ -47,6 +47,7 @@ vi.mock("../../source-control/model/worktrees", () => ({ listWorktrees: vi.fn() 
 vi.mock("../../source-control/model/gitIndexStore", () => ({ fetchGitIndex: vi.fn() }));
 vi.mock("../../../platform/tauri/fs", () => ({
   gitHistory: vi.fn(),
+  isGitWatched: vi.fn(() => true),
   subscribeGitChanged: vi.fn(() => () => {}),
 }));
 
@@ -111,6 +112,8 @@ it("previews the committed policy baseline and counts unique excluded paths incl
     baseRef: "refs/heads/main",
     baseCommit: "main-sha",
     excludedPaths: 3,
+    baseFromRemote: false,
+    baseLabel: "main",
   });
   expect(workspaceRequest).toHaveBeenCalledWith(
     "projects.workspacePolicy.get",
@@ -118,6 +121,11 @@ it("previews the committed policy baseline and counts unique excluded paths incl
     expect.anything(),
   );
   expect(workspaceRequest).toHaveBeenCalledTimes(1);
+});
+
+it("labels a start from the fetched upstream", async () => {
+  const result = await loadWorkspaceCreation("/project", undefined, undefined, true);
+  expect(result.preview).toMatchObject({ baseFromRemote: true, baseLabel: "From main (remote)" });
 });
 
 it("looks up an explicitly selected remote branch without creating a worktree", async () => {
@@ -333,4 +341,94 @@ it("keeps an explicit worktree policy failure as an error", async () => {
   vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy unavailable"));
   await renderCreation("worktree");
   expect(state.error).toBe("Policy unavailable");
+});
+
+it("lands a result while Git change events keep arriving instead of restarting the load forever", async () => {
+  let release!: (value: never) => void;
+  vi.mocked(fetchGitIndex).mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+  await renderCreation("worktree");
+  expect(state.pending).toBe(true);
+  expect(subscribeGitChanged).toHaveBeenCalledWith(expect.any(Function), {
+    cwd: "/project",
+    refsOnly: true,
+  });
+  const notify = vi.mocked(subscribeGitChanged).mock.calls[0][0] as () => void;
+  // A busy checkout fires change events faster than the preview loads.
+  await act(async () => {
+    notify();
+    notify();
+    notify();
+  });
+  expect(state.pending).toBe(true);
+  expect(fetchGitIndex).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    release({ head: "main-sha", branch: "main", files: [], conflicts: [] } as never),
+  );
+  expect(state.pending).toBe(false);
+  expect(state.preview?.baseCommit).toBe("main-sha");
+  // The coalesced refresh ran once more after the first load settled and keeps the result visible.
+  expect(fetchGitIndex).toHaveBeenCalledTimes(2);
+});
+
+const indexListener = () =>
+  vi.mocked(subscribeGitChanged).mock.calls.find((call) => !call[1]?.refsOnly)![0] as (
+    change?: { scope: string } | null,
+  ) => void;
+
+it("updates excludedPaths on an index event without rerunning the full preview chain", async () => {
+  vi.useFakeTimers();
+  await renderCreation("worktree");
+  expect(state.preview?.excludedPaths).toBe(3);
+  const loads = vi.mocked(workspaceRequest).mock.calls.length;
+  vi.mocked(fetchGitIndex).mockClear();
+  vi.mocked(fetchGitIndex).mockResolvedValue({
+    head: "main-sha",
+    branch: "main",
+    files: [{ relative: "a" }],
+    conflicts: [],
+  } as never);
+  await act(async () => indexListener()({ scope: "index" }));
+  expect(state.pending).toBe(false);
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(state.preview?.excludedPaths).toBe(1);
+  expect(state.pending).toBe(false);
+  expect(fetchGitIndex).toHaveBeenCalledTimes(1);
+  expect(workspaceRequest).toHaveBeenCalledTimes(loads);
+  expect(listWorktrees).toHaveBeenCalledTimes(1);
+});
+
+it("collapses a burst of index events into one dirty-file count read", async () => {
+  vi.useFakeTimers();
+  await renderCreation("worktree");
+  vi.mocked(fetchGitIndex).mockClear();
+  await act(async () => {
+    for (let i = 0; i < 20; i++) {
+      indexListener()({ scope: "index" });
+      await vi.advanceTimersByTimeAsync(100);
+    }
+  });
+  expect(fetchGitIndex).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+  expect(fetchGitIndex).toHaveBeenCalledTimes(1);
+});
+
+it("lands a full load while index events keep arriving", async () => {
+  vi.useFakeTimers();
+  let release!: (value: never) => void;
+  vi.mocked(fetchGitIndex).mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+  await renderCreation("worktree");
+  expect(state.pending).toBe(true);
+  await act(async () => {
+    for (let i = 0; i < 10; i++) {
+      indexListener()({ scope: "index" });
+      await vi.advanceTimersByTimeAsync(600);
+    }
+  });
+  expect(state.pending).toBe(true);
+  expect(fetchGitIndex).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    release({ head: "main-sha", branch: "main", files: [], conflicts: [] } as never),
+  );
+  expect(state.pending).toBe(false);
+  expect(state.preview?.baseCommit).toBe("main-sha");
 });

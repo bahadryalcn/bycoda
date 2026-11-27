@@ -77,6 +77,60 @@ it("only requests closed recovery after an explicit owner action", async () => {
   expect(recovery.recoverClosed).toBe(true);
 });
 
+it("offers owner rebuild when the live policy diverged from the saved one", async () => {
+  vi.resetModules();
+  mocks.invoke.mockReset();
+  mocks.scope.mockReturnValue({ stableStorageKeys: { groups: [] } });
+  const diverged = "Privacy policy has not been acknowledged by this window";
+  mocks.invoke.mockImplementation((command: string) =>
+    command === "control_privacy_projection_read"
+      ? Promise.resolve({ revision: 4 })
+      : Promise.reject(new Error(diverged)),
+  );
+  const model = await import("./roomPrivacyProjection");
+  model.activateRoomPrivacyProjection();
+  await vi.waitFor(() => expect(model.getRoomPrivacyStatus().error).toBe(diverged));
+  expect(model.canRetryRoomPrivacyProjection()).toBe(false);
+  expect(model.canRebuildRoomPrivacyProjection()).toBe(true);
+  mocks.invoke.mockResolvedValue({ revision: 5 });
+  await model.rebuildClosedRoomPrivacyProjection();
+  const recovery = mocks.invoke.mock.calls
+    .filter(([command]) => command === "control_privacy_projection_transition")
+    .at(-1)![1];
+  expect(recovery.recoverClosed).toBe(true);
+  expect(model.getRoomPrivacyStatus().error).toBeNull();
+  model.deactivateRoomPrivacyProjection();
+});
+
+it("rebases a change that failed inside its lease onto an owner rebuild", async () => {
+  vi.resetModules();
+  mocks.invoke.mockReset();
+  mocks.scope.mockReturnValue({ stableStorageKeys: { groups: [] } });
+  const diverged = "Privacy policy has not been acknowledged by this window";
+  mocks.invoke.mockResolvedValue({ revision: 4 });
+  const model = await import("./roomPrivacyProjection");
+  model.activateRoomPrivacyProjection();
+  await vi.waitFor(() => expect(model.getRoomPrivacyStatus().pending).toBe(false));
+  mocks.invoke.mockImplementation((command: string) =>
+    command === "control_privacy_projection_begin"
+      ? Promise.reject(new Error(diverged))
+      : Promise.resolve({ revision: 4 }),
+  );
+  await expect(model.withRoomPrivacyMutation(() => "folder")).rejects.toThrow(diverged);
+  const held = mocks.invoke.mock.calls
+    .filter(([command]) => command === "control_privacy_projection_begin")
+    .at(-1)![1].operationId;
+  expect(model.canRebuildRoomPrivacyProjection()).toBe(true);
+  mocks.invoke.mockResolvedValue({ revision: 5 });
+  await model.rebuildClosedRoomPrivacyProjection();
+  const recovery = mocks.invoke.mock.calls
+    .filter(([command]) => command === "control_privacy_projection_transition")
+    .at(-1)![1];
+  expect(recovery).toMatchObject({ expected: 5, recoverClosed: true, rebaseFrom: held });
+  expect(recovery.operationId).not.toBe(held);
+  model.deactivateRoomPrivacyProjection();
+});
+
 it("keeps the recovery payload unchanged after an uncertain acknowledgement", async () => {
   vi.resetModules();
   mocks.invoke.mockReset();

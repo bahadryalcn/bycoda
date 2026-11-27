@@ -57,7 +57,8 @@ it("shows one compact status and an accent update action with version columns", 
   );
   expect(html).toContain("provider-cli-status");
   expect(html).toContain("0.94.0");
-  expect(html).toContain("Update available");
+  // The Update button says it; no second status mark.
+  expect(html).not.toContain('role="img"');
   // The latest version rides in the Update button tooltip, not a second visible column.
   expect(html).toContain("Update</span>");
   expect(html).not.toContain("settings-row");

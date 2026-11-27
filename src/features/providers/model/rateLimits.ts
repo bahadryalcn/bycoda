@@ -17,6 +17,16 @@ export function formatUsagePercent(usedPercent: number): string {
 }
 
 /**
+ * The percent shown for a quota value in rows and the history legend: whole numbers, with the
+ * edges kept honest (a little used never reads 0%, a little left never reads 100%).
+ */
+export function formatQuotaPercent(value: number): string {
+  if (value > 0 && value < 1) return "<1%";
+  if (value > 99 && value < 100) return ">99%";
+  return `${Math.round(value)}%`;
+}
+
+/**
  * Compact window-size label. 10080 minutes stays "wk" to match the
  * original status-bar copy.
  */

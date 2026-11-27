@@ -75,6 +75,8 @@ export function VoiceWakeRows({
         description={t(
           "Start and end a conversation with your voice. Waiting for the wake phrase uses the local voice pack and keeps audio on this device.",
         )}
+        modified={enabled}
+        onReset={() => change({ wakeEnabled: false })}
       >
         <Toggle
           label={t("Wake and sleep phrases")}

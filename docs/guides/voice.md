@@ -6,11 +6,11 @@ adds its key), **Microphone** (the input device and **Record test**) and one **M
 options** with **Speaker**, **ElevenLabs voice ID**, **Processing**, **Visual style**
 and **Wake and sleep phrases**. With the companion on, the **Conversation** group holds
 **Wait before replying** (it includes **I end my turn**), **Memory** with **Manage**,
-an **Assistant settings** link and one **More options** with **I may interrupt speech**,
-**Remove filler words in replies**, **Hold spoken progress updates**, **Sleep voice
-when I'm idle**, **Call me when I return** and, for OpenAI Realtime, **Experimental
-OpenAI turn detection**. The **Dictation** group holds **Enable dictation**,
-**Dictation recognition** and its own **More options**. Opening settings never starts
+an **Assistant settings** link and one **More options** with **Interrupt replies by speaking**,
+**Remove filler words in replies**, **Hold spoken progress updates**, **Turn voice off
+when idle**, **Greet me when I return** and, for OpenAI Realtime, **Experimental
+OpenAI turn detection**. The **Dictation** group holds the **Dictation** switch,
+**Recognition** and its own **More options**. Opening settings never starts
 capture. A cloud provider shows a sentence saying that audio is sent to it.
 
 **Assistant settings** is the one place for the assistant's name, how it addresses
@@ -23,6 +23,10 @@ Choose the **Microphone** independently of assistant setup. **Record test** reco
 to ten seconds locally; **Play recording** lets you hear the input. Audio is never
 transcribed or uploaded by this test. Discarding, changing microphones or leaving
 the screen releases capture and removes the recording.
+
+**Audio output** chooses where spoken replies play; **System default** follows the
+operating system. On Windows the desktop app renders **System voice** replies itself so
+they follow the chosen output too; elsewhere they play on the system default.
 
 With the message composer focused, use **Voice: Dictate**, initially Ctrl+Shift+M
 on Windows/Linux or Command+Shift+M on macOS. Rebind or disable it in Keybindings.
@@ -42,10 +46,10 @@ value and show Retry beside the failed setting. A settings search for a dictatio
 setting opens **More options** and shows the row; the wake and sleep phrases need
 voice turned on first.
 
-**Clean up dictated text** is off by default. When enabled, it sends the recognized
+**Clean up text with Codex** is off by default. When enabled, it sends the recognized
 phrase and your cleanup instructions to a separate Codex utility turn. Surrounding
 drafts are not sent. Choose its model, optional correction phrase and whether to
-translate to English in the rows under **Clean up dictated text**. Failed cleanup keeps the
+translate to English in the rows under **Clean up text with Codex**. Failed cleanup keeps the
 recognized text, and cancelled dictation cannot insert a late result. This uses
 the existing isolated utility runner and its provider restrictions.
 
@@ -61,7 +65,7 @@ stretched forms, with their trailing comma or ellipsis. Filtering
 is on by default. Turning it off transcribes bounded audio chunks, including quiet
 audio, and does not provide live previews while recording.
 
-Under **Dictation recognition**, choose **This computer**; the local model list appears below it.
+Under **Recognition**, choose **This computer**; the local model list appears below it.
 Search or filter the Handy model catalog by language and installation status, or sort
 by size. It includes Whisper, Nemotron, Qwen, Parakeet, Canary and other GGUF model
 families. The existing Faster Whisper Small and Turbo models remain available.
@@ -86,9 +90,9 @@ never starts voice. Readiness comes from a successful check; a failed refresh
 clears the previous runtime observation. Activity is unknown when the current
 window cannot observe it, and running only when a live voice operation is known.
 
-Voice is **off by default**. Enable **Settings → Voice assistant → Enable voice companion** on
+Voice is **off by default**. Enable **Settings → Voice assistant → Voice assistant** on
 this device. When disabled, no voice launcher or companion is shown in chat.
-**Enable dictation** is a separate device preference in the same section. Turning
+**Dictation** is a separate device preference in the same section. Turning
 voice companion off does not turn dictation off, and enabling dictation does not
 enable the companion or its tools.
 Disabling it unmounts the companion, cancels pending speech and side replies,
@@ -99,7 +103,10 @@ voice and later open the companion. After setup it shows the assistant's avatar
 and name (the narrow rail shows the avatar alone). The avatar has no dot while
 voice is off. The dot pulses green during a connected call, turns yellow while
 connecting, red on an error and grey in standby. Muting the microphone keeps the
-call connected. The microphone button stays selected while muted, and the call
+call connected. Right-click the microphone or speaker button, or open the options
+menu, to switch the **Microphone** or **Audio output** device without opening
+settings. Both switch during a live call without ending it; if the new microphone
+cannot open, the call returns to the previous one. The microphone button stays selected while muted, and the call
 still shows when the assistant is preparing or playing a reply. When
 no sidebar is visible the button floats at the bottom right of the window. For a new
 assistant, work through the setup steps: **Identity**, **Voice provider**
@@ -133,8 +140,8 @@ Sign-in, billing and microphone permission failures require your action.
 **Stop**, **Disconnect voice** and sleep cancel any scheduled reconnect. A muted
 microphone stays muted. Escape closes menus without disconnecting voice.
 
-Voice sleeps after ten minutes without input by default. Change **Sleep voice
-when I'm idle** in Voice settings; **Never** disables idle sleep. On Windows,
+Voice sleeps after ten minutes without input by default. Change **Turn voice off
+when idle** in Voice settings; **Never** disables idle sleep. On Windows,
 screen lock also puts voice to sleep. Returning shows **Ready. Microphone is
 off.** Press **Talk** to reopen it. Sleep and disconnect do not stop coding work.
 Native idle and lock detection currently supports Windows. Browser sessions can
@@ -307,7 +314,7 @@ Quiet hours, Away/Do not disturb and held announcements prevent this. **Talk**
 still opens the microphone; otherwise the output-only session sleeps after a
 minute. Explicit Disconnect stays off.
 
-Turn on **Call me when I return** (Voice settings, Conversation, **More options**; off by default) and the
+Turn on **Greet me when I return** (Voice settings, Conversation, **More options**; off by default) and the
 assistant speaks first when you come back: the welcome-back briefing if one is
 waiting, otherwise a short greeting. The microphone then opens for a fixed 20 seconds. If you answer, the conversation
 continues. If not, the microphone closes, the panel shows **I called you but you
@@ -631,7 +638,7 @@ for transcription and is not written to recordings or logs.
 
 ## Dictation in the message box
 
-Enable **Settings → Voice assistant → Enable dictation** to show a microphone button next to
+Enable **Settings → Voice assistant → Dictation** to show a microphone button next to
 Send. It works even when voice companion is disabled. Both features default to off
 on a new device. Existing voice users retain dictation after upgrading; after that,
 each switch is independent. Disabling dictation cancels capture and pending
@@ -643,7 +650,7 @@ update is then inserted at the caret instead. Select the button again to stop;
 anything you were still saying is transcribed before the microphone closes.
 Nothing is sent until you press Send, so you can edit the text first.
 
-**Dictation recognition** chooses who recognizes speech:
+**Recognition** chooses who recognizes speech:
 
 - **This computer** (default) uses only speech recognition from your voice
   installation. It does not load the natural reply voice and does not ask a
@@ -673,7 +680,7 @@ footer shows **Dictating in** with the session name. Select it to return, or
 select stop to finish what was said and close the microphone. Errors, such as a missing installation or a
 blocked microphone, appear above the message box.
 
-With only dictation enabled, **Dictation setup** installs recognition support
+With only dictation enabled, **Setup** installs recognition support
 without reply-voice packages or models. Existing Python/model locations and voice
 companion playback preferences are retained. Detection never installs anything;
 choose **Install** explicitly to prepare missing files.

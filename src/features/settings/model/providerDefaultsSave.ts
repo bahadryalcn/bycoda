@@ -39,7 +39,6 @@ import {
 import {
   overlaySessionDefaults,
   parseAccountDraftKey,
-  targetProjects,
   type DefaultsDraft,
   type DefaultsTarget,
   type ProviderDefaultsChange,
@@ -152,9 +151,7 @@ export function saveDefaultsDraft(
         writeGlobal(draft, checks);
         return;
       }
-      const projects = targetProjects(target);
-      if (projects.length === 0) throw new Error("This group has no projects yet.");
-      for (const project of projects) writeProject(project, draft);
+      writeProject(target.path, draft);
       checks.push(projectProviderSettingsPersisted);
     },
     () => checks.every((check) => check()),
@@ -190,12 +187,11 @@ export async function saveDefaultsTargetsWithDelegation(
 ) {
   const saved: DefaultsTarget[] = [];
   const failed: { target: DefaultsTarget; message: string }[] = [];
-  const editsDelegation = [
-    ...Object.values(draft.providers),
-    ...Object.values(draft.accounts),
-  ].some((change) =>
-    MODEL_ROUTING_DELEGATION_KEYS.some((key) => change?.extras?.[key] !== undefined),
-  );
+  const editsDelegation =
+    Object.keys(draft.delegation ?? {}).length > 0 ||
+    [...Object.values(draft.providers), ...Object.values(draft.accounts)].some((change) =>
+      MODEL_ROUTING_DELEGATION_KEYS.some((key) => change?.extras?.[key] !== undefined),
+    );
   for (const target of targets) {
     try {
       const state =

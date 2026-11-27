@@ -8,6 +8,14 @@ Token totals and recorded time appear as soon as the local logs are read. Cost e
 use built-in prices until the model price list arrives. Open **Limits** to load quotas and
 budget rules. Switching between Usage tabs preserves an unfinished budget edit.
 
+With other machines saved under **Connections > Computers**, Usage also reads their
+provider logs through each machine's Host and adds them to every figure. The **Machine**
+menu next to the date range shows all machines, this computer or one machine, and
+**Group by > Machine** splits charts per machine. Each machine's accounts are named
+after the machine. Other machines cover at most their last 90 days, a machine that
+does not answer is named in a warning and left out of the totals, and recorded
+session time stays this computer's own.
+
 Custom periods use the shared date/time range field. Select two calendar days or a
 preset, adjust the Start or End hour/minute columns, then Apply. The end instant is
 exclusive. Typing local `YYYY-MM-DDTHH:mm` endpoints remains available; invalid or

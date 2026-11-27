@@ -51,14 +51,14 @@ with unsaved changes asks: **Save and leave**,
 **Discard and leave** or **Keep editing**.
 While a save is committing, wait for it to finish before leaving or discarding.
 
-**Prepare setup draft** uses the built-in rules. Open the provider icon beside **Plan setup with AI**
-to see or change the planning model, account, effort or speed.
+Above the Jobs, Models & order, Groups and Limits tabs, **Set up with rules** uses the built-in rules. The planning model beside **Set up with AI** (**Automatic** until you pick one) opens
+to change the model, account, effort or speed.
 You can cancel a running setup. Both actions prepare a draft for review before **Save changes**.
 With an empty model list, Background work opens on **Models & order**; **Jobs** can
 still bind fixed models without building a model order.
 
-- **Background work** has five tabs over one draft with one Save: **Jobs**, **Models &
-  order**, **Groups**, **Agents** and **Limits**. A dot on a tab marks unsaved changes in
+- **Background work** has four tabs over one draft with one Save: **Jobs**, **Models &
+  order**, **Groups** and **Limits**. A dot on a tab marks unsaved changes in
   it. When Save is refused for one model, the save bar's **Show** link opens **Models &
   order** and highlights that row.
   - **Jobs** binds task workers and reviewers, goal planners and final reviews, stewards,
@@ -79,25 +79,31 @@ still bind fixed models without building a model order.
     Each model holds its options, how much quota to keep for your own use and what happens
     when a quota is unknown; the first model new work would start on carries a **Next**
     badge and skipped models show why. Tick rows to **Remove**, **Set effort...** or **Add
-    to group...** in bulk; Escape clears the selection. **Prepare setup draft**, **Sort**
-    and **Add model** are actions here.
+    to group...** in bulk; Escape clears the selection. **Sort** and **Add model** are
+    actions here; setup sits above all tabs.
   - **Groups** are named, ordered subsets of the list; a group can include other groups
-    (its own models first, then each included group, repeats dropped). A group's **Effort**
-    (Default, Low, Medium, High) applies at run start to every model that supports it.
-    Open a group to edit its members. Drag their grips or use **Alt+Up** and **Alt+Down**
-    to reorder models or included groups. Add models to a group in bulk from **Models & order**.
-  - **Agents** holds the subagent, advisor, effort ceiling and image-model defaults for
-    unattended work, with provider and account overrides.
+    (its own models first, then each included group, repeats dropped). Every group is shown
+    open. Each model in a group uses the model picker: change the model or account there, and
+    set its effort and speed for runs on that group without changing its row in the model
+    order. **Add model** opens the picker; a model that is not in the order yet is added to
+    the end of the order. **Include group** adds another group. Drag the grips or use
+    **Alt+Up** and **Alt+Down** to reorder models or included groups. Add models to a group in
+    bulk from **Models & order**.
   - **Limits** holds concurrent tasks, daily agent minutes, the default maximum run time and
     token and cost caps. Choose **All providers** for a combined cap or pick a provider
     to edit its caps. When the Host can attribute usage, **Plan share by job** estimates how much of each account's 5-hour or
     weekly window the biggest jobs used.
 - **Defaults** manages what new conversations start with (provider, account, model,
-  effort, permissions and provider extras) and, in its **Subagents** section, delegation
-  defaults: subagents, advisor, subagent effort ceiling and image models. Global
-  delegation defaults apply to chats and unattended work; provider, account and explicit
-  item settings override them in that order. Project, group and workspace overrides apply
-  to chats only.
+  effort, permissions and provider extras) and, in **Helpers and delegation**, the
+  subagents, advisor, subagent effort ceiling and image models. This is the only place
+  to edit them. With **All projects** selected, **Applies to** picks **All providers**
+  (one shared value for every provider) or the selected provider (its own values). Going
+  back to **All providers** drops that provider's own values. An account's values come
+  from the **Account** choice. These apply to chats and unattended work; provider,
+  account and explicit item settings override **All providers** in that order. A provider
+  or account value equal to what it inherits is removed on the next save, so a later
+  **All providers** change reaches it. Project, group and workspace values apply to
+  chats only.
 - **Providers** holds the provider list and, for the selected provider, accounts,
   version and updates, runtime path and its model catalog.
 
@@ -155,6 +161,8 @@ New runs use the first eligible model at admission. Running sessions retain thei
 model even if you edit the order or a quota is exhausted. If every candidate is
 skipped, pending work waits for eligibility and the next known reset. An empty
 order keeps the item's stored model. A failed read does not mean the order is empty.
+Saved rows for models that become unavailable stay visible with their status.
+You can save other routing edits while those rows remain in the order.
 
 Routing saves require the Host owner. If another window changes the document,
 your stale draft cannot overwrite it: load the latest settings and reconcile your
@@ -227,7 +235,7 @@ Provider account rows separate identity from usage status. The check beside an a
 Bycoda updates recognized npm and Homebrew Codex installs through their package manager. If a standalone Codex updater fails, update it with its original installer and check the version again. If Cursor CLI exits without an error message, run `agent update` (or `cursor-agent update`) in a terminal for that installation to see its output.
 If Bycoda cannot verify the new version, update details include the updater's output when available. Some package-managed CLIs print a manual upgrade command and exit successfully without installing an update.
 
-Account profiles lists only signed-in Claude, Codex and Grok profiles: the default CLI home, home folders such as `.claude2`, and accounts saved by the release or dev app. Each signed-in identity appears once, and an account you already added shows as Connected. If automatic terminal profile discovery fails, open Account profiles to see the error and select Find terminal profiles to retry.
+**Add account** signs in a new account. **Add existing account**, next to it, lists Claude, Codex and Grok accounts already signed in on this computer: the default CLI home, home folders such as `.claude2`, and accounts saved by the release or dev app. Each signed-in identity appears once, titled by its name or email with its folder below, and accounts you already added are left out. Choosing one asks for its account name, Personal or Work, and color, like a new account, and saves it when you select Add; it reuses that sign-in without copying credentials. Use the refresh button to search again, or **Choose profile folder** for a folder the search did not find. During setup, the same list lets you pick an account to use, including one already added.
 
 **Settings > Models > Chats** sets what new conversations start with; subagents, the advisor and the subagent effort ceiling are set only in **Subagents**. With Global selected and a provider that has several accounts, **Account** picks whose own defaults the rows edit. With a project, group or workspace selected, **Account** picks which account that provider's new chats start on there; the rows then show that account's defaults as Bycoda defaults, and anything you change is saved for the project. A row that follows a default shows the value it resolves to, such as the effort level it fills in.
 
@@ -267,6 +275,6 @@ Background work is edited on the selected Host with one Save bar. Changes remain
 
 Decision models show the Host used for scanning, local installation and saved keys. The app prefers this computer’s Host, then the first connected Host. Adding a model and testing it are separate steps: a failed connection test leaves the added source available to edit or retry.
 
-In **Settings > Models > Background work**, **Prepare setup draft** fills the whole draft at once. It adds every active provider account and enabled model that is missing, orders them, fills the groups, binds every job in Jobs and sets subagents and the advisor. Strong models at a moderate price (such as Opus and Sol) come first, cheaper capable models (Sonnet, Terra) next, top-priced models (Fable, Astra) after them and light models last; reviews and planning use a group led by the strongest models, quick replies and helper text such as titles, commit messages and translation go to low-cost models, and Work and Personal groups are created when an account has a kind. The advisor is the strongest model; each provider's best standard and light model become subagents, capped at Medium effort, replacing provider and account overrides of those settings in the draft. Prices come from OpenRouter and capability scores from Artificial Analysis (through OpenRouter), fetched by the Host and cached for six hours; the built-in table keeps the owner-reviewed ordering of known families and is used when the feed is unavailable. **Plan setup with AI** uses the model selected in the picker. **Automatic** starts with the model bound to **Routing setup**, or the cheapest strong model you can use. Effort follows the job: the main order runs at Medium, groups used only by simple jobs at Low, and groups used by reviews or planning at High; a model without a level gets its closest one, so the same model can appear once per effort. The built-in setup never picks an effort above High: set higher levels on an entry yourself, and an entry you set above High is kept for the High groups. Automatic planning uses standard speed. The planner control can override effort and speed for a planning call. Model order entries in the generated draft use standard speed. Low reasoning effort is available for simple jobs. Groups with the same name are refilled. A setup draft clears rows pinned to removed accounts and cleans up affected group and job bindings. The result under the setup actions names the planner or explains why the built-in rules prepared the draft. Invalid parts of an answer are dropped instead of discarding the whole plan. Review the draft and press **Save changes** to apply through the existing Host-owner and version checks. If the model-order or group limit would be exceeded, nothing is added; reduce unused choices or groups and retry.
+In **Settings > Models > Background work**, **Set up with rules** (above the tabs) fills the whole draft at once. It adds every active provider account and enabled model that is missing, orders them, fills the groups, binds every job in Jobs and sets subagents and the advisor. Strong models at a moderate price (such as Opus and Sol) come first, cheaper capable models (Sonnet, Terra) next, top-priced models (Fable, Astra) after them and light models last; reviews and planning use a group led by the strongest models, quick replies and helper text such as titles, commit messages and translation go to low-cost models, and Work and Personal groups are created when an account has a kind. The advisor is the strongest model; each provider's best standard and light model become subagents, capped at Medium effort, replacing provider and account overrides of those settings in the draft. Prices come from OpenRouter and capability scores from Artificial Analysis (through OpenRouter), fetched by the Host and cached for six hours; the built-in table keeps the owner-reviewed ordering of known families and is used when the feed is unavailable. **Set up with AI** uses the model selected in the picker. **Automatic** starts with the model bound to **Routing setup**, or the cheapest strong model you can use. Effort follows the job: the main order runs at Medium, groups used only by simple jobs at Low, and groups used by reviews or planning at High; a model without a level gets its closest one, so the same model can appear once per effort. The built-in setup never picks an effort above High: set higher levels on an entry yourself, and an entry you set above High is kept for the High groups. Automatic planning uses standard speed. The planner control can override effort and speed for a planning call. Model order entries in the generated draft use standard speed. Low reasoning effort is available for simple jobs. Groups with the same name are refilled. A setup draft clears rows pinned to removed accounts and cleans up affected group and job bindings. The result under the setup actions names the planner or explains why the built-in rules prepared the draft. Invalid parts of an answer are dropped instead of discarding the whole plan. Review the draft and press **Save changes** to apply through the existing Host-owner and version checks. If the model-order or group limit would be exceeded, nothing is added; reduce unused choices or groups and retry.
 
 Accounts, projects and project groups can be tagged **Personal** or **Work**. An account without a tag, or whose name does not say work or personal, is shared. A run in a tagged project skips accounts tagged for the other kind and moves on to the next entry; if every entry is skipped, the work waits. Fixed models are never filtered, and runs without a project (such as the assistant) are unaffected. Tagging a project overrides its group's tag.

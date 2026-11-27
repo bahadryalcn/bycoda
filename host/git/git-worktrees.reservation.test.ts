@@ -51,7 +51,7 @@ it("bounds failed reservation diagnostics and retains the inherited Git deadline
     const workspace = {
       id: "fixture-reservation",
       path: join(root, "workspace"),
-      branchRef: "refs/heads/bycoda/s/fixture",
+      branchRef: "refs/heads/by/fixture",
       baseCommit: git("rev-parse", "HEAD"),
       repositoryId: await hostGitRepositoryKey(cwd),
     } as ManagedWorkspace;
@@ -101,7 +101,7 @@ it("rejects a hung reservation with a timeout message when its deadline aborts g
     const workspace = {
       id: "fixture-reservation-hung",
       path: join(root, "workspace"),
-      branchRef: "refs/heads/bycoda/s/fixture-hung",
+      branchRef: "refs/heads/by/fixture-hung",
       baseCommit: git("rev-parse", "HEAD"),
       repositoryId: await hostGitRepositoryKey(cwd),
     } as ManagedWorkspace;

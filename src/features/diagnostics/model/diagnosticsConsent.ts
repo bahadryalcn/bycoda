@@ -38,8 +38,8 @@ export const getDiagnosticsMode = (): DiagnosticsMode => consent.load().mode ?? 
 export function setDiagnosticsMode(
   mode: DiagnosticsMode,
   now: () => Date = () => new Date(),
-): void {
-  consent.save({ mode, decidedAt: now().toISOString() });
+): boolean {
+  return consent.save({ mode, decidedAt: now().toISOString() });
 }
 
 export const subscribeDiagnosticsConsent = consent.subscribe;

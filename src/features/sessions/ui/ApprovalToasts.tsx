@@ -1,4 +1,3 @@
-import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { NotificationBell } from "../../../shared/ui/NotificationBell";
 import { Portal } from "../../../shared/ui/Portal";
 import { Alert } from "../../../shared/ui/Alert";
@@ -19,6 +18,7 @@ import { useToday } from "../../../shared/ui/useToday";
 import { CheckCheck, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
+  type ComponentType,
   useEffect,
   useId,
   useLayoutEffect,
@@ -41,18 +41,21 @@ import { getGroupLockView } from "../../group-lock/model/groupLock";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { PendingApprovalNotice } from "../../notifications/model/approvalToast";
 import { LAYER } from "../../../shared/lib/layers";
+import { BACKGROUND_NOTIFICATION_TARGETS } from "../../notifications/model/notifications";
 import type { Session } from "../model/session";
-import { HistoryItem } from "./NotificationHistoryItem";
+import { HistoryItem, NotificationProjectIconContext } from "./NotificationHistoryItem";
+import { NotificationApprovalDialog } from "./NotificationApprovalDialog";
 import { NotificationRequestCard } from "./NotificationRequestCard";
 import { OwnerRequestRow } from "./OwnerRequestRow";
 import { useOwnerNotifications, type OwnerRequestRow as OwnerRow } from "./useOwnerNotifications";
 import {
   historyOccurrenceIds,
-  MAX_NOTIFICATION_HISTORY,
   groupHistoryByDay,
   isHistoryUnread,
   markNotificationsSeen,
+  hasOwnerApprovalChat,
   notificationKey,
+  presentOwnerApproval,
   reopenOwnerApproval,
   useNotificationHistory,
   useNotificationSeenAt,
@@ -71,8 +74,11 @@ type Props = {
   triggerTarget?: HTMLElement | null;
   notices: Notice[];
   popupNotices?: Notice[];
-  onFocusSession: (sessionId: string) => void;
+  /** `false` means the conversation could not open (closed, locked, or owned elsewhere). */
+  onFocusSession: (sessionId: string) => void | Promise<boolean>;
   onApproval: ApprovalDispatch;
+  /** The rail's project icon beside each request's project name; the app shell owns that identity. */
+  projectIcon?: ComponentType<{ cwd: string }>;
   /**
    * Opens a conversation recorded in history, which may no longer be open.
    * `false` or a rejection means it is unavailable. Without it, only history
@@ -144,6 +150,7 @@ export function ApprovalToasts({
   onOpenHistorySession,
   onOpenBackground,
   onOpenSettings,
+  projectIcon,
 }: Props) {
   const t = useT();
   const currentDay = useToday();
@@ -166,6 +173,7 @@ export function ApprovalToasts({
   } = useNotificationHistory(notices);
   const [popupsEnabled, setPopupsEnabled] = useState(readPopupsEnabled);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  const [answering, setAnswering] = useState<string>();
   const [occurred, setOccurred] = useState<ReadonlyMap<string, number>>(() => new Map());
   const trigger = useRef<HTMLButtonElement>(null);
   const [optionsAnchor, setOptionsAnchor] = useState<HTMLButtonElement | null>(null);
@@ -237,13 +245,47 @@ export function ApprovalToasts({
     hidePanel();
     trigger.current?.focus();
   };
-  // A conversation answers its own request; otherwise the shared confirmation is already open.
+  const ownerApprovalId = (row: OwnerRow) =>
+    row.key.startsWith("owner:") ? row.key.slice("owner:".length) : undefined;
+  // The row and Go take the owner to whoever asked: the conversation (switching to its project),
+  // whose chat card answers the request, or the Assistant Room. When the conversation cannot open
+  // or shows no card (a worker, a hidden pane), or nothing names a source, the request returns to
+  // the shared dialog, so the row always leads somewhere the owner can answer.
   const openOwnerRequest = (row: OwnerRow) => {
     hidePanel();
-    if (row.sessionId) onFocusSession(row.sessionId);
-    // A deferred request without a conversation returns to the shared dialog.
-    else if (row.key.startsWith("owner:")) reopenOwnerApproval(row.key.slice("owner:".length));
+    const approvalId = ownerApprovalId(row);
+    const reopen = () => approvalId && reopenOwnerApproval(approvalId);
+    const sessionId = row.sessionId;
+    if (!sessionId) {
+      if (row.threadId) return void onOpenBackground?.(BACKGROUND_NOTIFICATION_TARGETS.assistant);
+      return void reopen();
+    }
+    void Promise.resolve(onFocusSession(sessionId)).then((opened) => {
+      if (opened === false) {
+        // Recorded so a conversation that would not open can be traced in the app log.
+        console.warn("Owner request conversation did not open", sessionId);
+        return void reopen();
+      }
+      // The opened chat registers its card in an effect after the next paint.
+      requestAnimationFrame(() => {
+        if (!hasOwnerApprovalChat(sessionId)) reopen();
+      });
+    }, reopen);
   };
+  // Answer opens the shared dialog on this request, wherever the owner is.
+  const answerOwnerRequest = (row: OwnerRow) => {
+    const approvalId = ownerApprovalId(row);
+    hidePanel();
+    if (approvalId) presentOwnerApproval(approvalId);
+  };
+  // The dialog lives outside the sheet, so closing the sheet keeps it open.
+  const answerNotice = (notice: Notice) => {
+    hidePanel();
+    setAnswering(noticeKey(notice));
+  };
+  // A locked group hides the request, so its dialog closes too and does not reopen later.
+  const answeringNotice = open.find((notice) => noticeKey(notice) === answering);
+  if (answering && !answeringNotice) setAnswering(undefined);
   const focusSession = (id: string) => {
     const notice = notices.find((item) => item.sessionId === id);
     if (notice) dismiss(noticeKey(notice));
@@ -302,7 +344,7 @@ export function ApprovalToasts({
       : []),
     ...ownerRequests.map((row) => ({
       key: row.key,
-      node: <OwnerRequestRow row={row} onOpen={openOwnerRequest} />,
+      node: <OwnerRequestRow row={row} onOpen={openOwnerRequest} onAnswer={answerOwnerRequest} />,
     })),
     ...open.map((notice) => ({
       key: noticeKey(notice),
@@ -312,6 +354,7 @@ export function ApprovalToasts({
           occurredAt={occurred.get(noticeKey(notice))}
           onFocusSession={focusSession}
           onApproval={onApproval}
+          onAnswer={answerNotice}
         />
       ),
     })),
@@ -336,7 +379,7 @@ export function ApprovalToasts({
     />
   );
   return (
-    <>
+    <NotificationProjectIconContext value={projectIcon ?? null}>
       {triggerTarget ? <Portal target={triggerTarget}>{bell}</Portal> : bell}
       {expanded ? (
         <Sheet
@@ -388,7 +431,7 @@ export function ApprovalToasts({
               role="region"
               aria-label={t("Notification options")}
               variant="panel"
-              className="flex flex-col gap-2"
+              className="flex flex-col gap-0.5"
               width={292}
               flow="scroll"
               onDismiss={(reason) => {
@@ -396,7 +439,11 @@ export function ApprovalToasts({
                 if (reason === "escape") optionsAnchor.focus();
               }}
             >
+              {/* One row geometry: every option shares the item inset, the track sits at the end. */}
               <Switch
+                className="w-full"
+                padding={{ inline: "md", block: "sm" }}
+                labelPosition="start"
                 label={t("Show request popups")}
                 checked={popupsEnabled}
                 onCheckedChange={(enabled) => {
@@ -408,13 +455,20 @@ export function ApprovalToasts({
                   }
                 }}
               />
-              <Button variant="item" fullWidth type="button" onClick={dismissAll}>
+              <Button
+                variant="item"
+                fullWidth
+                padding={{ inline: "md" }}
+                type="button"
+                onClick={dismissAll}
+              >
                 {t("Hide all popups")}
               </Button>
               {onOpenSettings ? (
                 <Button
                   variant="item"
                   fullWidth
+                  padding={{ inline: "md" }}
                   type="button"
                   onClick={() => {
                     hidePanel();
@@ -425,18 +479,18 @@ export function ApprovalToasts({
                 </Button>
               ) : null}
               {history.length > 0 ? (
-                <ConfirmMorph
-                  label={t("Clear all")}
-                  prompt={t("Clear history?")}
-                  confirmLabel={t("Clear")}
-                  onConfirm={clearHistory}
-                />
+                <>
+                  <Divider decorative />
+                  <div className="flex min-h-8 items-center">
+                    <ConfirmMorph
+                      label={t("Clear all")}
+                      prompt={t("Clear history?")}
+                      confirmLabel={t("Clear")}
+                      onConfirm={clearHistory}
+                    />
+                  </div>
+                </>
               ) : null}
-              <InfoTooltip>
-                {t("Only the latest {p0} notifications are kept on this device.", {
-                  p0: MAX_NOTIFICATION_HISTORY,
-                })}
-              </InfoTooltip>
             </Popover>
           ) : null}
           <ScrollArea
@@ -525,7 +579,17 @@ export function ApprovalToasts({
           </div>
         </ToastSlot>
       ) : null}
-    </>
+      {/* A decided or withdrawn approval leaves the notices, which closes its dialog. */}
+      {answeringNotice ? (
+        <NotificationApprovalDialog
+          key={answering}
+          notice={answeringNotice}
+          onFocusSession={focusSession}
+          onApproval={onApproval}
+          onClose={() => setAnswering(undefined)}
+        />
+      ) : null}
+    </NotificationProjectIconContext>
   );
 }
 

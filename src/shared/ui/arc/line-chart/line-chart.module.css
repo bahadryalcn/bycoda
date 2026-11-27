@@ -170,6 +170,9 @@
   fill: var(--ui-chart-area-fill);
   stroke: none;
 }
+.area[data-tint] {
+  fill: color-mix(in oklab, var(--series) 16%, transparent);
+}
 .dot {
   fill: var(--series);
   stroke: var(--surface);

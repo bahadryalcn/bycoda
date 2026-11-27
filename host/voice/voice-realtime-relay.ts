@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
 import { WebSocket } from "ws";
 import {
   VOICE_RELAY_IN_RATE,
@@ -167,7 +168,7 @@ export function relayRecap(turns: readonly RelayRecapTurn[]): string {
     const text = turn.text.replace(/\s+/g, " ").trim();
     if (!text) continue;
     const clipped =
-      text.length > RELAY_RECAP_TURN_CHARS ? `${text.slice(0, RELAY_RECAP_TURN_CHARS - 1)}…` : text;
+      text.length > RELAY_RECAP_TURN_CHARS ? `${truncateGraphemes(text, RELAY_RECAP_TURN_CHARS - 1)}…` : text;
     const line = `${turn.role === "user" ? "Owner" : "You"}: ${clipped}`;
     if (size + line.length + 1 > RELAY_RECAP_MAX_CHARS) break;
     lines.unshift(line);
@@ -421,7 +422,10 @@ class RelaySession {
     if (!this.rotation && age >= RELAY_ROTATE_AFTER_MS && now >= this.rotationRetryAt) {
       // Nobody spoke or typed for a long while: end instead of paying for a renewed session.
       if (now - this.lastUserAt > RELAY_ROTATION_ACTIVITY_MS) return this.end("expired");
-      void this.renew();
+      void this.renew().catch(() => {
+        this.rotation = undefined;
+        this.rotationRetryAt = this.now() + RELAY_ROTATION_RETRY_MS;
+      });
       return;
     }
     const rotation = this.rotation;
@@ -1082,6 +1086,7 @@ export class VoiceRealtimeRelays {
 
   /** Host shutdown. */
   close() {
+    // oxlint-disable-next-line unicorn/no-useless-spread -- snapshot: end() removes the session from the map being iterated
     for (const session of [...this.sessions.values()]) session.end("stopping");
     this.ended.clear();
   }

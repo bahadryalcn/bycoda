@@ -1,6 +1,8 @@
 import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
+  AUTOSAVE_DEFAULT,
+  FORMAT_ON_SAVE_DEFAULT,
   loadAutosave,
   saveAutosave,
   subscribeAutosave,
@@ -31,6 +33,8 @@ export function WorkspaceEditorSettings() {
         id="auto-save"
         label={t("Autosave")}
         description={t("Turning on autosave can save existing unsaved changes.")}
+        modified={autosave !== AUTOSAVE_DEFAULT}
+        onReset={() => setAutosaveError(saveAutosave(AUTOSAVE_DEFAULT) !== AUTOSAVE_DEFAULT)}
         feedback={
           autosaveError ? (
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -46,6 +50,8 @@ export function WorkspaceEditorSettings() {
       <Row
         id="format-on-save"
         label={t("Format on save")}
+        modified={formatOnSave !== FORMAT_ON_SAVE_DEFAULT}
+        onReset={() => onFormatOnSave(FORMAT_ON_SAVE_DEFAULT)}
         feedback={
           formatError ? (
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>

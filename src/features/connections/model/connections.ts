@@ -1487,6 +1487,10 @@ function cachedSessions(project: string): HostSessionSummary[] {
 export function cachedRemoteSessionIds(project: string): string[] {
   return cachedSessions(project).map((session) => session.id);
 }
+/** The host sessions last listed for a remote project, as its machine reported them. */
+export function cachedRemoteSessionSummaries(project: string): HostSessionSummary[] {
+  return cachedSessions(project);
+}
 export function cachedRemoteSessionSummary(project: string, sessionId: string) {
   return cachedSessions(project).find((session) => session.id === sessionId);
 }

@@ -527,7 +527,7 @@ describe("Settings skill preview", () => {
 
   it.each([
     { control: "Skill name", preview: true },
-    ...["Project", "Personal", "Cancel", "Create"].flatMap((control) =>
+    ...["Project", "All projects", "Cancel", "Create"].flatMap((control) =>
       [true, false].map((preview) => ({ control, preview })),
     ),
   ])(

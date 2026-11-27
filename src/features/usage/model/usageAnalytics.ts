@@ -15,7 +15,7 @@ export type UsageMetric =
   | "cacheRead"
   | "cacheWrite"
   | "duration";
-export type UsageDimension = "provider" | "account" | "model" | "project";
+export type UsageDimension = "provider" | "account" | "model" | "project" | "machine";
 export type UsageResolution = "15m" | "hour" | "day" | "week";
 export type UsageWindow = { start: number; end: number };
 export type UsageFilters = Record<UsageDimension | "group", string[]>;
@@ -24,8 +24,11 @@ export const emptyUsageFilters = (): UsageFilters => ({
   account: [],
   model: [],
   project: [],
+  machine: [],
   group: [],
 });
+/** This computer in the `machine` dimension. The label is an English constant `usageLabel` translates. */
+export const LOCAL_USAGE_MACHINE = { id: "local", label: "This machine" } as const;
 export type UsageValues = Record<UsageMetric, number>;
 export const zeroUsage = (): UsageValues => ({
   cost: 0,
@@ -47,6 +50,8 @@ export type UsageSample = UsageValues & {
   projectLabel: string;
   group: string;
   groupLabel: string;
+  machine: string;
+  machineLabel: string;
   priced: boolean;
 };
 export type UsageTurn = {
@@ -95,7 +100,7 @@ export function usageSamples(
   pricing: UsagePricing,
   groupFor: (path: string) => { id: string; name: string } | null,
 ): UsageSample[] {
-  return usage.flatMap(({ account, rows }) =>
+  return usage.flatMap(({ account, rows, machine = LOCAL_USAGE_MACHINE }) =>
     rows.map((row) => {
       const group = groupFor(row.project);
       const cost = rowCost(row, pricing);
@@ -111,6 +116,8 @@ export function usageSamples(
         projectLabel: row.project ? projectName(row.project) : "Unknown folder",
         group: group?.id ?? "",
         groupLabel: group?.name ?? "Not in a group",
+        machine: machine.id,
+        machineLabel: machine.label,
         input: row.input,
         output: row.output,
         cacheRead: row.cacheRead,
@@ -124,7 +131,7 @@ export function usageSamples(
 }
 
 export function matchesUsage(
-  sample: Pick<UsageSample, "provider" | "account" | "model" | "project" | "group">,
+  sample: Pick<UsageSample, "provider" | "account" | "model" | "project" | "group" | "machine">,
   filters: UsageFilters,
 ): boolean {
   return (Object.keys(filters) as (keyof UsageFilters)[]).every(
@@ -164,11 +171,13 @@ export function usageBreakdown(
     const label =
       dimension === "account"
         ? sample.accountLabel
-        : dimension === "project"
-          ? sample.projectLabel
-          : dimension === "model"
-            ? modelDisplayName(key, sample.provider)
-            : key;
+        : dimension === "machine"
+          ? sample.machineLabel
+          : dimension === "project"
+            ? sample.projectLabel
+            : dimension === "model"
+              ? modelDisplayName(key, sample.provider)
+              : key;
     const row = rows.get(key) ?? {
       ...zeroUsage(),
       key,
@@ -316,6 +325,8 @@ export function turnDimensions(
     model: turn.model,
     project: turn.project ? pathKey(turn.project) : "",
     group: group?.id ?? "",
+    // Recorded turns are this computer's own session store.
+    machine: LOCAL_USAGE_MACHINE.id,
   };
 }
 
@@ -371,6 +382,7 @@ export function durationSamples(
         accountLabel: turn.accountId || "Default account",
         projectLabel: projectName(turn.project),
         groupLabel: groupFor(turn.project)?.name ?? "Not in a group",
+        machineLabel: LOCAL_USAGE_MACHINE.label,
         priced: true,
         duration: next - start,
       });

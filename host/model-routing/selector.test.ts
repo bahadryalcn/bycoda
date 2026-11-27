@@ -287,6 +287,23 @@ describe("nested pools and project scope", () => {
     });
   });
 
+  it("runs a pool model with that pool's own settings, from the pool that lists it", () => {
+    const draft = withPools();
+    draft.pools[0]!.memberSettings = { c: { effort: "low", fast: "true" } };
+    draft.pools[2]!.memberSettings = { d: { effort: "medium" } };
+    // Pool-wide effort from an earlier save yields to per-model settings.
+    draft.pools[0]!.effort = "high";
+    const own = pick(draft, (id) => id === "c");
+    expect(own).toMatchObject({
+      ok: true,
+      target: { modelSettings: { effort: "low", fast: "true" } },
+    });
+    const included = pick(draft, (id) => id === "d");
+    expect(included).toMatchObject({ ok: true, target: { modelSettings: { effort: "medium" } } });
+    const order = selectModelRouting(draft, { ...input, choice: { kind: "order" } }, signals());
+    expect(order).toMatchObject({ ok: true, target: { modelSettings: { effort: "high" } } });
+  });
+
   const scoped = (cwd: string | undefined, kinds: Record<string, "work" | "personal"> = {}) => {
     const draft = state([entry("personal"), entry("shared"), entry("work")]);
     draft.projectKinds = { "c:/proj/app": "work", ...kinds };

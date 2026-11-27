@@ -1059,6 +1059,7 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "terminals.create",
         "terminals.read",
         "terminals.write",
+        "terminals.resize",
         "terminals.interrupt",
         "terminals.close",
         "runtimeLogs.read",
@@ -1099,7 +1100,6 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
     assert!(!super::supported_remote_method("removed.feature"));
     assert!(!super::supported_remote_method("devices.exec"));
     assert!(!super::supported_remote_method("terminals.exec"));
-    assert!(!super::supported_remote_method("terminals.resize"));
     assert!(!super::supported_remote_method("removed.pr-feature"));
     assert!(!super::supported_remote_method("resources.delete"));
     assert!(!super::supported_remote_method("mobile.pairing.redeem"));
@@ -1574,6 +1574,9 @@ fn session_managed_owner_rpc_allowlist_excludes_trusted_native_protocol() {
         "modelRouting.save",
         "modelRouting.status",
         "workspaces.prepare",
+        "workspaces.prepare.status",
+        "workspaces.prepare.cancel",
+        "workspaces.renameBranch",
         "workspaces.get",
         "workspaces.list",
         "workspaces.resume",

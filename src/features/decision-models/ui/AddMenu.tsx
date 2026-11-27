@@ -4,9 +4,9 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
 import { Plus, FolderOpen, File, Download, KeyRound, Globe } from "../../../shared/ui/icons";
-/** The four ways to add a source; the dialogs for each live beside this menu. */
+/** The five ways to add a source; the dialogs for each live beside this menu. */
 export type AddPath = "folder" | "manual" | "local" | "api" | "custom";
-/** One primary action; the four paths sit in this menu. */
+/** One primary action; the five paths sit in this menu. */
 export function AddMenu({
   onPick,
   disabled = false,

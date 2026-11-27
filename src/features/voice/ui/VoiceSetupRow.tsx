@@ -2,11 +2,10 @@ import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { Text } from "../../../shared/ui/Text";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
 import { TextField } from "../../../shared/ui/TextField";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal } from "../../../shared/ui/Modal";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { t } from "../../../shared/i18n";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
@@ -36,7 +35,7 @@ export function VoiceSetupRow({
     <>
       <Row
         id="voice-setup"
-        label={settings.enabled ? t("Voice setup") : t("Dictation setup")}
+        label={t("Setup")}
         description={setup.setupHint}
         feedback={
           setup.setupError ? (
@@ -44,11 +43,15 @@ export function VoiceSetupRow({
           ) : undefined
         }
       >
-        {/* A failed check says so once, in the feedback line; the badge carries every other state. */}
-        {setup.setupError ? null : (
-          <Badge tone={ready ? "success" : setup.working ? "info" : "warning"}>
-            <LiveText text={message} />
-          </Badge>
+        {/* A failed check says so once, in the feedback line; every other state is one status word. */}
+        {setup.setupError ? null : ready ? (
+          <StatusText tone="done">{t("Ready")}</StatusText>
+        ) : installing ? (
+          <StatusText tone="running">{message}</StatusText>
+        ) : setup.working ? (
+          <StatusText tone="running">{t("Checking…")}</StatusText>
+        ) : (
+          <StatusText tone="needs-you">{t("Setup needed")}</StatusText>
         )}
         {detail ? (
           <InfoPopover label={t("Technical details")}>
@@ -59,20 +62,11 @@ export function VoiceSetupRow({
         ) : null}
         {!installing ? (
           <>
-            {setup.gpuUnavailable ? (
-              <Button
-                onClick={() => {
-                  setup.resetJob();
-                  change({ device: "auto" });
-                }}
-              >
-                {t("Use automatic selection")}
-              </Button>
-            ) : null}
             {pythonMissing ? (
               // One primary per state: without Python the only next step is Get Python.
               <Button
-                variant="primary"
+                variant="secondary"
+                size="sm"
                 onClick={() =>
                   void openExternal("https://www.python.org/downloads/release/python-31210/").catch(
                     (cause) => {
@@ -87,18 +81,19 @@ export function VoiceSetupRow({
                 {t("Get Python")}
               </Button>
             ) : !ready && !visibleError ? (
-              <Button variant="primary" onClick={() => setup.install()}>
+              <Button variant="secondary" size="sm" onClick={() => setup.install()}>
                 {t("Install")}
               </Button>
             ) : null}
             {setup.gpuUpgrade ? (
-              <Button variant="secondary" onClick={() => setup.install()}>
+              <Button variant="secondary" size="sm" onClick={() => setup.install()}>
                 {t("Install GPU support")}
               </Button>
             ) : null}
             {visibleError ? (
               <Button
                 variant="secondary"
+                size="sm"
                 onClick={() => {
                   setup.resetJob();
                   setup.check();
@@ -110,7 +105,7 @@ export function VoiceSetupRow({
             ) : null}
             {/* Python and the models are autodetected; pointing at them is for a setup that is not ready. */}
             {!ready || visibleError ? (
-              <Button variant="ghost" onClick={() => setup.setLocating(true)}>
+              <Button variant="secondary" size="sm" onClick={() => setup.setLocating(true)}>
                 {t("Locate files")}
               </Button>
             ) : null}
@@ -126,7 +121,6 @@ export function VoiceSetupRow({
                   <TextField
                     label={label}
                     hideLabel
-                    aria-label={label}
                     value={settings[key]}
                     placeholder={t("Automatic detection")}
                     onChange={(event) => {
@@ -135,6 +129,8 @@ export function VoiceSetupRow({
                     }}
                   />
                   <Button
+                    variant="secondary"
+                    size="sm"
                     disabled={installing || setup.browsing !== null}
                     disabledReason={
                       installing

@@ -4,6 +4,7 @@ import {
   readCodexTranscript,
   type DiscoveryReport,
   type ImportCandidate,
+  type ImportProvider,
 } from "../../../platform/tauri/sessionImport";
 import { t } from "../../../shared/i18n";
 import { importSessionRecord, importedSessionKeys } from "../data/sessionStore";
@@ -24,7 +25,7 @@ export type HistoryImportContext = {
 };
 export type HistoryImportCandidate = {
   id: string;
-  provider: "claude" | "codex";
+  provider: ImportProvider;
   prompt: string;
   startedAt: number;
   lastAt: number;

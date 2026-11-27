@@ -2,7 +2,6 @@ import { modelSettingText } from "../model/modelSettingText";
 import { EffortScale } from "../../../shared/ui/EffortScale";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
-import { delegationSelectChoice } from "../../sessions/public/modelPickerData";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Zap, WandSparkles } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
@@ -11,21 +10,19 @@ import {
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
   CROSS_SUBAGENTS_KEY,
   SUBAGENT_EFFORT_LEVELS,
+  decodeAdvisor,
   subagentEffortCeiling,
 } from "../../../shared/model/host-contracts/delegation";
 import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
 import type { ModelSetting } from "../../sessions/public/models";
-import {
-  isMultiSetting,
-  DelegationSubagentsControl,
-  DelegationOptionIcon,
-  SubagentEffortSwitch,
-} from "../../sessions/public/modelPickerData";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
-import { Row } from "../../../shared/ui/settings";
-import { SubagentSelectionControl } from "../../sessions/public/SubagentModeControl";
+import { Row, SettingsFeedback } from "../../../shared/ui/settings";
+import {
+  AdvisorControl,
+  DelegationSelectionControl,
+} from "../../sessions/public/SubagentModeControl";
 
 /** Label of the "follow the scope above" choice, naming the value it inherits. */
 export function inheritedChoiceLabel(inherited: string | undefined, valid: boolean): string {
@@ -59,286 +56,355 @@ function speedLabel(value: string, label: string): string {
   return modelSettingText(label);
 }
 
-export function ProviderDefaultExtras({
-  extras,
-  harness,
-  inheritedDefaults,
-  scopeDefaults,
-  onSessionDefaultsChange,
-  projectScope,
-  resetLabel,
-}: {
+/** Choices that fit one segmented row; longer tier lists use a select. */
+const SEGMENTED_MAX = 4;
+
+type ExtrasProps = {
   extras: ModelSetting[];
   harness: HarnessId;
   inheritedDefaults?: ProviderSessionDefaults;
   scopeDefaults: ProviderSessionDefaults;
   onSessionDefaultsChange: (next: ProviderSessionDefaults) => void;
-  projectScope: boolean;
   resetLabel: string;
-}) {
-  const threshold = extras.find((setting) => setting.id === "autoCompactWindow");
-  const orderedExtras =
-    threshold && extras.some((setting) => setting.id === "autoCompact")
-      ? extras
-          .filter((setting) => setting !== threshold)
-          .flatMap((setting) => (setting.id === "autoCompact" ? [setting, threshold] : [setting]))
-      : extras;
+};
+
+export function ProviderDefaultExtras(props: ExtrasProps) {
+  const { extras } = props;
+  // Auto-compact and its window share one row where both exist; the window alone keeps its own.
+  const compact = extras.find((setting) => setting.id === "autoCompact");
+  const compactWindow = extras.find((setting) => setting.id === "autoCompactWindow");
   return (
     <>
-      {orderedExtras.map((setting) => {
-        const saved = scopeDefaults.extras?.[setting.id];
-        const inherited = inheritedDefaults?.extras?.[setting.id];
-        const delegation = setting.id === CROSS_SUBAGENTS_KEY || setting.id === CROSS_ADVISOR_KEY;
-        const legacyKey =
-          harness === "claude" && delegation
-            ? setting.id === CROSS_ADVISOR_KEY
-              ? "advisor"
-              : "subagentModel"
-            : undefined;
-        const legacy = legacyKey ? scopeDefaults.extras?.[legacyKey] : undefined;
-        const effectiveValues = mergeProviderExtras(
-          harness,
-          inheritedDefaults?.extras,
-          scopeDefaults.extras,
-        );
-        if (delegation && effectiveValues[setting.id] == null && setting.value) {
-          effectiveValues[setting.id] = setting.value;
-        }
-        const inheritedOption = setting.options.find((option) => option.value === inherited);
-        const inheritedLabel = inherited === "null" ? "Off" : (inheritedOption?.label ?? inherited);
-        const savedIsUnavailable =
-          Boolean(saved) &&
-          saved !== "null" &&
-          !delegation &&
-          !setting.options.some((option) => option.value === saved);
-        const compact = setting.id === "autoCompact" || setting.id === "autoCompactWindow";
-        const compactDisabled =
-          setting.id === "autoCompactWindow" && effectiveValues.autoCompact === "off";
-        const updateCompact = (next: string) => {
-          const extras = { ...scopeDefaults.extras };
-          if (next) extras[setting.id] = next;
-          else delete extras[setting.id];
-          onSessionDefaultsChange({ ...scopeDefaults, extras });
-        };
-        const compactOptions = compact
-          ? [
-              {
-                value: "",
-                label: inheritedChoiceLabel(
-                  inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
-                  Boolean(inheritedOption),
-                ),
-              },
-              ...(savedIsUnavailable
-                ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
-                : []),
-              ...setting.options.map((option) => ({
-                value: option.value,
-                label: modelSettingText(option.label),
-              })),
-            ]
-          : [];
-        return (
-          <Row
+      {extras
+        .filter((setting) => !(compact && setting === compactWindow))
+        .map((setting) => (
+          <ExtraRow
             key={setting.id}
-            label={modelSettingText(setting.label)}
-            description={setting.description ? modelSettingText(setting.description) : undefined}
-            modified={saved != null || legacy != null}
-            onReset={() => {
-              const nextExtras = { ...scopeDefaults.extras };
-              delete nextExtras[setting.id];
-              if (legacyKey) delete nextExtras[legacyKey];
-              onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
-            }}
-            resetLabel={resetLabel}
-            // The window is the second half of Auto-compact: indented under it, inert while it is off.
-            dependsOn={setting.id === "autoCompactWindow" ? !compactDisabled : undefined}
-            controlWidth={delegation ? "wide" : undefined}
-          >
-            {compact ? (
-              setting.id === "autoCompact" && !savedIsUnavailable ? (
-                <SegmentedControl
-                  label={modelSettingText(setting.label)}
-                  value={saved ?? ""}
-                  options={[
-                    inheritedSegment(
-                      inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
-                      Boolean(inheritedOption),
-                    ),
-                    ...compactOptions
-                      .slice(1)
-                      .filter((option) => option.value !== "")
-                      // The catalog's own "Default" keeps Claude Code's /config choice; naming it apart
-                      // from the inheriting segment keeps every segment a distinct choice.
-                      .map((option) =>
-                        option.value === "default"
-                          ? { ...option, label: t("Claude default") }
-                          : option,
-                      ),
-                  ]}
-                  onValueChange={updateCompact}
-                />
-              ) : (
-                <Select
-                  hideLabel
-                  label={t("{p0} default {p1}", {
-                    p0: HARNESS_TITLE[harness],
-                    p1: modelSettingText(setting.label),
-                  })}
-                  value={saved ?? ""}
-                  options={compactOptions}
-                  disabled={compactDisabled}
-                  onValueChange={updateCompact}
-                />
-              )
-            ) : setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY ? (
-              <div className="provider-effort provider-effort-ceiling">
-                <SubagentEffortSwitch
-                  value={effectiveValues[setting.id] ?? ""}
-                  levels={setting.options.map((option) => option.value).filter(Boolean)}
-                  onChange={(next) =>
-                    onSessionDefaultsChange({
-                      ...scopeDefaults,
-                      extras: { ...scopeDefaults.extras, [setting.id]: next },
-                    })
-                  }
-                />
-                <EffortScale
-                  label={modelSettingText(setting.label)}
-                  showLabel={false}
-                  showValue={Boolean(subagentEffortCeiling(effectiveValues[setting.id]))}
-                  value={subagentEffortCeiling(effectiveValues[setting.id]) || ""}
-                  // Choosing a bar while Automatic is on sets a manual ceiling; the switch follows.
-                  options={setting.options
-                    .filter((option) => SUBAGENT_EFFORT_LEVELS.includes(option.value))
-                    .map((option) => ({
-                      value: option.value,
-                      label: modelSettingText(option.label),
-                    }))}
-                  onValueChange={(next) => {
-                    const nextExtras = { ...scopeDefaults.extras };
-                    if (next) nextExtras[setting.id] = next;
-                    else delete nextExtras[setting.id];
-                    onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
-                  }}
-                />
-              </div>
-            ) : setting.id === CROSS_SUBAGENTS_KEY ? (
-              <SubagentSelectionControl
-                setting={setting}
-                value={effectiveValues[setting.id]}
-                onChange={(next) => {
-                  const extras = { ...scopeDefaults.extras, [setting.id]: next };
-                  delete extras.subagentModel;
-                  onSessionDefaultsChange({ ...scopeDefaults, extras });
-                }}
-              />
-            ) : isMultiSetting(setting) ? (
-              <DelegationSubagentsControl
-                label={t("{p0} default {p1}", {
-                  p0: HARNESS_TITLE[harness],
-                  p1: modelSettingText(setting.label),
-                })}
-                setting={setting}
-                values={effectiveValues}
-                disabled={false}
-                appearance="field"
-                onChange={(next) => {
-                  const extras = { ...scopeDefaults.extras, [setting.id]: next || "[]" };
-                  // Image models: nothing picked is Automatic, stored by inheriting.
-                  if (!next && setting.id === IMAGE_MODELS_KEY) delete extras[setting.id];
-                  delete extras.subagentModel;
-                  onSessionDefaultsChange({ ...scopeDefaults, extras });
-                }}
-              />
-            ) : (setting.id === "fast" || setting.id === "serviceTier") && !savedIsUnavailable ? (
-              <SegmentedControl
-                label={modelSettingText(setting.label)}
-                value={saved ?? ""}
-                options={[
-                  inheritedSegment(
-                    inheritedOption
-                      ? speedLabel(inheritedOption.value, inheritedOption.label)
-                      : inheritedLabel
-                        ? modelSettingText(inheritedLabel)
-                        : undefined,
-                    Boolean(inheritedOption),
-                  ),
-                  ...setting.options
-                    .filter((option) => option.value !== "")
-                    .map((option) => ({
-                      value: option.value,
-                      label: speedLabel(option.value, option.label),
-                      icon:
-                        option.value === "true" || option.value === "fast" ? (
-                          <Zap className="icon-sm" />
-                        ) : undefined,
-                    })),
-                ]}
-                onValueChange={(next) => {
-                  const extras = { ...scopeDefaults.extras };
-                  if (next) extras[setting.id] = next;
-                  else delete extras[setting.id];
-                  onSessionDefaultsChange({ ...scopeDefaults, extras });
-                }}
-              />
-            ) : (
-              <SearchableSelect
-                hideLabel
-                label={t("{p0} default {p1}", {
-                  p0: HARNESS_TITLE[harness],
-                  p1: modelSettingText(setting.label),
-                })}
-                value={
-                  delegation
-                    ? saved === "null"
-                      ? "__off"
-                      : (saved ??
-                        (legacy != null
-                          ? setting.value || "__off"
-                          : projectScope
-                            ? ""
-                            : setting.value))
-                    : (saved ?? "")
-                }
-                options={[
-                  {
-                    value: "",
-                    label: inheritedChoiceLabel(
-                      inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
-                      Boolean(inheritedOption) || inherited === "null",
-                    ),
-                  },
-                  ...(delegation ? [{ value: "__off", label: t("Off") }] : []),
-                  ...(savedIsUnavailable
-                    ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
-                    : []),
-                  ...setting.options
-                    .filter((option) => option.value !== "")
-                    .map((option) => ({
-                      value: option.value,
-                      ...delegationSelectChoice(setting, option, t),
-                      disabled: "disabled" in option && option.disabled === true,
-                      icon: delegation ? (
-                        <DelegationOptionIcon setting={setting} value={option.value} />
-                      ) : undefined,
-                    })),
-                ]}
-                onChange={(next) => {
-                  const nextExtras = { ...scopeDefaults.extras };
-                  if (legacyKey) delete nextExtras[legacyKey];
-                  if (next) nextExtras[setting.id] = next === "__off" ? "null" : next;
-                  else delete nextExtras[setting.id];
-                  onSessionDefaultsChange({
-                    ...scopeDefaults,
-                    extras: nextExtras,
-                  });
-                }}
-              />
-            )}
-          </Row>
-        );
-      })}
+            {...props}
+            setting={setting}
+            compactWindow={setting === compact ? compactWindow : undefined}
+          />
+        ))}
     </>
+  );
+}
+
+function ExtraRow({
+  setting,
+  compactWindow,
+  harness,
+  inheritedDefaults,
+  scopeDefaults,
+  onSessionDefaultsChange,
+  resetLabel,
+}: Omit<ExtrasProps, "extras"> & {
+  setting: ModelSetting;
+  /** Auto-compact's window, edited in the same row. */
+  compactWindow?: ModelSetting;
+}) {
+  const saved = scopeDefaults.extras?.[setting.id];
+  const inherited = inheritedDefaults?.extras?.[setting.id];
+  const delegation = setting.id === CROSS_SUBAGENTS_KEY || setting.id === CROSS_ADVISOR_KEY;
+  const legacyKey =
+    harness === "claude" && delegation
+      ? setting.id === CROSS_ADVISOR_KEY
+        ? "advisor"
+        : "subagentModel"
+      : undefined;
+  const legacy = legacyKey ? scopeDefaults.extras?.[legacyKey] : undefined;
+  const effectiveValues = mergeProviderExtras(
+    harness,
+    inheritedDefaults?.extras,
+    scopeDefaults.extras,
+  );
+  if (delegation && effectiveValues[setting.id] == null && setting.value) {
+    effectiveValues[setting.id] = setting.value;
+  }
+  const inheritedOption = setting.options.find((option) => option.value === inherited);
+  const inheritedLabel = inherited === "null" ? "Off" : (inheritedOption?.label ?? inherited);
+  const savedIsUnavailable =
+    Boolean(saved) &&
+    saved !== "null" &&
+    !delegation &&
+    setting.id !== IMAGE_MODELS_KEY &&
+    setting.id !== CROSS_SUBAGENT_MAX_EFFORT_KEY &&
+    !setting.options.some((option) => option.value === saved);
+  const label = modelSettingText(setting.label);
+  const fieldLabel = t("{p0} default {p1}", { p0: HARNESS_TITLE[harness], p1: label });
+  /** Store `next` for each key (`undefined` removes it), keeping the other saved extras. */
+  const write = (changes: Record<string, string | undefined>) => {
+    const nextExtras = { ...scopeDefaults.extras };
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === undefined) delete nextExtras[key];
+      else nextExtras[key] = value;
+    }
+    onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
+  };
+  const choose = (next: string) => write({ [setting.id]: next || undefined });
+  const windowSaved = compactWindow ? scopeDefaults.extras?.[compactWindow.id] : undefined;
+
+  let control;
+  let feedback;
+  if (setting.id === "autoCompact" && !savedIsUnavailable) {
+    const effective = effectiveValues.autoCompact ?? setting.value;
+    control = (
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        {compactWindow && effective !== "off" ? (
+          <CompactWindowSelect
+            setting={compactWindow}
+            harness={harness}
+            saved={windowSaved}
+            inherited={inheritedDefaults?.extras?.[compactWindow.id]}
+            onChange={(next) => write({ [compactWindow.id]: next || undefined })}
+          />
+        ) : null}
+        <SegmentedControl
+          label={label}
+          value={saved ?? ""}
+          options={[
+            inheritedSegment(
+              inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
+              Boolean(inheritedOption),
+            ),
+            // Claude default (Claude Code's own /config choice) is what Automatic already does;
+            // it stays a segment only while it is the saved value, so that value remains visible.
+            ...setting.options
+              .filter(
+                (option) =>
+                  option.value !== "" && (option.value !== "default" || saved === "default"),
+              )
+              .map((option) => ({
+                value: option.value,
+                label:
+                  option.value === "default" ? t("Claude default") : modelSettingText(option.label),
+              })),
+          ]}
+          onValueChange={choose}
+        />
+      </div>
+    );
+  } else if (setting.id === "autoCompactWindow") {
+    control = (
+      <CompactWindowSelect
+        setting={setting}
+        harness={harness}
+        saved={saved}
+        inherited={inherited}
+        onChange={choose}
+      />
+    );
+  } else if (setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY) {
+    const ceiling = subagentEffortCeiling(effectiveValues[setting.id]);
+    control = (
+      <div className="provider-effort">
+        <EffortScale
+          label={label}
+          showLabel={false}
+          value={ceiling}
+          automatic={{
+            on: !ceiling,
+            // Stored explicitly only over an inherited limit, so a project keeps no limit even
+            // where its defaults set one; otherwise Automatic is simply nothing saved.
+            onChange: (on) => {
+              if (on) write({ [setting.id]: subagentEffortCeiling(inherited) ? "" : undefined });
+            },
+          }}
+          options={setting.options
+            .filter((option) => SUBAGENT_EFFORT_LEVELS.includes(option.value))
+            .map((option) => ({ value: option.value, label: modelSettingText(option.label) }))}
+          onValueChange={(next) => write({ [setting.id]: next || undefined })}
+        />
+      </div>
+    );
+  } else if (setting.id === CROSS_SUBAGENTS_KEY || setting.id === IMAGE_MODELS_KEY) {
+    control = (
+      <DelegationSelectionControl
+        setting={setting}
+        label={label}
+        value={effectiveValues[setting.id]}
+        onChange={(next) =>
+          // Image models' Automatic is stored by inheriting; subagents replace the legacy model.
+          write({
+            [setting.id]: next || undefined,
+            ...(legacyKey ? { [legacyKey]: undefined } : {}),
+          })
+        }
+      />
+    );
+  } else if (setting.id === CROSS_ADVISOR_KEY) {
+    const value =
+      saved === "null"
+        ? ""
+        : (saved ?? (legacy != null ? setting.value : effectiveValues[setting.id]));
+    // A truncated "Unavailable: …" in the field is easy to miss; say what it means and what to do.
+    const chosen = setting.options.find((option) => option.value === value);
+    if (chosen && "unavailable" in chosen && chosen.unavailable === true)
+      feedback = (
+        <SettingsFeedback state="warning">
+          {t(
+            "This advisor model is unavailable, so the advisor is not used. Choose another model or turn the advisor off.",
+          )}
+        </SettingsFeedback>
+      );
+    control = (
+      <AdvisorControl
+        setting={setting}
+        label={label}
+        value={value}
+        fallback={inherited && decodeAdvisor(inherited) ? inherited : undefined}
+        onChange={(next) =>
+          write({ [setting.id]: next || "null", ...(legacyKey ? { [legacyKey]: undefined } : {}) })
+        }
+      />
+    );
+  } else if ((setting.id === "fast" || setting.id === "serviceTier") && !savedIsUnavailable) {
+    const inheritedChoice = inheritedSegment(
+      inheritedOption
+        ? speedLabel(inheritedOption.value, inheritedOption.label)
+        : inheritedLabel
+          ? modelSettingText(inheritedLabel)
+          : undefined,
+      Boolean(inheritedOption),
+    );
+    // Standard leads on every provider; Claude's Fast toggle lists On before Off.
+    const standard = (value: string) => value === "false" || value === "default";
+    const tiers = setting.options
+      .filter((option) => option.value !== "")
+      .sort((a, b) => Number(standard(b.value)) - Number(standard(a.value)))
+      .map((option) => ({
+        value: option.value,
+        label: speedLabel(option.value, option.label),
+        icon: ["true", "fast", "priority"].includes(option.value) ? (
+          <Zap className="icon-sm" />
+        ) : undefined,
+      }));
+    control =
+      tiers.length + 1 <= SEGMENTED_MAX ? (
+        <SegmentedControl
+          label={label}
+          value={saved ?? ""}
+          options={[inheritedChoice, ...tiers]}
+          onValueChange={choose}
+        />
+      ) : (
+        <Select
+          hideLabel
+          label={fieldLabel}
+          value={saved ?? ""}
+          options={[
+            { value: "", label: inheritedChoice.ariaLabel ?? inheritedChoice.label },
+            ...tiers,
+          ]}
+          onValueChange={choose}
+        />
+      );
+  } else {
+    control = (
+      <SearchableSelect
+        hideLabel
+        label={fieldLabel}
+        value={saved ?? ""}
+        options={[
+          {
+            value: "",
+            label: inheritedChoiceLabel(
+              inheritedLabel ? modelSettingText(inheritedLabel) : undefined,
+              Boolean(inheritedOption),
+            ),
+          },
+          ...(savedIsUnavailable
+            ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
+            : []),
+          ...setting.options
+            .filter((option) => option.value !== "")
+            .map((option) => ({
+              value: option.value,
+              label: modelSettingText(option.label),
+              disabled: "disabled" in option && option.disabled === true,
+            })),
+        ]}
+        onChange={choose}
+      />
+    );
+  }
+
+  return (
+    <Row
+      label={label}
+      description={setting.description ? modelSettingText(setting.description) : undefined}
+      modified={saved != null || legacy != null || windowSaved != null}
+      onReset={() =>
+        write({
+          [setting.id]: undefined,
+          ...(legacyKey ? { [legacyKey]: undefined } : {}),
+          ...(compactWindow ? { [compactWindow.id]: undefined } : {}),
+        })
+      }
+      resetLabel={resetLabel}
+      feedback={feedback}
+      controlWidth={
+        delegation ||
+        setting.id === IMAGE_MODELS_KEY ||
+        setting.id === "autoCompact" ||
+        setting.id === "fast" ||
+        setting.id === "serviceTier"
+          ? "wide"
+          : undefined
+      }
+    >
+      {control}
+    </Row>
+  );
+}
+
+/**
+ * The auto-compact window. Automatic leaves the window to the scope above (or Claude Code's own);
+ * a saved "default" stays listed as Claude default so the saved value remains visible.
+ */
+function CompactWindowSelect({
+  setting,
+  harness,
+  saved,
+  inherited,
+  onChange,
+}: {
+  setting: ModelSetting;
+  harness: HarnessId;
+  saved: string | undefined;
+  inherited: string | undefined;
+  onChange: (next: string) => void;
+}) {
+  const inheritedOption = setting.options.find((option) => option.value === inherited);
+  const windowLabel = (option: { value: string; label: string }) =>
+    option.value === "default"
+      ? t("Claude default")
+      : t("{p0} tokens", { p0: modelSettingText(option.label) });
+  const unavailable =
+    saved != null && saved !== "" && !setting.options.some((option) => option.value === saved);
+  return (
+    <Select
+      hideLabel
+      label={t("{p0} default {p1}", {
+        p0: HARNESS_TITLE[harness],
+        p1: modelSettingText(setting.label),
+      })}
+      value={saved ?? ""}
+      options={[
+        {
+          value: "",
+          label:
+            inheritedOption && inheritedOption.value !== "default"
+              ? inheritedChoiceLabel(windowLabel(inheritedOption), true)
+              : t("Default window"),
+        },
+        ...(unavailable ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }] : []),
+        ...setting.options
+          .filter(
+            (option) => option.value !== "" && (option.value !== "default" || saved === "default"),
+          )
+          .map((option) => ({ value: option.value, label: windowLabel(option) })),
+      ]}
+      onValueChange={onChange}
+    />
   );
 }

@@ -5,7 +5,6 @@ import {
   type ModelPickerTab,
 } from "./models";
 import type { HarnessId } from "./session";
-import { decodeSubagents } from "../../../shared/model/host-contracts/delegation";
 import { offeredDelegationSetting } from "./claudeAdvisor";
 import {
   crossDelegationSettings,
@@ -63,13 +62,6 @@ export function settingLock(
     return dependent ? settingValue(dependent, values) : undefined;
   };
   if (extrasDisabled) return { reason: extrasReason };
-  if (
-    setting.id === "subagentPolicy" &&
-    (!effectiveValue("subagentModel") || effectiveValue("subagentModel") === "default") &&
-    values.crossSubagents !== "auto" &&
-    decodeSubagents(values.crossSubagents).length === 0
-  )
-    return { reason: "Pick a subagent model or subagent list first." };
   if (setting.id === "autoCompactWindow" && effectiveValue("autoCompact") === "off")
     return { reason: "Turn on auto-compact to change its window." };
   return undefined;
@@ -204,12 +196,19 @@ export function settingValue(setting: ModelSetting, values: Record<string, strin
   return values[setting.id] ?? setting.value;
 }
 
+/**
+ * Claude Code's own subagent and advisor rows that the any-provider rows replace. The Subagents
+ * choice decides the subagent model policy on every turn (`providerTurnInput`), so a separate
+ * policy row would only show a value that never applies.
+ */
+const REPLACED_BY_DELEGATION = ["advisor", "subagentModel", "subagentPolicy"];
+
 /** Every menu and Extras row: catalog settings, then the any-provider delegation rows. */
 export function menuSettings(input: DelegationInput): ModelSetting[] {
   const offered = input.source.modelsFor(input.current.harness);
   return groupSettings([
     ...pickerSettings(input.current)
-      .filter((setting) => !["advisor", "subagentModel"].includes(setting.id))
+      .filter((setting) => !REPLACED_BY_DELEGATION.includes(setting.id))
       .map((setting) =>
         offeredDelegationSetting(
           setting,

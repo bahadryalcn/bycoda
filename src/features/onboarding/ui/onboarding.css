@@ -224,10 +224,6 @@
 .onboarding-agent-list:empty {
   display: none;
 }
-.onboarding-agent-skeleton {
-  display: grid;
-  gap: 8px;
-}
 .onboarding-agent {
   display: flex;
   flex-wrap: wrap;

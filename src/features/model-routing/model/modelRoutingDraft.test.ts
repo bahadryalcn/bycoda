@@ -138,6 +138,16 @@ describe("model routing order draft", () => {
     },
   );
 
+  it("shows a stored daily minutes limit of 0 as an empty field", () => {
+    expect(orderDraft(state(), { maxRunningTasks: 2, dailyAgentMinutes: 0 }).limits).toEqual({
+      maxRunningTasks: "2",
+      dailyAgentMinutes: "",
+    });
+    expect(
+      orderDraft(state(), { maxRunningTasks: 2, dailyAgentMinutes: 90 }).limits.dailyAgentMinutes,
+    ).toBe("90");
+  });
+
   it("keeps an unset per-entry reserve unset so the provider default applies", () => {
     const stored = state();
     stored.entries[1] = { ...stored.entries[1]!, minRemainingPercent: 0 };

@@ -115,7 +115,8 @@ export const NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS: Record<NewThreadBackgrou
     "gradient-blur": "Blurs and fades the artwork into the background below.",
   };
 
-export const THEME_PREFERENCE_DEFAULT: ThemePreference = "dark";
+/** Follows the operating system's light or dark mode until the user picks one. */
+export const THEME_PREFERENCE_DEFAULT: ThemePreference = "system";
 
 export const ACCENT_COLOR_DEFAULT = themePalette.hexA3ACB8;
 
@@ -341,7 +342,11 @@ function hex(rgb: Rgb) {
 }
 
 /** Tint values applied to the document (live previews included); unset until first applied. */
-const appliedTint: { hue?: number; saturation?: number; darkLightness?: number } = {};
+const appliedTint: {
+  hue?: number;
+  saturation?: number;
+  darkLightness?: number;
+} = {};
 
 /**
  * Conservative contrast envelope for selection surfaces, from the applied tint:

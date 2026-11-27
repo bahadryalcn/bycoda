@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { updateNotificationPreferences } from "../../notifications/model/notificationPreferences";
 import { focusToastCard } from "../../../shared/ui/overlay";
 import { ApprovalToasts } from "./ApprovalToasts";
+import { resetSessionsStore } from "../model/sessionsStore";
 import { NOTIFICATION_SEEN_KEY } from "../../notifications/model/notificationSeen";
 import {
   NOTIFICATION_HISTORY_KEY,
@@ -15,7 +16,11 @@ import { pathKey } from "../../../shared/lib/paths";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
 import {
+  deferOwnerApprovals,
+  isOwnerApprovalDeferred,
+  isOwnerApprovalPresented,
   ownerApprovalsSnapshot,
+  registerOwnerApprovalChat,
   requestOwnerApproval,
   settleOwnerApproval,
 } from "../../notifications/model/ownerApprovals";
@@ -601,6 +606,30 @@ it("retains an uncertain approval and blocks repeated decisions after the callba
   expect(decide).toHaveBeenCalledTimes(1);
 });
 
+it("answers a sheet approval in a dialog and goes to its conversation from the row", async () => {
+  const decide = vi.fn(async () => true);
+  await act(async () => renderWith([notice("work")], { onApproval: decide }));
+  act(() => button("Notifications").click());
+  const card = document.querySelector(".notification-pending-card")!;
+  const inCard = (label: string) =>
+    [...card.querySelectorAll("button")].find((item) => item.textContent === label);
+  expect(inCard("Allow")).toBeUndefined();
+  expect(inCard("Deny")).toBeUndefined();
+  act(() => inCard("Answer")!.click());
+  expect(document.querySelector(".notification-pending-card")).toBeNull();
+  const dialog = document.querySelector("[role=dialog]")!;
+  expect(dialog.textContent).toContain("Request work");
+  expect(dialog.textContent).toContain("work");
+  await act(async () => button("Allow").click());
+  expect(decide).toHaveBeenCalledWith("work", 1, "allow", expect.anything());
+  await act(async () => renderWith([], { onApproval: decide }));
+  expect(document.querySelector("[role=dialog]")).toBeNull();
+  await act(async () => renderWith([notice("work")], { onApproval: decide }));
+  act(() => button("Notifications").click());
+  act(() => button("Go").click());
+  expect(onFocusSession).toHaveBeenCalledWith("work");
+});
+
 it("shows a pre-dispatch refusal without claiming delivery", async () => {
   const decide = vi.fn(async () => false);
   await act(async () => renderWith([notice("work")], { onApproval: decide }));
@@ -876,10 +905,15 @@ it("opens a history conversation from its row and reports an unavailable one", a
   act(() => renderWith([], { onOpenHistorySession: open }));
   openHistory();
   expandRow(historyRows()[0]);
-  const body = () => rowButton(historyRows()[0], "Open session");
+  const body = () => rowButton(historyRows()[0], "Open");
   await act(async () => body().click());
   expect(open).toHaveBeenCalledWith("work", "/projects/work");
   expect(document.body.textContent).toContain("This conversation is no longer available");
+  // The failure is a toast; a detail that only repeats the sentence offers no Details.
+  expect(historyRows()[0].textContent).not.toContain("This conversation is no longer available");
+  expect(
+    [...document.body.querySelectorAll("button")].some((node) => node.textContent === "Details"),
+  ).toBe(false);
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   open.mockResolvedValueOnce(true as never);
   await act(async () => body().click());
@@ -956,6 +990,151 @@ it("opens the owner request's conversation, or only closes the sheet without one
   act(() => button("Approve no-session").click());
   expect(onFocusSession).not.toHaveBeenCalled();
   expect(document.querySelector('[data-sheet-side="end"]')).toBeNull();
+});
+
+it("returns a put-off owner approval to the shared dialog when its conversation cannot open", async () => {
+  onFocusSession.mockResolvedValueOnce(false);
+  act(() => render([]));
+  act(() => void ownerApproval("unreachable", "s-gone"));
+  act(() => deferOwnerApprovals(["unreachable"]));
+  openHistory();
+  await act(async () => button("Approve unreachable").click());
+  expect(onFocusSession).toHaveBeenCalledWith("s-gone");
+  expect(isOwnerApprovalDeferred("unreachable")).toBe(false);
+});
+
+it("keeps a put-off owner approval deferred when its opened conversation shows the card", async () => {
+  onFocusSession.mockResolvedValueOnce(true);
+  act(() => render([]));
+  act(() => void ownerApproval("reachable", "s-open"));
+  act(() => deferOwnerApprovals(["reachable"]));
+  openHistory();
+  const release = registerOwnerApprovalChat("s-open");
+  await act(async () => button("Approve reachable").click());
+  await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  expect(isOwnerApprovalDeferred("reachable")).toBe(true);
+  release();
+});
+
+it("returns a put-off owner approval to the shared dialog when its conversation shows no card", async () => {
+  onFocusSession.mockResolvedValueOnce(true);
+  act(() => render([]));
+  act(() => void ownerApproval("cardless", "s-worker"));
+  act(() => deferOwnerApprovals(["cardless"]));
+  openHistory();
+  await act(async () => button("Approve cardless").click());
+  await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  expect(isOwnerApprovalDeferred("cardless")).toBe(false);
+});
+
+it("names what an owner request asks and the project and conversation that asked", () => {
+  resetSessionsStore([{ ...notice("clinic").session, title: "Fix password filter" }]);
+  act(() => render([]));
+  act(
+    () =>
+      void requestOwnerApproval({
+        id: "inbox-1",
+        sessionId: "clinic",
+        input: {
+          title: "bycoda — Inbox operation approval",
+          message: "Exact request",
+          confirmLabel: "Approve this operation",
+          cancelLabel: "Cancel",
+          deadline: Date.now() + 90_000,
+          details: {
+            kind: "inbox",
+            action: "comment",
+            project: "/projects/clinic",
+            provider: "jira",
+            target: "PFDEV-1123",
+            body: "Done",
+          },
+        },
+      }).catch(() => undefined),
+  );
+  openHistory();
+  const row = document.querySelector<HTMLElement>(".notification-owner-request")!;
+  expect(row.querySelector(".notification-request-title")?.textContent).toBe(
+    "Comment · PFDEV-1123",
+  );
+  expect(row.textContent).not.toContain("bycoda");
+  const footer = row.querySelector(".notification-request-source")!.textContent;
+  expect(footer).toContain("clinic");
+  expect(footer).toContain("Fix password filter");
+  resetSessionsStore([]);
+});
+
+it("opens the Assistant Room for a Room request and names its project", async () => {
+  const onOpenBackground = vi.fn();
+  act(() => renderWith([], { onOpenBackground }));
+  act(
+    () =>
+      void requestOwnerApproval({
+        id: "room-1",
+        threadId: "room-thread",
+        cwd: "/projects/clinic",
+        input: {
+          title: "bycoda — Inbox operation approval",
+          message: "Exact request",
+          confirmLabel: "Approve this operation",
+          cancelLabel: "Cancel",
+          deadline: Date.now() + 90_000,
+        },
+      }).catch(() => undefined),
+  );
+  act(() => deferOwnerApprovals(["room-1"]));
+  openHistory();
+  const row = document.querySelector<HTMLElement>(".notification-owner-request")!;
+  expect(row.querySelector(".notification-request-title")?.textContent).toBe(
+    "Inbox operation approval",
+  );
+  const footer = row.querySelector(".notification-request-source")!.textContent;
+  expect(footer).toContain("clinic");
+  expect(footer).toContain("Assistant");
+  await act(async () => button("Go").click());
+  expect(onOpenBackground).toHaveBeenCalledWith("background:assistant");
+  expect(onFocusSession).not.toHaveBeenCalled();
+  // Go only goes there; Answer is what opens the shared dialog.
+  expect(isOwnerApprovalDeferred("room-1")).toBe(true);
+  openHistory();
+  act(() => button("Answer").click());
+  expect(isOwnerApprovalDeferred("room-1")).toBe(false);
+  expect(isOwnerApprovalPresented("room-1")).toBe(true);
+  expect(onOpenBackground).toHaveBeenCalledTimes(1);
+});
+
+it("answers a request in the dialog even while its conversation shows the card", () => {
+  act(() => render([]));
+  act(() => void ownerApproval("in-chat", "s-chat"));
+  const release = registerOwnerApprovalChat("s-chat");
+  openHistory();
+  act(() => button("Answer").click());
+  expect(onFocusSession).not.toHaveBeenCalled();
+  expect(isOwnerApprovalPresented("in-chat")).toBe(true);
+  // Closing the dialog puts it off again; the chat card still answers it.
+  act(() => deferOwnerApprovals(["in-chat"]));
+  expect(isOwnerApprovalPresented("in-chat")).toBe(false);
+  release();
+});
+
+it("shows an answered owner request in history by what it asked, without the source prefix", async () => {
+  act(() => render([]));
+  const answer = requestOwnerApproval({
+    id: "history-1",
+    input: {
+      title: "bycoda — Inbox operation approval",
+      message: "Exact request",
+      confirmLabel: "Approve this operation",
+      cancelLabel: "Cancel",
+      deadline: Date.now() + 90_000,
+    },
+  });
+  await act(async () => void settleOwnerApproval("history-1", false));
+  await answer;
+  openHistory();
+  const sheet = document.querySelector('[data-sheet-side="end"]')!.textContent;
+  expect(sheet).toContain("Inbox operation approval");
+  expect(sheet).not.toContain("bycoda —");
 });
 
 it("never shows or stores a secret value, only its title and outcome", async () => {

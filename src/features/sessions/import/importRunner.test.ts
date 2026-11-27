@@ -87,6 +87,12 @@ function harness(overrides: Partial<ImportDeps> = {}): Harness {
       dropped: 0,
       oversizeSkipped: 0,
     }),
+    readEntries: async (): Promise<CodexTranscript> => ({
+      entries: [{ kind: "user", at: 5, text: "Add pagination" }],
+      truncated: false,
+      dropped: 0,
+      oversizeSkipped: 0,
+    }),
     placeholderDir: async (original) => {
       placeholders.push(original);
       return `C:/app/imported-history/Missing folder - ${placeholders.length}`;
@@ -225,6 +231,52 @@ describe("runSessionImport", () => {
     expect(session.providerSessionId).toBe("thread-9");
     expect(session.blocks.map((b) => b.role)).toEqual(["system", "user", "assistant"]);
     expect(session.blocks[0].text).toContain("Codex thread");
+  });
+
+  it("imports another provider's conversation from its own store, bound to it", async () => {
+    const reads: string[] = [];
+    const h = harness({
+      readEntries: async (source) => {
+        reads.push(`${source.provider}:${source.providerSessionId}`);
+        return {
+          entries: [
+            { kind: "user", at: 5, text: "Add a test" },
+            { kind: "tool", at: 6, text: "", name: "shell", input: "ls", output: "a.rs" },
+            { kind: "assistant", at: 7, text: "Added." },
+          ],
+          truncated: false,
+          dropped: 0,
+          oversizeSkipped: 0,
+        };
+      },
+    });
+    await run(h, [candidate({ provider: "opencode", providerSessionId: "ses_9" })]);
+    expect(reads).toEqual(["opencode:ses_9"]);
+    const { session } = h.persisted[0];
+    expect(session.id).toBe("imp-opencode-ses_9");
+    expect(session.harness).toBe("opencode");
+    expect(session.providerSessionId).toBe("ses_9");
+    expect(session.blocks[0].text).toContain("Imported from OpenCode.");
+    expect(session.blocks.map((b) => b.role)).toEqual(["system", "user", "tool", "assistant"]);
+  });
+
+  it("imports OpenClaw history read-only on the generic ACP agent", async () => {
+    const h = harness({
+      readEntries: async () => ({
+        entries: [{ kind: "user", at: 5, text: "Plan my week" }],
+        truncated: false,
+        dropped: 0,
+        oversizeSkipped: 0,
+      }),
+    });
+    const summary = await run(h, [
+      candidate({ provider: "openclaw", providerSessionId: "s1", resumable: false }),
+    ]);
+    const { session } = h.persisted[0];
+    expect(session.harness).toBe("acp");
+    expect(session.providerSessionId).toBeUndefined();
+    expect(session.blocks[0].text).toContain("OpenClaw conversations cannot be continued here");
+    expect(summary.readOnly).toBe(1);
   });
 
   it("files a conversation whose folder is gone under a placeholder, read-only", async () => {

@@ -64,7 +64,7 @@ export function paintCallOrb(
     ? -0.47
     : orbiting
       ? 0.25
-      : state === "connected"
+      : state === "connected" || state === "off"
         ? 0.14
         : state === "listening"
           ? 0.35

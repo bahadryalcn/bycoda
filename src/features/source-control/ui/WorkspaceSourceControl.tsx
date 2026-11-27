@@ -5,7 +5,7 @@ import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionE
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useRef, useState } from "react";
 import {
-  checkoutSelectionScope,
+  checkoutStateKey,
   checkoutRepositoryPaths,
   dropLegacyCheckoutSelections,
   sessionCheckout,
@@ -79,8 +79,10 @@ export function WorkspaceSourceControl({
   const paths = checkouts
     ? listedPaths.filter((path) => !gone.includes(projectKey(path)))
     : listedPaths;
-  const scope = checkouts ? checkoutSelectionScope(cwd, listedPaths) : projectKey(cwd);
-  const stateKey = `source-control:${checkouts ? "checkouts" : "repositories"}:${scope}`;
+  const scope = projectKey(cwd);
+  const stateKey = checkouts
+    ? checkoutStateKey(cwd, listedPaths)
+    : `source-control:repositories:${scope}`;
   const repositoryListId = useId();
   const [listOpen, setListOpen] = useRetainedState(`${stateKey}:list-open`, true);
   // Repository choice of a multi-folder workspace; worktrees follow the header focus instead.
@@ -274,6 +276,7 @@ export function WorkspaceSourceControl({
   const [lastUsed, setLastUsed] = useRetainedState(`${stateKey}:last-used`, "");
   const listed = (path: string) =>
     path ? repositories.find((item) => projectKey(item) === projectKey(path)) : undefined;
+  // The Changes tab badge follows the same repository (followedCheckoutRepository).
   const followed = listed(lastUsed) ?? repositories.find(own) ?? repositories[0] ?? "";
   const sectionsChosen = listed(sectionsChoice);
   const sectionsCwd = sectionsChosen ?? followed;

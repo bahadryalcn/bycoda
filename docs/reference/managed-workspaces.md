@@ -105,16 +105,61 @@ SHA; never copy an unrelated dirty checkout. A configured root applies to new
 directories and does not move existing ones. Preparation failure for a resolved
 or explicitly selected worktree remains an error; it never switches to current.
 
-Branches use `bycoda/s/<slug>-<12id>` or `bycoda/t/<slug>-<12id>`; directories use
-`wt-<12id>`. Generate names once. Validate collisions and ownership with the full
-workspace ID, not its shortened display form. Creation failure never falls back
-to main. Unsupported managed operations on older Hosts require a visible update
+Branches use `by/<8hex>` for sessions (a temporary name) and `by/<slug>-<8hex>` for
+tasks (final, never renamed); directories use `wt-<12id>`. Generate names once.
+Managed ownership is decided by `git config branch.<name>.bycodaWorkspace <workspaceId>`,
+written when the branch is created, never by the `by/` prefix: a hand-made `by/x`
+branch is not managed. Validate collisions and ownership with the full workspace ID,
+not its shortened display form. Creation failure never falls back to main.
+Unsupported managed operations on older Hosts require a visible update
 explanation; current-checkout creation uses the existing compatible path.
 
-`host/managed/managed-workspaces.ts` implements branch/directory naming and
-`host/git/turn-git-history.ts` implements turn/rewind refs. Constants define prefixes
-and the 12-character display ID length; implementations validate Git ref
-components and full ownership.
+`workspaces.renameBranch` (`workspaceId`, `expectedRevision`, `fragment`,
+`idempotencyKey`) renames a session's temporary branch once to `by/<fragment>`
+after the first turn names it. It sanitizes the fragment, tries suffixes `-2` to
+`-9` on collision and otherwise keeps the temporary name (`renamed: false`),
+renames the branch in the primary and every sibling worktree, and updates
+`branchRef` and the revision in one journaled transaction. It refuses while a
+mutation is active, an upstream is set or a delivery review is pending; delivery
+plans bind the revision, so a rename invalidates an earlier review. A failed or
+skipped rename is silent and keeps the temporary name.
+
+`host/managed/workspace-branch-naming.ts` owns naming, the marker and rename;
+`host/managed/workspace-creation.ts` owns creation. `host/git/turn-git-history.ts`
+implements turn/rewind refs. Constants define prefixes and the 12-character
+display ID length; implementations validate Git ref components and full ownership.
+
+### Creation v2
+
+Creation runs entirely in the Host behind capability `workspaces.creation.v2`.
+`workspaces.prepare` accepts `repositories` (project folders that get a sibling
+worktree on the same branch, at most 8), `baseFromRemote` and a client-chosen
+`progressId`, and returns `extraWorktrees` (folder to worktree path) and
+`baseSource` (`remote` or `local`). A Host without the capability must not
+receive extras or a remote start in worktree mode; the app shows the update
+explanation instead of falling back silently.
+
+Start from remote resolves the base's upstream and runs `git fetch <remote> <branch>`
+with a 60-second deadline and no terminal prompts, then starts from the fetched SHA.
+A missing upstream or remote branch starts from the local base with `baseSource`
+`local`; a network failure is a visible error.
+
+Multi-repository creation journals every sibling in a durable sibling journal
+(`host/managed/workspace-sibling-journal.ts`) before Git runs. On a definite
+failure or cancel, the operation removes every worktree it created, deletes with
+`branch -D` only branches it created, retires the primary workspace and its marker
+ref, and releases the idempotency receipt. Reused existing worktrees are never
+touched. A timeout or killed Git leaves the outcome unknown: the operation is
+recovered instead of rolled back, and retrying the same idempotency key recovers
+the same workspace.
+
+`workspaces.prepare.status` and `workspaces.prepare.cancel`, keyed by `progressId`,
+poll an in-memory registry with a TTL (`host/managed/workspace-creation-progress.ts`).
+Stages are fetch, checkout (with "repository n of total" and percent from
+`git worktree add --progress`), submodules, setup (only when explicit bootstrap
+runs) and agent (set by the client when the turn starts). Cancel aborts the Git
+child and rolls back as above. `workspaces.prepare` and `workspaces.renameBranch`
+use the Git mutation deadline.
 
 ## Lifecycle and storage
 
@@ -237,16 +282,17 @@ RPC request/response types are frozen in
 operations through the shared runtime; delivery and
 publication require authenticated owner transport, not agent credentials.
 
-| RPC methods                                                         | Capability                     |
-| ------------------------------------------------------------------- | ------------------------------ |
-| `workspaces.prepare/get/list/resume/finish/close`                   | `workspaces.managed.v1`        |
-| `projects.workspacePolicy.get/update`                               | `workspaces.policy.v1`         |
-| `workspaces.featureClaims.list/acquire/release`                     | `workspaces.managed.v1`        |
-| `sessions.rewind.plan/apply`                                        | `sessions.git-rewind.v1`       |
-| `sessions.rewind.undo`                                              | `sessions.git-rewind-undo.v1`  |
-| `workspaces.delivery.review/merge`                                  | `workspaces.delivery.v1`       |
-| `workspaces.delivery.publish`                                       | `workspaces.pr-publication.v1` |
-| `workspaces.cleanup.plan/apply/status`, `workspaces.storage.status` | `workspaces.lifecycle.v1`      |
+| RPC methods                                                                                                              | Capability                     |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| `workspaces.prepare/get/list/resume/finish/close`                                                                        | `workspaces.managed.v1`        |
+| `workspaces.prepare.status/cancel`, `workspaces.renameBranch`, `workspaces.prepare` with `repositories`/`baseFromRemote` | `workspaces.creation.v2`       |
+| `projects.workspacePolicy.get/update`                                                                                    | `workspaces.policy.v1`         |
+| `workspaces.featureClaims.list/acquire/release`                                                                          | `workspaces.managed.v1`        |
+| `sessions.rewind.plan/apply`                                                                                             | `sessions.git-rewind.v1`       |
+| `sessions.rewind.undo`                                                                                                   | `sessions.git-rewind-undo.v1`  |
+| `workspaces.delivery.review/merge`                                                                                       | `workspaces.delivery.v1`       |
+| `workspaces.delivery.publish`                                                                                            | `workspaces.pr-publication.v1` |
+| `workspaces.cleanup.plan/apply/status`, `workspaces.storage.status`                                                      | `workspaces.lifecycle.v1`      |
 
 Additional integration transports retain the frozen owner contract:
 

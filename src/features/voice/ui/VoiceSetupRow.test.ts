@@ -50,19 +50,19 @@ const primaries = () =>
     .filter((el) => el.className.includes("primary") || el.dataset.variant === "primary")
     .map((el) => el.textContent);
 
-it("makes Install the only primary action when Python is present", async () => {
+it("offers Install as a secondary row action when Python is present", async () => {
   await render({});
   expect(button("Install")).toBeDefined();
   expect(button("Get Python")).toBeUndefined();
-  expect(primaries()).toEqual(["Install"]);
+  expect(primaries()).toEqual([]);
 });
 
-it("makes Get Python the only primary action and offers no Install when Python is missing", async () => {
+it("offers Get Python and no Install when Python is missing", async () => {
   const setup = await render({ pythonMissing: true });
   expect(button("Get Python")).toBeDefined();
   expect(button("Install")).toBeUndefined();
   expect(setup.install).not.toHaveBeenCalled();
-  expect(primaries()).toEqual(["Get Python"]);
+  expect(primaries()).toEqual([]);
 });
 
 it("offers Locate files directly, with no menu and one retry on failure", async () => {
@@ -81,7 +81,7 @@ it("offers Locate files directly, with no menu and one retry on failure", async 
 });
 
 it("hides Locate files once setup is ready", async () => {
-  await render({ ready: true, message: "Voice is ready" });
+  await render({ ready: true, message: "Ready" });
   expect(button("Locate files")).toBeUndefined();
   expect(button("Install")).toBeUndefined();
 });

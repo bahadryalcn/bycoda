@@ -167,6 +167,12 @@
   z-index: 1;
   padding: 8px 16px;
 }
+/* Long catalogs scroll inside the box so a ~1000px-tall window shows the whole Models group without page scroll. */
+.provider-models-list {
+  max-block-size: clamp(15rem, 35dvh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .provider-model-name {
   display: inline-flex;
   align-items: center;

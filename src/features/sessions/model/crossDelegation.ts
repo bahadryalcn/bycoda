@@ -129,6 +129,8 @@ export type DelegationOption = ModelSetting["options"][number] & {
   accountColor?: string;
   accountNumber?: number;
   detail?: string;
+  /** A saved model the catalog no longer offers; it is kept so the saved value stays visible. */
+  unavailable?: boolean;
 };
 
 type DelegationChoice = Omit<DelegationOption, "value"> & {
@@ -224,6 +226,7 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
   const known = new Set(choices.map((choice) => choiceKey(choice.ref)));
   const unavailable = (ref: DelegateModelRef) => ({
     value: refValue(ref),
+    unavailable: true,
     label: input.unavailable(
       `${HARNESS_TITLE[ref.harness]} · ${modelDisplayName(ref.model, ref.harness)}`,
     ),

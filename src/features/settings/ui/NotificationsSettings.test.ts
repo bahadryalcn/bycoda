@@ -33,6 +33,7 @@ vi.mock("../../../platform/tauri/platform", () => ({
   IS_MAC: false,
 }));
 vi.mock("../../notifications/model/notifications", () => ({
+  NOTIFICATIONS_DEFAULT: false,
   cachedNotificationPermission: () => permission.value,
   loadNotificationsEnabled: () => false,
   saveNotificationsEnabled: vi.fn(),

@@ -2,13 +2,13 @@ import {
   useRetainedTransaction,
   retainedTransactionValue,
 } from "../../model-routing/public/settings";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useId, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { SlidersHorizontal } from "../../../shared/ui/icons";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Row } from "../../../shared/ui/settings";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import {
   MAX_EXTRA_FOLDERS,
@@ -23,6 +23,7 @@ import {
 import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { ErrorNotice } from "./ErrorNotice";
 import { useDecisionTarget } from "./DecisionTarget";
+import { useDecisionDialogClose } from "../hooks/useDecisionDialogClose";
 type FieldErrors = { ports?: string; folders?: string };
 function localFolderPlatform(): FolderPlatform | undefined {
   if (IS_WIN) return "win32";
@@ -30,7 +31,10 @@ function localFolderPlatform(): FolderPlatform | undefined {
   if (IS_LINUX) return "linux";
   return undefined;
 }
-/** Extra ports and folders for the scan, saved through the discovery settings RPC. */
+/**
+ * The "Scan settings" button and its dialog: extra ports and folders for the scan, saved through the
+ * discovery settings RPC. Drafts, the open state and a pending save survive a remount for the same Host.
+ */
 export function ScanSettings({
   hostId,
   client,
@@ -55,6 +59,7 @@ export function ScanSettings({
     ports: "",
     folders: "",
   });
+  const [open, setOpen] = useRetainedTransaction(`decision:${identity}:scan:open`, false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useRetainedTransaction(`decision:${identity}:scan:saving`, false);
   const [saveError, setSaveError] = useRetainedTransaction<unknown>(
@@ -97,11 +102,25 @@ export function ScanSettings({
     return () => setLoadError(null);
   }, [client, attempt, identity, setPorts, setFolders, setSaved]);
   const dirty = ports !== saved.ports || folders !== saved.folders;
+  const close = useDecisionDialogClose(
+    dirty,
+    saving,
+    () => {
+      setPorts(saved.ports);
+      setFolders(saved.folders);
+      setFieldErrors({});
+      setSaveError(null);
+      setOpen(false);
+    },
+    t("Your scan settings have not been saved."),
+  );
   const save = () => {
     if (retainedTransactionValue<boolean>(`decision:${identity}:scan:saving`)) return;
     if (!dirty) {
+      // The page's found list shows scan progress and errors.
       setSaveError(null);
-      void onScan().catch((error: unknown) => setSaveError(error));
+      setOpen(false);
+      void onScan().catch(() => undefined);
       return;
     }
     const portResult = parsePorts(ports);
@@ -137,7 +156,8 @@ export function ScanSettings({
           setFolders(next.folders);
           setSaved(next);
           setSaving(false);
-          void onScan().catch((error: unknown) => setSaveError(error));
+          setOpen(false);
+          void onScan().catch(() => undefined);
         },
         (error: unknown) => {
           setSaveError(error);
@@ -147,59 +167,70 @@ export function ScanSettings({
   };
   return (
     <>
-      {loadError !== null ? (
-        <div className="px-4 py-2.5">
-          <ErrorNotice
-            title={t("Could not load the scan settings.")}
-            error={loadError}
-            onRetry={() => setAttempt((value) => value + 1)}
-          />
-        </div>
-      ) : null}
-      <Row stacked label={t("Extra ports")}>
-        <TextField
-          label={t("Extra ports")}
-          hideLabel
-          placeholder="8080, 9000"
-          value={ports}
-          disabled={!loaded || saving}
-          error={fieldErrors.ports}
-          onChange={(event) => setPorts(event.target.value)}
-        />
-      </Row>
-      <Row stacked label={t("Extra folders")}>
-        <TextareaField
-          label={t("Extra folders")}
-          hideLabel
-          placeholder={example ?? t("Folder path, one per line")}
-          value={folders}
-          minRows={2}
-          monospace
-          disabled={!loaded || saving}
-          error={fieldErrors.folders}
-          onChange={(event) => setFolders(event.target.value)}
-        />
-      </Row>
-      <div
-        {...surfaceAttributes(
-          { frame: "pane", edge: "top" },
-          "flex min-w-0 flex-col gap-2 px-4 py-2.5",
-        )}
+      <Button
+        variant="ghost"
+        size="sm"
+        startIcon={<SlidersHorizontal aria-hidden="true" />}
+        onClick={() => setOpen(true)}
       >
-        {saveError !== null ? <ErrorNotice error={saveError} /> : null}
-        <div className="flex justify-end">
-          <Button
-            variant="primary"
-            size="sm"
-            loading={saving || scanning}
-            disabled={!loaded || saving || scanning}
-            disabledReason={loaded ? undefined : t("Wait for the settings to load.")}
-            onClick={save}
-          >
-            {dirty ? t("Save and scan") : t("Scan with these settings")}
-          </Button>
-        </div>
-      </div>
+        {t("Scan settings")}
+      </Button>
+      {open ? (
+        <Modal
+          title={t("Scan settings")}
+          description={t(
+            "The scan always checks the usual ports and model folders. Add others here.",
+          )}
+          size="md"
+          onClose={close.requestClose}
+          footer={
+            <ModalActions>
+              <Button variant="ghost" disabled={saving} onClick={close.requestClose}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                loading={saving || scanning}
+                disabled={!loaded || saving || scanning}
+                disabledReason={loaded ? undefined : t("Wait for the settings to load.")}
+                onClick={save}
+              >
+                {dirty ? t("Save and scan") : t("Scan with these settings")}
+              </Button>
+            </ModalActions>
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-3">
+            {loadError !== null ? (
+              <ErrorNotice
+                title={t("Could not load the scan settings.")}
+                error={loadError}
+                onRetry={() => setAttempt((value) => value + 1)}
+              />
+            ) : null}
+            <TextField
+              label={t("Extra ports")}
+              placeholder="8080, 9000"
+              value={ports}
+              disabled={!loaded || saving}
+              error={fieldErrors.ports}
+              onChange={(event) => setPorts(event.target.value)}
+            />
+            <TextareaField
+              label={t("Extra folders")}
+              placeholder={example ?? t("Folder path, one per line")}
+              value={folders}
+              minRows={2}
+              monospace
+              disabled={!loaded || saving}
+              error={fieldErrors.folders}
+              onChange={(event) => setFolders(event.target.value)}
+            />
+            {saveError !== null ? <ErrorNotice error={saveError} /> : null}
+          </div>
+          {close.dialog}
+        </Modal>
+      ) : null}
     </>
   );
 }

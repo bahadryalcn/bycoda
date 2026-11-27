@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { activitySharing, dataTransfers } from "../model/transfers";
+import { activitySharing, dataTransfers, type SharingMode } from "../model/transfers";
 import { DataSharingNotices } from "./DataSharingNotices";
 
 it("applies all five active-time choices and shows one daily receipt", async () => {
@@ -32,7 +32,7 @@ it("applies all five active-time choices and shows one daily receipt", async () 
         files: [{ name: "activity-days.json", text: '{"days":[]}' }],
         linkedToAccount: true,
       },
-      activitySharing.load,
+      activitySharing,
       send,
       undefined,
       accountId,
@@ -145,6 +145,64 @@ it("applies all five active-time choices and shows one daily receipt", async () 
     localStorage.clear();
     container.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("offers Always send for every category and saves it through the category permission", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let mode: SharingMode = "ask";
+  const permission = {
+    load: () => mode,
+    save: (next: SharingMode) => {
+      mode = next;
+      return true;
+    },
+  };
+  const click = (label: string) => {
+    const button = [...document.querySelectorAll<HTMLElement>("button")].find(
+      (item) => item.textContent?.trim() === label,
+    );
+    expect(button, label).toBeDefined();
+    button!.click();
+  };
+  try {
+    act(() => root.render(createElement(DataSharingNotices)));
+    let result: Promise<boolean> | undefined;
+    act(() => {
+      result = dataTransfers.run(
+        {
+          kind: "statistics",
+          destination: "https://account.test/v1/anonymous/ping",
+          files: [{ name: "anonymous-ping.json", text: "{}" }],
+          linkedToAccount: false,
+        },
+        permission,
+        async () => undefined,
+      );
+    });
+    act(() => click("Details"));
+    await act(async () => {
+      click("Always send");
+      expect(await result).toBe(true);
+    });
+    expect(mode).toBe("auto");
+  } finally {
+    act(() => root.unmount());
+    dataTransfers.pending()?.decide(false);
+    dataTransfers.clearReceipts();
+    container.remove();
     vi.unstubAllGlobals();
   }
 });

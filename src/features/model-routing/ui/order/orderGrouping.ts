@@ -57,9 +57,9 @@ const usesOrder = (role: ModelRoutingRole, choice: ModelRoutingChoice | undefine
   choice ? choice.kind === "order" : !role.startsWith("text.");
 
 /**
- * How many jobs follow the model order: bound to it, or unbound. Unbound `text.*` helpers keep
+ * The jobs that follow the model order: bound to it, or unbound. Unbound `text.*` helpers keep
  * their own cheap automatic choice and only count when bound to the order.
  */
 export function jobsUsingOrder(roles: Partial<Record<ModelRoutingRole, ModelRoutingChoice>>) {
-  return MODEL_ROLE_METADATA.filter(({ role }) => usesOrder(role, roles[role])).length;
+  return MODEL_ROLE_METADATA.filter(({ role }) => usesOrder(role, roles[role]));
 }

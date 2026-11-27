@@ -114,6 +114,38 @@ it("lets routing save while the work limits read is unavailable", async () => {
   expect(saveMachineLimits).not.toHaveBeenCalled();
 });
 
+it("saves edits with a persisted unavailable model and rejects a newly selected one", async () => {
+  const unavailable = {
+    id: "saved-opus",
+    harness: "antigravity" as const,
+    model: "antigravity:claude-opus-4-6-thinking",
+    modelSettings: {},
+    unknownLimit: "use" as const,
+  };
+  hostState.entries = [unavailable];
+  client.setQueryData(["model-routing-setup-catalog", machine.id], {
+    models: { antigravity: [{ id: "antigravity:gemini", name: "Gemini" }] },
+  });
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "45" }));
+  await act(async () => expect(await editor.save()).toBe(true));
+  expect(hostState.entries).toEqual([unavailable]);
+  expect(hostState.defaultMaxRunMinutes).toBe(45);
+
+  await act(() =>
+    editor.change({
+      ...editor.draft,
+      routing: {
+        ...editor.draft.routing,
+        entries: [{ ...unavailable, model: "antigravity:missing" }],
+      },
+    }),
+  );
+  await act(async () => expect(await editor.save()).toBe(false));
+  expect(editor.invalidEntryId).toBe(unavailable.id);
+  expect(hostState.entries).toEqual([unavailable]);
+});
+
 it("merges the first successful work limits read into an existing routing draft", async () => {
   vi.mocked(listMachineLimits).mockRejectedValue(new Error("Limits unavailable"));
   await mount();

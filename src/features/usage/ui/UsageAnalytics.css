@@ -36,7 +36,8 @@
 }
 .usage-band .usage-analytics-actions {
   margin-inline-start: auto;
-  gap: var(--ui-space-1);
+  gap: var(--ui-space-2);
+  flex-wrap: nowrap;
 }
 .usage-analytics-actions {
   max-inline-size: 100%;
@@ -54,32 +55,40 @@
 }
 /* Key numbers are the first read: open tiles separated by space, no rules. */
 .usage-details-disclosure {
-  justify-self: start;
-  margin-block-start: calc(-1 * var(--ui-space-3));
+  justify-self: stretch;
+}
+.usage-details-disclosure .usage-metrics {
+  margin-block-end: var(--ui-space-3);
 }
 .usage-search-actions {
   flex-wrap: nowrap;
+}
+.usage-search-field {
+  inline-size: clamp(12rem, 24cqi, 18rem);
+}
+.usage-first-load {
+  min-block-size: 24rem;
+}
+.usage-chart-options {
+  align-items: flex-end;
 }
 .usage-sessions {
   display: grid;
   gap: var(--ui-space-2);
   min-inline-size: 0;
 }
+/* Same column grid as the active-time block above, so the tiles line up. */
 .usage-metrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ui-space-4) var(--ui-space-8);
-}
-.usage-metrics > div {
-  flex: 1 1 9rem;
   display: grid;
-  align-content: start;
-  gap: var(--ui-space-1);
-  padding-block: var(--ui-space-1);
-  min-inline-size: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--ui-space-2);
 }
-.usage-metrics > div > button {
-  justify-self: start;
+.usage-page .usage-active-time .usage-active-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  gap: var(--ui-space-2);
+}
+.usage-metric-tile {
+  min-inline-size: 0;
   max-inline-size: 100%;
   white-space: normal;
   text-align: start;
@@ -190,18 +199,23 @@
   min-inline-size: 0;
 }
 .usage-time-secondary {
+  /* One column: the daily calendar appearing must not flip the hourly chart between widths. */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--ui-space-4);
   min-inline-size: 0;
   align-items: start;
+}
+.usage-hourly-chart {
+  /* Compact axis ticks need less gutter than full currency amounts. */
+  --chart-axis-width: 4rem;
 }
 .usage-hourly-chart > .bycoda-arc-chart {
   margin-block-start: var(--ui-space-4);
 }
 .usage-week-grid {
-  grid-template-columns: 3.5rem repeat(var(--usage-week-columns), minmax(0, 1fr));
   display: grid;
+  grid-template-columns: 3.5rem repeat(var(--usage-week-columns), minmax(0, 1fr));
   gap: var(--ui-space-1);
   margin-block-start: var(--ui-space-4);
   min-inline-size: 0;
@@ -215,8 +229,18 @@
   text-align: center;
   padding-block-end: var(--ui-space-2);
 }
+.usage-week-row > [role="columnheader"]:first-child {
+  text-align: start;
+  align-content: end;
+}
 .usage-week-row > [role="rowheader"] {
   align-self: center;
+  font-variant-numeric: tabular-nums;
+}
+.usage-week-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-space-1);
   font-variant-numeric: tabular-nums;
 }
 .usage-week-grid .usage-hour-cell {
@@ -242,6 +266,13 @@
 }
 .usage-week-grid .usage-hour-cell > span {
   font-variant-numeric: tabular-nums;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* Hours outside the period or without a price are not zero: they get their own look, not heat-0. */
+.usage-week-grid .usage-hour-cell[data-state="outside"] {
+  opacity: 0.35;
 }
 .usage-limits-view:not([hidden]),
 .usage-limits-content {
@@ -260,21 +291,28 @@
   position: relative;
   block-size: 88px;
   margin-block: var(--ui-space-3) var(--ui-space-2);
-  margin-inline: var(--usage-quota-axis-gutter) var(--ui-space-2);
+  margin-inline: var(--usage-quota-axis-gutter) var(--ui-space-3);
 }
+/* One row per account: dot and name, latest value, and when it was read. */
 .usage-quota-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ui-space-2) var(--ui-space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+  gap: var(--ui-space-2) var(--ui-space-6);
   margin-block-start: var(--ui-space-3);
 }
 .usage-quota-legend-item {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--ui-space-2);
   min-inline-size: 0;
-  overflow-wrap: anywhere;
+}
+.usage-quota-legend-value,
+.usage-quota-legend-time {
+  white-space: nowrap;
+}
+.usage-quota-unit {
+  margin-block-start: 0;
 }
 .usage-quota-legend-dot {
   inline-size: 6px;
@@ -292,6 +330,25 @@
   block-size: 5px;
   border-radius: 50%;
   background: var(--ui-interaction-accent);
+  /* Centre the dot on its reading so 0 and 100 are not clipped or hang outside the plot. */
+  transform: translate(-50%, 50%);
+}
+/* Connecting segments sit under the dots; the plot box is fixed, so switching type never changes height. */
+.usage-quota-lines {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.usage-quota-line {
+  fill: none;
+  stroke: var(--usage-line-color);
+  stroke-width: 1.5;
+  stroke-opacity: 0.55;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 .usage-quota-max,
 .usage-quota-zero {
@@ -367,5 +424,4 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--ui-space-2);
-  font-variant-numeric: tabular-nums;
 }

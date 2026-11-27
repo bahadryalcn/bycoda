@@ -713,7 +713,7 @@ def worker(request):
         package_inputs = {n: b for n, b in files.items()
                           if n in ('LICENSE', 'host/package.mjs', 'host/package-archive.mjs',
                                    'scripts/build/build-info.mjs', 'Cargo.toml', 'Cargo.lock',
-                                   'scripts/build/host-service-launcher.mjs',
+                                   'scripts/build/host-service-launcher.mjs', 'scripts/build/host-pty.mjs',
                                    'scripts/release/sign-desktop-helper.ps1')
                           or n.startswith('packages/host-service-launcher/')}
         keys['host'] = keys['hostCompile'] + ':package-v2:' + fingerprint(package_inputs) + target

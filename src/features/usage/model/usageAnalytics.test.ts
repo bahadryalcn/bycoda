@@ -308,4 +308,30 @@ describe("usage analysis contracts", () => {
     rows[0].label = '=HYPERLINK("private")';
     expect(usageCsv(rows)).toContain('"\'=HYPERLINK(""private"")"');
   });
+
+  it("keeps each machine apart and filters by machine; unset means this computer", () => {
+    const [local] = accounts();
+    const remote: AccountUsage = {
+      ...local,
+      account: { ...local.account, id: "office/work", label: "Office · Work" },
+      machine: { id: "office", label: "Office" },
+    };
+    const samples = usageSamples([local, remote], pricing, groupFor);
+    const byMachine = usageBreakdown(
+      filterUsage(samples, emptyUsageFilters(), window),
+      "machine",
+      "tokens",
+    );
+    expect(byMachine.map((row) => [row.key, row.label, row.tokens]).sort()).toEqual([
+      ["local", "This machine", 165],
+      ["office", "Office", 165],
+    ]);
+    const officeOnly = filterUsage(
+      samples,
+      { ...emptyUsageFilters(), machine: ["office"] },
+      window,
+    );
+    expect(officeOnly.every((sample) => sample.account === "codex:office/work")).toBe(true);
+    expect(usageTotals(officeOnly).tokens).toBe(165);
+  });
 });

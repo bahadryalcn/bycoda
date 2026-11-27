@@ -7,8 +7,10 @@ import {
   readDesktopQuota,
   readUsageLimits,
 } from "../usage/limits-report";
+import { readUsageRows } from "../usage/rows-read";
 import { readPlanShare } from "../usage/plan-share-read";
 import { HOST_USAGE_PLAN_SHARE_METHOD } from "../../src/shared/model/host-contracts/usage-plan-share";
+import { HOST_USAGE_ROWS_METHOD } from "../../src/shared/model/host-contracts/usage-rows";
 import {
   applyProviderAccountStyles,
   readProviderAccountStyles,
@@ -18,6 +20,29 @@ import { quotaBillingProvider, unavailableRateLimits } from "../../src/shared/mo
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { hostUsageLimitsDeps, providerAccountConfigDir as accountDir } from "./usage-limits-deps";
+
+/** Log roots of every provider account profile on this Host, with its display label. */
+async function providerAccountLogRoots(): Promise<
+  { provider: "claude" | "codex"; accountId: string; label: string; roots: string[] }[]
+> {
+  const catalog = await hostProviderAccounts();
+  const accounts = [];
+  for (const provider of ["claude", "codex"] as const)
+    for (const account of catalog[provider] ?? []) {
+      const dir = await accountDir(provider, account.id);
+      if (!dir) continue;
+      accounts.push({
+        provider,
+        accountId: account.id,
+        label: account.label,
+        roots:
+          provider === "claude"
+            ? [join(dir, "projects")]
+            : [join(dir, "sessions"), join(dir, "archived_sessions")],
+      });
+    }
+  return accounts;
+}
 
 /** Host-wide provider quota and cost reads for the phone; read-only, no provider session is started. */
 export async function handleUsageRpc(
@@ -71,23 +96,21 @@ export async function handleUsageRpc(
         {
           environmentId,
           accountRoots: async () => {
-            const catalog = await hostProviderAccounts();
             const roots: Record<string, { provider: "claude" | "codex"; roots: string[] }> = {};
-            for (const provider of ["claude", "codex"] as const)
-              for (const account of catalog[provider] ?? []) {
-                const dir = await accountDir(provider, account.id);
-                if (!dir) continue;
-                roots[`${provider}:${account.id}`] = {
-                  provider,
-                  roots:
-                    provider === "claude"
-                      ? [join(dir, "projects")]
-                      : [join(dir, "sessions"), join(dir, "archived_sessions")],
-                };
-              }
+            for (const account of await providerAccountLogRoots())
+              roots[`${account.provider}:${account.accountId}`] = {
+                provider: account.provider,
+                roots: account.roots,
+              };
             return roots;
           },
         },
+        request.params,
+      );
+      break;
+    case HOST_USAGE_ROWS_METHOD:
+      request.result = await readUsageRows(
+        { environmentId, accounts: providerAccountLogRoots },
         request.params,
       );
       break;

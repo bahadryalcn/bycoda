@@ -70,12 +70,20 @@ export function normalizeWorktrees(listed: {
   };
 }
 
-export const listWorktrees = async (cwd: string, background = false) =>
+/**
+ * `background` queues the read behind interactive Git work on a Host. `light` skips the per-checkout
+ * dirty/unpushed probes (they stay `null`) for callers that only need path, branch, head and `missing`.
+ */
+export const listWorktrees = async (
+  cwd: string,
+  options: { background?: boolean; light?: boolean } = {},
+) =>
   normalizeWorktrees(
-    await invokeWorkspace<Parameters<typeof normalizeWorktrees>[0]>(
-      "git_worktrees",
-      background ? { cwd, background } : { cwd },
-    ),
+    await invokeWorkspace<Parameters<typeof normalizeWorktrees>[0]>("git_worktrees", {
+      cwd,
+      ...(options.background ? { background: true } : {}),
+      ...(options.light ? { light: true } : {}),
+    }),
   );
 
 /** A missing parent may be an unmounted volume, not a deleted worktree. */
@@ -122,7 +130,7 @@ export function temporaryWorktreeBranchName(id: string = crypto.randomUUID()): s
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 8)
     .toLowerCase();
-  return `mc/${token || Date.now().toString(36)}`;
+  return `by/${token || Date.now().toString(36)}`;
 }
 
 export function orchestrationWorktreeBranchName(id: string): string {
@@ -130,15 +138,15 @@ export function orchestrationWorktreeBranchName(id: string): string {
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 12)
     .toLowerCase();
-  return `mc/orch-${token || Date.now().toString(36)}`;
+  return `by/orch-${token || Date.now().toString(36)}`;
 }
 
 export function namedWorktreeBranch(fragment: string): string | null {
   const clean = fragment
     .trim()
-    .replace(/^(?:mc|bycoda)\/+/, "")
+    .replace(/^(?:by|mc|bycoda)\/+/, "")
     .replace(/^\/+|\/+$/g, "");
-  return clean ? `mc/${clean}` : null;
+  return clean ? `by/${clean}` : null;
 }
 
 /** Native removal accepts only local paths. Remote removal routes through the owning Host. */

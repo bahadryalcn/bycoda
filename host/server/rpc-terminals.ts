@@ -24,6 +24,8 @@ export async function handleTerminalsRpc(
 
     case "terminals.write":
 
+    case "terminals.resize":
+
     case "terminals.interrupt":
 
     case "terminals.close": {

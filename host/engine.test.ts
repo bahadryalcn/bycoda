@@ -1,6 +1,8 @@
 import { runTextOperation } from "../src/integrations/harness/core/textSource";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { additionalDirsFor } from "../src/integrations/harness/core/additionalDirs";
 import { join } from "node:path";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import { TurnNotReadyError } from "../src/integrations/harness/core/types";
@@ -2874,7 +2876,7 @@ describe("managed turn boundaries", () => {
           ...original.session,
           workspaceId: "source-workspace",
           worktreeCwd: directory,
-          branch: "bycoda/s/source",
+          branch: "by/source",
           blocks: [
             { id: "source-user", role: "user", text: "Implement search" },
             { id: "source-reply", role: "assistant", text: "Search is implemented." },
@@ -2895,7 +2897,7 @@ describe("managed turn boundaries", () => {
       workspaceId: "destination-workspace",
       sessionId: destinationId,
       path: join(directory, "destination"),
-      branchRef: "refs/heads/bycoda/s/destination",
+      branchRef: "refs/heads/by/destination",
       revision: 1,
     });
     engine.setManagedTurnHistoryAdapter(adapter);
@@ -2923,7 +2925,7 @@ describe("managed turn boundaries", () => {
       workspaceId: "destination-workspace",
       cwd: join(directory, "destination"),
       worktreeCwd: join(directory, "destination"),
-      branch: "bycoda/s/destination",
+      branch: "by/destination",
     });
     expect(await store.session(id)).toEqual(source);
   });
@@ -2939,7 +2941,7 @@ describe("managed turn boundaries", () => {
       workspaceId: "managed",
       sessionId: "prepared-session",
       path: join(directory, "owned"),
-      branchRef: "refs/heads/bycoda/s/owned",
+      branchRef: "refs/heads/by/owned",
       revision: 7,
     }));
     adapter.startActivity = vi.fn(async () => release);
@@ -2963,7 +2965,7 @@ describe("managed turn boundaries", () => {
       workspaceRevision: 7,
       cwd: join(directory, "owned"),
       worktreeCwd: join(directory, "owned"),
-      branch: "bycoda/s/owned",
+      branch: "by/owned",
     });
     await waitForTurnStart();
     expect(turns).toHaveLength(1);
@@ -3305,7 +3307,7 @@ describe("managed turn boundaries", () => {
       expect((await store.session(id)).session.blocks.at(-1)?.id).toBe(request.userBlockId);
       return {
         ...request,
-        branchRef: "refs/heads/bycoda/s/test",
+        branchRef: "refs/heads/by/test",
         before: {
           status: "complete",
           snapshot: {
@@ -3322,7 +3324,7 @@ describe("managed turn boundaries", () => {
     vi.mocked(adapter.history.end).mockImplementationOnce(async (request) => ({
       ...request,
       conversationRevision: 1,
-      branchRef: "refs/heads/bycoda/s/test",
+      branchRef: "refs/heads/by/test",
       before: { status: "blocked", reason: "fixture" },
       after: {
         status: "complete",
@@ -3359,7 +3361,7 @@ describe("managed turn boundaries", () => {
     const { adapter } = managedHistory();
     vi.mocked(adapter.history.begin).mockImplementation(async (request) => ({
       ...request,
-      branchRef: "refs/heads/bycoda/s/test",
+      branchRef: "refs/heads/by/test",
       before: { status: "blocked", reason: "Resolve the unmerged index" },
     }));
     const { engine, store, id, provider } = await setup("codex", {}, adapter);
@@ -6230,6 +6232,36 @@ describe("headless session ownership", () => {
       resetsAt: 5_000,
       resumeAtReset: false,
     });
+  });
+
+  it("gives a turn the validated extra folders and refuses bad ones before any turn starts", async () => {
+    const { engine, turns, id, waitForTurnStart } = await setup();
+    const extra = mkdtempSync(join(tmpdir(), "bycoda-engine-extra-"));
+    try {
+      await expect(
+        engine.command({
+          type: "send",
+          commandId: "bad-dirs",
+          sessionId: id,
+          text: "Work",
+          additionalDirs: [join(extra, "missing")],
+        }),
+      ).rejects.toThrow(/does not exist/);
+      expect(turns).toHaveLength(0);
+      const receipt = await engine.command({
+        type: "send",
+        commandId: "good-dirs",
+        sessionId: id,
+        text: "Work",
+        additionalDirs: [extra],
+      });
+      await waitForTurnStart();
+      expect(additionalDirsFor(id)).toHaveLength(1);
+      turns.pop()!.finish();
+      await engine.waitForRun(id, receipt.runId);
+    } finally {
+      rmSync(extra, { recursive: true, force: true });
+    }
   });
 
   it("cancels, re-arms, and dismisses a remote usage limit", async () => {

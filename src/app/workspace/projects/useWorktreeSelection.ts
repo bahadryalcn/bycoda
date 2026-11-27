@@ -20,6 +20,10 @@ import { shouldPersistSession, upsertSession } from "../../../features/sessions/
 import { notifyGitChanged } from "../../../platform/tauri/fs";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { currentWorkspace } from "../helpers/appHelpers";
+import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
+
+/** Bound for the worktree check that precedes a switch; a stalled Host must not leave the row spinning. */
+const WORKTREE_LIST_TIMEOUT_MS = 15_000;
 
 export interface WorktreeSelectionDeps {
   sessionsRef: { current: Session[] };
@@ -83,7 +87,15 @@ export function useWorktreeSelection({
       switchingWorktrees.current.set(sessionId, tree.path);
       pendingPersist.current.delete(sessionId);
       try {
-        const listed = await listWorktrees(current.cwd);
+        const listed = await withTimeout(
+          listWorktrees(current.cwd, { light: true }),
+          WORKTREE_LIST_TIMEOUT_MS,
+          "Worktree list",
+        ).catch((error: unknown) => {
+          if (error instanceof TimeoutError)
+            throw new Error("Listing worktrees took too long. Try selecting the worktree again.");
+          throw error;
+        });
         if (!isCurrent()) return;
         const target = listed.worktrees.find(
           (entry) => pathKey(entry.path) === pathKey(tree.path) && !entry.missing,

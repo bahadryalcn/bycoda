@@ -1,5 +1,6 @@
 type Output = string | Uint8Array;
 type Entry = { data: Output; consumed: () => void };
+const PARSER_COMPLETION_PROBE_MS = 2_000;
 /** Ordered parser admission, including a bounded hidden hold. */
 export function terminalOutputBuffer(
   write: (data: Output, consumed?: () => void) => void,
@@ -19,9 +20,11 @@ export function terminalOutputBuffer(
     if (!entry) return;
     writing = true;
     let done = false;
+    let probe: ReturnType<typeof setTimeout> | undefined;
     const consumed = () => {
       if (done) return;
       done = true;
+      clearTimeout(probe);
       entry.consumed();
       activeDone = undefined;
       writing = false;
@@ -29,8 +32,18 @@ export function terminalOutputBuffer(
     };
     activeDone = consumed;
     try {
-      if (acknowledged) write(entry.data, consumed);
-      else {
+      if (acknowledged) {
+        probe = setTimeout(() => {
+          // xterm's FIFO puts this callback behind the original data. Return
+          // credit only when one of the callbacks proves the parser made progress.
+          try {
+            write(typeof entry.data === "string" ? "" : new Uint8Array(), consumed);
+          } catch (error) {
+            console.warn("Terminal output parser probe failed", error);
+          }
+        }, PARSER_COMPLETION_PROBE_MS);
+        write(entry.data, consumed);
+      } else {
         write(entry.data);
         consumed();
       }

@@ -1,14 +1,14 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Settings } from "../../../shared/ui/icons";
 import { t, useFormat } from "../../../shared/i18n";
 import { saveVoiceTurnEndChoice, voiceTurnChoiceFailedText } from "../model/voiceTurnPolicy";
 import { Group, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import { openAssistantRoom, VoiceMemoryRow } from "./VoiceCompanionSettings";
-import type { VoiceSettings as Preferences } from "../model/voiceSettings";
+import { VOICE_SETTINGS_DEFAULTS, type VoiceSettings as Preferences } from "../model/voiceSettings";
 
 const MANUAL_TURN_END = "manual";
+const DEFAULT_TURN_END_SILENCE = 1.2;
 
 /** How a spoken conversation takes turns, what it remembers, and when it sleeps or calls back. */
 export function VoiceConversationStyle({
@@ -22,7 +22,7 @@ export function VoiceConversationStyle({
 }) {
   const [turnChoiceError, setTurnChoiceError] = useState(false);
   const { formatNumber } = useFormat();
-  const pause = settings.turnEndSilence ?? 1.2;
+  const pause = settings.turnEndSilence ?? DEFAULT_TURN_END_SILENCE;
   const manual = settings.manualTurnEnd === true;
   const idleChoices = [0, 5, 10, 15, 30, 60];
   // One choice covers both ways a turn ends; leaving manual mode goes through the acknowledged opt-in save.
@@ -44,12 +44,7 @@ export function VoiceConversationStyle({
       title={t("Conversation")}
       layout="full"
       action={
-        <Button
-          size="sm"
-          variant="ghost"
-          startIcon={<Settings className="icon-sm" />}
-          onClick={() => openAssistantRoom("settings")}
-        >
+        <Button size="sm" variant="secondary" onClick={() => openAssistantRoom("settings")}>
           {t("Assistant settings")}
         </Button>
       }
@@ -57,6 +52,8 @@ export function VoiceConversationStyle({
       <Row
         id="voice-turn-silence"
         label={t("Wait before replying")}
+        modified={manual || pause !== DEFAULT_TURN_END_SILENCE}
+        onReset={() => chooseTurnEnd(String(DEFAULT_TURN_END_SILENCE))}
         description={
           manual
             ? t(
@@ -88,21 +85,36 @@ export function VoiceConversationStyle({
         />
       </Row>
       <VoiceMemoryRow assistantMemoryCount={assistantMemoryCount} />
-      <Row id="voice-barge-in" label={t("I may interrupt speech")}>
+      <Row
+        id="voice-barge-in"
+        label={t("Interrupt replies by speaking")}
+        modified={settings.allowBargeIn === false}
+        onReset={() => change({ allowBargeIn: true })}
+      >
         <Toggle
-          label={t("I may interrupt speech")}
+          label={t("Interrupt replies by speaking")}
           on={settings.allowBargeIn !== false}
           onChange={(allowBargeIn) => change({ allowBargeIn })}
         />
       </Row>
-      <Row id="voice-remove-fillers" label={t("Remove filler words in replies")}>
+      <Row
+        id="voice-remove-fillers"
+        label={t("Remove filler words in replies")}
+        modified={settings.removeFillers === true}
+        onReset={() => change({ removeFillers: false })}
+      >
         <Toggle
           label={t("Remove filler words in replies")}
           on={settings.removeFillers === true}
           onChange={(removeFillers) => change({ removeFillers })}
         />
       </Row>
-      <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
+      <Row
+        id="voice-hold-announcements"
+        label={t("Hold spoken progress updates")}
+        modified={settings.holdAnnouncements === true}
+        onReset={() => change({ holdAnnouncements: false })}
+      >
         <Toggle
           label={t("Hold spoken progress updates")}
           on={settings.holdAnnouncements === true}
@@ -111,14 +123,16 @@ export function VoiceConversationStyle({
       </Row>
       <Row
         id="voice-idle-sleep"
-        label={t("Sleep voice when I'm idle")}
+        label={t("Turn voice off when idle")}
+        modified={settings.idleSleepMinutes !== VOICE_SETTINGS_DEFAULTS.idleSleepMinutes}
+        onReset={() => change({ idleSleepMinutes: VOICE_SETTINGS_DEFAULTS.idleSleepMinutes })}
         description={t(
           "Closes the microphone while idle. Returning leaves it off until you press Talk.",
         )}
       >
         <Select
           hideLabel
-          label={t("Sleep voice when I'm idle")}
+          label={t("Turn voice off when idle")}
           value={String(settings.idleSleepMinutes)}
           options={[
             { value: "0", label: t("Never") },
@@ -134,14 +148,15 @@ export function VoiceConversationStyle({
       </Row>
       <Row
         id="voice-return-call"
-        label={t("Call me when I return")}
+        label={t("Greet me when I return")}
+        modified={settings.returnCall === true}
+        onReset={() => change({ returnCall: false })}
         description={t(
           "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
         )}
-        descriptionVisible
       >
         <Toggle
-          label={t("Call me when I return")}
+          label={t("Greet me when I return")}
           on={settings.returnCall === true}
           onChange={(returnCall) => change({ returnCall })}
         />
@@ -150,6 +165,8 @@ export function VoiceConversationStyle({
         <Row
           id="voice-semantic-vad"
           label={t("Experimental OpenAI turn detection")}
+          modified={settings.experimentalSemanticVad === true}
+          onReset={() => change({ experimentalSemanticVad: false })}
           description={t(
             "Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.",
           )}

@@ -485,6 +485,28 @@ export function providerAccountLabelIn(
   );
 }
 
+const GENERATED_ACCOUNT_LABEL = /^account-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+/**
+ * The one name every surface shows for an account. A stored label that is empty or only the
+ * generated account id is not a name: it falls back to the sign-in email, else "Account N"
+ * (N is the account's place among its provider's accounts). Stored data is never rewritten.
+ */
+export function accountDisplayLabel(
+  account: Pick<ProviderAccount, "id" | "provider" | "label">,
+  accounts: readonly Pick<ProviderAccount, "id" | "provider">[] = [],
+  email?: string | null,
+): string {
+  const label = cleanLabel(account.label);
+  if (label === DEFAULT_PROVIDER_ACCOUNT_LABEL) return t("Default account");
+  if (label && label !== account.id && !GENERATED_ACCOUNT_LABEL.test(label)) return label;
+  const address = email?.trim();
+  if (address) return address;
+  const peers = accounts.filter((entry) => entry.provider === account.provider);
+  const index = peers.findIndex((entry) => entry.id === account.id);
+  return t("Account {p0}", { p0: (index < 0 ? peers.length : index) + 1 });
+}
+
 export function subscribeProviderAccounts(listener: () => void): () => void {
   return accountStore.subscribe(() => listener());
 }

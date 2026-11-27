@@ -25,8 +25,8 @@ it("shows Grok weekly remaining/used values and known reset without account cont
   expect(remaining).toContain("Resets in");
   // The reset time is the countdown's tooltip, not a second line of text.
   expect(remaining).not.toContain("<br");
-  expect(remaining).toContain('aria-label="Grok · Weekly · left"');
-  expect(remaining).not.toContain("Account actions");
+  expect(remaining).toContain('aria-label="Grok Build · Default account · Weekly · left"');
+  expect(remaining).not.toContain("Account color");
   state.remaining = false;
   expect(renderToStaticMarkup(createElement(GrokLimits, { refresh: 0 }))).toContain("19%");
 });
@@ -34,8 +34,8 @@ it("shows Grok weekly remaining/used values and known reset without account cont
 it("keeps unavailable data unknown and offers retry", () => {
   state.limits = { ...idleRateLimits("grok"), status: "error", error: "Grok usage unavailable" };
   const markup = renderToStaticMarkup(createElement(GrokLimits, { refresh: 0 }));
-  expect(markup).toContain("Usage unavailable");
-  expect(markup).toContain("Try again");
+  expect(markup).toContain("Account limits unavailable.");
+  expect(markup).toContain("Retry: Default account");
   expect(markup).not.toContain('role="meter"');
 });
 
@@ -52,7 +52,7 @@ it("localizes the window and quantity direction together", async () => {
       state.remaining = remaining;
       const markup = renderToStaticMarkup(createElement(GrokLimits, { refresh: 0 }));
       expect(markup).toContain(
-        `aria-label="Grok · ${t("Weekly")} · ${t(remaining ? "left" : "used")}"`,
+        `aria-label="Grok Build · ${t("Default account")} · ${t("Weekly")} · ${t(remaining ? "left" : "used")}"`,
       );
       expect(markup).toContain(t("Reset time unavailable"));
       expect(markup).toContain(`aria-valuenow="${remaining ? 81 : 19}"`);

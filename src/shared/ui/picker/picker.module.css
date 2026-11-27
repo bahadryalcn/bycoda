@@ -51,7 +51,7 @@
   flex: none;
 }
 
-/* Row: [check] [icon] title · meta / description [trailing] [check]. The Arc choice row owns surface,
+/* Row: [icon] title · meta / description [trailing] [check]. The Arc choice row owns surface,
    highlight, pressed, selected and disabled roles; this only lays out the slots. */
 /* Meta yields first: it shrinks faster than the title and never takes more than 40% of the line. */
 .meta {

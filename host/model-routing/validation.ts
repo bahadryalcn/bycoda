@@ -1,6 +1,7 @@
 import {
   MODEL_ROUTING_DELEGATION_KEYS,
   ModelRoutingDraftSchema,
+  sameModelRoutingTarget,
   type ModelRoutingDraft,
   type ModelRoutingEntry,
   type ModelRoutingRole,
@@ -20,15 +21,6 @@ type PersistedTargets = {
   entries: ModelRoutingEntry[];
   roles: ModelRoutingDraft["roles"];
 };
-/** Same harness, model and account as the persisted target; settings are not part of identity. */
-function sameTarget(a: ModelRoutingTarget | undefined, b: ModelRoutingTarget) {
-  return (
-    a !== undefined &&
-    a.harness === b.harness &&
-    a.model === b.model &&
-    (a.providerAccountId ?? "default") === (b.providerAccountId ?? "default")
-  );
-}
 /** Persisted targets that were already saved keep their identity; only new or changed ones are checked against the live catalog. */
 export function validateModelRoutingDraft(
   raw: unknown,
@@ -60,6 +52,12 @@ export function validateModelRoutingDraft(
     if ((pool.poolIds ?? []).some((id) => !pools.has(id)))
       throw new Error(`Unknown included pool in pool ${pool.id}.`);
     if (pool.poolIds?.includes(pool.id)) throw new Error(`Pool ${pool.id} includes itself.`);
+    for (const [entryId, settings] of Object.entries(pool.memberSettings ?? {})) {
+      if (!pool.entryIds.includes(entryId))
+        throw new Error(`Pool ${pool.id} has settings for a model it does not list.`);
+      if (MODEL_ROUTING_DELEGATION_KEYS.some((key) => key in settings))
+        throw new Error("Delegation keys belong in model routing delegation settings.");
+    }
   }
   if (modelRoutingPoolCycle(draft.pools))
     throw new Error("Pools must not include each other in a cycle.");
@@ -72,7 +70,7 @@ export function validateModelRoutingDraft(
     draft.entries.map((entry) => ({
       target: entry,
       entryId: entry.id,
-      unchanged: sameTarget(persistedEntries.get(entry.id), entry),
+      unchanged: sameModelRoutingTarget(persistedEntries.get(entry.id), entry),
     }));
   for (const [role, choice] of Object.entries(draft.roles)) {
     if (choice.kind === "pool" && !pools.has(choice.poolId))
@@ -81,7 +79,8 @@ export function validateModelRoutingDraft(
       const previous = persisted?.roles[role as ModelRoutingRole];
       targets.push({
         target: choice.target,
-        unchanged: previous?.kind === "fixed" && sameTarget(previous.target, choice.target),
+        unchanged:
+          previous?.kind === "fixed" && sameModelRoutingTarget(previous.target, choice.target),
       });
     }
   }

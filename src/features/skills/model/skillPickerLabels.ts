@@ -52,7 +52,7 @@ export function skillScopeLabel(skill: Skill): string {
   }
   if (skill.kind === "builtin") return PRODUCT_IDENTITY.displayName;
   if (skill.kind === "template") return t("Templates");
-  if (skill.scope === "user") return t("Personal");
+  if (skill.scope === "user") return t("All projects");
   if (skill.source !== "agents" && skill.source !== "bycoda") return skill.source;
   return t("Project");
 }

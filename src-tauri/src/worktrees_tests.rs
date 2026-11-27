@@ -545,8 +545,17 @@ fn worktree_registered_managed_path_cannot_bypass_host_after_branch_rename() {
 fn worktree_managed_branches_require_authoritative_host_cleanup_even_with_force() {
     let repo = repo();
     let root = repo.0.join("repo");
-    for branch in ["bycoda/s/managed-session", "bycoda/t/managed-task"] {
+    for branch in ["by/managed-session", "by/managed-task-1a2b3c4d"] {
         let tree = create(&root, branch, "main", false).unwrap();
+        git(
+            &root,
+            &[
+                "config",
+                &format!("branch.{branch}.bycodaWorkspace"),
+                "ws-1",
+            ],
+        )
+        .unwrap();
         let path = Path::new(&tree.path);
         std::fs::write(path.join("dirty-source"), "retained source").unwrap();
         let error = remove(&root, path, true).unwrap_err();
@@ -703,18 +712,27 @@ fn reuses_branches_and_rejects_locked_or_unregistered_paths() {
 fn renames_only_temporary_worktree_branches() {
     let repo = repo();
     let root = repo.0.join("repo");
-    let tree = create(&root, "mc/12345678", "main", false).unwrap();
-    let renamed = rename_branch(&root, Path::new(&tree.path), "mc/faster-worktrees").unwrap();
-    assert_eq!(renamed.branch.as_deref(), Some("mc/faster-worktrees"));
+    let tree = create(&root, "by/12345678", "main", false).unwrap();
+    let renamed = rename_branch(&root, Path::new(&tree.path), "by/faster-worktrees").unwrap();
+    assert_eq!(renamed.branch.as_deref(), Some("by/faster-worktrees"));
     assert!(git(
         &root,
-        &["rev-parse", "--verify", "refs/heads/mc/faster-worktrees"]
+        &["rev-parse", "--verify", "refs/heads/by/faster-worktrees"]
     )
     .is_ok());
-    assert!(rename_branch(&root, &root, "mc/nope").is_err());
+    assert!(rename_branch(&root, &root, "by/nope").is_err());
 
     let regular = create(&root, "feature/manual", "main", false).unwrap();
-    assert!(rename_branch(&root, Path::new(&regular.path), "mc/should-not-change").is_err());
+    assert!(rename_branch(&root, Path::new(&regular.path), "by/should-not-change").is_err());
+
+    // A managed branch is renamed by Host only.
+    let managed = create(&root, "by/87654321", "main", false).unwrap();
+    git(
+        &root,
+        &["config", "branch.by/87654321.bycodaWorkspace", "ws-1"],
+    )
+    .unwrap();
+    assert!(rename_branch(&root, Path::new(&managed.path), "by/stolen").is_err());
 }
 
 #[test]
@@ -1227,4 +1245,31 @@ fn removal_keeps_the_branch_by_default() {
     .unwrap();
     assert!(branch_exists(&root, "kept-branch"));
     assert!(removed.branch_notice.is_none());
+}
+
+#[test]
+fn light_probe_reports_missing_without_git_state() {
+    let repo = repo();
+    let present = light_probe(&repo.0.join("repo"));
+    assert!(!present.missing);
+    assert!(present.dirty.is_none() && present.unpushed.is_none());
+    let gone = light_probe(&repo.0.join("nope"));
+    assert!(gone.missing);
+}
+
+#[test]
+fn worktree_missing_folder_is_not_mistaken_for_a_managed_workspace() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "by/hand-made-gone", "main", false).unwrap();
+    let path = std::path::PathBuf::from(&tree.path);
+    std::fs::remove_dir_all(&path).unwrap();
+    // The marker is read from the repository, so a deleted folder does not fail the check closed.
+    assert!(!branch_is_managed(&root, "by/hand-made-gone"));
+    if let Err(error) = removal_target(&root, &path) {
+        assert!(
+            !error.contains("Host workspace cleanup plan/apply"),
+            "{error}"
+        );
+    }
 }

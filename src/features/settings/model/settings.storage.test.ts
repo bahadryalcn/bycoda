@@ -49,15 +49,19 @@ it("keep-awake listeners hear Host snapshots, never localStorage events", () => 
   const unsubscribe = subscribeKeepAwakeEnabled(callback);
   try {
     // A save is forwarded to the Host and is not reported durable until it is acknowledged.
-    expect(saveKeepAwakeEnabled(true)).toBe(false);
-    expect(save).toHaveBeenCalledWith("keepAwakeWhileAgentsWork", true);
-    expect(loadKeepAwakeEnabled()).toBe(false);
+    expect(saveKeepAwakeEnabled(false)).toBe(false);
+    expect(save).toHaveBeenCalledWith("keepAwakeWhileAgentsWork", false);
+    expect(loadKeepAwakeEnabled()).toBe(true);
     expect(callback).not.toHaveBeenCalled();
     // Another window's change reaches this one through the Host record.
     acceptAgentDefaults({
-      agentDefaults: { ...DEFAULT_AGENT_DEFAULTS, version: 1, keepAwakeWhileAgentsWork: true },
+      agentDefaults: {
+        ...DEFAULT_AGENT_DEFAULTS,
+        version: 1,
+        keepAwakeWhileAgentsWork: false,
+      },
     });
-    expect(loadKeepAwakeEnabled()).toBe(true);
+    expect(loadKeepAwakeEnabled()).toBe(false);
     expect(callback).toHaveBeenCalledTimes(1);
     window.dispatchEvent(
       new StorageEvent("storage", {

@@ -191,9 +191,12 @@ async function selectProvider(title: string) {
 
 /** Selects an Appearance tab; hidden tabs keep their DOM but defer updates. */
 async function openAppearanceTab(label: string) {
-  const tab = [...container.querySelectorAll<HTMLElement>('[role="tab"]')].find(
-    (item) => item.textContent === label,
-  );
+  // The settings navigation also has a Chat entry, so only the Appearance tab list is searched.
+  const tab = [
+    ...container.querySelectorAll<HTMLElement>(
+      '[role="tablist"][aria-label="Appearance"] [role="tab"]',
+    ),
+  ].find((item) => item.textContent === label);
   await act(async () => tab!.click());
 }
 
@@ -684,6 +687,8 @@ describe("settings pages", () => {
     expect(summary.getAttribute("aria-checked")).toBe("false");
   });
   it("applies visual theme cards and preserves custom palettes", async () => {
+    // Depth is a dark-mode row; the default follows the system, which happy-dom reports as light.
+    localStorage.setItem("bycoda.colorScheme", "dark");
     localStorage.setItem("bycoda.themeHue", "123");
     localStorage.setItem("bycoda.themeSaturation", "31");
     await render("appearance");
@@ -871,12 +876,13 @@ describe("settings pages", () => {
     expect(onSelectSection).not.toHaveBeenCalled();
   });
 
-  it("shows the off-by-default sleep setting with Linux lock guidance", async () => {
+  it("shows the on-by-default sleep setting with Linux lock guidance", async () => {
     await render("general");
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Prevent sleep while agents work"]',
     )!;
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(toggle.closest(".settings-row")!.querySelector(".settings-reset")).toBeNull();
     // The platform detail lives in the row's tooltip.
     const info = toggle
       .closest(".settings-row")!
@@ -906,11 +912,7 @@ describe("settings pages", () => {
     )!;
     expect(hold.closest(".settings-row")).not.toBe(toggle.closest(".settings-row"));
     expect(hold.closest(".settings-row")?.textContent).toContain("After agents finish");
-    expect(hold.disabled).toBe(true);
-
-    await act(async () => toggle.click());
     expect(hold.disabled).toBe(false);
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
     expect(loadKeepAwakeEnabled()).toBe(true);
 
     await act(async () => hold.click());
@@ -1751,6 +1753,8 @@ describe("settings pages", () => {
   it.each(
     [...new Set(SETTINGS_INDEX.map((entry) => entry.section))].map((section) => ({ section })),
   )("renders every indexed setting on the $section page", async ({ section }) => {
+    // Depth is indexed but only shown in dark mode; the default follows the (light) test system.
+    if (section === "appearance") localStorage.setItem("bycoda.colorScheme", "dark");
     if (section === "worktrees") {
       vi.mocked(invoke).mockImplementation(async (command) =>
         command === "git_worktrees" ? { worktrees: [], defaultRoot: "/worktrees" } : undefined,
@@ -1851,25 +1855,26 @@ describe("settings pages", () => {
     );
     const group = container.querySelector('[data-setting-id="harness-updates"]')!;
     const status = container.querySelector('[data-setting-id="cli-path-claude"]')!;
-    expect(group.textContent).toContain("Not checked yet");
     // The state is an icon named by its accessible label, not row text.
     const statusIcon = () => status.querySelector('[role="img"]')?.getAttribute("aria-label");
     const updateButton = () =>
       [...status.querySelectorAll<HTMLButtonElement>("button")].find(
         (button) => button.textContent?.trim() === "Update",
       );
-    expect(statusIcon()).toBe("Unknown");
-    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "harness_exec")).toBe(
-      false,
-    );
-
+    // The first visit may already have checked (or reuse an earlier check), so Check all is
+    // asserted by the version reads it starts.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    vi.mocked(invoke).mockClear();
     const checkButton = Array.from(group.querySelectorAll("button")).find(
       (button) => button.textContent === "Check all",
     )!;
     await act(async () => checkButton.click());
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "harness_exec")).toBe(true);
     expect(status.textContent).toContain("2.1.284");
-    expect(statusIcon()).toBe("Update available");
+    // The Update button says it, so the row shows no second status mark.
+    expect(statusIcon()).toBeUndefined();
+    expect(updateButton()).toBeDefined();
     expect(group.textContent).toContain("Update available: Claude Code");
 
     await act(async () => updateButton()!.click());

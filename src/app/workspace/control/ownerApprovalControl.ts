@@ -28,6 +28,8 @@ export function handleOwnerApprovalControl(
     namespace: string;
     id: string;
     sessionId?: unknown;
+    threadId?: unknown;
+    cwd?: unknown;
     action?: string;
     input: Record<string, unknown>;
   },

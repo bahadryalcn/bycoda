@@ -92,7 +92,10 @@ import {
   startPerformanceSpan,
   recordPerformanceEvent,
 } from "../../../shared/lib/performanceTrace";
-import { prepareSessionWorkspace } from "../../workspaces/model/sessionWorkspace";
+import {
+  prepareSessionWorkspaceDetailed,
+  sessionWorktreeSnapshot,
+} from "../../workspaces/model/sessionWorkspace";
 import { applyWorkspaceRewind, planWorkspaceRewind } from "../../workspaces/model/rewindClient";
 import {
   clearWorkspaceRewindUndo,
@@ -103,6 +106,14 @@ import {
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
 import { useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
+import { remoteSessionAdditionalDirs } from "../model/remoteSessionDirs";
+import {
+  loadProjectBaseRemote,
+  saveProjectBaseRemote,
+  saveSessionExtraWorktrees,
+} from "../../projects/public/additionalDirs";
+import { newCreationProgressId } from "../../workspaces/model/creationProgress";
+import { HOST_ADDITIONAL_DIRS_CAPABILITY } from "../../../shared/model/host-contracts/session-additional-dirs";
 import {
   MachineChannelStreamError,
   subscribeRemoteMachineChannel,
@@ -335,7 +346,11 @@ export function RemoteSession({
 }
 function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSession>[0]) {
   const { project, machine, shell, compactPresentation } = props;
-  const [state, setState] = useState<{ ready: boolean; pending?: HostCommand; error?: string }>({
+  const [state, setState] = useState<{
+    ready: boolean;
+    pending?: HostCommand;
+    error?: string;
+  }>({
     ready: false,
   });
   const [attempt, setAttempt] = useState(0);
@@ -574,9 +589,11 @@ function ConnectedRemoteSession({
   snapshotRef.current = snapshot;
   const [remoteHistoryLoading, setRemoteHistoryLoading] = useState(false);
   const [remoteHistoryError, setRemoteHistoryError] = useState("");
-  const historyPageRequest = useRef<{ revision: number; before?: number; binding: number } | null>(
-    null,
-  );
+  const historyPageRequest = useRef<{
+    revision: number;
+    before?: number;
+    binding: number;
+  } | null>(null);
   const forceTailRead = useRef(false);
   const loadingRemoteBlocks = useRef(new Set<string>());
   const [refresh, setRefresh] = useState(0);
@@ -641,8 +658,9 @@ function ConnectedRemoteSession({
     shell.workspaceMode,
   );
   // This identity survives preparation failures/reloads, before a create receipt
-  // exists. Hosts advertising managedCreation validate it before binding ownership.
-  const creationIdentityKey = `bycoda.managedCreate:${machine.environmentId}:${shell.id}`;
+  // exists. Hosts advertising managedCreation validate it before binding ownership. The project
+  // is part of the key: switching the draft's project after a failed send starts a new identity.
+  const creationIdentityKey = `bycoda.managedCreate:${machine.environmentId}:${shell.id}:${shell.cwd}`;
   const managedCreateId = () => {
     if (owner) return owner.sessionId;
     const existing = localStorage.getItem(creationIdentityKey);
@@ -651,12 +669,42 @@ function ConnectedRemoteSession({
     localStorage.setItem(creationIdentityKey, id);
     return id;
   };
+  // The repositories and slug frozen for this creation identity's first prepare, so a retry after
+  // a timeout repeats the same Host request. Dropped once the workspace exists.
+  const creationSnapshotKey = `${creationIdentityKey}:snapshot`;
+  const creationSnapshot = (): Pick<Session, "worktreeRepositories" | "worktreeSlug"> => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(creationSnapshotKey) ?? "null") as {
+        worktreeRepositories?: unknown;
+        worktreeSlug?: unknown;
+      } | null;
+      if (
+        Array.isArray(stored?.worktreeRepositories) &&
+        stored.worktreeRepositories.every((dir) => typeof dir === "string") &&
+        typeof stored.worktreeSlug === "string"
+      )
+        return stored as { worktreeRepositories: string[]; worktreeSlug: string };
+    } catch {
+      // A damaged snapshot is replaced by a fresh one.
+    }
+    const fresh = sessionWorktreeSnapshot({ ...shell, cwd: project.key });
+    localStorage.setItem(creationSnapshotKey, JSON.stringify(fresh));
+    return fresh;
+  };
   const [draftWorktreeBase, setDraftWorktreeBase] = useState<string | undefined>(
     shell.worktreeBase,
   );
+  const [draftWorktreeBaseRemote, setDraftWorktreeBaseRemote] = useState<boolean | undefined>(
+    shell.worktreeBaseRemote,
+  );
+  // Id of the running `workspaces.prepare`, so the creation progress card can poll it.
+  const [creationProgressId, setCreationProgressId] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
   const [rewinding, setRewinding] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ offset: number; size: number }>();
+  const [uploadProgress, setUploadProgress] = useState<{
+    offset: number;
+    size: number;
+  }>();
   const sendingRef = useRef(false);
   const sendingOwner = useRef<symbol | undefined>(undefined);
   const rewindOwner = useRef<symbol | undefined>(undefined);
@@ -1476,6 +1524,7 @@ function ConnectedRemoteSession({
           providerAccountId: draft.providerAccountId ?? undefined,
           workspaceMode: draftWorkspaceMode,
           worktreeBase: draftWorktreeBase,
+          worktreeBaseRemote: draftWorktreeBaseRemote,
           worktreeCwd: selectedCwd === project.cwd ? undefined : selectedCwd,
         },
         binding,
@@ -1492,6 +1541,7 @@ function ConnectedRemoteSession({
     draft.providerAccountId,
     draftWorkspaceMode,
     draftWorktreeBase,
+    draftWorktreeBaseRemote,
     selectedCwd,
   ]);
   const updateConfiguration = (update: (current: Configuration) => Configuration) => {
@@ -2123,19 +2173,28 @@ function ConnectedRemoteSession({
       if (!descriptor || (!managedCreation && draftWorkspaceMode === "worktree"))
         throw new Error(t("Update bycoda to create managed sessions on this remote Host."));
       const reservedSessionId = managedCreateId();
-      const workspace = projectless
+      const progressId = newCreationProgressId();
+      if (!projectless) setCreationProgressId(progressId);
+      // The Host creates the primary worktree and one per chosen repository; a retry recovers
+      // the same workspace through the idempotency key. An old Host raises the update error.
+      const prepared = projectless
         ? undefined
-        : await prepareSessionWorkspace(
+        : await prepareSessionWorkspaceDetailed(
             {
               ...shell,
               id: reservedSessionId,
               cwd: project.key,
               workspaceMode: draftWorkspaceMode,
               worktreeBase: draftWorktreeBase,
+              worktreeBaseRemote: draftWorktreeBaseRemote,
               worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+              ...creationSnapshot(),
             },
             !!managedCreation,
-          );
+            { progressId },
+          ).finally(() => setCreationProgressId(undefined));
+      if (prepared) localStorage.removeItem(creationSnapshotKey);
+      const workspace = prepared?.workspace ?? null;
       if (
         !alive.current ||
         version !== bindingGen.version ||
@@ -2163,6 +2222,7 @@ function ConnectedRemoteSession({
       )
         return;
       setUploadProgress(undefined);
+      if (workspace) saveSessionExtraWorktrees(shell.id, prepared?.extraWorktrees ?? {});
       const worktreeCwd = workspace?.path ?? selectedCwd;
       const followup: Exclude<HostCommand, { type: "create" }> = turn.draft
         ? {
@@ -2288,6 +2348,12 @@ function ConnectedRemoteSession({
           intent,
           ...(draftBlockId ? { draftBlockId } : {}),
           ...(planBlockId ? { planBlockId } : {}),
+          // An older Host rejects unknown fields, so only a Host that advertises it gets the list.
+          ...(descriptor?.capabilities.includes(HOST_ADDITIONAL_DIRS_CAPABILITY)
+            ? {
+                additionalDirs: remoteSessionAdditionalDirs(shell.id, project.key),
+              }
+            : {}),
         };
 
   // The desktop that owns this conversation is running a turn (`LEASE_HELD`):
@@ -2536,18 +2602,26 @@ function ConnectedRemoteSession({
     preparingRef.current = true;
     void (async () => {
       const reservedSessionId = managedCreateId();
-      const workspace = await prepareSessionWorkspace(
+      const progressId = newCreationProgressId();
+      setCreationProgressId(progressId);
+      const prepared = await prepareSessionWorkspaceDetailed(
         {
           ...shell,
           id: reservedSessionId,
           cwd: project.key,
           workspaceMode: draftWorkspaceMode,
           worktreeBase: draftWorktreeBase,
+          worktreeBaseRemote: draftWorktreeBaseRemote,
           worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+          ...creationSnapshot(),
         },
         !!managedCreation,
-      );
+        { progressId },
+      ).finally(() => setCreationProgressId(undefined));
+      localStorage.removeItem(creationSnapshotKey);
+      const workspace = prepared.workspace;
       if (!alive.current || version !== bindingGen.version) return undefined;
+      if (workspace) saveSessionExtraWorktrees(shell.id, prepared.extraWorktrees);
       const cwd = workspace?.path ?? selectedCwd;
       return run({
         type: "create",
@@ -3023,6 +3097,8 @@ function ConnectedRemoteSession({
       projectless || executionCwd === project.cwd ? undefined : displayPath(executionCwd),
     workspaceMode: hostSession ? undefined : draftWorkspaceMode,
     worktreeBase: hostSession ? undefined : draftWorktreeBase,
+    worktreeBaseRemote: hostSession ? undefined : draftWorktreeBaseRemote,
+    worktreeProgressId: hostSession ? undefined : creationProgressId,
     branch: branches?.current ?? hostSession?.branch,
     harness: configuration.harness,
     model: configuration.model,
@@ -4207,8 +4283,21 @@ function ConnectedRemoteSession({
     onWorkspaceModeChange: (_, mode, base) => {
       setDraftWorkspaceMode(mode);
       if (base) setDraftWorktreeBase(base);
+      if (mode === "current") setDraftWorktreeBaseRemote(undefined);
+      // Entering worktree mode starts from the project's remembered "Start from remote" choice.
+      else
+        setDraftWorktreeBaseRemote(
+          (current) => current ?? (loadProjectBaseRemote(shell.cwd) || undefined),
+        );
     },
-    onWorktreeBaseChange: (_, base) => setDraftWorktreeBase(base),
+    onWorktreeBaseChange: (_: string, base: string, fromRemote?: boolean) => {
+      setDraftWorktreeBase(base);
+      if (fromRemote !== undefined) setDraftWorktreeBaseRemote(fromRemote);
+    },
+    onWorktreeBaseRemoteChange: (_, remote) => {
+      saveProjectBaseRemote(shell.cwd, remote);
+      setDraftWorktreeBaseRemote(remote);
+    },
     onManageWorktrees: undefined,
     onSaveDraft: (_, text, attachments) => saveDraft(text, attachments),
     onRemoveDraft: (_, draftBlockId) => removeDraft(draftBlockId),

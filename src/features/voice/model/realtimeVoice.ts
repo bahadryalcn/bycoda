@@ -1,3 +1,4 @@
+import { routeVoiceOutput } from "./voiceOutputDevice";
 import { errorText } from "../../../shared/lib/errors";
 import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
@@ -19,6 +20,7 @@ import {
 } from "./voiceReconnect";
 import { refusedVoiceCancel } from "./realtimeVoiceErrors";
 import { voiceSeedItems } from "./voiceOpenWork";
+import { swapMicrophone, voiceMicrophoneConstraints } from "./microphoneSwap";
 import { openMicrophone, stopMicrophone } from "./microphoneAccess";
 import {
   VOICE_AUDIO_STEP_MS,
@@ -306,15 +308,61 @@ export class RealtimeVoice {
   private startedAt = 0;
   private rotationTimer?: ReturnType<typeof setInterval>;
   private rotationRequested = false;
+  /** The open microphone; a switch replaces it without reconnecting. */
+  private deviceId?: string;
+  private microphoneSwap: Promise<void> = Promise.resolve();
+  private swappingMicrophone = false;
   private deviceChanged = () => {
     const tracks = this.stream?.getAudioTracks();
     if (
       !this.closed &&
+      !this.swappingMicrophone &&
       tracks &&
       (!tracks.length || tracks.every((track) => track.readyState === "ended"))
     )
       this.fail("Microphone lost.", "microphone_lost");
   };
+
+  /** Moves capture to another microphone without ending the conversation. */
+  switchMicrophone(deviceId: string | undefined): Promise<void> {
+    this.microphoneSwap = this.microphoneSwap.then(async () => {
+      const previous = this.deviceId;
+      if (previous === deviceId) return;
+      this.deviceId = deviceId;
+      if (this.closed || !this.input || !this.stream || !this.source || !this.capture) return;
+      this.vad?.reset();
+      this.level.current = 0;
+      this.swappingMicrophone = true;
+      try {
+        const next = await swapMicrophone({
+          context: this.input,
+          capture: this.capture,
+          stream: this.stream,
+          source: this.source,
+          deviceId,
+          previousDeviceId: previous,
+          muted: () => this.muted,
+          signal: this.lifetime.signal,
+          onEnded: () => {
+            if (!this.closed) this.fail("Microphone lost.", "microphone_lost");
+          },
+        });
+        if (this.closed) {
+          next.source.disconnect();
+          stopMicrophone(next.stream);
+          return;
+        }
+        this.stream = next.stream;
+        this.source = next.source;
+        this.deviceId = next.deviceId;
+      } catch {
+        if (!this.closed) this.fail("Microphone lost.", "microphone_lost");
+      } finally {
+        this.swappingMicrophone = false;
+      }
+    });
+    return this.microphoneSwap;
+  }
 
   get canRotate() {
     return (
@@ -463,18 +511,10 @@ export class RealtimeVoice {
           throw new Error(
             t("Microphone access requires the desktop app or a secure browser context."),
           );
-        const opening = openMicrophone(
-          {
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-              ...(options.deviceId ? { deviceId: { exact: options.deviceId } } : {}),
-            },
-            video: false,
-          },
-          { signal: this.lifetime.signal },
-        );
+        this.deviceId = options.deviceId;
+        const opening = openMicrophone(voiceMicrophoneConstraints(options.deviceId), {
+          signal: this.lifetime.signal,
+        });
         try {
           this.stream = await voiceConnectionStep(
             "microphone",
@@ -612,6 +652,7 @@ export class RealtimeVoice {
             this.send({ type: "input_audio_buffer.append", audio: pcmBase64(frame) });
         };
       } else this.output = new AudioContext();
+      routeVoiceOutput(this.output);
       this.outputGain = this.output.createGain();
       this.outputGain.gain.value = this.outputMuted ? 0 : 1;
       this.outputGain.connect(this.output.destination);

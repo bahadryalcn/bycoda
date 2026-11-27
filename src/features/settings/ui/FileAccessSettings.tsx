@@ -14,7 +14,6 @@ import { Group, Row } from "../../../shared/ui/settings";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { errorText } from "../../../shared/lib/errors";
 
 export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
@@ -121,15 +120,10 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       <Row
         id="file-access"
         label={t("Current access")}
-        info={
-          <InfoPopover className="shrink-0" label={t("About file access")}>
-            <p>
-              {t(
-                "Selected folders may be read-only. Agent approval rules still apply. Remote hosts manage their own file access.",
-              )}
-            </p>
-          </InfoPopover>
-        }
+        controlWidth="wide"
+        info={t(
+          "Selected folders may be read-only. Agent approval rules still apply. Remote hosts manage their own file access.",
+        )}
         feedback={
           recoveries.length > 0 || error || pending ? (
             <>
@@ -184,7 +178,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           ) : null
         }
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {statusUnavailable || mode !== null ? (
             <LiveText
               size="caption"

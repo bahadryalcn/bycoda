@@ -9179,6 +9179,7 @@
           {
             "additionalProperties": false,
             "properties": {
+              "additionalDirs": { "items": { "type": "string" }, "maxItems": 16, "type": "array" },
               "attachments": {
                 "items": {
                   "additionalProperties": false,
@@ -9763,6 +9764,11 @@
                   {
                     "additionalProperties": false,
                     "properties": {
+                      "additionalDirs": {
+                        "items": { "type": "string" },
+                        "maxItems": 16,
+                        "type": "array"
+                      },
                       "attachments": {
                         "items": {
                           "additionalProperties": false,
@@ -37910,6 +37916,15 @@
                       "type": "array"
                     },
                     "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "memberSettings": {
+                      "additionalProperties": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
+                      "propertyNames": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "type": "object"
+                    },
                     "name": { "maxLength": 80, "minLength": 1, "type": "string" },
                     "poolIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
@@ -38491,6 +38506,15 @@
                       "type": "array"
                     },
                     "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "memberSettings": {
+                      "additionalProperties": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
+                      "propertyNames": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "type": "object"
+                    },
                     "name": { "maxLength": 80, "minLength": 1, "type": "string" },
                     "poolIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
@@ -38826,6 +38850,15 @@
                       "type": "array"
                     },
                     "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "memberSettings": {
+                      "additionalProperties": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
+                      "propertyNames": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "type": "object"
+                    },
                     "name": { "maxLength": 80, "minLength": 1, "type": "string" },
                     "poolIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
@@ -69612,6 +69645,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "cols": { "maximum": 400, "minimum": 2, "type": "integer" },
           "command": { "maxLength": 10000, "minLength": 1, "type": "string" },
           "cwd": { "type": "string" },
           "name": { "type": "string" },
@@ -69621,6 +69655,7 @@
             "type": "string"
           },
           "requestId": { "type": "string" },
+          "rows": { "maximum": 200, "minimum": 2, "type": "integer" },
           "shellKind": { "enum": ["powershell", "posix"], "type": "string" }
         },
         "required": ["projectId", "requestId"],
@@ -69648,7 +69683,7 @@
           },
           "shell": { "type": "string" },
           "state": { "enum": ["running", "exited"], "type": "string" },
-          "transport": { "const": "pipe", "type": "string" }
+          "transport": { "enum": ["pipe", "pty"], "type": "string" }
         },
         "required": [
           "id",
@@ -69757,7 +69792,7 @@
                 },
                 "shell": { "type": "string" },
                 "state": { "enum": ["running", "exited"], "type": "string" },
-                "transport": { "const": "pipe", "type": "string" }
+                "transport": { "enum": ["pipe", "pty"], "type": "string" }
               },
               "required": [
                 "id",
@@ -69835,7 +69870,7 @@
               },
               "shell": { "type": "string" },
               "state": { "enum": ["running", "exited"], "type": "string" },
-              "transport": { "const": "pipe", "type": "string" }
+              "transport": { "enum": ["pipe", "pty"], "type": "string" }
             },
             "required": [
               "id",
@@ -69856,6 +69891,39 @@
         "type": "object"
       },
       "retry": "safe-query",
+      "scope": "device"
+    },
+    "terminals.resize": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "cols": { "maximum": 400, "minimum": 2, "type": "integer" },
+          "id": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])", "type": "string" },
+          "projectId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          },
+          "rows": { "maximum": 200, "minimum": 2, "type": "integer" }
+        },
+        "required": ["projectId", "id", "cols", "rows"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.terminals.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "accepted": { "type": "boolean" } },
+        "required": ["accepted"],
+        "type": "object"
+      },
+      "retry": "never",
       "scope": "device"
     },
     "terminals.write": {
@@ -71057,6 +71125,7 @@
         {
           "additionalProperties": false,
           "properties": {
+            "additionalDirs": { "items": { "type": "string" }, "maxItems": 16, "type": "array" },
             "attachments": {
               "items": {
                 "additionalProperties": false,
@@ -71616,6 +71685,11 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "additionalDirs": {
+                      "items": { "type": "string" },
+                      "maxItems": 16,
+                      "type": "array"
+                    },
                     "attachments": {
                       "items": {
                         "additionalProperties": false,
@@ -81837,6 +81911,15 @@
                             "type": "array"
                           },
                           "id": { "maxLength": 200, "minLength": 1, "type": "string" },
+                          "memberSettings": {
+                            "additionalProperties": {
+                              "additionalProperties": { "type": "string" },
+                              "propertyNames": { "type": "string" },
+                              "type": "object"
+                            },
+                            "propertyNames": { "maxLength": 200, "minLength": 1, "type": "string" },
+                            "type": "object"
+                          },
                           "name": { "maxLength": 80, "minLength": 1, "type": "string" },
                           "poolIds": {
                             "items": { "maxLength": 200, "minLength": 1, "type": "string" },
@@ -91828,6 +91911,7 @@
             "params": {
               "additionalProperties": false,
               "properties": {
+                "cols": { "maximum": 400, "minimum": 2, "type": "integer" },
                 "command": { "maxLength": 10000, "minLength": 1, "type": "string" },
                 "cwd": { "type": "string" },
                 "name": { "type": "string" },
@@ -91837,6 +91921,7 @@
                   "type": "string"
                 },
                 "requestId": { "type": "string" },
+                "rows": { "maximum": 200, "minimum": 2, "type": "integer" },
                 "shellKind": { "enum": ["powershell", "posix"], "type": "string" }
               },
               "required": ["projectId", "requestId"],
@@ -91899,6 +91984,36 @@
                 }
               },
               "required": ["projectId", "id", "data"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "terminals.resize", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "cols": { "maximum": 400, "minimum": 2, "type": "integer" },
+                "id": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "projectId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "rows": { "maximum": 200, "minimum": 2, "type": "integer" }
+              },
+              "required": ["projectId", "id", "cols", "rows"],
               "type": "object"
             }
           },
@@ -93281,6 +93396,11 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "additionalDirs": {
+                      "items": { "type": "string" },
+                      "maxItems": 16,
+                      "type": "array"
+                    },
                     "attachments": {
                       "items": {
                         "additionalProperties": false,
@@ -93881,6 +94001,11 @@
                         {
                           "additionalProperties": false,
                           "properties": {
+                            "additionalDirs": {
+                              "items": { "type": "string" },
+                              "maxItems": 16,
+                              "type": "array"
+                            },
                             "attachments": {
                               "items": {
                                 "additionalProperties": false,
@@ -96303,5 +96428,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "80d0ca3f0551ff1512979775b6d73590700ceefaf75791bb6f41f4e6e358d062"
+  "schemaHash": "d1d3193b5d3ea4b9bb4535d52119bc13a50a77608ae44694f19836b3ebfac4c9"
 }

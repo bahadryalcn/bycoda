@@ -298,7 +298,7 @@ describe("managed workspace persistence", () => {
       environmentId: "host",
       owner: { kind: "session", id: `session-${id}` },
       path: `/managed/${id}`,
-      branchRef: `refs/heads/bycoda/s/test-${id}`,
+      branchRef: `refs/heads/by/test-${id}`,
       baseRef: "refs/heads/main",
       baseCommit: "a".repeat(40),
       targetBranchRef: "refs/heads/main",

@@ -4,7 +4,7 @@ import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import { existsSync, statSync } from "node:fs";
 import { lstat, mkdir, open, readFile, readlink, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { WorktreeRemovalReview } from "../../src/features/source-control/model/worktrees";
 import {
   entryMissing,
@@ -12,11 +12,8 @@ import {
   inventoryWorkspaceLinks,
   validateWorkspaceCleanupPaths,
 } from "../workspaces/workspace-cleanup-paths";
-import type {
-  ManagedWorkspace,
-  WorkspaceNames,
-  WorkspaceOwner,
-} from "../workspaces/workspace-contracts";
+import type { ManagedWorkspace, WorkspaceNames } from "../workspaces/workspace-contracts";
+import { managedWorkspaceNames } from "../managed/workspace-branch-naming";
 import {
   canonicalWorkspaceDirectory,
   canonicalWorkspaceEntry,
@@ -38,29 +35,8 @@ const options = (cwd: string, mutation = false) => ({
   env: { ...process.env, ...gitEnv },
 });
 
-/** Stable names are allocated before execution and never renamed by title generation. */
-export function managedWorkspaceNames(owner: WorkspaceOwner, slug: string, id: string) {
-  if (!/^[a-zA-Z0-9-]{12,}$/.test(id)) throw new Error("Invalid workspace identity");
-  const short = id.replaceAll("-", "").slice(0, 12).toLowerCase();
-  if (short.length !== 12) throw new Error("Invalid workspace identity");
-  const name =
-    slug
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 64)
-      .replace(/-$/, "") || "work";
-  return {
-    branch: `bycoda/${owner.kind === "task" ? "t" : "s"}/${name}-${short}`,
-    directory: `wt-${short}`,
-  };
-}
-
 /** S1 portion of the frozen naming service; S2 supplies turnRef and rewindRef. */
-export const workspaceNames: Pick<WorkspaceNames, "branch" | "directory"> = {
-  branch(owner, slug, id) {
-    return managedWorkspaceNames(owner, slug, id).branch as ReturnType<WorkspaceNames["branch"]>;
-  },
+export const workspaceNames: Pick<WorkspaceNames, "directory"> = {
   directory(id) {
     return managedWorkspaceNames({ kind: "session", id: "naming" }, "work", id)
       .directory as ReturnType<WorkspaceNames["directory"]>;
@@ -93,6 +69,7 @@ export async function materializeManagedWorkspace(
   cwd: string,
   workspace: ManagedWorkspace,
   creating: boolean,
+  observer: CreationObserver = {},
 ): Promise<void> {
   const root = await canonicalWorkspaceEntry(dirname(workspace.path));
   const path = join(root, basename(workspace.path));
@@ -158,6 +135,14 @@ export async function materializeManagedWorkspace(
   const registered = listed.worktrees.find(
     (tree) => workspacePathKey(tree.path) === workspacePathKey(path),
   );
+  // A killed `git worktree add` leaves an "initializing" lock and a partial checkout. While
+  // creating, the marker above proves this workspace owns the path, so clear it and add again.
+  if (creating && registered && !registered.isMain && registered.branch === branch) {
+    if (registered.locked) {
+      await clearBrokenCheckout(cwd, path);
+      return materializeManagedWorkspace(cwd, workspace, creating, observer);
+    }
+  }
   if (registered) {
     if (registered.isMain || registered.branch !== branch || registered.locked)
       throw new Error("Managed worktree registration changed");
@@ -186,12 +171,18 @@ export async function materializeManagedWorkspace(
   if (listed.worktrees.some((tree) => tree.branch === branch))
     throw new Error("Managed branch is checked out elsewhere");
   try {
-    await hostGitExec.exec("git", ["worktree", "add", "--", path, branch], options(cwd, true));
+    await hostGitExec.exec("git", ["worktree", "add", "--", path, branch], {
+      ...options(cwd, true),
+      signal: observer.signal,
+    });
     await verify();
   } finally {
     invalidateHostWorktrees();
   }
 }
+
+/** Cancels a running creation. Git reports no checkout percent without a terminal, so none is relayed. */
+export type CreationObserver = { signal?: AbortSignal };
 
 function available(path: string): boolean {
   try {
@@ -450,8 +441,14 @@ async function withState(list: HostWorktrees, lane: CachedList["lane"]): Promise
  * clients see what the desktop's own listing shows. Probing is bounded and cached briefly;
  * path resolution keeps using the cheap list.
  */
-export function hostWorktreesWithState(cwd: string, background = false): Promise<HostWorktrees> {
+export function hostWorktreesWithState(
+  cwd: string,
+  background = false,
+  light = false,
+): Promise<HostWorktrees> {
   const lane = background ? "background" : "default";
+  // Light callers need path/branch/head/missing only: the cheap list has them, without probes.
+  if (light) return listCached(cwd, false, lane);
   const hit = stateCache.get(cwd);
   if (hit?.generation === listGeneration) {
     const reusable =
@@ -763,7 +760,7 @@ async function renameHostWorktreeBranchSerialized(
   branch: string,
   stillOwned: () => boolean | Promise<boolean>,
 ): Promise<HostWorktree> {
-  if (!/^mc\/[a-z0-9]{8}$/.test(expectedBranch))
+  if (!/^by\/[a-z0-9]{8}$/.test(expectedBranch))
     throw new Error("This is not an automatically created worktree branch");
   if (!branch || branch.length > 120 || branch.startsWith("-") || branch.startsWith("@"))
     throw new Error("Enter a valid branch name");
@@ -808,4 +805,375 @@ export async function deleteHostWorktreeBranch(
 /** Cheap list for Host-internal callers: no per-checkout Git state. */
 export function hostWorktrees(cwd: string, background = false): Promise<HostWorktrees> {
   return listCached(cwd, false, background ? "background" : "default");
+}
+
+const creationGit = (
+  cwd: string,
+  args: string[],
+  extra: Partial<{ timeout: number; signal: AbortSignal; lane: "network" }> = {},
+) =>
+  hostGitExec.exec("git", args, {
+    cwd,
+    windowsHide: true,
+    env: { ...process.env, ...gitEnv },
+    timeout: 30_000,
+    maxBuffer: 1024 * 1024,
+    ...extra,
+  });
+const creationRevision = (cwd: string, ref: string) =>
+  creationGit(cwd, [
+    "rev-parse",
+    "--verify",
+    "--quiet",
+    "--end-of-options",
+    `${ref}^{commit}`,
+  ]).then(
+    ({ stdout }) => stdout.trim(),
+    () => null,
+  );
+
+/**
+ * An extra folder of a multi-repository session. It must be an existing Git repository root,
+ * outside the project and not another working copy of the project's repository.
+ */
+export async function validateExtraRepository(
+  projectCwd: string,
+  projectRepositoryId: string,
+  directory: unknown,
+): Promise<{ directory: string; repositoryId: string }> {
+  if (typeof directory !== "string" || !isAbsolute(directory) || directory.includes("\0"))
+    throw new Error("Repositories must be absolute folders");
+  const canonical = await canonicalWorkspaceDirectory(directory).catch(() => null);
+  if (
+    !canonical ||
+    !(await stat(canonical).then(
+      (info) => info.isDirectory(),
+      () => false,
+    ))
+  )
+    throw new Error(`Repository folder does not exist: ${directory}`);
+  const top = await creationGit(canonical, ["rev-parse", "--show-toplevel"]).then(
+    ({ stdout }) => stdout.trim(),
+    () => null,
+  );
+  if (
+    !top ||
+    workspacePathKey(await canonicalWorkspacePath(top).catch(() => top)) !==
+      workspacePathKey(canonical)
+  )
+    throw new Error(`Not a Git repository root: ${directory}`);
+  const project = workspacePathKey(projectCwd);
+  const key = workspacePathKey(canonical);
+  const below = relative(project, key);
+  if (key === project || (below !== "" && !below.startsWith("..") && !isAbsolute(below)))
+    throw new Error(`Repository is inside the project: ${directory}`);
+  const repositoryId = await hostGitRepositoryKey(canonical);
+  if (repositoryId === projectRepositoryId)
+    throw new Error(`Repository is the project's own repository: ${directory}`);
+  return { directory: canonical, repositoryId };
+}
+
+/** The extra repository's counterpart of the base branch, else its default or current branch. */
+export async function equivalentBase(
+  cwd: string,
+  baseBranch: string | null,
+): Promise<{ commit: string; branch: string | null }> {
+  if (baseBranch) {
+    const commit = await creationRevision(cwd, `refs/heads/${baseBranch}`);
+    if (commit) return { commit, branch: baseBranch };
+  }
+  const originHead = await creationGit(cwd, [
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  ]).then(
+    ({ stdout }) => stdout.trim().replace(/^origin\//, ""),
+    () => "",
+  );
+  if (originHead) {
+    const commit = await creationRevision(cwd, `refs/heads/${originHead}`);
+    if (commit) return { commit, branch: originHead };
+  }
+  const current = await creationGit(cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"]).then(
+    ({ stdout }) => stdout.trim() || null,
+    () => null,
+  );
+  const commit = await creationRevision(cwd, "HEAD");
+  if (!commit) throw new Error("Repository has no commit to start from");
+  return { commit, branch: current };
+}
+
+/**
+ * Fetches the branch's upstream (60 s deadline, never prompts) and returns the fetched commit.
+ * Null means "start locally": no upstream, or the remote has no such branch. A network or
+ * authentication failure throws.
+ */
+export async function fetchRemoteBase(
+  cwd: string,
+  branch: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const [remote, remoteRef] = (
+    await creationGit(cwd, [
+      "for-each-ref",
+      "--format=%(upstream:remotename)%09%(upstream:remoteref)",
+      `refs/heads/${branch}`,
+    ])
+  ).stdout
+    .trim()
+    .split("\t");
+  if (!remote || remote === "." || !remoteRef?.startsWith("refs/heads/")) return null;
+  const remoteBranch = remoteRef.slice("refs/heads/".length);
+  // FETCH_HEAD is repository-global and other fetches rewrite it; land in a private ref instead.
+  const temporary = `refs/bycoda/fetch/${randomUUID()}`;
+  try {
+    await creationGit(
+      cwd,
+      ["fetch", "--no-tags", "--", remote, `+refs/heads/${remoteBranch}:${temporary}`],
+      { timeout: 60_000, signal, lane: "network" },
+    );
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/couldn't find remote ref/i.test(message)) return null;
+    const reason = message.split("\n").find((line) => /^(fatal|error):/i.test(line.trim()));
+    throw new Error(
+      `Could not fetch ${remote}/${remoteBranch}: ${reason?.trim() ?? "network or authentication failure"}`,
+    );
+  }
+  try {
+    return await creationRevision(cwd, temporary);
+  } finally {
+    await creationGit(cwd, ["update-ref", "-d", temporary]).catch(() => undefined);
+  }
+}
+
+/** One sibling worktree this operation made (or is about to make); the rollback journal entry. */
+export type ExtraWorktreeRecord = {
+  repository: string;
+  path: string;
+  branch: string;
+  /** Commit the branch was created at; rollback deletes the branch only while it is still there. */
+  base?: string;
+};
+
+/** Adds `branch` at `base` as a worktree of `repository`. Journals before running Git. */
+export async function createExtraWorktree(input: {
+  repository: string;
+  path: string;
+  branch: string;
+  base: string;
+  journal: ExtraWorktreeRecord[];
+  /** Makes the journal entry durable before Git runs. */
+  persist?: (record: ExtraWorktreeRecord) => Promise<void>;
+  observer?: CreationObserver;
+}): Promise<void> {
+  const { repository, path, branch, observer = {} } = input;
+  await withHostGitMutation(repository, async () => {
+    const listed = parse((await creationGit(repository, LIST_ARGS)).stdout);
+    const known = listed.find((tree) => workspacePathKey(tree.path) === workspacePathKey(path));
+    const ours = input.journal.some(
+      (record) => workspacePathKey(record.path) === workspacePathKey(path),
+    );
+    // A retry after an unknown outcome reuses its own earlier sibling, once it checks out whole.
+    if (known && ours && known.branch === branch) {
+      if (await siblingIntact(repository, known, branch)) return;
+      // Only a locked (killed add) or vanished checkout is partial; anything else holds changes.
+      if (!known.locked && !known.missing)
+        throw new Error(`Worktree is not a clean checkout of ${branch}: ${path}`);
+      await removeBrokenSibling(repository, path, branch, input.base);
+    } else if (known) throw new Error(`Worktree folder already registered: ${path}`);
+    else if (ours) await removeBrokenSibling(repository, path, branch, input.base);
+    if ((await creationRevision(repository, `refs/heads/${branch}`)) !== null)
+      throw new Error(`Branch ${branch} already exists in ${repository}`);
+    if (
+      await lstat(path).then(
+        () => true,
+        () => false,
+      )
+    )
+      throw new Error(`Worktree folder already exists: ${path}`);
+    await mkdir(dirname(path), { recursive: true });
+    const record = { repository, path, branch, base: input.base };
+    if (!ours) input.journal.push(record);
+    await input.persist?.(record);
+    try {
+      await hostGitExec.exec("git", ["worktree", "add", "-b", branch, "--", path, input.base], {
+        ...options(repository, true),
+        signal: observer.signal,
+      });
+    } finally {
+      invalidateHostWorktrees(repository);
+    }
+  });
+}
+
+/** Whole, unlocked, clean checkout of `branch`: what a finished `worktree add` leaves behind. */
+async function siblingIntact(repository: string, tree: HostWorktree, branch: string) {
+  if (tree.locked || tree.missing) return false;
+  try {
+    const tip = await creationRevision(repository, `refs/heads/${branch}`);
+    const head = (await creationGit(tree.path, ["rev-parse", "--verify", "HEAD"])).stdout.trim();
+    const symbolic = (
+      await creationGit(tree.path, ["symbolic-ref", "--quiet", "HEAD"])
+    ).stdout.trim();
+    const status = (await creationGit(tree.path, ["status", "--porcelain"])).stdout.trim();
+    return tip !== null && head === tip && symbolic === `refs/heads/${branch}` && status === "";
+  } catch {
+    return false;
+  }
+}
+
+/** Removes an earlier attempt's worktree even when a killed add left it locked, then its branch. */
+async function removeBrokenSibling(repository: string, path: string, branch: string, base: string) {
+  try {
+    await clearBrokenCheckout(repository, path);
+    // A branch that moved off its creation commit holds someone's work: keep it, the add then refuses.
+    if ((await creationRevision(repository, `refs/heads/${branch}`)) === base)
+      await creationGit(repository, ["branch", "-D", "--", branch]);
+  } finally {
+    invalidateHostWorktrees(repository);
+  }
+}
+
+/** `worktree remove -f -f` overrides the lock a killed `worktree add` leaves; prune drops dangling rows. */
+async function clearBrokenCheckout(repository: string, path: string) {
+  try {
+    await creationGit(repository, ["worktree", "prune"]).catch(() => undefined);
+    const listed = parse((await creationGit(repository, LIST_ARGS)).stdout);
+    if (
+      listed.some((tree) => !tree.isMain && workspacePathKey(tree.path) === workspacePathKey(path))
+    )
+      await creationGit(repository, ["worktree", "remove", "-f", "-f", "--", path]);
+    await creationGit(repository, ["worktree", "prune"]).catch(() => undefined);
+  } finally {
+    invalidateHostWorktrees(repository);
+  }
+}
+
+/**
+ * Forced removal is only for a checkout a killed `worktree add` left locked; anything else must
+ * be clean, so work someone put there is never destroyed by a rollback.
+ */
+async function removeOwnedWorktree(repository: string, registered: HostWorktree): Promise<void> {
+  if (registered.locked) {
+    await creationGit(repository, ["worktree", "remove", "-f", "-f", "--", registered.path]);
+    return;
+  }
+  if (registered.missing) return;
+  const status = await creationGit(registered.path, ["status", "--porcelain"]).then(
+    ({ stdout }) => stdout.trim(),
+    () => "unreadable",
+  );
+  if (status) throw new Error(`Worktree has uncommitted changes and was kept: ${registered.path}`);
+  await creationGit(repository, ["worktree", "remove", "--", registered.path]);
+}
+
+/**
+ * Removes one journaled sibling worktree and its branch. Only a clean (or lock-partial) checkout
+ * is removed and the branch only while it still sits at the commit it was created at.
+ */
+export async function rollbackExtraWorktree(record: ExtraWorktreeRecord): Promise<void> {
+  await withHostGitMutation(record.repository, async () => {
+    try {
+      const listed = parse((await creationGit(record.repository, LIST_ARGS)).stdout);
+      const registered = listed.find(
+        (tree) => workspacePathKey(tree.path) === workspacePathKey(record.path),
+      );
+      if (registered && !registered.isMain && registered.branch === record.branch)
+        await removeOwnedWorktree(record.repository, registered);
+      await creationGit(record.repository, ["worktree", "prune"]).catch(() => undefined);
+      const tip = await creationRevision(record.repository, `refs/heads/${record.branch}`);
+      if (tip !== null && record.base !== undefined && tip === record.base)
+        await creationGit(record.repository, ["branch", "-D", "--", record.branch]);
+    } finally {
+      invalidateHostWorktrees(record.repository);
+    }
+  });
+}
+
+/**
+ * Removes a primary workspace whose creation failed definitively or was cancelled: its worktree
+ * (when Git registered it at the planned path on the planned branch), its branch (only while the
+ * owner marker proves this workspace made it and no commit moved it) and the marker.
+ */
+export async function rollbackManagedWorkspaceGit(
+  cwd: string,
+  workspace: ManagedWorkspace,
+): Promise<void> {
+  const marker = `refs/bycoda/workspaces/${workspace.id}`;
+  const branch = workspace.branchRef.replace(/^refs\/heads\//, "");
+  try {
+    const listed = parse((await creationGit(cwd, LIST_ARGS)).stdout);
+    const registered = listed.find(
+      (tree) => workspacePathKey(tree.path) === workspacePathKey(workspace.path),
+    );
+    if (registered && !registered.isMain && registered.branch === branch)
+      await removeOwnedWorktree(cwd, registered);
+    await creationGit(cwd, ["worktree", "prune"]).catch(() => undefined);
+    if ((await creationRevision(cwd, marker)) === workspace.baseCommit) {
+      if ((await creationRevision(cwd, workspace.branchRef)) === workspace.baseCommit)
+        await creationGit(cwd, ["branch", "-D", "--", branch]);
+      await creationGit(cwd, ["update-ref", "-d", marker]);
+    }
+  } finally {
+    invalidateHostWorktrees(cwd);
+  }
+}
+
+/**
+ * Removes a retired workspace's sibling worktree (its branch stays, like the primary's). Refuses
+ * a locked, re-pointed or dirty checkout; an already absent one counts as removed. Idempotent.
+ */
+export async function removeSiblingWorktree(record: ExtraWorktreeRecord): Promise<void> {
+  await withHostGitMutation(record.repository, async () => {
+    try {
+      const blocker = await siblingBlocker(record);
+      if (blocker) throw new Error(blocker);
+      const listed = parse((await creationGit(record.repository, LIST_ARGS)).stdout);
+      const registered = listed.find(
+        (tree) => workspacePathKey(tree.path) === workspacePathKey(record.path),
+      );
+      if (registered && !registered.missing)
+        await creationGit(record.repository, ["worktree", "remove", "--", record.path]);
+      await creationGit(record.repository, ["worktree", "prune"]).catch(() => undefined);
+    } finally {
+      invalidateHostWorktrees(record.repository);
+    }
+  });
+}
+
+/** Why a sibling worktree cannot be removed now, or null when it is safe (or already gone). */
+export async function siblingBlocker(record: ExtraWorktreeRecord): Promise<string | null> {
+  const listed = parse((await creationGit(record.repository, LIST_ARGS)).stdout);
+  const registered = listed.find(
+    (tree) => workspacePathKey(tree.path) === workspacePathKey(record.path),
+  );
+  if (!registered) {
+    const present = await lstat(record.path).then(
+      () => true,
+      () => false,
+    );
+    return present ? `Repository worktree is not registered: ${record.path}` : null;
+  }
+  if (registered.isMain || registered.branch !== record.branch || registered.locked)
+    return `Repository worktree changed or is locked: ${record.path}`;
+  if (registered.missing) return null;
+  const status = await creationGit(record.path, ["status", "--porcelain"]).then(
+    ({ stdout }) => stdout.trim(),
+    () => "unreadable",
+  );
+  return status ? `Repository worktree has uncommitted changes: ${record.path}` : null;
+}
+
+/** Startup, best effort: fetch landing refs a crash left behind. */
+export async function deleteStaleFetchRefs(cwd: string): Promise<void> {
+  const refs = (
+    await creationGit(cwd, ["for-each-ref", "--format=%(refname)", "refs/bycoda/fetch/"])
+  ).stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (const ref of refs) await creationGit(cwd, ["update-ref", "-d", ref]);
 }

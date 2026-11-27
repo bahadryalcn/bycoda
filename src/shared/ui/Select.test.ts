@@ -5,6 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Select } from "./Select";
 import { SelectValue } from "./arc/select/select";
 
+it("shows the selected label at full opacity on first mount", async () => {
+  await act(async () => root.render(createElement(SelectValue, { value: "a", label: "Portal" })));
+  const label = container.querySelector<HTMLElement>("span > span");
+  expect(label?.textContent).toBe("Portal");
+  expect(label?.style.opacity).not.toBe("0");
+});
+
 it("replaces the selected label without overlapping outgoing text", async () => {
   await act(async () => root.render(createElement(SelectValue, { value: "a", label: "Portal" })));
   await act(async () => root.render(createElement(SelectValue, { value: "b", label: "Website" })));

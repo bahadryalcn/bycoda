@@ -107,6 +107,15 @@ describe("accountStatus", () => {
       tone: "low",
       label: "Running low",
       detail: "16% left",
+      critical: false,
+    });
+  });
+
+  it("marks a low account critical at or below 10% headroom", () => {
+    expect(accountStatus(limits(window(92)), now)).toMatchObject({
+      tone: "low",
+      detail: "8% left",
+      critical: true,
     });
   });
 

@@ -2,11 +2,15 @@ import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPrefere
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
+  TRANSCRIPT_ANCHOR_DEFAULT,
   loadTranscriptAnchor,
   subscribeTranscriptAnchor,
   saveTranscriptAnchor,
 } from "../model/appearance";
 import {
+  AUTO_CONTINUE_INTERRUPTED_DEFAULT,
+  MODEL_CONTROLS_DEFAULT,
+  RESUME_AT_RESET_DEFAULT,
   loadAutoContinueInterrupted,
   subscribeAutoContinueInterrupted,
   loadModelControls,
@@ -18,7 +22,7 @@ import {
   saveModelControls,
   type ModelControls,
 } from "../model/settings";
-import type { UsageLimitFailover } from "../../tasks/public/agentDefaults";
+import { DEFAULT_AGENT_DEFAULTS, type UsageLimitFailover } from "../../tasks/public/agentDefaults";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import {
   Group,
@@ -28,7 +32,10 @@ import {
   useConfirmedPreferences,
 } from "../../../shared/ui/settings";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Button } from "../../../shared/ui/Button";
+import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
+  COMPOSER_SPELLING_DEFAULT,
   loadComposerSpelling,
   saveComposerSpelling,
   useComposerSpelling,
@@ -125,6 +132,8 @@ export function ChatPage() {
           id="anchor-prompts"
           feedback={feedback("anchor-prompts")}
           label={t("Anchor prompts to top")}
+          modified={transcriptAnchor !== TRANSCRIPT_ANCHOR_DEFAULT && !pending("anchor-prompts")}
+          onReset={() => onTranscriptAnchor(TRANSCRIPT_ANCHOR_DEFAULT)}
           description={t("Keep your latest prompt at the top while the reply appears below.")}
         >
           <Toggle
@@ -138,6 +147,8 @@ export function ChatPage() {
           id="composer-spelling"
           feedback={feedback("composer-spelling")}
           label={t("Spelling and autocorrect")}
+          modified={spelling !== COMPOSER_SPELLING_DEFAULT && !pending("composer-spelling")}
+          onReset={() => onComposerSpelling(COMPOSER_SPELLING_DEFAULT)}
           description={t(
             "Enable spelling checks and automatic correction where supported by your platform.",
           )}
@@ -153,6 +164,8 @@ export function ChatPage() {
           id="resume-at-reset"
           feedback={feedback("resume-at-reset")}
           label={t("Resume at reset")}
+          modified={resumeAtReset !== RESUME_AT_RESET_DEFAULT && !pending("resume-at-reset")}
+          onReset={() => onResumeAtReset(RESUME_AT_RESET_DEFAULT)}
           info={
             <InfoPopover className="shrink-0">
               <p>
@@ -179,6 +192,11 @@ export function ChatPage() {
           id="usage-limit-failover"
           feedback={feedback("usage-limit-failover")}
           label={t("At usage limit, continue on")}
+          modified={
+            usageLimitFailover !== DEFAULT_AGENT_DEFAULTS.usageLimitFailover &&
+            !pending("usage-limit-failover")
+          }
+          onReset={() => onUsageLimitFailover(DEFAULT_AGENT_DEFAULTS.usageLimitFailover)}
           info={
             <InfoPopover className="shrink-0">
               <p>
@@ -235,6 +253,11 @@ export function ChatPage() {
           id="auto-continue-interrupted"
           feedback={feedback("auto-continue-interrupted")}
           label={t("Automatically continue interrupted turns")}
+          modified={
+            autoContinue !== AUTO_CONTINUE_INTERRUPTED_DEFAULT &&
+            !pending("auto-continue-interrupted")
+          }
+          onReset={() => onAutoContinue(AUTO_CONTINUE_INTERRUPTED_DEFAULT)}
           info={
             <InfoPopover className="shrink-0">
               <p>
@@ -257,6 +280,8 @@ export function ChatPage() {
           id="model-controls"
           feedback={feedback("model-controls")}
           label={t("Extras summary")}
+          modified={modelControls !== MODEL_CONTROLS_DEFAULT && !pending("model-controls")}
+          onReset={() => onModelControls(MODEL_CONTROLS_DEFAULT)}
           description={t("Choose whether Extras also shows your active options.")}
         >
           <Segmented
@@ -279,6 +304,17 @@ export function ChatPage() {
             onChange={onModelControls}
             disabled={pending("model-controls")}
           />
+        </Row>
+        <Row
+          id="import-history"
+          label={t("Conversations from other coding agents")}
+          description={t(
+            "Bring in local conversations from Claude Code, Codex, Cursor, Grok, OpenCode, Pi, omp, Hermes, Antigravity and OpenClaw.",
+          )}
+        >
+          <Button onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}>
+            {t("Import history")}
+          </Button>
         </Row>
       </Group>
 

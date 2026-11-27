@@ -26,6 +26,12 @@ type FakeState = {
   /** Simulated time each capture takes, advanced on the fake clock. */
   frameCostMs: number;
   frameError?: Error;
+  /** Serves screencast pictures (frameSequence, long-poll cursor) instead of screenshots. */
+  live: boolean;
+  /** Live mode only: simulated gap between display pictures, in ms of the fake clock. */
+  pictureEveryMs: number;
+  /** Every dispatched browser.frame call, for asserting the capture path. */
+  frameCalls: Record<string, unknown>[];
   onFrame?: (count: number) => void;
   onStatus?: (clock: number) => void;
 };
@@ -47,11 +53,18 @@ async function harness(overrides: HarnessOptions = {}) {
     leaseId: "lease-1",
     frames: 0,
     frameCostMs: 0,
+    live: false,
+    pictureEveryMs: 1000 / 60,
+    frameCalls: [],
     ...fake,
   };
   const browser: BrowserRecordingBrowser = {
     async dispatchForSession(method, params, token) {
-      if (token !== credential || JSON.stringify(params) !== JSON.stringify(scope))
+      if (
+        token !== credential ||
+        params.projectId !== scope.projectId ||
+        params.sessionId !== scope.sessionId
+      )
         throw new Error("scope mismatch");
       if (method === "browser.status") {
         state.onStatus?.(clock.t);
@@ -62,12 +75,34 @@ async function harness(overrides: HarnessOptions = {}) {
         };
       }
       if (method === "browser.frame") {
+        state.frameCalls.push(params);
         if (state.frameError) throw state.frameError;
+        state.onStatus?.(clock.t);
+        const status = {
+          open: state.open,
+          controlling: state.controlling,
+          leaseId: state.controlling ? state.leaseId : undefined,
+        };
+        if (state.live && params.after !== undefined) {
+          // The next display picture arrives pictureEveryMs after the previous one.
+          clock.t += state.pictureEveryMs;
+          state.frames += 1;
+          const count = state.frames;
+          state.onFrame?.(count);
+          return {
+            ...status,
+            data: Buffer.from(`jpeg-${count}`).toString("base64"),
+            width: 800,
+            height: 600,
+            frameSequence: count,
+          };
+        }
         state.frames += 1;
         const count = state.frames;
         clock.t += state.frameCostMs;
         state.onFrame?.(count);
         return {
+          ...status,
           data: Buffer.from(`jpeg-${count}`).toString("base64"),
           width: 800,
           height: 600,
@@ -134,10 +169,10 @@ describe("browser recording lifecycle", () => {
 
   it("validates fps and maxSeconds bounds", async () => {
     const { service } = await harness();
-    await expect(started(service, { fps: 11 })).rejects.toThrow(
-      "fps must be an integer from 1 to 10",
-    );
-    await expect(started(service, { fps: 2.5 })).rejects.toThrow("fps must be an integer");
+    for (const fps of [3, 12, 24, 61, 29.5])
+      await expect(started(service, { fps })).rejects.toThrow(
+        "fps must be one of 4, 8, 10, 15, 30, 60",
+      );
     await expect(started(service, { maxSeconds: 4 })).rejects.toThrow(
       "maxSeconds must be an integer from 5 to 300",
     );
@@ -156,10 +191,10 @@ describe("browser recording lifecycle", () => {
 
   it("paces frames at the requested fps and stops at maxSeconds", async () => {
     const { service, ffmpegCalls, clock } = await harness();
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 5 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 5 });
     await waitFor(() => finished(service, recordingId));
     const result = await service.stop({ recordingId }, scope);
-    expect(result.frames).toBe(20);
+    expect(result.frames).toBe(75);
     expect(result.durationMs).toBe(5000);
     expect(result.mimeType).toBe("video/webm");
     expect(clock.t).toBeGreaterThanOrEqual(5000);
@@ -167,8 +202,8 @@ describe("browser recording lifecycle", () => {
       state: "done",
       stopReason: "max-duration",
     });
-    // One JPEG per 250 ms slot, in capture order.
-    expect(ffmpegCalls[0]!.frames).toHaveLength(20);
+    // One JPEG per 66.7 ms slot, in capture order.
+    expect(ffmpegCalls[0]!.frames).toHaveLength(75);
     expect(ffmpegCalls[0]!.frames[0]).toBe("jpeg-1");
     expect(ffmpegCalls[0]!.args).toContain("image2pipe");
     expect(ffmpegCalls[0]!.args).toContain("libvpx-vp9");
@@ -176,7 +211,7 @@ describe("browser recording lifecycle", () => {
 
   it("drops slots when capture is slower than the interval instead of queuing frames", async () => {
     const { service, state, ffmpegCalls } = await harness({ frameCostMs: 600 });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 5 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 5 });
     await waitFor(() => finished(service, recordingId));
     const result = await service.stop({ recordingId }, scope);
     // Captures start at 0, 600, ... 4800; no catch-up bursts once behind.
@@ -184,16 +219,62 @@ describe("browser recording lifecycle", () => {
     expect(state.frames).toBe(9);
     // Slots hold the previous frame while a capture is in flight, so the video keeps real length.
     expect(result.durationMs).toBe(5000);
-    expect(ffmpegCalls[0]!.frames).toHaveLength(20);
+    expect(ffmpegCalls[0]!.frames).toHaveLength(75);
     expect(new Set(ffmpegCalls[0]!.frames).size).toBe(9);
+  });
+
+  it("records the live screencast at 60 fps without sleeping between pictures", async () => {
+    const { service, state, ffmpegCalls, clock } = await harness({ live: true });
+    const { recordingId } = await started(service, { fps: 60, maxSeconds: 5 });
+    await waitFor(() => finished(service, recordingId));
+    const result = await service.stop({ recordingId }, scope);
+    // The display delivers a picture every 1/60 s and every one lands in its own slot.
+    expect(result.frames).toBe(300);
+    expect(result.durationMs).toBe(5000);
+    expect(ffmpegCalls[0]!.frames).toHaveLength(300);
+    expect(new Set(ffmpegCalls[0]!.frames).size).toBe(300);
+    expect(ffmpegCalls[0]!.args).toContain("60");
+    expect(clock.t).toBeGreaterThanOrEqual(5000);
+    // Long polls carry the cursor of the newest picture and ask for fast acks.
+    expect(state.frameCalls[0]).toMatchObject({ after: 0, fast: true });
+    expect(state.frameCalls[5]).toMatchObject({ after: 5, fast: true });
+  });
+
+  it("keeps one picture per slot when the display outpaces the requested fps", async () => {
+    const { service, ffmpegCalls } = await harness({ live: true });
+    const { recordingId } = await started(service, { fps: 30, maxSeconds: 5 });
+    await waitFor(() => finished(service, recordingId));
+    const result = await service.stop({ recordingId }, scope);
+    // 60 pictures a second fill 30 slots a second; the newest picture of each slot wins.
+    expect(result.frames).toBe(150);
+    expect(result.durationMs).toBe(5000);
+    expect(ffmpegCalls[0]!.frames).toHaveLength(150);
+    expect(ffmpegCalls[0]!.frames[1]).toBe("jpeg-3");
+    expect(result.frames).toBeLessThan(300);
+  });
+
+  it("holds slow pictures until capture ends instead of shortening the video", async () => {
+    const { service, state, ffmpegCalls } = await harness({ live: true, pictureEveryMs: 400 });
+    const dispatch = state.frameCalls;
+    const { recordingId } = await started(service, { fps: 30, maxSeconds: 5 });
+    await waitFor(() => finished(service, recordingId));
+    const result = await service.stop({ recordingId }, scope);
+    expect(dispatch.length).toBeGreaterThan(0);
+    // 13 pictures, one per 400 ms from the first; each is held for twelve 33 ms slots.
+    expect(result.frames).toBe(13);
+    expect(result.durationMs).toBe(4833);
+    expect(ffmpegCalls[0]!.frames).toHaveLength(145);
+    // Few pictures stretch over many slots instead of shortening the video.
+    expect(new Set(ffmpegCalls[0]!.frames).size).toBe(result.frames);
+    expect(result.frames).toBeLessThan(20);
   });
 
   it("keeps recording after the control lease expires, until stop", async () => {
     const { service, state, ffmpegCalls } = await harness();
     state.onStatus = (clock) => {
-      if (clock >= 1000) state.controlling = false;
+      if (clock >= 300) state.controlling = false;
     };
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => (snapshot(service, recordingId).frames ?? 0) >= 8);
     expect(snapshot(service, recordingId)).toMatchObject({ state: "recording" });
     expect(service.status({ recordingId }, scope)).toMatchObject({ controlling: false });
@@ -212,14 +293,14 @@ describe("browser recording lifecycle", () => {
     state.onStatus = (clock) => {
       if (clock >= 1000) state.leaseId = "other-lease";
     };
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 5 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 5 });
     await waitFor(() => finished(service, recordingId));
     expect(await service.status({ recordingId }, scope)).toMatchObject({
       state: "done",
       stopReason: "max-duration",
       controlling: false,
     });
-    expect((await service.stop({ recordingId }, scope)).frames).toBe(20);
+    expect((await service.stop({ recordingId }, scope)).frames).toBe(75);
   });
 
   it("stops when the browser closes and keeps the frames", async () => {
@@ -227,7 +308,7 @@ describe("browser recording lifecycle", () => {
     state.onFrame = (count) => {
       if (count === 2) state.open = false;
     };
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => finished(service, recordingId));
     const result = await service.stop({ recordingId }, scope);
     expect(result.frames).toBe(2);
@@ -238,7 +319,7 @@ describe("browser recording lifecycle", () => {
 
   it("stops early on request, encodes, and deletes the frame folder", async () => {
     const { root, service, state, ffmpegCalls } = await harness();
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     let stopping: Promise<unknown> | undefined;
     state.onFrame = (count) => {
       if (count === 3) stopping = service.stop({ recordingId }, scope);
@@ -247,7 +328,7 @@ describe("browser recording lifecycle", () => {
     const result = (await stopping) as { path: string };
     expect(result).toEqual({
       path: join(root, BROWSER_RECORDING_DIRECTORY, `${recordingId}.webm`),
-      durationMs: 750,
+      durationMs: 200,
       frames: 3,
       bytes: "webm-bytes".length,
       mimeType: "video/webm",
@@ -262,7 +343,7 @@ describe("browser recording lifecycle", () => {
 
   it("reports the final cannot-run error and keeps nothing when no ffmpeg exists anywhere", async () => {
     const { root, service, state, ffmpegCalls } = await harness({ ffmpeg: undefined });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => state.frames >= 2);
     await expect(service.stop({ recordingId }, scope)).rejects.toThrow(FFMPEG_UNAVAILABLE);
     expect(ffmpegCalls).toHaveLength(0);
@@ -279,7 +360,7 @@ describe("browser recording lifecycle", () => {
         if (!online) throw new Error("getaddrinfo ENOTFOUND cdn.playwright.dev");
       },
     });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => state.frames >= 2);
     await expect(service.stop({ recordingId }, scope)).rejects.toThrow(
       "because the network connection failed",
@@ -310,7 +391,7 @@ describe("browser recording lifecycle", () => {
       ffmpeg: undefined,
       ensureFfmpeg: () => download,
     });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => state.frames >= 2);
     const stopping = service.stop({ recordingId }, scope);
     await new Promise((resolve) => setImmediate(resolve));
@@ -327,7 +408,7 @@ describe("browser recording lifecycle", () => {
       ensureFfmpeg: () => new Promise<void>(() => undefined),
       ffmpegWaitMs: 20,
     });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => state.frames >= 2);
     await expect(service.stop({ recordingId }, scope)).rejects.toThrow("still running");
     expect(await service.status({ recordingId }, scope)).toMatchObject({ retryable: true });
@@ -339,7 +420,7 @@ describe("browser recording lifecycle", () => {
     const { service, state, ffmpegCalls } = await harness({
       frameError: new Error("screenshot exploded"),
     });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => snapshot(service, recordingId).state === "failed");
     await expect(service.stop({ recordingId }, scope)).rejects.toThrow("captured no frames");
     expect(state.frames).toBe(0);
@@ -356,7 +437,7 @@ describe("browser recording lifecycle", () => {
       if (count === 1)
         state.frameError = new Error("Shared browser is busy; retry after the current request");
     };
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 5 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 5 });
     await waitFor(() => ["done", "failed"].includes(snapshot(service, recordingId).state));
     // Busy slots never reach the three-failure stop; the recording runs to maxSeconds.
     expect(snapshot(service, recordingId)).toMatchObject({
@@ -369,7 +450,7 @@ describe("browser recording lifecycle", () => {
   it("reports status for the latest recording and rejects other conversations", async () => {
     const { service, state } = await harness();
     expect(await service.status({}, scope)).toEqual({ recording: null });
-    const { recordingId } = await started(service, { fps: 4, maxSeconds: 60 });
+    const { recordingId } = await started(service, { fps: 15, maxSeconds: 60 });
     await waitFor(() => (service.status({}, scope) as { frames: number }).frames >= 2);
     expect(await service.status({}, scope)).toMatchObject({
       recordingId,

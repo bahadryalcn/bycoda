@@ -17,7 +17,10 @@ import { EMPTY_MODEL_ROUTING } from "../../../../shared/model/host-contracts/mod
 import type { ModelRoutingTarget } from "../../../../shared/model/host-contracts/model-routing";
 
 vi.mock("../../../sessions/public/modelSource", () => ({
-  useModelSource: () => ({ available: () => true }),
+  useModelSource: () => ({
+    available: () => true,
+    resolve: (_harness: string, model: string) => ({ id: model, name: `Name of ${model}` }),
+  }),
 }));
 vi.mock("../../model/smartSetup", () => ({
   setupCandidates: vi.fn(),
@@ -100,12 +103,12 @@ async function mount(run = false, choice?: ModelRoutingTarget) {
 }
 const primary = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Prepare setup draft" || button.textContent === "Planning…",
+    (button) => button.textContent === "Set up with rules" || button.textContent === "Planning…",
   )!;
 const ai = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) =>
-      button.textContent === "Plan setup with AI" || button.textContent?.startsWith("Planning"),
+      button.textContent === "Set up with AI" || button.textContent?.startsWith("Planning"),
   )!;
 /** A disabled action with a reason stays focusable: it is `aria-disabled`, not `disabled`. */
 const unavailable = (button: HTMLButtonElement) =>
@@ -126,7 +129,7 @@ it("fills the draft with the researched rules at once, without asking a model", 
   const catalog = { models: { codex: [{ id: "gpt", name: "GPT" }] } };
   vi.mocked(localSetupCatalog).mockResolvedValue(catalog);
   const { edits, container } = await mount(true);
-  expect(container.textContent).toContain("Prepare setup draft");
+  expect(container.textContent).toContain("Set up with rules");
   await act(async () => primary(container).click());
   expect(planSmartSetup).not.toHaveBeenCalled();
   expect(setupCandidates).toHaveBeenCalledWith(expect.anything(), catalog);
@@ -193,7 +196,7 @@ it("plans with localized names from the direct action, applies once and names th
   expect(container.querySelector('[role="status"]')?.textContent).toContain("Draft planned by Sol");
 });
 
-it("keeps the planner control icon-only and runs the selected account and settings", async () => {
+it("names the chosen planning model on its control and runs the selected account and settings", async () => {
   const choice = {
     harness: "codex",
     model: "gpt-selected",
@@ -204,8 +207,7 @@ it("keeps the planner control icon-only and runs the selected account and settin
   vi.mocked(planSmartSetup).mockResolvedValue({ candidates: [candidate], plan, plannedBy: "GPT" });
   const { container } = await mount(true, choice);
   const picker = container.querySelector('button[aria-haspopup="dialog"]');
-  expect(picker?.getAttribute("aria-label")).toBe("Model and settings");
-  expect(picker?.textContent).not.toContain(choice.model);
+  expect(picker?.textContent).toBe("Name of gpt-selected");
   expect(picker?.querySelector("img")).toBeTruthy();
   await planWithAi(container);
   expect(planSmartSetup).toHaveBeenCalledWith(

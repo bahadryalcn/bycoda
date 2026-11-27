@@ -67,26 +67,26 @@ export function WorkspaceFeatureSettings() {
   useLocale();
   const features = useWorkspaceFeatures();
   const [errors, setErrors] = useState<Partial<Record<WorkspaceFeatureId, boolean>>>({});
+  const save = (id: WorkspaceFeatureId, next: boolean) => {
+    const setting = workspaceFeatureSettings[id];
+    setting.save(next);
+    setErrors((current) => ({ ...current, [id]: setting.load() !== next }));
+  };
+  // Every workspace tool is visible by default.
   return workspaceFeatureChoices().map(({ id, label }) => (
     <Row
       key={id}
       id={id === "notes" ? "notes" : `workspace-${id}`}
       label={label}
+      modified={!features[id]}
+      onReset={() => save(id, true)}
       feedback={
         errors[id] ? (
           <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
         ) : undefined
       }
     >
-      <Toggle
-        label={label}
-        on={features[id]}
-        onChange={(next) => {
-          const setting = workspaceFeatureSettings[id];
-          setting.save(next);
-          setErrors((current) => ({ ...current, [id]: setting.load() !== next }));
-        }}
-      />
+      <Toggle label={label} on={features[id]} onChange={(next) => save(id, next)} />
     </Row>
   ));
 }

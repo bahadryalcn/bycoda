@@ -1,4 +1,8 @@
 import { OwnerApprovalInbox } from "../../features/notifications";
+import { OwnerRequestSource } from "../../features/sessions/ui/OwnerRequestSource";
+import { NotificationProjectIconContext } from "../../features/sessions/ui/NotificationHistoryItem";
+import { Text } from "../../shared/ui/Text";
+import { SessionProjectIcon } from "./useSessionProjectAppearance";
 import {
   ownerApprovalsSnapshot,
   subscribeOwnerApprovals,
@@ -105,7 +109,21 @@ export function AppConfirmHost({
   return (
     <div className="contents" onKeyDownCapture={guard} onKeyUpCapture={guard}>
       {dialog}
-      <OwnerApprovalInbox onOpenSession={onOpenSession} />
+      <NotificationProjectIconContext value={SessionProjectIcon}>
+        <OwnerApprovalInbox
+          onOpenSession={onOpenSession}
+          // The dialog names who asked: the project and conversation, or the Assistant Room.
+          source={(request) => (
+            <Text as="div" size="secondary" tone="secondary">
+              <OwnerRequestSource
+                sessionId={request.sessionId}
+                threadId={request.threadId}
+                cwd={request.cwd}
+              />
+            </Text>
+          )}
+        />
+      </NotificationProjectIconContext>
     </div>
   );
 }

@@ -39,6 +39,11 @@ export function rankSkills(skills: Skill[], query: string, limit = MAX_PICKER): 
       })
       .sort((a, b) => a.tier - b.tier || b.score - a.score || compareNames(a.skill, b.skill))
       .map(({ skill }) => skill);
+    // Matching groups lead: a broad query matches many skills and would push them out of view.
+    ranked = [
+      ...ranked.filter(isSkillGroupPickerItem),
+      ...ranked.filter((skill) => !isSkillGroupPickerItem(skill)),
+    ];
   }
 
   // Groups remain available beyond the normal result limit.

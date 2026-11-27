@@ -1,20 +1,22 @@
-import { useState } from "react";
-import { useT } from "../../../../shared/i18n";
+import { useFormat, useT } from "../../../../shared/i18n";
 import {
   MODEL_ROUTING_MAX_POOLS,
   type ModelRoutingPool,
 } from "../../../../shared/model/host-contracts/model-routing";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
-import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { modelRoutingPoolEntryIds } from "../../../../shared/model/modelRoutingPools";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
+import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { Group } from "../../../../shared/ui/settings";
 import { nextOrderPoolName, removeOrderPool, type OrderDraft } from "../../model/modelRoutingDraft";
 import { PoolMembers } from "./PoolMembers";
 
+/**
+ * Every group open at once: its name, model count and delete on one line, then its models.
+ * Each model carries its own effort and speed for runs on this group.
+ */
 export function ModelOrderPools({
   draft,
   onChange,
@@ -25,11 +27,21 @@ export function ModelOrderPools({
   onEdit: (operation: (draft: OrderDraft) => OrderDraft) => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const { entries, pools } = draft.routing;
-  const [expanded, setExpanded] = useState<string | undefined>(() => pools[0]?.id);
   // A group is only a draft edit until Save and Discard reverts it, so removing needs no confirmation.
   const removePool = (pool: ModelRoutingPool) =>
     onEdit((current) => removeOrderPool(current, pool.id));
+  const rename = (pool: ModelRoutingPool, name: string) =>
+    onChange({
+      ...draft,
+      routing: {
+        ...draft.routing,
+        pools: pools.map((candidate) =>
+          candidate.id === pool.id ? { ...candidate, name } : candidate,
+        ),
+      },
+    });
   return (
     <Group
       title={t("Groups")}
@@ -45,8 +57,7 @@ export function ModelOrderPools({
                 ? t("The group limit is reached.")
                 : undefined
           }
-          onClick={() => {
-            const id = crypto.randomUUID();
+          onClick={() =>
             onChange({
               ...draft,
               routing: {
@@ -54,111 +65,66 @@ export function ModelOrderPools({
                 pools: [
                   ...pools,
                   {
-                    id,
+                    id: crypto.randomUUID(),
                     name: nextOrderPoolName(pools, t("New group")),
                     entryIds: [entries[0]!.id],
                   },
                 ],
               },
-            });
-            setExpanded(id);
-          }}
+            })
+          }
         >
           {t("New group")}
         </Button>
       }
     >
       <>
-        {!pools.length && <EmptyState size="inline" title={t("No groups")} description="" />}
-        {pools.map((pool) => (
-          <div
-            key={pool.id}
-            role="group"
-            aria-label={pool.name || t("Unnamed group")}
-            className="flex flex-col gap-2 px-4 py-3"
-          >
-            <SectionLabel
-              collapsible
-              expanded={expanded === pool.id}
-              onExpandedChange={(open) => setExpanded(open ? pool.id : undefined)}
-              controls={`routing-pool-${pool.id}`}
-              count={pool.entryIds.length + (pool.poolIds?.length ?? 0)}
-              actions={
+        {!pools.length && (
+          <EmptyState
+            size="inline"
+            title={t("No groups")}
+            description={
+              entries.length
+                ? t("A job set to a group tries its models in order.")
+                : t("Add a model in Models & order first.")
+            }
+            showDescription
+          />
+        )}
+        {pools.map((pool) => {
+          const name = pool.name || t("Unnamed group");
+          return (
+            <section key={pool.id} aria-label={name} className="flex flex-col gap-1 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <div className="w-64 max-w-full min-w-0">
+                  <TextField
+                    label={t("Group name")}
+                    hideLabel
+                    fieldSize="sm"
+                    maxLength={80}
+                    value={pool.name}
+                    onChange={(event) => rename(pool, event.currentTarget.value)}
+                  />
+                </div>
+                <Text size="caption" tone="secondary" className="flex-1">
+                  {t("{p0} models", {
+                    p0: format.formatNumber(modelRoutingPoolEntryIds(pools, pool.id).length),
+                  })}
+                </Text>
                 <Button
                   iconOnly
                   variant="ghost"
-                  label={t("Delete group {p0}", { p0: pool.name || t("Unnamed group") })}
+                  size="sm"
+                  label={t("Delete group {p0}", { p0: name })}
                   onClick={() => removePool(pool)}
                 >
                   <Trash2 className="icon-sm" />
                 </Button>
-              }
-            >
-              {pool.name || t("Unnamed group")}
-            </SectionLabel>
-            <div id={`routing-pool-${pool.id}`} hidden={expanded !== pool.id}>
-              {expanded === pool.id ? (
-                <>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="min-w-0 flex-1">
-                      <TextField
-                        label={t("Group name")}
-                        maxLength={80}
-                        value={pool.name}
-                        onChange={(event) =>
-                          onChange({
-                            ...draft,
-                            routing: {
-                              ...draft.routing,
-                              pools: pools.map((candidate) =>
-                                candidate.id === pool.id
-                                  ? { ...candidate, name: event.currentTarget.value }
-                                  : candidate,
-                              ),
-                            },
-                          })
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <SegmentedControl
-                        label={t("Effort of {p0}", { p0: pool.name || t("Unnamed group") })}
-                        value={pool.effort ?? "default"}
-                        onValueChange={(effort) =>
-                          onChange({
-                            ...draft,
-                            routing: {
-                              ...draft.routing,
-                              pools: pools.map((candidate) => {
-                                if (candidate.id !== pool.id) return candidate;
-                                const { effort: _previous, ...rest } = candidate;
-                                return effort === "default"
-                                  ? rest
-                                  : { ...rest, effort: effort as ModelRoutingPool["effort"] };
-                              }),
-                            },
-                          })
-                        }
-                        options={[
-                          { value: "default", label: t("Default") },
-                          { value: "low", label: t("Low") },
-                          { value: "medium", label: t("Medium") },
-                          { value: "high", label: t("High") },
-                        ]}
-                      />
-                      <InfoPopover label={t("Group effort")}>
-                        {t(
-                          "Work that runs on this group uses this effort on every model that supports it, including models of included groups. Default keeps each model's own setting.",
-                        )}
-                      </InfoPopover>
-                    </div>
-                  </div>
-                  <PoolMembers draft={draft} pool={pool} onEdit={onEdit} />
-                </>
-              ) : null}
-            </div>
-          </div>
-        ))}
+              </div>
+              <PoolMembers draft={draft} pool={pool} onEdit={onEdit} />
+            </section>
+          );
+        })}
       </>
     </Group>
   );

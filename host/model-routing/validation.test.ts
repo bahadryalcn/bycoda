@@ -216,3 +216,17 @@ it("keeps catalog model checks for changed targets and fixed roles under the sam
     `Unknown codex account "${STALE}"`,
   );
 });
+
+it("accepts per-model pool settings only for the pool's own models and without delegation keys", () => {
+  const ok = draft();
+  ok.pools[0]!.memberSettings = { a: { effort: "high", fast: "true" } };
+  expect(validateModelRoutingDraft(ok, {}).pools[0]!.memberSettings).toEqual({
+    a: { effort: "high", fast: "true" },
+  });
+  const stranger = draft();
+  stranger.pools[0]!.memberSettings = { absent: { effort: "low" } };
+  expect(() => validateModelRoutingDraft(stranger, {})).toThrow("does not list");
+  const delegation = draft();
+  delegation.pools[0]!.memberSettings = { a: { [MODEL_ROUTING_DELEGATION_KEYS[0]]: "on" } };
+  expect(() => validateModelRoutingDraft(delegation, {})).toThrow("Delegation keys");
+});

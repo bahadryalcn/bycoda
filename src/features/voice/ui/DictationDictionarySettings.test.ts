@@ -61,10 +61,10 @@ async function input(label: string, value: string) {
 }
 it("saves preferred spelling with shared scope and keeps cancelled drafts out of settings", async () => {
   await render();
-  expect(container.textContent).toContain("No saved terms");
+  expect(container.textContent).toContain("No terms yet.");
   await click("Add term");
   await input("Preferred spelling", "Bycoda");
-  await click("Save term");
+  await click("Save");
   expect(loadVoiceSettings().dictationDictionary).toEqual([{ term: "Bycoda", aliases: [] }]);
   await click("Add term");
   await input("Preferred spelling", "Not saved");
@@ -83,7 +83,7 @@ it("edits existing aliases and project scope without widening scope or removing 
   await render();
   await rowAction("Edit");
   await input("Preferred spelling", "HL7 FHIR");
-  await click("Save term");
+  await click("Save");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
     { term: "HL7 FHIR", aliases: ["fire"], projectId },
     { term: "Bycoda", aliases: ["by coda"] },
@@ -111,7 +111,7 @@ it("keeps the draft and refuses to overwrite a shifted entry after a concurrent 
       dictationDictionary: [{ term: "Bycoda", aliases: ["by coda"] }],
     }),
   );
-  await click("Save term");
+  await click("Save");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
     { term: "Bycoda", aliases: ["by coda"] },
   ]);
@@ -140,7 +140,7 @@ it("retains a new draft if concurrent changes fill the dictionary limit", async 
     }),
   );
   const save = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Save term",
+    (button) => button.textContent === "Save",
   )!;
   expect(save.getAttribute("aria-disabled")).toBe("true");
   await act(async () => save.click());
@@ -175,7 +175,7 @@ it("retains existing aliases, scope and conflict baseline across navigation; Can
   );
   expect(container.textContent).toContain("fire");
   expect(container.textContent).toContain("Dictionary scopeproject");
-  await click("Save term");
+  await click("Save");
   expect(container.textContent).toContain("dictionary changed");
   expect(loadVoiceSettings().dictationDictionary[0].term).toBe("External");
   await click("Cancel");
@@ -230,10 +230,10 @@ it("blocks a repeated term in the same scope before saving and keeps the draft",
   await click("Add term");
   await input("Preferred spelling", " bycoda ");
   expect(container.textContent).toContain("This term is already saved in this scope.");
-  expect(buttonNamed("Save term").getAttribute("aria-disabled")).toBe("true");
+  expect(buttonNamed("Save").getAttribute("aria-disabled")).toBe("true");
   await input("Preferred spelling", "Bycoda Workspace");
   expect(container.textContent).not.toContain("This term is already saved in this scope.");
-  await click("Save term");
+  await click("Save");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
     { term: "Bycoda", aliases: [] },
     { term: "Bycoda Workspace", aliases: [] },
@@ -251,7 +251,7 @@ it("lets an entry keep its own spelling when edited without a duplicate elsewher
   await render();
   await rowAction("Edit");
   expect(container.textContent).not.toContain("This term is already saved in this scope.");
-  await click("Save term");
+  await click("Save");
   expect(loadVoiceSettings().dictationDictionary).toEqual([
     { term: "Bycoda", aliases: ["by coda"] },
     { term: "FHIR", aliases: [] },

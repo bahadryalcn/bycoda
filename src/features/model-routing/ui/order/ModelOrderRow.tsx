@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useFormat, useT } from "../../../../shared/i18n";
 import type {
   ModelRoutingEntry,
@@ -8,19 +9,58 @@ import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
-import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../../shared/ui/NumberField";
-import { Select } from "../../../../shared/ui/Select";
-import { Tooltip } from "../../../../shared/ui/Tooltip";
+import { Switch } from "../../../../shared/ui/Switch";
 import { ArrowRight, GripVertical, Trash2, TriangleAlert } from "../../../../shared/ui/icons";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../../connections/public/protocol";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { supportsProviderAccounts } from "../../../providers/public/providerAccounts";
 import { defaultModelSettings, resolveModel } from "../../../sessions/public/models";
 import { entrySettings, percentDraft } from "../../model/modelRoutingDraft";
+import { PLAN_QUOTA_PROVIDERS } from "./ModelOrderLimits";
 import type { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
 import { ModelProfileBadge } from "./ModelProfileBadge";
 import { useQuotaLabel } from "./useQuotaLabel";
+
+/**
+ * Column template shared by the order rows and their header so the list reads as a table:
+ * lead (select, grip, number), model, profile, keep free, skip if unknown, usage, remove.
+ * Below 58rem the settings wrap to a second line with their own visible labels, and the header
+ * shows only the lead and model.
+ */
+const ORDER_COLUMNS =
+  "grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 @min-[58rem]/model-order:grid-cols-[5rem_minmax(0,1fr)_4.5rem_5.5rem_6.5rem_10rem_2rem]";
+export const ORDER_GRID = `grid ${ORDER_COLUMNS}`;
+/** Inline labels for rows below 58rem, where the columns have no titles; wider, the header names them. */
+const NARROW_LABEL = "@min-[58rem]/model-order:sr-only";
+const NARROW_ONLY = "@min-[58rem]/model-order:hidden";
+
+/**
+ * The column titles above the rows; `selectAll` is the lead cell's checkbox. Without one (the By
+ * account view, where each account header selects its rows) the header is shown only when wide.
+ */
+export function ModelOrderHeader({ selectAll }: { selectAll?: ReactNode }) {
+  const t = useT();
+  const wide = "hidden @min-[58rem]/model-order:block";
+  return (
+    <div
+      className={`${selectAll ? "grid" : "hidden @min-[58rem]/model-order:grid"} ${ORDER_COLUMNS} pt-2 pb-1`}
+    >
+      <div className="flex items-center">{selectAll}</div>
+      {[
+        [t("Model"), ""],
+        [t("Profile"), wide],
+        [t("Keep free"), wide],
+        [t("Skip if unknown"), wide],
+        [t("Usage"), `${wide} text-end`],
+      ].map(([label, className]) => (
+        <Text key={label} size="caption" tone="secondary" className={className}>
+          {label}
+        </Text>
+      ))}
+    </div>
+  );
+}
 
 /** Why an entry is skipped; `t()` takes literals only, so each label is translated where it is named. */
 function skipLabel(skip: NonNullable<ModelRoutingEntryStatus["skip"]>, t: ReturnType<typeof useT>) {
@@ -90,6 +130,7 @@ export function ModelOrderRow({
   onRemove: () => void;
 }) {
   const t = useT();
+  const quotaReadable = PLAN_QUOTA_PROVIDERS.includes(entry.harness);
   const format = useFormat();
   const quotaLabel = useQuotaLabel();
   const left = quotaLabel(status, statusLoading, statusError);
@@ -98,7 +139,7 @@ export function ModelOrderRow({
       ref={(node) => sortable?.setItemRef(entry.id, node)}
       {...surfaceAttributes(
         invalidMessage ? { tone: "warning" } : {},
-        "reorder-item grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 px-4 py-2 @min-[64rem]/model-order:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto_auto]",
+        `reorder-item ${ORDER_GRID} py-1.5`,
       )}
       data-entry-id={entry.id}
       data-dragging={sortable?.draggingId === entry.id ? "" : undefined}
@@ -128,7 +169,7 @@ export function ModelOrderRow({
             <GripVertical className="icon-sm" />
           </Button>
         ) : null}
-        <Text size="secondary" tone="secondary" aria-hidden="true" className="w-4 text-center">
+        <Text size="secondary" tone="secondary" aria-hidden="true" className="w-5 text-center">
           {format.formatNumber(index + 1)}
         </Text>
       </div>
@@ -167,64 +208,68 @@ export function ModelOrderRow({
           }
         />
       </div>
-      {/* Below 64rem these settings wrap under the model; wider, each takes its own column. */}
-      <div className="col-start-2 col-end-4 row-start-2 flex flex-wrap items-center gap-2 @min-[64rem]/model-order:contents">
-        <div className="flex @min-[64rem]/model-order:col-start-3 @min-[64rem]/model-order:row-start-1 @min-[64rem]/model-order:w-16">
+      {/* Below 58rem these settings wrap under the model; wider, each takes its own column. */}
+      <div className="col-start-2 col-end-4 row-start-2 flex flex-wrap items-center gap-3 @min-[58rem]/model-order:contents">
+        <div className="flex @min-[58rem]/model-order:col-start-3 @min-[58rem]/model-order:row-start-1">
           <ModelProfileBadge harness={entry.harness} model={entry.model} />
         </div>
-        <Tooltip label={t("Keep % for my own use")}>
-          <div className="w-24 @min-[64rem]/model-order:col-start-4 @min-[64rem]/model-order:row-start-1">
-            <NumberField
-              label={t("Keep % for my own use")}
-              hideLabel
-              fieldSize="sm"
-              steppers={false}
-              min={0}
-              max={100}
-              step={1}
-              inputMode="numeric"
-              placeholder={providerPercent.trim() ? providerPercent : "0"}
-              endAdornment={
-                <Text size="caption" tone="secondary" aria-hidden="true">
-                  %
-                </Text>
-              }
-              value={percent}
-              onChange={(event) => onPercent(percentDraft(event.currentTarget.value, percent))}
-            />
-          </div>
-        </Tooltip>
-        <div className="w-44 @min-[64rem]/model-order:col-start-5 @min-[64rem]/model-order:row-start-1">
-          <Select
-            label={t("If the limit is unknown")}
-            hideLabel
-            fieldSize="sm"
-            value={entry.unknownLimit}
-            options={[
-              { value: "use", label: t("Unknown limit: use") },
-              { value: "skip", label: t("Unknown limit: skip") },
-            ]}
-            onValueChange={(value) =>
-              onChange({ ...entry, unknownLimit: value === "skip" ? "skip" : "use" })
-            }
-          />
-        </div>
-        <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 @min-[64rem]/model-order:col-start-6 @min-[64rem]/model-order:row-start-1 @min-[64rem]/model-order:w-56 @min-[64rem]/model-order:justify-end">
+        {quotaReadable ? (
+          <>
+            <div className="flex items-center gap-2 @min-[58rem]/model-order:col-start-4 @min-[58rem]/model-order:row-start-1">
+              <Text size="caption" tone="secondary" aria-hidden="true" className={NARROW_ONLY}>
+                {t("Keep free")}
+              </Text>
+              <div className="w-20">
+                <NumberField
+                  label={t("Keep % for my own use")}
+                  hideLabel
+                  fieldSize="sm"
+                  steppers={false}
+                  min={0}
+                  max={100}
+                  step={1}
+                  inputMode="numeric"
+                  placeholder={providerPercent.trim() ? providerPercent : "0"}
+                  endAdornment={
+                    <Text size="caption" tone="secondary" aria-hidden="true">
+                      %
+                    </Text>
+                  }
+                  value={percent}
+                  onChange={(event) => onPercent(percentDraft(event.currentTarget.value, percent))}
+                />
+              </div>
+            </div>
+            {/* A switch, so the row's only checkbox stays the selection; its label shows when the column has no title. */}
+            <div className="flex @min-[58rem]/model-order:col-start-5 @min-[58rem]/model-order:row-start-1">
+              <Switch
+                label={<span className={NARROW_LABEL}>{t("Skip if limit unknown")}</span>}
+                labelText={{ size: "caption", tone: "secondary" }}
+                aria-label={t("Skip if limit unknown")}
+                checked={entry.unknownLimit === "skip"}
+                onCheckedChange={(on) => onChange({ ...entry, unknownLimit: on ? "skip" : "use" })}
+              />
+            </div>
+          </>
+        ) : (
+          // No readable plan quota: the cells stay empty so the columns keep their alignment.
+          <>
+            <div className="hidden @min-[58rem]/model-order:col-start-4 @min-[58rem]/model-order:row-start-1 @min-[58rem]/model-order:block" />
+            <div className="hidden @min-[58rem]/model-order:col-start-5 @min-[58rem]/model-order:row-start-1 @min-[58rem]/model-order:block" />
+          </>
+        )}
+        <div className="flex max-w-full flex-wrap items-center gap-x-2 gap-y-1 @min-[58rem]/model-order:col-start-6 @min-[58rem]/model-order:row-start-1 @min-[58rem]/model-order:justify-end">
           {next ? (
-            <InfoTooltip
-              label={t("Next model to be used")}
-              icon={<ArrowRight className="icon-sm" aria-hidden />}
-            >
-              {t("Next model to be used")}
-            </InfoTooltip>
+            <Text size="caption" tone="accent" className="inline-flex items-center gap-1">
+              <ArrowRight className="icon-sm" aria-hidden />
+              {t("Next")}
+            </Text>
           ) : null}
           {status?.skip ? (
-            <InfoTooltip
-              label={skipLabel(status.skip, t)}
-              icon={<TriangleAlert className="icon-sm" aria-hidden />}
-            >
+            <Text size="caption" tone="warning" className="inline-flex items-center gap-1">
+              <TriangleAlert className="icon-sm shrink-0" aria-hidden />
               {skipLabel(status.skip, t)}
-            </InfoTooltip>
+            </Text>
           ) : null}
           {left !== accountQuota ? (
             <Text size="caption" tone="secondary" className="break-words">
@@ -233,7 +278,7 @@ export function ModelOrderRow({
           ) : null}
         </div>
       </div>
-      <div className="col-start-3 row-start-1 @min-[64rem]/model-order:col-start-7">
+      <div className="col-start-3 row-start-1 @min-[58rem]/model-order:col-start-7">
         <Button
           iconOnly
           variant="ghost"

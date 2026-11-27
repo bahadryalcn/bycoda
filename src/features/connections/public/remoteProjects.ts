@@ -2,6 +2,8 @@
 export {
   parseRemotePath,
   remotePath,
+  remoteProjectsOn,
   remoteProjectFor,
   rememberRemoteProject,
 } from "../model/remoteProjects";
+export { useRemoteProjectsOn } from "../model/useRemoteProject";

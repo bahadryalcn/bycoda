@@ -12,10 +12,10 @@ import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import {
-  activitySharing,
   dataTransfers,
   sharingNotices,
   type SharingKind,
+  type SharingMode,
 } from "../model/transfers";
 
 function sharingTitle(kind: SharingKind) {
@@ -73,9 +73,10 @@ export function DataSharingNotices() {
     setMenuAnchor(null);
     setOpenedId(id);
   };
-  const saveActivityMode = (mode: "auto" | "off") => {
+  // Always send and Never send persist the category's mode before deciding this transfer.
+  const saveMode = (mode: Extract<SharingMode, "auto" | "off">) => {
     if (!openPending) return;
-    if (!activitySharing.save(mode)) {
+    if (!openPending.save(mode)) {
       setFailedSaveId(openPending.id);
       return;
     }
@@ -144,7 +145,7 @@ export function DataSharingNotices() {
                           ]}
                           onClose={() => setMenuAnchor(null)}
                           onPick={(id) => {
-                            if (id === "never") saveActivityMode("off");
+                            if (id === "never") saveMode("off");
                             if (id === "later") {
                               openPending.decide(false, "user");
                               close();
@@ -168,7 +169,7 @@ export function DataSharingNotices() {
                   </Button>
                 )}
                 <Button
-                  variant={isActivityReview ? "secondary" : "primary"}
+                  variant="secondary"
                   onClick={() => {
                     openPending.decide(true, "user");
                     close();
@@ -191,11 +192,9 @@ export function DataSharingNotices() {
                     {t("Send for today")}
                   </Button>
                 )}
-                {isActivityReview && (
-                  <Button variant="primary" onClick={() => saveActivityMode("auto")}>
-                    {t("Always send")}
-                  </Button>
-                )}
+                <Button variant="primary" onClick={() => saveMode("auto")}>
+                  {t("Always send")}
+                </Button>
               </ModalActions>
             )
           }

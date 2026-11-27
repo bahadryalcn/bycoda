@@ -5,6 +5,7 @@ import {
   importPlaceholderDir,
   readClaudeTranscript,
   readCodexTranscript,
+  readImportEntries,
   type ClaudeTranscript,
   type CodexTranscript,
   type ImportCandidate,
@@ -34,7 +35,13 @@ import {
 import { buildImportedSession, hydrateImportedClaudeWorkflows } from "../model/claudeSessionImport";
 import { newSession, titleFromPrompt, type Block, type Session } from "../model/session";
 import { buildCodexSession } from "./codexTranscript";
-import { candidateKey, importedSessionId, isAlreadyImported } from "./importModel";
+import {
+  IMPORT_PROVIDER_LABEL,
+  candidateKey,
+  importHarness,
+  importedSessionId,
+  isAlreadyImported,
+} from "./importModel";
 
 /**
  * Per conversation, how much of a transcript crosses into the webview. Rust
@@ -92,6 +99,8 @@ export type ImportSummary = {
 export type ImportDeps = {
   readClaude: (path: string, maxBytes: number) => Promise<ClaudeTranscript>;
   readCodex: (path: string, maxBytes: number) => Promise<CodexTranscript>;
+  /** Every other provider: entries read from its own store. */
+  readEntries: (candidate: ImportCandidate, maxBytes: number) => Promise<CodexTranscript>;
   placeholderDir: (original: string) => Promise<string>;
   persist: (
     session: Session,
@@ -108,6 +117,7 @@ export type ImportDeps = {
 const defaultDeps: ImportDeps = {
   readClaude: readClaudeTranscript,
   readCodex: readCodexTranscript,
+  readEntries: readImportEntries,
   placeholderDir: importPlaceholderDir,
   persist: importSessionRecord,
   storedKeys: importedSessionKeys,
@@ -174,7 +184,7 @@ export function importNote(
   target: FolderTarget,
   options: { resumable: boolean; truncated: boolean },
 ): string {
-  const source = candidate.provider === "claude" ? "Claude Code" : "Codex";
+  const source = IMPORT_PROVIDER_LABEL[candidate.provider];
   const parts = [t("Imported from {p0}.", { p0: source })];
   if (!target.real) {
     parts.push(
@@ -188,6 +198,17 @@ export function importNote(
             { p0: target.original },
           ),
     );
+  } else if (
+    !options.resumable &&
+    candidate.provider !== "claude" &&
+    candidate.provider !== "codex"
+  ) {
+    parts.push(
+      t(
+        "{p0} conversations cannot be continued here, so this is read-only history; sending a message starts a new conversation.",
+        { p0: source },
+      ),
+    );
   } else if (!options.resumable) {
     parts.push(
       t(
@@ -196,12 +217,12 @@ export function importNote(
     );
   } else {
     parts.push(
-      source === "Codex"
+      candidate.provider === "codex"
         ? t("Sending a message continues the same Codex thread.")
         : t("Sending a message continues the same conversation."),
     );
   }
-  if (candidate.provider === "codex") {
+  if (candidate.provider !== "claude") {
     parts.push(t("Tool calls are shown as simple rows and reasoning is not included."));
   }
   if (options.truncated) {
@@ -217,7 +238,7 @@ async function buildSession(
   target: FolderTarget,
   deps: ImportDeps,
 ): Promise<Built> {
-  const harness = candidate.provider;
+  const harness = importHarness(candidate.provider);
   const base: Session = {
     ...newSession(harness, target.cwd, candidate.model ?? undefined, "supervised"),
     id: crypto.randomUUID(),
@@ -243,7 +264,10 @@ async function buildSession(
       })) ?? built;
     truncated = transcript.truncated || transcript.oversizeSkipped > 0;
   } else {
-    const transcript = await deps.readCodex(candidate.path, MAX_TRANSCRIPT_BYTES);
+    const transcript =
+      harness === "codex"
+        ? await deps.readCodex(candidate.path, MAX_TRANSCRIPT_BYTES)
+        : await deps.readEntries(candidate, MAX_TRANSCRIPT_BYTES);
     built = buildCodexSession({ base, entries: transcript.entries });
     truncated = transcript.truncated || transcript.oversizeSkipped > 0;
   }

@@ -1,4 +1,4 @@
-/* Inline placeholder bar for use inside paragraphs. Same tone and finite pulse as the block
+/* Inline placeholder bar for use inside paragraphs. Same tone and finite shimmer as the block
    skeleton; the shape stays visible and still under reduced or off decorative motion. */
 .inline {
   display: inline-block;
@@ -14,8 +14,8 @@
   visibility: hidden;
 }
 
-/* Layout-shaped placeholder piece (SkeletonBar). Same tone and finite pulse; pieces pulse one
-   beat apart so a composed skeleton reads as one calm wave. */
+/* Layout-shaped placeholder piece (SkeletonBar). Same tone and finite shimmer; one sweep lights
+   every piece so a composed skeleton reads as one surface. */
 .bar {
   display: block;
   flex: none;

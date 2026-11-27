@@ -2,6 +2,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useSyncExternalStore } from "react";
 
 import {
+  REMOTE_AUTO_RECONNECT_DEFAULT,
   loadRemoteAutoReconnect,
   saveRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
@@ -23,6 +24,8 @@ export function RemoteReconnectGroup() {
         persistence={{ mode: "automatic" }}
         label={t("Automatically reconnect to machines")}
         info={t("You can still reconnect manually when this is off.")}
+        modified={on !== REMOTE_AUTO_RECONNECT_DEFAULT}
+        onReset={() => saveRemoteAutoReconnect(REMOTE_AUTO_RECONNECT_DEFAULT)}
       >
         <Toggle
           label={t("Automatically reconnect to machines")}

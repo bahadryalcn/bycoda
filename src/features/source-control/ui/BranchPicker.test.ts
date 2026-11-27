@@ -427,7 +427,7 @@ it("badges a worktree branch, groups it last and goes to the worktree instead of
   const onSelectWorktree = vi.fn();
   const row = await openWithWorktreeBranch({ onSelectWorktree });
   expect(row.textContent).toContain("worktree");
-  expect(document.querySelector("[data-branch-picker]")?.textContent).toContain("In a worktree");
+  expect(document.querySelector("[data-branch-picker]")?.textContent).toContain("Existing worktrees");
   await act(async () => row.click());
   expect(onSelectWorktree).toHaveBeenCalledWith(expect.objectContaining({ path: "/wt/feat" }));
   expect(gitCheckout).not.toHaveBeenCalled();

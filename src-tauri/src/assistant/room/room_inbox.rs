@@ -356,7 +356,7 @@ pub(super) fn execute(
         };
         let (site, email) = account.display();
         let standing = room_full_access(app, channel, thread, relay, "inbox.jira.read");
-        let approved = standing || crate::control::owner_approval::ask_window_checked(app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Jira read approval", message: &(format!("Allow this Room to read Jira issues available to {email} on {site} within the current Inbox project visibility?\n\nRoom: {thread}\nHost: {environment}\nProject: {cwd}\nFilter: {state}{}", if assigned { ", assigned to me" } else { "" })), confirm: "Allow this read", cancel: "Cancel" }, || { check()?; account.current(app)?; check() });
+        let approved = standing || crate::control::owner_approval::ask_room_checked(app, &window, thread, cwd, crate::control::owner_approval::Prompt { title: "bycoda — Jira read approval", message: &(format!("Allow this Room to read Jira issues available to {email} on {site} within the current Inbox project visibility?\n\nRoom: {thread}\nHost: {environment}\nProject: {cwd}\nFilter: {state}{}", if assigned { ", assigned to me" } else { "" })), confirm: "Allow this read", cancel: "Cancel" }, || { check()?; account.current(app)?; check() });
         check()?;
         account.current(app)?;
         check()?;
@@ -579,7 +579,7 @@ pub(super) fn execute(
         account_check()?;
         let gate = room_write_gate(&operation);
         let standing = room_full_access(app, channel, thread, relay, gate);
-        let approved = standing || crate::control::owner_approval::ask_window_checked(app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("{message}\n\nAccount: {account}\nRoom: {thread}\nHost: {environment}\nRequest: {request_id}")), confirm: "Approve this operation", cancel: "Cancel" }, || { account_check() });
+        let approved = standing || crate::control::owner_approval::ask_room_checked(app, &window, thread, cwd, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("{message}\n\nAccount: {account}\nRoom: {thread}\nHost: {environment}\nRequest: {request_id}")), confirm: "Approve this operation", cancel: "Cancel" }, || { account_check() });
         account_check()?;
         if !approved {
             return Err("Owner declined Room Inbox operation".into());

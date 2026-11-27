@@ -107,6 +107,14 @@ export class MicrophoneRecording {
     }
   }
 
+  /** Stops playback and keeps the recording so it can be played again or deleted. */
+  stopPlayback() {
+    if (!this.player || this.disposed) return;
+    this.player.pause();
+    this.player = undefined;
+    this.changed("ready");
+  }
+
   cancel() {
     this.reset();
     if (!this.disposed) this.changed("idle");

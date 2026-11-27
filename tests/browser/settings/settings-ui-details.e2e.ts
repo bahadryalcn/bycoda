@@ -62,7 +62,7 @@ test.describe("provider identity touch access", () => {
         const name = row.locator(".provider-account-name");
         await expect(name).toContainText("Aleksandra Wiśniewska-Kowalczyk");
         await expect(name).toHaveCSS("overflow-wrap", "anywhere");
-        await expect(row.getByText("Default account", { exact: true })).toBeVisible();
+        await expect(row.getByRole("img", { name: "Default account", exact: true })).toBeVisible();
         await row.getByRole("button", { name: "Reveal email", exact: true }).tap();
         const email = row.getByRole("button", { name: "Hide email", exact: true });
         await expect(email).toHaveAttribute("aria-pressed", "true");
@@ -72,14 +72,14 @@ test.describe("provider identity touch access", () => {
         await page.screenshot({
           path: `temp/verification/2026-11-13-ui-coherence/providers/account-${theme}-${width}.png`,
         });
-        await page.getByRole("button", { name: "Terminal account profiles", exact: true }).tap();
+        await page.getByRole("button", { name: "Add existing account", exact: true }).tap();
         const profiles = page.getByRole("dialog", {
-          name: "Terminal account profiles",
+          name: "Accounts on this computer",
           exact: true,
         });
         await profiles.getByRole("button", { name: "Find terminal profiles", exact: true }).tap();
         const path = profiles.getByText(
-          "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+          "~/AppData/Local/Northwind Industries Holdings/research-and-development/claude-work-profile",
           { exact: true },
         );
         await expect(path).toHaveCSS("overflow-wrap", "anywhere");
@@ -95,8 +95,26 @@ test.describe("provider identity touch access", () => {
             path: `temp/verification/2026-11-13-ui-coherence/providers/profile-${theme}-${width}-${zoom}x.png`,
           });
         }
-        await page.keyboard.press("Escape");
+        await page.evaluate(() => {
+          document.documentElement.style.zoom = "1";
+          window.dispatchEvent(new Event("resize"));
+        });
+        // Adding an existing sign-in asks for its name, kind and colour before saving it.
+        await profiles.getByRole("button", { name: "Add", exact: true }).tap();
         await expect(profiles).toHaveCount(0);
+        const naming = page.getByRole("dialog", { name: "Add existing account", exact: true });
+        await expect(naming.getByRole("textbox", { name: "Account name" })).toHaveValue(
+          "International research and development workspace 🧑🏽‍💻",
+        );
+        await expect(naming.getByRole("button", { name: "Add", exact: true })).toBeEnabled();
+        await naming.evaluate((node) =>
+          Promise.all(node.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+        );
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/providers/add-existing-${theme}-${width}.png`,
+        });
+        await naming.getByRole("button", { name: "Cancel", exact: true }).tap();
+        await expect(naming).toHaveCount(0);
         await row.getByRole("button", { name: "Hide email", exact: true }).tap();
         await expect(
           row.getByRole("button", { name: "Reveal email", exact: true }),

@@ -26,7 +26,8 @@ import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { loadProjectGroups } from "../../projects/model/projectGroups";
 import { loadRecents } from "../../projects/model/recents";
-import { providerAccounts } from "../../providers/model/providerAccounts";
+import { accountDisplayLabel, providerAccounts } from "../../providers/model/providerAccounts";
+import { usageProviderLabel } from "./UsageProviderIdentity";
 import { formatUsageTokens } from "../../providers/model/providerUsage";
 import { formatResetCountdown } from "../../providers/model/rateLimits";
 import { getSessions, useShellSessions } from "../../sessions/model/sessionsStore";
@@ -250,21 +251,16 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             ) : null;
           })}
         </div>
-        {visible.length || editor ? (
-          <Button ref={addButton} onClick={() => openEditor("new")}>
-            {t("Add budget")}
-          </Button>
-        ) : null}
+        {/* Always the same real button, so the primary action never changes form or place. */}
+        <Button ref={addButton} className="ms-auto shrink-0" onClick={() => openEditor("new")}>
+          {t("Add budget")}
+        </Button>
       </div>
       {!pending && !visible.length && !editor && !problem ? (
         <EmptyState
           size="inline"
           kind="empty"
           description={t("No usage budgets. Add a project, session or workspace budget.")}
-          action={{
-            label: t("Add budget"),
-            onClick: () => openEditor("new"),
-          }}
         />
       ) : null}
       {problem ? <Alert tone="danger">{problem}</Alert> : null}
@@ -380,9 +376,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             )}
             {budget.metric === "accountPercent" ? (
               <Text as="p">
-                {budget.provider} ·{" "}
-                {providerAccounts(budget.provider).find((a) => a.id === budget.accountId)?.label ??
-                  t("Account unavailable")}
+                {usageProviderLabel(budget.provider)} · {budgetAccountName(budget)}
               </Text>
             ) : null}
           </Surface>
@@ -390,6 +384,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
       })}
     </section>
   );
+}
+
+function budgetAccountName(budget: UsageBudget): string {
+  const list = providerAccounts(budget.provider);
+  const found = list.find((a) => a.id === budget.accountId);
+  return found ? accountDisplayLabel(found, list) : t("Account unavailable");
 }
 
 function BudgetEditor({
@@ -552,7 +552,7 @@ function BudgetEditor({
             onChange={setAccount}
             options={accounts.map((a) => ({
               value: `${a.provider}:${a.id}`,
-              label: `${a.provider} · ${a.label}`,
+              label: `${usageProviderLabel(a.provider)} · ${accountDisplayLabel(a, accounts)}`,
             }))}
           />
         )}

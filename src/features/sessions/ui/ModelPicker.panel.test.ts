@@ -326,69 +326,69 @@ describe("model panel", () => {
     },
   );
 
-  it.each([
-    ["subagentModel", "default", "subagentPolicy"],
-    ["autoCompact", "off", "autoCompactWindow"],
-  ])("locks %s dependent settings until their parent is enabled", async (parent, value, child) => {
-    setHarnessModels("cursor", [
-      {
-        id: "cursor:dependent",
+  it.each([["autoCompact", "off", "autoCompactWindow"]])(
+    "locks %s dependent settings until their parent is enabled",
+    async (parent, value, child) => {
+      setHarnessModels("cursor", [
+        {
+          id: "cursor:dependent",
+          harness: "cursor",
+          name: "Dependent",
+          nativeId: "dependent",
+          settings: [
+            {
+              id: parent,
+              label: "Parent",
+              kind: "select",
+              value,
+              options: [
+                { value, label: "Default" },
+                { value: "enabled", label: "Enabled" },
+              ],
+            },
+            {
+              id: child,
+              label: "Child",
+              kind: "select",
+              value: "default",
+              options: [
+                { value: "default", label: "Default" },
+                { value: "custom", label: "Custom" },
+              ],
+            },
+          ],
+        },
+      ]);
+      const onSettingsChange = vi.fn();
+      await render({
         harness: "cursor",
-        name: "Dependent",
-        nativeId: "dependent",
-        settings: [
-          {
-            id: parent,
-            label: "Parent",
-            kind: "select",
-            value,
-            options: [
-              { value, label: "Default" },
-              { value: "enabled", label: "Enabled" },
-            ],
-          },
-          {
-            id: child,
-            label: "Child",
-            kind: "select",
-            value: "default",
-            options: [
-              { value: "default", label: "Default" },
-              { value: "custom", label: "Custom" },
-            ],
-          },
-        ],
-      },
-    ]);
-    const onSettingsChange = vi.fn();
-    await render({
-      harness: "cursor",
-      model: "cursor:dependent",
-      onSettingsChange,
-    });
-    await openPanel();
-    const locked = optionByText(await settingBlock(child), "radio", "Custom");
-    expect(locked.disabled).toBe(true);
-    await click(locked);
-    expect(onSettingsChange).not.toHaveBeenCalled();
+        model: "cursor:dependent",
+        onSettingsChange,
+      });
+      await openPanel();
+      const locked = optionByText(await settingBlock(child), "radio", "Custom");
+      expect(locked.disabled).toBe(true);
+      await click(locked);
+      expect(onSettingsChange).not.toHaveBeenCalled();
 
-    await render({
-      harness: "cursor",
-      model: "cursor:dependent",
-      values: { [parent]: "enabled" },
-      onSettingsChange,
-    });
-    const custom = optionByText(await settingBlock(child), "radio", "Custom");
-    expect(custom.disabled).toBe(false);
-    await click(custom);
-    expect(onSettingsChange).toHaveBeenCalledWith({
-      [parent]: "enabled",
-      [child]: "custom",
-    });
-    expect(panel()).not.toBeNull();
-  });
+      await render({
+        harness: "cursor",
+        model: "cursor:dependent",
+        values: { [parent]: "enabled" },
+        onSettingsChange,
+      });
+      const custom = optionByText(await settingBlock(child), "radio", "Custom");
+      expect(custom.disabled).toBe(false);
+      await click(custom);
+      expect(onSettingsChange).toHaveBeenCalledWith({
+        [parent]: "enabled",
+        [child]: "custom",
+      });
+      expect(panel()).not.toBeNull();
+    },
+  );
 
-  it("lists a long short-choice such as the subagent policy inline, not behind a picker", async () => {
+  it("leaves out the subagent model and policy rows that Subagents replaces", async () => {
     setHarnessModels("cursor", [
       {
         id: "cursor:policy",
@@ -427,17 +427,8 @@ describe("model panel", () => {
       onSettingsChange,
     });
     await openPanel();
-    const block = await settingBlock("subagentPolicy");
-    expect(block.querySelector("[aria-haspopup]")).toBeNull();
-    expect(optionByText(block, "radio", "Agent's choice").getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(block.textContent).toContain("Subagent model policy");
-    await click(optionByText(block, "radio", "Override all"));
-    expect(onSettingsChange).toHaveBeenCalledWith({
-      subagentModel: "enabled",
-      subagentPolicy: "force",
-    });
+    await expect(settingBlock("subagentPolicy")).rejects.toThrow("No setting block");
+    expect(container.querySelector('[data-setting-id="subagentModel"]')).toBeNull();
   });
 
   it("focuses a visible model search after its first frame", async () => {
@@ -982,7 +973,7 @@ describe("model panel settings column", () => {
     expect(block.firstElementChild?.textContent).toContain("high");
   });
 
-  it("offers only the effort levels the subagent models support and preserves manual choice", async () => {
+  it("offers only the effort levels the subagent models support behind an Automatic switch", async () => {
     const change = vi.fn();
     await openOrdered({ crossSubagentMaxEffort: "high" }, change);
     let block = await settingBlock("crossSubagentMaxEffort");
@@ -1001,10 +992,14 @@ describe("model panel settings column", () => {
     });
     block = await settingBlock("crossSubagentMaxEffort");
     expect(automatic().getAttribute("aria-checked")).toBe("true");
-    expect(block.textContent).toContain("No limit");
+    expect(block.querySelector("[data-automatic]")).not.toBeNull();
     expect(block.querySelector('[role="radio"][aria-checked="true"]')).toBeNull();
+    // Leaving Automatic starts in the middle of the offered ceilings.
     await click(automatic());
-    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "high" });
+    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "medium" });
+    // A bar while Automatic is on sets that ceiling directly.
+    await click(block.querySelectorAll<HTMLButtonElement>('[role="radio"]')[3]);
+    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "xhigh" });
   });
 
   it("explains the hovered setting in the help strip", async () => {
@@ -1255,7 +1250,7 @@ describe("model panel accounts", () => {
     expect(accountMenu()).toBeNull();
   });
 
-  it("switches between two accounts in one click and lists each model once", async () => {
+  it("collapses two accounts behind the account control and lists each model once", async () => {
     addClaudeAccounts(["work"]);
     const onChange = vi.fn();
     await openClaude(onChange);
@@ -1264,13 +1259,16 @@ describe("model panel accounts", () => {
         option.textContent?.trim(),
       ),
     ).toEqual(["Opus 5.5", "Sonnet 5"]);
-    const radios = [...accountSwitch()!.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    expect(accountList()).toBeNull();
+    await click(accountMenu()!);
+    const radios = accountRows();
     expect(
       radios.map((radio) => radio.querySelector("[data-model-account-number]")?.textContent),
     ).toEqual(["1", "2"]);
     expect(radios[0].getAttribute("aria-checked")).toBe("true");
     await click(radios[1]);
     expect(onChange).toHaveBeenCalledExactlyOnceWith("claude", "claude:opus-5.5", "account-work");
+    expect(accountList()).toBeNull();
     expect(panel()).not.toBeNull();
   });
 
@@ -1317,11 +1315,8 @@ describe("model panel accounts", () => {
     const onChange = vi.fn();
     await openClaude(onChange);
     await click(providerTab("Codex"));
-    await click(
-      [...accountSwitch()!.querySelectorAll('[role="radio"]')].find((radio) =>
-        radio.textContent?.includes("team"),
-      )!,
-    );
+    await click(accountMenu()!);
+    await click(accountRows().find((radio) => radio.textContent?.includes("team"))!);
     // Another provider's account waits for the model picked there.
     expect(onChange).not.toHaveBeenCalled();
     await click(optionByText(listbox(), "option", "GPT 6"));

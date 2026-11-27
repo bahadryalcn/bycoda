@@ -272,3 +272,41 @@ it("picks a kind-specific default icon and still honors an explicit icon or null
     await icon({ kind: "filtered", icon: createElement("svg", { className: "custom" }) }),
   ).toBe("custom");
 });
+
+it("renders an inline description without a title as plain caption text", async () => {
+  const { container, done } = await mount(
+    createElement(EmptyState, { size: "inline", description: "No terms yet." }),
+  );
+  try {
+    expect(container.querySelector("strong")).toBeNull();
+    expect(container.textContent).toBe("No terms yet.");
+  } finally {
+    done();
+  }
+});
+
+it("separates an inline title from its description and tucks it only for showDescription false", async () => {
+  const shown = await mount(
+    createElement(EmptyState, { size: "inline", title: "None", description: "Add one." }),
+  );
+  try {
+    expect(shown.container.querySelector("strong")?.className).toContain("block");
+    expect(shown.container.textContent).toContain("Add one.");
+  } finally {
+    shown.done();
+  }
+  const tucked = await mount(
+    createElement(EmptyState, {
+      size: "inline",
+      title: "None",
+      description: "Add one.",
+      showDescription: false,
+    }),
+  );
+  try {
+    expect(tucked.container.querySelector('[role="img"]')).not.toBeNull();
+    expect(tucked.container.querySelector("strong")?.className).not.toContain("block");
+  } finally {
+    tucked.done();
+  }
+});

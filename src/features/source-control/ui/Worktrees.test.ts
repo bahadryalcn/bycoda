@@ -283,10 +283,10 @@ const result = (branch = "feature"): Worktrees => ({
 });
 
 it("builds temporary and generated worktree branch names", () => {
-  expect(temporaryWorktreeBranchName("12345678-90ab-cdef-1234-567890abcdef")).toBe("mc/12345678");
-  expect(namedWorktreeBranch("feature/faster-worktrees")).toBe("mc/feature/faster-worktrees");
-  expect(namedWorktreeBranch("bycoda/already-prefixed")).toBe("mc/already-prefixed");
-  expect(namedWorktreeBranch("mc/already-short")).toBe("mc/already-short");
+  expect(temporaryWorktreeBranchName("12345678-90ab-cdef-1234-567890abcdef")).toBe("by/12345678");
+  expect(namedWorktreeBranch("feature/faster-worktrees")).toBe("by/feature/faster-worktrees");
+  expect(namedWorktreeBranch("bycoda/already-prefixed")).toBe("by/already-prefixed");
+  expect(namedWorktreeBranch("mc/already-short")).toBe("by/already-short");
   expect(namedWorktreeBranch("  ")).toBeNull();
 });
 
@@ -306,7 +306,11 @@ it("selects a draft workspace without opening the creation dialog", async () => 
   );
 
   await act(async () => button("Current checkout").click());
-  await act(async () => button("New worktree").click());
+  // Mode rows carry a one-line description after the title.
+  const newWorktree = [...document.querySelectorAll<HTMLElement>('[role="option"], button')].find(
+    (node) => node.textContent?.startsWith("New worktree"),
+  )!;
+  await act(async () => newWorktree.click());
 
   expect(onModeChange).toHaveBeenCalledWith("worktree", "main");
   expect(document.querySelector('[aria-label="Create worktree"]')).toBeNull();

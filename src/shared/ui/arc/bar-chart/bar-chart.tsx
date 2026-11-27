@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
@@ -83,6 +84,19 @@ export interface BarChartProps {
   /** Plot height in pixels. */
   height?: number;
   formatValue?: (value: number) => string;
+  /** Axis tick text, usually shorter than `formatValue` ("$1.2K" vs "$1,200.00"). Headline, average and summary keep `formatValue`. Defaults to `formatValue`. */
+  formatTick?: (value: number) => string;
+  /**
+   * Stacks the `values` of each category on top of each other instead of drawing them side by side. The scale follows
+   * the tallest stack, and the average line returns because every category has one total (`value`).
+   */
+  stacked?: boolean;
+  /** One CSS colour per series, aligned with `seriesLabels`. Bars and legend swatches use it instead of the single chart colour; the surface patterns stay as the non-colour cue. */
+  seriesColors?: string[];
+  /** Draws the legend built from `seriesLabels`. Turn it off when the caller already shows its own key. Defaults to true. */
+  legend?: boolean;
+  /** Called when the scrubbed category changes, with null when the scrubber leaves. */
+  onActiveChange?: (datum: BarChartDatum | null) => void;
 }
 
 const { spring, duration, ease, blur, stagger } = motionTokens;
@@ -133,9 +147,9 @@ const formatGrouped = (value: number) => grouped.format(value);
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 /** A column that grows from a square baseline to a softly rounded data end. */
-function barPath(x: number, w: number, h: number, base: number) {
+function barPath(x: number, w: number, h: number, base: number, round = RADIUS) {
   if (w <= 0 || h <= 0.01) return `M${x.toFixed(2)} ${base}H${(x + Math.max(w, 0)).toFixed(2)}Z`;
-  const r = Math.min(RADIUS, w / 2, h),
+  const r = Math.min(round, w / 2, h),
     top = base - h,
     f = (value: number) => value.toFixed(2);
   return `M${f(x)} ${base}V${f(top + r)}A${f(r)} ${f(r)} 0 0 1 ${f(x + r)} ${f(top)}H${f(x + w - r)}A${f(r)} ${f(r)} 0 0 1 ${f(x + w)} ${f(top + r)}V${base}Z`;
@@ -174,6 +188,9 @@ function Bar({
   patternBase,
   lane,
   lanes,
+  below = 0,
+  color,
+  stacked = false,
 }: {
   id: string;
   place: number;
@@ -190,9 +207,15 @@ function Bar({
   /** Position of this bar inside its category and the number of bars there; 0 of 1 is the single-series chart. */
   lane: number;
   lanes: number;
+  /** Stacked bars: the total of the series drawn under this one; a plain bar rests on the baseline. */
+  below?: number;
+  /** Stacked bars: this series' colour. */
+  color?: string;
+  stacked?: boolean;
 }) {
   const [isPresent, safeToRemove] = usePresence();
   const amount = useMotionValue(0);
+  const lift = useMotionValue(below);
   const slot = usePlace(place, reduced);
   const [firstDelay] = useState(delay);
   const grown = useRef(false);
@@ -215,6 +238,12 @@ function Bar({
     return soon(() => animate(amount, value, first ? { ...grow, delay: firstDelay } : settle));
   }, [amount, firstDelay, isPresent, reduced, shown, value]);
 
+  // A stacked bar follows the series under it when they change.
+  useEffect(() => {
+    if (reduced) lift.jump(below);
+    else return soon(() => animate(lift, below, settle));
+  }, [below, lift, reduced]);
+
   // A leaving bar sinks into the baseline, faster than a bar grows, while the zoom carries it out of the plot.
   useEffect(() => {
     if (isPresent) return;
@@ -233,7 +262,14 @@ function Bar({
         MAX_BAR,
       ),
       center = centerOf(frame, slot.get()) + (lane - (lanes - 1) / 2) * (size + gap);
-    return barPath(center - size / 2, size, (amount.get() / scale.get()) * (height - TOP), height);
+    const unit = (height - TOP) / scale.get();
+    return barPath(
+      center - size / 2,
+      size,
+      amount.get() * unit,
+      height - lift.get() * unit,
+      stacked ? 0 : RADIUS,
+    );
   });
   return (
     <>
@@ -243,6 +279,9 @@ function Bar({
         data-lane={lanes > 1 ? lane : undefined}
         data-pattern={pattern}
         data-active={active || undefined}
+        data-stacked={stacked || undefined}
+        data-color={color ? "" : undefined}
+        style={color ? ({ "--bar-color": color } as CSSProperties) : undefined}
         d={d}
       />
       {pattern !== "solid" && (
@@ -512,6 +551,11 @@ export function BarChart({
   showAverage = true,
   height = 176,
   formatValue = formatGrouped,
+  formatTick,
+  stacked = false,
+  seriesColors,
+  legend = true,
+  onActiveChange,
 }: BarChartProps) {
   const reduced = useReducedMotionSafe();
   const figure = useRef<HTMLElement>(null);
@@ -521,6 +565,7 @@ export function BarChart({
   const patternBase = useId().replace(/:/g, "");
   const lanes = lanesOf(data);
   const groupedBars = lanes > 1;
+  const stackedBars = stacked && groupedBars;
   const usedPatterns = useMemo(
     () =>
       new Set(
@@ -539,7 +584,14 @@ export function BarChart({
   const count = Math.max(data.length, 1),
     last = data.length - 1;
   const average = data.length ? data.reduce((sum, item) => sum + item.value, 0) / data.length : 0;
-  const peak = data.reduce((max, item) => Math.max(max, ...valuesOf(item)), 0);
+  const peak = data.reduce(
+    (max, item) =>
+      Math.max(
+        max,
+        ...(stackedBars ? [valuesOf(item).reduce((a, b) => a + b, 0)] : valuesOf(item)),
+      ),
+    0,
+  );
   const whole = data.every((item) => Number.isInteger(item.value));
   const { top, ticks } = useMemo(() => scaleFor(peak, whole), [peak, whole]);
   const signature = data.map((item) => item.key).join("|");
@@ -570,6 +622,16 @@ export function BarChart({
   const revealStep = Math.min(stagger.item, 0.36 / count);
   const index = active === null ? null : Math.min(active, last);
   const scrubbing = index !== null && last >= 0;
+  const scrubbedKey = scrubbing ? data[index]!.key : null;
+  const latest = useRef({ data, onActiveChange });
+  useEffect(() => {
+    latest.current = { data, onActiveChange };
+  }, [data, onActiveChange]);
+  // Report the scrubbed category to the caller, and null when the scrubber leaves or the data changes.
+  useEffect(() => {
+    const { data: items, onActiveChange: report } = latest.current;
+    report?.(scrubbedKey === null ? null : (items.find((d) => d.key === scrubbedKey) ?? null));
+  }, [scrubbedKey]);
   const shownValue = scrubbing ? data[index]!.value : average;
   // Headline copy moves the way the data did: a larger value rises from below, a later day arrives from below too.
   const [trend, setTrend] = useState({ value: shownValue, index, valueWay: 1, indexWay: 1 });
@@ -729,7 +791,7 @@ export function BarChart({
   const summary = `${label}, ${period}. ${averageLabel} ${formatValue(average)}${suffix}.${highest ? ` Highest ${highest.label}, ${formatValue(highest.value)}${suffix}.` : ""}${lowest && lowest !== highest ? ` Lowest ${lowest.label}, ${formatValue(lowest.value)}${suffix}.` : ""}`;
   const shown = inView || reduced;
   // Grouped bars compare series against each other, so no single average line crosses them.
-  const averageLine = showAverage && !groupedBars;
+  const averageLine = showAverage && (!groupedBars || stackedBars);
   const avoid = averageLine ? meanY : null;
 
   return (
@@ -802,7 +864,7 @@ export function BarChart({
             />
             <AnimatePresence initial={false}>
               {data.flatMap((item, at) =>
-                valuesOf(item).map((value, lane) => (
+                valuesOf(item).map((value, lane, all) => (
                   <Bar
                     key={groupedBars ? `${item.key}:${lane}/${lanes}` : item.key}
                     id={groupedBars ? `${item.key}:${lane}` : item.key}
@@ -817,8 +879,11 @@ export function BarChart({
                     reduced={reduced}
                     pattern={patternOf(groupedBars ? lane : item.series)}
                     patternBase={patternBase}
-                    lane={lane}
-                    lanes={groupedBars ? lanes : 1}
+                    lane={stackedBars ? 0 : lane}
+                    lanes={groupedBars && !stackedBars ? lanes : 1}
+                    below={stackedBars ? all.slice(0, lane).reduce((a, b) => a + b, 0) : 0}
+                    color={groupedBars ? seriesColors?.[lane] : undefined}
+                    stacked={stackedBars}
                   />
                 )),
               )}
@@ -855,7 +920,7 @@ export function BarChart({
                 scale={scale}
                 height={height}
                 avoid={avoid}
-                format={formatValue}
+                format={formatTick ?? formatValue}
               />
             ))}
           </AnimatePresence>
@@ -924,11 +989,20 @@ export function BarChart({
           }}
         />
       </div>
-      {seriesLabels && seriesLabels.length > 0 && (
+      {legend && seriesLabels && seriesLabels.length > 0 && (
         <ul className={styles.legend} aria-label={seriesColumnLabel}>
           {seriesLabels.map((name, series) => (
             <li key={name} className={styles.legendItem}>
-              <span className={styles.swatch} data-pattern={patternOf(series)} aria-hidden="true" />
+              <span
+                className={styles.swatch}
+                data-pattern={patternOf(series)}
+                style={
+                  seriesColors?.[series]
+                    ? ({ "--bar-color": seriesColors[series] } as CSSProperties)
+                    : undefined
+                }
+                aria-hidden="true"
+              />
               <span className={styles.legendName}>{name}</span>
             </li>
           ))}

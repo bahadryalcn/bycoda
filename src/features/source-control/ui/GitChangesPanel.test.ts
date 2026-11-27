@@ -2937,7 +2937,7 @@ it("shows a nested separate repository with the repository icon, muted branch an
   expect(toggle.querySelector("svg.lucide-git-branch")).toBeNull();
 });
 
-it("marks the section header actions as revealed by hover or keyboard focus only", async () => {
+it("always shows the section header actions, not only on hover", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "main" }));
   await act(async () =>
     root.render(
@@ -2953,8 +2953,7 @@ it("marks the section header actions as revealed by hover or keyboard focus only
     ),
   );
   const header = container.querySelector("header")!;
-  // The shared row host reveals this slot on hover and :focus-visible only; the buttons stay in the tab order.
-  expect(header.hasAttribute("data-hover-reveal")).toBe(true);
-  const slot = header.querySelector('[data-action-slot="collapse"]')!;
-  expect(slot.querySelector('button[aria-label="Refresh source control"]')).not.toBeNull();
+  expect(header.hasAttribute("data-hover-reveal")).toBe(false);
+  expect(header.querySelector("[data-action-slot]")).toBeNull();
+  expect(header.querySelector('button[aria-label="Refresh source control"]')).not.toBeNull();
 });

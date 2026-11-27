@@ -38,7 +38,7 @@ export const modelsSettingsEntries: SettingsEntry[] = [
     id: "models-delegation",
     section: "providers",
     get label() {
-      return t("Subagents");
+      return t("Helpers and delegation");
     },
     keywords: "advisor subagent max effort image models delegation",
   },

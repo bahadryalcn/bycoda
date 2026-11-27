@@ -159,7 +159,7 @@ import { useProjectBranches } from "../features/source-control/hooks/useProjectB
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
 import { IS_MAC } from "../platform/tauri/platform";
 import { useLinkedWorkspaceGroups } from "../features/projects/hooks/useLinkedWorkspaceGroups";
-import { additionalDirsForSession } from "../features/projects/model/additionalDirs";
+import { providerAdditionalDirsForSession } from "../features/projects/model/additionalDirs";
 import { setAdditionalDirsResolver } from "../integrations/harness/core/additionalDirs";
 import { leafIds, newTab } from "../features/workspace/model/layout";
 import { idleWorkspaceTabIds } from "../features/workspace/model/idleTabs";
@@ -591,7 +591,7 @@ function Workspace({
     setAdditionalDirsResolver((sessionId) => {
       const session = sessionsRef.current.find((item) => item.id === sessionId);
       return session && isLocalProject(session.cwd)
-        ? additionalDirsForSession(sessionId, session.cwd)
+        ? providerAdditionalDirsForSession(sessionId, session.cwd)
         : [];
     });
     return () => setAdditionalDirsResolver(() => []);
@@ -1768,6 +1768,7 @@ function Workspace({
     onBranchChange,
     onWorkspaceModeChange,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onSelectWorkspace,
   } = useWorkspaceDirectoryActions({
     activeTab,
@@ -2913,6 +2914,7 @@ function Workspace({
     onWorkspaceModeChange,
     onPrepareSessionHistory: ensureSessionHistoryForExecution,
     onWorktreeBaseChange,
+    onWorktreeBaseRemoteChange,
     onManageWorktrees,
     onModelChange,
     onModelSettingsChange,

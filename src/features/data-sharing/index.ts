@@ -5,7 +5,12 @@ export {
   sharingMode,
   sharingNotices,
 } from "./model/transfers";
-export type { SharingDetails, SharingKind, SharingMode } from "./model/transfers";
+export type {
+  SharingDetails,
+  SharingKind,
+  SharingMode,
+  SharingPermission,
+} from "./model/transfers";
 export { DataSharingNotices } from "./ui/DataSharingNotices";
 export {
   ActivitySharingSetting,

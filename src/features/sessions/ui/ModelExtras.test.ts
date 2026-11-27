@@ -22,6 +22,12 @@ vi.mock("../../../shared/ui/Popover", async () => ({
 }));
 import { encodeAdvisor, encodeSubagents } from "../../../shared/model/host-contracts/delegation";
 import { ModelExtras } from "./ModelExtras";
+const advisorModel = () =>
+  document.querySelector<HTMLButtonElement>(
+    '[aria-haspopup="dialog"][aria-label^="Advisor model"]',
+  )!;
+const advisorSwitch = () =>
+  document.querySelector<HTMLButtonElement>('[role="switch"][aria-label="Advisor"]')!;
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
@@ -39,7 +45,7 @@ afterEach(() => {
   resetDisabledModels();
   resetHarnessModelOverlays();
 });
-it("keeps subagent force inactive until a model is selected and resets extras only", () => {
+it("leaves Claude Code's subagent policy to the Subagents row and resets extras only", () => {
   const onChange = vi.fn();
   act(() =>
     root.render(
@@ -52,9 +58,7 @@ it("keeps subagent force inactive until a model is selected and resets extras on
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  expect(
-    container.querySelector<HTMLSelectElement>('[aria-label="Subagent model policy"]')!.disabled,
-  ).toBe(true);
+  expect(container.querySelector('[aria-label="Subagent model policy"]')).toBeNull();
   act(() =>
     root.render(
       createElement(ModelExtras, {
@@ -65,9 +69,7 @@ it("keeps subagent force inactive until a model is selected and resets extras on
       }),
     ),
   );
-  expect(
-    container.querySelector<HTMLSelectElement>('[aria-label="Subagent model policy"]')!.disabled,
-  ).toBe(false);
+  expect(container.querySelector('[aria-label="Subagent model policy"]')).toBeNull();
   act(() =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]
       .find((b) => b.textContent === "Reset extras")!
@@ -178,14 +180,16 @@ it("offers enabled Claude models in unified advisor choices", () => {
       createElement(ModelExtras, {
         harness: "claude",
         model: "claude:sonnet-5",
-        values: {},
+        values: { crossAdvisor: encodeAdvisor({ harness: "claude", model: "claude:opus-5" })! },
         onSettingsChange: vi.fn(),
       }),
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  const advisor = container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!;
-  act(() => advisor.click());
+  expect(
+    container.querySelector('[role="switch"][aria-label="Advisor"]')!.getAttribute("aria-checked"),
+  ).toBe("true");
+  act(() => advisorModel().click());
   const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   expect(options.some((o) => o.textContent?.includes("Opus 5"))).toBe(true);
   expect(options.some((o) => o.textContent?.includes("Haiku"))).toBe(false);
@@ -208,13 +212,12 @@ it("retains the saved accountless advisor value in the native select", () => {
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!;
+  const trigger = advisorModel();
   expect(trigger.textContent).toContain("GPT-6-Astra");
   act(() => trigger.click());
   const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   const selected = options.find((option) => option.getAttribute("aria-selected") === "true");
   expect(selected?.textContent).toContain("GPT-6-Astra");
-  expect(selected?.textContent).toContain("Default");
   expect(options.some((option) => option.textContent?.includes("Unavailable"))).toBe(false);
   expect(onChange).not.toHaveBeenCalled();
 });
@@ -238,12 +241,20 @@ it("offers the any-provider subagents row for any harness and writes the picked 
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Subagents"]')!;
-  expect(trigger.textContent).toContain("Off");
-  act(() => trigger.click());
-  const composer = [
-    ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'),
-  ].find((item) => item.textContent?.includes("Composer 2"))!;
+  const segment = (label: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (node) => node.textContent === label,
+    )!;
+  expect(segment("Off").getAttribute("aria-checked")).toBe("true");
+  act(() => segment("Custom").click());
+  act(() =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Add model")!
+      .click(),
+  );
+  const composer = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+    item.textContent?.includes("Composer 2"),
+  )!;
   act(() => composer.click());
   expect(onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({
@@ -268,13 +279,7 @@ it("clears a legacy advisor and records explicit Off", async () => {
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!.click());
-  const off = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (option) =>
-      option.getAttribute("aria-selected") !== "true" &&
-      /^\s*(Off|Default|None)/.test(option.textContent ?? ""),
-  )!;
-  act(() => off.click());
+  act(() => advisorSwitch().click());
   expect(onChange).toHaveBeenLastCalledWith(
     expect.objectContaining({ crossAdvisor: "null", advisor: "off" }),
   );
@@ -295,11 +300,7 @@ it("writes no Claude advisor setting into another provider's conversation", () =
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
-  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Advisor"]')!.click());
-  const off = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
-    /^\s*Off/.test(option.textContent ?? ""),
-  )!;
-  act(() => off.click());
+  act(() => advisorSwitch().click());
   const written = onChange.mock.lastCall![0] as Record<string, string>;
   expect(written.crossAdvisor).toBe("null");
   expect(written).not.toHaveProperty("advisor");

@@ -4,8 +4,8 @@ import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMen
 import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
 import { AudioLines, Maximize2, Minimize2, MoreHorizontal, RefreshCw } from "../../shared/ui/icons";
-import { useFullscreenToggle } from "./FullscreenButton";
-import { useSoundsToggle } from "../../features/notifications/ui/SoundsButton";
+import { FullscreenButton, useFullscreenToggle } from "./FullscreenButton";
+import { SoundsButton, useSoundsToggle } from "../../features/notifications/ui/SoundsButton";
 
 export const WORKSPACE_REFRESH_EVENT = "bycoda:refresh-workspace-view";
 
@@ -15,7 +15,9 @@ export { UsageIcon } from "../../shared/ui/icons";
 const refreshView = () => window.dispatchEvent(new Event(WORKSPACE_REFRESH_EVENT));
 
 /**
- * Window-wide controls share one overflow menu at every width.
+ * Window-wide controls sit inline when the workspace footer has room and fold into one
+ * overflow menu when it is narrow. Both forms stay mounted; the `footer` container query
+ * shows one, so a resize never re-renders.
  */
 export function WorkspaceControls({ canRefresh = true }: { canRefresh?: boolean }) {
   const t = useT();
@@ -27,7 +29,27 @@ export function WorkspaceControls({ canRefresh = true }: { canRefresh?: boolean 
       aria-label={t("Workspace controls")}
       className="ml-auto flex shrink-0 items-center justify-end gap-1"
     >
-      <WorkspaceControlsMenu canRefresh={canRefresh} />
+      <div className="hidden items-center gap-1 @min-[40rem]/footer:flex">
+        <Button
+          iconOnly
+          label={t("Refresh current view")}
+          variant="ghost"
+          motion="none"
+          type="button"
+          data-workspace-control="refresh"
+          data-tauri-drag-region="false"
+          disabled={!canRefresh}
+          disabledReason={canRefresh ? undefined : t("This view updates on its own.")}
+          onClick={refreshView}
+        >
+          <RefreshCw className="icon-sm" />
+        </Button>
+        <SoundsButton />
+        <FullscreenButton />
+      </div>
+      <div className="flex items-center @min-[40rem]/footer:hidden">
+        <WorkspaceControlsMenu canRefresh={canRefresh} />
+      </div>
     </Text>
   );
 }

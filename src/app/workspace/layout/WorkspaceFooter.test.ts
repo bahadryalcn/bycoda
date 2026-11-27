@@ -48,3 +48,31 @@ it("re-renders the memoized footer's translated strings after a language switch"
   await act(async () => setLanguagePreference("en"));
   await act(async () => root.unmount());
 });
+
+it.each([true, false])(
+  "shows the development marker at the footer end only in dev (%s)",
+  async (dev) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubEnv("DEV", dev);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const props = {
+      searchViewOpen: false,
+      inboxViewOpen: false,
+      notesViewOpen: false,
+      automationsViewOpen: false,
+      settingsOpen: false,
+      projectCwd: "/remote/project",
+    } as unknown as WorkspaceFooterProps;
+    await act(async () => root.render(createElement(WorkspaceFooter, props)));
+    const marker = container.querySelector("[data-dev-mode-indicator]");
+    if (dev) {
+      expect(marker?.getAttribute("aria-label")).toBe("Development build");
+      expect(marker?.closest("[data-workspace-footer]")).not.toBeNull();
+    } else {
+      expect(marker).toBeNull();
+    }
+    await act(async () => root.unmount());
+    vi.unstubAllEnvs();
+  },
+);

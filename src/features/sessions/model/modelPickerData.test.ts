@@ -94,14 +94,6 @@ it("gives each locked row its reason and leaves editable rows unlocked", () => {
   expect(settingLock(window, current, { autoCompact: "off" }, true, extras)).toEqual({
     reason: extras,
   });
-
-  const subagentModel = { ...select("subagentModel"), value: "default" };
-  const policy = select("subagentPolicy");
-  const withPolicy = model([subagentModel, policy]);
-  expect(settingLock(policy, withPolicy, { crossSubagents: "[]" }, false)).toEqual({
-    reason: "Pick a subagent model or subagent list first.",
-  });
-  expect(settingLock(policy, withPolicy, { crossSubagents: "auto" }, false)).toBeUndefined();
 });
 
 it("only treats a plain on/off pair as Fast", () => {

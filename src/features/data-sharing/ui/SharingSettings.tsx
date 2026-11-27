@@ -63,7 +63,13 @@ export function SharingNoticeSetting() {
   const show = useSyncExternalStore(sharingNotices.subscribe, sharingNotices.load);
   const label = t("Data sharing receipts");
   return (
-    <Row id="data-sharing-receipts" label={label} description={t("Show what was sent and where.")}>
+    <Row
+      id="data-sharing-receipts"
+      label={label}
+      description={t("Show what was sent and where.")}
+      modified={!show}
+      onReset={() => sharingNotices.save(true)}
+    >
       <Select
         label={label}
         hideLabel

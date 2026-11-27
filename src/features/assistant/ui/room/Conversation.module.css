@@ -37,25 +37,7 @@
   min-inline-size: 0;
 }
 .threadSkeleton {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ui-space-2);
   padding: var(--ui-space-2);
-}
-.threadSkeletonRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ui-space-3);
-  min-block-size: 36px;
-}
-.threadSkeletonRow > :first-child {
-  flex: 1 1 auto;
-  max-inline-size: 70%;
-}
-.threadSkeletonRow > :last-child {
-  flex: none;
-  inline-size: 36px;
 }
 .messageSkeleton {
   display: flex;

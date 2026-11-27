@@ -9,6 +9,31 @@ Clearing a conversation preserves that execution identity, including after resta
 Upgrading also retains current-checkout identity for legacy sessions cleared by
 an older app; it does not assign managed ownership to them.
 
+Under the composer, the workspace chip offers two options: **Current checkout**
+(work directly in the project on its branch) and **New worktree** (an isolated
+copy from the base branch shown as "From <branch>", created on first send). The
+branch chip lists **Existing worktrees** to continue in one that already exists.
+The project chip shows the project name with "+N" for extra folders; its
+**Project** section switches the project of a blank draft, and **Also work in**
+adds other projects or folders to this session only.
+
+With **New worktree**, each extra folder that is the root of a Git repository (and
+not inside the project) also gets its own worktree on first send. It uses the same
+branch name as the project's worktree and starts from that repository's current
+branch, and the agent works in these worktrees instead of the live checkouts. The
+chip still shows the original project names. Other folders are used as they are. If
+any extra worktree cannot be created, the send fails with an error you can retry;
+retrying reuses what was already created.
+
+In a session on another machine, the project chip lists that machine's projects, and
+**Add folder…** opens that machine's folder browser. Each send carries the chosen
+folders; the Host checks that each one is an existing folder on that machine (not a
+drive root or home) and refuses the send with an error otherwise. With **New worktree**,
+extra folders that are Git repository roots on that machine get their own worktrees on
+first send, exactly as above, and a failure is retryable. A folder deleted later is
+dropped from what the agent receives. A Host that predates this (capability
+`sessions.additionalDirs.v1`) hides the chip and keeps working without extra folders.
+
 This guide describes the integrated managed-workspace workflow. Managed operations
 require the connected Host's advertised capability; an older Host shows an update
 explanation for those operations. Current-checkout creation remains available.
@@ -29,6 +54,31 @@ or shared checkout, another writer's checkout, or unknown ownership, it stops wi
 that automation or configure the project policy; existing owner review and
 publication permissions still apply. The shared checkout's branch, index and
 dirty work remain intact.
+
+## Choosing where a new session works
+
+A new session's hero heading holds a project picker: choose a project, **Add project…**
+or **No project** before the first send. The same picker works for drafts on another
+machine. The composer's chips choose **Current checkout** or **Worktree**.
+
+- **Previous worktree** appears next to those choices when this project has a recent
+  session whose worktree still exists; selecting it reuses that directory.
+- **Start from remote** (in the base picker) fetches the base branch's upstream and
+  starts the worktree from it, labeled "From main (remote)". Without an upstream it
+  starts from the local branch. The choice is remembered per project.
+- **Repositories** lists the project's folders. In worktree mode each checked folder
+  gets its own worktree on the session's branch ("N repositories"); in current mode
+  the chip reads "Also work in". The choice is remembered per project.
+
+While the workspace is created, a progress card shows fetching, creating the worktree
+(with the repository count), submodules, setup and starting the agent. **Cancel**
+stops creation and removes what it made, including every repository's worktree and the
+branches it created. If the Host cannot tell whether Git finished (a timeout), nothing
+is removed and Retry recovers the same workspace. Creation needs a Host that supports
+it; otherwise you are asked to update. All of this works on remote machines too.
+
+Session branches start as `by/<id>` and are renamed from the first message when
+nothing blocks it (no upstream, no pending review); otherwise the first name stays.
 
 In a shared checkout, agents preserve other sessions' changes and keep their own
 work uncommitted unless you direct otherwise. An opted-in worktree starts from a
