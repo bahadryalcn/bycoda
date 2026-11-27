@@ -1,6 +1,6 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { createContext, use, useRef, useState, type ComponentType } from "react";
+import { createContext, createElement, use, useRef, useState, type ComponentType } from "react";
 import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { ActionHost, InlineAction, actionContentAttributes } from "../../../shared/ui/ActionHost";
@@ -293,9 +293,8 @@ function HistoryFailureToast({
   failure: HistoryFailure;
   onDismiss: () => void;
 }) {
-  const t = useT();
   const detail = failure.detail?.trim();
-  const distinct = detail && detail !== failure.title && t(detail) !== failure.title;
+  const distinct = detail && detail !== failure.title;
   return (
     <Toast
       tone="warning"
@@ -326,7 +325,7 @@ export function NotificationProjectLabel({ cwd }: { cwd: string }) {
       >
         {ProjectIcon ? (
           <span className="grid size-4 shrink-0 place-items-center" aria-hidden>
-            <ProjectIcon cwd={cwd} />
+            {createElement(ProjectIcon, { cwd })}
           </span>
         ) : null}
         <Text

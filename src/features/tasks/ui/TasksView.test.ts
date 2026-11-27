@@ -583,11 +583,12 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   expect(actions("done")).toEqual(["Run again", "More actions"]);
   expect(actions("blocked")).toEqual(["Failed · Not signed in", "Retry", "More actions"]);
   await act(async () => button(column("blocked"), "More actions")!.click());
-  expect(Array.from(document.body.querySelectorAll('[role="menu"] button'), buttonName)).toEqual([
-    "Edit",
-    "Move to To do",
-    "Delete",
-  ]);
+  expect(
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('[role="menu"] button'),
+      buttonName,
+    ),
+  ).toEqual(["Edit", "Move to To do", "Delete"]);
   await act(async () =>
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
   );
@@ -2781,7 +2782,12 @@ it("counts searched work by group before applying the selected chip", async () =
   host(
     [
       task({ id: "review", title: "Review report", status: "review" }),
-      task({ id: "ask", title: "Report question", status: "verifying", needsInput: true }),
+      task({
+        id: "ask",
+        title: "Report question",
+        status: "verifying",
+        stop: stopOf({ code: "input_required", message: "Answer needed." }),
+      }),
       task({ id: "run", title: "Build report", status: "running" }),
       task({ id: "next", title: "Next report", status: "queued" }),
       task({ id: "done", title: "Final report", status: "done", updatedAt: today }),

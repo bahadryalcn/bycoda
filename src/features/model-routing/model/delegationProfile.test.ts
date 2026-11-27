@@ -84,6 +84,8 @@ describe("delegation profile edits", () => {
   it("lets a new All providers value reach providers that only copied the old one", () => {
     const state: ModelRoutingState = {
       ...structuredClone(EMPTY_MODEL_ROUTING),
+      version: 1,
+      updatedAt: 0,
       delegation: {
         global: { crossSubagents: "auto" },
         providers: { codex: { crossSubagents: "auto" }, pi: { crossSubagents: "[]" } },

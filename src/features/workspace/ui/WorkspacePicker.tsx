@@ -29,7 +29,7 @@ import {
   type ReactNode,
 } from "react";
 import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
-import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktrees";
+import { useProjectWorktrees } from "../../source-control/public/useProjectWorktrees";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { prettyCwd, projectKey } from "../../../shared/lib/paths";
@@ -551,9 +551,11 @@ function WorkspaceModePicker({
             }}
           />
           {pickError && !worktreeMenu ? (
-            <InlineError live="off" details={pickError} className="px-2 py-1">
-              {t("Could not use the previous worktree.")}
-            </InlineError>
+            <div className="px-2 py-1">
+              <InlineError live="off" details={pickError}>
+                {t("Could not use the previous worktree.")}
+              </InlineError>
+            </div>
           ) : null}
         </div>
       </PickerPopover>

@@ -70,7 +70,11 @@ import {
 import { DESKTOP_CONTROL_RECEIPTS_CAPABILITY } from "../model/desktopControlCapability";
 import { resetRemoteQueuesForTests } from "../model/useRemoteQueue";
 import { resetRemoteMachineChannelsForTests } from "../model/remoteMachineChannel";
-import { readRemotePageCache, writeRemotePageCache } from "../model/remotePageCache";
+import {
+  readRemotePageCache,
+  writeRemotePageCache,
+  type RemotePageSnapshot,
+} from "../model/remotePageCache";
 import { watchKey, watchRun, watchedRun } from "../model/remoteTurnWatch";
 import { clearComposerDraft } from "../../sessions/model/draftCache";
 import { captureApprovalRequest, readApprovalIntent } from "../../sessions/model/approvalIntents";
@@ -163,6 +167,8 @@ vi.mock("../../sessions/ui/AgentTranscript", () => ({
   }: {
     blocks: Block[];
     busy: boolean;
+    remoteHistoryHasMore?: boolean;
+    onLoadRemoteHistory?: () => void;
     onSendDraft?: (block: Block) => void;
     onRemoveDraft?: (block: Block) => void;
     onOpenFile?: (path: string) => void;
@@ -426,7 +432,8 @@ beforeEach(() => {
     if (machineDown) throw machineDown;
     const { method, params } = input as {
       method: string;
-      params: HostCommand & { sessionId?: string };
+      // Fixture dispatcher: each method reads its own loose parameters.
+      params: HostCommand & { sessionId?: string } & Record<string, any>;
     };
     const workspace =
       method === "workspace.run"
@@ -668,7 +675,7 @@ beforeEach(() => {
             revision: value.revision,
           };
     }
-    if (method === "attachments.upload") return { offset: (params as { size: number }).size };
+    if (method === "attachments.upload") return { offset: params.size };
     if (method === "attachments.claim" || method === "attachments.release") return {};
     if (method === "attachments.claims") return { claims: [] };
     if (method.startsWith("sessions.queue.")) {
@@ -1194,7 +1201,17 @@ it.each(["cancel", "approve", "answer"] as const)(
           kind: "answered",
           answers: {},
           custom: { scope: "Keep draft" },
-          attachments: { scope: [{ id: "draft-file", name: "draft.txt" }] },
+          attachments: {
+            scope: [
+              {
+                id: "draft-file",
+                name: "draft.txt",
+                mimeType: "text/plain",
+                kind: "file",
+                size: 1,
+              },
+            ],
+          },
         });
     });
     await settle();
@@ -1962,6 +1979,7 @@ it("lets an existing Claude host session select another installed provider", asy
       model: claude.id,
       runtimeMode: "supervised",
       title: "Earlier Claude chat",
+      modelSettings: {},
       blocks: [{ id: "earlier", role: "user", text: "Earlier work" }],
     },
   };
@@ -2008,6 +2026,7 @@ it("keeps Host models selectable despite the desktop's local model settings", as
       harness: "claude",
       model: visible.id,
       runtimeMode: "supervised",
+      modelSettings: {},
       title: "Earlier chat",
       blocks: [{ id: "earlier", role: "user", text: "Work" }],
     },
@@ -3157,7 +3176,9 @@ it.each([undefined, 2])(
     };
     savedQueue = [row];
     await renderRemoteProbe();
-    await expect(remoteOverrides.onResumeQueue!()).rejects.toThrow("earlier session authority");
+    await expect(remoteOverrides.onResumeQueue!("shell")).rejects.toThrow(
+      "earlier session authority",
+    );
     expect(remoteOverrides.session?.queuedMessages).toEqual([row]);
     expect(commands).toEqual([]);
   },
@@ -3233,7 +3254,7 @@ it.each(["approve", "answer", "usageLimit", "compact", "removeDraft"] as const)(
       if (kind === "approve") await remoteOverrides.onApproval!("shell", 7, "allow", approvalToken);
       if (kind === "answer") remoteOverrides.onQuestionReply!("shell", 3, { kind: "skipped" });
       if (kind === "usageLimit") remoteOverrides.onUsageLimitDismiss!("shell");
-      if (kind === "compact") remoteOverrides.onCompactContext!();
+      if (kind === "compact") remoteOverrides.onCompactContext!("shell");
       if (kind === "removeDraft") remoteOverrides.onRemoveDraft!("shell", "draft");
     });
     await settle();
@@ -3730,7 +3751,7 @@ it("re-reads the owner tail when a reset arrives during its initial read", async
   const published: HostSession[] = [];
   await render(shell(), {
     onRemoteSnapshot: (_shellId, snapshot) => {
-      published.push(snapshot);
+      published.push(snapshot as HostSession);
     },
   });
   const tailReads = () =>
@@ -4130,7 +4151,7 @@ it("shows a saved tail offline but requires a fresh tail page before sending", a
     history: { revision: host!.revision, totalBlocks: 4, before: 3 },
     session: { ...host!.session, blocks: [host!.session.blocks.at(-1)!] },
   };
-  vi.mocked(readRemotePageCache).mockResolvedValue(cached as HostSession);
+  vi.mocked(readRemotePageCache).mockResolvedValue(cached as unknown as RemotePageSnapshot);
   await render();
   await vi.waitFor(() => expect(document.body.textContent).toContain("Earlier reply"));
   expect(await tooltipText(byLabel("Send")!)).toContain("saved transcript preview");

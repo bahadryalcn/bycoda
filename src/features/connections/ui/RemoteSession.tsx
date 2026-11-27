@@ -22,7 +22,7 @@ import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
   sessionProviderAccountId,
   supportsProviderAccounts,
-} from "../../providers/model/providerAccounts";
+} from "../../providers/public/providerAccounts";
 import {
   acknowledgeHostSessionBinding,
   hostExecutionProject,

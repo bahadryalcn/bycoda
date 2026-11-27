@@ -115,6 +115,8 @@ it("exposes actual provider model and project on hour hover", async () => {
       projectLabel: "Demo",
       group: "",
       groupLabel: "",
+      machine: "local",
+      machineLabel: "This machine",
       priced: true,
       cost: 12,
     },
@@ -193,6 +195,8 @@ it("keeps unpriced usage visible without reporting a zero cost", async () => {
     projectLabel: "Demo",
     group: "",
     groupLabel: "",
+    machine: "local",
+    machineLabel: "This machine",
     priced: false,
     tokens: 100,
   };

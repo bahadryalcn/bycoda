@@ -2,8 +2,8 @@ import { pathKey } from "../../../shared/lib/paths";
 import { cachedRemoteSessionSummaries } from "../../connections/public/connections";
 import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 import { sessionActivityAt } from "../../sessions/public/sessionActivity";
-import type { Worktree } from "../../source-control/model/worktrees";
-import type { Session } from "../../sessions/model/session";
+import type { Worktree } from "../../source-control";
+import type { Session } from "../../sessions";
 
 /** A path in Host form, so a `remote://` session path matches a Worktree listed by its Host. */
 const hostKey = (path: string) => pathKey(parseRemotePath(path)?.hostPath ?? path);

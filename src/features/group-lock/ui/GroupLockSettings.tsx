@@ -175,7 +175,7 @@ export function GroupLockSettings({
 
   if (lock.storageAvailable === false) return <PrivacyStorageError />;
   return (
-    <div className="group-privacy-controls">
+    <>
       <Group id="group-lock-password" title={t("Lock password")}>
         {lock.hasPassword ? (
           <>
@@ -483,6 +483,6 @@ export function GroupLockSettings({
           onClose={close}
         />
       ) : null}
-    </div>
+    </>
   );
 }

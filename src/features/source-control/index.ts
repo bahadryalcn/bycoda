@@ -12,6 +12,7 @@ export {
 export type * as hooksUseGitFileStatusesApi from "./public/useGitFileStatuses";
 export type * as hooksUseProjectBranchesApi from "./public/useProjectBranches";
 export type * as hooksUseProjectDiffStatsApi from "./public/useProjectDiffStats";
+export type * as hooksUseProjectWorktreesApi from "./public/useProjectWorktrees";
 export type * as modelBlameMappingApi from "./public/blameMapping";
 export type * as modelConflictMarkersApi from "./public/conflictMarkers";
 export type * as modelConflictSectionApi from "./public/conflictSection";

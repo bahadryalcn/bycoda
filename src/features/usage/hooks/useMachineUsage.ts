@@ -1,7 +1,7 @@
 import { keepPreviousData, useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { useRemoteMachines } from "../../connections/public/connections";
-import type { AccountUsage } from "../../providers/model/providerUsage";
+import type { AccountUsage } from "../../providers/public/providerUsage";
 import { loadMachineUsage, otherUsageMachines } from "../data/usageSources";
 
 export type MachineUsage = {

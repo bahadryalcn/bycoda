@@ -5,7 +5,7 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { useFormat, useLocale, useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useState } from "react";
 import type { ImportCandidate, ImportProvider } from "../../../platform/tauri/sessionImport";
 import { parentPath, prettyCwd, projectName } from "../../../shared/lib/paths";
@@ -65,7 +65,7 @@ export function ProviderSection({
   selection: Selection;
 }) {
   const t = useT();
-  const locale = useLocale();
+  const { formatNumber } = useFormat();
   const [open, setOpen] = useState(defaultOpen);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [missingOpen, setMissingOpen] = useState(false);
@@ -109,6 +109,7 @@ export function ProviderSection({
           indeterminate={check.chosen > 0 && !check.all}
           onChange={(event) => selection.onToggleKeys(check.keys, event.target.checked)}
         />
+        {/* oxlint-disable-next-line bycoda/transcript-row-trigger -- an import-list folder header beside its checkbox, not a transcript row */}
         <Button
           variant="ghost"
           type="button"
@@ -128,8 +129,8 @@ export function ProviderSection({
             className="shrink-0 whitespace-nowrap text-end tabular-nums"
           >
             {check.chosen > 0 && !check.all
-              ? `${check.chosen.toLocaleString(locale)} / ${items.length.toLocaleString(locale)}`
-              : items.length.toLocaleString(locale)}
+              ? `${formatNumber(check.chosen)} / ${formatNumber(items.length)}`
+              : formatNumber(items.length)}
           </Text>
         </Button>
       </div>
@@ -149,6 +150,7 @@ export function ProviderSection({
                     selection.onToggleKeys(missingCheck.keys, event.target.checked)
                   }
                 />
+                {/* oxlint-disable-next-line bycoda/transcript-row-trigger -- an import-list folder header beside its checkbox, not a transcript row */}
                 <Button
                   variant="ghost"
                   type="button"
@@ -160,7 +162,7 @@ export function ProviderSection({
                 >
                   <Text size="secondary" tone="secondary" truncate className="min-w-0 flex-1">
                     {t("Missing folders ({p0})", {
-                      p0: missing.length.toLocaleString(locale),
+                      p0: formatNumber(missing.length),
                     })}
                   </Text>
                 </Button>
@@ -188,8 +190,7 @@ function FolderSection({
   selection: Selection;
 }) {
   const t = useT();
-  const locale = useLocale();
-  const { formatImportDate } = useFormat();
+  const { formatImportDate, formatNumber } = useFormat();
   const [limit, setLimit] = useState(ITEM_PAGE);
   const { keys, chosen, all } = groupCheck(folder.items, selection);
   const parent = parentPath(folder.path);
@@ -212,6 +213,7 @@ function FolderSection({
           indeterminate={chosen > 0 && !all}
           onChange={(event) => selection.onToggleKeys(keys, event.target.checked)}
         />
+        {/* oxlint-disable-next-line bycoda/transcript-row-trigger -- an import-list folder header beside its checkbox, not a transcript row */}
         <Button
           variant="ghost"
           type="button"
@@ -251,8 +253,8 @@ function FolderSection({
             className="shrink-0 whitespace-nowrap text-end tabular-nums"
           >
             {chosen > 0 && !all
-              ? `${chosen.toLocaleString(locale)} / ${folder.items.length.toLocaleString(locale)}`
-              : folder.items.length.toLocaleString(locale)}
+              ? `${formatNumber(chosen)} / ${formatNumber(folder.items.length)}`
+              : formatNumber(folder.items.length)}
           </Text>
         </Button>
       </div>
@@ -332,7 +334,7 @@ function FolderSection({
             <li className="ps-[calc(2rem+0.25rem)] pe-3 pt-1">
               <Button variant="ghost" type="button" onClick={() => setLimit(limit + ITEM_PAGE)}>
                 {t("Show {p0} more", {
-                  p0: Math.min(ITEM_PAGE, folder.items.length - limit).toLocaleString(locale),
+                  p0: formatNumber(Math.min(ITEM_PAGE, folder.items.length - limit)),
                 })}
               </Button>
             </li>

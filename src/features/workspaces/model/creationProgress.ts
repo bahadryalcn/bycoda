@@ -76,10 +76,12 @@ export function useCreationProgress(
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const contextRef = useRef(context);
   // The poll loop must read the latest context without restarting on every render.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- mirrors the latest context into the ref the timer-driven poll loop reads
   useEffect(() => {
     contextRef.current = context;
   });
   // One poll loop per progress id; the cleanup stops it when the id changes or clears.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- holds a Host poll timer until the id changes or the component unmounts
   useEffect(() => {
     if (!progressId) return;
     let stopped = false;

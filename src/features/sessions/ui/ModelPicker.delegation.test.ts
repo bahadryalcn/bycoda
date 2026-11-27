@@ -225,7 +225,11 @@ describe("cross-provider delegation rows", () => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
       vi.setSystemTime(new Date("2026-11-25T12:00:00Z"));
       const { onChange } = await openWithExhaustedAccount();
-      const account = container.querySelector<HTMLButtonElement>(
+      // Two accounts collapse behind the account control; open it to see the rows.
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>("[data-model-account-menu]")!.click(),
+      );
+      const account = document.querySelector<HTMLButtonElement>(
         '[data-model-account-list] [aria-checked="true"]',
       )!;
       const model = container.querySelector<HTMLButtonElement>(

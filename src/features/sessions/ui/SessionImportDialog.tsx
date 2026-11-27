@@ -225,40 +225,23 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
         : [],
     [report, deferredText, rootFilter, showAutomation],
   );
-  const { visible, temporaryCount } = useMemo(() => {
-    const temporary = new Set<ImportCandidate>();
-    for (const candidate of matched) if (isTemporaryFolder(candidate.cwd)) temporary.add(candidate);
-    return {
-      visible: hideTemporary ? matched.filter((candidate) => !temporary.has(candidate)) : matched,
-      temporaryCount: temporary.size,
-    };
-  }, [matched, hideTemporary]);
-  const folders = useMemo(() => groupByFolder(visible), [visible]);
+  const temporary = new Set<ImportCandidate>();
+  for (const candidate of matched) if (isTemporaryFolder(candidate.cwd)) temporary.add(candidate);
+  const temporaryCount = temporary.size;
+  const visible = hideTemporary
+    ? matched.filter((candidate) => !temporary.has(candidate))
+    : matched;
+  const folders = groupByFolder(visible);
   // Providers in the order the dialog lists them, each with its visible conversations.
-  const groups = useMemo(
-    () =>
-      IMPORT_PROVIDERS.map((provider) => ({
-        provider,
-        items: visible.filter((candidate) => candidate.provider === provider),
-      })).filter((group) => group.items.length > 0),
-    [visible],
+  const groups = IMPORT_PROVIDERS.map((provider) => ({
+    provider,
+    items: visible.filter((candidate) => candidate.provider === provider),
+  })).filter((group) => group.items.length > 0);
+  const counts = countSelection(visible, selected, stored);
+  const toImport = visible.filter(
+    (candidate) => selected.has(candidateKey(candidate)) && !isAlreadyImported(candidate, stored),
   );
-  const counts = useMemo(
-    () => countSelection(visible, selected, stored),
-    [visible, selected, stored],
-  );
-  const toImport = useMemo(
-    () =>
-      visible.filter(
-        (candidate) =>
-          selected.has(candidateKey(candidate)) && !isAlreadyImported(candidate, stored),
-      ),
-    [visible, selected, stored],
-  );
-  const groupPreview = useMemo(
-    () => (groupProjects ? previewProjectGroups(toImport) : []),
-    [groupProjects, toImport],
-  );
+  const groupPreview = groupProjects ? previewProjectGroups(toImport) : [];
   const visibleKeys = new Set(visible.map(candidateKey));
   let hiddenSelected = 0;
   for (const key of selected) if (!visibleKeys.has(key)) hiddenSelected += 1;

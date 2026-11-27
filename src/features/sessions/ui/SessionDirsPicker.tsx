@@ -407,6 +407,7 @@ export function SessionDirsPicker({
                   variant="ghost"
                   type="button"
                   disabled={blocked || projectDirs.length === 0}
+                  disabledReason={blocked ? undefined : t("No folders to select.")}
                   onClick={() => selectRepositories(true)}
                 >
                   {t("Select all")}
@@ -415,6 +416,7 @@ export function SessionDirsPicker({
                   variant="ghost"
                   type="button"
                   disabled={blocked || chosenRepos.length === 0}
+                  disabledReason={blocked ? undefined : t("No folders are selected.")}
                   onClick={() => selectRepositories(false)}
                 >
                   {t("Select none")}

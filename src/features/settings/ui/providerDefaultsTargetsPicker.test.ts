@@ -13,7 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const recents = [{ path: "C:/work/alpha", lastOpened: 1 }];
+const recents = [{ path: "C:/work/alpha", openedAt: 1 }];
 const segment = (label: string) =>
   [...host.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
     (node) => node.textContent === label,

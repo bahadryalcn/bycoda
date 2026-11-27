@@ -599,6 +599,9 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
         "mcp.config.call" => std::time::Duration::from_secs(45),
+        // Going live or stopping waits on every Social account; the contract allows 120 s.
+        "liveStream.live.start" | "liveStream.live.stop" => std::time::Duration::from_secs(125),
+        "liveStream.obsSetup" => std::time::Duration::from_secs(65),
         // A reviewed page can publish 500 files, including Windows permission-preserving replacements.
         "workspace.run"
             if params.get("command").and_then(Value::as_str) == Some("replace_project") =>
@@ -630,9 +633,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         | "workspaces.list"
         | "workspaces.prepare.status"
         | "workspaces.prepare.cancel"
-        | "projects.workspacePolicy.get" => {
-            WORKSPACE_READ_RPC_TIMEOUT
-        }
+        | "projects.workspacePolicy.get" => WORKSPACE_READ_RPC_TIMEOUT,
         // One 512 KiB chunk per call; allow slow SSH links.
         "attachments.upload" | "attachments.read" => ATTACHMENT_CHUNK_RPC_TIMEOUT,
         "sessions.update"

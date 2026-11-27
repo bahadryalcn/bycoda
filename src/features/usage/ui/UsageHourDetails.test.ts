@@ -49,6 +49,8 @@ const sample = (model: string, hour: number, cost: number): UsageSample => ({
   projectLabel: model,
   group: "",
   groupLabel: "",
+  machine: "local",
+  machineLabel: "This machine",
   priced: true,
   cost,
 });

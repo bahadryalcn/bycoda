@@ -239,6 +239,7 @@ function Bar({
   }, [amount, firstDelay, isPresent, reduced, shown, value]);
 
   // A stacked bar follows the series under it when they change.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- drives a motion value (outside React) toward the series total under this bar
   useEffect(() => {
     if (reduced) lift.jump(below);
     else return soon(() => animate(lift, below, settle));
@@ -624,10 +625,12 @@ export function BarChart({
   const scrubbing = index !== null && last >= 0;
   const scrubbedKey = scrubbing ? data[index]!.key : null;
   const latest = useRef({ data, onActiveChange });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the latest caller callback readable by the scrub effect below without re-firing it
   useEffect(() => {
     latest.current = { data, onActiveChange };
   }, [data, onActiveChange]);
   // Report the scrubbed category to the caller, and null when the scrubber leaves or the data changes.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scrubbing is pointer state tracked outside React; the caller is told once per scrubbed category
   useEffect(() => {
     const { data: items, onActiveChange: report } = latest.current;
     report?.(scrubbedKey === null ? null : (items.find((d) => d.key === scrubbedKey) ?? null));

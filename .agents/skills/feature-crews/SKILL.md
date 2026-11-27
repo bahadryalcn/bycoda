@@ -23,7 +23,7 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 
 ## Preserve
 
-- Scheduler reads use a transactionally backfilled SQLite active-run projection maintained by metadata insert/update/delete triggers, including legacy writers. Invalid source fails closed; history remains canonical. Delivery updates keep original coordinator and persisted command identity. SQLite JSON write/trigger traversal still scales with canonical state; active payloads are never truncated. Full-state writes persist only runs that differ from the read they came from, and refuse (retry) if another writer put a different run at a row; reordered, shrunk or unread run lists use the full rewrite. Finished history has no retention: pruning must first prove history queries, finish sequence, receipts and recovery stay intact.
+- Scheduler reads use a SQLite active-run projection kept by insert/update/delete triggers (legacy writers too). Invalid source fails closed; history stays canonical. Delivery updates keep the original coordinator and command identity. Active payloads are never truncated. Full-state writes persist only runs that differ from the read they came from, and refuse (retry) if another writer put a different run at a row; reordered, shrunk or unread run lists use the full rewrite. Finished history has no retention: pruning must first prove history queries, finish sequence, receipts and recovery stay intact.
 
 - Owner-started work runs with the crew's `policy.runtimeMode` (default supervised, capability `crews.access.v1`); task-started work keeps the task's mode and members follow the run's mode.
 - A member tool profile (`crews.tools.v1`) only narrows; the Host writes it into session model settings at start. `host/crews/crew-tools.ts` checks Host Conversation Tools before the existing authorization; `host/crews/crew-native-tools.ts` maps it onto provider-native tools (Claude, Codex; other providers refuse a read-only member), the MCP hub allowlist and the skill policy at the Host provider boundary.
@@ -42,7 +42,7 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 ## Focused checks
 
 - Choose crew/crewClient/crewRoster/crewPresentation tests and changed UI tests; Host changes need relevant crews, lifecycle/defaults and dispatcher suites. Use `host/crews/crew-native-session.test.ts` for native coordinator resolution, ownership races and command routing.
-- Exercise Team/library/settings/work/rail states. Exercise isolated Host/native orchestration separately from browser fixtures; review scene motion and keyboard only when affected.
+- Exercise Team/library/settings/work/rail states; test Host/native orchestration apart from browser fixtures.
 
 ## References
 

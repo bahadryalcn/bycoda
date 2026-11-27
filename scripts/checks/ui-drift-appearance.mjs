@@ -780,12 +780,6 @@ export const bespokeParts = [
     reason: "Project logo image clipped to its rounded frame.",
   },
   {
-    file: "src/features/settings/ui/ProjectScopeIcon.tsx",
-    rules: ["surface-style"],
-    token: "rounded-sm",
-    reason: "Project logo image clipped to its rounded frame.",
-  },
-  {
     file: "src/app/shell/Sidebar.tsx",
     rules: ["surface-style"],
     token: "rounded-full",

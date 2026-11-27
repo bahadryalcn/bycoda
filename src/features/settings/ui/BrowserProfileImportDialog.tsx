@@ -55,6 +55,7 @@ export function BrowserProfileImportDialog({
           <Button
             variant="primary"
             disabled={!selected}
+            disabledReason={t("Choose a profile to import.")}
             onClick={() => selected && onImport(selected)}
           >
             {t("Import")}

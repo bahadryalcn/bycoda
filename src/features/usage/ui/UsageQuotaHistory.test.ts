@@ -39,7 +39,7 @@ it("shows distinct accounts together by default and obeys provider/account filte
       root.render(
         createElement(QuotaHistory, {
           window: { start: 0, end: 200 },
-          filters: { provider, account, project: [], model: [], group: [] },
+          filters: { provider, account, project: [], model: [], group: [], machine: [] },
           accounts,
         }),
       ),
@@ -107,7 +107,7 @@ it("mounts the history table only while its disclosure is open", async () => {
       root.render(
         createElement(QuotaHistory, {
           window: { start: 0, end: 200 },
-          filters: { provider: [], account: [], project: [], model: [], group: [] },
+          filters: { provider: [], account: [], project: [], model: [], group: [], machine: [] },
           accounts: [{ id: "default", provider: "codex", label: "Default", color: "pink" }],
         }),
       ),
@@ -168,7 +168,7 @@ it("sorts Time and Reset chronologically over year boundaries, with missing rese
       root.render(
         createElement(QuotaHistory, {
           window: { start: old - 1000, end: recent + 2000 },
-          filters: { provider: [], account: [], project: [], model: [], group: [] },
+          filters: { provider: [], account: [], project: [], model: [], group: [], machine: [] },
           accounts: [{ id: "default", provider: "codex", label: "Default", color: "pink" }],
         }),
       ),
@@ -230,7 +230,7 @@ it("bounds plot nodes for thousands of samples while the review table and count 
       root.render(
         createElement(QuotaHistory, {
           window: { start: 0, end: 5000 },
-          filters: { provider: [], account: [], project: [], model: [], group: [] },
+          filters: { provider: [], account: [], project: [], model: [], group: [], machine: [] },
           accounts: [{ id: "default", provider: "codex", label: "Default", color: "pink" }],
         }),
       ),

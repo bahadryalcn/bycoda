@@ -3,7 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 const { limits, filters, profiles } = vi.hoisted(() => ({
   profiles: { empty: false },
-  filters: { provider: [] as string[], account: [] as string[], project: [], model: [], group: [] },
+  filters: {
+    provider: [] as string[],
+    account: [] as string[],
+    project: [],
+    model: [],
+    group: [],
+    machine: [],
+  },
   limits: {
     status: "ready",
     error: null as string | null,

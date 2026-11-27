@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n/core";
+import { taskNeedsInput } from "../../../shared/model/host-contracts/task-stop";
 import type { TaskStatus } from "./hostTasks";
 
 /** The list's state sections and count chips, in display order: what needs the owner first. */
@@ -6,7 +7,11 @@ export const TASK_GROUPS = ["needsYou", "blocked", "running", "todo", "done"] as
 export type TaskGroup = (typeof TASK_GROUPS)[number];
 
 /** The fields the grouping reads, so summaries and board rows share one predicate. */
-export type GroupableTask = { status: TaskStatus; needsInput?: boolean };
+export type GroupableTask = {
+  status: TaskStatus;
+  needsInput?: boolean;
+  stop?: { nextAction: string };
+};
 
 /**
  * One grouping predicate for list sections and count chips. Review, and running or verifying work
@@ -19,7 +24,7 @@ export function taskGroup(task: GroupableTask): TaskGroup {
       return "needsYou";
     case "running":
     case "verifying":
-      return task.needsInput ? "needsYou" : "running";
+      return task.needsInput || taskNeedsInput(task) ? "needsYou" : "running";
     case "todo":
     case "queued":
       return "todo";

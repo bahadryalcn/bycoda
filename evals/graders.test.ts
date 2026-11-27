@@ -128,7 +128,7 @@ describe("offline model behavior standard", () => {
       externalGrade.criteria.find((entry) => entry.id === "production-tool-schema")?.pass,
     ).toBe(true);
     expect(externalGrade.pass).toBe(false);
-    expect(buildCasePrompt(preview)).toContain("browser.preview/browser.status route");
+    expect(buildCasePrompt(preview)).toContain("browser.status then browser.preview");
   });
   it("requires production preview receipt identity and rejects authority overrides", () => {
     expect(

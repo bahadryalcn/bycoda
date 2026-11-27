@@ -236,7 +236,7 @@
       "shared-internal-selector": 1
     },
     "src/features/settings/ui/BycodaSettings.css": {
-      "shared-internal-selector": 7
+      "shared-internal-selector": 6
     },
     "src/features/settings/ui/ChatSettings.css": {
       "feature-typography": 1
@@ -380,7 +380,7 @@
     },
     "src/features/usage/ui/UsagePage.css": {
       "feature-typography": 3,
-      "shared-internal-selector": 3
+      "shared-internal-selector": 1
     },
     "src/features/usage/ui/UsageVisualizations.css": {
       "feature-typography": 1

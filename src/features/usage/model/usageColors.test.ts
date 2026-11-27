@@ -38,6 +38,8 @@ it("attributes project/model color to its leading configured account", () => {
     projectLabel: "App",
     group: "",
     groupLabel: "",
+    machine: "local",
+    machineLabel: "This machine",
     priced: true,
     tokens: 100,
   };

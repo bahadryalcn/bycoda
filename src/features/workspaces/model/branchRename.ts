@@ -1,4 +1,4 @@
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { generateHarnessBranchName } from "../../../integrations/harness";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import { withTimeout } from "../../../shared/lib/withTimeout";

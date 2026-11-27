@@ -281,106 +281,107 @@ export function ModelAccountList({
           description={t("No matching accounts")}
         />
       ) : (
-        <RadioGroup
-          variant="tiles"
-          label={inline ? t("Account") : t("Accounts")}
-          value={accountId}
-          keepFocus
-          tileLayout="list"
-          className="p-1"
-          tileClassName="min-h-9 text-start"
-          tile={{ fullWidth: true }}
-          options={shown.map((account) => {
-            const selected = account.id === accountId;
-            const detail =
-              account.limitReason ??
-              account.status ??
-              (account.resetsAt != null
-                ? t("Resets in {p0}", { p0: formatResetDuration(account.resetsAt - now) })
-                : undefined);
-            return {
-              value: account.id,
-              disabled: !!account.limitReason,
-              content: (
-                <>
-                  <ModelAccountNumber account={account} />
-                  <span className="min-w-0 flex-1">
-                    <Text
-                      as="span"
-                      size="inherit"
-                      tone="inherit"
-                      leading="snug"
-                      className="flex min-w-0 flex-wrap items-baseline gap-x-1.5"
-                    >
+        <div className="p-1">
+          <RadioGroup
+            variant="tiles"
+            label={inline ? t("Account") : t("Accounts")}
+            value={accountId}
+            keepFocus
+            tileLayout="list"
+            tileClassName="min-h-9 text-start"
+            tile={{ fullWidth: true }}
+            options={shown.map((account) => {
+              const selected = account.id === accountId;
+              const detail =
+                account.limitReason ??
+                account.status ??
+                (account.resetsAt != null
+                  ? t("Resets in {p0}", { p0: formatResetDuration(account.resetsAt - now) })
+                  : undefined);
+              return {
+                value: account.id,
+                disabled: !!account.limitReason,
+                content: (
+                  <>
+                    <ModelAccountNumber account={account} />
+                    <span className="min-w-0 flex-1">
                       <Text
-                        data-model-account-name
+                        as="span"
                         size="inherit"
                         tone="inherit"
                         leading="snug"
-                        weight="medium"
-                        wrap="anywhere"
-                        className="min-w-0"
+                        className="flex min-w-0 flex-wrap items-baseline gap-x-1.5"
                       >
-                        {account.label}
-                      </Text>
-                      {account.id === defaultAccountId ? (
                         <Text
-                          data-model-default-account
-                          size="micro"
-                          tone="secondary"
+                          data-model-account-name
+                          size="inherit"
+                          tone="inherit"
+                          leading="snug"
+                          weight="medium"
                           wrap="anywhere"
+                          className="min-w-0"
                         >
-                          <DefaultMark />
+                          {account.label}
+                        </Text>
+                        {account.id === defaultAccountId ? (
+                          <Text
+                            data-model-default-account
+                            size="micro"
+                            tone="secondary"
+                            wrap="anywhere"
+                          >
+                            <DefaultMark />
+                          </Text>
+                        ) : null}
+                      </Text>
+                      {detail ? (
+                        <Text
+                          as="span"
+                          size="micro"
+                          tone={(account.usedPercent ?? 0) >= USAGE_DANGER ? "danger" : "secondary"}
+                          wrap="anywhere"
+                          className="block"
+                        >
+                          {detail}
                         </Text>
                       ) : null}
-                    </Text>
-                    {detail ? (
-                      <Text
-                        as="span"
-                        size="micro"
-                        tone={(account.usedPercent ?? 0) >= USAGE_DANGER ? "danger" : "secondary"}
-                        wrap="anywhere"
-                        className="block"
-                      >
-                        {detail}
-                      </Text>
-                    ) : null}
-                  </span>
-                  {account.usedPercent != null ? (
-                    <span className="grid w-max min-w-14 shrink-0 justify-items-end gap-0.5">
-                      <Percent value={account.usedPercent} />
-                      <UsageMeter
-                        compact
-                        showLegend={false}
-                        showRemaining={showRemaining}
-                        decimals={0}
-                        className="w-full"
-                        segments={[
-                          { id: "usage", label: account.label, value: account.usedPercent },
-                        ]}
-                        limit={100}
-                        tone={
-                          account.usedPercent >= USAGE_DANGER
-                            ? "danger"
-                            : account.usedPercent >= USAGE_WARNING
-                              ? "warning"
-                              : "accent"
-                        }
-                        label={t("Usage of {p0}", { p0: account.label })}
-                      />
                     </span>
-                  ) : null}
-                  {selected ? (
-                    <Check className="icon-sm shrink-0" tone="secondary" />
-                  ) : (
-                    <span className="size-3.5 shrink-0" aria-hidden />
-                  )}
-                </>
-              ),
-            };
-          })}
-          onValueChange={onSelect}
-        />
+                    {account.usedPercent != null ? (
+                      <span className="grid w-max min-w-14 shrink-0 justify-items-end gap-0.5">
+                        <Percent value={account.usedPercent} />
+                        <UsageMeter
+                          compact
+                          showLegend={false}
+                          showRemaining={showRemaining}
+                          decimals={0}
+                          className="w-full"
+                          segments={[
+                            { id: "usage", label: account.label, value: account.usedPercent },
+                          ]}
+                          limit={100}
+                          tone={
+                            account.usedPercent >= USAGE_DANGER
+                              ? "danger"
+                              : account.usedPercent >= USAGE_WARNING
+                                ? "warning"
+                                : "accent"
+                          }
+                          label={t("Usage of {p0}", { p0: account.label })}
+                        />
+                      </span>
+                    ) : null}
+                    {selected ? (
+                      <Check className="icon-sm shrink-0" tone="secondary" />
+                    ) : (
+                      <span className="size-3.5 shrink-0" aria-hidden />
+                    )}
+                  </>
+                ),
+              };
+            })}
+            onValueChange={onSelect}
+          />
+        </div>
       )}
       <Divider decorative inset="sm" />
     </div>
