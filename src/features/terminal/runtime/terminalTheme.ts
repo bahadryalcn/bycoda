@@ -93,19 +93,18 @@ export function terminalColors(light: boolean, scope: HTMLElement) {
     light ? themePalette.hexfafafa : themePalette.hex171717,
     scope,
   );
+  const foreground = cssColor(
+    "var(--terminal-text, var(--color-content))",
+    light ? themePalette.hex2e2e2e : themePalette.hexe8eef2,
+    scope,
+  );
   const policy = terminalRenderingPolicy({
     canvas: resolveTerminalCanvas(scope, (color) => cssColor(color, "", scope)),
     fallbackCanvas,
-    foreground: cssColor(
-      "var(--terminal-text, var(--color-content))",
-      light ? themePalette.hex2e2e2e : themePalette.hexe8eef2,
-      scope,
-    ),
-    cursor: cssColor(
-      "var(--ui-focus-ring-color)",
-      light ? themePalette.hex4078f2 : themePalette.hex4da3f5,
-      scope,
-    ),
+    foreground,
+    // The cursor uses the text color: the focus ring token is transparent until
+    // keyboard input, and the theme is resolved only once per palette change.
+    cursor: foreground,
     selectionBackground: cssColor(
       "var(--ui-text-selection-background)",
       themePalette.accent,
@@ -164,7 +163,7 @@ function oscColors(scope: HTMLElement) {
     ),
     cursor: cssHexColor(
       theme.cursor,
-      light ? themePalette.hex4078f2 : themePalette.hex4da3f5,
+      light ? themePalette.hex2e2e2e : themePalette.hexebebeb,
       scope,
     ),
   };

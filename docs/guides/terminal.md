@@ -101,7 +101,7 @@ background colors, preserving their meaning in terminal applications. Dim text a
 background-like drawing glyphs retain the renderer's separate treatment.
 
 Selection uses the shared accent/background and readable foreground pair, including
-when the terminal loses focus. The cursor follows the shared focus color and stops
+when the terminal loses focus. The cursor uses the terminal text color and stops
 blinking when reduced motion is requested. Image, filtered and native glass
 backdrops require separate visual verification; a nominal contrast calculation
 does not establish readability against those backgrounds or every colored cell.
