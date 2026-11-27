@@ -182,7 +182,7 @@ when using Browser. [X post API](https://docs.x.com/x-api/posts/create-post)
 The X actions panel supports individually confirmed API engagement,
 relationships, lists and post deletion. Profile edits, encrypted Chat,
 creator earnings and Live Studio have owner browser handoffs.
-Hosting Spaces requires the X mobile app. [X Spaces](https://help.x.com/en/using-x/spaces)
+Hosting Spaces works only in the X app on phones. [X Spaces](https://help.x.com/en/using-x/spaces)
 
 X prohibits scripting its website. Save the exact ingest server URL and stream
 key from the same Live Studio source on the executor Host. Older key-only entries
