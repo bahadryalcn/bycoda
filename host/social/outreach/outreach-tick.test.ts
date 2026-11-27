@@ -94,6 +94,141 @@ async function setup(options: {
   return { audience, sequence, person, enrollment, fake, id: enrollment.id };
 }
 
+describe("runOutreachTick: unexpected enrollment failures", () => {
+  it("lets a healthy enrollment run after a full batch of failures", async () => {
+    const { audience, enrollment, fake, id } = await setup({
+      steps: [dm("s1", "Hi {name}")],
+      autonomy: { message: "autonomous" },
+    });
+    for (let index = 0; index < 50; index++) {
+      await audience.putEnrollment({
+        ...enrollment,
+        id: `broken-${index}`,
+        nextAt: NOW - 1,
+      });
+    }
+    const getEnrollment = audience.getEnrollment.bind(audience);
+    const reads = vi.spyOn(audience, "getEnrollment").mockImplementation(async (key) => {
+      if (key.startsWith("broken-")) throw new Error("Enrollment read failed");
+      return getEnrollment(key);
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const ctx = { service: fake.service, store: audience, now: NOW };
+
+    await runOutreachTick(ctx);
+    expect(reads).toHaveBeenCalledTimes(50);
+    expect(fake.jobs).toHaveLength(0);
+    await runOutreachTick({ ...ctx, now: NOW + 5_000 });
+    expect(reads).toHaveBeenCalledTimes(51);
+    expect(await getEnrollment(id)).toMatchObject({ status: "done", stepIndex: 1 });
+    expect(fake.jobs).toHaveLength(1);
+  });
+
+  it("backs off exponentially and fails the same unsent step after five errors", async () => {
+    const { audience, fake, id } = await setup({
+      steps: [dm("s1", "Hi {name}")],
+      autonomy: { message: "autonomous" },
+      enrollmentOverrides: { lastJobId: "earlier-job", variantId: "earlier-variant" },
+    });
+    vi.spyOn(audience, "getList").mockRejectedValue(new Error("List read failed"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let now = NOW;
+    for (const delay of [60_000, 120_000, 240_000, 480_000]) {
+      await runOutreachTick({ service: fake.service, store: audience, now });
+      now += delay;
+      expect(await audience.getEnrollment(id)).toMatchObject({
+        status: "active",
+        stepIndex: 0,
+        nextAt: now,
+      });
+    }
+    await runOutreachTick({ service: fake.service, store: audience, now });
+    const failed = await audience.getEnrollment(id);
+    expect(failed).toMatchObject({
+      status: "failed",
+      stepIndex: 0,
+      lastJobId: "earlier-job",
+      variantId: "earlier-variant",
+    });
+    expect(failed?.nextAt).toBeUndefined();
+    expect((await readStats(audience, "seq-1")).failed).toBe(1);
+    expect(fake.aiActions).toEqual([
+      expect.objectContaining({ status: "failed", reason: "List read failed" }),
+    ]);
+    expect(fake.drafts).toHaveLength(0);
+    expect(fake.jobs).toHaveLength(0);
+  });
+
+  it("starts a fresh retry budget after advancing to the next step", async () => {
+    const { audience, fake, id } = await setup({
+      steps: [dm("s1", "Hi {name}"), dm("s2", "Follow up {name}", 1)],
+      autonomy: { message: "autonomous" },
+      enrollmentOverrides: { unexpectedFailures: 4 },
+    });
+    const ctx = { service: fake.service, store: audience, now: NOW };
+    await runOutreachTick(ctx);
+    expect(fake.jobs).toHaveLength(1);
+    const next = await audience.getEnrollment(id);
+    expect(next).toMatchObject({ status: "active", stepIndex: 1, nextAt: NOW + 3_600_000 });
+    expect(next?.unexpectedFailures).toBeUndefined();
+
+    vi.spyOn(audience, "getList").mockRejectedValue(new Error("List read failed"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runOutreachTick({ ...ctx, now: NOW + 3_600_000 });
+    expect(await audience.getEnrollment(id)).toMatchObject({
+      status: "active",
+      stepIndex: 1,
+      unexpectedFailures: 1,
+      nextAt: NOW + 3_660_000,
+    });
+    expect(fake.jobs).toHaveLength(1);
+  });
+
+  it("does not overwrite a reply recorded after the batch was selected", async () => {
+    const { audience, enrollment, fake, id } = await setup({
+      steps: [dm("s1", "Hi {name}")],
+      autonomy: { message: "autonomous" },
+      enrollmentOverrides: { unexpectedFailures: 4 },
+    });
+    vi.spyOn(audience, "getList").mockImplementationOnce(async () => {
+      await audience.putEnrollment({ ...enrollment, status: "replied", nextAt: undefined });
+      throw new Error("List read failed");
+    });
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await runOutreachTick({ service: fake.service, store: audience, now: NOW });
+
+    const replied = await audience.getEnrollment(id);
+    expect(replied?.status).toBe("replied");
+    expect(replied?.nextAt).toBeUndefined();
+    expect(fake.aiActions).toHaveLength(0);
+    expect(fake.jobs).toHaveLength(0);
+  });
+
+  it("never rewinds an advanced step when delivery and failure persistence both throw", async () => {
+    const { audience, fake, id } = await setup({
+      steps: [dm("s1", "Hi {name}")],
+      autonomy: { message: "autonomous" },
+    });
+    const putEnrollment = audience.putEnrollment.bind(audience);
+    vi.spyOn(audience, "putEnrollment").mockImplementation(async (enrollment) => {
+      if (enrollment.status === "failed") throw new Error("Enrollment write failed");
+      return putEnrollment(enrollment);
+    });
+    const send = vi
+      .spyOn(fake.service, "sendDraft")
+      .mockRejectedValue(new Error("Unknown outcome"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const ctx = { service: fake.service, store: audience, now: NOW };
+
+    await runOutreachTick(ctx);
+    await runOutreachTick({ ...ctx, now: NOW + 60_000 });
+    expect(send).toHaveBeenCalledTimes(1);
+    const advanced = await audience.getEnrollment(id);
+    expect(advanced).toMatchObject({ status: "done", stepIndex: 1 });
+    expect(advanced?.nextAt).toBeUndefined();
+  });
+});
+
 describe("runOutreachTick: social steps", () => {
   it("sends a DM through the draft path as the sequence principal and advances the enrollment", async () => {
     const { audience, fake, id } = await setup({

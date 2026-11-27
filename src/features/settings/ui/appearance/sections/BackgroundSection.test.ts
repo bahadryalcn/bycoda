@@ -50,7 +50,7 @@ it("previews image blur during a drag and saves only on release", async () => {
   }
 });
 
-it.each(["Change image", "Remove", "Reset background settings"])(
+it.each(["Choose background", "Remove", "Reset background settings"])(
   "revokes old generated-image intent on %s",
   async (label) => {
     const choose = vi.fn(async () => "/next.png");
@@ -81,7 +81,7 @@ it.each(["Change image", "Remove", "Reset background settings"])(
     expect(button, label).toBeDefined();
     await act(async () => button!.click());
     expect(generatorSession.selected()).toBeNull();
-    if (label === "Change image") expect(choose).toHaveBeenCalledOnce();
+    if (label === "Choose background") expect(choose).toHaveBeenCalledOnce();
     if (label === "Remove") expect(remove).toHaveBeenCalledOnce();
   },
 );

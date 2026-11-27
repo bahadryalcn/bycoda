@@ -2905,9 +2905,7 @@ it("shows a collapsed worktree as one row: bold folder and its branch picker, no
   expect(toggle.textContent).toMatch(/^open-worktree/);
   expect(toggle.textContent).not.toContain("This session");
   // Collapsed rows keep the branch picker, as in VS Code.
-  expect(
-    container.querySelector('header button[aria-label="Branch feature/row"]'),
-  ).not.toBeNull();
+  expect(container.querySelector('header button[aria-label="Branch feature/row"]')).not.toBeNull();
   expect(await tooltipText(toggle)).toContain("/work/open-worktree");
   expect(container.querySelector("header")!.textContent).not.toContain("/work");
 });

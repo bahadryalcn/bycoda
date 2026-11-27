@@ -204,6 +204,8 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "appearance.backgroundSuggestions",
   "appearance.backgroundImage",
   "appearance.cancelGeneration",
+  "appearance.createDesign",
+  "appearance.cancelDesign",
   "diagnostics.logs.read",
   "ollama.status",
   "ollama.start",

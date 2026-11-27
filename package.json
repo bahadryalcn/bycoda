@@ -195,6 +195,7 @@
     "remend": "1.4.0",
     "shiki": "^4.5.0",
     "streamdown": "^2.7.1",
+    "three": "0.180.0",
     "tiktok-live-connector": "2.5.0",
     "unified": "11.0.5",
     "ws": "8.22.0",

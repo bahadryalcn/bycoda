@@ -1,7 +1,7 @@
 /* Library thumbnails: one even grid; the applied image gets an accent ring, no side stripe. */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
   gap: var(--ui-space-2);
   width: 100%;
   margin: 0;
@@ -11,6 +11,10 @@
 .item {
   position: relative;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 0.25rem;
 }
 .tile {
   position: relative;

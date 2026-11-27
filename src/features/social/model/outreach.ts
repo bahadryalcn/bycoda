@@ -33,6 +33,8 @@ export type SequenceEnrollment = {
   stepIndex: number;
   status: "active" | "replied" | "stopped" | "done" | "suppressed" | "failed";
   nextAt?: number;
+  /** Consecutive unexpected errors while processing the current due step. */
+  unexpectedFailures?: number;
   variantId?: string;
   lastJobId?: string;
   updatedAt: number;

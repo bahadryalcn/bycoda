@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { callVisualConversationTool } from "./conversation-visual-tools";
 import { validateConversationTool } from "./conversation-tools";
 
@@ -14,6 +14,115 @@ const root = () => {
   return path;
 };
 const allow = () => true;
+
+it("saves only on explicit instruction through its own relay without applying or rendering", async () => {
+  const saveBackground = vi.fn(async () => ({
+    saved: true,
+    applied: false,
+    designId: "saved-one",
+  }));
+  const applyBackground = vi.fn();
+  const input = {
+    title: "Robotun adası",
+    html: "<b>island</b>",
+    target: "global",
+    confirmed: true,
+  };
+  expect(validateConversationTool("visuals.saveBackground", input)).toBeUndefined();
+  await expect(
+    callVisualConversationTool(
+      root(),
+      "visuals.saveBackground",
+      { ...input, confirmed: false },
+      allow,
+      { saveBackground },
+    ),
+  ).rejects.toThrow("Explicit owner");
+  await expect(
+    callVisualConversationTool(
+      root(),
+      "visuals.saveBackground",
+      { ...input, designId: "one" },
+      allow,
+      { saveBackground },
+    ),
+  ).rejects.toThrow("version");
+  expect(saveBackground).not.toHaveBeenCalled();
+  expect(
+    await callVisualConversationTool(root(), "visuals.saveBackground", input, allow, {
+      saveBackground,
+      applyBackground,
+    }),
+  ).toMatchObject({ saved: true, applied: false });
+  expect(saveBackground).toHaveBeenCalledExactlyOnceWith(input);
+  expect(applyBackground).not.toHaveBeenCalled();
+});
+
+it("reads current background through authenticated desktop without requiring workspace HTML", async () => {
+  const input = { target: "project", offset: 32000, expectedPath: "/assets/scene.html" };
+  const requests: Record<string, unknown>[] = [];
+  const options = {
+    readBackground: async (request: Record<string, unknown>) => {
+      requests.push(request);
+      return { kind: "html", html: "part" };
+    },
+  };
+  expect(validateConversationTool("visuals.background", input)).toBeUndefined();
+  expect(
+    await callVisualConversationTool(root(), "visuals.background", input, allow, options),
+  ).toMatchObject({
+    kind: "html",
+    html: "part",
+    threeCapabilities: expect.arrayContaining(["CircleGeometry", "PointLight"]),
+  });
+  expect(requests).toEqual([input]);
+  await expect(
+    callVisualConversationTool(root(), "visuals.background", input, () => false, options),
+  ).rejects.toThrow("revoked");
+  expect(requests).toHaveLength(1);
+});
+
+it("applies only an owner-directed validated confined source through the desktop", async () => {
+  const cwd = root();
+  writeFileSync(join(cwd, "scene.html"), "<b>Quiet scene</b>");
+  const input = { title: "Quiet", path: "scene.html", target: "project", confirmed: true };
+  const calls: Record<string, unknown>[] = [];
+  const options = {
+    applyBackground: async (request: Record<string, unknown>) => {
+      calls.push(request);
+      return { applied: true };
+    },
+  };
+  expect(validateConversationTool("visuals.applyBackground", input)).toBeUndefined();
+  await expect(
+    callVisualConversationTool(
+      cwd,
+      "visuals.applyBackground",
+      { ...input, confirmed: false },
+      allow,
+      options,
+    ),
+  ).rejects.toThrow("Explicit");
+  await expect(
+    callVisualConversationTool(
+      cwd,
+      "visuals.applyBackground",
+      { ...input, path: "../outside.html" },
+      allow,
+      options,
+    ),
+  ).rejects.toThrow();
+  expect(calls).toHaveLength(0);
+  expect(
+    await callVisualConversationTool(cwd, "visuals.applyBackground", input, allow, options),
+  ).toEqual({ applied: true });
+  expect(calls).toEqual([
+    { html: "<b>Quiet scene</b>", title: "Quiet", target: "project", confirmed: true },
+  ]);
+  await expect(
+    callVisualConversationTool(cwd, "visuals.applyBackground", input, () => false, options),
+  ).rejects.toThrow("revoked");
+});
 
 it("publishes an immutable workspace snapshot and preview does not publish", async () => {
   const cwd = root();
@@ -148,4 +257,35 @@ it("starts the one-time preview browser setup in the background and answers with
     ),
   ).rejects.toThrow("revoked");
   expect(setups).toBe(1);
+});
+
+it("counts background HTML in UTF-8 bytes, not characters", async () => {
+  const saveBackground = vi.fn(async () => ({ saved: true }));
+  const base = { title: "Wide", target: "global", confirmed: true };
+  // 1,048,577 two-byte characters is 2,097,154 bytes: under the character cap, over the byte cap.
+  await expect(
+    callVisualConversationTool(
+      root(),
+      "visuals.saveBackground",
+      { ...base, html: "é".repeat(1_048_577) },
+      allow,
+      { saveBackground },
+    ),
+  ).rejects.toThrow("limit is 2 MiB");
+  expect(saveBackground).not.toHaveBeenCalled();
+  await callVisualConversationTool(
+    root(),
+    "visuals.saveBackground",
+    { ...base, html: "é".repeat(1_048_576) },
+    allow,
+    { saveBackground },
+  );
+  expect(saveBackground).toHaveBeenCalledTimes(1);
+  expect(() =>
+    validateConversationTool("visuals.saveBackground", {
+      ...base,
+      title: "t".repeat(41),
+      html: "<b>x</b>",
+    }),
+  ).toThrow();
 });

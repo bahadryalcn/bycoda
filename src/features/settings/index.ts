@@ -10,6 +10,9 @@ export type { McpConnection } from "./model/mcp";
 export type { McpSettingsSnapshot } from "./model/mcpSettingsCache";
 export type { CrewTheme, DiffLayout, FollowUpBehavior } from "./model/settings";
 export type * as modelAppearanceApi from "./public/appearance";
+export type * as uiChatBackgroundMediaApi from "./public/ChatBackgroundMedia";
+export type * as uiBackgroundHistoryApi from "./public/BackgroundHistory";
+export type * as modelBackgroundControlApi from "./public/backgroundControl";
 export type * as modelAppearancePreferencesApi from "./public/appearancePreferences";
 export type * as modelApplicationPreferencesControlApi from "./public/applicationPreferencesControl";
 export type * as modelComposerSpellingApi from "./public/composerSpelling";
@@ -28,5 +31,6 @@ export type * as modelUseKeybindingShortcutApi from "./public/useKeybindingShort
 export type * as uiConnectionRecoverySettingsApi from "./public/ConnectionRecoverySettings";
 export type * as uiGradientBlurBackgroundApi from "./public/GradientBlurBackground";
 export type * as uiLiveBackgroundCanvasApi from "./public/LiveBackgroundCanvas";
+export type * as uiDesignStudioApi from "./public/DesignStudio";
 export type * as uiSettingsControlsApi from "../../shared/ui/settings";
 export type * as secondaryWindowAppearanceApi from "./public/secondaryWindowAppearance";

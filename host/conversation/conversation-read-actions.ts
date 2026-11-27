@@ -31,6 +31,7 @@ export const CONVERSATION_READ_ACTIONS: ReadonlySet<string> = new Set<string>([
   ...DESKTOP_CONTROL_READ_ACTIONS,
   "visuals.preview",
   "visuals.render",
+  "visuals.background",
   "images.status",
   ...Object.keys(CONVERSATION_CREW_READ_TOOLS),
   ...FILE_CONVERSATION_READS,

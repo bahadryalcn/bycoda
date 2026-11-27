@@ -184,7 +184,9 @@ it("plans an SSH add only from native routes", () => {
 
 it("plans a ported route as host and SSH port, with a second address only on that port", () => {
   const plan = (routes: MachineCandidate["routes"]) =>
-    sshAddPlan(mergeMachineCandidates({ account: [], native: [native({ routes })], saved: [] })[0]!);
+    sshAddPlan(
+      mergeMachineCandidates({ account: [], native: [native({ routes })], saved: [] })[0]!,
+    );
   expect(
     plan([
       { address: "box:2222", kind: "name" },
@@ -221,7 +223,11 @@ it("shows a Tailscale peer once when an SSH source uses its short name", () => {
           { address: "jane-mbp", kind: "name" },
         ],
       }),
-      native({ key: "jane-mbp", name: "jane-mbp", routes: [{ address: "jane-mbp", kind: "name" }] }),
+      native({
+        key: "jane-mbp",
+        name: "jane-mbp",
+        routes: [{ address: "jane-mbp", kind: "name" }],
+      }),
     ],
     saved: [],
   });

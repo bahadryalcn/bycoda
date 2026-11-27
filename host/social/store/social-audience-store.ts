@@ -621,6 +621,23 @@ export class SocialAudienceStore {
     return row ? parse<SequenceEnrollment>(row) : undefined;
   }
 
+  /** Update an enrollment only if its persisted snapshot is still current. */
+  async updateEnrollmentIfCurrent(
+    expected: SequenceEnrollment,
+    update: Pick<SequenceEnrollment, "status" | "nextAt" | "unexpectedFailures" | "updatedAt">,
+  ): Promise<boolean> {
+    const result = await this.store.db
+      .prepare("UPDATE social_enrollments SET status=?, next_at=?, value=? WHERE id=? AND value=?")
+      .run(
+        update.status,
+        update.nextAt ?? null,
+        JSON.stringify({ ...expected, ...update }),
+        expected.id,
+        JSON.stringify(expected),
+      );
+    return Number(result.changes) > 0;
+  }
+
   /** Active enrollments whose next step is due. Oldest due first, at most 200. */
   async dueEnrollments(now: number, limit = DEFAULT_PAGE): Promise<SequenceEnrollment[]> {
     const rows = await this.store.db

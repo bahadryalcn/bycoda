@@ -304,6 +304,31 @@
       "retry": "never",
       "scope": "device"
     },
+    "appearance.cancelDesign": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "requestId": { "maxLength": 36, "minLength": 36, "type": "string" } },
+        "required": ["requestId"],
+        "type": "object"
+      },
+      "requiredCapability": null,
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "cancelled": { "type": "boolean" } },
+        "required": ["cancelled"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "appearance.cancelGeneration": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -329,6 +354,159 @@
         "additionalProperties": false,
         "properties": { "cancelled": { "type": "boolean" } },
         "required": ["cancelled"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "appearance.createDesign": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "generationId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          },
+          "harness": {
+            "enum": [
+              "codex",
+              "claude",
+              "cursor",
+              "grok",
+              "opencode",
+              "pi",
+              "omp",
+              "fx",
+              "hermes",
+              "antigravity",
+              "acp"
+            ],
+            "type": "string"
+          },
+          "imageProvider": { "enum": ["codex", "gemini"], "type": "string" },
+          "kind": { "enum": ["image", "scene", "motion"], "type": "string" },
+          "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "modelSettings": {
+            "additionalProperties": { "type": "string" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "previousSource": { "maxLength": 120000, "type": "string" },
+          "prompt": { "maxLength": 2000, "minLength": 1, "type": "string" },
+          "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" },
+          "requestId": { "maxLength": 36, "minLength": 36, "type": "string" }
+        },
+        "required": ["prompt", "harness", "model", "requestId", "kind"],
+        "type": "object"
+      },
+      "requiredCapability": null,
+      "responseTimeoutMs": 240000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "html": { "maxLength": 2097152, "type": "string" },
+          "kind": { "enum": ["image", "scene", "motion"], "type": "string" },
+          "motion": {
+            "additionalProperties": false,
+            "properties": {
+              "accent": { "maxLength": 7, "minLength": 7, "type": "string" },
+              "background": {
+                "additionalProperties": {
+                  "anyOf": [
+                    { "maxLength": 100, "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" }
+                  ]
+                },
+                "propertyNames": { "maxLength": 40, "type": "string" },
+                "type": "object"
+              },
+              "canvas": { "enum": ["pure", "tinted"], "type": "string" },
+              "codeFont": { "maxLength": 60, "minLength": 1, "type": "string" },
+              "codeTheme": { "enum": ["github", "dracula"], "type": "string" },
+              "darkLightness": { "maximum": 30, "minimum": 0, "type": "number" },
+              "density": { "enum": ["compact", "comfortable", "touch"], "type": "string" },
+              "gradient": {
+                "additionalProperties": false,
+                "properties": {
+                  "angle": { "maximum": 360, "minimum": 0, "type": "number" },
+                  "name": { "maxLength": 40, "type": "string" },
+                  "stops": {
+                    "items": { "maxLength": 7, "minLength": 7, "type": "string" },
+                    "maxItems": 3,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "type": { "enum": ["linear", "radial", "solid"], "type": "string" }
+                },
+                "required": ["name", "stops", "angle", "type"],
+                "type": "object"
+              },
+              "hue": { "maximum": 360, "minimum": 0, "type": "number" },
+              "image": {
+                "additionalProperties": {
+                  "anyOf": [
+                    { "maxLength": 100, "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" }
+                  ]
+                },
+                "propertyNames": { "maxLength": 40, "type": "string" },
+                "type": "object"
+              },
+              "imagePrompt": { "maxLength": 400, "minLength": 1, "type": "string" },
+              "interface": {
+                "additionalProperties": {
+                  "anyOf": [
+                    { "maxLength": 100, "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" }
+                  ]
+                },
+                "propertyNames": { "maxLength": 40, "type": "string" },
+                "type": "object"
+              },
+              "interfaceFont": { "maxLength": 60, "minLength": 1, "type": "string" },
+              "motion": {
+                "additionalProperties": {
+                  "anyOf": [
+                    { "maxLength": 100, "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" }
+                  ]
+                },
+                "propertyNames": { "maxLength": 40, "type": "string" },
+                "type": "object"
+              },
+              "name": { "maxLength": 40, "minLength": 1, "type": "string" },
+              "saturation": { "maximum": 60, "minimum": 0, "type": "number" },
+              "scheme": { "enum": ["light", "dark"], "type": "string" },
+              "typography": {
+                "additionalProperties": {
+                  "anyOf": [
+                    { "maxLength": 100, "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" }
+                  ]
+                },
+                "propertyNames": { "maxLength": 40, "type": "string" },
+                "type": "object"
+              }
+            },
+            "required": ["name", "hue", "saturation", "accent"],
+            "type": "object"
+          },
+          "name": { "maxLength": 160, "minLength": 1, "type": "string" },
+          "path": { "maxLength": 4096, "minLength": 1, "type": "string" }
+        },
+        "required": ["kind", "name"],
         "type": "object"
       },
       "retry": "never",
@@ -41657,6 +41835,9 @@
               "workspace.operation.execute",
               "ui.tools.open",
               "ui.tools.status",
+              "ui.background.apply",
+              "ui.background.save",
+              "ui.background.read",
               "assistant.notification.deliver",
               "assistant.notification.status",
               "assistant.background.effect",
@@ -78968,6 +79149,9 @@
                     "workspace.operation.execute",
                     "ui.tools.open",
                     "ui.tools.status",
+                    "ui.background.apply",
+                    "ui.background.save",
+                    "ui.background.read",
                     "assistant.notification.deliver",
                     "assistant.notification.status",
                     "assistant.background.effect",
@@ -79192,6 +79376,77 @@
                 "command": { "const": "format_text_file", "type": "string" }
               },
               "required": ["command", "args"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "appearance.createDesign", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "generationId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "harness": {
+                  "enum": [
+                    "codex",
+                    "claude",
+                    "cursor",
+                    "grok",
+                    "opencode",
+                    "pi",
+                    "omp",
+                    "fx",
+                    "hermes",
+                    "antigravity",
+                    "acp"
+                  ],
+                  "type": "string"
+                },
+                "imageProvider": { "enum": ["codex", "gemini"], "type": "string" },
+                "kind": { "enum": ["image", "scene", "motion"], "type": "string" },
+                "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "modelSettings": {
+                  "additionalProperties": { "type": "string" },
+                  "propertyNames": { "type": "string" },
+                  "type": "object"
+                },
+                "previousSource": { "maxLength": 120000, "type": "string" },
+                "prompt": { "maxLength": 2000, "minLength": 1, "type": "string" },
+                "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" },
+                "requestId": { "maxLength": 36, "minLength": 36, "type": "string" }
+              },
+              "required": ["prompt", "harness", "model", "requestId", "kind"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "appearance.cancelDesign", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "requestId": { "maxLength": 36, "minLength": 36, "type": "string" } },
+              "required": ["requestId"],
               "type": "object"
             }
           },
@@ -96433,5 +96688,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "838fdb86a47985af1271aeebd293831a3444d2de989fc6cc66184ce7409fff5b"
+  "schemaHash": "d5afbaeb3c59e821479893b2e234affe660deb17a856674d6b65ef320aea4777"
 }

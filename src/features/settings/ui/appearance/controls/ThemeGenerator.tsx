@@ -1,14 +1,6 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
-import { LoadingText } from "../../../../../shared/ui/LoadingText";
-import {
-  lazy,
-  Suspense,
-  useEffect,
-  useState,
-  useSyncExternalStore,
-  type KeyboardEvent,
-} from "react";
+import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
 import { Button } from "../../../../../shared/ui/Button";
@@ -20,12 +12,8 @@ import { randomThemePrompt } from "../../../model/themePromptIdeas";
 import { Text } from "../../../../../shared/ui/Text";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
-import { HARNESSES } from "../../../../sessions";
-import { defaultModelSettings, resolveModel } from "../../../../sessions/public/models";
-import {
-  defaultProviderAccountId,
-  supportsProviderAccounts,
-} from "../../../../providers/public/providerAccounts";
+import { AppearanceModelPicker } from "./AppearanceModelPicker";
+import { DesignStudioButton } from "./DesignStudioButton";
 import {
   addBackgroundLibraryImage,
   libraryImageSrc,
@@ -66,12 +54,6 @@ import {
 } from "./themeGeneratorSession";
 import "./ThemeControls.css";
 import { isImeComposition } from "../../../../../shared/lib/keyboard";
-
-const ModelPicker = lazy(() =>
-  import("../../../../sessions")
-    .then((entry) => entry.loadModelPicker())
-    .then((module) => ({ default: module.ModelPicker })),
-);
 
 /** The image state of one suggestion chip: drawing, ready (with the stored file) or failed. */
 export type ChipImage =
@@ -123,7 +105,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   );
   // Everything below survives closing Settings (see themeGeneratorSession.ts).
   const [prompt, setPrompt] = useGeneratorState("prompt", "");
-  const [choice, setChoice] = useThemeGeneratorModel();
+  const [choice] = useThemeGeneratorModel();
   const [suggestions, setSuggestions] = useGeneratorState<ThemeSuggestion[]>("suggestions", []);
   const jobs = useGenerationJobs();
   const busy = jobs.some((job) => job.kind === "themes" && isActiveGeneration(job));
@@ -348,32 +330,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
         </div>
         <div className="theme-generator-bar">
           <div className="theme-generator-config">
-            <Suspense fallback={<LoadingText />}>
-              <ModelPicker
-                harness={choice.harness}
-                model={choice.model}
-                values={choice.modelSettings ?? {}}
-                accountId={choice.providerAccountId}
-                accountChoices
-                allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
-                onChange={(harness, model, accountId) => {
-                  setChoice({
-                    ...choice,
-                    harness,
-                    model,
-                    modelSettings: defaultModelSettings(resolveModel(harness, model)),
-                    // The Host runs the prompt under this bycoda account; without one it would use
-                    // the provider's own default login, which may be signed out.
-                    providerAccountId: supportsProviderAccounts(harness)
-                      ? (accountId ?? defaultProviderAccountId(harness))
-                      : undefined,
-                  });
-                }}
-                onSettingsChange={(modelSettings) => {
-                  setChoice({ ...choice, modelSettings });
-                }}
-              />
-            </Suspense>
+            <AppearanceModelPicker />
             <ImageProviderButton
               value={withImage ? imageProvider : "none"}
               onChange={(value) => {
@@ -382,6 +339,12 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                 if (value !== "none") setImageProvider(value);
               }}
             />
+            <DesignStudioButton
+              appearance={appearance}
+              kind="image"
+              label={t("Create background")}
+            />
+            <DesignStudioButton appearance={appearance} label={t("Saved designs")} />
           </div>
           <Button
             variant="primary"

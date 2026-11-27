@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
 import {
   isLightScheme,
   SCHEME_CHANGE_EVENT,
@@ -20,7 +21,8 @@ export function useProjectBackgroundEffect(
   revision: number,
 ): string | null {
   const light = useSyncExternalStore(subscribeScheme, isLightScheme, () => false);
-  const src = path ? projectChatBackgroundSrc(path, revision) : null;
+  const src =
+    path && chatBackgroundKind(path) === "image" ? projectChatBackgroundSrc(path, revision) : null;
   const sourceKey = path ? `${path}?v=${revision}` : null;
   const themeKey =
     effect === "dither" || effect === "none" || effect === "gradient-blur" ? false : light;

@@ -259,6 +259,15 @@ export function usePrefersReducedMotion(): boolean {
   );
 }
 
+/** Untrusted decorative code stops for OS reduced motion even when app motion is overridden. */
+export function useSystemReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => (media ?? reducedMotionMedia())?.matches ?? false,
+    () => true,
+  );
+}
+
 /** Use for decorative effects only; game availability is a separate setting. */
 export function useDecorativeMotionEnabled(): boolean {
   return useSyncExternalStore(

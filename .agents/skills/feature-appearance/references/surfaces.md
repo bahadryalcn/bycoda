@@ -17,6 +17,8 @@ Code paths are repository-relative. Verify current callers and platform gates fo
 
 ## Persistence and platform boundaries
 
+- Custom image/video/HTML backgrounds: `src/features/settings/ui/ChatBackgroundMedia.tsx`, `src/features/settings/model/backgroundHistory.ts`, `src/features/settings/model/backgroundControl.ts` and `src-tauri/src/chat_background/preview.rs`. The [workbench guide](../../../../docs/guides/workbench.md) covers limits and ordinary conversation tools. Preserve image-only effects, immutable selections and the offline nested sandbox.
+
 - Workspace gradients: `src/features/settings/ui/GradientBackgroundCard.tsx` and its module CSS; `src/features/settings/model/workspaceBackground.ts` owns `bycoda.workspaceBackground.v1`, normalization, same-/sibling-window updates and save/conflict recovery. The pure serializer/presets are `src/shared/theme/workspaceBackground.ts`; `src/styles/index.css` owns the single root image, theme veil and accessibility fallback. `initAppearance()` initializes it for main/detached workspaces; independent quick composer keeps its own background contract. Model/UI tests are colocated; browser scenarios are in `tests/browser/settings/settings.e2e.ts`.
 
 - Appearance record: `bycoda.appearancePreferences.v1`; verify normalization/defaults before adding a field. `canvasBackground`, accent readability, custom surfaces and reset scopes are independent contracts.
@@ -40,7 +42,9 @@ Check write failure/retry/sibling races, scoped reset, image decode/worker failu
 
 - Every applied chat background image is also kept in the library (`model/backgroundLibrary.ts`, `controls/BackgroundLibrary.tsx`). Saved themes (`model/savedThemes.ts`, `model/appearanceSnapshot.ts`, `controls/savedThemeActions.ts`, `SavedThemes.tsx`, `SaveLookButton.tsx`) store a snapshot of every setting plus a library image id.
 - A new Appearance setting must join `captureAppearanceSnapshot`, `normalizeAppearanceSnapshot` and `applyAppearanceSnapshot`, or saved themes will not restore it.
-- Library images referenced by saved themes are never evicted; deleting one asks first and leaves those themes without the picture.
+- Library media referenced by saved themes/designs are never evicted or deleted by the media picker; delete the named design first.
+- Creation entry points use `controls/DesignStudio.tsx`, `runtime/createDesign.ts` and `runtime/savedDesigns.ts`. Named designs extend the existing saved-theme store with creation metadata; do not add another preference store. Portable artifacts cross the native `chat_background/design.rs` boundary and never apply on import. See the workbench guide for the user flow and limits.
+- Ordinary Library/history/current-selection names use `model/backgroundNames.ts`, `runtime/nameBackground.ts` and `controls/SaveBackgroundButton.tsx`. Reuse the same saved-design name and immutable media id. Legacy path aliases are bounded label metadata only, removed when replacing the media and excluded from portable exports. Failed catalog writes do not publish names before storage succeeds.
 
 ## Host theme and background commands
 

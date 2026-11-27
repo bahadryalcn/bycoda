@@ -82,7 +82,7 @@ export function ImageDropZone({
         fullWidth
         className={styles.drop}
         data-has-image={hasImage || undefined}
-        aria-label={hasImage ? t("Change image") : t("Choose an image")}
+        aria-label={t("Choose background")}
         disabled={busy}
         onClick={() => onChoose()}
       >
@@ -90,7 +90,7 @@ export function ImageDropZone({
           <Text as="div" size="caption" tone="muted" leading="inherit">
             <div className={styles.dropEmpty}>
               <ImagePlus className="icon-md" aria-hidden />
-              <span>{t("Drop an image here or click to choose")}</span>
+              <span>{t("Choose background")}</span>
             </div>
           </Text>
         )}

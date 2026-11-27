@@ -188,8 +188,7 @@ fn add_sync(
 ) -> Result<LibraryImage, String> {
     let source_file = expand_home(source_path);
     let ext = validate_background_file(&source_file)?;
-    let bytes =
-        std::fs::read(&source_file).map_err(|e| format!("{}: {e}", source_file.display()))?;
+    let bytes = crate::chat_background::read_background_bytes(&source_file, &ext)?;
     let id = content_id(&bytes);
     let dir = library_dir(app)?;
     let existing = read_library(&dir)?;

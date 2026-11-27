@@ -1,4 +1,7 @@
 import { actionDragAttributes } from "../../../shared/ui/ActionHost";
+import { ChatBackgroundMedia } from "../../settings/public/ChatBackgroundMedia";
+import { chatBackgroundKind } from "../../../shared/lib/chatBackgroundKind";
+import { loadChatBackgroundScope, subscribeThemeStorage } from "../../settings/public/appearance";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
@@ -788,6 +791,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     subscribeChatBackgroundPath,
     loadNewThreadBackgroundEffect,
     loadNewThreadBackgroundEffect,
+  );
+  const globalBackgroundScope = useSyncExternalStore(
+    subscribeThemeStorage,
+    loadChatBackgroundScope,
+    loadChatBackgroundScope,
   );
   // A string snapshot keeps the store read stable while the stored settings are unchanged.
   const projectBackgroundJson = useSyncExternalStore(
@@ -1879,6 +1887,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
       className="chat-pane-background relative isolate flex h-full min-h-0 min-w-0 flex-1 flex-col"
       onMouseDown={() => onFocus(session.id)}
     >
+      {chatBackgroundKind(projectBackground?.path ?? globalBackgroundPath) !== "image" ? (
+        <ChatBackgroundMedia
+          path={projectBackground?.path ?? globalBackgroundPath}
+          live={focused}
+          active={
+            visible && (isEmpty || (projectBackground?.scope ?? globalBackgroundScope) === "all")
+          }
+        />
+      ) : null}
       <LiveSessionBackground
         sessionId={session.id}
         fallback={session}

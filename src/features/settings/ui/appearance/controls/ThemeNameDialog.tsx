@@ -13,6 +13,7 @@ export function ThemeNameDialog({
   confirmLabel,
   initialName = "",
   description,
+  inputLabel,
   onSubmit,
   onClose,
 }: {
@@ -20,6 +21,7 @@ export function ThemeNameDialog({
   confirmLabel: string;
   initialName?: string;
   description?: string;
+  inputLabel?: string;
   /** Receives the cleaned name; a rejection keeps the dialog open with the error. */
   onSubmit: (name: string) => void | Promise<void>;
   onClose: () => void;
@@ -71,7 +73,7 @@ export function ThemeNameDialog({
       }
     >
       <TextField
-        label={t("Theme name")}
+        label={inputLabel ?? t("Theme name")}
         value={name}
         maxLength={SAVED_THEME_NAME_MAX}
         autoFocus

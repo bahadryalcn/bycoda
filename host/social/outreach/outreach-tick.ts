@@ -51,6 +51,8 @@ export type OutreachTickInput = Omit<OutreachTickContext, "now" | "smtp"> & {
 
 const TICK_BATCH = 50;
 const TICK_BUDGET_MS = 30_000;
+const UNEXPECTED_RETRY_BASE_MS = 60_000;
+const MAX_UNEXPECTED_FAILURES = 5;
 
 /** The principal a sequence acts as. It is an external AI principal, so every send is autonomy-gated. */
 export function sequencePrincipal(
@@ -101,25 +103,55 @@ export async function runOutreachTick(input: OutreachTickInput): Promise<void> {
       // An earlier model call may have run long: the owner's stop switches apply to the rest.
       if (index > 0 && !(await sendingOpen(base.service))) return;
       // The due list is a snapshot; runEnrollment re-reads the enrollment against this fresh instant.
-      await runEnrollment({ ...base, smtp, now: clock() }, enrollment.id).catch((error) =>
-        console.error("Social outreach step failed; retrying later:", sanitizeSocialError(error)),
-      );
+      const ctx = { ...base, smtp, now: clock() };
+      try {
+        await runEnrollment(ctx, enrollment.id);
+      } catch (error) {
+        const reason = sanitizeSocialError(error);
+        console.error("Social outreach step failed:", reason);
+        // A failing enrollment backs off instead of taking a batch slot on every tick.
+        await settleUnexpectedFailure({ ...ctx, now: clock() }, enrollment, reason).catch(
+          (settlementError) =>
+            console.error(
+              "Social outreach failure settlement failed:",
+              sanitizeSocialError(settlementError),
+            ),
+        );
+      }
     }
   } finally {
     smtp.close();
   }
 }
 
+async function settleUnexpectedFailure(
+  ctx: OutreachTickContext,
+  enrollment: SequenceEnrollment,
+  reason: string,
+): Promise<void> {
+  const unexpectedFailures = (enrollment.unexpectedFailures ?? 0) + 1;
+  const failed = unexpectedFailures >= MAX_UNEXPECTED_FAILURES;
+  // A reply, deletion or pre-dispatch advance may have superseded this due snapshot.
+  const updated = await ctx.store.updateEnrollmentIfCurrent(enrollment, {
+    status: failed ? "failed" : "active",
+    nextAt: failed ? undefined : ctx.now + UNEXPECTED_RETRY_BASE_MS * 2 ** (unexpectedFailures - 1),
+    unexpectedFailures,
+    updatedAt: ctx.now,
+  });
+  if (updated && failed) await recordFailure(ctx, enrollment.sequenceId, reason);
+}
+
 async function runEnrollment(ctx: OutreachTickContext, id: string): Promise<void> {
   const { store, now } = ctx;
-  const current = await store.getEnrollment(id);
+  const enrollment = await store.getEnrollment(id);
   if (
-    !current ||
-    current.status !== "active" ||
-    current.nextAt === undefined ||
-    current.nextAt > now
+    !enrollment ||
+    enrollment.status !== "active" ||
+    enrollment.nextAt === undefined ||
+    enrollment.nextAt > now
   )
     return;
+  const current = { ...enrollment, unexpectedFailures: undefined };
   const sequence = await store.getRecord("sequence", current.sequenceId);
   if (!sequence) {
     await store.putEnrollment({ ...current, status: "stopped", nextAt: undefined, updatedAt: now });
@@ -227,14 +259,23 @@ async function markFailed(
   enrollment: SequenceEnrollment,
   reason: string,
 ): Promise<void> {
-  const { store, service, now } = ctx;
+  const { store, now } = ctx;
   await store.putEnrollment({ ...enrollment, status: "failed", nextAt: undefined, updatedAt: now });
-  await countStat(store, sequence.id, "failed");
+  await recordFailure(ctx, sequence.id, reason, step);
+}
+
+async function recordFailure(
+  { store, service, now }: OutreachTickContext,
+  sequenceId: string,
+  reason: string,
+  step?: SequenceStep,
+): Promise<void> {
+  await countStat(store, sequenceId, "failed");
   await service.recordAiAction(
     newAiAction({
-      actor: `sequence:${sequence.id}`,
-      action: `outreach.${step.channel}`,
-      ...(step.accountId ? { accountId: step.accountId } : {}),
+      actor: `sequence:${sequenceId}`,
+      action: step ? `outreach.${step.channel}` : "outreach.tick",
+      ...(step?.accountId ? { accountId: step.accountId } : {}),
       status: "failed",
       reason: sanitizeSocialError(reason),
       at: now,
