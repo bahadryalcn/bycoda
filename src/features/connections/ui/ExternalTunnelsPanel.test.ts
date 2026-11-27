@@ -163,11 +163,18 @@ async function choose(label: string, value: string) {
   await act(async () => option.click());
 }
 
+/** Picks "Web app" (`dev-server`) or "Remote access" (`host`) in the share form. */
+async function chooseTarget(value: "dev-server" | "host") {
+  const radio = container.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`);
+  if (!radio) throw new Error(`Missing target ${value}`);
+  await act(async () => radio.click());
+}
+
 it("only enables automatic Host access when Start sharing is submitted", async () => {
   await render();
   await openShare();
   expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-  await choose("Tunnel target", "bycoda host");
+  await chooseTarget("host");
   const toggle = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   expect(toggle.checked).toBe(false);
   await act(async () => toggle.click());
@@ -201,7 +208,7 @@ it("hides automatic access for an older Host that cannot persist the setting", a
   delete current.automaticHostAccess;
   await render();
   await openShare();
-  await choose("Tunnel target", "bycoda host");
+  await chooseTarget("host");
   expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   expect(remoteRequest).not.toHaveBeenCalledWith(
     "local",
@@ -215,7 +222,7 @@ it("hides automatic access for an older Host that cannot persist the setting", a
 it("starts a one-time Cloudflare Host tunnel when automatic restart is unchecked", async () => {
   await render();
   await openShare();
-  await choose("Tunnel target", "bycoda host");
+  await chooseTarget("host");
   await act(async () => button("Share").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "local",
@@ -230,7 +237,7 @@ it("can explicitly stop automatic Host access even without an active link", asyn
   current = { ...current, automaticHostAccess: true, tunnels: [] };
   await render();
   await openShare();
-  await choose("Tunnel target", "bycoda host");
+  await chooseTarget("host");
   await act(async () => button("Stop automatic Host access").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "local",
@@ -334,19 +341,12 @@ it("separates dev and host targets and routes host start to the selected compute
     "Create link",
   );
   await choose("Computer", "Home Mac");
-  await choose("Tunnel target", "bycoda host");
-  const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
-  expect(field.value).toBe("http://127.0.0.1:3777");
-  expect(container.textContent).not.toContain(
-    "Host access keeps device authentication and pairing.",
-  );
-  // The full public-access text sits behind the info affordance.
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Public access"]')!.click(),
-  );
-  expect(document.body.textContent).toContain(
-    "Host access keeps device authentication and pairing.",
-  );
+  expect(container.textContent).toContain("Port or local address");
+  await chooseTarget("host");
+  // Remote access shares bycoda itself: no address to type and no web-app warning.
+  expect(container.textContent).not.toContain("Port or local address");
+  expect(container.textContent).not.toContain("Anyone with the link can open this app.");
+  expect(container.textContent).toContain("Each one still has to be a paired device.");
   await act(async () => button("Share").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "remote",
@@ -400,8 +400,8 @@ it("shows missing dependencies and locked credentials and never renders secret d
 it("says a host tunnel is for other computers and never offers phone pairing", async () => {
   current.tunnels[0] = { ...info, target: "host", localUrl: "http://127.0.0.1:3776" };
   await render();
-  expect(container.textContent).toContain("Public internet");
-  expect(container.textContent).toContain("Phones use a tunnel only when you allow it");
+  expect(container.textContent).toContain("Anyone on the internet can open a shared link.");
+  expect(container.textContent).toContain("Phones use one only if you allow it in Devices.");
   expect(container.textContent).not.toContain("Connect your phone");
 });
 
@@ -488,8 +488,15 @@ it.each([false, true])(
 it("offers Tailscale Funnel as a public host-only provider and warns about public reach", async () => {
   await render();
   await openShare();
-  expect(container.textContent).toContain("Anyone on the internet can reach the address");
+  expect(container.textContent).toContain("Anyone on the internet can open a shared link.");
   await choose("Tunnel provider", "Tailscale Funnel (public)");
+  // Funnel cannot publish a web app, so that choice turns off and remote access is picked.
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="radio"][value="dev-server"]')!.disabled,
+  ).toBe(true);
+  expect(
+    container.querySelector<HTMLInputElement>('input[type="radio"][value="host"]')!.checked,
+  ).toBe(true);
   await act(async () => button("Share").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "local",

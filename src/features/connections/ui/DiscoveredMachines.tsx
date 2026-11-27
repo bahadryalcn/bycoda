@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Apple, Laptop, Smartphone, Terminal } from "../../../shared/ui/icons";
 import { useAccount } from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -70,11 +69,6 @@ function CandidateRow({
           </Text>
         ) : null}
       </div>
-      {machine.online === false ? (
-        <Badge variant="dot" size="sm" tone="neutral">
-          {t("Offline")}
-        </Badge>
-      ) : null}
       <Button
         stableWidth
         variant="secondary"
@@ -158,10 +152,25 @@ export function DiscoveredMachines({
           (b.machine.group ? GROUP_ORDER[b.machine.group] : 0) || a.index - b.index,
     )
     .map(({ machine }) => machine);
+  const [showUnreachable, setShowUnreachable] = useState(false);
+  const unreachableId = useId();
   const searching = query.trim() !== "";
   const found = open.filter((machine) => matches(machine, query));
-  const shown = found;
-  const showGroupLabels = groupBySource(shown).length > 1;
+  // SSH setup needs a connection, so rows that did not answer wait in a closed section.
+  const shown = found.filter((machine) => machine.online !== false);
+  const unreachable = found.filter((machine) => machine.online === false);
+  const unreachableOpen = showUnreachable || (searching && shown.length === 0);
+  const showGroupLabels = groupBySource(shown).length > 1 || unreachable.length > 0;
+  const row = (machine: DiscoveredMachine, showSource: boolean) => (
+    <CandidateRow
+      key={machine.key}
+      machine={machine}
+      busy={busy}
+      showSource={showSource}
+      onAdd={onAdd}
+      onPair={setPairing}
+    />
+  );
   return (
     <section aria-label={t("Available to add")} className="flex flex-col gap-2">
       {/* Search earns its row only once the list is long enough to scan. */}
@@ -189,28 +198,51 @@ export function DiscoveredMachines({
             <div key={label} className="flex flex-col gap-1">
               {showGroupLabels ? <SectionLabel count={rows.length}>{label}</SectionLabel> : null}
               <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
-                {rows.map((machine) => (
-                  <CandidateRow
-                    key={machine.key}
-                    machine={machine}
-                    busy={busy}
-                    showSource={!showGroupLabels}
-                    onAdd={onAdd}
-                    onPair={setPairing}
-                  />
-                ))}
+                {rows.map((machine) => row(machine, !showGroupLabels))}
               </Surface>
             </div>
           ))
         : null}
-      {found.length === 0 && loading ? (
+      {shown.length === 0 && loading ? (
         <LoadingText>{t("Looking for machines…")}</LoadingText>
       ) : null}
       {found.length === 0 && !loading && searching ? (
         <EmptyState size="inline" kind="empty" description={t("No matches")} />
       ) : null}
-      {found.length === 0 && !loading && !searching && !signedOut ? (
-        <EmptyState size="inline" kind="empty" description={t("No new machines found")} />
+      {shown.length === 0 && !loading && !searching && !signedOut ? (
+        <EmptyState
+          size="inline"
+          kind="empty"
+          description={
+            unreachable.length > 0
+              ? t("No reachable computers found")
+              : t("No new machines found")
+          }
+        />
+      ) : null}
+      {unreachable.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          <SectionLabel
+            collapsible
+            expanded={unreachableOpen}
+            onExpandedChange={setShowUnreachable}
+            controls={unreachableId}
+            count={unreachable.length}
+          >
+            {t("Not reachable now")}
+          </SectionLabel>
+          {unreachableOpen ? (
+            <Surface
+              id={unreachableId}
+              variant="card"
+              padding="none"
+              dividers="card"
+              className="overflow-hidden"
+            >
+              {unreachable.map((machine) => row(machine, true))}
+            </Surface>
+          ) : null}
+        </div>
       ) : null}
       {pairing ? (
         <AccountPairDialog
