@@ -156,6 +156,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     ],
     remaining: "External writes retain native review and durable operation receipts.",
   },
+  liveStream: {
+    tools: [],
+    remaining:
+      "Going live publishes to the owner's Social accounts from OBS; it stays an owner action in the desktop.",
+  },
   machine: {
     tools: [],
     sessionOnly: ["machines.list"],
