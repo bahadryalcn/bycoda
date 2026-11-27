@@ -11,6 +11,7 @@ import type { BackgroundLibraryImage } from "../../../model/backgroundLibrary";
 import { saveBackgroundName, prepareBackgroundName } from "../../../runtime/nameBackground";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../../../shared/lib/errors";
 import { ThemeNameDialog } from "./ThemeNameDialog";
 
 /** Direct naming in the ordinary library/history; editing never changes the selected file. */
@@ -48,7 +49,7 @@ export function SaveBackgroundButton({
       const target = await prepareBackgroundName(path, image, designId);
       setEditing({ path, ...target, look: snapshot });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     } finally {
       setPreparing(false);
     }

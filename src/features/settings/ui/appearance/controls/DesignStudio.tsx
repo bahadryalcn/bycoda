@@ -11,6 +11,7 @@ import { Badge } from "../../../../../shared/ui/Badge";
 import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
 import { ErrorDetails } from "../../../../../shared/ui/ErrorDetails";
+import { errorText } from "../../../../../shared/lib/errors";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
 import { useAppearanceSettings, type AppearanceSettings } from "../../useAppearanceSettings";
@@ -142,7 +143,7 @@ function Studio({
   const fail = (cause: unknown) =>
     setError({
       title: t("Could not complete this action."),
-      detail: cause instanceof Error ? cause.message : String(cause),
+      detail: errorText(cause),
     });
   const perform = async (action: () => Promise<void>) => {
     if (blocked || operation.current) return;
