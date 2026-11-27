@@ -6,7 +6,9 @@
   min-inline-size: 0;
 }
 
-.toolbar:has([data-expanded]) {
+/* An open search takes the free row width; the inline row must grow with it or the field stays at its minimum. */
+.toolbar:has([data-expanded]),
+.toolbar:has([data-expanded]) > .inline {
   flex: 1;
 }
 

@@ -164,6 +164,38 @@ for (const light of [false, true])
     });
 for (const light of [false, true])
   for (const width of [1280, 800])
+    test(`open session search fills the header row ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
+      );
+      const pane = page.locator('[data-side-pane="workspace"]');
+      const header = pane.locator("[data-workspace-header]");
+      await pane.evaluate((element) => element.style.setProperty("width", "520px", "important"));
+      const height = await header.evaluate((element) => element.getBoundingClientRect().height);
+      await header.getByRole("button", { name: "Search sessions", exact: true }).click();
+      await expect(
+        header.getByRole("combobox", { name: "Search sessions", exact: true }),
+      ).toBeFocused();
+      const shell = header.locator("[data-expanded]");
+      // The field used to stay at its three-button minimum while the row had free room.
+      await expect
+        .poll(() => shell.evaluate((element) => element.getBoundingClientRect().width))
+        .toBeGreaterThan(180);
+      expect(await header.evaluate((element) => element.getBoundingClientRect().height)).toBe(
+        height,
+      );
+      const directory = path.resolve("temp/verification/2026-11-27-sidebar-search-width");
+      await mkdir(directory, { recursive: true });
+      await header.screenshot({
+        path: path.join(directory, `${light ? "light" : "dark"}-${width}.png`),
+      });
+    });
+for (const light of [false, true])
+  for (const width of [1280, 800])
     for (const rail of ["compact", "wide", "hidden"])
       test(`remote project header ${light ? "light" : "dark"} ${width} ${rail}`, async ({
         page,
