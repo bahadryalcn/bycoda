@@ -131,7 +131,8 @@ export function SidebarUpdateFooter({
       {promptOpen && actionable ? (
         <Modal
           title={snapshot.phase === "error" ? t("Update failed") : t("Update available")}
-          size="sm"
+          size="md"
+          height={notes ? "tall" : undefined}
           onClose={closePrompt}
           footer={
             <ModalActions
@@ -176,7 +177,7 @@ export function SidebarUpdateFooter({
                   tone="primary"
                   interactionTone="accent"
                 >
-                  <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
+                  <AgentMarkdown className="update-release-notes" text={notes} streaming={false} />
                 </Disclosure>
               </>
             ) : null}

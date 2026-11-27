@@ -169,7 +169,8 @@ The docked voice companion and GitHub icon have transparent idle backgrounds lik
 and Account; the floating voice companion keeps its raised surface.
 In an expanded footer with enough room, hovering or focusing the update icon reveals
 its label. Click it to compare your installed version with the available version
-and read the release notes. Use the download button to start the update or choose
+and read the release notes. Scroll the notes to read each section while the update
+actions stay visible. Use the download button to start the update or choose
 **Remind me tomorrow** to see the prompt later.
 
 **Ctrl+B** on Windows and Linux or **Command+B** on macOS cycles through three layouts.

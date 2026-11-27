@@ -2691,6 +2691,7 @@ input,
 .agent-transcript,
 .markdown-preview,
 .whats-new-md,
+.update-release-notes,
 .inbox-pr-diff,
 .unified-diff,
 .inbox-comment-md,
@@ -3460,6 +3461,19 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 
 .whats-new-md.agent-markdown ul {
   margin-top: 0.15rem;
+}
+
+.update-release-notes.agent-markdown [data-streamdown="heading-3"] {
+  margin-block: var(--ui-space-5) var(--ui-space-2);
+  padding-block-end: var(--ui-space-2);
+  border-block-end: 1px solid var(--ui-pane-border);
+  font-size: var(--ui-font-body);
+  font-weight: 600;
+  color: var(--color-content);
+}
+
+.update-release-notes.agent-markdown > .agent-markdown-block:first-child > [data-streamdown="heading-3"] {
+  margin-block-start: var(--ui-space-2);
 }
 
 .agent-markdown [data-streamdown="code-block-header"] {
