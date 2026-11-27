@@ -332,7 +332,7 @@ function DockBody({
       <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1">
         {/* The provider marks name who runs the work; the counts say how it stands.
         "Background work" stays in the accessible label only. */}
-        <span className="flex min-w-0 shrink-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
           <ProviderStack agents={listed} fallback={harness} />
           <span className="flex min-w-0 flex-wrap items-center gap-x-1">
             {counts.map(({ text, tone }, index) => (

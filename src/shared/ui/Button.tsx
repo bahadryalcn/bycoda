@@ -382,7 +382,11 @@ export function Button({
     const node = labelMeasure.current;
     if (!reserveLabel || !node) return;
     const measure = () => {
-      const width = node.getBoundingClientRect().width;
+      // Under CSS zoom the rect is in zoomed pixels while min-inline-size is in local ones, so
+      // feeding it back unscaled doubles the reservation on every observer tick.
+      const rect = node.getBoundingClientRect().width;
+      const zoom = node.offsetWidth ? Math.round((rect / node.offsetWidth) * 20) / 20 : 1;
+      const width = rect / (zoom || 1);
       setLabelWidth((previous) => Math.max(previous, width));
     };
     measure();

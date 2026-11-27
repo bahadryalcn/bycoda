@@ -118,8 +118,12 @@ test("application menu keeps navigation in reach and groups secondary actions", 
       await expect(page.getByLabel("Selected action")).toHaveText("Notes");
       await trigger.click();
       await page.keyboard.press("End");
-      // Quit, Minimize to tray and Close window sit below the Terminal submenu.
-      for (let step = 0; step < 3; step++) await page.keyboard.press("ArrowUp");
+      // On Windows, Quit, Minimize to tray and Close window sit below the Terminal submenu; other
+      // platforms end on it.
+      const windowActions = await menu
+        .getByRole("menuitem", { name: /^(Close window|Minimize to tray|Quit)/ })
+        .count();
+      for (let step = 0; step < windowActions; step++) await page.keyboard.press("ArrowUp");
       await page.keyboard.press("ArrowRight");
       await page.getByRole("menuitem", { name: /^New terminal/ }).click();
       await expect(page.getByLabel("Selected action")).toHaveText("New Terminal");

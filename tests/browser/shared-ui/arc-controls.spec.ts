@@ -2506,7 +2506,7 @@ test.describe("shared control state matrix", () => {
       Math.abs(groupBox!.height - firstBox!.height),
       "group is exactly one Button tall",
     ).toBeLessThanOrEqual(1);
-    await expect(review.getByRole("button", { name: "Request changes" })).toBeDisabled();
+    await expect(review.getByRole("button", { name: "Changes" })).toBeDisabled();
     await expect(review.getByRole("button", { name: /^Merg/ })).toHaveAttribute(
       "aria-busy",
       "true",

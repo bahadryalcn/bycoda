@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { scrollToAsReader } from "../support/readerScroll";
 
 for (const width of [800, 1000]) {
   for (const theme of ["light", "dark"] as const) {
@@ -104,6 +105,7 @@ for (const width of [390, 1000]) {
           .evaluate((element) => element.scrollWidth <= element.clientWidth),
       ).toBe(true);
       expect(fileBox!.x + fileBox!.width).toBeLessThanOrEqual(imageBox!.x);
+      await scrollToAsReader(page, file);
       await file.getByText("notes.txt", { exact: true }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog.locator("pre")).toHaveText("Attachment file content");

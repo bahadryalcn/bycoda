@@ -198,7 +198,7 @@ function ActionsMatrix() {
               {t("Approve")}
             </Button>
             <Button variant="ghost" disabled>
-              {t("Request changes")}
+              {t("Changes")}
             </Button>
             <Button variant="ghost" pressed>
               {t("Comment")}

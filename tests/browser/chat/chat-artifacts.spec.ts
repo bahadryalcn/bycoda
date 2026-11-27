@@ -126,21 +126,31 @@ for (const theme of ["light", "dark"])
       await expect(output).toContainText("output-marker");
       await page.keyboard.press("Tab");
       await output.focus();
-      const outline = await output.evaluate((node) => {
-        const s = getComputedStyle(node);
-        const probe = document.createElement("span");
-        probe.style.outline = "1px solid var(--ui-focus-ring-color)";
-        node.appendChild(probe);
-        const expected = getComputedStyle(probe).outlineColor;
-        probe.remove();
-        return { width: s.outlineWidth, offset: s.outlineOffset, color: s.outlineColor, expected };
-      });
-      expect(outline).toEqual({
-        width: "1px",
-        offset: "-1px",
-        color: outline.expected,
-        expected: outline.expected,
-      });
+      // Focus styles can transition in; poll until the settled computed outline matches the token.
+      const readOutline = () =>
+        output.evaluate((node) => {
+          const s = getComputedStyle(node);
+          const probe = document.createElement("span");
+          probe.style.outline = "1px solid var(--ui-focus-ring-color)";
+          node.appendChild(probe);
+          const expected = getComputedStyle(probe).outlineColor;
+          probe.remove();
+          return {
+            width: s.outlineWidth,
+            offset: s.outlineOffset,
+            color: s.outlineColor,
+            expected,
+          };
+        });
+      await expect
+        .poll(async () => {
+          const outline = await readOutline();
+          return {
+            ...outline,
+            expected: outline.color === outline.expected ? "match" : outline.expected,
+          };
+        })
+        .toEqual({ width: "1px", offset: "-1px", color: expect.anything(), expected: "match" });
       await page.screenshot({
         animations: "disabled",
         path: `temp/verification/feature-controls/tool-output-focus-${theme}-${width}.png`,

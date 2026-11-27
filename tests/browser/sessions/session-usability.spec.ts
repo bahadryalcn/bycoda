@@ -26,8 +26,15 @@ for (const kind of ["projectless", "project"])
         );
         const picker = page.getByRole("button", { name: /^Run on:/ });
         await expect(picker).toContainText("This computer");
-        await picker.click();
-        await expect(page.getByRole("menuitemradio", { name: /Office Mac/ })).toBeVisible();
+        // The first click can land before the fixture finishes hydrating; reopen only while closed.
+        await expect(async () => {
+          if ((await page.getByRole("menu", { name: "Run on" }).count()) === 0) {
+            await picker.click();
+          }
+          await expect(page.getByRole("menuitemradio", { name: /Office Mac/ })).toBeVisible({
+            timeout: 1500,
+          });
+        }).toPass({ timeout: 10_000 });
         await expect(page.getByRole("menuitemradio", { name: /Build PC.*Offline/ })).toBeDisabled();
         if (width === 1280) await expect(page.locator(".crew-scene")).toBeVisible();
         const choices = page.getByRole("menu", { name: "Run on" });

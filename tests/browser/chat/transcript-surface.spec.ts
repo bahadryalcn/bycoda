@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { scrollToAsReader } from "../support/readerScroll";
 
 // k12 §6.2: the reading surface on the transcript scenario fixture. Selectors follow the k12 §5.1
 // contract ([data-transcript-reply], [data-transcript-actions-row], html[data-transcript-surface]).
@@ -16,7 +17,9 @@ const open = async (page: Page, query: Record<string, string> = {}) => {
   // A settled turn folds its work behind one line and groups its steps; the row states under test
   // live inside them, so open the fold and then each step group (groups never nest).
   if (query.scene === "interleaved" && query.streaming !== "1") {
-    await interleavedTurn(page).getByLabel("Show the work", { exact: true }).click();
+    const fold = interleavedTurn(page).getByLabel("Show the work", { exact: true });
+    await scrollToAsReader(page, fold);
+    await fold.click();
     const groups = interleavedTurn(page).locator("details:not([open]) > summary", {
       hasText: /^(Ran|Read) /,
     });
@@ -47,8 +50,16 @@ async function resolveColor(page: Page, css: string): Promise<Rgba> {
     return { r, g, b, a };
   }, css);
 }
+// Buttons ease their ink in (Arc Button transitions `color`), and worstContrast has just hidden and
+// restored it, so a slow runner would read a half-transparent mid-transition color as black.
 const inkOf = async (page: Page, locator: Locator) =>
-  resolveColor(page, await locator.evaluate((el) => getComputedStyle(el).color));
+  resolveColor(
+    page,
+    await locator.evaluate(async (el) => {
+      await Promise.all(el.getAnimations().map((animation) => animation.finished.catch(() => {})));
+      return getComputedStyle(el).color;
+    }),
+  );
 
 const luminance = ({ r, g, b }: Rgba) => {
   const [lr, lg, lb] = [r, g, b].map((channel) => {
@@ -64,7 +75,7 @@ const luminance = ({ r, g, b }: Rgba) => {
 async function worstContrast(page: Page, reply: Locator, ink: Rgba): Promise<number> {
   const style = await page.addStyleTag({
     content:
-      '[data-transcript-reply] * { color: transparent !important; -webkit-text-fill-color: transparent !important; border-color: transparent !important; } [data-transcript-reply] *::before, [data-transcript-reply] *::after { visibility: hidden !important; } [data-transcript-reply] :is(svg, img, canvas, button, code, pre, table, .bg-sidebar, [class*="_badge_"], [class*="_appearance_"], [class*="_track_"], [data-transcript-inset]) { visibility: hidden !important; }',
+      '[data-transcript-reply] * { transition: none !important; color: transparent !important; -webkit-text-fill-color: transparent !important; border-color: transparent !important; } [data-transcript-reply] *::before, [data-transcript-reply] *::after { visibility: hidden !important; } [data-transcript-reply] :is(svg, img, canvas, button, code, pre, table, .bg-sidebar, [class*="_badge_"], [class*="_appearance_"], [class*="_track_"], [data-transcript-inset]) { visibility: hidden !important; }',
   });
   // A reply taller than the viewport is captured in pieces with the fixed composer and wallpaper
   // stitched in; a viewport that holds the whole reply measures the reply surface only.
@@ -218,7 +229,7 @@ test.describe("trigger", () => {
     for (let index = 0; index < count; index++) {
       const summary = summaries.nth(index);
       const details = summary.locator("xpath=..");
-      await summary.scrollIntoViewIfNeeded();
+      await scrollToAsReader(page, summary);
       await page.mouse.move(0, 0);
       // The arrow is always visible at rest.
       await expect(summary.locator("svg").last()).toHaveCSS("opacity", "1");
@@ -237,7 +248,7 @@ test.describe("trigger", () => {
       let expected = await details.evaluate((node: HTMLDetailsElement) => node.open);
       for (const name of ["left", "middle", "right", "arrow"] as const) {
         // Toggling a row re-measures the virtual list, so the point is taken fresh each time.
-        await summary.scrollIntoViewIfNeeded();
+        await scrollToAsReader(page, summary);
         await expect
           .poll(async () => {
             const before = JSON.stringify(await summary.boundingBox());
