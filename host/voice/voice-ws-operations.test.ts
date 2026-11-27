@@ -32,8 +32,14 @@ function setup(state: { setup?: string; models?: string } = {}) {
     end: vi.fn(),
   };
   const voiceCallSettings = {
-    get: vi.fn(async () => ({ settings: { mode: "local" }, signedIn: { grok: false, openai: true } })),
-    set: vi.fn(async () => ({ settings: { mode: "openai" }, signedIn: { grok: false, openai: true } })),
+    get: vi.fn(async () => ({
+      settings: { mode: "local" },
+      signedIn: { grok: false, openai: true },
+    })),
+    set: vi.fn(async () => ({
+      settings: { mode: "openai" },
+      signedIn: { grok: false, openai: true },
+    })),
   };
   const operations = voiceSocketOperations({
     localVoice: localVoice as unknown as LocalVoiceService,
@@ -98,12 +104,21 @@ describe("phone voice call over the native socket", () => {
     await expect(
       operations["voice.realtime.start"]({ threadId: "room-1", provider: "openai" }, device),
     ).resolves.toEqual({ lease: "relay-a", inRate: 16000, outRate: 24000 });
-    expect(voiceRelays.start).toHaveBeenCalledWith({ threadId: "room-1", provider: "openai" }, device);
+    expect(voiceRelays.start).toHaveBeenCalledWith(
+      { threadId: "room-1", provider: "openai" },
+      device,
+    );
     await expect(
-      operations["voice.realtime.audio"]({ lease: "relay-a", seq: 0, audio: "A".repeat(87_388) }, device),
+      operations["voice.realtime.audio"](
+        { lease: "relay-a", seq: 0, audio: "A".repeat(87_388) },
+        device,
+      ),
     ).rejects.toThrow();
     await expect(
-      operations["voice.realtime.audio"]({ lease: "relay-a", seq: 0, audio: "AAAA" }, context(false)),
+      operations["voice.realtime.audio"](
+        { lease: "relay-a", seq: 0, audio: "AAAA" },
+        context(false),
+      ),
     ).rejects.toBeInstanceOf(HostDomainAuthorizationError);
     await expect(
       operations["voice.realtime.start"]({ threadId: "room-1", provider: "elevenlabs" }, device),

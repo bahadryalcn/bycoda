@@ -269,7 +269,9 @@ it("blocks a second retry press while the retry is pending", async () => {
 
 it("picks a kind-specific default icon and still honors an explicit icon or null", async () => {
   const icon = async (props: Record<string, unknown>) => {
-    const mounted = await mount(createElement(EmptyState, { context: "list", description: "x", ...props }));
+    const mounted = await mount(
+      createElement(EmptyState, { context: "list", description: "x", ...props }),
+    );
     try {
       return mounted.container.querySelector("svg")?.getAttribute("class") ?? null;
     } finally {
@@ -326,14 +328,18 @@ it("separates an inline title from its description and tucks it only for showDes
 it("shows the pixel-guide mascot by default on page and panel, never on list or inline", async () => {
   vi.stubGlobal(
     "matchMedia",
-    vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+    vi
+      .fn()
+      .mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
   );
   const plain = await mount(createElement(EmptyState, { title: "Nothing", description: "Empty" }));
   try {
     expect(plain.container.querySelector("img[data-scene]")?.getAttribute("data-scene")).toBe(
       "inbox-empty",
     );
-    expect(plain.container.querySelector("img[data-scene]")?.getAttribute("style")).toContain("block-size: 144px");
+    expect(plain.container.querySelector("img[data-scene]")?.getAttribute("style")).toContain(
+      "block-size: 144px",
+    );
     expect(plain.container.querySelector("p")?.textContent).toBe("Empty");
   } finally {
     plain.done();
@@ -363,7 +369,11 @@ it("shows the pixel-guide mascot by default on page and panel, never on list or 
     filtered.done();
   }
   const guided = await mount(
-    createElement(EmptyState, { title: "Nothing", description: "Empty", illustration: "no-sessions" }),
+    createElement(EmptyState, {
+      title: "Nothing",
+      description: "Empty",
+      illustration: "no-sessions",
+    }),
   );
   try {
     const art = guided.container.querySelector("img[data-scene]")!;

@@ -49,7 +49,9 @@ export function ProviderDefaultsSaveBar({
   useLocale();
   const pending = changes.length;
   const skips =
-    draft && activeProvider ? prepareDefaultsDraft(draft, activeProvider, providers, target).skipped : [];
+    draft && activeProvider
+      ? prepareDefaultsDraft(draft, activeProvider, providers, target).skipped
+      : [];
   return (
     <SettingsSaveBar
       id="models-defaults"

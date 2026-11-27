@@ -1049,7 +1049,9 @@ function ScopedRuntimeLogsPanel({
             />
           ) : (
             <EmptyState
-              illustration={buffer.entries.length && !filteredCount ? "search-empty" : "inbox-empty"}
+              illustration={
+                buffer.entries.length && !filteredCount ? "search-empty" : "inbox-empty"
+              }
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
               description={empty}
               kind={buffer.entries.length && !filteredCount ? "filtered" : "empty"}

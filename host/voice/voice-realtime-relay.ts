@@ -168,7 +168,9 @@ export function relayRecap(turns: readonly RelayRecapTurn[]): string {
     const text = turn.text.replace(/\s+/g, " ").trim();
     if (!text) continue;
     const clipped =
-      text.length > RELAY_RECAP_TURN_CHARS ? `${truncateGraphemes(text, RELAY_RECAP_TURN_CHARS - 1)}…` : text;
+      text.length > RELAY_RECAP_TURN_CHARS
+        ? `${truncateGraphemes(text, RELAY_RECAP_TURN_CHARS - 1)}…`
+        : text;
     const line = `${turn.role === "user" ? "Owner" : "You"}: ${clipped}`;
     if (size + line.length + 1 > RELAY_RECAP_MAX_CHARS) break;
     lines.unshift(line);
@@ -345,7 +347,8 @@ class RelaySession {
           if (event.type === "session.updated") {
             ready = true;
             settle();
-          } else if (event.type === "error") settle(new Error("The voice provider refused the call."));
+          } else if (event.type === "error")
+            settle(new Error("The voice provider refused the call."));
           return;
         }
         if (socket === this.socket) this.handle(event);
@@ -430,7 +433,10 @@ class RelaySession {
     }
     const rotation = this.rotation;
     if (rotation?.next && rotation.readyAt !== undefined) {
-      if (now - rotation.readyAt >= RELAY_ROTATION_MAX_WAIT_MS && (this.responding || this.audible()))
+      if (
+        now - rotation.readyAt >= RELAY_ROTATION_MAX_WAIT_MS &&
+        (this.responding || this.audible())
+      )
         // The reply outlasted the bound: cut it at what was heard and switch.
         this.interruptReply(this.playedEstimate(), { resetVad: false, settleNow: true });
       this.advance();
@@ -511,7 +517,8 @@ class RelaySession {
     if (item.kind === "chunk") this.queuedChars += item.audio.length;
     for (const wake of this.waiters) wake();
     this.waiters.clear();
-    if (this.queuedChars > RELAY_MAX_QUEUED_CHARS) this.end("provider", "The phone stopped playing the reply.");
+    if (this.queuedChars > RELAY_MAX_QUEUED_CHARS)
+      this.end("provider", "The phone stopped playing the reply.");
   }
 
   private setState(state: RelaySession["state"]) {
@@ -558,7 +565,7 @@ class RelaySession {
     if (!this.duplex && this.state !== "listening") return { accepted: false };
     // While the reply is audible, the VAD's onset is longer and louder (echo residue, breaths).
     this.vad.setStrict(this.duplex && this.audible());
-    for (let offset = 0; offset < samples.length; ) {
+    for (let offset = 0; offset < samples.length;) {
       const length = Math.min(samples.length - offset, VAD_FRAME - this.filled);
       this.frame.set(samples.subarray(offset, offset + length), this.filled);
       offset += length;
@@ -611,7 +618,8 @@ class RelaySession {
   text(raw: string) {
     this.assertOpen();
     const text = raw.trim();
-    if (!text || text.length > VOICE_RELAY_TEXT_MAX) throw new RelayRefusal("The message is empty or too long.");
+    if (!text || text.length > VOICE_RELAY_TEXT_MAX)
+      throw new RelayRefusal("The message is empty or too long.");
     if (this.turns.length >= RELAY_MAX_PENDING_TURNS)
       throw new RelayRefusal("Wait for the reply before sending more.");
     this.lastConversationAt = this.lastUserAt = this.now();
@@ -659,7 +667,11 @@ class RelaySession {
       } else {
         this.send({
           type: "conversation.item.create",
-          item: { type: "message", role: "user", content: [{ type: "input_text", text: turn.text }] },
+          item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: turn.text }],
+          },
         });
         this.push({ type: "user_transcript", at: 0, text: turn.text });
         this.remember("user", turn.text);
@@ -775,7 +787,8 @@ class RelaySession {
     } catch (error) {
       output = JSON.stringify({
         status: "failed",
-        error: error instanceof Error ? error.message.slice(0, 500) : "The assistant is unavailable.",
+        error:
+          error instanceof Error ? error.message.slice(0, 500) : "The assistant is unavailable.",
       });
     }
     this.pendingCalls--;
@@ -783,7 +796,11 @@ class RelaySession {
     if (this.closed) return;
     this.send({
       type: "conversation.item.create",
-      item: { type: "function_call_output", call_id: callId, output: output.slice(0, MAX_TOOL_OUTPUT) },
+      item: {
+        type: "function_call_output",
+        call_id: callId,
+        output: output.slice(0, MAX_TOOL_OUTPUT),
+      },
     });
     this.continueAfterTools = true;
     this.advance();
@@ -802,7 +819,11 @@ class RelaySession {
     if (!binding || binding.id !== this.threadId || binding.projectId !== this.projectId)
       throw new Error("Assistant thread scope changed or belongs to another project.");
     if (this.projectId)
-      await assertAssistantThreadScope(this.dependencies.threadBinding, this.threadId, this.projectId);
+      await assertAssistantThreadScope(
+        this.dependencies.threadBinding,
+        this.threadId,
+        this.projectId,
+      );
     const context: HostDomainContext = {
       authorized: this.authority.authorized,
       principalId: this.authority.principalId,

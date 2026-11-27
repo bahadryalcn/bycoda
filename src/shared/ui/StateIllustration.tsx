@@ -2,14 +2,11 @@ import { useEffect, useState } from "react";
 import styles from "./StateIllustration.module.css";
 
 /** Every scene, with the frames of its loop (frame 0 is the rest pose) and the width / height of one frame. */
-const frameUrls = import.meta.glob<string>(
-  "../../assets/states/*/frame-*.png",
-  {
-    eager: true,
-    query: "?url",
-    import: "default",
-  },
-);
+const frameUrls = import.meta.glob<string>("../../assets/states/*/frame-*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+});
 
 const SCENES = {
   "connect-computer": 812 / 623,
@@ -30,15 +27,9 @@ export type IllustrationName = keyof typeof SCENES;
 
 const FPS = 6;
 /** Four seconds: breathing, bead sway, two blinks, brows, mustache twitch and the scene's prop. */
-const LOOP = [
-  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 12, 13, 4, 14, 15, 16, 8, 17, 18,
-  11,
-];
+const LOOP = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 12, 13, 4, 14, 15, 16, 8, 17, 18, 11];
 /** The chat scene's typing dots fill in, so it has its own order (17 frames). */
-const CHAT_LOOP = [
-  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 1, 2, 2, 11, 12, 13, 14, 15, 15, 16,
-  0,
-];
+const CHAT_LOOP = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 1, 2, 2, 11, 12, 13, 14, 15, 15, 16, 0];
 
 const frameCache = new Map<IllustrationName, string[]>();
 function framesOf(name: IllustrationName): string[] {
@@ -70,19 +61,11 @@ function useLoopStep(steps: number) {
     const sync = () => {
       clearInterval(timer);
       timer = undefined;
-      if (
-        motion?.matches ||
-        motionGateClosed() ||
-        document.hidden ||
-        steps < 2
-      ) {
+      if (motion?.matches || motionGateClosed() || document.hidden || steps < 2) {
         setStep(0);
         return;
       }
-      timer = setInterval(
-        () => setStep((current) => (current + 1) % steps),
-        1000 / FPS,
-      );
+      timer = setInterval(() => setStep((current) => (current + 1) % steps), 1000 / FPS);
     };
     sync();
     motion?.addEventListener("change", sync);

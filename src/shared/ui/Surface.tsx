@@ -75,11 +75,7 @@ export type SurfaceAppearance = {
   /** Visible inset outline for keyboard-focusable scroll regions. */
   focusRing?: "inset" | "preview-inset" | "outer";
   /** Settings rows use their group hairlines and corners. */
-  layout?:
-    | "settings-group"
-    | "settings-group-flat"
-    | "settings-rows"
-    | "settings-account-list";
+  layout?: "settings-group" | "settings-group-flat" | "settings-rows" | "settings-account-list";
   /** One hairline after each direct child except the last; no outer frame or layout.
    * `pane` uses the pane border, `card` the card border.
    * Replaces vertical divide-y lists. Horizontal splits keep Divider. */

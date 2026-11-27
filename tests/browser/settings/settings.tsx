@@ -549,15 +549,61 @@ mockIPC(
         // Synthetic local transcription catalog: one selected, one installed, one downloading.
         if (args.method === "voice.local.models")
           return [
-            { id: "small", label: "Whisper Small", path: "fixture/small", installed: true, sizeBytes: 464e6, format: "faster-whisper" },
-            { id: "gguf-small", label: "Whisper Small", path: "fixture/gguf-small", installed: true, sizeBytes: 257e6, format: "gguf", languages: ["tr", "en"] },
-            { id: "gguf-nemotron", label: "Nemotron Streaming 3.5", path: "fixture/nemotron", installed: false, sizeBytes: 716e6, format: "gguf", languages: ["tr", "en"], recommended: true },
-            { id: "gguf-medium", label: "Whisper Medium", path: "fixture/medium", installed: false, sizeBytes: 793e6, format: "gguf", languages: ["tr", "en"], recommended: true },
-            { id: "large-v3-turbo", label: "Whisper Large v3 Turbo", path: "fixture/turbo", installed: false, sizeBytes: 1.5e9, format: "faster-whisper" },
+            {
+              id: "small",
+              label: "Whisper Small",
+              path: "fixture/small",
+              installed: true,
+              sizeBytes: 464e6,
+              format: "faster-whisper",
+            },
+            {
+              id: "gguf-small",
+              label: "Whisper Small",
+              path: "fixture/gguf-small",
+              installed: true,
+              sizeBytes: 257e6,
+              format: "gguf",
+              languages: ["tr", "en"],
+            },
+            {
+              id: "gguf-nemotron",
+              label: "Nemotron Streaming 3.5",
+              path: "fixture/nemotron",
+              installed: false,
+              sizeBytes: 716e6,
+              format: "gguf",
+              languages: ["tr", "en"],
+              recommended: true,
+            },
+            {
+              id: "gguf-medium",
+              label: "Whisper Medium",
+              path: "fixture/medium",
+              installed: false,
+              sizeBytes: 793e6,
+              format: "gguf",
+              languages: ["tr", "en"],
+              recommended: true,
+            },
+            {
+              id: "large-v3-turbo",
+              label: "Whisper Large v3 Turbo",
+              path: "fixture/turbo",
+              installed: false,
+              sizeBytes: 1.5e9,
+              format: "faster-whisper",
+            },
           ];
         if (args.method === "voice.local.modelStatus")
           return voiceFixture === "model-downloading"
-            ? { state: "working", action: "download", id: "gguf-medium", bytesDone: 300e6, bytesTotal: 793e6 }
+            ? {
+                state: "working",
+                action: "download",
+                id: "gguf-medium",
+                bytesDone: 300e6,
+                bytesTotal: 793e6,
+              }
             : { state: "idle" };
         if (args.method === "voice.local.setup") {
           sessionStorage.setItem("fixture-voice-install-request", JSON.stringify(config));

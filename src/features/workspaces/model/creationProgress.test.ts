@@ -16,7 +16,8 @@ vi.mock("./workspaceClient", () => {
 import {
   MAX_POLL_FAILURES,
   finishedStages,
-  useCreationProgress, type CreationProgressView,
+  useCreationProgress,
+  type CreationProgressView,
 } from "./creationProgress";
 import { WorkspaceCapabilityError } from "./workspaceClient";
 

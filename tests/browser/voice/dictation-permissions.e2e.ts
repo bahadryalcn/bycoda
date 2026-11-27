@@ -56,9 +56,7 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&data=worst&surface=settings`,
       );
-      await expect(
-        page.getByRole("switch", { name: "Dictation", exact: true }),
-      ).toBeChecked();
+      await expect(page.getByRole("switch", { name: "Dictation", exact: true })).toBeChecked();
       // One More options holds every rare choice; no nested dictionary or cleanup disclosure.
       await page.getByRole("button", { name: "More options", exact: true }).click();
       await expect(

@@ -9,9 +9,9 @@ const PACKAGE = "@lydell/node-pty";
 /** sha512 integrity of `name@version` as pinned in the lockfile. */
 export function lockedIntegrity(lockfile, name, version) {
   const escaped = `${name}@${version}`.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-  const match = new RegExp(`'${escaped}':\\s*\\n\\s*resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}`).exec(
-    lockfile,
-  );
+  const match = new RegExp(
+    `'${escaped}':\\s*\\n\\s*resolution: \\{integrity: (sha512-[A-Za-z0-9+/=]+)\\}`,
+  ).exec(lockfile);
   if (!match) throw new Error(`${name}@${version} is not pinned in pnpm-lock.yaml`);
   return match[1];
 }

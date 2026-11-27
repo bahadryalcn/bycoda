@@ -8,7 +8,9 @@ it("sizes the box from the scene aspect and uses a frame url for every scene", a
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "matchMedia",
-    vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+    vi
+      .fn()
+      .mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
   );
   const container = document.createElement("div");
   document.body.append(container);
@@ -32,7 +34,9 @@ it("rests on the first frame while the app's decorative motion is off", async ()
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "matchMedia",
-    vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+    vi
+      .fn()
+      .mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
   );
   document.documentElement.dataset.decorativeMotion = "off";
   const container = document.createElement("div");

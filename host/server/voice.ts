@@ -10,7 +10,10 @@ import { assistantDomain } from "../domains/assistant/service";
 import { realtimeSignIns } from "./rpc-voice";
 import type { ServerBindings } from "./bindings";
 export function createVoiceRuntime(
-  dependencies: Pick<ServerBindings, "featureDirectory" | "engine" | "assistant" | "projectsService">,
+  dependencies: Pick<
+    ServerBindings,
+    "featureDirectory" | "engine" | "assistant" | "projectsService"
+  >,
 ) {
   // Cloud voice keys (ElevenLabs) live in their own OS-encrypted vault.
   const voiceCloud = new VoiceCloudCredentials(

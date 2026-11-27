@@ -238,7 +238,9 @@ export function FailureState({
     >
       <div className={styles.content}>
         {brand}
-        {illustration ? <StateIllustration name={illustration} size={context === "panel" ? "panel" : "page"} /> : null}
+        {illustration ? (
+          <StateIllustration name={illustration} size={context === "panel" ? "panel" : "page"} />
+        ) : null}
         <div className={styles.message} role="alert">
           <div className={styles.heading}>
             {icon}

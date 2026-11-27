@@ -3,7 +3,11 @@ import { errorText } from "../../../shared/lib/errors";
 import { boundToolOutput } from "./voiceToolOutput";
 import captureUrl from "./voiceCapture.js?url&no-inline";
 import type { RealtimeProvider, RealtimeSecret } from "./realtimeVoiceClient";
-import { VoiceVad, decodePcmBase64, pcmBase64 } from "../../../shared/model/voice-realtime/voiceVad";
+import {
+  VoiceVad,
+  decodePcmBase64,
+  pcmBase64,
+} from "../../../shared/model/voice-realtime/voiceVad";
 import { removeSpeechFillers, speechTranscript } from "./voiceTranscript";
 import { voiceTools } from "./voiceToolSchemas";
 import { voiceInstructions } from "../../../shared/model/voice-realtime/voiceInstructions";

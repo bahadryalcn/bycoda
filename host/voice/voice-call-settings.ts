@@ -4,10 +4,7 @@ import {
   type VoiceCallSettingsPatch,
   type VoiceCallSettingsResult,
 } from "../../src/shared/model/host-contracts/voice";
-import {
-  DEFAULT_SPEAKERS,
-  SPEAKER_IDS,
-} from "../../src/shared/model/voice-realtime/voiceSpeakers";
+import { DEFAULT_SPEAKERS, SPEAKER_IDS } from "../../src/shared/model/voice-realtime/voiceSpeakers";
 import { voiceLanguageCode } from "../../src/shared/model/voice-realtime/voiceLanguage";
 import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
 

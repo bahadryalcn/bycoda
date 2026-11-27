@@ -102,7 +102,10 @@ export function useCreationProgress(
           }));
           failures += 1;
           if (!(error instanceof WorkspaceCapabilityError) && failures < MAX_POLL_FAILURES)
-            timer = setTimeout(poll, Math.min(POLL_INTERVAL_MS * 2 ** (failures - 1), POLL_RETRY_MAX_MS));
+            timer = setTimeout(
+              poll,
+              Math.min(POLL_INTERVAL_MS * 2 ** (failures - 1), POLL_RETRY_MAX_MS),
+            );
         },
       );
     };

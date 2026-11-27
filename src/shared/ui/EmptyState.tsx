@@ -258,7 +258,8 @@ export function EmptyState({
   const art =
     illustration === false || context === "list"
       ? undefined
-      : (illustration ?? (icon === undefined ? (kind === "filtered" ? "search-empty" : "inbox-empty") : undefined));
+      : (illustration ??
+        (icon === undefined ? (kind === "filtered" ? "search-empty" : "inbox-empty") : undefined));
   const glyph = art ? (
     <StateIllustration name={art} size={context === "page" ? "page" : "panel"} />
   ) : icon !== undefined ? (

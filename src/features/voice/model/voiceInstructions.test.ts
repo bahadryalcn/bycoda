@@ -9,7 +9,10 @@ vi.mock("../../../integrations/harness", () => ({
 }));
 vi.mock("../../../platform/tauri/fs", () => ({ homeDir: vi.fn(async () => "/home") }));
 import { converseWithAssistant } from "./voiceAssistant";
-import { VOICE_SHARED_POLICY, voiceInstructions } from "../../../shared/model/voice-realtime/voiceInstructions";
+import {
+  VOICE_SHARED_POLICY,
+  voiceInstructions,
+} from "../../../shared/model/voice-realtime/voiceInstructions";
 import { buildVoicePrompt } from "../../../shared/model/voice-realtime/voicePrompt";
 import { voiceWorkRefusal } from "./voiceWorkAdmission";
 
@@ -66,7 +69,8 @@ it("keeps absolute paths out of spoken replies by default on every route", () =>
 });
 
 it("tells the assistant to ask instead of going silent after a failure or a dropped turn", async () => {
-  const { VOICE_SHARED_POLICY, voiceInterruptedTurnNotice } = await import("../../../shared/model/voice-realtime/voiceInstructions");
+  const { VOICE_SHARED_POLICY, voiceInterruptedTurnNotice } =
+    await import("../../../shared/model/voice-realtime/voiceInstructions");
   expect(VOICE_SHARED_POLICY).toContain("never ends the turn in silence");
   const notice = voiceInterruptedTurnNotice(`  ${"x".repeat(400)}  `);
   expect(notice).toContain("do not repeat any action until they answer");

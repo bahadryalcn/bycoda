@@ -56,7 +56,9 @@ it("keeps the opaque floating ground on the theme step, never a gray content lif
 });
 
 it("paints every in-window popup backdrop with the theme glass and keeps fallbacks opaque", () => {
-  expect(indexCss).toMatch(/--ui-floating-glass: color-mix\(in oklab, var\(--color-background-base\)/);
+  expect(indexCss).toMatch(
+    /--ui-floating-glass: color-mix\(in oklab, var\(--color-background-base\)/,
+  );
   expect(indexCss).toContain("--ui-frosted-glass: var(--ui-floating-glass);");
   const after = (marker: string) => {
     const start = indexCss.indexOf(marker);

@@ -1,7 +1,4 @@
-import type {
-  AssistantRequest,
-  AssistantResponse,
-} from "../host-contracts/assistant";
+import type { AssistantRequest, AssistantResponse } from "../host-contracts/assistant";
 export const SPOKEN_LANGUAGES = {
   tr: "tr-TR",
   en: "en-US",

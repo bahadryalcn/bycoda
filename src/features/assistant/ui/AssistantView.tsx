@@ -309,21 +309,21 @@ export function AssistantView(props: AssistantViewProps) {
           </Alert>
         )}
         {roomPrivacy.error && showsRoom && canRebuildPrivacy && (
-            <div className={`${shell.notice} ${shell.noticeBody}`}>
-              <InlineMessage tone="info">
-                {t("Review current project visibility before rebuilding Room privacy protection.")}
-              </InlineMessage>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  void rebuildClosedRoomPrivacyProjection().catch(() => {});
-                }}
-              >
-                {t("Rebuild Room privacy protection")}
-              </Button>
-            </div>
-          )}
+          <div className={`${shell.notice} ${shell.noticeBody}`}>
+            <InlineMessage tone="info">
+              {t("Review current project visibility before rebuilding Room privacy protection.")}
+            </InlineMessage>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void rebuildClosedRoomPrivacyProjection().catch(() => {});
+              }}
+            >
+              {t("Rebuild Room privacy protection")}
+            </Button>
+          </div>
+        )}
         {/* Without a snapshot the failure panel below owns the message and the one Try again. */}
         {readError && snapshot && (
           <InlineError
