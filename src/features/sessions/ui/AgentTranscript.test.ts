@@ -61,6 +61,36 @@ describe("AgentTranscript shell commands", () => {
   });
 });
 
+describe("AgentTranscript web search sources", () => {
+  const search: Block = {
+    id: "search",
+    role: "tool",
+    text: "WebSearch",
+    tool: {
+      kind: "search",
+      status: "completed",
+      preview: {
+        kind: "search",
+        title: "WebSearch",
+        query: "club news",
+        sources: [
+          { title: "Club news today", url: "https://news.example/club", domain: "news.example" },
+        ],
+      },
+    },
+  };
+
+  it("keeps the sources of folded web searches visible under the answer", () => {
+    const markup = render([
+      { id: "user", role: "user", text: "News?", startedAt: 1_000, durationMs: 2_000 },
+      search,
+      { id: "answer", role: "assistant", text: "Here is the news." },
+    ]);
+    expect(markup).toContain("data-turn-sources");
+    expect(markup).toContain("Club news today");
+  });
+});
+
 describe("AgentTranscript collapsed work", () => {
   it("offers one Edit from here action for each rewindable historical user message", () => {
     const markup = render(

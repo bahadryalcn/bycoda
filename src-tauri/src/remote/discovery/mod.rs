@@ -5,7 +5,7 @@ use std::{
     collections::HashSet,
     fs,
     io::Read,
-    net::IpAddr,
+    net::{IpAddr, TcpStream, ToSocketAddrs},
     path::PathBuf,
     process::{Command, Stdio},
     sync::mpsc,
@@ -486,7 +486,103 @@ fn discover(app: AppHandle) -> Vec<MachineCandidate> {
         let _ = tx2.send(Source::Inventory(list, added, environments));
     });
     drop(tx);
-    collect_sources(rx, Duration::from_millis(2900))
+    let mut result = collect_sources(rx, Duration::from_millis(2900));
+    probe_reachability(&mut result, Instant::now() + PROBE_TIMEOUT);
+    result
+}
+
+/// Git hosting services answer SSH for repositories, not as computers to add.
+const CODE_HOSTS: &[&str] = &[
+    "github.com",
+    "ssh.github.com",
+    "gitlab.com",
+    "altssh.gitlab.com",
+    "bitbucket.org",
+    "altssh.bitbucket.org",
+    "codeberg.org",
+    "ssh.dev.azure.com",
+    "vs-ssh.visualstudio.com",
+];
+fn is_code_host(c: &MachineCandidate) -> bool {
+    c.routes
+        .iter()
+        .any(|r| CODE_HOSTS.contains(&normalized(&r.address).as_str()))
+}
+
+/// How long one discovery pass waits for SSH ports to answer.
+const PROBE_TIMEOUT: Duration = Duration::from_millis(1200);
+/// shortcut: at most this many rows are probed per pass; raise it when a real list is longer.
+const PROBE_LIMIT: usize = 32;
+
+/// Host and port of a route address: `host`, `host:2222`, `[v6]:2222` or a bare IPv6 address.
+fn socket_target(address: &str) -> (String, u16) {
+    if let Some(rest) = address.strip_prefix('[') {
+        return match rest.split_once("]:") {
+            Some((host, port)) => (host.into(), port.parse().unwrap_or(22)),
+            None => (rest.trim_end_matches(']').into(), 22),
+        };
+    }
+    if address.matches(':').count() == 1 {
+        if let Some((host, port)) = address.rsplit_once(':') {
+            if let Ok(port) = port.parse() {
+                return (host.into(), port);
+            }
+        }
+    }
+    (address.into(), 22)
+}
+fn ssh_port_answers(addresses: &[String], deadline: Instant) -> bool {
+    for address in addresses {
+        let (host, port) = socket_target(address);
+        let Ok(resolved) = (host.as_str(), port).to_socket_addrs() else {
+            continue;
+        };
+        for socket in resolved {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            if TcpStream::connect_timeout(&socket, left).is_ok() {
+                return true;
+            }
+        }
+    }
+    false
+}
+/// Marks rows no other source vouched for as online when their SSH port accepts a connection
+/// before `deadline`. A row that does not answer in time (closed port, other network, stalled
+/// name lookup) is offline for this pass. Saved rows and rows with a known state are skipped.
+fn probe_reachability(list: &mut [MachineCandidate], deadline: Instant) {
+    let (tx, rx) = mpsc::channel();
+    let mut probed = Vec::new();
+    for (index, c) in list
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.online.is_none() && !c.already_added)
+        .take(PROBE_LIMIT)
+    {
+        let addresses: Vec<String> = c
+            .routes
+            .iter()
+            .filter(|r| r.kind != "tunnel")
+            .map(|r| r.address.clone())
+            .collect();
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send((index, ssh_port_answers(&addresses, deadline)));
+        });
+        probed.push(index);
+    }
+    drop(tx);
+    for index in probed {
+        list[index].online = Some(false);
+    }
+    let grace = deadline + Duration::from_millis(50);
+    while let Ok((index, answered)) =
+        rx.recv_timeout(grace.saturating_duration_since(Instant::now()))
+    {
+        list[index].online = Some(answered);
+    }
 }
 fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<MachineCandidate> {
     let end = Instant::now() + timeout;
@@ -514,6 +610,7 @@ fn collect_sources(rx: mpsc::Receiver<Source>, timeout: Duration) -> Vec<Machine
     }
     added.extend(known_ssh_addresses(&known, &added));
     let mut result = merge(all);
+    result.retain(|c| !is_code_host(c));
     for c in &mut result {
         c.already_added = c
             .environment_id
@@ -640,6 +737,55 @@ mod tests {
             known_hosts("|1|hash key\nfoo,bar key\n[server]:2222 key\n"),
             vec!["foo", "bar", "server"]
         );
+    }
+    #[test]
+    fn git_hosts_are_not_computers() {
+        let (tx, rx) = mpsc::channel();
+        let mut alias = candidate("github-work", "ssh-config");
+        alias.routes.push(route("ssh.github.com"));
+        tx.send(Source::Candidates(vec![
+            alias,
+            candidate("box", "ssh-config"),
+        ]))
+        .unwrap();
+        tx.send(Source::KnownHosts("github.com ssh-ed25519 a2V5\n".into()))
+            .unwrap();
+        drop(tx);
+        let keys: Vec<_> = collect_sources(rx, Duration::from_millis(50))
+            .into_iter()
+            .map(|c| c.key)
+            .collect();
+        assert_eq!(keys, vec!["box"]);
+    }
+    #[test]
+    fn route_addresses_split_into_host_and_port() {
+        assert_eq!(socket_target("box"), ("box".into(), 22));
+        assert_eq!(socket_target("box:2222"), ("box".into(), 2222));
+        assert_eq!(
+            socket_target("[2001:db8::1]:2200"),
+            ("2001:db8::1".into(), 2200)
+        );
+        assert_eq!(socket_target("2001:db8::1"), ("2001:db8::1".into(), 22));
+    }
+    #[test]
+    fn probe_marks_answering_ports_online_and_others_offline() {
+        let open = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let closed_port = closed.local_addr().unwrap().port();
+        drop(closed);
+        let mut up = candidate("up", "known-hosts");
+        up.routes = vec![route("127.0.0.1")];
+        up.routes[0].address = format!("127.0.0.1:{}", open.local_addr().unwrap().port());
+        let mut down = candidate("down", "known-hosts");
+        down.routes[0].address = format!("127.0.0.1:{closed_port}");
+        let mut known = candidate("known", "tailscale");
+        known.online = Some(true);
+        let mut saved = candidate("saved", "known-hosts");
+        saved.already_added = true;
+        let mut list = vec![up, down, known, saved];
+        probe_reachability(&mut list, Instant::now() + Duration::from_secs(2));
+        let online: Vec<_> = list.iter().map(|c| c.online).collect();
+        assert_eq!(online, vec![Some(true), Some(false), Some(true), None]);
     }
     #[test]
     fn merges_transitive_routes_and_preserves_tailscale_identity() {

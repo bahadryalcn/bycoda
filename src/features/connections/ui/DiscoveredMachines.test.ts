@@ -187,6 +187,29 @@ it("adds a home-network account computer over SSH when an SSH entry has its addr
   });
 });
 
+it("keeps machines that did not answer in a closed section until it is opened", async () => {
+  await render([
+    native,
+    {
+      ...native,
+      key: "known:10.0.0.9",
+      name: "10.0.0.9",
+      sources: ["known-hosts"],
+      routes: [{ address: "10.0.0.9", kind: "lan" }],
+      online: false,
+    },
+  ]);
+  expect(container.textContent).toContain("box");
+  expect(container.textContent).toContain("Not reachable now");
+  expect(container.textContent).not.toContain("10.0.0.9");
+  const toggle = [...container.querySelectorAll("button")].find((b) =>
+    b.textContent?.includes("Not reachable now"),
+  )!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => toggle.click());
+  expect(container.textContent).toContain("10.0.0.9");
+});
+
 const many = Array.from({ length: 7 }, (_, index) => ({
   ...native,
   key: `ssh:box-${index}`,

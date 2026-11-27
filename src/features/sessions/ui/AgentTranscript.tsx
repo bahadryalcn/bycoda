@@ -123,6 +123,7 @@ import type {
 } from "../../../shared/ui/FloatingButtonGroup";
 import { TurnOutputActions } from "./TranscriptMessageActions";
 import { TurnChangedFiles } from "./TurnChangedFiles";
+import { TurnSearchSources } from "./WebSearchRow";
 import { ResumeTurnRow } from "./ResumeTurnRow";
 import { resumePromptKind } from "../model/resumePrompt";
 import type { ApprovalDecision } from "../../../integrations/harness";
@@ -1175,6 +1176,9 @@ const Turn = memo(function Turn({
   // leaving the prompt and the answer to it.
   const fold = foldableWork(items);
   const folded = fold ? foldedBlocks(items, fold) : [];
+  // Pages the folded web searches returned stay under the answer; the fold runs first, so their
+  // order matches the reply's `[n]` citations.
+  const foldedSearchSources = collectSearchSources(folded);
   // The fold line is the turn's status line from the first token to
   // the last: the mark, and the clock beside it. It never moves, so a
   // turn settling does not shuffle the layout around the answer.
@@ -1449,6 +1453,9 @@ const Turn = memo(function Turn({
               ),
             }))}
         />
+      ) : null}
+      {settled && !workOpen && foldedSearchSources.length ? (
+        <TurnSearchSources sources={foldedSearchSources} />
       ) : null}
       {/* The accessory keeps the pane's props, which go stale once parked. */}
       {latestTurnAccessory ? latestTurnAccessory : null}

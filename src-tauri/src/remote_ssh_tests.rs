@@ -85,6 +85,22 @@ fn job_remains_readable_and_writable_after_mutex_poison() {
 }
 
 #[test]
+fn job_reports_its_flow_and_current_step() {
+    let job = Job::new();
+    let view = serde_json::to_value(job.view()).unwrap();
+    assert_eq!(
+        (view["flow"].as_str(), view["step"].as_str()),
+        (Some("reconnect"), Some("connect"))
+    );
+    job.flow("add");
+    job.step("pair", "Pairing this desktop with the host…");
+    let view = serde_json::to_value(job.view()).unwrap();
+    assert_eq!(view["flow"], "add");
+    assert_eq!(view["step"], "pair");
+    assert_eq!(view["message"], "Pairing this desktop with the host…");
+}
+
+#[test]
 fn setup_falls_back_after_ssh_failure_and_keeps_the_selected_host_key() {
     let primary = SshTarget {
         target: "me@home".into(),

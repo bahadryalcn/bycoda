@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -16,6 +15,7 @@ import "./connections-settings.css";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SshSetupPromptForm } from "./SshSetupPromptForm";
+import { SshSetupProgress } from "./SshSetupProgress";
 import { useConnectionRequestInbox } from "./useConnectionRequestInbox";
 import { useSshSetupJob } from "./useSshSetupJob";
 import { sshSetupSuccessNotice } from "../model/hostLifecycleMode";
@@ -72,7 +72,9 @@ export function ConnectionsSettings() {
         ? "phone"
         : revealed === "connections-sharing"
           ? "tunnels"
-          : revealed === "remote-machines" || revealed === "remote-auto-reconnect"
+          : revealed === "remote-machines" ||
+              revealed === "remote-auto-reconnect" ||
+              revealed === "remote-media"
             ? "machines"
             : null;
     if (next) {
@@ -103,6 +105,8 @@ export function ConnectionsSettings() {
       ...patch,
     }));
   const [connectionName, setConnectionName] = useState("");
+  // The job Stop was pressed for; the card shows "Stopping…" until that job ends.
+  const [stoppingJob, setStoppingJob] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [retryMachine, setRetryMachine] = useState<RemoteMachine>();
@@ -468,29 +472,24 @@ ${next.error}`
             />
           ) : null}
           {busy && jobId && (
-            <Surface variant="card" padding="lg" className="flex flex-col gap-3" ref={progress}>
-              <Text wrap="anywhere" as="div" size="secondary" tone="primary" weight="medium">
-                {connectionName}
-              </Text>
-              <LoadingText delay={false}>{job?.message ?? t("Starting connection…")}</LoadingText>
-              {job?.prompt && (
-                <SshSetupPromptForm key={job.prompt.id} prompt={job.prompt} onRespond={respond} />
-              )}
-              <Button
-                stableWidth
-                type="button"
-                className="self-start"
-                onClick={() => {
-                  if (jobId)
-                    void cancel(jobId).catch((reason) =>
-                      setError(sanitizeConnectionError(errorText(reason))),
-                    );
-                }}
-                variant="ghost"
-              >
-                {t("Stop")}
-              </Button>
-            </Surface>
+            <SshSetupProgress
+              ref={progress}
+              name={connectionName}
+              job={job}
+              stopping={stoppingJob === jobId}
+              onStop={() => {
+                setStoppingJob(jobId);
+                void cancel(jobId).catch((reason) => {
+                  setStoppingJob(undefined);
+                  setError(sanitizeConnectionError(errorText(reason)));
+                });
+              }}
+              prompt={
+                job?.prompt ? (
+                  <SshSetupPromptForm key={job.prompt.id} prompt={job.prompt} onRespond={respond} />
+                ) : null
+              }
+            />
           )}
           {error && !adding && !removing ? (
             <Alert

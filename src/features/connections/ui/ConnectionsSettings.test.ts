@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   machines = [];
-  state = { id: "setup", message: "Installing host…", done: false };
+  state = { id: "setup", message: "Installing host…", flow: "add", step: "install", done: false };
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_machines") return [...machines];
@@ -254,6 +254,30 @@ async function fill(selector: string, value: string) {
   });
 }
 
+it("lists the add steps, marks the current one and shows Stopping after Stop", async () => {
+  state = { ...state, flow: "add", step: "install" };
+  await render();
+  await openAdvanced();
+  await fill(SSH_TARGET, "owner@fixture");
+  await act(async () => button("Connect").click());
+  await poll();
+  const text = container.textContent ?? "";
+  expect(text).toContain("Adding");
+  for (const step of [
+    "Sign in over SSH",
+    "Install bycoda Host",
+    "Pair this desktop",
+    "Open the connection",
+  ])
+    expect(text).toContain(step);
+  // Only the step in progress explains itself.
+  expect(text).toContain("Installs bycoda Host if it is missing, then starts it.");
+  expect(text).not.toContain("Checks the address and your SSH login.");
+  await act(async () => button("Stop").click());
+  expect(container.textContent).toContain("Stopping…");
+  expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
+});
+
 it("closes the add dialog when SSH setup starts and locks the method while a URL connect is pending", async () => {
   await render();
   await openAdvanced();
@@ -421,7 +445,7 @@ it("starts SSH setup from Settings and makes the machine available after native 
     port: null,
     alternate: null,
   });
-  expect(container.textContent).toContain("Installing host…");
+  expect(container.textContent).toContain("Install bycoda Host");
   machines = [machine];
   state = { ...state, done: true, machine };
   await poll();
@@ -475,7 +499,7 @@ it("keeps the SSH address after a failed install and cancels active setup when S
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await openAdvanced();
   expect(document.querySelector<HTMLInputElement>(SSH_TARGET)!.value).toBe("me@home");
-  state = { id: "setup", message: "Connecting…", done: false };
+  state = { id: "setup", message: "Connecting…", flow: "reconnect", step: "open", done: false };
   await act(async () => button("Connect").click());
   await act(async () => root.unmount());
   root = createRoot(container);

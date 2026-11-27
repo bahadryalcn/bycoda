@@ -166,7 +166,11 @@ function MachineSharing({
         <Modal
           title={t("Create link")}
           description={
-            computerPicker ? undefined : t("Share from {p0}", { p0: machineLabel(machine) })
+            computerPicker
+              ? undefined
+              : isLocalSyncMachine(machine)
+                ? t("Share from this computer")
+                : t("Share from {p0}", { p0: machine.name })
           }
           size="md"
           onClose={onShareClose}
@@ -278,7 +282,7 @@ export function ExternalTunnelsPanel({
       {/* Not optional help: every shared link is reachable from the public internet. */}
       <Alert tone="warning">
         {t(
-          "Public internet: tunnels (Cloudflare, ngrok, Tailscale Funnel) share a dev server or this Host with other computers. Anyone on the internet can reach the address. Phones use a tunnel only when you allow it in Devices; Same Wi-Fi and Tailscale (private) stay private.",
+          "Anyone on the internet can open a shared link. Phones use one only if you allow it in Devices. Same Wi-Fi and Tailscale (private) connections are not shared links and stay private.",
         )}
       </Alert>
       {ordered.map((entry) => (
@@ -307,7 +311,9 @@ export function ExternalTunnelsPanel({
           kind="empty"
           illustration={false}
           title={t("No shared links")}
-          description={t("Create a link to share a dev server or this Host over the internet.")}
+          description={t(
+            "Create a link to open a web app or reach this computer from anywhere.",
+          )}
         />
       ) : null}
     </section>

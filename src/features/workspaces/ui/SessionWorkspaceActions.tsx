@@ -17,6 +17,7 @@ import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
 import type { ManagedWorkspace } from "../model/contracts";
 import {
   getWorkspaceCapabilities,
+  hasWorkspaceProject,
   resolveWorkspaceContext,
   workspaceOperationKey,
   workspaceRequest,
@@ -66,7 +67,9 @@ export function SessionWorkspaceActions({
   const authority = useRef<string | null>(null);
   const shown = useRef<ManagedWorkspace | null>(null);
   const attempts = useRef(0);
-  const managedCandidate = enabled && !!cwd && (!!workspaceId || !!session?.worktreeCwd);
+  // A projectless chat may carry a working folder (`worktreeCwd`) but never a managed workspace.
+  const managedCandidate =
+    enabled && hasWorkspaceProject(cwd) && (!!workspaceId || !!session?.worktreeCwd);
   function show(next: ManagedWorkspace | null) {
     shown.current = next;
     setWorkspace(next);

@@ -15,6 +15,7 @@ import {
 } from "./SessionWorkspaceActions";
 import { notifyRemoteRecovered } from "../../connections/model/remoteHealth";
 import { remotePath } from "../../connections/model/remoteProjects";
+import { projectlessMachineProject } from "../../connections/model/sessionMachineTarget";
 import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 
 const connection = vi.hoisted(() => ({ status: "connected", reconnecting: false }));
@@ -22,7 +23,9 @@ vi.mock("../../connections/model/useRemoteConnection", () => ({
   useRemoteConnection: () => connection,
 }));
 
-vi.mock("../model/workspaceClient", () => ({
+vi.mock("../model/workspaceClient", async (importOriginal) => ({
+  hasWorkspaceProject: (await importOriginal<typeof import("../model/workspaceClient")>())
+    .hasWorkspaceProject,
   getWorkspaceCapabilities: vi.fn(),
   workspaceRequest: vi.fn(),
   workspaceOperationKey: () => "operation",
@@ -80,6 +83,18 @@ afterEach(async () => {
   setSessions([]);
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it.each([
+  ["~", "~"],
+  ["a projectless machine chat", projectlessMachineProject("env").key],
+])("shows no workspace error for a chat without a project (%s)", async (_label, cwd) => {
+  setSessions([{ ...newSession("codex", cwd), id: "session", worktreeCwd: "/home/user" }]);
+  await act(async () =>
+    root.render(createElement(SessionWorkspaceActions, { sessionId: "session", cwd })),
+  );
+  expect(workspaceRequest).not.toHaveBeenCalled();
+  expect(container.textContent).toBe("");
 });
 
 it("hydrates the retained managed identity and prevents sending into a removed directory after reload", async () => {
