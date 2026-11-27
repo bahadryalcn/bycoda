@@ -1564,15 +1564,7 @@ function SidebarComponent({
         ? { ...session, pinned: intent.pinned }
         : session;
     });
-  }, [
-    projectSessions,
-    remoteProject,
-    openSessions,
-    sessionFolders,
-    crewManaged,
-    cwd,
-    pinPreview,
-  ]);
+  }, [projectSessions, remoteProject, openSessions, sessionFolders, crewManaged, cwd, pinPreview]);
   // oxlint-disable-next-line bycoda/compiler-owns-memo -- the sidebar cannot compile its lock reads; retain membership and recency while the search text changes
   const filteredSessions = useMemo(() => {
     const filtered = filterSessionsByStatus(

@@ -214,9 +214,7 @@ export function DiscoveredMachines({
           size="inline"
           kind="empty"
           description={
-            unreachable.length > 0
-              ? t("No reachable computers found")
-              : t("No new machines found")
+            unreachable.length > 0 ? t("No reachable computers found") : t("No new machines found")
           }
         />
       ) : null}

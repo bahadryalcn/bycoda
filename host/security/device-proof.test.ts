@@ -164,7 +164,10 @@ describe("requireDeviceProof", () => {
     expect((await gate(request(), TOKEN)).ok).toBe(false);
     expect((await gate(request(sign({ seed: seedOf(8) })), TOKEN)).ok).toBe(false);
     // Neither does the check the client signs before it has saved the credential.
-    expect(await gate(request(sign({ unsaved: true })), TOKEN)).toEqual({ ok: true, unsaved: true });
+    expect(await gate(request(sign({ unsaved: true })), TOKEN)).toEqual({
+      ok: true,
+      unsaved: true,
+    });
     expect(completeReplacement).not.toHaveBeenCalled();
     // A failed retirement does not fail the request and is tried again on the next one.
     expect(await gate(request(sign()), TOKEN)).toEqual({ ok: true });
@@ -358,7 +361,9 @@ describe("Host enforces device proofs", () => {
     const describe = (seed: Uint8Array, token: string) =>
       s.signed(s.directPort, seed, token, "environment.describe");
     // Issued but not in use: a stolen new token without its key retires nothing.
-    expect((await s.call(s.directPort, replacement.token, "environment.describe")).status).toBe(401);
+    expect((await s.call(s.directPort, replacement.token, "environment.describe")).status).toBe(
+      401,
+    );
     expect((await describe(earlierSeed, replacement.token)).status).toBe(401);
     expect((await describe(earlierSeed, earlier.token)).status).toBe(200);
     // The check before the phone saves the new credential works and still retires nothing, so a

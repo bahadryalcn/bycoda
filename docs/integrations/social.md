@@ -694,6 +694,8 @@ records remain informational data that the owner can read and edit.
 - **Sequences** are ordered steps (message, email, comment) with waits between them.
   Enrollments hold the state for each person. `sequences.start`, `sequences.pause` and
   `sequences.stats` manage them. Each send step goes through the same gates as any other send.
+  Unexpected errors before a step advances delay that enrollment by 1, 2, 4 and 8 minutes.
+  A fifth consecutive error marks the enrollment failed. Other due enrollments can proceed.
 - **Pacing** limits how fast a sequence advances per account and channel. Pacing does not
   override platform limits or daily limits.
 - **Email** uses SMTP through `nodemailer` (`smtp-sender`), Resend and Postmark over HTTPS
