@@ -29,6 +29,7 @@ import {
   PanelLeft,
   PanelRight,
   RefreshCw,
+  Undo2,
 } from "../../../shared/ui/icons";
 import {
   Suspense,
@@ -1697,6 +1698,23 @@ function ChangedFiles({
                 view={view}
                 onToggleView={toggleView}
                 headerActions={[
+                  {
+                    get title() {
+                      return t("Open All Changes");
+                    },
+                    icon: <FileDiff className="icon-sm" strokeWidth={1.75} />,
+                    onClick: () => onOpenAllChanges("unstaged"),
+                  },
+                  {
+                    get title() {
+                      return deferredFileQuery
+                        ? t("Discard {p0} shown", { p0: visibleUnstaged.length })
+                        : t("Discard All Changes");
+                    },
+                    icon: <Undo2 className="icon-sm" strokeWidth={1.75} />,
+                    danger: true,
+                    onClick: () => void runAll("discard"),
+                  },
                   {
                     get title() {
                       return deferredFileQuery

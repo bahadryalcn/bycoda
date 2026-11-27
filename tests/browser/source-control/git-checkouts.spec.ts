@@ -62,6 +62,33 @@ for (const theme of ["light", "dark"])
     });
 
 for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`Changes header shows bulk actions as icons ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        "/tests/browser/source-control/git-workspace.html?action-feedback&file-typography",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const open = page.getByRole("button", { name: "Open All Changes", exact: true });
+      await expect(open).toBeVisible();
+      const actions = open.locator("..");
+      await expect(actions.getByRole("button", { name: "Filter changed files" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "Discard All Changes" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "Stage all changes" })).toBeVisible();
+      await expect(actions.getByRole("button", { name: "More actions" })).toHaveCount(0);
+
+      const evidence = "temp/verification/changes-header";
+      mkdirSync(evidence, { recursive: true });
+      await actions.locator("..").screenshot({
+        path: `${evidence}/icons-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+
+for (const theme of ["light", "dark"])
   test(`file names share typography and paths stay secondary ${theme}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(
