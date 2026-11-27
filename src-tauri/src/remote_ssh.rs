@@ -214,6 +214,10 @@ pub struct Prompt {
 pub struct JobView {
     pub id: String,
     pub message: String,
+    /// What the job does: `add`, `update` or `reconnect`. The UI lists that flow's steps.
+    pub flow: &'static str,
+    /// The step in progress: `connect`, `install`, `update`, `pair` or `open`.
+    pub step: &'static str,
     pub prompt: Option<Prompt>,
     pub done: bool,
     pub error: Option<String>,
@@ -235,6 +239,8 @@ impl Job {
                 view: JobView {
                     id: uuid::Uuid::new_v4().to_string(),
                     message: "Connecting to SSH and setting up bycoda Host…".into(),
+                    flow: "reconnect",
+                    step: "connect",
                     prompt: None,
                     done: false,
                     error: None,
@@ -259,6 +265,20 @@ impl Job {
             .unwrap_or_else(|error| error.into_inner())
             .view
             .message = text.into();
+    }
+    /// Sets the flow once, when the job starts.
+    pub fn flow(&self, flow: &'static str) {
+        self.inner
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .view
+            .flow = flow;
+    }
+    /// Moves to the next step; `text` is the English fallback for callers without step copy.
+    pub fn step(&self, step: &'static str, text: &str) {
+        let mut inner = self.inner.lock().unwrap_or_else(|error| error.into_inner());
+        inner.view.step = step;
+        inner.view.message = text.into();
     }
     pub fn background_service_enabled(&self) {
         self.inner
@@ -547,7 +567,7 @@ pub fn detect_platform(
     job: &Arc<Job>,
     askpass: &Askpass,
 ) -> Result<(HostPlatform, SshTarget), String> {
-    job.message("Checking the machine…");
+    job.step("connect", "Checking the machine…");
     detect_platform_from_dials(dial_order(target), job, |dial| {
         run_remote_command(
             dial,

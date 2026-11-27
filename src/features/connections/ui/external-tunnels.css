@@ -15,13 +15,6 @@
   min-inline-size: 0;
 }
 
-.external-tunnel-choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  align-items: start;
-  gap: var(--ui-space-3);
-}
-
 .external-tunnel-main {
   display: grid;
   gap: var(--ui-space-1);

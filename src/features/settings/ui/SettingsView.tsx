@@ -56,11 +56,9 @@ import {
 import { SettingsSearch } from "./SettingsSearch";
 import { settingsRevealControl } from "./settingsReveal";
 import { GeneralPage, HelpSettings } from "./GeneralSettings";
-import { RemoteMediaSettings } from "./RemoteMediaSettings";
 import { SessionFolderGroup } from "./SessionFolderSettings";
 import { NewProjectFolderGroup } from "./NewProjectFolderSettings";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
-import { Disclosure } from "../../../shared/ui/Disclosure";
 import { LegalDocuments } from "./PoliciesSettings";
 import { NotificationAlerts } from "./NotificationsSettings";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
@@ -559,9 +557,6 @@ export function SettingsView({
                         {section === "connections" ? (
                           <div className="settings-topics">
                             <ConnectionsSettings />
-                            <Disclosure summary={t("Advanced")} variant="row">
-                              <RemoteMediaSettings />
-                            </Disclosure>
                           </div>
                         ) : null}
                         {section === "appearance" ? (
