@@ -223,7 +223,7 @@ export function parseDeviceInstallId(value: unknown): string | undefined {
     : undefined;
 }
 
-export type DeviceProofFailure ="malformed" | "key" | "signature" | "claims" | "stale";
+export type DeviceProofFailure = "malformed" | "key" | "signature" | "claims" | "stale";
 
 export type VerifyDeviceProofInput = {
   proof: string;

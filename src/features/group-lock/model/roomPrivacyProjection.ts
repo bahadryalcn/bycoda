@@ -45,7 +45,9 @@ const NATIVE_NOT_SENT =
 /** Failures the drain retries on its own under the original operation identity. */
 function isReconcilable(error: unknown): boolean {
   const text = errorText(error);
-  return isRoomPrivacyHostBusy(error) || NATIVE_RESULT_LOST.test(text) || NATIVE_NOT_SENT.test(text);
+  return (
+    isRoomPrivacyHostBusy(error) || NATIVE_RESULT_LOST.test(text) || NATIVE_NOT_SENT.test(text)
+  );
 }
 let wakeBackoff: (() => void) | null = null;
 let ready = false;

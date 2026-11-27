@@ -554,30 +554,28 @@ it("refuses a change whose begin was interrupted and reconciles that begin in th
   }
 });
 
-it.each([
-  UNDISPATCHED,
-  "RPC_WS_UNAVAILABLE: Host connection is unavailable before dispatch",
-])("replays a begin that was settled unsent before dispatch instead of holding it: %s", async (
-  message,
-) => {
-  const model = await startInterrupted(
-    (command, call) => command === "control_privacy_projection_begin" && call === 1,
-    message,
-  );
-  try {
-    const refused = expect(model.withRoomPrivacyMutation(() => "unlocked")).rejects.toThrow(
+it.each([UNDISPATCHED, "RPC_WS_UNAVAILABLE: Host connection is unavailable before dispatch"])(
+  "replays a begin that was settled unsent before dispatch instead of holding it: %s",
+  async (message) => {
+    const model = await startInterrupted(
+      (command, call) => command === "control_privacy_projection_begin" && call === 1,
       message,
     );
-    await vi.advanceTimersByTimeAsync(0);
-    await refused;
-    await vi.advanceTimersByTimeAsync(0);
-    expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
-    await expect(model.withRoomPrivacyMutation(() => "next")).resolves.toBe("next");
-  } finally {
-    model.deactivateRoomPrivacyProjection();
-    vi.useRealTimers();
-  }
-});
+    try {
+      const refused = expect(model.withRoomPrivacyMutation(() => "unlocked")).rejects.toThrow(
+        message,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await refused;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
+      await expect(model.withRoomPrivacyMutation(() => "next")).resolves.toBe("next");
+    } finally {
+      model.deactivateRoomPrivacyProjection();
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("stops waiting to retry when the window deactivates", async () => {
   const model = await startBusy(() => new Error(BUSY));
