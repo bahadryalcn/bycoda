@@ -4,6 +4,7 @@ import {
   CAPTURE_REQUEST_MS,
   ConversationDesktopRelay,
   DESKTOP_RELAY_STALE_MS,
+  SESSION_FULL_ACCESS_ACTIONS,
 } from "./conversation-desktop-relay";
 
 const principal = {
@@ -571,4 +572,15 @@ it("answers the session Full access query for task and inbox approvals only", as
     await relay.authorize(String(request.id), "terminals.create.permission", "native"),
   ).toEqual({ authorized: false });
   relay.close();
+});
+
+it("lets native send every Full access permission query the relay answers", () => {
+  // Native validates against this contract before sending; a missing action rejected the
+  // query with RPC_WS_VALIDATION and blocked every agent inbox comment.
+  const schema =
+    NATIVE_SERVICES_RPC_SCHEMAS["native.services.conversation.desktop.authorize"].params;
+  for (const action of SESSION_FULL_ACCESS_ACTIONS)
+    expect(schema.safeParse({ id: "r", action: `${action}.permission` }).success, action).toBe(
+      true,
+    );
 });
