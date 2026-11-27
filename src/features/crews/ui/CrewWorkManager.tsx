@@ -171,7 +171,7 @@ export function CrewWorkManager({
   const coordinatorInline = !!(selected?.coordinatorSessionId && renderCoordinator);
   return (
     <>
-      <div className="@container/crew-management min-w-0" aria-busy={pending}>
+      <div className="@container/crew-management flex min-w-0 flex-1 flex-col" aria-busy={pending}>
         <div className="flex flex-wrap items-end gap-2 px-4 pb-2 pt-2 empty:hidden">
           {scope.picker(pending)}
           {/* Read-only work view: the project is chosen elsewhere, shown only when scoped away from home. */}
@@ -206,7 +206,7 @@ export function CrewWorkManager({
           </InlineMessage>
         ) : null}
         {!data ? (
-          <div className="p-4">
+          <div className="flex flex-1 flex-col p-4">
             {state.visibleError ? (
               <FailureState
                 context="panel"
@@ -220,7 +220,7 @@ export function CrewWorkManager({
             )}
           </div>
         ) : noWork ? (
-          <div className="px-4 pb-4">
+          <div className="flex flex-1 flex-col px-4 pb-4">
             {data.catalogError || (state.visibleError && !refreshShownCentrally) ? (
               <div className="pb-3">
                 <InlineError
@@ -234,7 +234,12 @@ export function CrewWorkManager({
                 <FailureAlert title={actionError.title} detail={actionError.detail} />
               </div>
             ) : null}
-            <EmptyState context="panel" kind="empty" title={t("No crew work yet")} />
+            <EmptyState
+              context="panel"
+              kind="empty"
+              title={t("No crew work yet")}
+              description={t("Start work with a crew and its progress appears here.")}
+            />
           </div>
         ) : (
           <div

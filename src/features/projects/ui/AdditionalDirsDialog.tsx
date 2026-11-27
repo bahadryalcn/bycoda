@@ -90,13 +90,14 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
       ) : null}
       {candidates.length === 0 ? (
         <EmptyState
+          illustration={false}
           description={t("Put this project in a group with other projects to offer them here.")}
         />
       ) : visible.length === 0 ? (
         <EmptyState
           context="panel"
           kind="filtered"
-          icon={null}
+          illustration={false}
           description={t("No folders match your search.")}
           onReset={() => setQuery("")}
           resetLabel={t("Clear search")}

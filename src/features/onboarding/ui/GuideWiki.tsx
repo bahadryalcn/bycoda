@@ -142,6 +142,7 @@ export function GuideWiki({
             context="panel"
             kind="filtered"
             title={t("No results")}
+            description={t("Try a different search or clear the filters.")}
             onReset={() => setQuery("")}
             resetLabel={t("Clear search")}
           />

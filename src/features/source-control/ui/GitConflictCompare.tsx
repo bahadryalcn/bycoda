@@ -124,7 +124,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
         </div>
       ) : load.status === "error" ? (
         shownCentrally ? null : (
-          <div className="grid flex-1 place-items-center p-6">
+          <div className="flex min-h-0 flex-1 flex-col">
             <FailureState
               context="panel"
               title={t("Couldn’t load the versions")}

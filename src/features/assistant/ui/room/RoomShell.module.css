@@ -1,4 +1,4 @@
-/* Room shell: header, tab row, notices, status popovers and the setup prompt. */
+/* Room shell: header, tab row, notices, status popovers. */
 
 /* The room is the pane: every breakpoint inside it (shell, tabs, Today, Conversations, History,
    Memory) queries this container, not the window, so an open side panel narrows the layout too. */
@@ -89,21 +89,13 @@
   margin: 0 var(--ui-space-4) var(--ui-space-2);
   overflow-wrap: anywhere;
 }
-.empty {
-  margin: 0;
+/* Body region before the room is usable (loading, failure, first-run setup): centered in the remaining height. */
+.stage {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  min-block-size: 0;
   padding: var(--ui-space-4);
-}
-
-/* First run: a short prompt on the canvas. */
-.setupPrompt {
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  gap: var(--ui-space-3);
-  inline-size: 100%;
-  max-inline-size: 560px;
-  margin-inline: auto;
-  padding: var(--ui-space-10) var(--ui-space-5);
 }
 
 /* Status popovers (assistant status, presence, filter). */

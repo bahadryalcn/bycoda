@@ -109,7 +109,11 @@ export function TikTokPrivacy({
         </InlineMessage>
       )}
       {draft && !Object.keys(draft).length && (
-        <EmptyState context="panel" title={t("Privacy settings unavailable")} />
+        <EmptyState
+          context="panel"
+          illustration={false}
+          title={t("Privacy settings unavailable")}
+        />
       )}
       {draft && Object.keys(draft).length > 0 && (
         <div className="tiktok-panel">

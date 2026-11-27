@@ -82,7 +82,9 @@ function OwnerSecretsInventory({ hostId, scope }: { hostId: string; scope: Setti
   if (groups.length === 0)
     return (
       <EmptyState
+        context="panel"
         kind="empty"
+        illustration="locked"
         title={t("No saved secrets")}
         description={t(
           "Agents ask for credentials in the chat. Secrets you save there appear here.",

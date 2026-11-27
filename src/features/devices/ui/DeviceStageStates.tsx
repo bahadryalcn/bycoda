@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Smartphone } from "../../../shared/ui/icons";
+import { StateIllustration } from "../../../shared/ui/StateIllustration";
 import type { DeviceSummary } from "../types";
 
 /** The one "how to connect a device" help, shared by the connect and no-device states. */
@@ -69,7 +70,7 @@ export function DeviceConnectState({
       leading="inherit"
       className="device-panel-state device-panel-connect"
     >
-      <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
+      <StateIllustration name="connect-computer" size="panel" />
       <div className="flex items-center gap-1">
         <Text
           as="p"
@@ -179,7 +180,7 @@ function DeviceNoDevicesState({
       leading="inherit"
       className="device-panel-state device-panel-connect"
     >
-      <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
+      <StateIllustration name="no-sessions" size="panel" />
       <div className="flex items-center gap-1">
         <Text
           as="p"

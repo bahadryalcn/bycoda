@@ -171,6 +171,7 @@ export function TodayView() {
           {/* A failed read is explained by the alert above; it must not read as "no activity". */}
           {failed ? null : (
             <EmptyState
+              context="panel"
               kind="empty"
               description={
                 loadedPeriod === "today"

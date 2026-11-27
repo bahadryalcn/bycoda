@@ -41,6 +41,7 @@ export function TasksViewEmpty({
       <FailureState
         context="panel"
         title={t("Tasks unavailable")}
+        illustration="unreachable"
         description={unreadable}
         onRetry={onRetry}
         retrying={retrying}
@@ -51,6 +52,8 @@ export function TasksViewEmpty({
       <EmptyState
         context="panel"
         title={t("No tasks in this sprint")}
+        description={t("Add tasks from the backlog to plan this sprint.")}
+        illustration="no-sessions"
         action={onBacklog ? { label: t("Browse tasks"), onClick: onBacklog } : undefined}
       />
     );
@@ -59,7 +62,7 @@ export function TasksViewEmpty({
       <EmptyState
         context="panel"
         kind="filtered"
-        icon={null}
+        illustration="search-empty"
         description={t("No tasks match your search or filters.")}
         onReset={onReset}
       />
@@ -69,7 +72,7 @@ export function TasksViewEmpty({
       <EmptyState
         context="panel"
         kind="empty"
-        icon={null}
+        illustration="success"
         description={t("Every task is planned in a sprint.")}
         action={{ label: t("Sprints"), onClick: onSprints }}
       />
@@ -84,5 +87,13 @@ export function TasksViewEmpty({
         onCreateEpic={onCreateEpic}
       />
     );
-  return <EmptyState context="panel" kind="empty" title={t("No tasks yet")} />;
+  return (
+    <EmptyState
+      context="panel"
+      kind="empty"
+      title={t("No tasks yet")}
+      description={t("Tasks will appear here once they are created.")}
+      illustration="inbox-empty"
+    />
+  );
 }

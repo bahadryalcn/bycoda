@@ -156,7 +156,7 @@ export function CrewsPage({
         <div {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "px-3 py-1.5")}>
           <TabList label={t("Crews sections")} items={crewsTabs()} />
         </div>
-        <TabPanel className="min-h-0 w-full max-w-336 flex-1 self-center overflow-y-auto">
+        <TabPanel className="flex min-h-0 w-full max-w-336 flex-1 flex-col self-center overflow-y-auto">
           {tab === "work" ? <CrewsActive known={known} onOpenSession={onOpenSession} /> : null}
           <CrewsLoadState state={state} noProject={noProject}>
             {(data) =>
@@ -168,7 +168,7 @@ export function CrewsPage({
                   onOpenSession={onOpenSession}
                 />
               ) : tab === "members" ? (
-                <div className="settings-topics p-4">
+                <div className="settings-topics flex-1 p-4">
                   <CrewLibrary
                     cwd={cwd}
                     state={state}

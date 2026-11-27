@@ -122,7 +122,9 @@ export function CrewCoordinatorSession({
       )}
     </Alert>
   ) : null;
-  if (!loaded || !session) return errorNotice ?? <LoadingText>{t("Loading session…")}</LoadingText>;
+  if (!loaded || !session) return errorNotice ?? (
+      <LoadingText layout="fill">{t("Loading session…")}</LoadingText>
+    );
   return (
     <>
       {dialog}

@@ -6,6 +6,12 @@
   margin: 0 auto;
   padding: var(--space-4);
 }
+/* Loading or unavailable account: the one message centers in the pane height. */
+.screen[data-state="centered"] {
+  justify-content: center;
+  block-size: 100%;
+  min-block-size: 0;
+}
 
 .header {
   display: flex;

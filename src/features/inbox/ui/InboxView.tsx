@@ -14,6 +14,7 @@ import "./InboxView.css";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { FailureState } from "../../../shared/ui/FailureState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { InboxGithubListControls, type InboxListLayout } from "./InboxGithubListControls";
@@ -898,7 +899,7 @@ export function InboxView({
           {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}
         </InlineMessage>
       ) : null}
-      {sourceError ? (
+      {sourceError && visibleItems.length > 0 ? (
         <InboxLoadError
           error={sourceError}
           retrying={refreshAction === "retry"}
@@ -909,7 +910,9 @@ export function InboxView({
       <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-hidden flex flex-col">
         {noSourcesConnected ? (
           <EmptyState
-            icon={<Inbox aria-hidden="true" />}
+            context="panel"
+            illustration="connect-computer"
+            title={t("No inbox source connected")}
             description={
               pullRequestsOnly
                 ? t("Connect GitHub, GitLab or Azure DevOps to view pull requests.")
@@ -921,9 +924,16 @@ export function InboxView({
                 : undefined
             }
           />
-        ) : sourceError && visibleItems.length === 0 ? null : loading &&
-          visibleItems.length === 0 ? (
-          <LoadingText inset="panel" className="justify-center" />
+        ) : sourceError && visibleItems.length === 0 ? (
+          <FailureState
+            context="panel"
+            title={t("Could not load.")}
+            error={sourceError}
+            onRetry={() => requestRefresh("retry", source === "github")}
+            retrying={refreshAction === "retry"}
+          />
+        ) : loading && visibleItems.length === 0 ? (
+          <LoadingText layout="fill" />
         ) : visibleItems.length === 0 &&
           !(source === "jira" && collection.jiraContinuation.hasMore) ? (
           !pullRequestsOnly &&
@@ -932,7 +942,9 @@ export function InboxView({
           !(source !== "github" && activeFilters.assignedToMe) ? (
             <EmptyState
               kind="empty"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="no-projects"
+              title={t("No project open")}
               description={t("Open a project to fill the inbox")}
               action={
                 onOpenProject
@@ -943,7 +955,9 @@ export function InboxView({
           ) : pullRequestsOnly && needsLocalProject && projects.length === 0 ? (
             <EmptyState
               kind="empty"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="no-projects"
+              title={t("No project open")}
               description={t("Add a project to see its repository's pull requests.")}
               action={
                 onOpenProject
@@ -954,7 +968,8 @@ export function InboxView({
           ) : narrowed ? (
             <EmptyState
               kind="filtered"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="search-empty"
               description={t("No loaded items match these filters.")}
               onReset={resetNarrowing}
               resetLabel={t("Clear filters")}
@@ -962,7 +977,9 @@ export function InboxView({
           ) : (
             <EmptyState
               kind="empty"
-              icon={<Inbox aria-hidden="true" />}
+              context="panel"
+              illustration="success"
+              title={t("All clear")}
               description={t("No items to show.")}
             />
           )

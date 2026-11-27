@@ -1188,6 +1188,7 @@ function ProjectDevServersPanel({
       ) : null}
       {scan && scan.servers.length === 0 && !scanError ? (
         <EmptyState
+          context="panel"
           kind="empty"
           description={t("No servers found")}
           action={{
@@ -1198,6 +1199,7 @@ function ProjectDevServersPanel({
         />
       ) : scan && visibleServers.length === 0 && query ? (
         <EmptyState
+          context="panel"
           kind="filtered"
           description={t("No matching servers")}
           onReset={() => setSearch("")}

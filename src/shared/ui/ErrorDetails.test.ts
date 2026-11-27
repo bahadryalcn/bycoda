@@ -134,3 +134,13 @@ it("prefers the plain summary and still offers the raw text", async () => {
   await act(async () => trigger().click());
   expect(dialog()?.querySelector("pre")?.textContent).toBe("ECONNRESET");
 });
+
+it("keeps the icon-only copy control in the header row beside the title", async () => {
+  await act(async () => root.render(createElement(ErrorDetails, { detail: "boom" })));
+  await act(async () => trigger().click());
+  const copy = inDialog("Copy details")!;
+  const header = copy.parentElement!;
+  expect(header.textContent).toContain("Technical details");
+  expect(header.className).not.toContain("flex-wrap");
+  expect(copy.textContent?.trim()).toBe("");
+});

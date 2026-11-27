@@ -11,8 +11,9 @@ import styles from "./empty-state.module.css";
 /**
  * Where the state sits. `page` fills an area and centres generously (default);
  * `panel` is a compact centred block inside a side panel or card; `list` is a
- * start-aligned row for a list that has no entries. The primitive only changes
- * density: whether the copy means no data, no match or unavailable is the caller's.
+ * start-aligned row for a list that has no entries. `page` and `panel` fill the free space
+ * of their parent and centre their content both ways: the parent must give them the remaining
+ * height (flex column / grid with `min-block-size: 0`). The primitive only changes density: whether the copy means no data, no match or unavailable is the caller's.
  */
 export type EmptyStateContext = "page" | "panel" | "list";
 

@@ -15,6 +15,7 @@ import { optionalTextAttributes } from "./Text";
 import { InfoTooltip } from "./InfoPopover";
 import { Search } from "./icons";
 import { useT } from "../i18n";
+import { StateIllustration, type IllustrationName } from "./StateIllustration";
 import styles from "./EmptyState.module.css";
 
 export type { EmptyStateContext } from "./arc/empty-state/empty-state";
@@ -41,6 +42,12 @@ export type SharedEmptyStateProps = Omit<ArcEmptyStateProps, "action" | "help"> 
    * keeps its `context` padding), `row` (8/12, inside a list row or form), `panel` (12/16).
    */
   inset?: StateInset;
+  /**
+   * Block page and panel only: pixel-guide scene above the title, 144 px (page) or 96 px (panel).
+   * Unset picks "search-empty" for a `filtered` kind and "inbox-empty" otherwise; an explicit `icon`
+   * replaces that default; `false` shows no mascot. `list` context and `inline` size never show one.
+   */
+  illustration?: IllustrationName | false;
   /** Distinguishes no data from a filter with no match for assistive tech and styling. */
   kind?: EmptyStateKind;
   /** The one next step, rendered as a button in a block or a text link inline. */
@@ -50,9 +57,9 @@ export type SharedEmptyStateProps = Omit<ArcEmptyStateProps, "action" | "help"> 
   /** Escape for one non-button control after the actions (a menu or split trigger). */
   extra?: ReactNode;
   /**
-   * Keeps the description visible under the title. By default a titled state puts its description
-   * behind the info affordance; set this only when the sentence states scope or consequence (a
-   * `filtered` state always shows it). Without a title the description is the message and shows.
+   * Keeps the description visible under the title. Page and panel states always show it (default
+   * true); a titled `list` state puts it behind the info affordance unless this is set or the kind
+   * is `filtered`. Without a title the description is the message and shows.
    * `size="inline"` shows the sentence under the title by default; `false` tucks it behind the info glyph.
    */
   showDescription?: boolean;
@@ -170,12 +177,15 @@ function InlineEmptyState({
 /**
  * Block (page, panel or list `context`) or inline caption row explaining why nothing is shown:
  * title, one sentence and the next step (`action`, `secondaryAction`, `onReset` for a filter,
- * `onRetry`). A titled block state keeps its sentence behind the info affordance unless `showDescription`
- * (or a `filtered` kind) says it states scope or consequence; an inline state shows it under the title unless `showDescription={false}`.
- * Pass only `description` for a plain one-line caption (no bold title). `kind` sets the glyph and live role; no
- * glyph is drawn unless `icon` is passed (a filtered state gets the search glyph). `inset` sets inner spacing.
+ * `onRetry`). Page and panel states show the sentence under the title; a titled
+ * `list` state keeps it behind the info affordance unless `showDescription` (or a `filtered` kind). `kind` sets the glyph and live role; page and
+ * panel show a mascot by default (see `illustration`), otherwise no glyph unless `icon` is passed. Page and
+ * panel fill the free space of their parent and centre in it: the parent must give them the remaining
+ * height (flex column / grid with `min-block-size: 0`). `inset` sets inner spacing.
+ * An inline state shows the sentence under the title unless `showDescription={false}`; pass only
+ * `description` for a plain one-line caption (no bold title).
  * @group feedback
- * @use A list, panel or picker with no data or no filter matches. `size="inline"` replaces a bare "No ..." paragraph.
+ * @use A list, panel or picker with no data or no filter matches. `size="inline"` replaces a bare "No ..." paragraph. `illustration` picks another mascot scene or `false` drops it.
  * @avoid Loading: LoadingText or Skeleton. Unavailable or failed region: FailureState. Inline failure: InlineError. A one-line field or row message: InlineMessage. Boxed notice with a title: Alert. Never a Button in `action`.
  * @action Pass `action={{ label, onClick }}` (+ `secondaryAction`); the component renders it.
  * @arc empty-state
@@ -185,6 +195,7 @@ export function EmptyState({
   size = "block",
   inset,
   kind,
+  illustration,
   action,
   secondaryAction,
   extra,
@@ -234,12 +245,27 @@ export function EmptyState({
         {extra}
       </>
     ) : undefined;
-  // A titled state keeps its sentence behind the info affordance unless it states scope.
+  const context = props.context ?? "page";
   const hasDescription = description !== undefined && description !== null && description !== "";
-  const tucked = Boolean(title) && hasDescription && !showDescription && kind !== "filtered";
-  // A hidden match must not wear the "nothing here" folder glyph.
-  const glyph =
-    icon !== undefined ? icon : kind === "filtered" ? <Search aria-hidden /> : undefined;
+  // Only a titled list row keeps its sentence behind the info affordance, unless it states scope.
+  const tucked =
+    context === "list" &&
+    Boolean(title) &&
+    hasDescription &&
+    !showDescription &&
+    kind !== "filtered";
+  // The mascot leads a page or panel; a filtered match must not wear the "nothing here" scene.
+  const art =
+    illustration === false || context === "list"
+      ? undefined
+      : (illustration ?? (icon === undefined ? (kind === "filtered" ? "search-empty" : "inbox-empty") : undefined));
+  const glyph = art ? (
+    <StateIllustration name={art} size={context === "page" ? "page" : "panel"} />
+  ) : icon !== undefined ? (
+    icon
+  ) : kind === "filtered" && context === "list" ? (
+    <Search aria-hidden />
+  ) : undefined;
   return (
     <ArcEmptyState
       {...props}

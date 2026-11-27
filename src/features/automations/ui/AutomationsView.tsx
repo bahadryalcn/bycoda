@@ -519,6 +519,7 @@ function AutomationsContent({
               title={t("Automations")}
               description={t("Focus this window to load automations.")}
               showDescription
+              illustration="chat-empty"
             />
           ) : loading && !editorDraft ? (
             <div className="min-h-0 flex-1">
@@ -604,6 +605,7 @@ function AutomationsContent({
           ) : readFailed && !hasAutomations ? (
             <FailureState
               title={t("Automations unavailable")}
+              illustration="unreachable"
               description={t("Automations could not be read.")}
               error={host.error ?? localQuery.error}
               onRetry={
@@ -619,7 +621,8 @@ function AutomationsContent({
           ) : (
             <EmptyState
               kind="empty"
-              description={t("No automations yet")}
+              title={t("No automations yet")}
+              description={t("Create an automation to run an agent on a schedule.")}
               showDescription
               action={{ label: t("New automation"), onClick: () => void beginNew() }}
             />

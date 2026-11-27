@@ -37,7 +37,6 @@ import {
   Play,
   RefreshCw,
   Search,
-  Terminal,
   Square,
 } from "../../shared/ui/icons";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
@@ -1040,12 +1039,7 @@ function ScopedRuntimeLogsPanel({
             </ol>
           ) : error && !loaded ? (
             <FailureState
-              icon={
-                <>
-                  <Globe className="icon-lg" />
-                  <Terminal className="icon-lg" />
-                </>
-              }
+              illustration="unreachable"
               title={t("Runtime logs")}
               description={empty}
               action={emptyAction}
@@ -1055,12 +1049,7 @@ function ScopedRuntimeLogsPanel({
             />
           ) : (
             <EmptyState
-              icon={
-                <>
-                  <Globe className="icon-lg" />
-                  <Terminal className="icon-lg" />
-                </>
-              }
+              illustration={buffer.entries.length && !filteredCount ? "search-empty" : "inbox-empty"}
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
               description={empty}
               kind={buffer.entries.length && !filteredCount ? "filtered" : "empty"}

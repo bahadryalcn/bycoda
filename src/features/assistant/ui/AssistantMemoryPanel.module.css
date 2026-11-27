@@ -3,6 +3,8 @@
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
+  /* An empty memory centers its state in the pane height left under the header. */
+  flex: 1 1 auto;
   gap: var(--ui-space-4);
 }
 .header {

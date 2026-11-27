@@ -30,9 +30,6 @@
   overflow-wrap: anywhere;
   margin: 0;
 }
-.empty {
-  margin: 0;
-}
 .feedback {
   padding: var(--ui-space-3) var(--ui-space-4);
 }

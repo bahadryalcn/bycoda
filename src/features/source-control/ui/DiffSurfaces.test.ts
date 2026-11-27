@@ -277,7 +277,7 @@ it.each(["working", "session"])("clears the %s load error and retries", async (k
   await act(async () => root.render(render("/other")));
   expect(container.textContent).toContain(title);
   await act(async () => root.render(render("~")));
-  expect(container.textContent).toBe("No project folder");
+  expect(container.textContent).toContain("No project folder");
 });
 
 it("clears a previous commit's error while a new commit loads and provides retry", async () => {

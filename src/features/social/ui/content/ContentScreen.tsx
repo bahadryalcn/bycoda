@@ -297,7 +297,11 @@ export function ContentScreen({
         ) : null,
       )}
       {!projectId ? (
-        <EmptyHint message={t("Choose a project at the top to see its posts.")} />
+        <EmptyHint
+          illustration="no-projects"
+          title={t("No project selected")}
+          message={t("Choose a project at the top to see its posts.")}
+        />
       ) : data.error ? (
         <InlineError
           details={redactDiagnosticText(data.error.message)}
@@ -306,10 +310,14 @@ export function ContentScreen({
           {t("Could not load posts.")}
         </InlineError>
       ) : data.loading ? (
-        <LoadingText delay={false}>{t("Loading…")}</LoadingText>
+        <LoadingText layout="fill" delay={false} className="flex-1">
+          {t("Loading posts…")}
+        </LoadingText>
       ) : isEmpty ? (
         <EmptyHint
-          message={t("No posts yet.")}
+          illustration="inbox-empty"
+          title={t("No posts yet")}
+          message={t("Create a post or let AI plan the week, then schedule or publish it.")}
           action={{ label: t("New post"), onClick: () => openNew(), ...newGate }}
           fillWithAi={{
             onClick: () => onNavigate("command", { prompt: t("Plan this week's posts") }),

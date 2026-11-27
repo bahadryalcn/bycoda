@@ -359,7 +359,11 @@ function PlanSurface({
   if (!block || !plan) {
     return (
       <div className="grid h-full place-items-center p-4">
-        <EmptyState title={t("This plan is no longer in the session.")} />
+        <EmptyState
+          context="panel"
+          title={t("This plan is no longer in the session.")}
+          description={t("Open the session that created it to see the plan.")}
+        />
       </div>
     );
   }

@@ -1,17 +1,9 @@
 import { useSyncExternalStore, type ReactNode } from "react";
-import connectComputer from "../../../assets/onboarding/connect-computer.webp";
-import connectComputerStill from "../../../assets/onboarding/connect-computer-still.webp?no-inline";
-import errorScene from "../../../assets/connections/error.webp";
-import errorStill from "../../../assets/connections/error-still.webp?no-inline";
-import offlineScene from "../../../assets/connections/offline.webp";
-import offlineStill from "../../../assets/connections/offline-still.webp?no-inline";
-import unreachableScene from "../../../assets/connections/unreachable.webp";
-import unreachableStill from "../../../assets/connections/unreachable-still.webp?no-inline";
 import { t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import type { IllustrationName } from "../../../shared/ui/StateIllustration";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Text } from "../../../shared/ui/Text";
-import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { knownRemoteMachine, OPEN_CONNECTIONS_EVENT } from "../model/connections";
 import {
   machineHidesView,
@@ -26,19 +18,10 @@ import {
 } from "../model/remoteReconnect";
 import { useGracedFailure } from "../model/transientFailure";
 
-/** The mobile app's scenes exported for the desktop: animated and still (frame 0) per scene. */
-const SCENES = {
-  "connect-computer": {
-    animated: connectComputer,
-    still: connectComputerStill,
-    width: 240,
-    height: 184,
-  },
-  unreachable: { animated: unreachableScene, still: unreachableStill, width: 203, height: 240 },
-  offline: { animated: offlineScene, still: offlineStill, width: 129, height: 240 },
-  error: { animated: errorScene, still: errorStill, width: 189, height: 240 },
-} as const;
-export type MachineScene = keyof typeof SCENES;
+export type MachineScene = Extract<
+  IllustrationName,
+  "connect-computer" | "unreachable" | "offline" | "error"
+>;
 
 /**
  * Which scene says this state: a machine that is not added or turned off is "connect a computer",
@@ -87,23 +70,6 @@ function subscribeNetwork(listener: () => void) {
     window.removeEventListener("online", listener);
     window.removeEventListener("offline", listener);
   };
-}
-
-/** A scene as a decorative picture: animated, or its still frame while decorative motion is off. */
-function MachineSceneArt({ scene, size }: { scene: MachineScene; size: "page" | "panel" }) {
-  const motion = useDecorativeMotionEnabled();
-  const art = SCENES[scene];
-  return (
-    <img
-      src={motion ? art.animated : art.still}
-      alt=""
-      width={art.width}
-      height={art.height}
-      draggable={false}
-      data-scene={scene}
-      className={["w-auto max-w-full", size === "page" ? "h-48" : "h-28"].join(" ")}
-    />
-  );
 }
 
 /**
@@ -161,14 +127,10 @@ export function MachineUnavailable({
   return (
     <EmptyState
       data-machine-unavailable={reason}
-      context={size}
-      className="h-full"
-      // The scene is for the page; a compact panel carries no art.
-      icon={
-        size === "page" ? (
-          <MachineSceneArt scene={machineScene(reason, networkDown)} size={size} />
-        ) : undefined
-      }
+      // The page centers the scene; the sidebar panel stays one short line with the reason behind Help.
+      context={size === "page" ? "page" : "list"}
+      className={size === "page" ? "h-full min-h-0 flex-1" : undefined}
+      illustration={size === "page" ? machineScene(reason, networkDown) : false}
       title={title}
       description={reasonText(reason, networkDown)}
       action={

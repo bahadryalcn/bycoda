@@ -1,5 +1,8 @@
 .history {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  /* An empty history centers its state in the pane height left under the toolbar. */
+  flex: 1 1 auto;
   gap: var(--ui-space-4);
   inline-size: 100%;
   min-inline-size: 0;
@@ -47,11 +50,6 @@
   display: flex;
   align-items: center;
   gap: 2px;
-}
-.empty {
-  display: block;
-  margin: 0;
-  text-align: center;
 }
 @container assistant-room (max-width: 540px) {
   .event {

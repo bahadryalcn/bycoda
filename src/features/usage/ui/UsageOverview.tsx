@@ -921,7 +921,7 @@ export function UsageOverview({
           {/* One empty state replaces every tile, chart and panel; refreshing is shown by aria-busy. */}
           {isEmptyPeriod ? (
             <EmptyState
-              size="inline"
+              context="panel"
               kind={activeFilters.length ? "filtered" : "empty"}
               description={
                 activeFilters.length

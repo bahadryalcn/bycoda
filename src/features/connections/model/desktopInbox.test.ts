@@ -79,6 +79,25 @@ describe("native desktop inbox heartbeat runner", () => {
     );
     expect(result).toEqual({ items: [{ provider: "jira" }], errors: { jira: "slow" } });
   });
+  it("keeps the filter dimensions the phone's Inbox filters use on each listed item", async () => {
+    const jira = {
+      provider: "jira",
+      teamId: "10001",
+      teamName: "Platform",
+      assignees: [{ login: "Ada", accountId: "acc-1" }],
+    };
+    const linear = { provider: "linear", teamId: "t1", projectId: "p1", projectName: "Launch" };
+    const list = vi.fn().mockResolvedValue({ items: [jira, linear], errors: {} });
+    const result = await executeDesktopInboxOperation(
+      {
+        action: "list",
+        projects: [{ path: "/project" }],
+        query: { assignedToMe: false, state: "all", search: "" },
+      },
+      { invoke: vi.fn(), list },
+    );
+    expect(result).toEqual({ items: [jira, linear], errors: {} });
+  });
   it("passes only the owner's explicit refresh on, never as a provider query field", async () => {
     const list = vi.fn().mockResolvedValue({ items: [], errors: {} });
     await executeDesktopInboxOperation(

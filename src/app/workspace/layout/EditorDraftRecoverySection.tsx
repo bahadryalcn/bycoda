@@ -220,6 +220,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
           <EmptyState
             context="panel"
             kind="empty"
+            illustration="success"
             title={t("No file recovery copies.")}
             description={t("Recovery copies of unsaved editor text appear here.")}
           />

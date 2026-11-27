@@ -297,6 +297,8 @@ function ProjectDiagnosticsPanel({
       ) : null}
       {!sample && !busy && !error ? (
         <EmptyState
+          context="panel"
+          illustration="no-sessions"
           description={t("Take a sample to start the charts.")}
           action={{
             label: t("Take a sample"),

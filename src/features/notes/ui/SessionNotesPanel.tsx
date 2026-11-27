@@ -29,7 +29,6 @@ import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   BookOpen,
-  File,
   Link,
   ListBullet,
   MessageSquarePlus,
@@ -564,8 +563,10 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         />
       ) : error ? null : loaded && !selected ? (
         <EmptyState
-          icon={<File />}
-          description={t("No notes for this session yet.")}
+          context="panel"
+          illustration="inbox-empty"
+          title={t("No notes for this session yet.")}
+          description={t("Notes you write here stay linked to this session.")}
           className="min-h-0 flex-1"
           action={{ label: t("New note"), pending: creating, onClick: () => void onCreate() }}
           secondaryAction={

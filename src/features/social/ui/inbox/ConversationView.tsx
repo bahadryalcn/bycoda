@@ -10,7 +10,7 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialClient } from "../../model/socialClient";
-import { EmptyHint } from "../common/EmptyHint";
+import { FailureState } from "../../../../shared/ui/FailureState";
 import { channelName, PlatformIcon } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
 import { LinkedInCommentActions } from "../linkedin/LinkedInCommentActions";
@@ -83,21 +83,27 @@ export function ConversationView({
     if (result.isError) olderAnchor.current = null;
   };
 
-  if (!threadId) return <EmptyHint message={t("Choose a conversation to read and reply.")} />;
-  if (thread.isPending) return <LoadingText>{t("Loading conversation…")}</LoadingText>;
+  if (!threadId)
+    return (
+      <EmptyState
+        context="page"
+        illustration="chat-empty"
+        title={t("Select a conversation")}
+        description={t("Choose a conversation to read and reply.")}
+      />
+    );
+  if (thread.isPending)
+    return <LoadingText layout="fill">{t("Loading conversation…")}</LoadingText>;
   if (!thread.data)
     return (
-      <InlineError
-        retry={{
-          label: t("Try again"),
-          pending: thread.isFetching,
-          onRetry: () => {
-            void thread.refetch().catch(() => undefined);
-          },
+      <FailureState
+        context="panel"
+        title={t("This conversation could not be opened.")}
+        onRetry={async () => {
+          await thread.refetch().catch(() => undefined);
         }}
-      >
-        {t("This conversation could not be opened.")}
-      </InlineError>
+        retrying={thread.isFetching}
+      />
     );
 
   const conversation = thread.data;

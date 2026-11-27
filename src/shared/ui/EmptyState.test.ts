@@ -49,7 +49,9 @@ it.each(["panel", "list"] as const)(
       expect(section.getAttribute("aria-label")).toBe("Sessions");
       expect(section.classList.contains("bycoda-arc")).toBe(true);
       expect(section.querySelector("h3")?.textContent).toBe("No sessions");
-      expect(section.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
+      expect(section.querySelector('[role="img"][aria-label="Help"]') !== null).toBe(
+        context === "list",
+      );
       expect(section.querySelector("button:not([aria-label])")?.textContent).toBe("Clear");
     } finally {
       done();
@@ -125,9 +127,14 @@ it("lets the caller override the implied role", async () => {
   }
 });
 
-it("tucks a titled description behind the info affordance unless it states scope", async () => {
+it("tucks a titled list description behind the info affordance unless it states scope", async () => {
   const tucked = await mount(
-    createElement(EmptyState, { kind: "empty", title: "No crews", description: "Create a crew." }),
+    createElement(EmptyState, {
+      context: "list",
+      kind: "empty",
+      title: "No crews",
+      description: "Create a crew.",
+    }),
   );
   try {
     expect(tucked.container.querySelector("p")).toBeNull();
@@ -137,7 +144,12 @@ it("tucks a titled description behind the info affordance unless it states scope
   }
   for (const props of [{ showDescription: true }, { kind: "filtered" as const }]) {
     const shown = await mount(
-      createElement(EmptyState, { title: "No crews", description: "Create a crew.", ...props }),
+      createElement(EmptyState, {
+        context: "list",
+        title: "No crews",
+        description: "Create a crew.",
+        ...props,
+      }),
     );
     try {
       expect(shown.container.querySelector("p")?.textContent).toBe("Create a crew.");
@@ -257,7 +269,7 @@ it("blocks a second retry press while the retry is pending", async () => {
 
 it("picks a kind-specific default icon and still honors an explicit icon or null", async () => {
   const icon = async (props: Record<string, unknown>) => {
-    const mounted = await mount(createElement(EmptyState, { description: "x", ...props }));
+    const mounted = await mount(createElement(EmptyState, { context: "list", description: "x", ...props }));
     try {
       return mounted.container.querySelector("svg")?.getAttribute("class") ?? null;
     } finally {
@@ -308,5 +320,56 @@ it("separates an inline title from its description and tucks it only for showDes
     expect(tucked.container.querySelector("strong")?.className).not.toContain("block");
   } finally {
     tucked.done();
+  }
+});
+
+it("shows the pixel-guide mascot by default on page and panel, never on list or inline", async () => {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
+  );
+  const plain = await mount(createElement(EmptyState, { title: "Nothing", description: "Empty" }));
+  try {
+    expect(plain.container.querySelector("img[data-scene]")?.getAttribute("data-scene")).toBe(
+      "inbox-empty",
+    );
+    expect(plain.container.querySelector("img[data-scene]")?.getAttribute("style")).toContain("block-size: 144px");
+    expect(plain.container.querySelector("p")?.textContent).toBe("Empty");
+  } finally {
+    plain.done();
+  }
+  for (const props of [
+    { illustration: false as const },
+    { context: "list" as const },
+    { size: "inline" as const },
+  ]) {
+    const none = await mount(
+      createElement(EmptyState, { title: "Nothing", description: "Empty", ...props }),
+    );
+    try {
+      expect(none.container.querySelector("img[data-scene]")).toBeNull();
+    } finally {
+      none.done();
+    }
+  }
+  const filtered = await mount(
+    createElement(EmptyState, { context: "panel", kind: "filtered", title: "No match" }),
+  );
+  try {
+    const art = filtered.container.querySelector("img[data-scene]")!;
+    expect(art.getAttribute("data-scene")).toBe("search-empty");
+    expect(art.getAttribute("style")).toContain("block-size: 96px");
+  } finally {
+    filtered.done();
+  }
+  const guided = await mount(
+    createElement(EmptyState, { title: "Nothing", description: "Empty", illustration: "no-sessions" }),
+  );
+  try {
+    const art = guided.container.querySelector("img[data-scene]")!;
+    expect(art.getAttribute("data-scene")).toBe("no-sessions");
+    expect(art.getAttribute("data-step")).toBe("0");
+  } finally {
+    guided.done();
   }
 });

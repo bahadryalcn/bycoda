@@ -245,8 +245,14 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   // A folder that no longer exists is the same state as no folder: nothing to retry.
   if (!cwd || cwd === "~" || (files == null && isMissingPathError(error))) {
     return (
-      <div className="grid h-full place-items-center">
-        <EmptyState key="no-project" context="panel" description={t("No project folder")} />
+      <div className="flex h-full min-h-0 flex-col">
+        <EmptyState
+          key="no-project"
+          context="panel"
+          illustration="no-projects"
+          title={t("No project folder")}
+          description={t("Open a project folder to see its changes.")}
+        />
       </div>
     );
   }
@@ -254,7 +260,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   if (error && files == null) {
     if (shownCentrally) return null;
     return (
-      <div className="grid h-full place-items-center p-6">
+      <div className="flex h-full min-h-0 flex-col">
         <FailureState
           key="load-error"
           context="panel"
@@ -273,8 +279,13 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     <div className="flex h-full min-h-0 flex-col">
       {error ? <StaleReviewNotice error={error} onRetry={reload} /> : null}
       {files.length === 0 ? (
-        <div className="grid min-h-0 flex-1 place-items-center">
-          <EmptyState context="panel" description={t("No session changes")} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <EmptyState
+            context="panel"
+            illustration="inbox-empty"
+            title={t("No session changes")}
+            description={t("Files this session edits appear here for review.")}
+          />
         </div>
       ) : (
         <UnifiedDiffView

@@ -31,7 +31,6 @@ import {
   ChevronRight,
   ArrowLeft,
   Folder,
-  FolderOpen,
   FolderPlus,
 } from "../../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -571,7 +570,7 @@ function Projects({
           {empty ? (
             <EmptyState
               context="panel"
-              icon={<FolderOpen aria-hidden width={24} height={24} strokeWidth={1.75} />}
+              illustration="no-projects"
               description={t(
                 "No new conversation history found. Choose a project folder to start.",
               )}

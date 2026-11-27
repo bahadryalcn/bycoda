@@ -17,6 +17,7 @@ import { useSyncExternalStore } from "react";
 import { AssistantSettings } from "./AssistantSettings";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
@@ -151,6 +152,10 @@ export function AssistantView(props: AssistantViewProps) {
             : { label: t("Ready"), tone: "success" as const }
     : { label: "", tone: "secondary" as const };
 
+  // With no room content to protect, the privacy failure takes the whole body instead of a banner.
+  const showsRoom = Boolean(snapshot?.profile.setupComplete);
+  const privacyBlocksBody = Boolean(roomPrivacy.error) && !showsRoom;
+  const canRebuildPrivacy = Boolean(roomPrivacy.error) && canRebuildRoomPrivacyProjection();
   const sameReadError = Boolean(readError && projectReadError) && projectReadError === readError;
 
   return (
@@ -287,7 +292,7 @@ export function AssistantView(props: AssistantViewProps) {
             ]}
           />
         )}
-        {roomPrivacy.error && (
+        {roomPrivacy.error && showsRoom && (
           <Alert
             className={shell.notice}
             tone="danger"
@@ -303,22 +308,22 @@ export function AssistantView(props: AssistantViewProps) {
             {hostBusy ? t("The Host is busy. Try again in a moment.") : undefined}
           </Alert>
         )}
-        {roomPrivacy.error && canRebuildRoomPrivacyProjection() && (
-          <div className={`${shell.notice} ${shell.noticeBody}`}>
-            <InlineMessage tone="info">
-              {t("Review current project visibility before rebuilding Room privacy protection.")}
-            </InlineMessage>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                void rebuildClosedRoomPrivacyProjection().catch(() => {});
-              }}
-            >
-              {t("Rebuild Room privacy protection")}
-            </Button>
-          </div>
-        )}
+        {roomPrivacy.error && showsRoom && canRebuildPrivacy && (
+            <div className={`${shell.notice} ${shell.noticeBody}`}>
+              <InlineMessage tone="info">
+                {t("Review current project visibility before rebuilding Room privacy protection.")}
+              </InlineMessage>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  void rebuildClosedRoomPrivacyProjection().catch(() => {});
+                }}
+              >
+                {t("Rebuild Room privacy protection")}
+              </Button>
+            </div>
+          )}
         {/* Without a snapshot the failure panel below owns the message and the one Try again. */}
         {readError && snapshot && (
           <InlineError
@@ -348,29 +353,54 @@ export function AssistantView(props: AssistantViewProps) {
         {error?.key.startsWith("navigation:") && (
           <InlineError className={shell.notice}>{error.text}</InlineError>
         )}
-        {!snapshot ? (
-          loading ? (
-            <div className={shell.empty}>
-              <LoadingText delay={false}>{t("Loading…")}</LoadingText>
-            </div>
-          ) : (
-            <FailureState
-              context="panel"
-              title={t("Could not open the assistant room")}
-              description={t("Connect to the local Host to open this room.")}
-              error={readError || undefined}
-              onRetry={() => {
-                void refresh();
-                if (projectReadError) void readProjects();
-              }}
-            />
-          )
-        ) : !snapshot.profile.setupComplete ? (
-          <section className={shell.setupPrompt}>
-            <Heading size="section">{t("Set up your personal assistant")}</Heading>
-            <Button variant="primary" onClick={() => setSetup(true)}>
-              {t("Set up")}
-            </Button>
+        {!snapshot || !snapshot.profile.setupComplete ? (
+          <section className={shell.stage}>
+            {privacyBlocksBody ? (
+              <FailureState
+                illustration="locked"
+                title={t("Room privacy protection could not be confirmed.")}
+                description={
+                  hostBusy
+                    ? t("The Host is busy. Try again in a moment.")
+                    : t("Your room stays closed until its privacy protection is confirmed.")
+                }
+                error={roomPrivacy.error}
+                onRetry={retryPrivacy}
+                secondaryAction={
+                  canRebuildPrivacy
+                    ? {
+                        label: t("Rebuild Room privacy protection"),
+                        onClick: () => {
+                          void rebuildClosedRoomPrivacyProjection().catch(() => {});
+                        },
+                      }
+                    : undefined
+                }
+              />
+            ) : !snapshot ? (
+              loading ? (
+                <LoadingText delay={false}>{t("Loading…")}</LoadingText>
+              ) : (
+                <FailureState
+                  context="panel"
+                  title={t("Could not open the assistant room")}
+                  description={t("Connect to the local Host to open this room.")}
+                  error={readError || undefined}
+                  onRetry={() => {
+                    void refresh();
+                    if (projectReadError) void readProjects();
+                  }}
+                />
+              )
+            ) : (
+              <EmptyState
+                illustration="chat-empty"
+                title={t("Set up your personal assistant")}
+                description={t("A few quick choices and it is ready to take work.")}
+                showDescription
+                action={{ label: t("Set up"), onClick: () => setSetup(true) }}
+              />
+            )}
           </section>
         ) : (
           <>

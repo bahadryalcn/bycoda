@@ -347,9 +347,7 @@ it("asks only connected accounts for new activity when the owner presses Check n
     handlers: { "inbox.unified": () => ({ items: [], unreadable: [] }) },
   });
   await mount(fake.client);
-  expect(element.textContent).toContain(
-    "No conversations yet. New messages and comments appear here.",
-  );
+  expect(element.textContent).toContain("No conversations yet");
   await act(async () => button("Check now")!.click());
   await flush();
   expect(fake.of("inbox.sync").map((call) => call.input)).toEqual([{ accountId: "a1" }]);

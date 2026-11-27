@@ -97,6 +97,7 @@ export function CrewMemberPicker({
           <EmptyState
             context="panel"
             kind="empty"
+            illustration={false}
             title={t("Your member library is empty")}
             action={{ label: t("New member"), onClick: () => onModeChange("new") }}
           />

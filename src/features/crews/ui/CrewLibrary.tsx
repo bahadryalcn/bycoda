@@ -80,6 +80,7 @@ export function CrewLibrary({
           context="panel"
           kind="empty"
           title={t("No library members yet")}
+          description={t("Members are the agents you add to crews. Create one to start.")}
           action={{ label: t("New member"), onClick: onNewMember }}
         />
       ) : (

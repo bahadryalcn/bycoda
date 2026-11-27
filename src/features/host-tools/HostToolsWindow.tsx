@@ -679,7 +679,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         {!currentPane ? (
           <EmptyState
             context="panel"
-            icon={<Wrench aria-hidden className="icon-lg" />}
+            illustration={ownerUnavailable ? "unreachable" : "no-sessions"}
             title={
               ownerUnavailable
                 ? t("Conversation tools owner unavailable")

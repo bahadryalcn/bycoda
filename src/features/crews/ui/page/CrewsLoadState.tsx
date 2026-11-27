@@ -32,14 +32,19 @@ export function CrewsLoadState({
   const data = state.data;
   if (!data)
     return (
-      <div className="p-4" aria-busy={state.pendingFailure || undefined}>
+      <div className="flex flex-1 flex-col p-4" aria-busy={state.pendingFailure || undefined}>
         {state.visibleError ? (
           <RetryAlert state={state} />
         ) : noProject ? (
           // The query is disabled without a real project folder: say so instead of loading forever.
-          <EmptyState context="page" title={t("Open a project to manage its crews.")} />
+          <EmptyState
+            context="page"
+            illustration="no-projects"
+            title={t("Open a project to manage its crews.")}
+            description={t("Crews belong to a project folder. Pick or add a project first.")}
+          />
         ) : (
-          <LoadingText>{t("Loading crews…")}</LoadingText>
+          <LoadingText layout="fill">{t("Loading crews…")}</LoadingText>
         )}
       </div>
     );

@@ -1026,6 +1026,7 @@ export function JiraBoardView({
     );
   }
 
+  const noBoards = !loading && !boards.length && !error;
   return (
     <Text
       as="section"
@@ -1137,12 +1138,14 @@ export function JiraBoardView({
           </Button>
         </Surface>
       ) : null}
-      {!loading && !boards.length && !error ? (
+      {noBoards ? (
         <EmptyState
-          size="inline"
           kind="empty"
-          description={t("No Jira boards found")}
-          inset="row"
+          context="panel"
+          illustration="inbox-empty"
+          title={t("No Jira boards found")}
+          description={t("Create a board in Jira, or check that this account can see one.")}
+          className="min-h-0 flex-1"
         />
       ) : null}
       {!loading && board?.kind === "scrum" && configuration?.sprints.length === 0 ? (
@@ -1153,7 +1156,7 @@ export function JiraBoardView({
           inset="row"
         />
       ) : null}
-      {mode === "kanban" ? (
+      {noBoards ? null : mode === "kanban" ? (
         <div
           {...pan}
           onScrollCapture={continueNearEnd}

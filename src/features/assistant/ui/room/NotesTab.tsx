@@ -41,7 +41,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
     refresh,
     pending,
     errorFor,
-    empty,
+    setQuery,
   } = room;
 
   const [selectedId, setSelectedId] = useState<string>();
@@ -266,7 +266,22 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           )}
           {snapshot.capabilities.notes &&
             visible.length === 0 &&
-            empty(query ? t("No results") : t("No notes yet"))}
+            (query ? (
+              <EmptyState
+                context="panel"
+                kind="filtered"
+                title={t("No results")}
+                description={t("Try a different search.")}
+                onReset={() => setQuery("")}
+              />
+            ) : (
+              <EmptyState
+                context="panel"
+                kind="empty"
+                title={t("No notes yet")}
+                description={t("Notes the assistant takes and notes you add appear here.")}
+              />
+            ))}
         </section>
       )}
     </>

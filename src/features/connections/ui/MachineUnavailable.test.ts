@@ -4,10 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
-const motion = vi.hoisted(() => ({ enabled: true }));
-vi.mock("../../settings/model/decorativeMotion", () => ({
-  useDecorativeMotionEnabled: () => motion.enabled,
-}));
 const reconnect = vi.hoisted(() => ({
   active: false,
   listeners: new Set<() => void>(),
@@ -36,7 +32,6 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  motion.enabled = true;
   reconnect.active = false;
   reconnect.run.mockClear();
   localStorage.clear();
@@ -94,15 +89,9 @@ it("shows a title without art in a panel, with the reason in a tooltip", async (
   expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("Tailscale");
 });
 
-it("uses the still frame while decorative motion is off", async () => {
+it("shows the scene of the reason on the page", async () => {
   await mount({ reason: "not-added", size: "page" });
   expect(art()?.dataset.scene).toBe("connect-computer");
-  const animated = art()?.getAttribute("src");
-
-  motion.enabled = false;
-  await mount({ reason: "not-added", size: "page" });
-  expect(art()?.getAttribute("src")).not.toBe(animated);
-  expect(art()?.getAttribute("src")).toContain("still");
 });
 
 it("shows only a status line while a reconnect runs, then Try now between attempts", async () => {

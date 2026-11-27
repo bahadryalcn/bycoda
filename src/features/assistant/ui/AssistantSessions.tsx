@@ -12,7 +12,7 @@ import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { StatusText } from "../../../shared/ui/StatusText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
+import { ExternalLink } from "../../../shared/ui/icons";
 import {
   workerContextAction,
   type WorkerContextSettings,
@@ -98,7 +98,7 @@ export function AssistantSessions({
         <EmptyState
           context="panel"
           kind={filtered ? "filtered" : "empty"}
-          icon={filtered ? undefined : <MessageSquare className="icon-md" aria-hidden="true" />}
+          illustration={filtered ? "search-empty" : "no-sessions"}
           title={filtered ? t("No matching sessions") : t("No sessions from assistant jobs yet")}
           description={
             filtered

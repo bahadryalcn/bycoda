@@ -53,6 +53,7 @@ export function CrewsTeams({
         context="page"
         kind="empty"
         title={t("No crews yet")}
+        description={t("A crew is a team of members that works on a task together.")}
         action={{
           label: t("Create your first crew"),
           onClick: () => setDialog({ kind: "edit", createScope: "project" }),
@@ -88,7 +89,8 @@ export function CrewsTeams({
         <EmptyState
           context="panel"
           kind="filtered"
-          description={t("No matching crews")}
+          title={t("No matching crews")}
+          description={t("Try a different search.")}
           onReset={() => setQuery("")}
         />
       ) : (

@@ -156,18 +156,23 @@ export function CommitDiff({ cwd, sha }: Props) {
   // A folder that no longer exists is the same state as no folder: nothing to retry.
   if (!cwd || cwd === "~" || (files == null && isMissingPathError(error))) {
     return (
-      <div className="grid h-full place-items-center">
-        <EmptyState key="no-project" context="panel" description={t("No project folder")} />
+      <div className="flex h-full min-h-0 flex-col">
+        <EmptyState
+          key="no-project"
+          context="panel"
+          illustration="no-projects"
+          title={t("No project folder")}
+          description={t("Open a project folder to see its changes.")}
+        />
       </div>
     );
   }
   if (error) {
     if (shownCentrally) return null;
     return (
-      <div className="grid h-full place-items-center p-6">
+      <div className="flex h-full min-h-0 flex-col">
         <FailureState
           key="load-error"
-
           context="panel"
           title={t("Couldn’t load commit")}
           error={error}

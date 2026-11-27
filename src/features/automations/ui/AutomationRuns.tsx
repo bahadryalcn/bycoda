@@ -86,7 +86,11 @@ export function AutomationRuns({
           ) : null}
         </Surface>
       ) : !loading && !error ? (
-        <EmptyState description={t("This automation has not run yet.")} />
+        <EmptyState
+          context="panel"
+          illustration={false}
+          description={t("This automation has not run yet.")}
+        />
       ) : null}
     </section>
   );

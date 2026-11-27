@@ -20,6 +20,8 @@ export function TasksEmptyState({
       context="page"
       kind="empty"
       title={t("No tasks yet")}
+      description={t("Create a task to hand work to an agent.")}
+      illustration="inbox-empty"
       extra={
         <TaskCreationSplit
           create={{ visible: true, disabled, onCreate }}

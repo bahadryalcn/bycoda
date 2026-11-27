@@ -221,16 +221,20 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
           !list.isError &&
           !snapshot.isError ? (
             snapshot.isPending ? (
-              <LoadingText>{t("Loading accounts…")}</LoadingText>
+              <LoadingText layout="fill">{t("Loading accounts…")}</LoadingText>
             ) : accounts.length === 0 ? (
               <EmptyState
                 kind="empty"
+                context="panel"
+                illustration="connect-computer"
+                title={t("No accounts yet")}
                 description={t("Add an account to read messages and comments.")}
                 action={{ label: t("Add account"), onClick: () => onNavigate("accounts") }}
               />
             ) : filtered ? (
               <EmptyState
                 kind="filtered"
+                context="panel"
                 description={t("No conversations match these filters.")}
                 onReset={() => setFilter(NO_FILTER)}
                 resetLabel={t("Clear filters")}
@@ -238,13 +242,19 @@ function HostInboxScreen({ client, projectId, active, target, onNavigate }: Soci
             ) : unreadable.length === 0 && !accounts.some((account) => account.connected) ? (
               <EmptyState
                 kind="empty"
+                context="panel"
+                illustration="connect-computer"
+                title={t("No account connected")}
                 description={t("Connect an account to check for new conversations.")}
                 action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
               />
             ) : (
               <EmptyState
                 kind="empty"
-                description={t("No conversations yet. New messages and comments appear here.")}
+                context="panel"
+                illustration="chat-empty"
+                title={t("No conversations yet")}
+                description={t("New messages and comments appear here.")}
               />
             )
           ) : (

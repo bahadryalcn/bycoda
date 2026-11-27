@@ -13,7 +13,7 @@ import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sash } from "../../../shared/ui/Sash";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { ChevronLeft, MessageMultiple, RefreshCw, Search } from "../../../shared/ui/icons";
+import { ChevronLeft, RefreshCw, Search } from "../../../shared/ui/icons";
 import { useMessageThreads } from "../hooks/useMessageThreads";
 import { useWindowActive } from "../hooks/useWindowActive";
 import {
@@ -129,24 +129,28 @@ export function MessagesPanel({
   const listBody =
     connectedCount === 0 ? (
       <FailureState
-        icon={<MessageMultiple aria-hidden="true" />}
+        context="panel"
+        illustration="connect-computer"
+        title={t("No messaging account connected")}
         description={t("Reconnect a messaging account to read its conversations.")}
         action={{ label: t("Open settings"), onClick: openMessagingSettings }}
       />
     ) : threads.length === 0 && allFailed ? (
       <FailureState
-        icon={<MessageMultiple aria-hidden="true" />}
+        context="panel"
+        illustration="unreachable"
         description={t("Could not load messages.")}
         onRetry={retryFailed}
         retrying={loading}
       />
     ) : threads.length === 0 && (loading || !loaded) ? (
-      <LoadingText inset="panel" className="justify-center" />
+      <LoadingText layout="fill" />
     ) : visible.length === 0 ? (
       narrowed ? (
         <EmptyState
           kind="filtered"
-          icon={<MessageMultiple aria-hidden="true" />}
+          context="panel"
+          illustration="search-empty"
           description={t("No conversations match these filters.")}
           onReset={resetNarrowing}
           resetLabel={t("Clear filters")}
@@ -154,8 +158,9 @@ export function MessagesPanel({
       ) : (
         <EmptyState
           kind="empty"
-          icon={<MessageMultiple aria-hidden="true" />}
-          description={t("No conversations yet.")}
+          context="panel"
+          illustration="chat-empty"
+          description={t("No conversations yet. New messages from connected accounts appear here.")}
         />
       )
     ) : (
@@ -275,10 +280,12 @@ export function MessagesPanel({
               onSent={onSent}
             />
           ) : (
-            <div className="grid h-full place-items-center">
+            <div className="flex h-full min-h-0 flex-col">
               <EmptyState
-                icon={<MessageMultiple aria-hidden="true" />}
-                description={t("Select a conversation")}
+                context="page"
+                illustration="chat-empty"
+                title={t("Select a conversation")}
+                description={t("Pick a conversation from the list to read and reply.")}
               />
             </div>
           )}

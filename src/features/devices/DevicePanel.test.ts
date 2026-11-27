@@ -741,7 +741,7 @@ it("waits for a live capture before stopping and never installs its late frame",
   expect(api.capture).toHaveBeenCalledTimes(1);
   await act(async () => finish({ mime: "image/png", base64: "old-frame", capturedAt: "now" }));
   expect(api.stop).toHaveBeenCalledTimes(1);
-  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector("img:not([data-scene])")).toBeNull();
 });
 
 it("retains successful action output when the follow-up screenshot fails", async () => {

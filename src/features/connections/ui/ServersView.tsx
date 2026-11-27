@@ -27,6 +27,7 @@ import { Divider } from "../../../shared/ui/Divider";
 import { Sheet } from "../../../shared/ui/Sheet";
 import "./ServersView.css";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { FailureState } from "../../../shared/ui/FailureState";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -568,7 +569,7 @@ export function ServersView({
           ) : null}
         </div>
       </div>
-      {error ? (
+      {error && loaded ? (
         <div className="px-3 py-2">
           <RemoteActionError
             title={
@@ -589,9 +590,6 @@ export function ServersView({
             action={failure.retry ? { label: t("Retry"), onClick: failure.retry } : undefined}
           />
         </div>
-      ) : null}
-      {loading && !loaded && !error ? (
-        <LoadingText inset="row">{t("Loading servers…")}</LoadingText>
       ) : null}
       {groups.length > 0 ? (
         <div
@@ -623,13 +621,34 @@ export function ServersView({
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className="servers-catalog min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3"
+          className={[
+            "servers-catalog min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3",
+            // An empty or fully filtered catalog centers its state in the free space.
+            !loaded || servers.length === 0 || filtered.length === 0 ? "flex flex-col" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
+          {!loaded && error ? (
+            <FailureState
+              context="panel"
+              illustration="unreachable"
+              title={t("Couldn’t load servers.")}
+              description={describeRemoteError(error).message}
+              error={describeRemoteError(error).details}
+              onRetry={() => void refresh()}
+              retrying={loading}
+            />
+          ) : null}
+          {!loaded && !error ? (
+            <LoadingText layout="fill">{t("Loading servers…")}</LoadingText>
+          ) : null}
           {loaded && servers.length === 0 ? (
             <EmptyState
               kind="empty"
-              icon={<Server aria-hidden className="icon-lg" />}
+              illustration="connect-computer"
               title={t("No servers yet.")}
+              description={t("Add an SSH server to open terminals, files and tunnels on it.")}
               action={{ label: t("Add SSH server"), onClick: () => setEditor("new") }}
             />
           ) : null}
@@ -637,8 +656,8 @@ export function ServersView({
             <EmptyState
               context="panel"
               kind="filtered"
-              icon={null}
-              description={t("No matching servers")}
+              title={t("No matching servers")}
+              description={t("Try a different search or reset the filters.")}
               onReset={resetNarrowing}
               resetLabel={t("Reset filters")}
             />

@@ -172,3 +172,60 @@ it("renders structured actions in a block and as text links inline", async () =>
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(button("Open settings").closest("span.min-w-0")).not.toBeNull();
 });
+
+function stubMotion(reduce: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({
+      matches: reduce,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  );
+}
+
+it("leads a block failure with the decorative error mascot and lets a caller drop it", async () => {
+  stubMotion(false);
+  await render();
+  const art = container.querySelector("img[data-scene]")!;
+  expect(art.getAttribute("data-scene")).toBe("error");
+  expect(art.getAttribute("alt")).toBe("");
+  expect(art.getAttribute("aria-hidden")).toBe("true");
+  await render({ illustration: "offline" });
+  expect(container.querySelector("img[data-scene]")?.getAttribute("data-scene")).toBe("offline");
+  await render({ illustration: false });
+  expect(container.querySelector("img[data-scene]")).toBeNull();
+});
+
+it("keeps the mascot on its rest frame under reduced motion", async () => {
+  vi.useFakeTimers();
+  stubMotion(true);
+  try {
+    await render();
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(container.querySelector("img[data-scene]")?.getAttribute("data-step")).toBe("0");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("plays the loop at six steps a second when motion is allowed", async () => {
+  vi.useFakeTimers();
+  stubMotion(false);
+  try {
+    await render();
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(container.querySelector("img[data-scene]")?.getAttribute("data-step")).toBe("3");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("puts the copy control in the details header beside its label", async () => {
+  stubMotion(false);
+  await render();
+  await act(async () => button("Show details").click());
+  const header = container.querySelector("[id] > div")!;
+  expect(header.textContent).toContain("Technical details");
+  expect(header.contains(button("Copy details"))).toBe(true);
+});

@@ -441,11 +441,6 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     t("Project unavailable");
   const errorFor = (key: string) =>
     error?.key === key ? <InlineError className={styles.error}>{error.text}</InlineError> : null;
-  const empty = (text: string) => (
-    <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.empty}>
-      {text}
-    </Text>
-  );
   function clearHistory() {
     setConfirm({
       title: t("Clear history?"),
@@ -473,7 +468,6 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
     allJobs,
     projectName,
     errorFor,
-    empty,
     clearHistory,
   };
 }

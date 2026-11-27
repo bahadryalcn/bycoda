@@ -20,7 +20,6 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
-  CheckCircle,
   FileDiff,
   GitBranch,
   ListFilter,
@@ -653,7 +652,10 @@ export function GitChangesPanel({
             <EmptyState
               context="panel"
               kind="empty"
+              illustration="no-projects"
+              className="min-h-0 flex-1"
               title={t("This folder is not a Git repository")}
+              description={t("Initialize a repository to track changes, commit and branch.")}
               action={{
                 label: t("Initialize Repository"),
                 variant: "primary",
@@ -1566,7 +1568,9 @@ function ChangedFiles({
             <EmptyState
               context={fill ? "page" : "panel"}
               className={fill ? "h-full" : undefined}
-              icon={diverged ? <GitBranch /> : <CheckCircle />}
+              illustration={diverged ? false : "success"}
+              icon={diverged ? <GitBranch /> : undefined}
+              title={diverged ? undefined : t("All clean")}
               description={
                 diverged
                   ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })

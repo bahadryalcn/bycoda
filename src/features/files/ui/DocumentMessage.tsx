@@ -39,7 +39,7 @@ export function DocumentMessage({
     <div className="grid h-full min-w-0 place-items-center overflow-auto p-4">
       {error ? (
         <FailureState
-          context="list"
+          context="panel"
           title={title}
           description={
             children ??
@@ -59,6 +59,7 @@ export function DocumentMessage({
       ) : (
         // Children can hold a recovery button (Retry), so they stay visible rather than behind the info affordance.
         <EmptyState
+          context="panel"
           title={title}
           description={children ?? ""}
           showDescription

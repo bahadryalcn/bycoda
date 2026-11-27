@@ -57,7 +57,6 @@ export function ErrorDetails({
         type="button"
         variant="link"
         layout="text"
-        textSize="caption"
         className={className}
         aria-label={name}
         aria-expanded={open}
@@ -82,16 +81,17 @@ export function ErrorDetails({
           solid
           onDismiss={close}
           variant="panel"
-          className="flex flex-col gap-2"
+          className="flex flex-col gap-[var(--space-2)]"
         >
-          <div className="flex flex-wrap items-center justify-between gap-x-2">
-            <Text size="secondary" tone="primary" weight="medium">
+          <div className="flex items-center justify-between gap-[var(--space-2)]">
+            <Text size="secondary" tone="primary" weight="medium" truncate className="min-w-0">
               {t("Technical details")}
             </Text>
             <CopyButton
               type="button"
-              variant="ghost"
+              iconOnly
               size="sm"
+              className="shrink-0"
               label={t("Copy details")}
               resetKeys={[detail]}
               onCopy={() => navigator.clipboard.writeText(detail)}
@@ -102,7 +102,7 @@ export function ErrorDetails({
             {detail}
           </OutputBlock>
           {actions ? (
-            <div className="flex flex-wrap items-center gap-2">{actions(close)}</div>
+            <div className="flex flex-wrap items-center gap-[var(--space-2)]">{actions(close)}</div>
           ) : null}
         </Popover>
       ) : null}

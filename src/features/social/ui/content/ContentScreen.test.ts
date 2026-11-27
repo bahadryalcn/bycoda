@@ -103,7 +103,7 @@ describe("ContentScreen states", () => {
     };
     const onNavigate = vi.fn();
     render(props({ onNavigate }));
-    expect(element.textContent).toContain("No posts yet.");
+    expect(element.textContent).toContain("No posts yet");
     expect(buttonWith("New post")).toBeDefined();
     buttonWith("Fill with AI")?.click();
     expect(onNavigate).toHaveBeenCalledWith("command", { prompt: "Plan this week's posts" });
@@ -127,7 +127,7 @@ describe("ContentScreen states", () => {
   it("shows loading text while the first read is in flight", () => {
     state.data = { snapshot: undefined, programs: [], loading: true, refetch: vi.fn() };
     render(props());
-    expect(element.textContent).toContain("Loading…");
+    expect(element.textContent).toContain("Loading posts…");
   });
 
   it("switches from the week calendar to the month calendar", () => {

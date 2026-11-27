@@ -302,7 +302,13 @@ export function ExternalTunnelsPanel({
         />
       ) : null}
       {total === 0 && settled && loaded && !loading ? (
-        <EmptyState context="panel" kind="empty" title={t("No shared links")} />
+        <EmptyState
+          context="panel"
+          kind="empty"
+          illustration={false}
+          title={t("No shared links")}
+          description={t("Create a link to share a dev server or this Host over the internet.")}
+        />
       ) : null}
     </section>
   );

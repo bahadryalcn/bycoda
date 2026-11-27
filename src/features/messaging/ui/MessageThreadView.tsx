@@ -13,7 +13,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { MessageTimeline } from "../../../shared/ui/MessageTimeline";
-import { ChevronDown, ExternalLink, MessageMultiple, RefreshCw } from "../../../shared/ui/icons";
+import { ChevronDown, ExternalLink, RefreshCw } from "../../../shared/ui/icons";
 import { useThreadMessages } from "../hooks/useThreadMessages";
 import { messagingProviderLabel } from "../model/messageThreads";
 import type { MessageThread, MessagingAccount, ThreadMessage } from "../model/messagingTypes";
@@ -197,19 +197,19 @@ export function MessageThreadView({
         onScroll={(event) => onScroll(event.currentTarget)}
       >
         {messages == null ? (
-          error ? (
-            <FailureState
-              icon={<MessageMultiple aria-hidden="true" />}
-              title={t("Could not load this conversation.")}
-              error={error}
-              onRetry={reload}
-              retrying={loading}
-            />
-          ) : (
-            <LoadingText inset="panel" className="justify-center">
-              {t("Loading conversation…")}
-            </LoadingText>
-          )
+          <div className="flex h-full min-h-0 flex-col">
+            {error ? (
+              <FailureState
+                context="panel"
+                title={t("Could not load this conversation.")}
+                error={error}
+                onRetry={reload}
+                retrying={loading}
+              />
+            ) : (
+              <LoadingText layout="fill">{t("Loading conversation…")}</LoadingText>
+            )}
+          </div>
         ) : (
           <>
             {error ? (
@@ -244,12 +244,15 @@ export function MessageThreadView({
               </InlineError>
             ) : null}
             {messages.length === 0 ? (
-              <EmptyState
-                kind="empty"
-                size="inline"
-                inset="panel"
-                description={t("No messages in this conversation yet.")}
-              />
+              <div className="flex h-full min-h-0 flex-col">
+                <EmptyState
+                  kind="empty"
+                  context="panel"
+                  illustration="chat-empty"
+                  title={t("No messages yet")}
+                  description={t("Messages in this conversation appear here once someone writes.")}
+                />
+              </div>
             ) : (
               // The timeline's CSS module resets its own padding, so the gutter lives on a wrapper.
               <div className="px-4 py-3">

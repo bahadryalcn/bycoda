@@ -540,6 +540,7 @@ export function SessionRecoveryPanel({
           <EmptyState
             context="panel"
             kind="empty"
+            illustration="success"
             title={t("No recovered sessions")}
             description={t("Nothing is waiting to be reopened.")}
           />
@@ -560,6 +561,7 @@ export function SessionRecoveryPanel({
           <EmptyState
             context="panel"
             kind="empty"
+            illustration="success"
             title={t("No recovered sessions")}
             description={t("Nothing is waiting to be reopened.")}
           />

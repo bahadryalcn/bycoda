@@ -85,9 +85,14 @@ export function AssistantMemoryPanel(props: Props) {
       )}
       {!props.searching && !props.searchError && !props.entries.length && (
         <EmptyState
-          size="inline"
+          context="panel"
           kind={props.query.trim() ? "filtered" : "empty"}
-          description={props.query.trim() ? t("No results") : t("Nothing saved here yet")}
+          title={props.query.trim() ? t("No results") : t("Nothing saved here yet")}
+          description={
+            props.query.trim()
+              ? t("Try a different search.")
+              : t("Add a memory and the assistant will use it in its work.")
+          }
         />
       )}
       {GROUPS.map((kind) => {

@@ -558,7 +558,12 @@ ${next.error}`
                     onReset={() => setQuery("")}
                   />
                 ) : (
-                  <EmptyState kind="empty" title={t("No computers yet")} />
+                  <EmptyState
+                    kind="empty"
+                    illustration={false}
+                    title={t("No computers yet")}
+                    description={t("Add a computer to open its projects and sessions from here.")}
+                  />
                 )
               ) : (
                 <div>{loading ? <LoadingText /> : null}</div>

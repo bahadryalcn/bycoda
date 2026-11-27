@@ -1111,7 +1111,7 @@ export function NotesView({
             </Alert>
           ))}
         {loading && notes.length === 0 ? (
-          <SurfaceLoading className="py-10" title={t("Loading notes…")} />
+          <SurfaceLoading className="min-h-0 flex-1" title={t("Loading notes…")} />
         ) : (
           <div data-note-library className="min-h-0 flex flex-1 flex-col">
             <ContinuousList
@@ -1594,7 +1594,13 @@ function NoteDetail({
   useLocale();
   if (!note) {
     return (
-      <EmptyState icon={<File />} description={t("Select a note")} className="min-w-0 flex-1" />
+      <EmptyState
+        context="page"
+        illustration="inbox-empty"
+        title={t("Select a note")}
+        description={t("Pick a note from the list, or create a new one.")}
+        className="min-w-0 flex-1"
+      />
     );
   }
   return (

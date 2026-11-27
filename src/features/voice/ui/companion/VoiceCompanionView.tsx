@@ -443,7 +443,12 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
                   {p.chatTurns.length ? (
                     <VoiceChatTranscript turns={p.chatTurns} />
                   ) : (
-                    <EmptyState title={t("No messages yet")} context="panel" />
+                    <EmptyState
+                      title={t("No messages yet")}
+                      description={t("Start talking and the transcript appears here.")}
+                      illustration="chat-empty"
+                      context="panel"
+                    />
                   )}
                 </>
               )}

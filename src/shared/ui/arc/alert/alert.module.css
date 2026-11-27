@@ -6,11 +6,11 @@
   .presence {
     min-inline-size: 0;
   }
-  /* Glyph, copy and dismiss share the first line: each rides a first-line-tall box, so one-line,
-     wrapped and titled copy centre identically. */
+  /* A one-line strip centres glyph, copy, actions and dismiss on one axis; copy with a description
+     keeps glyph and dismiss on the first line and drops the actions to the block end. */
   .alert {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--ui-space-2, 0.5rem);
     min-inline-size: 0;
     /* Same 8/12 inset as a Notice `row` state. */
@@ -21,7 +21,7 @@
     display: flex;
     flex: 1;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     gap: var(--ui-space-1, 0.25rem) var(--ui-space-3, 0.75rem);
     min-inline-size: 0;
   }
@@ -31,12 +31,21 @@
     /* The root is user-select: none; the message must stay copyable into a bug report. */
     user-select: text;
   }
-  /* Text actions sit at the end of the strip, centred on the first line of copy. */
+  .alert:has(.copy > .description:not(:first-child)) {
+    align-items: flex-start;
+  }
+  .alert:has(.copy > .description:not(:first-child)) .body {
+    align-items: flex-end;
+  }
+  /* Text actions (all links of one height) sit at the end of the strip as one group. */
   .actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--ui-space-1, 0.25rem);
+    gap: var(--ui-space-3, 0.75rem);
+    /* Links take the title's size so the strip reads as one line of text. */
+    font-size: var(--ui-font-secondary);
+    line-height: var(--ui-leading-secondary);
     /* The action keeps its density height: touch and wrapped actions set the strip's minimum height. */
     margin-inline-start: auto;
   }

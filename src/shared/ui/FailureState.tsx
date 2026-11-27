@@ -11,6 +11,7 @@ import { Button } from "./Button";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import styles from "./FailureState.module.css";
 import { useConnectionErrorShownCentrally } from "./connectionErrorGate";
+import { StateIllustration, type IllustrationName } from "./StateIllustration";
 
 const moduleLoadFailures = new WeakSet<object>();
 
@@ -52,9 +53,12 @@ export const FAILURE_PREVIEW_CHARS = 8000;
  * Alert-role recovery surface for a region or whole screen that failed to load: title, one sentence,
  * Try again (promise-aware, blocks double press), structured `action` / `secondaryAction` and a
  * Show/Copy details area for the error text (preview capped, copy always complete). `fullScreen`
- * makes the title an h1. Inline form is an InlineError with the same structured actions.
+ * makes the title an h1. The block form is one centered column led by the pixel-guide mascot
+ * (`illustration`, default "error"; `false` drops it) sized 144 px (page, default) or 96 px
+ * (`context="panel"`). It fills the free space of its parent and centres in it: the parent must
+ * give it the remaining height (flex column / grid with `min-block-size: 0`). Inline form is an InlineError with the same structured actions.
  * @group feedback
- * @use Replaces EmptyState kind="unavailable". An unavailable pane, route or app boot. Optional error adds copyable diagnostics; promise-aware retry blocks double activation.
+ * @use Replaces EmptyState kind="unavailable". An unavailable pane, route or app boot. Optional error adds copyable diagnostics; promise-aware retry blocks double activation. Block failures show the "error" mascot by default (`illustration` picks another scene or `false` drops it).
  * @replaces EmptyState
  * @avoid Nothing to show or filtered list: EmptyState. Inline failure: InlineError. One-line message: InlineError. Boxed notice with a title: Alert. Never a Button in `action`.
  * @action Pass `action={{ label, onClick }}` and `onRetry`; the component renders them.
@@ -69,7 +73,8 @@ export function FailureState({
   secondaryAction,
   fullScreen = false,
   brand,
-  context = "panel",
+  illustration = "error",
+  context,
   size = "block",
   action,
   extra,
@@ -98,6 +103,8 @@ export function FailureState({
   fullScreen?: boolean;
   /** Decorative identity shown above the message, outside the alert, for a whole-app failure. */
   brand?: ReactNode;
+  /** Pixel-guide scene above the title of a block failure; `false` drops it. */
+  illustration?: IllustrationName | false;
 }) {
   // Subscribed locale reads keep this component compilable; module t()/formatNumber are not reactive.
   const t = useT();
@@ -190,10 +197,15 @@ export function FailureState({
         descriptionText={descriptionText}
         title={title}
         description={description}
-        context={context}
+        context={context ?? "panel"}
         role={role ?? "alert"}
         data-kind="unavailable"
-        icon={icon}
+        icon={
+          icon ??
+          (illustration ? (
+            <StateIllustration name={illustration} size={context === "page" ? "page" : "panel"} />
+          ) : undefined)
+        }
         className={["bycoda-arc", className].filter(Boolean).join(" ")}
         action={
           action || secondaryAction || extra || onRetry ? (
@@ -226,6 +238,7 @@ export function FailureState({
     >
       <div className={styles.content}>
         {brand}
+        {illustration ? <StateIllustration name={illustration} size={context === "panel" ? "panel" : "page"} /> : null}
         <div className={styles.message} role="alert">
           <div className={styles.heading}>
             {icon}
@@ -265,6 +278,18 @@ export function FailureState({
         </div>
         {error !== undefined && details && (
           <div id={detailsId} className={styles.details}>
+            <div className={styles.detailsHeader}>
+              <span className={styles.detailsLabel}>{t("Technical details")}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                motion="none"
+                onClick={() => void copyDetails()}
+                loading={copy === "pending" || undefined}
+              >
+                {copy === "copied" ? t("Copied") : t("Copy details")}
+              </Button>
+            </div>
             <pre ref={preview} tabIndex={0} aria-label={t("Error details")}>
               {/* oxlint-disable-next-line bycoda/no-raw-error-text -- this is the shared Details view the rule points to */}
               {shown}
@@ -277,25 +302,14 @@ export function FailureState({
                 })}
               </p>
             ) : null}
-            <div className={styles.actions}>
-              <Button
-                variant="secondary"
-                size="sm"
-                motion="none"
-                onClick={() => void copyDetails()}
-                loading={copy === "pending" || undefined}
-              >
-                {copy === "copied" ? t("Copied") : t("Copy details")}
-              </Button>
-              {/* Always mounted so the polite live region exists before its text changes. */}
-              <span role="status" className={styles.copyStatus} data-state={copy}>
-                {copy === "failed" ? (
-                  t("Could not copy. Select the details and copy them manually.")
-                ) : copy === "copied" ? (
-                  <span className="sr-only">{t("Copied")}</span>
-                ) : null}
-              </span>
-            </div>
+            {/* Always mounted so the polite live region exists before its text changes. */}
+            <span role="status" className={styles.copyStatus} data-state={copy}>
+              {copy === "failed" ? (
+                t("Could not copy. Select the details and copy them manually.")
+              ) : copy === "copied" ? (
+                <span className="sr-only">{t("Copied")}</span>
+              ) : null}
+            </span>
           </div>
         )}
       </div>

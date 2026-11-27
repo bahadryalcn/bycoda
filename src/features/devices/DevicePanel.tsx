@@ -1392,6 +1392,8 @@ function DevicePanelSurface({
       )}
       {!status && ((shownError && !discoveryShownCentrally) || operation === "status") && (
         <FailureState
+          context="panel"
+          illustration="unreachable"
           title={
             readableDeviceError(shownError ?? "") ??
             (discoveryError || operation === "status"

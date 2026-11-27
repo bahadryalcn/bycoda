@@ -116,7 +116,7 @@ export function InboxList({
   onSelect(threadId: string): void;
   onMore(): void;
 }) {
-  if (loading) return <LoadingText>{t("Loading conversations…")}</LoadingText>;
+  if (loading) return <LoadingText layout="fill">{t("Loading conversations…")}</LoadingText>;
   return (
     <div className="inbox-list">
       <ContinuousList

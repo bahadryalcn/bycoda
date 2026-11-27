@@ -302,6 +302,7 @@ export function RemoteSession({
     return (
       <FailureState
         context={compactPresentation ? "list" : "page"}
+        title={t("This project’s machine details are missing")}
         description={t(
           "This project’s machine details are missing. Add the project again from the project rail.",
         )}
@@ -325,7 +326,9 @@ export function RemoteSession({
         />
       </div>
     ) : (
-      <LoadingText>{t("Connecting to the machine…")}</LoadingText>
+      <div className="grid h-full place-items-center">
+        <LoadingText>{t("Connecting to the machine…")}</LoadingText>
+      </div>
     );
   return (
     <DurableRemoteSessionGate

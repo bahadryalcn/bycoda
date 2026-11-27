@@ -44,7 +44,14 @@ export type RemoteInboxItem = {
   identifier?: string;
   draft: boolean;
   labels: { name: string; color: string }[];
-  assignees: { login: string; avatarUrl?: string }[];
+  /** `accountId` is the stable Jira identity the desktop's Assignee filter uses. */
+  assignees: { login: string; accountId?: string; avatarUrl?: string }[];
+  /** Linear team or Jira project: the desktop's Teams / Projects filter dimension. */
+  teamId?: string;
+  teamName?: string;
+  /** Linear project; empty when the issue sits outside every project. */
+  projectId?: string;
+  projectName?: string;
 };
 export type RemoteInboxTarget = Pick<
   RemoteInboxItem,

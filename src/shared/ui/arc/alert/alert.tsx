@@ -15,7 +15,7 @@ import { X } from "../../icons";
 import { Button } from "../../Button";
 import {
   NoticeGlyph,
-  NoticeButton,
+  NoticeLink,
   NoticeSlot,
   noticeEnterClass,
   type NoticeAction,
@@ -34,7 +34,7 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   /** Shows a dismiss button. An uncontrolled alert collapses first, then calls this. */
   onDismiss?: () => void;
-  /** The one follow-up (Retry, Open settings), rendered as a secondary small button after the copy. */
+  /** The one follow-up (Retry, Open settings), rendered as a text link after the copy. */
   action?: NoticeAction;
   /** A second follow-up, rendered after `action`. */
   secondaryAction?: NoticeAction;
@@ -88,8 +88,8 @@ function AlertBox({
         </div>
         {hasActions ? (
           <div className={styles.actions}>
-            {action ? <NoticeButton action={action} /> : null}
-            {secondaryAction ? <NoticeButton action={secondaryAction} quiet /> : null}
+            {action ? <NoticeLink action={action} /> : null}
+            {secondaryAction ? <NoticeLink action={secondaryAction} /> : null}
             {extra}
           </div>
         ) : null}

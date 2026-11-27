@@ -995,7 +995,11 @@ export function SkillsPage({
             onClose={() => groupView.selectGroup(null)}
           />
         ) : groupView.view === "groups" ? (
-          <EmptyState title={t("Select a group")} />
+          <EmptyState
+            title={t("Select a group")}
+            description={t("Pick a group to edit its skills.")}
+            illustration="chat-empty"
+          />
         ) : previewSkill && shownCopy ? (
           <aside id={previewId} aria-label={t("Skill preview")} className={styles.detail}>
             <header className={styles.detailHeader}>
@@ -1237,7 +1241,11 @@ export function SkillsPage({
             )}
           </aside>
         ) : (
-          <EmptyState title={t("Select a skill")} />
+          <EmptyState
+            title={t("Select a skill")}
+            description={t("Pick a skill from the list to preview it.")}
+            illustration="chat-empty"
+          />
         )}
         {actionFeedback}
       </div>

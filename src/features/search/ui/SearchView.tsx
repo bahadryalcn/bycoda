@@ -690,7 +690,7 @@ export function SearchView({
         aria-busy={loading}
         className={
           empty
-            ? "min-h-0 overflow-y-auto overscroll-none px-3 py-2"
+            ? "flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-3 py-2"
             : "min-h-0 flex-1 overflow-y-auto overscroll-none px-1.5 py-1.5"
         }
       >
@@ -700,7 +700,11 @@ export function SearchView({
           </LoadingText>
         ) : null}
         {empty ? (
-          <EmptyState context="panel" icon={<Search className="icon-md" />} />
+          <EmptyState
+            context="panel"
+            illustration="search-empty"
+            description={t("Type to search across the project")}
+          />
         ) : noResults ? (
           <EmptyState
             size="inline"

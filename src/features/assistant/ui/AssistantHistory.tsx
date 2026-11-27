@@ -4,7 +4,7 @@ import type { AssistantActivity } from "../../../shared/model/host-contracts/ass
 import { dateTimeFormat, t, useLocale } from "../../../shared/i18n";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
-import { LiveText } from "../../../shared/ui/LiveText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Briefcase, ExternalLink } from "../../../shared/ui/icons";
@@ -98,12 +98,18 @@ export function AssistantHistory({
   }
   return (
     <div className={styles.history}>
-      {/* Always mounted so the empty state is announced when it first appears. */}
-      <LiveText
-        tone="secondary"
-        className={styles.empty}
-        text={!entries.length ? (filtered ? t("No results") : t("No activity yet")) : ""}
-      />
+      {!entries.length ? (
+        <EmptyState
+          context="panel"
+          kind={filtered ? "filtered" : "empty"}
+          title={filtered ? t("No results") : t("No activity yet")}
+          description={
+            filtered
+              ? t("Try a different search or clear the filters.")
+              : t("What the assistant does is recorded here.")
+          }
+        />
+      ) : null}
       {[...groups].map(([key, events]) => (
         <section className={styles.day} key={key} aria-labelledby={`history-day-${key}`}>
           <SectionLabel as="h3" labelId={`history-day-${key}`} count={events.length}>

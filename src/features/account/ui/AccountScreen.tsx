@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Divider } from "../../../shared/ui/Divider";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
@@ -60,17 +61,20 @@ export function AccountScreen() {
 
   if (state.phase === "starting") {
     return (
-      <div className={styles.screen}>
-        <LoadingText>{t("Loading account…")}</LoadingText>
+      <div className={styles.screen} data-state="centered">
+        <LoadingText layout="fill">{t("Loading account…")}</LoadingText>
       </div>
     );
   }
   if (state.phase === "unavailable") {
     return (
-      <div className={styles.screen}>
-        <InlineMessage tone="neutral">
-          {t("Accounts are not available in this build of bycoda.")}
-        </InlineMessage>
+      <div className={styles.screen} data-state="centered">
+        <EmptyState
+          context="page"
+          illustration="locked"
+          title={t("Accounts are not available")}
+          description={t("Accounts are not available in this build of bycoda.")}
+        />
       </div>
     );
   }
