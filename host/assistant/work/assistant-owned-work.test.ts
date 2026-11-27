@@ -8,6 +8,7 @@ import { initializeCrewSchedulerProjection } from "../../crews/crew-scheduler-pr
 import { HostAssistantQuickAutomations } from "./assistant-quick-automations";
 import { assistantProfileDefaults } from "../profile-defaults";
 import {
+  assistantOwnedGoalAllowed,
   assistantOwnedSessionAllowed,
   assistantOwnedTaskAllowed,
   recordAssistantCrewTaskOrigin,
@@ -125,6 +126,107 @@ it("seeks existing worker, reviewer, crew and receipt rows through ownership ind
     const details = plan.map((row) => String(row.detail)).join("\n");
     for (const index of indexes) expect(details).toContain(`USING INDEX ${index}`);
   }
+});
+it("scoped ownership lookups keep the full-scan match set and receipt order", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "assistant-owned-scope-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  await store.ready;
+  await store.db.exec(`
+    CREATE TABLE goals(id TEXT PRIMARY KEY,value TEXT NOT NULL);
+    INSERT INTO goals VALUES('goal-1','{"createdAt":3,"projectIds":["p"]}');
+    INSERT INTO goals VALUES('goal-2','{"createdAt":4,"projectIds":["p"]}');
+  `);
+  const receipt = (key: string, ownership: Record<string, unknown>) =>
+    store.db
+      .prepare("INSERT INTO metadata(key,value) VALUES(?,?)")
+      .run(`voice-work:${key}`, JSON.stringify({ ownership }));
+  // Written first under a key that sorts last: the task receipt must still win over the goal one.
+  await receipt("z-task", {
+    kind: "task",
+    id: "owned",
+    projectId: "p",
+    threadId: "room",
+    state: "pending",
+    entityCreatedAt: 5,
+  });
+  await receipt("a-goal", {
+    kind: "goal",
+    id: "goal-1",
+    projectId: "p",
+    threadId: "room",
+    state: "completed",
+    entityCreatedAt: 3,
+  });
+  await receipt("b-goal", {
+    kind: "goal",
+    id: "goal-2",
+    projectId: "p",
+    threadId: "room",
+    state: "pending",
+    entityCreatedAt: 4,
+  });
+  // An automation receipt only applies to tasks an automation started.
+  await receipt("c-automation", {
+    kind: "automation",
+    id: "schedule",
+    projectId: "p",
+    threadId: "room",
+    state: "pending",
+    entityCreatedAt: 7,
+  });
+  const profile = {
+    ...assistantProfileDefaults,
+    enabled: true,
+    setupComplete: true,
+    permissionLevel: "everything" as const,
+  };
+  const task = (patch: Partial<HostTask>) =>
+    ({ id: "other", projectId: "p", createdAt: 9, status: "queued", ...patch }) as HostTask;
+
+  expect(
+    await assistantOwnedTaskAllowed(
+      store,
+      task({ id: "owned", goalId: "goal-1", createdAt: 5 }),
+      profile,
+      false,
+    ),
+  ).toBe(false);
+  expect(await assistantOwnedTaskAllowed(store, task({ goalId: "goal-1" }), profile, false)).toBe(
+    true,
+  );
+  expect(await assistantOwnedTaskAllowed(store, task({ goalId: "goal-1" }), profile, true)).toBe(
+    false,
+  );
+  expect(await assistantOwnedTaskAllowed(store, task({ goalId: "goal-2" }), profile, false)).toBe(
+    false,
+  );
+  expect(await assistantOwnedTaskAllowed(store, task({ goalId: "unowned" }), profile, true)).toBe(
+    true,
+  );
+  expect(
+    await assistantOwnedTaskAllowed(
+      store,
+      task({ source: "manual", automationId: "schedule" } as Partial<HostTask>),
+      profile,
+      true,
+    ),
+  ).toBe(true);
+  expect(
+    await assistantOwnedTaskAllowed(
+      store,
+      task({ source: "automation", automationId: "schedule" } as Partial<HostTask>),
+      profile,
+      false,
+    ),
+  ).toBe(false);
+  expect(await assistantOwnedGoalAllowed(store, "goal-1", profile, false)).toBe(true);
+  expect(await assistantOwnedGoalAllowed(store, "goal-1", profile, true)).toBe(false);
+  expect(await assistantOwnedGoalAllowed(store, "goal-2", profile, false)).toBe(false);
+  expect(await assistantOwnedGoalAllowed(store, "owned", profile, true)).toBe(true);
 });
 it("binds a Room Crew coordinator and members to the actual linked Task creation", async () => {
   const directory = mkdtempSync(join(tmpdir(), "assistant-owned-crew-"));
