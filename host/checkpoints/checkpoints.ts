@@ -343,12 +343,19 @@ export class HostCheckpoints {
   }
   /** Lightweight default turn hooks: no private Git index, tree or refs. Call
    * with the actual user block ID, which differs from the provider run ID. */
-  beginFilesTurn(session: string, cwd: string, turn: string, userBlockId = turn) {
+  beginFilesTurn(
+    session: string,
+    cwd: string,
+    turn: string,
+    userBlockId = turn,
+    /** The turn was stopped: end the baseline scan instead of reading every remaining file. */
+    abandoned?: () => boolean,
+  ) {
     return this.queue(session, [cwd], async () => {
       cwd = await realpath(cwd);
       await this.leases.publish(session, turn, cwd);
       try {
-        await this.fileHistory.begin(session, cwd, turn, userBlockId);
+        await this.fileHistory.begin(session, cwd, turn, userBlockId, abandoned);
         const previous = await this.load(session);
         if (previous?.cwd === cwd && !previous.active) await this.retireResolved(session, previous);
         const currentHead = await head(cwd);
@@ -374,7 +381,14 @@ export class HostCheckpoints {
       }
     });
   }
-  finishFilesTurn(session: string, cwd: string, turn: string, _interrupted = false) {
+  finishFilesTurn(
+    session: string,
+    cwd: string,
+    turn: string,
+    _interrupted = false,
+    /** The turn never reached its provider, so it changed nothing: skip the second workspace scan. */
+    untouched = false,
+  ) {
     return this.queue(session, [cwd], async () => {
       try {
         const captured = await this.fileHistory.finish(
@@ -382,6 +396,7 @@ export class HostCheckpoints {
           cwd,
           turn,
           await this.leases.shared(session, turn),
+          untouched,
         );
         const record = await this.load(session);
         if (record?.active?.id === turn && record.cwd === (await realpath(cwd))) {

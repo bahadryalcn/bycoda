@@ -67,6 +67,9 @@ const record = (value: unknown) =>
     ? (value as Record<string, unknown>)
     : undefined;
 
+/** The sign-in exists but its token has run out; the provider's own CLI renews it. */
+export class RealtimeSignInExpiredError extends Error {}
+
 /** The provider's own CLI keeps ownership of its login; this only reads the
  * current token to mint a 60-second voice credential. */
 async function providerCredential(provider: RealtimeProvider, deps: Required<SecretDeps>) {
@@ -82,7 +85,9 @@ async function providerCredential(provider: RealtimeProvider, deps: Required<Sec
     if (typeof entry?.key !== "string" || !entry.key.trim()) return undefined;
     const expires = typeof entry.expires_at === "string" ? Date.parse(entry.expires_at) : NaN;
     if (Number.isFinite(expires) && expires <= deps.now())
-      throw new Error("Open Grok Build once to refresh its sign-in, then start voice again.");
+      throw new RealtimeSignInExpiredError(
+        "Open Grok Build once to refresh its sign-in, then start voice again.",
+      );
     return entry.key.trim();
   }
   const codexHome = deps.env.CODEX_HOME?.trim() || join(deps.home, ".codex");

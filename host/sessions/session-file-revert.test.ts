@@ -12,9 +12,10 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { HostCheckpoints } from "../checkpoints/checkpoints";
+import { hostGitExec } from "../git/git-exec-pool";
 import { reverseProviderUpdate, SessionFileRevert } from "./session-file-revert";
 import { acquireRevertFileGuard, createRevertGuardSession } from "./session-file-revert-guard";
 
@@ -88,6 +89,65 @@ describe("session message file revert", () => {
     },
     60_000,
   );
+
+  it("settles a turn stopped before its provider ran without reading the workspace again", async () => {
+    const f = await fixture();
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "run-one", "one");
+    // Someone else edits while the stopped turn winds down: not this turn's change.
+    await f.write("a.txt", "outside edit\n");
+    const listed = vi.spyOn(hostGitExec, "exec");
+    try {
+      await f.checkpoints.finishFilesTurn("s", f.cwd, "run-one", true, true);
+      // No second `git ls-files` over the checkout: Stop is not held behind a workspace scan.
+      expect(listed.mock.calls.filter(([, args]) => args?.[0] === "ls-files")).toEqual([]);
+    } finally {
+      listed.mockRestore();
+    }
+    const plan = await f.checkpoints.filesRevertPlan("s", f.cwd, "one");
+    expect(plan.unavailable).toBeUndefined();
+    expect(plan.files).toEqual([]);
+    // The next turn starts from a fresh baseline and still captures its own edit.
+    await f.turn("two", () => f.write("a.txt", "second turn\n"));
+    expect(
+      (await f.checkpoints.filesRevertPlan("s", f.cwd, "two")).files.map((file) => file.path),
+    ).toEqual(["a.txt"]);
+  }, 60_000);
+
+  it("captures files in listed order up to the budget and reports a change beyond it as unavailable", async () => {
+    const f = await fixture();
+    await mkdir(join(f.cwd, "0dir"));
+    for (const name of ["x", "y", "z"]) await f.write(`0dir/${name}.txt`, `${name}\n`);
+    await f.write("big.txt", "b".repeat(6000));
+    for (let index = 0; index < 9; index++) await f.write(`f${index}.txt`, `${index}\n`);
+    // Git lists 0dir/* first and they fit; big.txt spends the budget, so it and every file
+    // listed after it are excluded.
+    const history = new SessionFileRevert(join(f.root, "small"), 4096, async () => {});
+    await history.begin("s", f.cwd, "run-one", "one");
+    await f.write("0dir/y.txt", "edited\n");
+    await history.finish("s", f.cwd, "run-one");
+    const plan = await history.plan("s", f.cwd, "one");
+    expect(plan.unavailable).toBeUndefined();
+    expect(plan.files.map((file) => [file.path, file.action, file.conflict])).toEqual([
+      ["0dir/y.txt", "restore", undefined],
+    ]);
+    await history.begin("s", f.cwd, "run-two", "two");
+    await f.write("f8.txt", "edited\n");
+    await history.finish("s", f.cwd, "run-two");
+    expect((await history.plan("s", f.cwd, "two")).unavailable).toBeTruthy();
+  }, 60_000);
+
+  it("stops capturing the baseline once the turn is cancelled, and a run that still entered stays honest", async () => {
+    const f = await fixture();
+    for (let index = 0; index < 20; index++) await f.write(`f${index}.txt`, `${index}\n`);
+    let checks = 0;
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "run-one", "one", () => ++checks > 2);
+    // The scan ended at the first cancelled check instead of reading all 21 files.
+    expect(checks).toBe(3);
+    await f.write("f19.txt", "changed\n");
+    // Without the "never entered" proof the partial baseline is reported, never trusted.
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "run-one", true);
+    expect((await f.checkpoints.filesRevertPlan("s", f.cwd, "one")).unavailable).toBeTruthy();
+  }, 60_000);
 
   it("retains and reverts queued-message history using its opaque RPC block ID", async () => {
     const f = await fixture();

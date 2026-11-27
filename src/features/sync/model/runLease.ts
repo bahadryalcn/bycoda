@@ -31,7 +31,7 @@ export type RunLease = { holder: string; epoch: number; expiresAt: number };
 /** Another side is running a turn of this conversation. Nothing was sent. */
 export class LeaseHeldError extends Error {
   readonly code = RUN_LEASE_HELD;
-  declare readonly holder: string;
+  readonly holder: string;
   constructor(
     holder: string,
     detail = "This session is running in bycoda on that computer. Wait for it to finish.",
