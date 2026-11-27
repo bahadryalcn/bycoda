@@ -606,7 +606,12 @@ test.describe("overlay frame layout contracts", () => {
             // The modal body is a scroll host by design; only its parts may scroll, not the frame.
             allow: {},
           });
-          // The frame itself stays inside the window.
+          // The frame itself stays inside the window, measured after its entrance settles.
+          await dialog.evaluate((element) =>
+            Promise.all(
+              element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+            ),
+          );
           const box = (await dialog.boundingBox())!;
           expect(box.x, `${surface} left edge`).toBeGreaterThanOrEqual(-1);
           expect(box.y, `${surface} top edge`).toBeGreaterThanOrEqual(-1);
