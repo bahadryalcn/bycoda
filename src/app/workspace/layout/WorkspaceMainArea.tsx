@@ -1,6 +1,6 @@
 import { toolsSessionsFor } from "./useActiveTabContext";
 import { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
-import { memo, useLayoutEffect, type ComponentProps, type RefObject } from "react";
+import { memo, useLayoutEffect, type ComponentProps, type RefCallback } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
@@ -65,7 +65,7 @@ export type WorkspaceSessionPaneProps = Omit<
 export interface WorkspaceMainAreaProps {
   voiceWorkspaceOutlet?: VoiceWorkspaceOutlet;
   // Project terminal dock (markup only; dock state lives in Workspace)
-  dockGridRef: RefObject<HTMLDivElement | null>;
+  dockGridRef: RefCallback<HTMLDivElement>;
   projectCwd: string;
   projectTerminals: ProjectTerminal[];
   projectTerminalFocused: boolean;
