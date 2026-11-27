@@ -259,6 +259,7 @@ impl Job {
             .view
             .clone()
     }
+    #[cfg(test)]
     pub fn message(&self, text: &str) {
         self.inner
             .lock()
