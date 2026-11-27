@@ -1244,7 +1244,11 @@ it("keeps associated sessions by default when deleting a worktree", async () => 
   expect(onRemove).toHaveBeenCalledWith("/keep-sessions", tree.path, true, true);
 });
 
-it("shows no selected branch after removal even when the old path has a branch again", async () => {
+it("offers the actual project branch and a worktree picker after removal", async () => {
+  vi.mocked(listWorktrees).mockResolvedValue({
+    worktrees: [{ ...tree, path: "/repo", branch: "develop", isMain: true }, tree],
+    defaultRoot: "/repo-worktrees",
+  });
   const onSelect = vi.fn(async () => {});
   await act(async () =>
     root.render(
@@ -1257,21 +1261,20 @@ it("shows no selected branch after removal even when the old path has a branch a
       }),
     ),
   );
-  const trigger = container.querySelector<HTMLButtonElement>("button")!;
-  // MiddleTruncate keeps the complete label once in the accessibility tree and once as aria-hidden visual parts.
-  expect(trigger.querySelector("[data-middle-truncate] > span:first-child")?.textContent).toBe(
-    "No branch selected",
-  );
+  expect(container.textContent).toContain("Worktree unavailable");
+  expect(container.textContent).not.toContain("Continue in main");
+  const trigger = button("Choose worktree…");
   expect(trigger.disabled).toBe(false);
   await act(async () => trigger.click());
   expect(document.querySelector('[aria-selected="true"]')).toBeNull();
-  expect(document.body.textContent).toContain(
-    "This session’s worktree was deleted. Select a worktree to continue.",
+  expect(document.body.textContent).not.toContain("Switch branch in this worktree…");
+  const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
+    (entry) => entry.textContent?.includes("feature"),
   );
-  expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
-  expect(button("Switch branch in this worktree…").getAttribute("aria-disabled")).toBe("true");
-  await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
-  expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo" }));
+  await act(async () => option!.click());
+  expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: tree.path }));
+  await act(async () => button("Continue in develop").click());
+  expect(onSelect).toHaveBeenLastCalledWith(expect.objectContaining({ path: "/repo" }));
 });
 
 it("keeps a Reveal failure on its worktree row with a local retry", async () => {

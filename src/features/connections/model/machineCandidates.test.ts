@@ -182,6 +182,57 @@ it("plans an SSH add only from native routes", () => {
   expect(sshAddPlan(both)).toEqual({ target: "me@box", alternate: "me@100.64.0.9", name: "box" });
 });
 
+it("plans a ported route as host and SSH port, with a second address only on that port", () => {
+  const plan = (routes: MachineCandidate["routes"]) =>
+    sshAddPlan(mergeMachineCandidates({ account: [], native: [native({ routes })], saved: [] })[0]!);
+  expect(
+    plan([
+      { address: "box:2222", kind: "name" },
+      { address: "100.64.0.9", kind: "tailscale" },
+      { address: "[fd7a::9]:2222", kind: "lan" },
+    ]),
+  ).toEqual({ target: "box", alternate: "fd7a::9", name: "box", port: 2222 });
+  // An alias leaves the port to SSH config, so the resolved address on another port is no twin.
+  expect(
+    plan([
+      { address: "box", kind: "name" },
+      { address: "10.0.0.5:2222", kind: "lan" },
+    ]),
+  ).toEqual({ target: "box", alternate: null, name: "box" });
+});
+
+it("shows a Tailscale peer once when an SSH source uses its short name", () => {
+  // The Rust merge returns one native row: the peer's routes plus the short name SSH vouched for.
+  const machines = mergeMachineCandidates({
+    account: [
+      candidateFromComputer(
+        computer({ routes: [{ endpoint: "https://jane-mbp.tail.ts.net" }] }),
+        NOW,
+      ),
+    ],
+    native: [
+      native({
+        key: "node-id",
+        name: "Jane MacBook Pro",
+        sources: ["tailscale", "known-hosts"],
+        routes: [
+          { address: "jane-mbp.tail.ts.net", kind: "tailscale" },
+          { address: "100.64.0.9", kind: "tailscale" },
+          { address: "jane-mbp", kind: "name" },
+        ],
+      }),
+      native({ key: "jane-mbp", name: "jane-mbp", routes: [{ address: "jane-mbp", kind: "name" }] }),
+    ],
+    saved: [],
+  });
+  expect(machines).toHaveLength(1);
+  expect(machines[0]!.sources).toEqual(["account", "tailscale", "known-hosts", "ssh-config"]);
+  expect(sshAddPlan(machines[0]!)).toMatchObject({
+    target: "jane-mbp",
+    alternate: "jane-mbp.tail.ts.net",
+  });
+});
+
 it("joins an account computer with the SSH entry on its home-network address", () => {
   const machines = mergeMachineCandidates({
     account: [

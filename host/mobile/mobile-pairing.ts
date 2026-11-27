@@ -8,8 +8,13 @@ import {
   type MobilePairingStatus,
   type MobilePairingRedemption as MobilePairingCredential,
 } from "../../src/integrations/mobile-pairing";
-import { deviceProofThumbprint, parseDeviceProofJwk } from "../../src/integrations/device-proof";
-import type { DeviceProofBinding } from "../security/device-proof";
+import {
+  deviceProofThumbprint,
+  parseDeviceInstallId,
+  parseDeviceProofJwk,
+  verifyDeviceReplacement,
+} from "../../src/integrations/device-proof";
+import type { DeviceProofBinding, DeviceReplacement } from "../security/device-proof";
 import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 import { isTunnelIngress } from "../security/ingress";
 import { hostProof, matchesHostProof } from "./host-proof";
@@ -43,6 +48,8 @@ export type MobilePairingStore = {
     name: string,
     kind: "phone" | "desktop" | undefined,
     proofKey: DeviceProofBinding,
+    /** Absent when the client offered neither a valid earlier-key proof nor an install ID. */
+    replacement?: DeviceReplacement,
   ) => { id: string; token: string } | Promise<{ id: string; token: string }>;
   transaction?<T>(action: () => T | Promise<T>): T | Promise<T>;
 };
@@ -266,9 +273,30 @@ export class MobilePairing {
     }
     // The FIFO prevents duplicate issuance; the production store's actor transaction
     // keeps issuer validation and device creation in one durable operation.
+    // Pairing again with the same client replaces its credential instead of adding one. The
+    // device name is no identity, so only a signature by the earlier key names what to retire.
+    // A phone whose keys did not survive a reinstall can only name its installation; the store
+    // limits what that weaker identifier may retire. The earlier credential is retired once the
+    // client uses the new one after saving it, never here: a client that loses this response,
+    // fails to connect or fails to save keeps the credential it has.
+    const replacedJkt = verifyDeviceReplacement(input.replaces, {
+      claimId: input.claimId,
+      proofKey: jwk,
+      environmentId: this.store.environmentId,
+    });
+    const installId = entry.kind === "phone" ? parseDeviceInstallId(input.installId) : undefined;
+    const replacement: DeviceReplacement = {
+      ...(replacedJkt && replacedJkt !== proofKey.jkt ? { jkt: replacedJkt } : {}),
+      ...(installId ? { installId } : {}),
+    };
     let issued: { id: string; token: string };
     try {
-      issued = await this.store.issueDevice(name, entry.kind, proofKey);
+      issued = await this.store.issueDevice(
+        name,
+        entry.kind,
+        proofKey,
+        ...(replacement.jkt || replacement.installId ? [replacement] : []),
+      );
       if (
         this.closed ||
         this.pairings.get(entry.id) !== entry ||

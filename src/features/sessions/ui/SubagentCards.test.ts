@@ -90,6 +90,31 @@ it("shows the member's identity, task and status, and opens the child", () => {
   expect(fake.open).toHaveBeenCalledWith("parent-1", "child-1");
 });
 
+it("opens a run from a click on its row before it reports any step", () => {
+  render(child(true));
+  const row = container.querySelector<HTMLButtonElement>("button[data-subagent-open]");
+  expect(row?.textContent).toContain("Reviewer");
+  act(() => row?.click());
+  expect(fake.open).toHaveBeenCalledWith("parent-1", "child-1");
+});
+
+it("marks an advisor run as the advisor", () => {
+  const advisor = child(false);
+  advisor.modelSettings = {
+    [DELEGATION_PARENT_KEY]: JSON.stringify({
+      parentSessionId: "parent-1",
+      runId: "ask_2",
+      kind: "advisor",
+      model: "codex:gpt-a",
+      startedAt: 1,
+    }),
+  };
+  render(advisor);
+  expect(container.querySelector("[data-subagent-advisor]")?.textContent).toBe("Advisor");
+  render(child(false));
+  expect(container.querySelector("[data-subagent-advisor]")).toBeNull();
+});
+
 it("stops a running member and offers no Stop once it is done", () => {
   render(child(true));
   const stop = container.querySelector<HTMLButtonElement>('button[aria-label="Stop Reviewer"]');
@@ -151,12 +176,102 @@ it("lays up to three runs out as cards that open their own panel", () => {
   expect(container.querySelector('[data-subagent-card] [role="progressbar"]')).not.toBeNull();
 });
 
+it("opens a card's run from a click anywhere on the card while it has no work to show", () => {
+  const opened: string[] = [];
+  const listen = (event: Event) => opened.push(String((event as CustomEvent).detail ?? ""));
+  window.addEventListener("bycoda:view-subagent", listen);
+  renderStack(["in_progress", "completed"]);
+  const actions = container.querySelectorAll<HTMLButtonElement>(
+    "button[data-subagent-card-action]",
+  );
+  expect(actions).toHaveLength(2);
+  expect(actions[0].getAttribute("aria-label")).toBe("Open r0 in its own panel");
+  act(() => actions[0].click());
+  window.removeEventListener("bycoda:view-subagent", listen);
+  expect(opened).toEqual(["r0"]);
+});
+
 it("lays more than three runs out as rows under a finished counter", () => {
   renderStack(["in_progress", "completed", "failed", "completed"]);
   expect(container.querySelector("[data-subagent-card]")).toBeNull();
   expect(container.querySelector("[data-subagent-list]")).not.toBeNull();
   expect(container.textContent).toContain("2/4 done");
   expect(container.textContent).toContain("1 failed");
+});
+
+function unstarted(id: string, reason: string, name = "Subagent"): Block {
+  return {
+    id,
+    role: "tool",
+    text: name,
+    tool: { kind: "subagent", title: name, status: "failed", detail: reason },
+    agentRun: { name, steps: [], unstarted: true },
+  };
+}
+
+it("shows asks that never started as one line with their reason, not as cards", () => {
+  const reason = "Choose an available worktree of this project";
+  act(() => {
+    root.render(
+      createElement(SubagentStack, { blocks: [unstarted("a", reason), unstarted("b", reason)] }),
+    );
+  });
+  expect(container.querySelector("[data-subagent-card]")).toBeNull();
+  expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  const lines = container.querySelectorAll("[data-subagent-start-failure]");
+  expect(lines).toHaveLength(1);
+  expect(lines[0].textContent).toBe(`2 subagents could not start: ${reason}`);
+  expect(container.textContent).not.toContain("Details");
+});
+
+it("keeps started runs as cards beside a line for the asks that never started", () => {
+  act(() => {
+    root.render(
+      createElement(SubagentStack, {
+        blocks: [
+          nativeRun("r0", "completed"),
+          unstarted("x", "Limit reached", "Advisor"),
+          nativeRun("r1", "in_progress"),
+        ],
+        live: true,
+      }),
+    );
+  });
+  expect(container.querySelectorAll("[data-subagent-card]")).toHaveLength(2);
+  expect(container.querySelector("[data-subagent-start-failure]")?.textContent).toBe(
+    "Advisor could not start: Limit reached",
+  );
+});
+
+it("shows a lone ask that never started as its line", () => {
+  act(() => {
+    root.render(createElement(SubagentRow, { block: unstarted("a", "Model unavailable") }));
+  });
+  expect(container.querySelector("[data-subagent-start-failure]")?.textContent).toBe(
+    "Subagent could not start: Model unavailable",
+  );
+  expect(container.querySelector("[data-subagent-open]")).toBeNull();
+});
+
+it("shows a failed card's short reason on the card once, without a Details popover or Failure section", () => {
+  act(() => {
+    root.render(
+      createElement(SubagentStack, {
+        blocks: [
+          nativeRun("a", "completed"),
+          {
+            ...nativeRun("b", "failed"),
+            tool: { callId: "b", kind: "agent", title: "Task b", status: "failed", detail: "Boom" },
+          } as Block,
+        ],
+      }),
+    );
+  });
+  const reasons = container.querySelectorAll("[data-subagent-reason]");
+  expect(reasons[1].textContent).toBe("Boom");
+  expect(container.textContent).not.toContain("Details");
+  expect(container.textContent).not.toContain("Failure");
+  expect(container.querySelector("[data-subagent-trail]")).toBeNull();
 });
 
 it("opens one card's trail at a time under the grid, and a failed run opens itself on its reason", () => {

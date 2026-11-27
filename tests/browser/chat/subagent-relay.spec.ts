@@ -413,7 +413,24 @@ test("blocked shortcut and rejected submission preserve drafts", async ({ page }
 });
 
 for (const theme of ["light", "dark"])
-  for (const width of [800, 1280])
+  for (const width of [800, 1280]) {
+    test(`subagent start failures ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 600 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?start-failure&theme=${theme}`);
+      const lines = page.locator("[data-subagent-start-failure]");
+      await expect(lines).toHaveText([
+        "2 subagents could not start: Choose an available worktree of this project",
+        "Advisor could not start: Choose an available worktree of this project",
+      ]);
+      await expect(page.locator("[data-subagent-card]")).toHaveCount(2);
+      await expect(page.getByRole("button", { name: /^Details/ })).toHaveCount(0);
+      await expect(page.locator("[data-subagent-reason]").last()).toHaveText("Model unavailable");
+      await page.screenshot({
+        path: `temp/verification/subagent-start-failure/${theme}-${width}.png`,
+      });
+    });
+
     test(`shared subagent label interaction ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -437,6 +454,7 @@ for (const theme of ["light", "dark"])
       await page.mouse.move(0, 0);
       await expect(label).toHaveCSS("color", before);
     });
+  }
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])

@@ -1890,10 +1890,20 @@ export class HostEngine {
         if (snapshot.status === "running" || this.live.has(id)) return undefined;
         const current = await this.store.session(id);
         if (current.authorityGeneration !== undefined) return undefined;
-        await this.managedWorkspace(current);
+        const managed = await this.managedWorkspace(current);
         if (!current.desktop || current.status === "running") return undefined;
         if (snapshot.updatedAt <= current.desktop.updatedAt) return undefined;
         const { session } = snapshot;
+        // The desktop decides where an unmanaged conversation works: a worktree switch or a
+        // recovery from a deleted worktree moves it. A managed workspace keeps the Host's path.
+        const location = managed?.path
+          ? {}
+          : { cwd: session.cwd, worktreeCwd: session.worktreeCwd, branch: session.branch };
+        const sameLocation =
+          !!managed?.path ||
+          (session.cwd === current.session.cwd &&
+            session.worktreeCwd === current.session.worktreeCwd &&
+            session.branch === current.session.branch);
         // A copy the desktop saved before this host's latest change, e.g. while
         // the host was still running the turn, holds nothing newer; replacing the
         // transcript with it would drop the turn's output.
@@ -1923,7 +1933,8 @@ export class HostEngine {
         };
         const same =
           stale ||
-          (session.title === current.session.title &&
+          (sameLocation &&
+            session.title === current.session.title &&
             session.harness === current.session.harness &&
             session.providerSessionId === current.session.providerSessionId &&
             session.providerAccountId === current.session.providerAccountId &&
@@ -1995,6 +2006,7 @@ export class HostEngine {
                   status: "idle" as const,
                   session: {
                     ...current.session,
+                    ...location,
                     title: session.title,
                     harness: session.harness,
                     model: session.model,
@@ -2036,6 +2048,7 @@ export class HostEngine {
           // adapter. Otherwise the next mirror sees a third, mixed identity.
           if (
             current.session.harness !== saved.session.harness ||
+            current.session.cwd !== saved.session.cwd ||
             current.session.providerSessionId !== saved.session.providerSessionId ||
             current.session.providerAccountId !== saved.session.providerAccountId
           )

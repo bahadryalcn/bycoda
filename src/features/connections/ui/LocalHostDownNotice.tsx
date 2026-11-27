@@ -54,10 +54,11 @@ export function useLocalHostDownNotice() {
   const [starting, setStarting] = useState(false);
 
   const [seenState, setSeenState] = useState(state);
-  // Show it again the next time the host stops (adjusted during render).
+  // Show it again the next time the host stops (adjusted during render); a dismissed update
+  // notice does not hide a stop that follows it.
   if (seenState !== state) {
     setSeenState(state);
-    if (state !== "stopped") {
+    if (state !== "stopped" || seenState === "updating") {
       setHidden(false);
       setError(undefined);
     }
@@ -78,7 +79,10 @@ export function useLocalHostDownNotice() {
     }
   };
   return {
-    visible: state === "stopped" && !hidden,
+    // An update stops the Host on purpose; saying so explains why everything on this computer
+    // fails meanwhile.
+    visible: (state === "stopped" || state === "updating") && !hidden,
+    updating: state === "updating",
     dismiss: () => setHidden(true),
     error,
     starting,
@@ -93,6 +97,18 @@ export function LocalHostDownNotice({
   notice: ReturnType<typeof useLocalHostDownNotice>;
 }) {
   useLocale();
+  if (notice.updating)
+    return (
+      <Alert
+        open
+        tone="info"
+        title={t("The host on this computer is being updated.")}
+        dismissLabel={t("Dismiss")}
+        onDismiss={notice.dismiss}
+      >
+        {t("Tasks, sessions and sync on this computer return when it restarts.")}
+      </Alert>
+    );
   return (
     <Alert
       // Controlled: dismissing removes the notice at once; the owner hides the row itself.

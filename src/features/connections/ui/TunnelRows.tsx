@@ -161,9 +161,11 @@ function TunnelRow({
           ) : null}
           {tunnel.issue ? (
             tunnel.state === "error" ? (
-              <InlineError>{issueCopy(tunnel.issue)}</InlineError>
+              <InlineError>{issueCopy(tunnel.issue, session.remoteName)}</InlineError>
             ) : (
-              <InlineMessage tone="warning">{issueCopy(tunnel.issue)}</InlineMessage>
+              <InlineMessage tone="warning">
+                {issueCopy(tunnel.issue, session.remoteName)}
+              </InlineMessage>
             )
           ) : null}
           {tunnel.issue === "approval-required" && tunnel.approvalUrl ? (

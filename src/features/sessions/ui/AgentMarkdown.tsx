@@ -87,7 +87,9 @@ import {
 import {
   messageFileCandidates,
   resolveMessageFileReference,
+  sessionFileCandidates,
 } from "../../files/public/messagePathContext";
+import { TranscriptToolPaths } from "./TranscriptToolPaths";
 import { resolveInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
@@ -942,15 +944,20 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   const [revealRemoteOnOpen, setRevealRemoteOnOpen] = useState(false);
   // Read at click time so streaming text does not recreate the file callbacks.
   const readText = useStableCallback(() => text);
+  const readToolPaths = useContext(TranscriptToolPaths);
   const resolveInMessage = useCallback(
-    (path: string) => resolveMessageFileReference(path, cwd, readText()),
-    [cwd, readText],
+    (path: string) => resolveMessageFileReference(path, cwd, readText(), readToolPaths?.() ?? []),
+    [cwd, readText, readToolPaths],
   );
   const openFile = useCallback<OpenFileFn>(
     (...args) => {
       const [path, ...rest] = args;
+      const hasContext =
+        !!cwd &&
+        (messageFileCandidates(path, cwd, readText()).length > 0 ||
+          sessionFileCandidates(path, cwd, readToolPaths?.() ?? []).length > 0);
       if (!path.startsWith("remote://")) {
-        if (!cwd || messageFileCandidates(path, cwd, readText()).length === 0) {
+        if (!hasContext) {
           onOpenFile?.(...args);
           return;
         }
@@ -958,15 +965,18 @@ export const AgentMarkdown = memo(function AgentMarkdown({
         return;
       }
       // Host file managers are not visible on this computer. Folders open here.
-      void browseDirectory(path).then(
-        () => {
-          setRevealRemoteOnOpen(false);
-          setRemoteFolder(path);
-        },
-        () => onOpenFile?.(...args),
+      // Remote bare names resolve against the message and session first, too.
+      void (hasContext ? resolveInMessage(path) : Promise.resolve(path)).then((resolved) =>
+        browseDirectory(resolved).then(
+          () => {
+            setRevealRemoteOnOpen(false);
+            setRemoteFolder(resolved);
+          },
+          () => onOpenFile?.(resolved, ...rest),
+        ),
       );
     },
-    [cwd, onOpenFile, resolveInMessage, readText],
+    [cwd, onOpenFile, resolveInMessage, readText, readToolPaths],
   );
   const onRevealFile = useCallback(
     (path: string, revealLocal = false) => {

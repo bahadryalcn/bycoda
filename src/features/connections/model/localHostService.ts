@@ -56,7 +56,16 @@ function loadLocalHost(): Promise<void> {
         return;
       }
       if (next !== "stopped" || localHostPrevious === "stopped") publishLocalHost(next);
+      // The Host answers again after an update, a restart or an outage: views that failed while
+      // it was down reload now instead of on their next own retry or the owner's next action.
+      // No environment is named, so every view reloads; the Host's id is not known here.
+      const recovered =
+        next === "running" &&
+        (localHostPrevious === "updating" ||
+          localHostPrevious === "stopped" ||
+          localHostPrevious === "starting");
       localHostPrevious = next;
+      if (recovered) notifyRemoteRecovered();
     },
     () => {
       if (session !== localHostSession) return;

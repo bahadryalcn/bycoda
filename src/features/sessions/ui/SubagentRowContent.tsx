@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { useT } from "../../../shared/i18n";
 import { actionContentAttributes } from "../../../shared/ui/ActionHost";
+import { Badge } from "../../../shared/ui/Badge";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -7,6 +9,16 @@ import type { HarnessId } from "../model/session";
 import type { ModelAccountIdentity } from "./ModelAccountIdentity";
 import { SubagentMarks } from "./SubagentAnatomy";
 import styles from "./SubagentRow.module.css";
+
+/** Marks a delegated run that is the conversation's advisor, not a subagent doing work. */
+export function AdvisorBadge() {
+  const t = useT();
+  return (
+    <Badge size="xs" appearance="subtle" tone="accent" className="shrink-0" data-subagent-advisor>
+      {t("Advisor")}
+    </Badge>
+  );
+}
 
 /**
  * The two-line card of one delegated run, in the transcript and in the activity dock: the
@@ -21,12 +33,15 @@ export function SubagentRowContent({
   active,
   failed,
   handle,
+  badge,
   subtitle,
   details,
   status,
   chevron,
   layout = "transcript",
 }: {
+  /** A role mark beside the name, such as the advisor's. */
+  badge?: ReactNode;
   harness?: HarnessId;
   /** Model id; names the provider when `harness` is not known. */
   model?: string;
@@ -75,6 +90,7 @@ export function SubagentRowContent({
               {name}
             </Text>
           )}
+          {badge}
           {handle ? (
             <Text size="micro" tone="muted" truncate className="min-w-0 shrink-[8]">
               @{handle}

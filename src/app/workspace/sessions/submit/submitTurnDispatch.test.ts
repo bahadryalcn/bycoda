@@ -10,6 +10,8 @@ import { prepareSubmittedTurn } from "./submitTurnSetup";
 import { startSubmittedTurn } from "./submitTurnRun";
 import type { SubmitDeps, SubmitInput } from "./submitTypes";
 import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
+import { REMOVED_WORKTREE_ERROR } from "../../../../features/sessions/model/sessionIssue";
+import { worktreeDeletedExternally } from "../../../../features/source-control/model/worktrees";
 import { newSession, type Session } from "../../../../features/sessions/model/session";
 import {
   getSessions,
@@ -43,6 +45,10 @@ const shared = vi.hoisted(() => ({
   kept: false,
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
+vi.mock("../../../../features/source-control/model/worktrees", async (original) => ({
+  ...(await original<typeof import("../../../../features/source-control/model/worktrees")>()),
+  worktreeDeletedExternally: vi.fn(),
+}));
 vi.mock("../../../../features/connections/model/sessionExecutionBinding", async (original) => ({
   ...(await original<
     typeof import("../../../../features/connections/model/sessionExecutionBinding")
@@ -108,7 +114,8 @@ vi.mock("../../../../integrations/harness/core/runtimeGuidance", async (original
 }));
 
 const model = "codex:gpt-6.1-sol";
-const refusals = vi.hoisted(() => ({ left: 0 }));
+const refusals = vi.hoisted(() => ({ left: 0, missingPath: "" }));
+const missingPathError = "Sistem belirtilen dosyayı bulamıyor. (os error 2)";
 let root: Root;
 let ctx: SubmitDeps;
 let events: { sessionId: string; event: HarnessEvent }[];
@@ -118,6 +125,11 @@ const adapter: HarnessAdapter = {
   id: "codex",
   live: true,
   async sendTurn(input) {
+    if (refusals.missingPath === "throw") throw new Error(missingPathError);
+    if (refusals.missingPath === "event") {
+      input.onEvent({ type: "session.error", message: missingPathError });
+      return;
+    }
     // Refused before the provider writes anything: nothing was accepted.
     if (refusals.left > 0) {
       refusals.left -= 1;
@@ -138,6 +150,8 @@ const adapter: HarnessAdapter = {
 
 beforeEach(async () => {
   refusals.left = 0;
+  refusals.missingPath = "";
+  vi.mocked(worktreeDeletedExternally).mockReset().mockResolvedValue(false);
   shared.wake.mockReset();
   shared.requeue.mockReset().mockReturnValue(false);
   shared.kept = false;
@@ -222,6 +236,28 @@ function sendQueuedRow() {
   if (preparation.settled) throw new Error("Submit preparation rejected the queued row");
   startSubmittedTurn(ctx, input, preflight.pre, preparation.setup);
 }
+
+it.each([
+  { deleted: true, delivery: "throw" },
+  { deleted: true, delivery: "event" },
+  { deleted: false, delivery: "throw" },
+])(
+  "checks worktree absence before recovery ($deleted, $delivery)",
+  async ({ deleted, delivery }) => {
+    refusals.missingPath = delivery;
+    vi.mocked(worktreeDeletedExternally).mockResolvedValue(deleted);
+    resetSessionsStore([{ ...original, branch: "feature", worktreeCwd: "/trees/feature" }]);
+    sendQueuedRow();
+    await vi.waitFor(() => expect(getSessions()[0].busy).toBeFalsy());
+    const session = getSessions()[0];
+    expect(worktreeDeletedExternally).toHaveBeenCalledWith("/trees/feature");
+    expect(!!session.worktreeRemoved).toBe(deleted);
+    expect(session.blocks.map((block) => block.text)).toContain("Earlier question");
+    expect(
+      session.blocks.filter((block) => block.notice === "error").map((block) => block.text),
+    ).toEqual([deleted ? REMOVED_WORKTREE_ERROR : missingPathError]);
+  },
+);
 
 it("puts a refused queued row back at the head with its id, without a session error or a held queue", async () => {
   refusals.left = 1;

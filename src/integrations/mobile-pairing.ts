@@ -1,4 +1,4 @@
-import type { DeviceProofJwk } from "./device-proof";
+import type { DeviceProofJwk, DeviceReplacementProof } from "./device-proof";
 import { isLanKey, isPrivateRouteAddress } from "./mobile-lan";
 
 /** Shared, credential-free contract for the desktop-to-phone pairing QR. */
@@ -30,6 +30,10 @@ export type MobilePairingRedeemInput = {
   deviceName?: string;
   /** Public key the new credential is bound to; the private key never leaves the client. */
   proofKey: DeviceProofJwk;
+  /** Sent when this client pairs again with the same Host: retires its earlier credential. */
+  replaces?: DeviceReplacementProof;
+  /** `deviceInstallId`: names a phone installation whose keys did not survive a reinstall. */
+  installId?: string;
 };
 export type MobilePairingStatus = {
   state: "pending" | "paired" | "expired" | "cancelled";

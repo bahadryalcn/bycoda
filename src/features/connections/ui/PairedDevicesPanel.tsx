@@ -360,7 +360,7 @@ export function PairedDevicesPanel({
             </Group>
           ) : null}
           <Group
-            title={t("Private — only your devices")}
+            title={t("Private to your devices")}
             description={t(
               "Reachable only from your own network or Tailscale network. Never from the public internet.",
             )}
@@ -371,9 +371,9 @@ export function PairedDevicesPanel({
               <LocalNetworkAccessRow machine={local} active={active} mode="tailscale" />
             ) : null}
             <Row
-              label={t("Let my signed-in phones find this computer")}
+              label={t("Let my signed-in devices find this computer")}
               info={t(
-                "Phones signed in to your account can ask to connect, and you approve each one here. Needs bycoda open and your account signed in; route addresses are stored in your account.",
+                "Phones and computers signed in to your account can find this computer and ask to connect. You approve each one here. bycoda must be open and signed in, and it saves this computer's private addresses in your account.",
               )}
               disabled={!signedIn}
               disabledReason={t("Sign in to your account first")}
@@ -382,7 +382,7 @@ export function PairedDevicesPanel({
                 checked={accountConnect && signedIn}
                 disabled={!signedIn}
                 onCheckedChange={setPhoneConnectEnabled}
-                aria-label={t("Let my signed-in phones find this computer")}
+                aria-label={t("Let my signed-in devices find this computer")}
               />
             </Row>
           </Group>

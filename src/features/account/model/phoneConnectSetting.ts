@@ -1,6 +1,6 @@
 import { storedFlag } from "../../../shared/lib/storedSetting";
 
-/** Local only and off by default: "Let my signed-in phones find this computer". */
+/** Local only and off by default: "Let my signed-in devices find this computer". */
 const KEY = "bycoda.account.phoneConnect";
 const EVENT = "bycoda:phone-connect-change";
 

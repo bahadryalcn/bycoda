@@ -1,4 +1,4 @@
-import type { AgentStep, Block } from "../model/session";
+import type { AgentStep, Block } from "./session";
 
 /**
  * A mirrored step as the transcript block it stands for, so a subagent's trail

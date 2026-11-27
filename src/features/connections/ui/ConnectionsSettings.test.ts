@@ -9,6 +9,7 @@ import { requestMachineAdd } from "../model/machineAdd";
 import { registerAppConfirmHost } from "../../../shared/model/appConfirm";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
+import { recordRemoteConnection, resetRemoteHealth } from "../model/remoteHealth";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 // Connection setup fixtures contain no persisted commands; outbox recovery has
@@ -81,6 +82,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  resetRemoteHealth();
   stopConfirm();
   act(() => root.unmount());
   container.remove();
@@ -790,6 +792,57 @@ it("keeps the connection when the host cannot revoke its credential", async () =
   expect(document.body.textContent).toContain(
     "was not removed because access could not be revoked",
   );
+});
+
+const refuse = () =>
+  act(async () =>
+    recordRemoteConnection("env", "Host rejected request [RPC_AUTHORIZATION] (workspace.run)."),
+  );
+
+it("offers Pair again with the saved address when the machine refuses this desktop", async () => {
+  machines = [{ ...machine, ssh: { ...machine.ssh!, port: 2222, alternate: "me@100.64.0.5" } }];
+  await render();
+  await refuse();
+  expect(container.textContent).toContain(
+    "Home Mac no longer accepts this computer. Pair again to reconnect.",
+  );
+  await act(async () => button("Pair again").click());
+  expect(invoke).toHaveBeenCalledWith(
+    "remote_ssh_begin",
+    expect.objectContaining({ target: "me@home", alternate: "me@100.64.0.5", port: 2222 }),
+  );
+});
+
+it("shows a reconnect the machine refused on its row, with Pair again", async () => {
+  machines = [machine];
+  await render();
+  await pick("Home Mac", "Reconnect");
+  state = {
+    ...state,
+    flow: "reconnect",
+    step: "open",
+    done: true,
+    error:
+      "Host rejected request [RPC_AUTHORIZATION] (environment.describe). This machine no longer accepts this computer's pairing; pair it again.",
+  };
+  await poll();
+  expect(container.textContent).toContain(
+    "Home Mac no longer accepts this computer. Pair again to reconnect.",
+  );
+  expect(button("Pair again")).toBeTruthy();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("does not offer to revoke access a refusing machine no longer grants", async () => {
+  await openRemove();
+  await refuse();
+  const radio = document.querySelector<HTMLInputElement>(
+    '[role="dialog"] input[type="radio"][value="revoke"]',
+  )!;
+  expect(radio.disabled).toBe(true);
+  expect(document.body.textContent).toContain("There is no access left to revoke.");
+  await act(async () => confirmRemove().click());
+  expect(invoke).toHaveBeenCalledWith("remote_disconnect", { machineId: "machine" });
 });
 
 it("does not spellcheck or autocorrect the machine name", async () => {

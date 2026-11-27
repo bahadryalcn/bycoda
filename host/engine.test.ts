@@ -4335,6 +4335,38 @@ describe("headless session ownership", () => {
     },
   );
 
+  it("follows a desktop worktree switch even when the transcript is unchanged", async () => {
+    const { engine, store, id } = await setup("claude");
+    const base = await store.session(id);
+    const removed = join(base.session.cwd, "..", "removed-tree");
+    const adopted = await store.save(
+      {
+        ...base,
+        revision: base.revision + 1,
+        desktop: { updatedAt: 1, revision: base.revision + 1 },
+        session: {
+          ...base.session,
+          cwd: removed,
+          worktreeCwd: removed,
+          branch: "feature",
+          blocks: [{ id: "u1", role: "user", text: "Start" }],
+        },
+      },
+      { type: "test.adopted" },
+    );
+    // The desktop recovered the conversation onto the project's own checkout.
+    const snapshot = structuredClone(adopted);
+    snapshot.updatedAt = adopted.updatedAt + 1000;
+    snapshot.session.cwd = base.session.cwd;
+    delete snapshot.session.worktreeCwd;
+    snapshot.session.branch = "main";
+    const refreshed = (await engine.refreshFromDesktop(snapshot))!;
+    expect(refreshed.session).toMatchObject({ cwd: base.session.cwd, branch: "main" });
+    expect(refreshed.session.worktreeCwd).toBeUndefined();
+    expect((await store.session(id)).session.worktreeCwd).toBeUndefined();
+    expect(refreshed.session.blocks).toEqual(adopted.session.blocks);
+  });
+
   it("refreshes a desktop provider switch atomically and binds the new thread only to its adapter", async () => {
     const target: HostProvider = {
       send: vi.fn(async () => {}),

@@ -84,7 +84,6 @@ import { formatGitLabel } from "./sessionGitLabel";
 import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { prefetchGithubWorkItem } from "../../features/inbox/model/githubTasks";
-import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import { confirmSessionDelete } from "../../features/sessions/model/confirmSessionDelete";
 import { SessionDeletionNotice } from "../../features/sessions/ui/SessionDeletionNotice";
 import {
@@ -6580,7 +6579,7 @@ const SessionCard = memo(function SessionCard({
     orchestration?.tasks.filter((task) => task.status === "completed").length ?? 0;
   const title = sessionDisplayTitle(session.title, session.harness);
   const gitLabel = session.worktreeRemoved
-    ? NO_BRANCH_LABEL
+    ? t("Worktree unavailable")
     : formatGitLabel(session.repo, session.branch);
   const compact = density === "compact";
   // Reactive lookups: the live model catalog changes outside React.

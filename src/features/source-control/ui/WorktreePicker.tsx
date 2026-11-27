@@ -2,17 +2,18 @@ import { describeRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { WorktreeList, useWorktreeList } from "./WorktreeList";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
-import { worktreeRows } from "../model/worktreeRows";
+import { isListedWorktree, worktreeRows } from "../model/worktreeRows";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { NoticeCard } from "../../../shared/ui/NoticeCard";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useRef, useState } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
-import { NO_BRANCH_LABEL, type Worktree } from "../model/worktrees";
+import type { Worktree } from "../model/worktrees";
 import { BranchPicker } from "./BranchPicker";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
@@ -49,10 +50,11 @@ export function WorktreePicker({
   const [query, setQuery] = useState("");
   const [activePath, setActivePath] = useState<string>();
   const anchor = useRef<HTMLDivElement>(null);
+  const recoveryAnchor = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const { branches, settled, unreachable } = useProjectBranchesState(
-    worktreeRemoved ? cwd : executionCwd,
-    !!cwd && cwd !== "~",
+    executionCwd,
+    !worktreeRemoved && !!cwd && cwd !== "~",
   );
   const inWorktree = pathKey(cwd) !== pathKey(executionCwd);
   const {
@@ -73,7 +75,7 @@ export function WorktreePicker({
     onClose?.();
   };
   const select = async (tree: Worktree) => {
-    if (busy || tree.missing) return;
+    if (busy || !enabled || !isListedWorktree(tree)) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -86,6 +88,20 @@ export function WorktreePicker({
       setBusy(false);
     }
   };
+  const toggle = () => {
+    setError(undefined);
+    setQuery("");
+    setActivePath(undefined);
+    if (!open) refresh();
+    setOpen(!open);
+  };
+  const waitReason = t("Wait for this conversation to finish before changing worktrees.");
+  const projectTree =
+    worktreeRemoved && !loadError
+      ? data?.worktrees.find(
+          (tree) => pathKey(tree.path) === pathKey(cwd) && isListedWorktree(tree),
+        )
+      : undefined;
   const rows = worktreeRows(data?.worktrees, cwd, query);
   // Default to the current working copy, including when rows arrive after open.
   // Track navigation by path so background refreshes cannot move the highlight.
@@ -118,28 +134,63 @@ export function WorktreePicker({
       />
     );
   return (
-    <div ref={anchor} className="relative flex min-w-0 shrink">
-      <GitPickerTrigger
-        disabled={!enabled || (!worktreeRemoved && !branches?.current && !inWorktree)}
-        title={
-          worktreeRemoved
-            ? t("Select a branch or worktree to continue this session")
-            : t("Worktree: {p0}", { p0: prettyCwd(executionCwd) })
-        }
-        aria-label={t("Choose worktree")}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => {
-          setError(undefined);
-          setQuery("");
-          setActivePath(undefined);
-          if (!open) refresh();
-          setOpen(!open);
-        }}
-        label={
-          worktreeRemoved
-            ? NO_BRANCH_LABEL
-            : branches?.current
+    <div
+      ref={anchor}
+      className={worktreeRemoved ? "relative mb-1.5 min-w-0" : "relative flex min-w-0 shrink"}
+    >
+      {worktreeRemoved ? (
+        <NoticeCard
+          kind="warning"
+          title={t("Worktree unavailable")}
+          detail={t("The worktree folder is gone. Your conversation and draft are kept.")}
+          actions={
+            <>
+              {projectTree ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  disabled={!enabled || busy}
+                  disabledReason={enabled ? undefined : waitReason}
+                  loading={busy && !open}
+                  onClick={() => void select(projectTree)}
+                >
+                  {projectTree.branch
+                    ? t("Continue in {p0}", { p0: projectTree.branch })
+                    : t("Continue in project folder")}
+                </Button>
+              ) : null}
+              <div ref={recoveryAnchor}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={!enabled || busy}
+                  disabledReason={enabled ? undefined : waitReason}
+                  aria-haspopup="dialog"
+                  aria-expanded={open}
+                  onClick={toggle}
+                >
+                  {t("Choose worktree…")}
+                </Button>
+              </div>
+            </>
+          }
+        >
+          {error && !open ? (
+            <InlineError details={error}>{t("Couldn’t select worktree")}</InlineError>
+          ) : null}
+        </NoticeCard>
+      ) : (
+        <GitPickerTrigger
+          disabled={!enabled || (!branches?.current && !inWorktree)}
+          title={t("Worktree: {p0}", { p0: prettyCwd(executionCwd) })}
+          aria-label={t("Choose worktree")}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={toggle}
+          label={
+            branches?.current
               ? branches.detached
                 ? t("detached {p0}", { p0: branches.current })
                 : branches.current
@@ -150,13 +201,15 @@ export function WorktreePicker({
                     ? t("Unavailable")
                     : t("No repo")
                 : t("Loading…")
-        }
-        worktree={!worktreeRemoved && inWorktree}
-      />
+          }
+          worktree={inWorktree}
+        />
+      )}
       {open && (
         <Popover
-          anchor={anchor}
+          anchor={worktreeRemoved ? recoveryAnchor : anchor}
           side="top"
+          align={worktreeRemoved ? "end" : undefined}
           minWidth={320}
           maxHeight={400}
           onDismiss={() => {
@@ -184,11 +237,6 @@ export function WorktreePicker({
               ) : undefined
             }
           />
-          {worktreeRemoved ? (
-            <InlineMessage tone="warning" inset="row" className="shrink-0">
-              {t("This session’s worktree was deleted. Select a worktree to continue.")}
-            </InlineMessage>
-          ) : null}
           <WorktreeList controller={list} loading={!data && !loadError} />
           {(error || loadError) && (
             <InlineError
@@ -229,28 +277,24 @@ export function WorktreePicker({
             >
               {t("Create worktree…")}
             </Button>
-            <Button
-              variant="item"
-              motion="none"
-              type="button"
-              disabled={busy || worktreeRemoved}
-              disabledReason={
-                worktreeRemoved
-                  ? t("This worktree was removed.")
-                  : busy
-                    ? t("Wait for the current operation to finish")
-                    : undefined
-              }
-              fullWidth
-              align="start"
-              startIcon={<GitBranch className="icon-sm" />}
-              onClick={() => {
-                setOpen(false);
-                setBranchPicker(true);
-              }}
-            >
-              {t("Switch branch in this worktree…")}
-            </Button>
+            {!worktreeRemoved && (
+              <Button
+                variant="item"
+                motion="none"
+                type="button"
+                disabled={busy}
+                disabledReason={busy ? t("Wait for the current operation to finish") : undefined}
+                fullWidth
+                align="start"
+                startIcon={<GitBranch className="icon-sm" />}
+                onClick={() => {
+                  setOpen(false);
+                  setBranchPicker(true);
+                }}
+              >
+                {t("Switch branch in this worktree…")}
+              </Button>
+            )}
             {onManage && (
               <Button
                 variant="item"

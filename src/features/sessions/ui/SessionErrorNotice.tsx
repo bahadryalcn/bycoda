@@ -3,7 +3,11 @@ import { useT } from "../../../shared/i18n";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import type { Block } from "../model/session";
 import { sessionErrorPresentation } from "../model/sessionErrorPresentation";
-import { isSessionErrorBlock } from "../model/sessionIssue";
+import {
+  isMissingPathError,
+  isSessionErrorBlock,
+  REMOVED_WORKTREE_ERROR,
+} from "../model/sessionIssue";
 import { useFailedTurnRecovery } from "./RetryFailedTurn";
 import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 import { UsageLimitNotice } from "./UsageLimitNotice";
@@ -34,9 +38,13 @@ export function SessionErrorNotice({ text, errorId }: { text: string; errorId?: 
   const t = useT();
   const recovery = useFailedTurnRecovery(errorId);
   const usageLimitRecovery = useContext(UsageLimitRecoveryContext);
+  if (text === REMOVED_WORKTREE_ERROR) text = t("Worktree unavailable");
   const message = sessionErrorPresentation(text);
-  const detail = message.detail ?? (!fitsOneLine(text) ? text : undefined);
-  const summary = errorHeadline(message.summary || t("The last turn failed"));
+  const missingPath = isMissingPathError(text);
+  const detail = message.detail ?? (missingPath || !fitsOneLine(text) ? text : undefined);
+  const summary = errorHeadline(
+    !missingPath && message.summary ? message.summary : t("The last turn failed"),
+  );
   const title = message.usageLimit ? t("Usage limit reached") : summary;
   const details = detail ? <ErrorDetails title={title} detail={detail} /> : undefined;
   if (message.usageLimit) {

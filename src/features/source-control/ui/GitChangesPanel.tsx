@@ -367,6 +367,20 @@ export function GitChangesPanel({
         />
       </Text>
     ) : null;
+  const runAlternate = () => {
+    const failed = feedback;
+    void failed?.alternate?.run().catch((error) =>
+      setGitFeedback(cwd, {
+        kind: "error",
+        get title() {
+          return t("Couldn’t create pull request");
+        },
+        detail: presentRemoteError(error, { explicit: true }),
+        retry: failed.retry,
+        alternate: failed.alternate,
+      }),
+    );
+  };
   // Operation results sit next to the actions that produced them (below the commit
   // and sync controls); a collapsed repository row shows them in place.
   const notices = (
@@ -395,25 +409,18 @@ export function GitChangesPanel({
                     )
                 : undefined
             }
+            alternate={
+              feedback.alternate && !busy
+                ? { label: feedback.alternate.label, onClick: runAlternate }
+                : undefined
+            }
           />
           {feedback.alternate && !busy ? (
             <Button
               variant="link"
               size="sm"
               className="mx-3 mb-2 self-start"
-              onClick={() =>
-                void feedback.alternate?.run().catch((error) =>
-                  setGitFeedback(cwd, {
-                    kind: "error",
-                    get title() {
-                      return t("Couldn’t create pull request");
-                    },
-                    detail: presentRemoteError(error, { explicit: true }),
-                    retry: feedback.retry,
-                    alternate: feedback.alternate,
-                  }),
-                )
-              }
+              onClick={runAlternate}
             >
               {feedback.alternate.label}
             </Button>

@@ -3309,11 +3309,11 @@ it("labels preserved sessions as having no branch selected", () => {
     },
   ];
   act(render);
-  expect(card().textContent).toContain("No branch selected");
+  expect(card().textContent).toContain("Worktree unavailable");
   expect(card().textContent).not.toContain("old-feature");
   props.sessions = [{ ...props.sessions[0], branch: "main", worktreeRemoved: undefined }];
   act(render);
-  expect(card().textContent).not.toContain("No branch selected");
+  expect(card().textContent).not.toContain("Worktree unavailable");
   // Standard rows name the branch; the repo-qualified label stays in the row's detail tooltip.
   expect(card().textContent).toContain("main");
   expect(card().querySelector("[data-session-row-branch]")?.hasAttribute("title")).toBe(false);
