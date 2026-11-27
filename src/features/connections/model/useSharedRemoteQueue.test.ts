@@ -92,7 +92,8 @@ it("confirms Resume when the released row was already sent before the read retur
   mocks.request.mockImplementation(async (...args) => {
     const result = await request(...args);
     // The drainer takes the only row as soon as the queue is active.
-    if (saved.status === "active") saved = { ...saved, messages: [], status: undefined, revision: saved.revision + 1 };
+    if (saved.status === "active")
+      saved = { ...saved, messages: [], status: undefined, revision: saved.revision + 1 };
     return result;
   });
   await act(async () => {

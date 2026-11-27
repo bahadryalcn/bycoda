@@ -347,26 +347,27 @@ export function GitChangesPanel({
   // every repository row, open or collapsed (as in VS Code), so each worktree switches its own
   // branch from the overview just as from its focused panel.
   const worktreeSection = !!repository?.checkout && !repository.checkout.isMain;
-  const branchControl =
-    (repository
+  const branchControl = (
+    repository
       ? !!index?.branch
-      : detailsOpen && (checkout || (index?.repository !== false && index?.branch))) ? (
-      <Text
-        className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
-      >
-        <BranchPicker
-          key={cwd}
-          cwd={cwd}
-          branch={index?.branch ?? undefined}
-          enabled={enabled && !busy && !loading}
-          popoverSide="bottom"
-          onChange={() => {
-            onMutated();
-            changesRef.current?.refreshPr?.();
-          }}
-        />
-      </Text>
-    ) : null;
+      : detailsOpen && (checkout || (index?.repository !== false && index?.branch))
+  ) ? (
+    <Text
+      className={`flex min-w-0 items-center gap-1 ${repository ? "max-w-48 shrink-4" : "-ms-1.5 max-w-[65%] shrink-0"}`}
+    >
+      <BranchPicker
+        key={cwd}
+        cwd={cwd}
+        branch={index?.branch ?? undefined}
+        enabled={enabled && !busy && !loading}
+        popoverSide="bottom"
+        onChange={() => {
+          onMutated();
+          changesRef.current?.refreshPr?.();
+        }}
+      />
+    </Text>
+  ) : null;
   // Operation results sit next to the actions that produced them (below the commit
   // and sync controls); a collapsed repository row shows them in place.
   const notices = (
