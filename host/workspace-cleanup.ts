@@ -26,6 +26,7 @@ import {
   exists,
   inside,
   inventoryWorkspaceLinks,
+  workspaceHasLinks,
   validateWorkspaceCleanupPaths,
   type Link,
 } from "./workspaces/workspace-cleanup-paths";
@@ -613,10 +614,7 @@ export async function guardedRemoveWorkspace(
     await input.phase?.("evidence-preserved", recoveryIds, archives);
     if (await input.inUse()) throw new Error("Workspace is still in use.");
     if (beforeDetachment && !input.allowDirty) {
-      if (
-        links.some((link) => exists(link.path)) ||
-        (await inventoryWorkspaceLinks(input.path)).length
-      )
+      if (links.some((link) => exists(link.path)) || (await workspaceHasLinks(input.path)))
         throw new Error("Dependency links changed during cleanup.");
       const afterDetachment = await sourceState(input.path, trackedLinks);
       if (afterDetachment.fingerprint !== beforeDetachment.fingerprint)
@@ -632,7 +630,7 @@ export async function guardedRemoveWorkspace(
       }
       // Preserve every remaining byte, including edits made after the prior preservation.
       await validateWorkspaceCleanupPaths(input.managedRoot, input.path);
-      if ((await inventoryWorkspaceLinks(input.path)).length)
+      if (await workspaceHasLinks(input.path))
         throw new Error("Links appeared during recovery; cleanup remains blocked.");
       await input.assertAuthorized?.();
       archive(input.path, `recovered-directory-${randomUUID()}`);
@@ -659,8 +657,7 @@ export async function guardedRemoveWorkspace(
         )
           throw error;
         if (exists(input.path)) {
-          const remaining = await inventoryWorkspaceLinks(input.path);
-          if (remaining.length)
+          if (await workspaceHasLinks(input.path))
             throw new Error("Links appeared during removal; cleanup remains blocked.");
           await input.assertAuthorized?.();
           archive(input.path, `remaining-${randomUUID()}`);
