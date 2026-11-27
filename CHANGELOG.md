@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.30]
+
+### Added
+
+- Social accounts can publish, moderate and read insights for Instagram, Facebook, TikTok, X, YouTube, LinkedIn and Snapchat, with owner review before anything is sent.
+- Live streaming goes live on several Social accounts at once from OBS.
+- Realtime voice calls can run through the Host.
+- Empty, error and offline states share one set of illustrations.
+- Browser profile import finds Chrome, Edge, Brave, Vivaldi, Opera, Chromium and Firefox on macOS and Linux too.
+- Room privacy protection can be rebuilt after an interrupted change, without dropping any lock.
+
 ### Changed
 
 - The Tasks screens are simpler:
@@ -23,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Triggers, run history and templates each have one place in the editor.
 - The voice assistant is simpler:
   - Voice settings has Assistant, Conversation and Dictation groups, and a cloud provider's privacy note is always visible.
-  - The live companion has one More menu. The overlay's Full screen mode and the launcher's wake popover are gone.
+  - The live voice call has one More menu. The overlay's Full screen mode and the launcher's wake popover are gone.
   - The message box's dictation menu holds Language only.
 - The interface follows one design system:
   - Toasts, alerts and the notification center share one feedback language.
@@ -36,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Sessions without a project open and list correctly.
 - The new task form no longer shows a "Merge automatically" option that had no effect.
+- Default settings apply to all providers again: per-provider copies that matched the shared default no longer block changes.
+- Running tasks that wait for input are listed under Needs you.
+- Live streaming start and stop no longer time out after 30 seconds on remote machines.
+- Narrow layouts: settings rows, the composer Stop button, the task details panel, notification rows and the account footer no longer overflow or clip.
+- Shortened English labels are restored.
 
 ## [0.7.25]
 
