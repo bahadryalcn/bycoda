@@ -15172,5 +15172,8 @@
   "Create a task to hand work to an agent.": "タスクを作成して、エージェントに作業を任せます。",
   "Add tasks from the backlog to plan this sprint.": "バックログからタスクを追加して、このスプリントを計画します。",
   "Tasks will appear here once they are created.": "タスクは作成されるとここに表示されます。",
-  "Start talking and the transcript appears here.": "話し始めると、文字起こしがここに表示されます。"
+  "Start talking and the transcript appears here.": "話し始めると、文字起こしがここに表示されます。",
+  "No folders to select.": "選択できるフォルダーがありません。",
+  "No folders are selected.": "フォルダーが選択されていません。",
+  "Choose a profile to import.": "インポートするプロファイルを選択してください。"
 }

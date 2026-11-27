@@ -15172,5 +15172,8 @@
   "Create a task to hand work to an agent.": "创建任务，把工作交给代理。",
   "Add tasks from the backlog to plan this sprint.": "从待办列表中添加任务来规划此迭代。",
   "Tasks will appear here once they are created.": "任务创建后会显示在这里。",
-  "Start talking and the transcript appears here.": "开始说话，转录内容会显示在这里。"
+  "Start talking and the transcript appears here.": "开始说话，转录内容会显示在这里。",
+  "No folders to select.": "没有可选择的文件夹。",
+  "No folders are selected.": "未选择任何文件夹。",
+  "Choose a profile to import.": "请选择要导入的配置文件。"
 }

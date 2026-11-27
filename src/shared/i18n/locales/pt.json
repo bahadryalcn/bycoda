@@ -15172,5 +15172,8 @@
   "Create a task to hand work to an agent.": "Crie uma tarefa para passar o trabalho a um agente.",
   "Add tasks from the backlog to plan this sprint.": "Adicione tarefas do backlog para planejar esta sprint.",
   "Tasks will appear here once they are created.": "As tarefas aparecerão aqui quando forem criadas.",
-  "Start talking and the transcript appears here.": "Comece a falar e a transcrição aparece aqui."
+  "Start talking and the transcript appears here.": "Comece a falar e a transcrição aparece aqui.",
+  "No folders to select.": "Nenhuma pasta para selecionar.",
+  "No folders are selected.": "Nenhuma pasta selecionada.",
+  "Choose a profile to import.": "Escolha um perfil para importar."
 }

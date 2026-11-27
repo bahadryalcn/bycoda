@@ -15172,5 +15172,8 @@
   "Create a task to hand work to an agent.": "İşi bir ajana vermek için bir görev oluşturun.",
   "Add tasks from the backlog to plan this sprint.": "Bu sprint’i planlamak için backlog’dan görev ekleyin.",
   "Tasks will appear here once they are created.": "Görevler oluşturulunca burada görünür.",
-  "Start talking and the transcript appears here.": "Konuşmaya başlayın, konuşma kaydı burada görünür."
+  "Start talking and the transcript appears here.": "Konuşmaya başlayın, konuşma kaydı burada görünür.",
+  "No folders to select.": "Seçilecek klasör yok.",
+  "No folders are selected.": "Hiç klasör seçilmedi.",
+  "Choose a profile to import.": "İçe aktarılacak bir profil seçin."
 }

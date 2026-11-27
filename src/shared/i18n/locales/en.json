@@ -15172,5 +15172,8 @@
   "Create a task to hand work to an agent.": "Create a task to hand work to an agent.",
   "Add tasks from the backlog to plan this sprint.": "Add tasks from the backlog to plan this sprint.",
   "Tasks will appear here once they are created.": "Tasks will appear here once they are created.",
-  "Start talking and the transcript appears here.": "Start talking and the transcript appears here."
+  "Start talking and the transcript appears here.": "Start talking and the transcript appears here.",
+  "No folders to select.": "No folders to select.",
+  "No folders are selected.": "No folders are selected.",
+  "Choose a profile to import.": "Choose a profile to import."
 }
