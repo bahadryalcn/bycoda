@@ -44,8 +44,6 @@
 .row {
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 16px;
 }
 .identity {
   display: grid;

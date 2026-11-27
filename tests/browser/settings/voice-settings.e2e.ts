@@ -52,7 +52,6 @@ async function assertVoiceRows(region: Locator) {
 /** The one-word status in the Setup row. */
 const setupStatus = (group: Locator, text: string) =>
   group.locator('[data-setting-id="voice-setup"]').getByText(text, { exact: true });
-const hasSetting = (id: string) => `.settings-group:has([data-setting-id="${id}"])`;
 
 for (const [theme, width] of [
   ["light", 1280],
@@ -74,8 +73,6 @@ for (const [theme, width] of [
         animations: "disabled",
       });
     };
-    const assistant = region.locator(hasSetting("voice-companion"));
-    const conversation = region.locator(hasSetting("voice-turn-silence"));
     await expect(setupStatus(region, "Ready")).toBeVisible();
     await assertVoiceRows(region);
     await capture("top");
