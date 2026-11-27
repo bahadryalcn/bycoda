@@ -3236,7 +3236,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 
 .agent-markdown .markdown-code-copy:hover {
   background: var(--ui-fill-muted);
-  color: var(--color-content);
+  color: var(--transcript-ink-emphasis);
 }
 
 .sidebar-opacity-slider:focus-visible {
@@ -3472,7 +3472,9 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   color: var(--color-content);
 }
 
-.update-release-notes.agent-markdown > .agent-markdown-block:first-child > [data-streamdown="heading-3"] {
+.update-release-notes.agent-markdown
+  > .agent-markdown-block:first-child
+  > [data-streamdown="heading-3"] {
   margin-block-start: var(--ui-space-2);
 }
 

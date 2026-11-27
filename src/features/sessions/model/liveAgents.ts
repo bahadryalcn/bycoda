@@ -101,8 +101,7 @@ export function withoutSettledAgents(
 ): LiveAgent[] {
   const kept = agents.filter(
     (agent) =>
-      lifecycleOf(agent)?.state !== "settled" ||
-      (!agent.done && !agent.issue && !agent.waiting),
+      lifecycleOf(agent)?.state !== "settled" || (!agent.done && !agent.issue && !agent.waiting),
   );
   return kept.length === agents.length ? agents : kept;
 }

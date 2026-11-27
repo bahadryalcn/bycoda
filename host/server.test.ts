@@ -5306,7 +5306,8 @@ describe("remote host API", () => {
       ).value.error,
     ).toContain("identity changed");
     // Revoked from a separate connection, as the CLI does.
-    const other = new DatabaseSync(join(s.directory, "host.db"));
+    // Wait out the Host's own write lock instead of failing with "database is locked".
+    const other = new DatabaseSync(join(s.directory, "host.db"), { timeout: 10_000 });
     other.prepare("DELETE FROM devices WHERE id=?").run(s.first.id);
     other.close();
     // External SQLite revocation is observed at the 1.5s auth-cache boundary.
